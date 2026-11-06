@@ -147,7 +147,7 @@ fn tokio_transport_rejects_unauthenticated_kpasswd_success_result() -> Result<()
             .err()
             .ok_or("unsigned success result rejected")?;
 
-        task.await??;
+        bounded(Duration::from_secs(10), "unsigned success peer task", task).await???;
         assert!(matches!(
             error,
             ClientError::KpasswdOutcomeUnknown(source)
@@ -189,7 +189,7 @@ fn tokio_transport_exchanges_configured_kpasswd_failure_result() -> Result<(), T
             .err()
             .ok_or("non-zero kpasswd result returns error")?;
 
-        task.await??;
+        bounded(Duration::from_secs(10), "unsigned failure peer task", task).await???;
         assert!(matches!(
             error,
             ClientError::KpasswdOutcomeUnknown(source)

@@ -39,6 +39,10 @@ const KPASSWD_HEADER_LEN: usize = 6;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
+    #[path = "../bounded.rs"]
+    mod bounded;
+    use bounded::{bounded, stop};
+
     use crate::ambient_guard::tests::access_violations;
     /// Configured preauthentication connection reuse.
     mod affinity;
@@ -113,9 +117,12 @@ mod tests {
                 .with_timeout(Duration::from_secs(1))
                 .send_to_kpasswd_realm(&config, KdcProtocol::Tcp, "TEST.GOKRB5", b"mutation")
                 .await;
-            assert_eq!(committed.await??, b"mutation");
+            assert_eq!(
+                bounded(Duration::from_secs(10), "committed request task", committed).await???,
+                b"mutation"
+            );
             assert!(
-                !duplicate.await??,
+                !bounded(Duration::from_secs(10), "duplicate request task", duplicate).await???,
                 "a possibly committed mutation was delivered twice"
             );
             assert!(
@@ -134,7 +141,12 @@ mod tests {
             let config = config_with_kpasswd_servers([udp.local_addr()?.to_string()], 1465)?;
             let received = tokio::spawn(async move {
                 let mut bytes = [0; 64];
-                let (length, _) = udp.recv_from(&mut bytes).await?;
+                let (length, _) = bounded(
+                    Duration::from_secs(10),
+                    "password UDP delivery",
+                    udp.recv_from(&mut bytes),
+                )
+                .await??;
                 let duplicate = timeout(Duration::from_millis(250), tcp.accept())
                     .await
                     .is_ok();
@@ -144,7 +156,8 @@ mod tests {
                 .with_timeout(Duration::from_millis(50))
                 .send_to_kpasswd_realm(&config, KdcProtocol::Auto, "TEST.GOKRB5", b"mutation")
                 .await;
-            let (length, duplicate) = received.await??;
+            let (length, duplicate) =
+                bounded(Duration::from_secs(10), "password delivery task", received).await???;
             assert_eq!(length, 8);
             assert!(
                 !duplicate,
@@ -172,7 +185,7 @@ mod tests {
                 .await
                 .err()
                 .ok_or("reserved bit rejected")?;
-            task.await??;
+            bounded(Duration::from_secs(10), "TCP peer task", task).await???;
             assert!(
                 !matches!(
                     error,
@@ -203,7 +216,7 @@ mod tests {
                 .with_dns_server(&server.to_string())?
                 .discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Tcp)
                 .await;
-            task.abort();
+            stop(task).await?;
             let endpoints = result?;
             assert_eq!(
                 endpoints
@@ -228,7 +241,7 @@ mod tests {
                 .with_dns_server(&server.to_string())?
                 .discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Tcp)
                 .await;
-            task.abort();
+            stop(task).await?;
             assert!(
                 result.err().is_some(),
                 "explicit unavailability must stop discovery"
@@ -252,7 +265,7 @@ mod tests {
                 .with_dns_server(&server.to_string())?
                 .discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Tcp)
                 .await;
-            task.abort();
+            stop(task).await?;
             let mut authorities = result?
                 .iter()
                 .map(KdcEndpoint::authority)
@@ -267,7 +280,12 @@ mod tests {
     async fn dns_admin_fixture(socket: UdpSocket, kpasswd: Option<Name>) -> Result<(), TestError> {
         loop {
             let mut buffer = [0; 4096];
-            let (len, peer) = socket.recv_from(&mut buffer).await?;
+            let (len, peer) = bounded(
+                Duration::from_secs(10),
+                "DNS request",
+                socket.recv_from(&mut buffer),
+            )
+            .await??;
             let request = Message::from_vec(buffer.get(..len).ok_or("DNS length")?)?;
             let query = request.queries.first().ok_or("DNS question")?;
             let mut response = Message::response(request.metadata.id, request.metadata.op_code);
@@ -397,7 +415,12 @@ mod tests {
             let addr = server.local_addr()?;
             let task = tokio::spawn(async move {
                 let mut request = [0; 64];
-                let (len, peer) = server.recv_from(&mut request).await?;
+                let (len, peer) = bounded(
+                    Duration::from_secs(10),
+                    "IPv6 UDP request",
+                    server.recv_from(&mut request),
+                )
+                .await??;
                 assert_eq!(request.get(..len), Some(b"ipv6-request".as_slice()));
                 let _: usize = server.send_to(b"ipv6-response", peer).await?;
                 Ok::<_, io::Error>(())
@@ -409,7 +432,7 @@ mod tests {
                 .await;
             // Then a complete UDP reply is returned.
             let response = result?;
-            task.await??;
+            bounded(Duration::from_secs(10), "IPv6 UDP peer task", task).await???;
             assert_eq!(response, b"ipv6-response");
             Ok::<_, TestError>(())
         })
@@ -424,7 +447,12 @@ mod tests {
             let addr = server.local_addr()?;
             let task = tokio::spawn(async move {
                 let mut request = [0; 64];
-                let (_, peer) = server.recv_from(&mut request).await?;
+                let (_, peer) = bounded(
+                    Duration::from_secs(10),
+                    "UDP request",
+                    server.recv_from(&mut request),
+                )
+                .await??;
                 let _: usize = server.send_to(b"ABCDEFGH", peer).await?;
                 Ok::<_, io::Error>(())
             });
@@ -433,7 +461,7 @@ mod tests {
                 .with_udp_response_limit(4)
                 .send_udp(addr, b"request")
                 .await;
-            task.await??;
+            bounded(Duration::from_secs(10), "oversized UDP peer task", task).await???;
             // Then no incomplete response is returned as success.
             assert!(
                 response.err().is_some(),
@@ -452,7 +480,12 @@ mod tests {
                 let addr = server.local_addr()?;
                 let task = tokio::spawn(async move {
                     let mut request = [0; 64];
-                    let (_, peer) = server.recv_from(&mut request).await?;
+                    let (_, peer) = bounded(
+                        Duration::from_secs(10),
+                        "UDP request",
+                        server.recv_from(&mut request),
+                    )
+                    .await??;
                     let _: usize = server.send_to(b"ABCDEFGH", peer).await?;
                     Ok::<_, io::Error>(())
                 });
@@ -460,7 +493,7 @@ mod tests {
                     .with_udp_response_limit(limit)
                     .send_udp(addr, b"request")
                     .await?;
-                task.await??;
+                bounded(Duration::from_secs(10), "exact UDP peer task", task).await???;
                 assert_eq!(response, b"ABCDEFGH");
             }
             Ok::<_, TestError>(())
@@ -475,7 +508,12 @@ mod tests {
             let addr = server.local_addr()?;
             let task = tokio::spawn(async move {
                 let mut request = [0_u8; 64];
-                let (len, peer) = server.recv_from(&mut request).await?;
+                let (len, peer) = bounded(
+                    Duration::from_secs(10),
+                    "UDP AS request",
+                    server.recv_from(&mut request),
+                )
+                .await??;
                 assert_eq!(request.get(..len), Some(b"udp-as-req".as_slice()));
                 let _: usize = server.send_to(b"udp-as-rep", peer).await?;
                 Ok::<_, io::Error>(())
@@ -486,9 +524,45 @@ mod tests {
                 .send(KdcProtocol::Udp, addr, b"udp-as-req")
                 .await?;
 
-            task.await??;
+            bounded(Duration::from_secs(10), "UDP peer task", task).await???;
             assert_eq!(response, b"udp-as-rep");
             Ok::<_, TestError>(())
+        })
+    }
+
+    /// UDP accepts its maximum request size and rejects one byte above it.
+    #[test]
+    fn udp_request_size_boundaries() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let peer = UdpSocket::bind("127.0.0.1:0").await?;
+            let addr = peer.local_addr()?;
+            let transport = Tokio::new().with_timeout(Duration::from_secs(2));
+            let oversized = vec![42; 65_508];
+            let result = transport.send_udp(addr, &oversized).await;
+            assert!(matches!(
+                result,
+                Err(ClientError::UdpRequestTooLarge {
+                    actual: 65_508,
+                    limit: 65_507
+                })
+            ));
+            let server = async {
+                let mut bytes = vec![0; 65_507];
+                let (length, client) = bounded(
+                    Duration::from_secs(10),
+                    "maximum UDP request",
+                    peer.recv_from(&mut bytes),
+                )
+                .await??;
+                assert_eq!(length, 65_507);
+                let _: usize = peer.send_to(&[17], client).await?;
+                Ok::<_, TestError>(())
+            };
+            let request = vec![42; 65_507];
+            let (sent, response) = tokio::join!(server, transport.send_udp(addr, &request));
+            sent?;
+            assert_eq!(response?, [17]);
+            Ok(())
         })
     }
 
@@ -512,7 +586,7 @@ mod tests {
                 .send_tcp(addr, b"tcp-as-req")
                 .await?;
 
-            task.await??;
+            bounded(Duration::from_secs(10), "TCP peer task", task).await???;
             assert_eq!(response, b"tcp-as-rep");
             Ok::<_, TestError>(())
         })
@@ -565,7 +639,12 @@ mod tests {
             let config = config_with_kdcs([addr.to_string()])?;
             let task = tokio::spawn(async move {
                 let mut request = [0_u8; 64];
-                let (len, peer) = server.recv_from(&mut request).await?;
+                let (len, peer) = bounded(
+                    Duration::from_secs(10),
+                    "configured UDP AS request",
+                    server.recv_from(&mut request),
+                )
+                .await??;
                 assert_eq!(
                     request.get(..len),
                     Some(b"configured-udp-as-req".as_slice())
@@ -584,7 +663,7 @@ mod tests {
                 )
                 .await?;
 
-            task.await??;
+            bounded(Duration::from_secs(10), "configured UDP peer task", task).await???;
             assert_eq!(response, b"configured-udp-as-rep");
             Ok::<_, TestError>(())
         })
@@ -616,7 +695,7 @@ mod tests {
                 )
                 .await?;
 
-            task.await??;
+            bounded(Duration::from_secs(10), "configured TCP peer task", task).await???;
             assert_eq!(response, b"configured-tcp-as-rep");
             Ok::<_, TestError>(())
         })
@@ -691,7 +770,7 @@ mod tests {
                 .send_to_kpasswd_realm(&config, KdcProtocol::Tcp, "TEST.GOKRB5", b"kpasswd-tcp-req")
                 .await?;
 
-            task.await??;
+            bounded(Duration::from_secs(10), "password TCP peer task", task).await???;
             assert_eq!(response, b"kpasswd-tcp-rep");
             Ok::<_, TestError>(())
         })
@@ -724,7 +803,7 @@ mod tests {
                 )
                 .await?;
 
-            task.await??;
+            bounded(Duration::from_secs(10), "password exchange peer task", task).await???;
             assert!(reply.is_krb_error());
             assert_eq!(usize::from(reply.message_length), expected_response_len);
             assert_eq!(
@@ -761,7 +840,7 @@ mod tests {
                 )
                 .await?;
 
-            task.await??;
+            bounded(Duration::from_secs(10), "fallback TCP peer task", task).await???;
             assert_eq!(response, b"fallback-tcp-as-rep");
             Ok::<_, TestError>(())
         })
@@ -777,7 +856,12 @@ mod tests {
 
             let udp_task = tokio::spawn(async move {
                 let mut request = [0_u8; 64];
-                let (len, peer) = udp.recv_from(&mut request).await?;
+                let (len, peer) = bounded(
+                    Duration::from_secs(10),
+                    "Auto UDP AS request",
+                    udp.recv_from(&mut request),
+                )
+                .await??;
                 assert_eq!(request.get(..len), Some(b"auto-as-req".as_slice()));
                 let _: usize = udp.send_to(&too_big, peer).await?;
                 Ok::<_, io::Error>(())
@@ -793,8 +877,8 @@ mod tests {
                 .send(KdcProtocol::Auto, addr, b"auto-as-req")
                 .await?;
 
-            udp_task.await??;
-            tcp_task.await??;
+            bounded(Duration::from_secs(10), "Auto UDP peer task", udp_task).await???;
+            bounded(Duration::from_secs(10), "Auto TCP peer task", tcp_task).await???;
             assert_eq!(response, b"auto-tcp-as-rep");
             Ok::<_, TestError>(())
         })
@@ -824,7 +908,7 @@ mod tests {
                 )
                 .await?;
 
-            task.await??;
+            bounded(Duration::from_secs(10), "Auto password peer task", task).await???;
             assert_eq!(response, b"auto-kpasswd-tcp-rep");
             Ok::<_, TestError>(())
         })
@@ -920,20 +1004,45 @@ mod tests {
 
     /// Accepts one connection and reads one length-prefixed request from it.
     async fn read_tcp_request(listener: &TcpListener) -> io::Result<(Vec<u8>, TcpStream)> {
-        let (mut socket, _) = listener.accept().await?;
+        let (mut socket, _) = bounded(
+            Duration::from_secs(10),
+            "TCP request connection",
+            listener.accept(),
+        )
+        .await??;
         let mut header = [0_u8; 4];
-        let _: usize = socket.read_exact(&mut header).await?;
+        let _: usize = bounded(
+            Duration::from_secs(10),
+            "TCP request header",
+            socket.read_exact(&mut header),
+        )
+        .await??;
         let request_len = usize::try_from(u32::from_be_bytes(header)).map_err(io::Error::other)?;
         let mut request = vec![0_u8; request_len];
-        let _: usize = socket.read_exact(&mut request).await?;
+        let _: usize = bounded(
+            Duration::from_secs(10),
+            "TCP request body",
+            socket.read_exact(&mut request),
+        )
+        .await??;
         Ok((request, socket))
     }
 
     /// Writes one length-prefixed response to a stub KDC connection.
     async fn write_tcp_response(socket: &mut TcpStream, response: &[u8]) -> io::Result<()> {
         let response_len = u32::try_from(response.len()).map_err(io::Error::other)?;
-        socket.write_all(&response_len.to_be_bytes()).await?;
-        socket.write_all(response).await
+        bounded(
+            Duration::from_secs(10),
+            "TCP response header",
+            socket.write_all(&response_len.to_be_bytes()),
+        )
+        .await??;
+        bounded(
+            Duration::from_secs(10),
+            "TCP response body",
+            socket.write_all(response),
+        )
+        .await?
     }
 
     /// Encodes the KRB-ERROR `KRB_ERR_RESPONSE_TOO_BIG` that pushes a UDP client to TCP.
@@ -1064,7 +1173,12 @@ mod tests {
             let listener = TcpListener::bind("127.0.0.1:0").await?;
             let addr = listener.local_addr()?;
             let server = tokio::spawn(async move {
-                let (mut socket, _) = listener.accept().await?;
+                let (mut socket, _) = bounded(
+                    Duration::from_secs(10),
+                    "preauthentication TCP connection",
+                    listener.accept(),
+                )
+                .await??;
                 let first = read_framed(&mut socket).await?;
                 write_framed(&mut socket, &preauth_required_error()?).await?;
                 let second = read_framed(&mut socket).await?;
@@ -1079,7 +1193,8 @@ mod tests {
             // The connection count is what is under test, not the login outcome.
             drop(login_over_tcp(addr).await.err());
 
-            let (first_len, second_len, reconnected) = server.await??;
+            let (first_len, second_len, reconnected) =
+                bounded(Duration::from_secs(10), "preauth peer task", server).await???;
             assert!(first_len > 0, "KDC received the bare AS-REQ");
             assert!(
                 second_len > 0,
@@ -1100,7 +1215,12 @@ mod tests {
             let listener = TcpListener::bind("127.0.0.1:0").await?;
             let addr = listener.local_addr()?;
             let server = tokio::spawn(async move {
-                let (mut socket, _) = listener.accept().await?;
+                let (mut socket, _) = bounded(
+                    Duration::from_secs(10),
+                    "Auto TCP connection",
+                    listener.accept(),
+                )
+                .await??;
                 let first = read_framed(&mut socket).await?;
                 write_framed(&mut socket, &preauth_required_error()?).await?;
                 let second = read_framed(&mut socket).await?;
@@ -1115,7 +1235,8 @@ mod tests {
             // TCP; the retry must ride that same connection.
             drop(login_over(addr, KdcProtocol::Auto).await.err());
 
-            let (first_len, second_len, reconnected) = server.await??;
+            let (first_len, second_len, reconnected) =
+                bounded(Duration::from_secs(10), "Auto preauth peer task", server).await???;
             assert!(
                 first_len > 0,
                 "KDC received the AS-REQ after the UDP fallback"
@@ -1136,13 +1257,23 @@ mod tests {
             let listener = TcpListener::bind("127.0.0.1:0").await?;
             let addr = listener.local_addr()?;
             let server = tokio::spawn(async move {
-                let (mut socket, _) = listener.accept().await?;
+                let (mut socket, _) = bounded(
+                    Duration::from_secs(10),
+                    "initial TCP connection",
+                    listener.accept(),
+                )
+                .await??;
                 drop(read_framed(&mut socket).await?);
                 write_framed(&mut socket, &preauth_required_error()?).await?;
                 // RFC 4120 section 7.2.2 allows the KDC to close here.
                 drop(socket);
 
-                let (mut retry_socket, _) = listener.accept().await?;
+                let (mut retry_socket, _) = bounded(
+                    Duration::from_secs(10),
+                    "retry TCP connection",
+                    listener.accept(),
+                )
+                .await??;
                 let retry = read_framed(&mut retry_socket).await?;
                 write_framed(&mut retry_socket, b"not-an-as-rep").await?;
                 Ok::<_, TestError>(retry.len())
@@ -1150,7 +1281,8 @@ mod tests {
 
             drop(login_over_tcp(addr).await.err());
 
-            let retry_len = server.await??;
+            let retry_len =
+                bounded(Duration::from_secs(10), "reconnect peer task", server).await???;
             assert!(
                 retry_len > 0,
                 "closed stream must be retried on a fresh connection"
@@ -1259,18 +1391,36 @@ mod tests {
     /// Read one RFC 4120 framed message from a stub KDC connection.
     async fn read_framed(socket: &mut TcpStream) -> Result<Vec<u8>, TestError> {
         let mut header = [0; 4];
-        let _: usize = socket.read_exact(&mut header).await?;
+        let _: usize = bounded(
+            Duration::from_secs(10),
+            "framed header",
+            socket.read_exact(&mut header),
+        )
+        .await??;
         let mut body = vec![0; usize::try_from(u32::from_be_bytes(header))?];
-        let _: usize = socket.read_exact(&mut body).await?;
+        let _: usize = bounded(
+            Duration::from_secs(10),
+            "framed body",
+            socket.read_exact(&mut body),
+        )
+        .await??;
         Ok(body)
     }
 
     /// Write one RFC 4120 framed message from a stub KDC connection.
     async fn write_framed(socket: &mut TcpStream, body: &[u8]) -> Result<(), TestError> {
-        socket
-            .write_all(&u32::try_from(body.len())?.to_be_bytes())
-            .await?;
-        socket.write_all(body).await?;
+        bounded(
+            Duration::from_secs(10),
+            "framed response header",
+            socket.write_all(&u32::try_from(body.len())?.to_be_bytes()),
+        )
+        .await??;
+        bounded(
+            Duration::from_secs(10),
+            "framed response body",
+            socket.write_all(body),
+        )
+        .await??;
         Ok(())
     }
 

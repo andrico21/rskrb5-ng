@@ -18,7 +18,7 @@ fn root_srv_error_is_precise() -> Result<(), TestError> {
             .with_dns_server(&server.to_string())?
             .discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Tcp)
             .await;
-        task.abort();
+        stop(task).await?;
         assert!(
             matches!(result, Err(ClientError::DnsServiceUnavailable { service, realm })
             if service == "_kpasswd" && realm == "TEST.GOKRB5")
@@ -60,7 +60,12 @@ fn srv_target_failure_keeps_usable_peers() -> Result<(), TestError> {
                 let fixture = tokio::spawn(async move {
                     for _ in 0_u8..16 {
                         let mut buffer = [0; 4096];
-                        let (length, peer) = socket.recv_from(&mut buffer).await?;
+                        let (length, peer) = bounded(
+                            Duration::from_secs(10),
+                            "SRV fixture query",
+                            socket.recv_from(&mut buffer),
+                        )
+                        .await??;
                         let request = Message::from_vec(buffer.get(..length).ok_or("DNS length")?)?;
                         let query = request.queries.first().ok_or("DNS question")?;
                         let mut response =
@@ -105,12 +110,7 @@ fn srv_target_failure_keeps_usable_peers() -> Result<(), TestError> {
                     }
                 };
                 let result = timeout(Duration::from_secs(2), operation).await;
-                fixture.abort();
-                match fixture.await {
-                    Ok(completion) => completion?,
-                    Err(error) if error.is_cancelled() => {}
-                    Err(error) => return Err(error.into()),
-                }
+                stop(fixture).await?;
                 // Then the usable target remains available regardless of selected order.
                 let endpoints = result??;
                 assert_eq!(endpoints.len(), 1);
@@ -134,7 +134,12 @@ fn udp_password_discovers_admin_tcp_service() -> Result<(), TestError> {
         let fixture = tokio::spawn(async move {
             for _ in 0_u8..8 {
                 let mut buffer = [0; 4096];
-                let (length, peer) = socket.recv_from(&mut buffer).await?;
+                let (length, peer) = bounded(
+                    Duration::from_secs(10),
+                    "admin DNS query",
+                    socket.recv_from(&mut buffer),
+                )
+                .await??;
                 let request = Message::from_vec(buffer.get(..length).ok_or("DNS length")?)?;
                 let query = request.queries.first().ok_or("DNS question")?;
                 let mut response = Message::response(request.metadata.id, request.metadata.op_code);
@@ -171,12 +176,7 @@ fn udp_password_discovers_admin_tcp_service() -> Result<(), TestError> {
             transport.discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Udp),
         )
         .await;
-        fixture.abort();
-        match fixture.await {
-            Ok(completion) => completion?,
-            Err(error) if error.is_cancelled() => {}
-            Err(error) => return Err(error.into()),
-        }
+        stop(fixture).await?;
         let outcome = result??;
         // Then the host is retained but the password port and protocol are selected.
         assert_eq!(outcome.len(), 1);

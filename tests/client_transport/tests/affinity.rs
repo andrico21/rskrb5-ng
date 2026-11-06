@@ -28,7 +28,7 @@ fn tokio_transport_auto_honors_tcp_first_udp_preference_limit() -> Result<(), Te
             )
             .await?;
 
-        task.await??;
+        bounded(Duration::from_secs(10), "TCP-first peer task", task).await???;
         assert_eq!(response, b"auto-config-tcp-as-rep");
         let mut datagram = [0; 64];
         assert!(
@@ -53,7 +53,7 @@ fn configured_auto_logins_reuse_connection() -> Result<(), TestError> {
                 let config = Config::parse(&format!("[libdefaults]\ndns_lookup_kdc = false\nudp_preference_limit = {limit}\n[realms]\nTEST.GOKRB5 = {{\nkdc = {addr}\n}}\n"))?;
                 let transport = Tokio::new().with_timeout(Duration::from_millis(200));
                 let fixture = async {
-                    let (mut stream, _) = listener.accept().await?;
+                    let (mut stream, _) = bounded(Duration::from_secs(10), "configured login connection", listener.accept()).await??;
                     drop(read_framed(&mut stream).await?);
                     write_framed(&mut stream, &preauth_required_error()?).await?;
                     let second = timeout(Duration::from_secs(1), read_framed(&mut stream)).await??;
