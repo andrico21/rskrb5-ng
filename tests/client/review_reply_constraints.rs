@@ -192,6 +192,53 @@ mod tests {
         Ok(())
     }
 
+    /// Unrequested renewal metadata does not activate either optional request bound.
+    #[test]
+    fn unrequested_renewal_metadata_ignores_optional_bounds() -> Result<(), TestError> {
+        let mut request = build_tgt_as_req(
+            Principal::user("TEST.GOKRB5", "testuser1"),
+            AsReq::new(timestamp(1_893_553_447)?, 42),
+        )?;
+        request.message.0.req_body.till = kerberos_time(1_893_553_499)?;
+        request.message.0.req_body.rtime = Some(kerberos_time(1_893_553_499)?);
+        let key = reply_key()?;
+        let mut reply: rasn_kerberos::AsRep = der::decode(&as_reply(&request, None)?)?;
+        let mut part = decrypt_as_rep_enc_part(&reply, &key)?;
+        part.renew_till = Some(kerberos_time(1_893_553_500)?);
+        reply.0.enc_part.cipher = encrypt_message(
+            &key,
+            &der::encode(&rasn_kerberos::EncAsRepPart(part))?,
+            AS_REP_ENCPART_USAGE,
+            AS_REP_CONFOUNDER,
+        )?
+        .into();
+        let session = process_as_rep(&request, &der::encode(&reply)?, &key)?;
+        assert_eq!(session.renew_till, Some(timestamp(1_893_553_500)?));
+        Ok(())
+    }
+
+    /// Only postdated requests bind the granted start to the requested from time.
+    #[test]
+    fn requested_from_binds_only_postdated_replies() -> Result<(), TestError> {
+        for (options, from, accepted) in [
+            (0_u32, 1_893_553_446_u64, true),
+            (0x0200_0000, 1_893_553_445, true),
+            (0x0200_0000, 1_893_553_446, false),
+        ] {
+            let mut request = build_tgt_as_req(
+                Principal::user("TEST.GOKRB5", "testuser1"),
+                AsReq::new(timestamp(1_893_553_447)?, 42).with_kdc_option_bits(options),
+            )?;
+            request.message.0.req_body.from = Some(kerberos_time(from)?);
+            if options != 0 {
+                request.reply_clock.0 = timestamp(0)?;
+            }
+            let result = process_as_rep(&request, &as_reply(&request, None)?, &reply_key()?);
+            assert_eq!(result.is_ok(), accepted);
+        }
+        Ok(())
+    }
+
     /// Configured clock skew accepts its boundary and rejects one second beyond it.
     #[test]
     fn reply_start_obeys_configured_skew_boundary() -> Result<(), TestError> {
