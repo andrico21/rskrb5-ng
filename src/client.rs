@@ -5083,6 +5083,9 @@ fn system_time_to_u32_seconds(time: SystemTime) -> Result<u32, Error> {
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
+    use core::time::Duration;
+    use std::time::UNIX_EPOCH;
+
     use super::{
         AsRepSession, EncryptionKey, Error, PA_AS_FRESHNESS, PA_FX_COOKIE, Principal, SystemTime,
         TgsReq, build_tgs_req_for_realm_with_confounder_and_subkey,
@@ -5113,6 +5116,69 @@ mod tests {
             renew_till: None,
             key_expiration: None,
         })
+    }
+
+    /// Validity excludes future, expired and INVALID sessions at exact boundaries.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn session_validity_boundaries() -> Result<(), Error> {
+        let mut session = session_with_key(EncryptionKey::new(18, vec![0; 32]))?;
+        let now = UNIX_EPOCH + Duration::from_secs(100);
+        session.auth_time = now;
+        session.start_time = now;
+        session.end_time = now + Duration::from_secs(1);
+        for (start, end, flags, expected) in [
+            (100_u64, 101_u64, 0_u32, true),
+            (101, 102, 0, false),
+            (99, 100, 0, false),
+            (99, 101, 0x0100_0000, false),
+        ] {
+            session.start_time = UNIX_EPOCH + Duration::from_secs(start);
+            session.end_time = UNIX_EPOCH + Duration::from_secs(end);
+            session.ticket_flags = flags.to_be_bytes();
+            assert_eq!(super::session_valid_at(&session, now), expected);
+            assert_eq!(super::session_usable_at(&session, now), expected);
+        }
+        Ok(())
+    }
+
+    /// A valid shorter candidate beats an invalid longer cached session.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn valid_candidate_beats_longer_invalid_session() -> Result<(), Error> {
+        let mut existing = session_with_key(EncryptionKey::new(18, vec![0; 32]))?;
+        let now = UNIX_EPOCH + Duration::from_secs(100);
+        existing.start_time = now;
+        existing.end_time = now + Duration::from_secs(100);
+        existing.ticket_flags = 0x0100_0000_u32.to_be_bytes();
+        let mut candidate = existing.clone();
+        candidate.ticket_flags = [0; 4];
+        candidate.end_time = now + Duration::from_secs(1);
+        assert!(!super::prefer_current_session_at(
+            &existing, &candidate, now
+        ));
+        Ok(())
+    }
+
+    /// Renewal options retain bits that the caller already set.
+    #[test]
+    fn renewal_options_are_idempotent() {
+        assert_eq!(super::renewal_kdc_option_bits(0x0080_0002), 0x0080_0002);
+    }
+
+    /// Whole-second cache timestamps include the epoch but reject pre-epoch values.
+    #[test]
+    fn cache_timestamp_epoch_boundaries() -> Result<(), Error> {
+        assert_eq!(super::system_time_to_u32_seconds(UNIX_EPOCH)?, 0);
+        assert_eq!(
+            super::system_time_to_u32_seconds(UNIX_EPOCH + Duration::from_secs(1))?,
+            1
+        );
+        assert!(matches!(
+            super::system_time_to_u32_seconds(UNIX_EPOCH - Duration::from_secs(1)),
+            Err(Error::TimeOverflow)
+        ));
+        Ok(())
     }
 
     /// The request nonce keeps its top bit clear, so peers that decode it as a
