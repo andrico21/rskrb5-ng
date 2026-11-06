@@ -81,10 +81,15 @@ use rasn::der;
 
 #[cfg(test)]
 #[expect(
+    clippy::missing_errors_doc,
     clippy::missing_panics_doc,
     reason = "test code is not rendered API documentation"
 )]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
+    use alloc::collections::TryReserveError;
+    use core::num::TryFromIntError;
+
     use super::trim_zero_padded_der;
 
     /// A value with no trailing bytes is returned unchanged.
@@ -113,5 +118,68 @@ mod tests {
     fn leaves_malformed_der_unchanged() {
         let bytes = [0x30, 0x81];
         assert_eq!(trim_zero_padded_der(&bytes), bytes);
+    }
+
+    /// High-tag identifiers consume every continuation octet before the length.
+    #[test]
+    fn trims_padding_after_high_tag_identifiers() -> Result<(), TryReserveError> {
+        for value in [
+            &[0x04, 1, 0x42][..],
+            &[0x1f, 0x20, 1, 0x42],
+            &[0x7f, 0x81, 0, 1, 0x42],
+        ] {
+            let mut padded = value.to_vec();
+            padded.try_reserve(2)?;
+            padded.extend_from_slice(&[0, 0]);
+            assert_eq!(trim_zero_padded_der(&padded), value);
+        }
+        Ok(())
+    }
+
+    /// Long-form length octets preserve the value extent before zero padding.
+    #[test]
+    fn trims_padding_after_long_form_lengths() -> Result<(), TryReserveError> {
+        for length in [&[0x81, 0x80][..], &[0x82, 1, 0]] {
+            let mut value = vec![0x30];
+            value.extend_from_slice(length);
+            let size = if length.len() == 2 { 128 } else { 256 };
+            value.resize(value.len().saturating_add(size), 0x42);
+            let mut padded = value.clone();
+            padded.try_reserve(2)?;
+            padded.extend_from_slice(&[0, 0]);
+            assert_eq!(trim_zero_padded_der(&padded), value);
+        }
+        Ok(())
+    }
+
+    /// A length using every usize octet is not rejected solely for its width.
+    #[test]
+    fn trims_padding_after_native_width_length() -> Result<(), TryFromIntError> {
+        let mut value = vec![0x30];
+        let count = u8::try_from(size_of::<usize>())?;
+        value.push(0x80 | count);
+        value.extend_from_slice(&1_usize.to_be_bytes());
+        value.push(0x42);
+        let mut padded = value.clone();
+        padded.extend_from_slice(&[0, 0]);
+        assert_eq!(trim_zero_padded_der(&padded), value);
+        Ok(())
+    }
+
+    /// Indefinite and over-wide lengths are left for the strict decoder to reject.
+    #[test]
+    fn preserves_indefinite_and_overwide_lengths() -> Result<(), TryFromIntError> {
+        assert_eq!(
+            trim_zero_padded_der(&[0x30, 0x80, 0, 0]),
+            [0x30, 0x80, 0, 0]
+        );
+        let mut bytes = vec![0x30];
+        let count = size_of::<usize>().saturating_add(1);
+        let octet = u8::try_from(count)?;
+        bytes.push(0x80 | octet);
+        bytes.resize(bytes.len().saturating_add(count), 0);
+        bytes.extend_from_slice(&[0, 0]);
+        assert_eq!(trim_zero_padded_der(&bytes), bytes);
+        Ok(())
     }
 }

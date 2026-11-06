@@ -1,14 +1,26 @@
 //! DER scalar boundary regressions, including the public SPNEGO decoder.
 
+use alloc::collections::TryReserveError;
+use core::num::TryFromIntError;
+
 use proptest::{arbitrary::any, collection, prop_assert_eq, proptest};
 
-use super::{DerReader, Error, ObjectIdentifier, decode_oid_value, decode_u32, encode_u32};
+use super::{
+    DerReader, Error, ObjectIdentifier, decode_oid_value, decode_u32, encode_tlv, encode_u32,
+};
 use crate::spnego::{NegState, NegTokenResp};
 
 /// Long lengths must use the shortest representation, including nested token fields.
 #[test]
 fn der_lengths_reject_nonminimal_forms() -> Result<(), Error> {
-    for (length, size) in [(vec![0x81, 0x7f], 127), (vec![0x82, 0, 0x80], 128)] {
+    let [native_count, ..] = size_of::<usize>().to_le_bytes();
+    let mut native_length = vec![0x80 | native_count];
+    native_length.extend_from_slice(&128_usize.to_be_bytes());
+    for (length, size) in [
+        (vec![0x81, 0x7f], 127),
+        (vec![0x82, 0, 0x80], 128),
+        (native_length, 128),
+    ] {
         // Given a complete TLV with a redundant length representation.
         let mut bytes = vec![4];
         bytes.extend(length);
@@ -188,5 +200,61 @@ proptest! {
         let mut token = NegTokenResp::accept_completed();
         token.supported_mech = Some(ObjectIdentifier::from_arcs(arcs)?);
         prop_assert_eq!(NegTokenResp::decode(&token.encode()?)?, token);
+    }
+}
+
+/// Complete token fields reject an extra element rather than prefix-decoding it.
+#[test]
+fn der_token_rejects_trailing_elements() {
+    assert!(matches!(
+        NegTokenResp::decode(&[0xa1, 9, 0x30, 7, 0xa0, 5, 0x0a, 1, 0, 5, 0]),
+        Err(Error::TrailingData)
+    ));
+}
+
+/// A length wider than usize cannot wrap around to a small accepted payload.
+#[test]
+fn der_lengths_reject_overwide_values() -> Result<(), TryFromIntError> {
+    let count = size_of::<usize>().saturating_add(1);
+    let octet = u8::try_from(count)?;
+    let mut bytes = vec![4, 0x80 | octet, 1];
+    bytes.resize(count.saturating_add(2), 0);
+    bytes.extend_from_slice(&[0x42]);
+    assert!(matches!(
+        DerReader::new(&bytes).read_tlv(),
+        Err(Error::LengthExceedsInput)
+    ));
+    Ok(())
+}
+
+/// Exactly 128 payload octets require the long-form length on the wire.
+#[test]
+fn der_encoder_uses_long_form_at_128() -> Result<(), TryReserveError> {
+    let mut expected = vec![4, 0x81, 0x80];
+    expected.try_reserve(128)?;
+    expected.extend_from_slice(&[0x42; 128]);
+    assert_eq!(encode_tlv(4, &[0x42; 128]), expected);
+    Ok(())
+}
+
+/// High-tag-number identifiers cannot masquerade as single-octet DER tags.
+#[test]
+fn der_reader_rejects_high_tag_identifiers() {
+    for tag in [0x1f, 0x3f, 0x5f, 0x7f, 0x9f, 0xbf, 0xdf, 0xff] {
+        assert!(matches!(
+            DerReader::new(&[tag, 0]).read_tlv(),
+            Err(Error::HighTagNumber)
+        ));
+    }
+}
+
+/// OID construction rejects invalid roots and out-of-range second arcs.
+#[test]
+fn der_oid_constructor_rejects_invalid_arc_prefixes() {
+    for arcs in [vec![], vec![1], vec![3, 0], vec![0, 40], vec![1, 40]] {
+        assert!(matches!(
+            ObjectIdentifier::from_arcs(arcs),
+            Err(Error::InvalidOid)
+        ));
     }
 }
