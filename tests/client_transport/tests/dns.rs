@@ -164,6 +164,13 @@ fn udp_password_discovers_admin_tcp_service() -> Result<(), TestError> {
                         RData::SRV(SRV::new(0, 0, 749, Name::from_ascii("127.0.0.1.")?)),
                     ));
                 }
+                if query.query_type() == RecordType::SRV && response.answers.is_empty() {
+                    response.additionals.push(Record::from_rdata(
+                        query.name().clone(),
+                        60,
+                        RData::SRV(SRV::new(0, 0, 1464, Name::from_ascii("127.0.0.1.")?)),
+                    ));
+                }
                 let _: usize = socket.send_to(&response.to_vec()?, peer).await?;
             }
             Ok::<(), TestError>(())

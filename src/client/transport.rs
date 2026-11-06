@@ -2502,7 +2502,16 @@ fn auto_uses_udp_first(config: &Config, request_len: usize) -> bool {
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    use core::net::IpAddr;
+    use core::{error::Error as StdError, net::IpAddr, time::Duration};
+    use std::{sync::mpsc::channel, thread};
+
+    use chrono::DateTime;
+    use rasn::der;
+    use rasn_kerberos::{KerberosString, KerberosTime, KrbError, PrincipalName};
+    use tokio::{
+        io::{AsyncReadExt as _, AsyncWriteExt as _},
+        net::{TcpListener, UdpSocket},
+    };
 
     use super::parse_dns_server;
 
@@ -2511,6 +2520,7 @@ mod tests {
     fn profile_udp_preference_boundaries() -> Result<(), super::ConfigError> {
         for (limit, size, expected) in [
             (-1_i32, 1465_usize, true),
+            (0_i32, 1_usize, false),
             (-1_i32, 1466_usize, false),
             (1_i32, 1_usize, true),
             (1_i32, 2_usize, false),
@@ -2521,6 +2531,137 @@ mod tests {
                 super::Config::parse(&format!("[libdefaults]\n udp_preference_limit = {limit}\n"))?;
             assert_eq!(super::auto_uses_udp_first(&config, size), expected);
         }
+        Ok(())
+    }
+
+    /// Invalid entropy ranges are errors rather than a fabricated zero draw.
+    #[test]
+    fn srv_draw_rejects_overflowing_range() {
+        assert!(matches!(
+            super::srv_draw(u64::MAX),
+            Err(super::Error::Transport(_))
+        ));
+    }
+
+    /// A singleton entropy range returns its sole index without rejecting every draw.
+    #[test]
+    fn srv_draw_singleton_terminates() -> Result<(), Box<dyn StdError>> {
+        let (sender, receiver) = channel();
+        let worker = thread::spawn(move || sender.send(super::srv_draw(0)));
+        let draw = receiver.recv_timeout(Duration::from_secs(10))??;
+        worker
+            .join()
+            .map_err(|_panic| "SRV draw worker panicked")??;
+        assert_eq!(draw, 0);
+        Ok(())
+    }
+
+    /// Default transport configuration retains the documented 16 MiB TCP cap.
+    #[test]
+    fn default_tcp_response_limit_is_sixteen_mib() {
+        assert_eq!(super::Tokio::new().tcp_response_limit, 0x0100_0000);
+    }
+
+    /// Endpoint syntax preserves explicit ports, default ports and malformed-host handling.
+    #[test]
+    fn endpoint_port_boundaries() -> Result<(), super::Error> {
+        for (input, host, port) in [
+            ("kdc:89", "kdc", 89),
+            ("host::89", "host::89", 88),
+            ("[::1]:65535", "::1", 0xFFFF),
+        ] {
+            assert_eq!(
+                super::parse_kdc_endpoint(input, 88)?,
+                (host.to_owned(), port)
+            );
+        }
+        for input in ["", ":88", "host:", "[::1]:65536"] {
+            assert!(matches!(
+                super::parse_kdc_endpoint(input, 88),
+                Err(super::Error::InvalidKdcEndpoint(_))
+            ));
+        }
+        Ok(())
+    }
+
+    /// Pinned Auto preserves an ordinary UDP response instead of opening TCP.
+    #[tokio::test]
+    async fn pinned_auto_preserves_ordinary_udp_reply() -> Result<(), Box<dyn StdError>> {
+        let socket = UdpSocket::bind("127.0.0.1:0").await?;
+        let address = socket.local_addr()?;
+        let transport = super::Tokio::new();
+        let peer = async {
+            let mut request = [0; 32];
+            let (_, client) =
+                super::timeout(Duration::from_secs(10), socket.recv_from(&mut request)).await??;
+            let _: usize = socket.send_to(b"ordinary", client).await?;
+            Ok::<_, Box<dyn StdError>>(())
+        };
+        let (sent, result) = tokio::join!(
+            peer,
+            transport.send_pinned(super::KdcProtocol::Auto, address, b"request")
+        );
+        sent?;
+        let (response, stream) = result?;
+        assert_eq!(response, b"ordinary");
+        assert!(
+            stream.is_none(),
+            "UDP must not fabricate a TCP conversation"
+        );
+        Ok(())
+    }
+
+    /// Pinned Auto retries a UDP response-too-big error on a retained TCP stream.
+    #[tokio::test]
+    async fn pinned_auto_retries_response_too_big() -> Result<(), Box<dyn StdError>> {
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let address = listener.local_addr()?;
+        let socket = UdpSocket::bind(address).await?;
+        let response = der::encode(&KrbError {
+            pvno: 5_i32.into(),
+            msg_type: 30_i32.into(),
+            ctime: None,
+            cusec: None,
+            stime: KerberosTime(
+                DateTime::from_timestamp(1_893_553_440, 0)
+                    .ok_or("time")?
+                    .fixed_offset(),
+            ),
+            susec: 0_i32.into(),
+            error_code: super::KRB_ERR_RESPONSE_TOO_BIG,
+            crealm: None,
+            cname: None,
+            realm: KerberosString::try_from("TEST.GOKRB5")?,
+            sname: PrincipalName {
+                r#type: 2_i32,
+                string: vec![KerberosString::try_from("krbtgt")?],
+            },
+            e_text: None,
+            e_data: None,
+        })?;
+        let transport = super::Tokio::new();
+        let peer = async {
+            let mut request = [0; 32];
+            let (_, client) =
+                super::timeout(Duration::from_secs(10), socket.recv_from(&mut request)).await??;
+            let _: usize = socket.send_to(&response, client).await?;
+            let (mut stream, _) =
+                super::timeout(Duration::from_secs(10), listener.accept()).await??;
+            let mut framed = [0; 11];
+            let _: usize =
+                super::timeout(Duration::from_secs(10), stream.read_exact(&mut framed)).await??;
+            stream.write_all(&[0, 0, 0, 1, 42]).await?;
+            Ok::<_, Box<dyn StdError>>(stream)
+        };
+        let (sent, result) = tokio::join!(
+            peer,
+            transport.send_pinned(super::KdcProtocol::Auto, address, b"request")
+        );
+        let connection = sent?;
+        let (reply, stream) = result?;
+        assert_eq!(reply, [42]);
+        assert!(stream.is_some(), "TCP fallback retains its connection");
+        drop(connection);
         Ok(())
     }
 

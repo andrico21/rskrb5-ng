@@ -39,7 +39,6 @@ const KPASSWD_HEADER_LEN: usize = 6;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    #[path = "../bounded.rs"]
     mod bounded;
     use bounded::{bounded, stop};
 
@@ -562,6 +561,152 @@ mod tests {
             let (sent, response) = tokio::join!(server, transport.send_udp(addr, &request));
             sent?;
             assert_eq!(response?, [17]);
+            Ok(())
+        })
+    }
+
+    /// Password UDP preserves the exact datagram bound and uncertainty taxonomy.
+    #[test]
+    fn password_udp_request_size_boundaries() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let peer = UdpSocket::bind("127.0.0.1:0").await?;
+            let addr = peer.local_addr()?;
+            let config = config_with_kpasswd_servers([addr.to_string()], 1465)?;
+            let transport = Tokio::new().with_timeout(Duration::from_secs(2));
+            let oversized = vec![42; 65_508];
+            assert!(matches!(
+                transport
+                    .send_to_kpasswd_realm(&config, KdcProtocol::Udp, "TEST.GOKRB5", &oversized)
+                    .await,
+                Err(ClientError::KdcEndpointFailures {
+                    realm: _,
+                    protocol: _,
+                    failures: _
+                })
+            ));
+            let server = async {
+                let mut bytes = vec![0; 65_507];
+                let (length, client) = bounded(
+                    Duration::from_secs(10),
+                    "maximum password UDP request",
+                    peer.recv_from(&mut bytes),
+                )
+                .await??;
+                assert_eq!(length, 65_507);
+                let _: usize = peer.send_to(&[17], client).await?;
+                Ok::<_, TestError>(())
+            };
+            let request = vec![42; 65_507];
+            let (sent, response) = tokio::join!(
+                server,
+                transport.send_to_kpasswd_realm(&config, KdcProtocol::Udp, "TEST.GOKRB5", &request)
+            );
+            sent?;
+            assert_eq!(response?, [17]);
+            Ok(())
+        })
+    }
+
+    /// Auto fallback occurs only for UDP response-too-big, retaining ordinary replies.
+    #[test]
+    fn configured_auto_classifies_protocol_and_reply() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            for tcp_first in [false, true] {
+                for too_big in [false, true] {
+                    let (udp, tcp) = bind_udp_and_tcp_pair().await?;
+                    let addr = udp.local_addr()?;
+                    let config = config_with_kdcs_and_udp_limit(
+                        [addr.to_string()],
+                        if tcp_first { 1 } else { 1465 },
+                    )?;
+                    let response = if too_big {
+                        response_too_big_error()?
+                    } else {
+                        b"ordinary".to_vec()
+                    };
+                    let expected = if !tcp_first && too_big {
+                        b"fallback".to_vec()
+                    } else {
+                        response.clone()
+                    };
+                    let server = async {
+                        if tcp_first {
+                            let (_, mut stream) = read_tcp_request(&tcp).await?;
+                            write_tcp_response(&mut stream, &response).await?;
+                        } else {
+                            let mut request = [0; 64];
+                            let (_, client) = bounded(
+                                Duration::from_secs(10),
+                                "configured Auto UDP request",
+                                udp.recv_from(&mut request),
+                            )
+                            .await??;
+                            let _: usize = udp.send_to(&response, client).await?;
+                            if too_big {
+                                let (_, mut stream) = read_tcp_request(&tcp).await?;
+                                write_tcp_response(&mut stream, b"fallback").await?;
+                            }
+                        }
+                        Ok::<_, TestError>(())
+                    };
+                    let transport = Tokio::new().with_timeout(Duration::from_millis(200));
+                    let (sent, result) = tokio::join!(
+                        server,
+                        transport.send_to_realm(
+                            &config,
+                            KdcProtocol::Auto,
+                            "TEST.GOKRB5",
+                            b"request"
+                        )
+                    );
+                    sent?;
+                    assert_eq!(result?, expected);
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// Direct Auto retains ordinary UDP replies and falls back only on response-too-big.
+    #[test]
+    fn direct_auto_classifies_udp_reply() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            for too_big in [false, true] {
+                let (udp, tcp) = bind_udp_and_tcp_pair().await?;
+                let addr = udp.local_addr()?;
+                let response = if too_big {
+                    response_too_big_error()?
+                } else {
+                    b"ordinary".to_vec()
+                };
+                let server = async {
+                    let mut request = [0; 64];
+                    let (_, client) = bounded(
+                        Duration::from_secs(10),
+                        "pinned Auto UDP request",
+                        udp.recv_from(&mut request),
+                    )
+                    .await??;
+                    let _: usize = udp.send_to(&response, client).await?;
+                    if too_big {
+                        let (_, mut stream) = read_tcp_request(&tcp).await?;
+                        write_tcp_response(&mut stream, b"fallback").await?;
+                    }
+                    Ok::<_, TestError>(())
+                };
+                let transport = Tokio::new().with_timeout(Duration::from_millis(200));
+                let (sent, result) =
+                    tokio::join!(server, transport.send(KdcProtocol::Auto, addr, b"request"));
+                sent?;
+                assert_eq!(
+                    result?,
+                    if too_big {
+                        b"fallback".as_slice()
+                    } else {
+                        b"ordinary".as_slice()
+                    }
+                );
+            }
             Ok(())
         })
     }
