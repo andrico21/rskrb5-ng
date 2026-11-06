@@ -54,5 +54,9 @@ impl Drop for NtlmSupplementalCredential {
         } = self;
         lm_password.zeroize();
         nt_password.zeroize();
+        #[cfg(test)]
+        super::mutation_tests::ERASED_HASHES.with(|erased| {
+            erased.set(lm_password.is_none() && nt_password.is_none());
+        });
     }
 }

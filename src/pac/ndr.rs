@@ -16,6 +16,16 @@ use super::{
 #[path = "ndr_tests.rs"]
 mod tests;
 
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "ndr_mutation_tests.rs"]
+mod mutation_tests;
+
 /// Upper bound on any NDR conformant count, to stop hostile buffers from
 /// requesting huge allocations.
 const MAX_REASONABLE_NDR_COUNT: u32 = 1_000_000;
