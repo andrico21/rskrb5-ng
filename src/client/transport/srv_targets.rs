@@ -48,3 +48,28 @@ pub(super) async fn resolve(
     }
     Ok(endpoints)
 }
+
+/// Empty successful SRV lookup handling.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests {
+    use super::{Error, KdcProtocol, resolve};
+    use crate::client::transport::dns_resolver;
+
+    /// No SRV answers means no endpoints, not a target resolution failure.
+    #[tokio::test]
+    async fn empty_srv_answers_preserve_empty_success() -> Result<(), Error> {
+        let resolver = dns_resolver(None)?;
+        let endpoints = resolve(&resolver, "TEST.GOKRB5", KdcProtocol::Tcp, vec![], false).await?;
+        assert!(
+            endpoints.is_empty(),
+            "empty answers must yield no endpoints"
+        );
+        Ok(())
+    }
+}
