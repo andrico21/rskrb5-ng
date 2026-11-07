@@ -889,10 +889,20 @@ mod tests {
         keytab_principal: [&str; N],
         rc4: bool,
     ) -> Result<ValidatedApReq, Box<dyn Error>> {
+        validate_service_ticket_at(ticket, keytab, keytab_principal, rc4, SystemTime::now())
+    }
+
+    /// Validate a service fixture at an explicit wall-clock sample.
+    fn validate_service_ticket_at<const N: usize>(
+        ticket: &TgsRepSession,
+        keytab: &Keytab,
+        keytab_principal: [&str; N],
+        rc4: bool,
+        timestamp: SystemTime,
+    ) -> Result<ValidatedApReq, Box<dyn Error>> {
         let etype = KerberosEtype::from_etype_id(ticket.session_key.etype)
             .ok_or("ticket etype is supported")?;
         let confounder = vec![0x42_u8; etype.confounder_len()];
-        let timestamp = SystemTime::now();
         let (seconds, cusec) = service_authenticator_time(timestamp)?;
         let policy = CryptoPolicy::from_libdefaults(&ad_config(rc4)?.libdefaults)?;
         let mut options = ApReq::new();
@@ -914,6 +924,85 @@ mod tests {
                 .ok_or("time overflow")?,
             elapsed.subsec_micros(),
         ))
+    }
+
+    /// Synthetic AES and opted-in RC4 tickets traverse the live helper at a fractional clock.
+    #[test]
+    fn ad_service_helper_accepts_aes_and_opted_in_rc4() -> Result<(), Box<dyn Error>> {
+        use rskrb5_ng::{
+            ap_req,
+            keytab::{EncryptionKey, Entry, Principal as KeyPrincipal},
+            ticket,
+        };
+        let original = ap_req::decode(include_bytes!("../fuzz/fixtures/valid_ap_req.der"))?;
+        let original_key = EncryptionKey::new(
+            18,
+            hex::decode("9cad00bbc72d703258e911dc18e6d5487cf737bf67fd111f0c2463ad6033bf51")?,
+        );
+        let original_part = ticket::decrypt_ticket_enc_part(&original.ticket, &original_key)?;
+        let now = UNIX_EPOCH
+            .checked_add(Duration::from_millis(1_893_553_447_500))
+            .ok_or("clock")?;
+        for id in [18_i32, 23_i32] {
+            let etype = KerberosEtype::from_etype_id(id).ok_or("enctype")?;
+            let service_key = EncryptionKey::new(id, vec![0x31; etype.key_len()]);
+            let session_key = EncryptionKey::new(id, vec![0x32; etype.key_len()]);
+            let mut part = original_part.clone();
+            part.key = rasn_kerberos::EncryptionKey {
+                r#type: id,
+                value: session_key.value.clone().into(),
+            };
+            let encrypted = ticket::build_ticket_with_confounder(
+                original.ticket.realm.clone(),
+                original.ticket.sname.clone(),
+                &part,
+                &service_key,
+                Some(1),
+                &vec![0x33; etype.confounder_len()],
+            )?;
+            let session = TgsRepSession::new(
+                Principal::user("TEST.GOKRB5", "testuser1"),
+                Principal::new("TEST.GOKRB5", 2, ["HTTP", "host.test.gokrb5"]),
+                session_key,
+                ticket::encode(&encrypted)?,
+                [0; 4],
+                now,
+                now,
+            );
+            let mut keys = Keytab::new();
+            keys.entries_mut().push(Entry::new(
+                KeyPrincipal::new(
+                    "TEST.GOKRB5",
+                    2,
+                    vec!["HTTP".to_owned(), "host.test.gokrb5".to_owned()],
+                ),
+                0,
+                1,
+                service_key,
+                1,
+            ));
+            let accepted = validate_service_ticket_at(
+                &session,
+                &keys,
+                ["HTTP", "host.test.gokrb5"],
+                id == 23_i32,
+                now,
+            )?;
+            assert_eq!(accepted.session_key.etype, id);
+            if id == 23_i32 {
+                let failure = validate_service_ticket_at(
+                    &session,
+                    &keys,
+                    ["HTTP", "host.test.gokrb5"],
+                    false,
+                    now,
+                )
+                .err()
+                .ok_or("default RC4 accepted")?;
+                assert!(failure.to_string().contains("not permitted"));
+            }
+        }
+        Ok(())
     }
 
     /// Fractional wall clocks remain valid input to the live service-ticket helper.
