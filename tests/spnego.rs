@@ -1201,7 +1201,7 @@ mod tests {
     #[test]
     fn gss_authenticator_rejects_wrong_checksum_type() -> Result<(), TestError> {
         let mut checksum = gss_checksum(&[]);
-        checksum.r#type = 1_i32;
+        checksum.r#type = 16_i32;
         let token = authenticator_token(Some(checksum), Some(42))?;
         assert!(matches!(
             accept_token(&token)?,
