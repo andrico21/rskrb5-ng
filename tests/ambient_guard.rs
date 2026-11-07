@@ -385,7 +385,12 @@ pub(crate) mod tests {
     fn aliases(words: &[Token]) -> (BTreeMap<String, String>, Vec<usize>) {
         let mut names = BTreeMap::from([("env".to_owned(), "std::env".to_owned())]);
         let mut imported = Vec::new();
-        for (index, word) in words.iter().enumerate() {
+        let mut index = 0_usize;
+        while let Some(word) = words.get(index) {
+            if word.text == "{" {
+                index = closing(words, index).map_or(words.len(), |end| end.saturating_add(1));
+                continue;
+            }
             if word.text == "extern"
                 && is(words, index.saturating_add(1), "crate")
                 && let Some(root) = words.get(index.saturating_add(2))
@@ -410,9 +415,45 @@ pub(crate) mod tests {
                     }
                 }
                 imported.extend(index..=end);
+                index = end;
             }
+            index = index.saturating_add(1);
         }
         (names, imported)
+    }
+
+    /// Resolve each lexical scope before flattening function bodies for ownership checks.
+    fn scoped_paths(words: &[Token], inherited: &BTreeMap<String, String>) -> Vec<Token> {
+        let (local, imported) = aliases(words);
+        let mut names = inherited.clone();
+        names.extend(local);
+        let mut result = Vec::new();
+        let mut index = 0_usize;
+        while let Some(word) = words.get(index) {
+            if word.text == "{" && !imported.contains(&index) {
+                let end = closing(words, index).unwrap_or(words.len());
+                result.push(word.clone());
+                result.extend(scoped_paths(
+                    words.get(index.saturating_add(1)..end).unwrap_or_default(),
+                    &names,
+                ));
+                if let Some(close) = words.get(end) {
+                    result.push(close.clone());
+                }
+                index = end.saturating_add(1);
+                continue;
+            }
+            let mut resolved = word.clone();
+            if !imported.contains(&index)
+                && !is(words, index.saturating_sub(1), ":")
+                && !matches!(word.text.as_str(), "literal" | "doc")
+            {
+                resolved.text = canonical(&word.text, &names);
+            }
+            result.push(resolved);
+            index = index.saturating_add(1);
+        }
+        result
     }
 
     /// Extract the concrete owner from an inherent or trait impl header.
@@ -605,7 +646,10 @@ pub(crate) mod tests {
 
     /// Index one file and reject unowned env references as well as malformed aliases.
     fn inventory(file: &str, source: &str) -> (Vec<Function>, Vec<String>) {
-        let words = production(&tokens(&source.replace("\r\n", "\n")));
+        let words = scoped_paths(
+            &production(&tokens(&source.replace("\r\n", "\n"))),
+            &BTreeMap::new(),
+        );
         let (names, imported) = aliases(&words);
         let mut items = Vec::new();
         functions(&words, (file, ""), &mut items);
@@ -812,6 +856,19 @@ pub(crate) mod tests {
     /// Every supplied evasion must produce a named rejection, not a vacuous pass.
     #[test]
     fn guard_rejects_reader_and_attribute_evasions() {
+        for source in [
+            "use std::env as ambient; fn hidden() { ambient::var(\"HOME\"); } mod decoy { use crate::dummy as ambient; } mod dummy {}",
+            "mod decoy { use crate::dummy as ambient; } use std::env as ambient; fn hidden() { ambient::var(\"HOME\"); } mod dummy {}",
+            "use std::env as ambient; fn decoy() { use crate::dummy as ambient; } fn hidden() { ambient::var(\"HOME\"); } mod dummy {}",
+            "use std::env as ambient; fn hidden() { { use crate::dummy as ambient; } ambient::var(\"HOME\"); } mod dummy {}",
+        ] {
+            assert!(
+                access_violations("src/config.rs", source)
+                    .iter()
+                    .any(|failure| failure.contains("hidden")),
+                "scoped aliases must not hide an environment read"
+            );
+        }
         assert!({
             ["var(\"HOME\")", "var_os(\"HOME\")", "vars()", "vars_os()"]
                 .iter()

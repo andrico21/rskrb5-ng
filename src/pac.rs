@@ -178,7 +178,7 @@ impl Pac {
     /// Returns [`Error::Truncated`] or [`Error::TooShort`] when the header or buffer table is
     /// cut short, [`Error::LengthOverflow`] when the table size overflows `usize`, and
     /// [`Error::BufferOffsetNotAligned`] or [`Error::BufferOutOfBounds`] for an invalid buffer
-    /// entry.
+    /// entry. Returns [`Error::InvalidPacVersion`] when the format version is nonzero.
     #[inline]
     pub fn parse(bytes: &[u8]) -> Result<Self, Error> {
         let mut reader = Reader::new(bytes);

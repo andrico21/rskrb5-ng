@@ -186,7 +186,7 @@ mod tests {
         assert_eq!(address.addr_type, 2_i32);
         assert_eq!(address.address, hex::decode("12d00023")?);
         assert_eq!(
-            credential.ticket,
+            credential.ticket.as_slice(),
             der::encode(krb_cred.tickets.first().context("a first ticket")?)
                 .context("ticket encodes")?
         );
@@ -218,11 +218,11 @@ mod tests {
         };
         assert_eq!(first.client.components, ["hftsai", "extra"]);
         assert_eq!(
-            first.ticket,
+            first.ticket.as_slice(),
             der::encode(first_ticket).context("ticket encodes")?
         );
         assert_eq!(
-            second.ticket,
+            second.ticket.as_slice(),
             der::encode(second_ticket).context("ticket encodes")?
         );
         Ok(())
@@ -382,7 +382,7 @@ mod tests {
         with_auth_data
             .first_mut()
             .context("a first credential")?
-            .auth_data = vec![ccache::AuthorizationDataEntry::new(1, vec![2, 3])];
+            .auth_data = vec![ccache::AuthorizationDataEntry::new(1, vec![2, 3].into())];
 
         let auth_data_error = ccache_credentials_to_krb_cred_parts(&with_auth_data)
             .err()
@@ -397,7 +397,7 @@ mod tests {
         with_second_ticket
             .first_mut()
             .context("a first credential")?
-            .second_ticket = vec![0x61, 0x03, 0x02, 0x01, 0x05];
+            .second_ticket = vec![0x61, 0x03, 0x02, 0x01, 0x05].into();
 
         let second_ticket_error = ccache_credentials_to_krb_cred_parts(&with_second_ticket)
             .err()

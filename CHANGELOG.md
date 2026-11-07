@@ -62,6 +62,33 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
   and client-preauthentication restrictions before keytab discovery, matching
   direct validators (FU-HTTP-R07).
 
+- Runtime/serde timestamp-restriction errors now identify preauthentication
+  work package WP-07, matching text parsing (FU-CFG-R07).
+
+- Next-line profile subsection braces now work in every section, including
+  unknown and server-only sections; existing empty scalar extensions remain
+  supported when no opening brace follows (FU-CFG-R08).
+
+- Checked string-to-key retains the policy's per-family iteration minimum and
+  rejects lower counts before PBKDF2. Raw vector APIs remain policy-free
+  (FU-CRY-R02).
+
+- Programmatic and serde realm timestamp restrictions reject every non-Boolean
+  value with a named invalid-policy error instead of treating it as absent
+  (FU-CFG-R09).
+
+- Ccache ticket, second-ticket, configuration and authorization payloads now use
+  `Zeroizing<Vec<u8>>`, including partially parsed records. Owning constructors
+  and setters require zeroizing buffers (FU-FIL-R05).
+
+- TGT classification now requires exactly `krbtgt/<nonempty destination>`,
+  with case-sensitive service components. Extra components and `KRBTGT` no
+  longer enter the TGT cache or renewal path (FU-CLI-R09).
+
+- Complete client AP builders reject explicitly selected unkeyed/weak checksum
+  IDs with `RejectedFeature::UnauthenticatedChecksum` before cryptographic work;
+  keyed and GSS checksum selections remain supported (FU-CLI-R08).
+
 - Retained SPNEGO token bytes, initiator DER/header fields and pending Tower
   AP-REP headers now use zeroizing owners; token and future Debug expose only
   metadata and lengths (FU-SPN-R05). Plain returned wire buffers remain the

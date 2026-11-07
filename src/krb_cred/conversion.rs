@@ -100,8 +100,8 @@ pub(super) fn krb_cred_info_to_ccache_credential(
             })
             .unwrap_or_default(),
         auth_data: Vec::new(),
-        ticket: encode_ticket(ticket).map_err(ticket_error)?,
-        second_ticket: Vec::new(),
+        ticket: encode_ticket(ticket).map_err(ticket_error)?.into(),
+        second_ticket: Vec::new().into(),
     })
 }
 

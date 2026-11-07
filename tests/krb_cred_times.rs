@@ -38,7 +38,7 @@ mod tests {
             ccache::EncryptionKey::new(17, vec![0x42; 16]),
             ccache::CredentialTimes::default(),
             [0; 4],
-            der::encode(&ticket)?,
+            der::encode(&ticket)?.into(),
         );
         let (tickets, part) = krb_cred::ccache_credentials_to_krb_cred_parts(&[credential])?;
         let message = rasn_kerberos::KrbCred {

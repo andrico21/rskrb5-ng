@@ -11,6 +11,47 @@ use super::*;
 mod tests {
     use super::*;
 
+    /// Only exact, nonempty krbtgt/destination principals enter the TGT cache.
+    #[test]
+    fn tgt_cache_rejects_malformed_service_shapes() -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let mut client =
+            Tokio::from_tgt_session(config_without_kdcs()?, KdcProtocol::Tcp, tgt.clone());
+        let before = client.to_ccache()?;
+        for components in [
+            vec!["krbtgt", "unused", "TEST.GOKRB5"],
+            vec!["KRBTGT", "TEST.GOKRB5"],
+            vec!["krbtgt", ""],
+            vec!["krbtgt"],
+        ] {
+            let mut malformed = tgt.clone();
+            malformed.service = Principal::new("TEST.GOKRB5", 2, components);
+            align_ticket_service(&mut malformed)?;
+            assert!(matches!(
+                client.cache_tgt_session(malformed.clone()),
+                Err(Error::InvalidTgtSession { service: _ })
+            ));
+            assert_eq!(client.to_ccache()?, before);
+            assert!(matches!(
+                build_tgt_renewal_req_with_confounder(
+                    &malformed,
+                    TgsReq::new(timestamp(1_893_553_452)?, 42),
+                    timestamp(1_893_553_452)?,
+                    0,
+                    &[0; 16],
+                ),
+                Err(Error::InvalidTgtSession { service: _ })
+            ));
+        }
+        for name_type in [0_i32, 10_i32] {
+            let mut referral = tgt.clone();
+            referral.service = Principal::new("TEST.GOKRB5", name_type, ["krbtgt", "OTHER.REALM"]);
+            align_ticket_service(&mut referral)?;
+            client.cache_tgt_session(referral)?;
+        }
+        Ok(())
+    }
+
     /// Mislabeled ticket services fail before cache mutation or AP construction.
     #[test]
     fn cache_rejects_mislabeled_ticket_service() -> Result<(), TestError> {

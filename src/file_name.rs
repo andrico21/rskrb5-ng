@@ -238,6 +238,55 @@ mod tests {
 
     /// Interrupted staging never publishes a partial primary and removes the private stage.
     #[test]
+    fn primary_partial_stage_cannot_hide_concurrent_saved_cache() -> Result<(), Box<dyn StdError>> {
+        use core::time::Duration;
+        use std::sync::mpsc;
+
+        use crate::ccache::{CCache, Principal};
+        let directory = env::temp_dir().join(format!(
+            "primary-overlap-{}",
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        fs::create_dir_all(&directory)?;
+        let path = directory.join("primary");
+        let name = format!("DIR:{}", directory.display());
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let (resume_tx, resume_rx) = mpsc::channel();
+        let result = thread::scope(|scope| -> Result<(), Box<dyn StdError>> {
+            let primary = &path;
+            let writer = scope.spawn(move || {
+                super::create_primary_with(primary, |file| {
+                    file.write_all(b"t")?;
+                    ready_tx.send(()).map_err(io::Error::other)?;
+                    resume_rx
+                        .recv_timeout(Duration::from_secs(10))
+                        .map_err(io::Error::other)?;
+                    Err(io::ErrorKind::Interrupted.into())
+                })
+            });
+            ready_rx.recv_timeout(Duration::from_secs(10))?;
+            let cache = CCache::new(Principal::new("R", 1, vec!["alice".to_owned()]));
+            let saved = cache.save_name(&name);
+            let resolved = CCache::file_path_from_cache_name(&name);
+            resume_tx.send(())?;
+            let failed = writer.join().map_err(|_panic| "writer panicked")?;
+            assert_eq!(
+                failed.err().map(|error| error.kind()),
+                Some(io::ErrorKind::Interrupted)
+            );
+            saved?;
+            assert_eq!(resolved?, directory.join("tkt"));
+            assert_eq!(CCache::load_name(&name)?, cache);
+            assert_eq!(fs::read(&path)?, b"tkt\n");
+            assert_eq!(fs::read_dir(&directory)?.count(), 2);
+            Ok(())
+        });
+        fs::remove_dir_all(directory)?;
+        result
+    }
+
+    /// Interrupted staging never publishes a partial primary and removes the private stage.
+    #[test]
     fn primary_partial_write_failure_cleans_stage() -> Result<(), Box<dyn StdError>> {
         // Given an absent primary and a writer that fails after one byte.
         let directory = env::temp_dir().join(format!(

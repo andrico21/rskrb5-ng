@@ -29,6 +29,52 @@ mod tests {
 
     use crate::crypto::AesSha1Etype;
 
+    /// Checked derivation enforces default and trusted floors before primitive entry.
+    #[test]
+    fn checked_derivation_enforces_floors_before_pbkdf2() -> Result<(), Box<dyn Error>> {
+        use crate::{
+            config::LibDefaults,
+            crypto::{CryptoPolicy, checked, s2k::Family},
+            error,
+        };
+        for (id, family, default) in [
+            (17_i32, Family::AesSha1, 4096_u32),
+            (18_i32, Family::AesSha1, 4096),
+            (19_i32, Family::AesSha2, 0x8000),
+            (20_i32, Family::AesSha2, 0x8000),
+        ] {
+            for minimum in [default, default.saturating_add(1), 1] {
+                let defaults = LibDefaults::new().with_min_s2k_iterations(family, minimum)?;
+                let policy = CryptoPolicy::from_libdefaults(&defaults)?;
+                let etype = checked::Etype::new(&policy, id)?;
+                if minimum > 1 {
+                    let actual = minimum.checked_sub(1).ok_or("minimum")?;
+                    let _prior = super::take();
+                    let result =
+                        etype.string_to_key(b"password", b"salt", &format!("{actual:08x}"));
+                    assert_eq!(
+                        super::take(),
+                        0,
+                        "checked boundary entered PBKDF2 below floor"
+                    );
+                    assert_eq!(
+                        result,
+                        Err(error::Crypto::Policy(error::Policy::S2kIterationsTooLow {
+                            etype: id,
+                            minimum,
+                            actual
+                        }))
+                    );
+                }
+                let _prior = super::take();
+                let key = etype.string_to_key(b"password", b"salt", &format!("{minimum:08x}"))?;
+                assert_eq!(super::take(), 1);
+                assert!(!key.is_empty(), "floor produces a key");
+            }
+        }
+        Ok(())
+    }
+
     /// Observe actual raw work while preserving the low-count vector contract.
     #[test]
     fn raw_vector_still_derives_at_one() -> Result<(), Box<dyn Error>> {

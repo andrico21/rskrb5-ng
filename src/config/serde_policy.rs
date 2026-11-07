@@ -79,14 +79,8 @@ where
     D: Deserializer<'de>,
 {
     let values = BTreeMap::<String, super::section_values::Value>::deserialize(deserializer)?;
-    super::restrictions::reject(
-        "disable_encrypted_timestamp",
-        matches!(
-            values.get("disable_encrypted_timestamp"),
-            Some(super::section_values::Value::Boolean(Toggle::Enabled))
-        ),
-    )
-    .map_err(D::Error::custom)?;
+    super::restrictions::timestamp(values.get("disable_encrypted_timestamp"))
+        .map_err(D::Error::custom)?;
     Ok(values)
 }
 

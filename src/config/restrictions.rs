@@ -48,13 +48,20 @@ pub(crate) fn config(value: &Config) -> Result<(), Error> {
 /// # Errors
 /// Returns the named unsupported restriction.
 pub(super) fn realm(value: &Realm) -> Result<(), Error> {
-    reject(
-        "disable_encrypted_timestamp",
-        matches!(
-            value.relations.get("disable_encrypted_timestamp"),
-            Some(Value::Boolean(Toggle::Enabled))
+    timestamp(value.relations.get("disable_encrypted_timestamp"))
+}
+
+/// Admit only the typed Boolean timestamp policy at every construction boundary.
+/// # Errors
+/// Returns a named invalid Boolean or unsupported restriction.
+pub(super) fn timestamp(value: Option<&Value>) -> Result<(), Error> {
+    match value {
+        None | Some(Value::Boolean(Toggle::Disabled)) => Ok(()),
+        Some(Value::Boolean(Toggle::Enabled)) => reject("disable_encrypted_timestamp", true),
+        Some(Value::Text(_) | Value::List(_) | Value::Choice(_) | Value::Locations(_)) => Err(
+            Error::InvalidBoolean("disable_encrypted_timestamp".to_owned()),
         ),
-    )
+    }
 }
 
 /// Validate restrictions on the currently implemented client preauthentication method.
@@ -84,7 +91,8 @@ pub(super) fn plugins(value: &Plugins) -> Result<(), Error> {
 pub(super) fn reject(relation: &'static str, restricted: bool) -> Result<(), Error> {
     if restricted {
         let package = match relation {
-            "disable" | "enable_only" | "disable_encrypted_timestamp" => "plan 2 WP-16",
+            "disable" | "enable_only" => "plan 2 WP-16",
+            "disable_encrypted_timestamp" => "plan 2 WP-07",
             "default_rcache_name" => "plan 2 WP-20",
             _ => super::libdefaults::relations::RELATIONS
                 .iter()

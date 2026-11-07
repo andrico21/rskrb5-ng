@@ -64,6 +64,36 @@ mod tests {
         Ok(())
     }
 
+    /// Wrong public value variants cannot bypass restrictive realm admission.
+    #[test]
+    fn realm_restriction_rejects_wrong_value_variants() -> Result<(), Box<dyn Error>> {
+        for value in [
+            Value::Text("true".to_owned()),
+            Value::Choice("true".to_owned()),
+            Value::List(vec!["true".to_owned()]),
+            Value::Locations(Vec::new()),
+            Value::Boolean(Toggle::Enabled),
+            Value::Boolean(Toggle::Disabled),
+        ] {
+            let accepted = value == Value::Boolean(Toggle::Disabled);
+            let mut config = Config::parse("[realms]\nR = {\nkdc = 127.0.0.1:1\n}\n")?;
+            drop(
+                config
+                    .realms
+                    .first_mut()
+                    .ok_or("realm")?
+                    .relations
+                    .insert("disable_encrypted_timestamp".to_owned(), value),
+            );
+            assert_eq!(config.configured_kdcs("R").is_ok(), accepted);
+            assert_eq!(
+                serde_json::from_value::<Config>(serde_json::to_value(&config)?).is_ok(),
+                accepted
+            );
+        }
+        Ok(())
+    }
+
     /// Realm and plugin restrictions reject independently of defaults and credentials.
     #[test]
     fn restrictive_scopes_fail_before_login() -> Result<(), Box<dyn Error>> {

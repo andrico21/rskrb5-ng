@@ -109,6 +109,8 @@ mod review_cache_replacement;
 mod review_cache_update;
 #[path = "client/review_canonical.rs"]
 mod review_canonical;
+#[path = "client/review_checksums.rs"]
+mod review_checksums;
 #[path = "client/review_cookie.rs"]
 mod review_cookie;
 #[cfg(feature = "tokio")]
@@ -1746,12 +1748,12 @@ mod harness {
             ccache::EncryptionKey::new(0, Vec::new()),
             ccache::CredentialTimes::default(),
             [0; 4],
-            b"yes".to_vec(),
+            b"yes".to_vec().into(),
         )
         .with_is_skey(false)
         .with_addresses(Vec::new())
         .with_auth_data(Vec::new())
-        .with_second_ticket(Vec::new())
+        .with_second_ticket(Vec::new().into())
     }
 
     /// The credentials of `testuser1` in `cache` for `server`.

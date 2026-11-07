@@ -26,9 +26,9 @@ mod tests {
         Ok(())
     }
 
-    /// INVALID defeats renewal eligibility, not just ordinary cache lookup.
+    /// Pruning removes all INVALID copies despite renewable metadata.
     #[test]
-    fn pruning_removes_invalid_renewable_sessions() -> Result<(), TestError> {
+    fn pruning_removes_invalid_sessions_despite_renewable_metadata() -> Result<(), TestError> {
         // Given: live renewable sessions differing only in the INVALID flag.
         let valid = current_tgt_session(1, 60)?;
         let mut removed = Vec::new();
@@ -48,7 +48,7 @@ mod tests {
             let mut client = Tokio::from_tgt_session(config_without_kdcs()?, KdcProtocol::Tcp, tgt);
             client.cache_service_ticket(ticket)?;
 
-            // When: pruning consults both validity and renewal eligibility.
+            // When: pruning evaluates current usability independently of renewal metadata.
             let pruned = client.prune_unusable_sessions();
 
             // Then: all INVALID copies disappear while the valid control survives.

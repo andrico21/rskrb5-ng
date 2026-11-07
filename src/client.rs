@@ -447,8 +447,8 @@ impl AsRepSession {
             ticket_flags: self.ticket_flags,
             addresses: Vec::new(),
             auth_data: Vec::new(),
-            ticket: self.ticket.to_vec(),
-            second_ticket: Vec::new(),
+            ticket: self.ticket.clone(),
+            second_ticket: Zeroizing::default(),
         })
     }
 }
@@ -3332,6 +3332,9 @@ pub fn build_ap_req_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<BuiltApReq, Error> {
+    if let Some(checksum) = &options.checksum {
+        selection::reject_checksum(checksum.r#type)?;
+    }
     let policy = options.crypto_policy.clone().unwrap_or_default();
     crypto_policy::session(&policy, service_ticket, Use::SessionKey)?;
     if let Some(subkey) = &options.subkey {
@@ -3573,6 +3576,11 @@ where
 }
 
 /// Perform a TGT AS login using password credentials and KDC preauth hints.
+///
+/// # Security
+/// The caller retains erasure duties for the borrowed password and all caller-created
+/// copies. Prefer a caller-owned [`Password`] or [`Zeroizing`] buffer; library
+/// erasure of derived keys does not erase the original password.
 /// # Errors
 ///
 /// Returns the errors of [`login_as_service_with_password`].
@@ -3591,6 +3599,11 @@ where
 }
 
 /// Perform an AS login for an explicit service using password credentials and KDC preauth hints.
+///
+/// # Security
+/// The caller retains erasure duties for the borrowed password and all caller-created
+/// copies. Prefer a caller-owned [`Password`] or [`Zeroizing`] buffer; library
+/// erasure of derived keys does not erase the original password.
 /// # Errors
 ///
 /// Returns the transport's error, [`Error::Kdc`] when the KDC rejects the login,
@@ -4084,6 +4097,11 @@ pub fn default_password_salt(client: &Principal) -> String {
 /// Applies RFC-default minimum work factors to peer parameters. Application
 /// overrides on `LibDefaults` are carried by the high-level request/login APIs.
 /// Raw `KerberosEtype::string_to_key` remains policy-free for trusted RFC vectors.
+///
+/// # Security
+/// The caller retains erasure duties for the borrowed password and all caller-created
+/// copies. Prefer a caller-owned [`Password`] or [`Zeroizing`] buffer; library
+/// erasure of derived keys does not erase the original password.
 /// # Errors
 ///
 /// Returns [`Error::UnsupportedEtype`] for an unknown enctype and
@@ -4710,17 +4728,14 @@ fn principal_matches(left: &Principal, right: &Principal) -> bool {
 
 /// Whether a principal is a `krbtgt/<realm>` service.
 fn is_tgt_principal(principal: &Principal) -> bool {
-    principal
-        .components
-        .first()
-        .is_some_and(|component| component.eq_ignore_ascii_case("krbtgt"))
-        && principal.components.len() >= 2
+    matches!(principal.components.as_slice(), [service, destination]
+        if service == "krbtgt" && !destination.is_empty())
 }
 
 /// The realm a TGT session is issued for, or `None` for a non-TGT session.
 fn tgt_realm(session: &AsRepSession) -> Option<String> {
     if is_tgt_principal(&session.service) {
-        session.service.components.last().cloned()
+        session.service.components.get(1).cloned()
     } else {
         None
     }
@@ -4905,7 +4920,7 @@ fn ccache_credential_session(credential: &ccache::Credential) -> AsRepSession {
             etype: credential.key.etype,
             value: credential.key.value.clone(),
         },
-        ticket: Zeroizing::new(credential.ticket.clone()),
+        ticket: credential.ticket.clone(),
         ticket_flags: credential.ticket_flags,
         auth_time,
         start_time,

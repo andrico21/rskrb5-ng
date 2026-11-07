@@ -66,6 +66,52 @@ settings, before discovering or loading a keytab. Programmatic configuration
 has the same fail-closed admission as direct validators; do not rely on these
 constructors silently ignoring a restriction.
 
+Timestamp restriction diagnostics (FU-CFG-R07): the deferred package for
+`disable_encrypted_timestamp` is now `plan 2 WP-07` for runtime/serde admission,
+matching text parsing. Plugin `disable` and `enable_only` remain WP-16.
+
+Profile braces (FU-CFG-R08): `name =` followed by `{` has the same subsection
+meaning as `name = {` in every section, matching MIT's generic profile grammar.
+Unknown and deferred sections reach their normal diagnostics instead of a
+brace syntax error. Quoted empty strings remain scalars; the existing unquoted
+empty-scalar extension remains available outside mandatory subsection sections
+when no brace follows.
+
+Checked derivation (FU-CRY-R02): `crypto::checked::Etype` snapshots the authorized
+family's minimum. Counts below it now return `S2kIterationsTooLow` before PBKDF2.
+For trusted count-one vectors, construct a policy from `LibDefaults` with
+`with_min_s2k_iterations(Family::AesSha1, 1)` (or AesSha2), or use the explicitly
+policy-free raw primitive. The upper work limit still applies.
+
+Realm restriction values (FU-CFG-R09): `disable_encrypted_timestamp` accepts only
+`Value::Boolean(Toggle::Disabled)` or an absent entry. The enabled restriction
+remains unsupported; Text, List, Choice and Locations now return `InvalidBoolean`
+naming the relation at runtime admission and serde deserialization. Do not encode
+Boolean settings in the Text variant.
+
+Ccache payload ownership (FU-FIL-R05): `Credential.ticket`, `second_ticket` and
+`AuthorizationDataEntry.data` are `Zeroizing<Vec<u8>>`. Pass zeroizing buffers to
+`Credential::new`, `with_second_ticket`, `config_entry`, `upsert_config_entry`
+and `AuthorizationDataEntry::new`; convert a moved vector with `.into()` and
+borrow with `.as_slice()`. Payload owners erase on drop, replacement and parse
+failure. `Credential` and `AuthorizationDataEntry` now implement Drop; borrow
+their fields or use `core::mem::take` rather than moving fields out. Construction
+is no longer const. Binary and serde byte encodings are unchanged.
+Caller-owned serialized output and borrowed source buffers remain the caller's
+erasure responsibility.
+
+TGT identity (FU-CLI-R09): use exactly two components, `krbtgt` and a nonempty
+destination realm. `KRBTGT`, extra components and empty destinations are not
+TGTs and return `InvalidTgtSession` from TGT insertion/renewal. Cross-realm
+`krbtgt/B@A` and advisory name types remain supported. Ccache classification
+and referral processing use the same exact identity rule.
+
+Explicit AP checksums (FU-CLI-R08): `client::build_ap_req_with_confounder`
+rejects checksum IDs 1 through 10 and 14 through
+`Client::Crypto(Crypto::Policy(Policy::RejectedFeature { .. }))`, identifying
+`RejectedFeature::UnauthenticatedChecksum`. Select a supported keyed checksum
+or the protocol's GSS checksum instead. No unkeyed fallback is performed.
+
 Retained SPNEGO credentials now use `zeroize::Zeroizing`: `Krb5MechToken.message`,
 `NegTokenInit.{mech_token, mech_list_mic}`, `NegTokenResp.{response_token,
 mech_list_mic}`, and `InitiatorContext.{ap_req_der, header}` (FU-SPN-R05).
@@ -1627,9 +1673,9 @@ kpasswd result helpers, `MicToken::verify`/`WrapToken::verify` and others).
 - `ccache::CCache::default_principal`: `pub const fn default_principal(&self) -> &Principal`.
 - `ccache::CCache::default_principal_mut`: `pub const fn default_principal_mut(&mut self) -> &mut Principal`.
 - `ccache::CCache::credentials_mut`: `pub const fn credentials_mut(&mut self) -> &mut Vec<Credential>`.
-- `ccache::CCache::upsert_config_entry`: `pub fn upsert_config_entry<P, Q>( &mut self, key: P, principal: Option<String>, value: Q, ) -> Option<Credential> where P: Into<String>, Q: Into<Vec<u8>>,`.
+- `ccache::CCache::upsert_config_entry`: `pub fn upsert_config_entry<P>(&mut self, key: P, principal: Option<String>, value: Zeroizing<Vec<u8>>) -> Option<Credential> where P: Into<String>`.
 - `ccache::Principal::new`: `pub fn new<P>(realm: P, name_type: i32, components: Vec<String>) -> Self where P: Into<String>,`.
-- `ccache::Credential::config_entry`: `pub fn config_entry<P, Q>( client: Principal, key: P, principal: Option<String>, value: Q, ) -> Self where P: Into<String>, Q: Into<Vec<u8>>,`.
+- `ccache::Credential::config_entry`: `pub fn config_entry<P>(client: Principal, key: P, principal: Option<String>, value: Zeroizing<Vec<u8>>) -> Self where P: Into<String>`.
 - `client::kpasswd::RequestOptions::new`: `pub const fn new( timestamp: SystemTime, cusec: u32, sequence_number: u32, sender_address: rasn_kerberos::HostAddress, ) -> Self`.
 - `client::kpasswd::build_kpasswd_request_with_confounders`: `pub fn build_kpasswd_request_with_confounders( service_ticket: &TgsRepSession, change_data: &kadmin::ChangePasswdData, reply_key: EncryptionKey, options: &RequestOptions, ap_req_confounder: &[u8], krb_priv_confounder: &[u8], ) -> Result<BuiltKpasswdRequest, Error>`.
 - `client::kpasswd::build_kpasswd_request`: `pub fn build_kpasswd_request( service_ticket: &TgsRepSession, change_data: &kadmin::ChangePasswdData, options: &RequestOptions, ) -> Result<BuiltKpasswdRequest, Error>`.

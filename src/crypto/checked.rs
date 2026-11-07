@@ -8,7 +8,7 @@ use crate::error;
 /// Construction checks permission before any derivation, encryption or checksum.
 /// This value is not a key owner and contains no secret material.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Etype(KerberosEtype);
+pub struct Etype(KerberosEtype, Option<u32>);
 
 impl Etype {
     /// Authorize an enctype for checked low-level operations.
@@ -19,7 +19,7 @@ impl Etype {
     pub fn new(policy: &CryptoPolicy, etype: i32) -> Result<Self, error::Policy> {
         policy.check_use(etype, Use::CheckedLowLevel)?;
         KerberosEtype::from_etype_id(etype)
-            .map(Self)
+            .map(|value| Self(value, policy.min_s2k_iterations(etype)))
             .ok_or(error::Policy::EnctypeNotPermitted {
                 etype,
                 usage: Use::CheckedLowLevel,
@@ -29,7 +29,7 @@ impl Etype {
     /// Derive a key only after runtime enctype authorization.
     ///
     /// # Errors
-    /// Returns the raw primitive's parameter or derivation error.
+    /// Returns the policy minimum rejection or the raw primitive's parameter/derivation error.
     #[inline]
     pub fn string_to_key(
         self,
@@ -37,6 +37,14 @@ impl Etype {
         salt: &[u8],
         s2kparams: &str,
     ) -> Result<Vec<u8>, error::Crypto> {
+        if let Some(minimum) = self.1 {
+            let actual = super::s2kparams_to_iterations(s2kparams)?;
+            (actual >= minimum).ok_or(error::Policy::S2kIterationsTooLow {
+                etype: self.0.etype_id(),
+                minimum,
+                actual,
+            })?;
+        }
         self.0.string_to_key(secret, salt, s2kparams)
     }
 
