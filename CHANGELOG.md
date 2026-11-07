@@ -23,6 +23,10 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Validated AP contexts retain their effective `crypto_policy`; AP-REP builders
+  reject wrapping keys and outgoing subkeys outside it before producing a reply
+  or calling the protected Tower handler (FU-SPN-R10).
+
 - Config-backed HTTP layer and service constructors now reject unsupported realm
   and client-preauthentication restrictions before keytab discovery, matching
   direct validators (FU-HTTP-R07).

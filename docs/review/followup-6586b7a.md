@@ -293,6 +293,8 @@ Original review rows:
 | --- | --- | --- | --- | --- | --- | --- |
 | FU-HTTP-R07 | minor | HTTP config constructors omit whole-configuration restrictive-policy admission | fixed | `http_constructors_reject_restrictive_scopes` red/green; all three `acceptor_http` tests pass; commit `http: admit whole configuration before keytab discovery (FU-HTTP-R07)` | Both config-backed layer constructors and forwarding service constructors reject unsupported realm/plugin restrictions with Policy::InvalidConfiguration before keytab discovery. | task-22d-rskrb5-ng-zero-open-items.log: pre-fix realm assertion failed; realm, disable and enable_only now rejected by all four entry points. |
 
+| FU-SPN-R10 | minor | Accepted contexts can emit AP-REP subkeys forbidden by the context policy | fixed | `accepted_reply_enforces_retained_policy` red/green; `forbidden_reply_precedes_handler` mutation red/green; commit `service: retain policy for outgoing AP replies (FU-SPN-R10)` | ValidatedApReq gains crypto_policy; wrapping session key and server subkey checked before AP-REP encoding and reciprocal MIC work; forbidden reply stops Tower handler invocation. Raw codecs unchanged. | task-22d-rskrb5-ng-zero-open-items.log: default DES/RC4/DES3 refusals, AES membership, legacy opt-in plus membership, mutable session key, zero handler calls; policy75/service91/http54/spnego54 passed. |
+
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 
 - RVX-u1-01 → FU-TST-01 (also: the test never exercises the router wiring cited by the review doc; covered by FU-TST-01's Proof)

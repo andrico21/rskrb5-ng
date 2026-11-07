@@ -20,7 +20,7 @@ use rasn::types::Integer;
 use crate::{
     ap_rep,
     config::{Config, parameters::DefaultName, restrictions},
-    crypto::CryptoPolicy,
+    crypto::{CryptoPolicy, Use},
     der::decode_complete,
     error,
     keytab::{self, EncryptionKey, Keytab},
@@ -80,6 +80,8 @@ mod host_address;
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ValidatedApReq {
+    /// Effective policy retained for outgoing context keys.
+    pub crypto_policy: CryptoPolicy,
     /// Client identity from the KDC-authenticated ticket.
     pub client: Principal,
     /// Realm and components matched by the keytab lookup that decrypted the ticket.
@@ -123,6 +125,12 @@ impl ValidatedApReq {
         confounder: &[u8],
         options: &ApRepOptions,
     ) -> Result<Vec<u8>, Error> {
+        self.crypto_policy
+            .check_use(self.session_key.etype, Use::SessionKey)?;
+        if let Some(subkey) = &options.subkey {
+            self.crypto_policy
+                .check_use(subkey.etype, Use::AcceptorSubkey)?;
+        }
         let cusec = microseconds_to_u32(
             "authenticator.cusec",
             &Integer::from(self.authenticator_cusec),

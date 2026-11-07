@@ -7,6 +7,13 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Accepted-context reply policy (FU-SPN-R10): `ValidatedApReq.crypto_policy`
+retains the validator's policy. Its AP-REP builder and SPNEGO/HTTP response
+helpers reject excluded wrapping keys and server subkeys with a typed policy
+error before encoding or invoking a protected handler. Configure legacy opt-in
+and permitted membership on the validator; the default remains AES-only.
+Raw `ap_rep` codecs remain policy-free vector APIs.
+
 HTTP configuration admission (FU-HTTP-R07): `NegotiateLayer` and
 `NegotiateService` constructors taking `Config` now return
 `Policy::InvalidConfiguration` for unsupported restrictive realm or clpreauth
