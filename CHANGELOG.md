@@ -23,6 +23,10 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Programmatic and serde realm timestamp restrictions reject every non-Boolean
+  value with a named invalid-policy error instead of treating it as absent
+  (FU-CFG-R09).
+
 - Ccache ticket, second-ticket, configuration and authorization payloads now use
   `Zeroizing<Vec<u8>>`, including partially parsed records. Owning constructors
   and setters require zeroizing buffers (FU-FIL-R05).

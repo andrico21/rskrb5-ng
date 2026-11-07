@@ -48,13 +48,20 @@ pub(crate) fn config(value: &Config) -> Result<(), Error> {
 /// # Errors
 /// Returns the named unsupported restriction.
 pub(super) fn realm(value: &Realm) -> Result<(), Error> {
-    reject(
-        "disable_encrypted_timestamp",
-        matches!(
-            value.relations.get("disable_encrypted_timestamp"),
-            Some(Value::Boolean(Toggle::Enabled))
+    timestamp(value.relations.get("disable_encrypted_timestamp"))
+}
+
+/// Admit only the typed Boolean timestamp policy at every construction boundary.
+/// # Errors
+/// Returns a named invalid Boolean or unsupported restriction.
+pub(super) fn timestamp(value: Option<&Value>) -> Result<(), Error> {
+    match value {
+        None | Some(Value::Boolean(Toggle::Disabled)) => Ok(()),
+        Some(Value::Boolean(Toggle::Enabled)) => reject("disable_encrypted_timestamp", true),
+        Some(Value::Text(_) | Value::List(_) | Value::Choice(_) | Value::Locations(_)) => Err(
+            Error::InvalidBoolean("disable_encrypted_timestamp".to_owned()),
         ),
-    )
+    }
 }
 
 /// Validate restrictions on the currently implemented client preauthentication method.

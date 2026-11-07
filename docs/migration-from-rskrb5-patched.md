@@ -7,6 +7,12 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Realm restriction values (FU-CFG-R09): `disable_encrypted_timestamp` accepts only
+`Value::Boolean(Toggle::Disabled)` or an absent entry. The enabled restriction
+remains unsupported; Text, List, Choice and Locations now return `InvalidBoolean`
+naming the relation at runtime admission and serde deserialization. Do not encode
+Boolean settings in the Text variant.
+
 Ccache payload ownership (FU-FIL-R05): `Credential.ticket`, `second_ticket` and
 `AuthorizationDataEntry.data` are `Zeroizing<Vec<u8>>`. Pass zeroizing buffers to
 `Credential::new`, `with_second_ticket`, `config_entry`, `upsert_config_entry`
