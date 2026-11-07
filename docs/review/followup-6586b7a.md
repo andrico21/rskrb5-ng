@@ -206,17 +206,19 @@ limits are recorded under FU-OPS-03.
 | FU-SVC-R05 | minor | A second mandatory PAC is accepted without parsing or verification | fixed | `authdata_rejects_duplicate_pac_before_replay`; `aa759e6` | Duplicate PACs anywhere in the ticket authorization tree return UnsupportedAuthorizationData kind 128 before replay admission. | Task 22 evidence: reencrypted signed-PAC fixture plus malformed sibling accepted before fix, rejected directly and under type 8 after fix. |
 | FU-TST-R02 | minor | The inner ticket-key policy regression is masked by the authenticator-envelope policy check | fixed | `acceptor_checks_inner_keys_before_replay`; `ea32dee` | none | Task 22 mutation removes only decrypted ticket-key check: corrected fixture fails with wrong cause; restored production check passes. Authenticator envelope now allowed independently of inner key. |
 
-## Source notes
- 
-### Critic u3 resolutions
+## Critic round fb19af4, unit u3
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
 | --- | --- | --- | --- | --- | --- | --- |
-| FU-DOC-R04 | nit | Kpasswd fuzz description still names an obsolete patch | fixed | Target/inventory inspection, fuzz lint; commit containing this row | none | The target parses current numeric result and raw text fields; historical patch 0002 reference removed. docs/review/fuzz.md maps the actual calls correctly. |
-| FU-TST-R05 | minor | AD service-ticket validation uses invalid timestamps and drops legacy policy | fixed | `ad_service_time_is_whole_seconds`, AD strict-env tests; commit containing this row | none (test harness only); AD AP construction splits fractional wall clocks and passes matching explicit RC4 policy to AP builder and validator. | Task 22 fixed 500 ms sample red/green; cross-trust call selects RC4 explicitly. Live AD/PAC scenarios not executed. |
-| FU-TST-R04 | minor | MIT legacy integration cases never opt in to the crypto they test | fixed | `legacy_live_options_have_explicit_permission`; commit containing this row | none (test harness only); MIT RC4/DES3 AS/TGS and SPNEGO fixtures carry explicit family opt-in and membership instead of relying on secure defaults. | Task 22: offline helper red/green; live realm cases not executed. |
-| FU-TRN-R01 | major | Configured checked kpasswd replies bypass the runtime encryption policy | fixed | `checked_replies_enforce_legacy_policy`; commit containing this row | Checked kpasswd exchanges enforce outgoing and authenticated reply key policy. Post-delivery refusal is exactly one unknown outcome. RequestOptions gains optional crypto_policy; BuiltKpasswdRequest retains its policy. | Task 22 u3 red/green real TCP reply matrix for RC4 and DES3, default rejection and explicit opt-in success. |
+| FU-DOC-R04 | nit | Kpasswd fuzz description still names an obsolete patch | fixed | Target/inventory inspection, fuzz lint; `f14b9ed` | none | The target parses current numeric result and raw text fields; historical patch 0002 reference removed. docs/review/fuzz.md maps the actual calls correctly. |
+| FU-TRN-R01 | major | Configured checked kpasswd replies bypass the runtime encryption policy | fixed | `checked_replies_enforce_legacy_policy`; `0c2fdbb` | Checked kpasswd exchanges enforce outgoing and authenticated reply key policy. Post-delivery refusal is exactly one unknown outcome. RequestOptions gains optional crypto_policy; BuiltKpasswdRequest retains its policy. | Task 22 u3 red/green real TCP reply matrix for RC4 and DES3, default rejection and explicit opt-in success. |
+| FU-TRN-R02 | minor | Password-specific DER replacement bypasses KRB-PRIV scalar validation | fixed | `password_request_builders_validate_scalars`; `ada1658` | Both complete password request builders reject fractional timestamps and microseconds outside 0..999999 as local Kadmin::Encode errors before encrypted request construction. | Task 22 invalid/valid boundary matrix red then green; raw part-builder contract unchanged. |
+| FU-TRN-R03 | minor | Borrowed password transport APIs omit caller erasure duties | fixed | Attached rustdoc inspection and rustdoc build; `8330354` | none; documentation explicitly assigns original/caller-copy erasure to callers of four borrowed login APIs and Bytes::from(slice). | Task 22 before: no attached Security section; after: each boundary documents zeroizing input ownership. No prose-pinning test. |
+| FU-TRN-R04 | minor | Kpasswd request construction loses explicit legacy permission | fixed | `legacy_request_preserves_explicit_policy`; `732d3fe` | Password request AP construction inherits explicit RequestOptions policy; high-level changes install the configured snapshot. RC4/DES3 opt-ins work; default requests remain AES-only. | Task 22 mixed AES ticket/legacy session fixture red then green for RC4 and DES3 with paired default rejection. |
+| FU-TST-R04 | minor | MIT legacy integration cases never opt in to the crypto they test | fixed | `legacy_live_options_have_explicit_permission`; `bb5ab9c` and encoded-request follow-up | none (test harness only); MIT RC4/DES3 AS/TGS and SPNEGO fixtures carry explicit family opt-in and membership instead of relying on secure defaults. | Task 22: offline helper red/green and exact encoded AS/TGS enctype assertions; live realm cases not executed. |
+| FU-TST-R05 | minor | AD service-ticket validation uses invalid timestamps and drops legacy policy | fixed | `ad_service_time_is_whole_seconds`, AD strict-env tests; `2695681` | none (test harness only); AD AP construction splits fractional wall clocks and passes matching explicit RC4 policy to AP builder and validator. | Task 22 fixed 500 ms sample red/green; cross-trust call selects RC4 explicitly. Live AD/PAC scenarios not executed. |
 
+## Source notes
 
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 
@@ -228,13 +230,6 @@ Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 - RVX-u1-08 → FU-AMB-01
 
 ## Added rows
- 
-| ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
-| --- | --- | --- | --- | --- | --- | --- |
-| FU-TRN-R04 | minor | Kpasswd request construction loses explicit legacy permission | fixed | `legacy_request_preserves_explicit_policy`; commit containing this row | Password request AP construction inherits explicit RequestOptions policy; high-level changes install the configured snapshot. RC4/DES3 opt-ins work; default requests remain AES-only. | Task 22 mixed AES ticket/legacy session fixture red then green for RC4 and DES3 with paired default rejection. |
-| FU-TRN-R03 | minor | Borrowed password transport APIs omit caller erasure duties | fixed | Attached rustdoc inspection and rustdoc build; commit containing this row | none; documentation explicitly assigns original/caller-copy erasure to callers of four borrowed login APIs and Bytes::from(slice). | Task 22 before: no attached Security section; after: each boundary documents zeroizing input ownership. No prose-pinning test. |
-| FU-TRN-R02 | minor | Password-specific DER replacement bypasses KRB-PRIV scalar validation | fixed | `password_request_builders_validate_scalars`; commit containing this row | Both complete password request builders reject fractional timestamps and microseconds outside 0..999999 as local Kadmin::Encode errors before encrypted request construction. | Task 22 invalid/valid boundary matrix red then green; raw part-builder contract unchanged. |
-
 
 Rows added after the ledger from revmux unit-1 run 02, with the owning todo of plan `rskrb5-ng-zero-open-items`:
 
