@@ -12,6 +12,10 @@ use std::{
 
 use zeroize::{Zeroize as _, Zeroizing};
 
+#[cfg(test)]
+#[path = "file_name/mutation_tests.rs"]
+mod mutation_tests;
+
 /// Internal credential bytes with erasure attached to their lifetime.
 pub(crate) struct SecretBytes(Zeroizing<Vec<u8>>);
 
