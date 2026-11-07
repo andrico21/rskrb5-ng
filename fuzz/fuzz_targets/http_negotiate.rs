@@ -74,7 +74,7 @@ fn initiator() -> Option<InitiatorContext> {
         Principal::user("TEST.GOKRB5", "testuser1"),
         Principal::new("TEST.GOKRB5", 2, ["HTTP", "host.test.gokrb5"]),
         EncryptionKey::new(AES256, SESSION_KEY.to_vec()),
-        TICKET.to_vec(),
+        TICKET.to_vec().into(),
         [0x40, 0xe1, 0x00, 0x00],
         now,
         end,
