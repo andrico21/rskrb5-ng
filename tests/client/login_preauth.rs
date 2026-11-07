@@ -276,6 +276,44 @@ mod tests {
         Ok(())
     }
 
+    /// An initial AS reply's legacy salt selects the password key without a challenge.
+    #[test]
+    fn initial_as_reply_uses_legacy_password_salt() -> Result<(), TestError> {
+        use rasn::der;
+        let client = Principal::user("TEST.GOKRB5", "testuser1");
+        let request = build_tgt_as_req(client.clone(), AsReq::new(timestamp(1_893_553_447)?, 42))?;
+        let key = derive_password_reply_key(
+            &client,
+            TESTUSER_PASSWORD,
+            &PreauthKeyInfo::new(18).with_salt(Some("alternate-salt".to_owned())),
+        )?;
+        let mut reply: rasn_kerberos::AsRep = der::decode(&synthetic_as_rep_with_reply_key(
+            &request,
+            request.nonce,
+            &request.service,
+            &key,
+        )?)?;
+        reply.0.padata = Some(vec![rasn_kerberos::PaData {
+            r#type: 3,
+            value: b"alternate-salt".to_vec().into(),
+        }]);
+        let response = der::encode(&reply)?;
+        let mut transport = MockTransport {
+            expected_realm: client.realm.clone(),
+            expected_request: request.der.clone(),
+            response,
+            called: false,
+        };
+        let session = login_tgt_with_password(
+            &mut transport,
+            client,
+            TESTUSER_PASSWORD,
+            AsReq::new(timestamp(1_893_553_447)?, 42).with_fast_negotiation(false),
+        )?;
+        assert_eq!(session.service, request.service);
+        Ok(())
+    }
+
     /// Pins that a keytab login rejects an assumed-preauth AS-REP keyed outside the requested etypes.
     #[test]
     fn keytab_initial_as_rep_outside_requested_enctypes_is_rejected() -> Result<(), TestError> {

@@ -156,6 +156,10 @@ mod tests {
     fn borrowed_input_and_debug_are_explicit() -> Result<(), Box<dyn Error>> {
         // Given a distinctive borrowed password.
         let input = str::from_utf8(b"redaction-canary")?;
+        assert!(
+            format!("{:?}", Secret::copy_from_str(input)).starts_with("Password("),
+            "redacted password retains its diagnostic kind"
+        );
         // When an owning copy is constructed.
         let password = Secret::copy_from_str(input);
         // Then the borrowed input remains unchanged and both Debug forms redact it.

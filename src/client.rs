@@ -5091,7 +5091,9 @@ mod tests {
         TgsReq, build_tgs_req_for_realm_with_confounder_and_subkey,
         build_tgs_req_for_realm_with_subkey, random_nonce,
     };
-    use crate::error;
+    use crate::{
+        ccache::Principal as CachePrincipal, error, kadmin::Request as PasswordRequest, ticket,
+    };
 
     // RFC 6113 section 5.2 registers PA-FX-COOKIE as 133, and RFC 8070
     // registers PA-AS-FRESHNESS as 150.
@@ -5164,6 +5166,207 @@ mod tests {
     #[test]
     fn renewal_options_are_idempotent() {
         assert_eq!(super::renewal_kdc_option_bits(0x0080_0002), 0x0080_0002);
+    }
+
+    /// Explicit enctype allowlists reject omitted algorithms, including an empty list.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn permitted_enctype_requires_membership() -> Result<(), Error> {
+        super::ensure_permitted_enctype(&[18_i32], 18_i32)?;
+        for permitted in [&[][..], &[17_i32][..]] {
+            assert!(matches!(
+                super::ensure_permitted_enctype(permitted, 18),
+                Err(Error::EnctypeNotPermitted(18_i32))
+            ));
+        }
+        Ok(())
+    }
+
+    /// Flag membership requires every requested bit rather than any nonempty mask.
+    #[test]
+    fn ticket_flag_membership_requires_all_bits() {
+        assert!(!super::ticket_flags_contain_bits(
+            &rasn_kerberos::TicketFlags(rasn_kerberos::KerberosFlags::from_slice(&[0; 4])),
+            0x4000_0000
+        ));
+        assert!(!super::ticket_flags_contain_bits(
+            &rasn_kerberos::TicketFlags(rasn_kerberos::KerberosFlags::from_slice(
+                &0x4000_0000_u32.to_be_bytes()
+            )),
+            0x5000_0000
+        ));
+        assert!(super::ticket_flags_contain_bits(
+            &rasn_kerberos::TicketFlags(rasn_kerberos::KerberosFlags::from_slice(
+                &0x5000_0000_u32.to_be_bytes()
+            )),
+            0x4000_0000
+        ));
+    }
+
+    /// Draft-9 padata policy rejects explicit legacy selections at its shared boundary.
+    #[test]
+    fn padata_policy_rejects_draft9() {
+        assert!(
+            super::crypto_policy::padata(&[rasn_kerberos::PaData {
+                r#type: 14,
+                value: vec![].into()
+            }])
+            .is_err()
+        );
+    }
+
+    /// Principal matching rejects foreign realms and components while ignoring name type.
+    #[test]
+    fn principal_matching_preserves_identity() -> Result<(), Error> {
+        let client = Principal::parse_user("user@A")?;
+        assert!(super::principal_matches(
+            &client,
+            &Principal::new("A", 2, ["user"])
+        ));
+        assert!(!super::principal_matches(
+            &client,
+            &Principal::new("B", 1, ["user"])
+        ));
+        assert!(!super::principal_matches(
+            &client,
+            &Principal::new("A", 1, ["other"])
+        ));
+        Ok(())
+    }
+
+    /// Ticket flag conversion retains wire bytes and zero-pads short bitstrings.
+    #[test]
+    fn ticket_flag_conversion_preserves_bytes() {
+        assert_eq!(
+            super::ticket_flags_to_bytes(&rasn_kerberos::TicketFlags(
+                rasn_kerberos::KerberosFlags::from_slice(&[0x40, 0x80])
+            )),
+            [0x40, 0x80, 0, 0]
+        );
+    }
+
+    /// Cache-only due TGT renewal preserves its discovery failure before service lookup.
+    #[cfg(feature = "tokio")]
+    #[tokio::test]
+    async fn due_tgt_renewal_error_is_preserved() -> Result<(), Error> {
+        let mut session = session_with_key(EncryptionKey::new(18, vec![0; 32]))?;
+        session.ticket = ticket::encode(
+            &PasswordRequest::parse(
+                &hex::decode(include_str!("../tests/fixtures/kpasswd-request.hex").trim())
+                    .map_err(|error| Error::Transport(error.to_string()))?,
+            )?
+            .ap_req
+            .ticket,
+        )
+        .map_err(|error| Error::Transport(error.to_string()))?;
+        let now = SystemTime::now();
+        session.auth_time = now - Duration::from_secs(55);
+        session.start_time = session.auth_time;
+        session.end_time = now + Duration::from_secs(5);
+        session.renew_till = Some(now + Duration::from_secs(60));
+        session.ticket_flags = super::KDC_OPTION_RENEWABLE.to_be_bytes();
+        let config = super::Config::parse(
+            "[libdefaults]\ndns_lookup_kdc = false\n[realms]\nEXAMPLE.TEST = {\n}\n",
+        )?;
+        let mut client = super::Tokio::new(
+            config,
+            super::transport::KdcProtocol::Tcp,
+            session.client.clone(),
+            None,
+        );
+        client.tgt = Some(session);
+        let result = client.ensure_tgt().await;
+        assert!(
+            matches!(
+                result,
+                Err(Error::NoKdcEndpoints {
+                    realm: _,
+                    protocol: _
+                })
+            ),
+            "renewal failure must not become reuse"
+        );
+        Ok(())
+    }
+
+    /// Realm cache lookup returns the matching live TGT rather than forcing fresh login.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn realm_cache_lookup_returns_live_ticket() -> Result<(), Error> {
+        let mut session = session_with_key(EncryptionKey::new(18, vec![0; 32]))?;
+        session.end_time = SystemTime::now() + Duration::from_secs(60);
+        let mut client = super::Tokio::from_tgt_session(
+            super::Config::new(),
+            super::transport::KdcProtocol::Tcp,
+            session.clone(),
+        );
+        drop(
+            client
+                .tgt_sessions
+                .insert("EXAMPLE.TEST".to_owned(), session.clone()),
+        );
+        assert_eq!(
+            client.cached_tgt_session_for_realm("EXAMPLE.TEST"),
+            Some(session)
+        );
+        Ok(())
+    }
+
+    /// Partial prune reports are nonempty when any cache lost a session.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn prune_reports_each_nonempty_field() {
+        assert!(
+            !super::PrunedSessions::default()
+                .with_tgt_sessions(1)
+                .is_empty(),
+            "realm TGT removals make report nonempty"
+        );
+        assert!(
+            !super::PrunedSessions::default()
+                .with_service_tickets(1)
+                .is_empty(),
+            "service removals make report nonempty"
+        );
+        assert!(
+            !super::PrunedSessions::default()
+                .with_primary_tgt(true)
+                .is_empty(),
+            "primary removal makes report nonempty"
+        );
+    }
+
+    /// Public login settings reflect the configured opt-in and opt-out values.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn login_setting_queries_preserve_both_values() -> Result<(), Error> {
+        for enabled in [false, true] {
+            let client = super::Tokio::with_password(
+                super::Config::new(),
+                super::transport::KdcProtocol::Tcp,
+                Principal::parse_user("user@A")?,
+                b"password".to_vec(),
+            )
+            .with_assume_preauthentication(enabled)
+            .with_fast_negotiation(enabled);
+            assert_eq!(client.assume_preauthentication(), enabled);
+            assert_eq!(client.fast_negotiation(), enabled);
+        }
+        Ok(())
+    }
+
+    /// Cache identity compares realm and ordered components independently.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn ccache_identity_requires_both_coordinates() {
+        assert!(!super::same_ccache_client_identity(
+            &CachePrincipal::new("A", 1, vec!["user".to_owned()]),
+            &CachePrincipal::new("B", 1, vec!["user".to_owned()])
+        ));
+        assert!(!super::same_ccache_client_identity(
+            &CachePrincipal::new("A", 1, vec!["user".to_owned()]),
+            &CachePrincipal::new("A", 1, vec!["other".to_owned()])
+        ));
     }
 
     /// Whole-second cache timestamps include the epoch but reject pre-epoch values.

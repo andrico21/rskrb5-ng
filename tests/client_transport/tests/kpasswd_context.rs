@@ -3,7 +3,7 @@
 use core::time::Duration;
 use std::time::UNIX_EPOCH;
 
-use rasn::types::Integer;
+use rasn::{der, types::Integer};
 use rskrb5_ng::{
     ap_rep,
     client::{
@@ -11,6 +11,7 @@ use rskrb5_ng::{
         kpasswd::{BuiltKpasswdRequest, RequestOptions, build_kpasswd_request_with_confounders},
         principal::Principal,
     },
+    crypto::AesSha1Etype,
     kadmin::{self, ChangePasswdData, Request},
     keytab::EncryptionKey,
     krb_priv::{EncKrbPrivPartOptions, ipv4_host_address},
@@ -77,6 +78,12 @@ pub(super) enum ReplyCase {
     WrongAddress,
     /// KRB-PRIV timestamp is outside the permitted skew.
     StaleTime,
+    /// Timestamp exactly at the accepted five-minute skew boundary.
+    SkewBoundary,
+    /// Largest valid microsecond field.
+    MaximumUsec,
+    /// Authenticated microseconds exceed the protocol range.
+    ExcessiveUsec,
     /// Ciphertext encrypted with an unrelated key.
     WrongKey,
     /// Password ciphertext reflected with modified outer metadata.
@@ -99,7 +106,7 @@ pub(super) fn reply(request: &BuiltKpasswdRequest, case: ReplyCase) -> Result<Ve
         .with_sequence_number(99);
     let mut data: &[u8] = b"\x00\x00changed";
     match case {
-        ReplyCase::BadApRep => {}
+        ReplyCase::BadApRep | ReplyCase::ExcessiveUsec => {}
         ReplyCase::WrongApRepTime => cusec = 456_788,
         ReplyCase::MissingFreshness => {
             sequence = None;
@@ -110,6 +117,8 @@ pub(super) fn reply(request: &BuiltKpasswdRequest, case: ReplyCase) -> Result<Ve
         ReplyCase::WrongSequence => options.seq_number = Some(100),
         ReplyCase::WrongAddress => options.sender_address = ipv4_host_address([127, 0, 0, 9]),
         ReplyCase::StaleTime => options.timestamp = Some(kerberos_time(1_893_550_000)?),
+        ReplyCase::SkewBoundary => options.timestamp = Some(kerberos_time(1_893_553_752)?),
+        ReplyCase::MaximumUsec => options.usec = Some(999_999_u32.into()),
         ReplyCase::WrongKey => response_key = EncryptionKey::new(18, vec![0x66; 32]),
         ReplyCase::Reflection => sequence = None,
         ReplyCase::Subkey => {
@@ -143,12 +152,28 @@ pub(super) fn reply(request: &BuiltKpasswdRequest, case: ReplyCase) -> Result<Ve
         | ReplyCase::WrongSequence
         | ReplyCase::WrongAddress
         | ReplyCase::StaleTime
+        | ReplyCase::SkewBoundary
+        | ReplyCase::MaximumUsec
+        | ReplyCase::ExcessiveUsec
         | ReplyCase::WrongKey
         | ReplyCase::Subkey
         | ReplyCase::Rejected => {
             kadmin::build_krb_priv_with_confounder(data, options, &response_key, &[0x77; 16])?
         }
     };
+    if matches!(case, ReplyCase::ExcessiveUsec) {
+        let mut part = kadmin::decrypt_krb_priv_enc_part(&private, &response_key)?;
+        part.usec = Some(1_000_001_u32.into());
+        private.enc_part.cipher = AesSha1Etype::from_etype_id(18)
+            .ok_or("AES-SHA1")?
+            .encrypt_message_with_confounder(
+                &response_key.value,
+                &der::encode(&part)?,
+                13,
+                &[0x77; 16],
+            )?
+            .into();
+    }
     private.enc_part.kvno = Some(999);
     let ap_bytes = ap_rep::encode(&ap_rep)?;
     let private_bytes = kadmin::encode_krb_priv(&private)?;

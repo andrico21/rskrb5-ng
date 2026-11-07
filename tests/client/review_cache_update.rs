@@ -9,7 +9,42 @@ use super::*;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
+    use std::fs;
+
+    use rskrb5_ng::error::Ccache;
+
     use super::*;
+
+    /// Cache updates create missing files but retain an existing directory on read failure.
+    #[test]
+    fn file_update_distinguishes_missing_from_unreadable() -> Result<(), TestError> {
+        let client =
+            Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, sample_tgt_session()?);
+        let path = temp_client_ccache_file("mutation-update")?;
+        client.update_ccache_file(&path)?;
+        let saved = ccache::CCache::load(&path);
+        fs::remove_file(&path)?;
+        assert_eq!(saved?, client.to_ccache()?);
+        fs::create_dir_all(&path)?;
+        let mut invalid = sample_tgt_session()?;
+        invalid.end_time = UNIX_EPOCH
+            .checked_sub(Duration::from_secs(1))
+            .context("invalid cache timestamp")?;
+        let rejected = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, invalid)
+            .update_ccache_file(&path);
+        let retained = path.is_dir();
+        if retained {
+            fs::remove_dir(&path)?;
+        } else {
+            fs::remove_file(&path)?;
+        }
+        assert!(
+            matches!(rejected, Err(Error::CCache(Ccache::Io(_)))),
+            "read errors precede cache conversion errors"
+        );
+        assert!(retained, "failed update must preserve the directory");
+        Ok(())
+    }
 
     /// Invalid session timestamps cannot partially replace an existing cache.
     #[test]

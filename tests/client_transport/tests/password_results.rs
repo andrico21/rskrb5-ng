@@ -17,7 +17,7 @@ fn checked_helpers_reject_invalid_contexts() -> Result<(), TestError> {
         for configured in [false, true] {
             for case in [ReplyCase::BadApRep, ReplyCase::WrongApRepTime, ReplyCase::MissingFreshness,
                 ReplyCase::WrongSequence, ReplyCase::WrongAddress, ReplyCase::StaleTime,
-                ReplyCase::WrongKey, ReplyCase::Reflection] {
+                ReplyCase::WrongKey, ReplyCase::Reflection, ReplyCase::ExcessiveUsec] {
                 // Given a peer returning one independently corrupted reply.
                 let listener = TcpListener::bind("127.0.0.1:0").await?;
                 let addr = listener.local_addr()?;
@@ -57,7 +57,12 @@ fn checked_reply_fixtures_are_valid() -> Result<(), TestError> {
     use super::kpasswd_context::{self, ReplyCase};
     runtime()?.block_on(async {
         for configured in [false, true] {
-            for case in [ReplyCase::Subkey, ReplyCase::Rejected] {
+            for case in [
+                ReplyCase::Subkey,
+                ReplyCase::Rejected,
+                ReplyCase::SkewBoundary,
+                ReplyCase::MaximumUsec,
+            ] {
                 // Given authenticated success or rejection with valid contextual controls.
                 let (built, options) = kpasswd_context::request()?;
                 let response = kpasswd_context::reply(&built, case)?;
@@ -91,7 +96,9 @@ fn checked_reply_fixtures_are_valid() -> Result<(), TestError> {
                 delivery?;
                 // Then the authenticated result is definite, including server-subkey success.
                 match case {
-                    ReplyCase::Subkey => assert_eq!(result?.code, KPASSWD_SUCCESS),
+                    ReplyCase::Subkey | ReplyCase::SkewBoundary | ReplyCase::MaximumUsec => {
+                        assert_eq!(result?.code, KPASSWD_SUCCESS);
+                    }
                     ReplyCase::Rejected => assert!(matches!(
                         result,
                         Err(ClientError::Kadmin(KadminError::PasswordChangeFailed {
@@ -106,6 +113,7 @@ fn checked_reply_fixtures_are_valid() -> Result<(), TestError> {
                     | ReplyCase::WrongSequence
                     | ReplyCase::WrongAddress
                     | ReplyCase::StaleTime
+                    | ReplyCase::ExcessiveUsec
                     | ReplyCase::WrongKey
                     | ReplyCase::Reflection => return Err("invalid success fixture".into()),
                 }

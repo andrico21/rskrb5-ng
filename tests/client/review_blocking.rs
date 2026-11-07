@@ -10,7 +10,7 @@ use super::*;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    use rskrb5_ng::spnego::InitiatorContextOptions;
+    use rskrb5_ng::spnego::{InitiatorContextOptions, Token, parse_negotiate_header};
     use tokio::{runtime::Builder, task::JoinSet};
 
     use super::*;
@@ -26,6 +26,25 @@ mod tests {
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Auto, tgt);
         client.cache_service_ticket(service)?;
         Ok(NegotiateClient::from_tokio_client(client))
+    }
+
+    /// String header APIs emit a decodable SPNEGO initial token from a cached ticket.
+    #[test]
+    fn cached_header_apis_emit_initial_tokens() -> Result<(), TestError> {
+        let mut client = cached_client()?;
+        let service = sample_service_principal();
+        let header = runtime()?.block_on(client.authorization_header(service.clone()))?;
+        assert!(matches!(parse_negotiate_header(&header)?, Token::Init(_)));
+        let explicit_header = runtime()?.block_on(
+            client
+                .inner_mut()
+                .spnego_header_with_options(service, InitiatorContextOptions::default()),
+        )?;
+        assert!(matches!(
+            parse_negotiate_header(&explicit_header)?,
+            Token::Init(_)
+        ));
+        Ok(())
     }
 
     /// Construction inside either Tokio scheduler rejects before creating an owned runtime.
