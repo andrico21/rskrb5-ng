@@ -22,3 +22,4 @@ is a parity feature, not a defect>`.
 | critic:critics-fb19af4/u1.md#U1-12 | FU-SPN-R09 | no |
 | executor:todo-16#transit-validator-rustdoc | FU-DOC-R02 | no |
 | critic:critics-fb19af4/u3.md#U3-01 | FU-TRN-R01 | no |
+| critic:critics-fb19af4/u3.md#U3-02 | FU-TST-R04 | no |

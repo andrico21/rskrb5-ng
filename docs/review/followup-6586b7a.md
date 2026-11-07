@@ -212,6 +212,7 @@ limits are recorded under FU-OPS-03.
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
 | --- | --- | --- | --- | --- | --- | --- |
+| FU-TST-R04 | minor | MIT legacy integration cases never opt in to the crypto they test | fixed | `legacy_live_options_have_explicit_permission`; commit containing this row | none (test harness only); MIT RC4/DES3 AS/TGS and SPNEGO fixtures carry explicit family opt-in and membership instead of relying on secure defaults. | Task 22: offline helper red/green; live realm cases not executed. |
 | FU-TRN-R01 | major | Configured checked kpasswd replies bypass the runtime encryption policy | fixed | `checked_replies_enforce_legacy_policy`; commit containing this row | Checked kpasswd exchanges enforce outgoing and authenticated reply key policy. Post-delivery refusal is exactly one unknown outcome. RequestOptions gains optional crypto_policy; BuiltKpasswdRequest retains its policy. | Task 22 u3 red/green real TCP reply matrix for RC4 and DES3, default rejection and explicit opt-in success. |
 
 
