@@ -7,6 +7,10 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+PAC allocation admission (FU-PAC-R05): truncated claims/group/string arrays
+fail with `Truncated` before reservation. Valid counts up to the existing
+one-million-element ceiling remain accepted when the wire extent is present.
+
 RPC strings in PACs (FU-PAC-R04): a null pointer is valid only when logical
 length is zero. Nonempty null strings return `error::Pac::MissingNdrPointer`;
 maximum capacity and legitimate nonnull termination slack remain supported.

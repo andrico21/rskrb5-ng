@@ -26,6 +26,36 @@ mod tests;
 #[path = "ndr_mutation_tests.rs"]
 mod mutation_tests;
 
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "ndr_extent_tests.rs"]
+mod extent_tests;
+
+/// Reserve fixed wire elements after admission; tests observe the allocation entry.
+/// # Errors
+/// Returns [`Error::Truncated`] or [`Error::LengthOverflow`] before allocation for an impossible extent.
+fn reserve_wire<T>(
+    reader: &mut Reader<'_>,
+    len: usize,
+    layout: (usize, usize),
+) -> Result<Vec<T>, Error> {
+    let (width, alignment) = layout;
+    if len != 0 {
+        reader.align(alignment)?;
+        let extent = len.checked_mul(width).ok_or(Error::LengthOverflow)?;
+        let mut probe = *reader;
+        let _: &[u8] = probe.read_bytes(extent)?;
+    }
+    #[cfg(test)]
+    extent_tests::RESERVATIONS.with(|count| count.set(count.get().saturating_add(1)));
+    Ok(Vec::with_capacity(len))
+}
+
 /// Upper bound on any NDR conformant count, to stop hostile buffers from
 /// requesting huge allocations.
 const MAX_REASONABLE_NDR_COUNT: u32 = 1_000_000;
@@ -306,7 +336,7 @@ pub(super) fn read_deferred_rpc_unicode_strings(
     }
 
     let len = ndr_len(count)?;
-    let mut descriptors = Vec::with_capacity(len);
+    let mut descriptors = reserve_wire(reader, len, (8, 1))?;
     for _ in 0..count {
         descriptors.push(RpcUnicodeStringDescriptor::read(reader)?);
     }
@@ -349,7 +379,7 @@ pub(super) fn read_deferred_claims_arrays(
     }
 
     let len = ndr_len(count)?;
-    let mut descriptors = Vec::with_capacity(len);
+    let mut descriptors = reserve_wire(reader, len, (12, 4))?;
     for _ in 0..count {
         descriptors.push(ClaimsArrayDescriptor {
             claims_source_type: read_ndr_u16(reader)?,
@@ -407,7 +437,7 @@ fn read_deferred_claim_entries(
     }
 
     let len = ndr_len(count)?;
-    let mut descriptors = Vec::with_capacity(len);
+    let mut descriptors = reserve_wire(reader, len, (16, 4))?;
     for _ in 0..count {
         descriptors.push(read_claim_entry_descriptor(reader)?);
     }
@@ -505,7 +535,7 @@ fn read_deferred_i64_array(
     }
 
     let len = ndr_len(count)?;
-    let mut values = Vec::with_capacity(len);
+    let mut values = reserve_wire(reader, len, (8, 8))?;
     for _ in 0..count {
         values.push(read_ndr_u64(reader)?.cast_signed());
     }
@@ -542,7 +572,7 @@ fn read_deferred_u64_array(
     }
 
     let len = ndr_len(count)?;
-    let mut values = Vec::with_capacity(len);
+    let mut values = reserve_wire(reader, len, (8, 8))?;
     for _ in 0..count {
         values.push(read_ndr_u64(reader)?);
     }
@@ -579,7 +609,7 @@ fn read_deferred_bool_array(
     }
 
     let len = ndr_len(count)?;
-    let mut values = Vec::with_capacity(len);
+    let mut values = reserve_wire(reader, len, (8, 8))?;
     for _ in 0..count {
         let value = read_ndr_u64(reader)?;
         let boolean = match value {
@@ -623,7 +653,7 @@ fn read_deferred_lpwstr_array(
     }
 
     let len = ndr_len(count)?;
-    let mut string_refs = Vec::with_capacity(len);
+    let mut string_refs = reserve_wire(reader, len, (4, 4))?;
     for _ in 0..count {
         string_refs.push(read_ndr_u32(reader)?);
     }
@@ -791,7 +821,7 @@ pub(super) fn read_deferred_group_memberships(
     }
 
     let len = ndr_len(count)?;
-    let mut groups = Vec::with_capacity(len);
+    let mut groups = reserve_wire(reader, len, (8, 1))?;
     for _ in 0..count {
         groups.push(GroupMembership {
             relative_id: reader.read_u32()?,
@@ -832,7 +862,7 @@ pub(super) fn read_deferred_sid(
     }
 
     let identifier_authority: [u8; 6] = reader.read_array()?;
-    let mut sub_authorities = Vec::with_capacity(sub_authority_count.into());
+    let mut sub_authorities = reserve_wire(reader, sub_authority_count.into(), (4, 1))?;
     for _ in 0..sub_authority_count {
         sub_authorities.push(reader.read_u32()?);
     }
@@ -876,7 +906,7 @@ pub(super) fn read_deferred_sid_and_attributes(
     }
 
     let len = ndr_len(count)?;
-    let mut refs_and_attributes = Vec::with_capacity(len);
+    let mut refs_and_attributes = reserve_wire(reader, len, (8, 1))?;
     for _ in 0..count {
         refs_and_attributes.push((reader.read_u32()?, reader.read_u32()?));
     }
@@ -921,7 +951,7 @@ pub(super) fn read_deferred_domain_group_memberships(
     }
 
     let len = ndr_len(count)?;
-    let mut descriptors = Vec::with_capacity(len);
+    let mut descriptors = reserve_wire(reader, len, (12, 1))?;
     for _ in 0..count {
         descriptors.push((reader.read_u32()?, reader.read_u32()?, reader.read_u32()?));
     }

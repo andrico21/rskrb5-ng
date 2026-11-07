@@ -49,6 +49,8 @@ Critic round `critics-fb19af4`, unit u4:
 
 | FU-PAC-R04 | minor | A null RPC string pointer silently turns a declared nonempty string into an empty value | fixed | `credentials_rejects_nonempty_null_package_name`; empty/null and nonnull fixture controls; commit containing this row | Nonempty null RPC string descriptors fail with MissingNdrPointer; zero logical length remains accepted. | task-22b: conformant 48-byte descriptor accepted before guard, typed rejection after. |
 
+| FU-PAC-R05 | minor | Claims and group array readers reserve from peer counts before checking descriptor extent | fixed | `truncated_arrays_never_reserve`, `complete_group_extent_at_ceiling_is_admitted`; commit containing this row | Fixed wire extent and alignment checked before NDR descriptor/element reservations; truncated counts return Truncated without amplified allocation. UTF-16 arrays already borrow admitted bytes after FU-PAC-R03. | task-22b: ten reservation entries on truncated million-count inputs before guard, zero after; full million-group boundary admitted once. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |

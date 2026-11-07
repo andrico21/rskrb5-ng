@@ -91,6 +91,10 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- PAC NDR arrays validate aligned descriptor/element extent before reserving
+  from peer counts, preventing large allocations for truncated inputs
+  (FU-PAC-R05).
+
 - Nonempty PAC RPC strings with null pointers now return `MissingNdrPointer`
   instead of silently becoming empty strings (FU-PAC-R04).
 
