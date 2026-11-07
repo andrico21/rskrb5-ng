@@ -7,6 +7,10 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+RPC strings in PACs (FU-PAC-R04): a null pointer is valid only when logical
+length is zero. Nonempty null strings return `error::Pac::MissingNdrPointer`;
+maximum capacity and legitimate nonnull termination slack remain supported.
+
 PAC versions (FU-PAC-R02): only version zero is supported. Nonzero versions
 now return `error::Pac::InvalidPacVersion(u32)` before buffer processing.
 

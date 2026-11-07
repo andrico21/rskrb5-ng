@@ -47,6 +47,8 @@ Critic round `critics-fb19af4`, unit u4:
 
 | FU-PAC-R03 | nit | PAC UTF-16 decoder retains the intermediate allocation explicitly superseded by the mandatory core | fixed | PAC integration and NDR unit decoding controls; commit containing this row | No text/API change; byte-slice decoding avoids Vec-u16 allocations and bounds character extent before decoding. Odd length, malformed UTF-16, logical lengths and one-NUL trimming preserved. | task-22b structural before: three collect/reserve UTF-16-unit buffers; after: shared String::from_utf16le and borrowed slices. |
 
+| FU-PAC-R04 | minor | A null RPC string pointer silently turns a declared nonempty string into an empty value | fixed | `credentials_rejects_nonempty_null_package_name`; empty/null and nonnull fixture controls; commit containing this row | Nonempty null RPC string descriptors fail with MissingNdrPointer; zero logical length remains accepted. | task-22b: conformant 48-byte descriptor accepted before guard, typed rejection after. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |

@@ -719,6 +719,7 @@ pub(super) fn read_deferred_unicode_string(
         });
     }
     if descriptor.referent_id == 0 {
+        (descriptor.length == 0).ok_or(Error::MissingNdrPointer(target))?;
         return Ok(RpcUnicodeString {
             length: descriptor.length,
             maximum_length: descriptor.maximum_length,

@@ -91,6 +91,9 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Nonempty PAC RPC strings with null pointers now return `MissingNdrPointer`
+  instead of silently becoming empty strings (FU-PAC-R04).
+
 - PAC parsing rejects nonzero format versions with `Pac::InvalidPacVersion`
   before allocating the buffer table (FU-PAC-R02).
 
