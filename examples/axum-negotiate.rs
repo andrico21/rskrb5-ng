@@ -17,7 +17,9 @@ use axum::{
     routing::get,
 };
 use rskrb5_ng::{
-    error::{Http as HttpError, Spnego as SpnegoError},
+    error::{
+        Http as HttpError, Keytab as KeytabError, Service as ServiceError, Spnego as SpnegoError,
+    },
     http as krb_http,
     keytab::Keytab,
     service::{ApRepOptions, Validator},
@@ -86,6 +88,9 @@ async fn negotiate(
         let Ok(mut validator) = state.validator.lock() else {
             let mut response = Response::new(Body::empty());
             *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            drop(response.extensions_mut().insert(Arc::new(HttpError::Spnego(
+                SpnegoError::Service(ServiceError::ReplayCachePoisoned),
+            ))));
             return response;
         };
         match krb_http::accept_request(&mut validator, &mut request) {
@@ -93,7 +98,29 @@ async fn negotiate(
             Err(HttpError::MissingAuthorization | HttpError::InvalidHeader(_)) => {
                 return krb_http::challenge_response();
             }
-            Err(HttpError::Spnego(_)) => {
+            Err(HttpError::Spnego(source)) => {
+                if matches!(
+                    &source,
+                    SpnegoError::Service(
+                        ServiceError::ReplayCachePoisoned
+                            | ServiceError::ReplayCacheSkewExceeded {
+                                maximum: _,
+                                requested: _
+                            }
+                            | ServiceError::ReplayCacheClockRollback
+                            | ServiceError::ReplayCacheCapacityExceeded { capacity: _ }
+                            | ServiceError::Keytab(KeytabError::Io(_))
+                    )
+                ) {
+                    let mut response = Response::new(Body::empty());
+                    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                    drop(
+                        response
+                            .extensions_mut()
+                            .insert(Arc::new(HttpError::Spnego(source))),
+                    );
+                    return response;
+                }
                 return krb_http::reject_response()
                     .unwrap_or_else(|_| krb_http::challenge_response());
             }
@@ -201,9 +228,40 @@ async fn security_response(response: Response) -> Response {
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    use std::{fs, process};
+    use std::{fs, panic::catch_unwind, process};
 
     use super::*;
+
+    /// A poisoned validator returns a hardened infrastructure error with a local typed cause.
+    #[cfg(feature = "tower")]
+    #[tokio::test]
+    async fn poisoned_validator_retains_cause() -> Result<(), Box<dyn Error>> {
+        use tower_service::Service as _;
+        let state = AppState {
+            validator: Arc::new(Mutex::new(Validator::from_keytab(Keytab::parse(&[5, 2])?))),
+        };
+        let shared = Arc::clone(&state.validator);
+        let _panic = catch_unwind(move || {
+            let guard = shared.lock();
+            assert_eq!(format!("{guard:?}"), "poison fixture");
+            drop(guard);
+        });
+        let mut app = Router::new()
+            .route("/", get(async || "protected handler reached"))
+            .layer(middleware::from_fn_with_state(state, negotiate))
+            .layer(middleware::map_response(security_response));
+        let response = app.call(Request::new(Body::empty())).await?;
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(response.extensions().get::<Arc<HttpError>>().is_some());
+        assert_eq!(
+            response
+                .headers()
+                .get("x-content-type-options")
+                .ok_or("hardening")?,
+            "nosniff"
+        );
+        Ok(())
+    }
 
     /// Reply-generation failure never reaches the protected handler.
     #[cfg(feature = "tower")]

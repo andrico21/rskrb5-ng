@@ -87,6 +87,9 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- The Axum example reports replay infrastructure faults as hardened 500 responses
+  and retains typed causes in local response extensions (FU-HTTP-R05).
+
 - Service validation rejects duplicate ticket PACs, including nested siblings,
   with `UnsupportedAuthorizationData { kind: 128 }` before replay admission
   instead of interpreting only the first PAC (FU-SVC-R05).

@@ -199,6 +199,8 @@ limits are recorded under FU-OPS-03.
 
 | FU-SVC-R05 | minor | A second mandatory PAC is accepted without parsing or verification | fixed | `authdata_rejects_duplicate_pac_before_replay`; commit `service: reject duplicate ticket PACs (FU-SVC-R05)` | Duplicate PACs anywhere in the ticket authorization tree return UnsupportedAuthorizationData kind 128 before replay admission. | Task 22 evidence: reencrypted signed-PAC fixture plus malformed sibling accepted before fix, rejected directly and under type 8 after fix. |
 
+| FU-HTTP-R05 | minor | The Axum example still turns internal validation faults into authentication rejection | fixed | `poisoned_validator_retains_cause`; commit `http: retain example infrastructure fault causes (FU-HTTP-R05)` | Example replay infrastructure faults now produce opaque hardened 500 responses with Arc<Http> response-extension causes instead of 401 or discarded causes. | Task 22 evidence: actual router lost poison cause before fix, retained it after fix. |
+
 ## Source notes
 
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):

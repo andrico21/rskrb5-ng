@@ -56,6 +56,10 @@ policy" below have the details.
 
 ## Behaviour changes before the review backlog
 
+The Axum example now distinguishes replay infrastructure failures from invalid
+credentials (FU-HTTP-R05): expect HTTP 500 and inspect `Arc<error::Http>` in local
+response extensions, rather than retrying credentials after an apparent 401.
+
 Tickets must supply at most one PAC across their authorization-data tree
 (FU-SVC-R05). Duplicate PACs now return `UnsupportedAuthorizationData { kind: 128 }`
 before replay admission; issuers must remove duplicates, not rely on first-PAC selection.
