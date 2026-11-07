@@ -23,6 +23,10 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- TGT classification now requires exactly `krbtgt/<nonempty destination>`,
+  with case-sensitive service components. Extra components and `KRBTGT` no
+  longer enter the TGT cache or renewal path (FU-CLI-R09).
+
 - Complete client AP builders reject explicitly selected unkeyed/weak checksum
   IDs with `RejectedFeature::UnauthenticatedChecksum` before cryptographic work;
   keyed and GSS checksum selections remain supported (FU-CLI-R08).

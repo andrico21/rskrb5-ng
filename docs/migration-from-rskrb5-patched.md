@@ -7,6 +7,12 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+TGT identity (FU-CLI-R09): use exactly two components, `krbtgt` and a nonempty
+destination realm. `KRBTGT`, extra components and empty destinations are not
+TGTs and return `InvalidTgtSession` from TGT insertion/renewal. Cross-realm
+`krbtgt/B@A` and advisory name types remain supported. Ccache classification
+and referral processing use the same exact identity rule.
+
 Explicit AP checksums (FU-CLI-R08): `client::build_ap_req_with_confounder`
 rejects checksum IDs 1 through 10 and 14 through
 `Client::Crypto(Crypto::Policy(Policy::RejectedFeature { .. }))`, identifying

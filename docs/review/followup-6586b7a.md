@@ -28,6 +28,7 @@ Critic round `critics-f22ea5b`, lane B:
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
 | --- | --- | --- | --- | --- | --- | --- |
 | FU-CLI-R08 | minor | Complete AP builder accepts explicitly prohibited unkeyed checksums | fixed | `ap_rejects_prohibited_checksums_before_crypto`, `ap_preserves_keyed_and_gss_checksums`; commit `client: reject prohibited AP checksums (FU-CLI-R08)` | Complete AP construction rejects explicit checksum IDs 1..10 and 14 with UnauthenticatedChecksum before any crypto; keyed and GSS selections remain accepted. | task-22e: pre-fix rejection test failed, preservation control passed; post-fix both passed. Invalid confounder proves rejection precedes encryption. |
+| FU-CLI-R09 | minor | TGT classification admits extra components and case-distinct service names | fixed | `tgt_cache_rejects_malformed_service_shapes`; commit `client: require exact TGT principal shape (FU-CLI-R09)` | TGT classification requires exactly krbtgt and a nonempty destination, case-sensitive; malformed services fail cache insertion and renewal before mutation. Advisory name types remain accepted. | task-22e: matching encoded extra-component ticket admitted before fix, rejected after; case, empty and missing destination negatives plus cross-realm/name-type controls pass. |
 
 Critic round `critics-fb19af4`, unit u2:
 

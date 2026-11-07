@@ -4713,17 +4713,14 @@ fn principal_matches(left: &Principal, right: &Principal) -> bool {
 
 /// Whether a principal is a `krbtgt/<realm>` service.
 fn is_tgt_principal(principal: &Principal) -> bool {
-    principal
-        .components
-        .first()
-        .is_some_and(|component| component.eq_ignore_ascii_case("krbtgt"))
-        && principal.components.len() >= 2
+    matches!(principal.components.as_slice(), [service, destination]
+        if service == "krbtgt" && !destination.is_empty())
 }
 
 /// The realm a TGT session is issued for, or `None` for a non-TGT session.
 fn tgt_realm(session: &AsRepSession) -> Option<String> {
     if is_tgt_principal(&session.service) {
-        session.service.components.last().cloned()
+        session.service.components.get(1).cloned()
     } else {
         None
     }
