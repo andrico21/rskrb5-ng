@@ -193,6 +193,8 @@ limits are recorded under FU-OPS-03.
 
 | FU-SPN-R06 | minor | SPNEGO MIC and unsealed Wrap verification still uses handwritten MAC equality | fixed | `verification_requires_audited_hmac_api`, `checksum_rejects_each_mismatch_and_wrong_length`, GSSAPI and SPNEGO targets; commit `spnego: verify MICs through audited HMAC boundary (FU-SPN-R06)` | MIC and unsealed Wrap verification delegates to the existing enctype verifier; malformed tags remain GssChecksumMismatch. | Task 22 evidence: audit regression red, then all 77 targeted tests green. |
 
+| FU-HTTP-R04 | major | Clone-local HTTP settings can attach an incompatible cache to a shared validator | fixed | `cloned_service_rejects_incompatible_cache`, `cloned_layer_preserves_shared_cache_ceiling`; commit `http: preserve replay compatibility across clones (FU-HTTP-R04)` | Cache attachment validates actual shared validator skew before replacement; lowering a layer window never lowers the shared retention ceiling. | Task 22 evidence: both new clone regressions red then green; original shared service remains usable after rejected attachment. |
+
 ## Source notes
 
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):

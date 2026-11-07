@@ -180,7 +180,7 @@ fn checked_attachment_keeps_shared_cache() -> Result<(), Error> {
         message: error.to_string(),
     })?;
     let mut validator = super::Validator::new(&keytab);
-    validator.attach_replay_cache(super::SharedReplayCache::new());
+    validator.attach_replay_cache(super::SharedReplayCache::new())?;
     assert!(
         validator.shared_replay_cache().is_some(),
         "checked attachment retains shared state"

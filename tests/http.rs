@@ -209,6 +209,50 @@ mod tests {
     #[derive(Clone)]
     struct PolicyService;
 
+    /// Cache replacement checks the shared validator rather than stale clone settings.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn cloned_service_rejects_incompatible_cache() -> Result<(), TestError> {
+        let keytab = keytab()?;
+        let service = krb_http::NegotiateLayer::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .layer(PolicyService);
+        let clone = service.clone();
+        let mut configured = service.with_max_clock_skew(Duration::from_mins(15))?;
+        assert!(matches!(
+            clone.with_shared_replay_cache(SharedReplayCache::new()),
+            Err(HttpError::Spnego(SpnegoError::Service(
+                ServiceError::ReplayCacheSkewExceeded {
+                    maximum: _,
+                    requested: _
+                }
+            )))
+        ));
+        let mut request = Request::new(());
+        krb_http::set_authorization_header(&mut request, &valid_authorization_header()?)?;
+        assert_eq!(
+            run_ready(configured.call(request))??.status(),
+            StatusCode::OK
+        );
+        Ok(())
+    }
+
+    /// Lowering one layer's window does not shorten retention for its siblings.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn cloned_layer_preserves_shared_cache_ceiling() -> Result<(), TestError> {
+        let keytab = keytab()?;
+        let layer = krb_http::NegotiateLayer::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .with_max_clock_skew(Duration::from_mins(15))?;
+        drop(layer.clone().with_max_clock_skew(Duration::from_mins(5))?);
+        let mut service = layer.layer(PolicyService);
+        let mut request = Request::new(());
+        krb_http::set_authorization_header(&mut request, &valid_authorization_header()?)?;
+        assert_eq!(run_ready(service.call(request))??.status(), StatusCode::OK);
+        Ok(())
+    }
+
     /// A pending authenticated response never formats its retained AP-REP credential.
     #[cfg(feature = "tower")]
     #[test]

@@ -87,6 +87,10 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Cloned HTTP services reject replay-cache attachment incompatible with the
+  actual shared validator; lowering a cloned layer's skew no longer shortens
+  its siblings' replay retention (FU-HTTP-R04).
+
 - Ccache parsing bounds every record count (principal components, addresses,
   authorization data) against the remaining input before reserving memory, so
   a short malformed cache returns `error::Ccache::Truncated` instead of

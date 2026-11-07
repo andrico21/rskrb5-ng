@@ -48,7 +48,7 @@ impl ReplayCache {
         if self.watermark.is_some() {
             self.ensure_skew(requested)?;
         } else {
-            self.max_clock_skew = requested;
+            self.max_clock_skew = self.max_clock_skew.max(requested);
         }
         Ok(())
     }

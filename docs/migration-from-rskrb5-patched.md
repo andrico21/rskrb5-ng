@@ -56,6 +56,11 @@ policy" below have the details.
 
 ## Behaviour changes before the review backlog
 
+HTTP clone configuration now checks cache compatibility against the shared
+validator under its lock (FU-HTTP-R04). Handle the existing typed skew error
+from `with_shared_replay_cache` even when that clone's original settings used
+a smaller window. Lowering a layer's window preserves the shared cache ceiling.
+
 These came with the 0.3 line before the review fixes below; `CHANGELOG.md`
 describes each one.
 

@@ -1389,7 +1389,9 @@ impl<'keytab, S> NegotiateService<'keytab, S> {
         let mut guard = self.validator.lock().map_err(|_poisoned| {
             Error::Spnego(SpnegoError::Service(ServiceError::ReplayCachePoisoned))
         })?;
-        guard.attach_replay_cache(replay_cache);
+        guard
+            .attach_replay_cache(replay_cache)
+            .map_err(|error| Error::Spnego(SpnegoError::Service(error)))?;
         drop(guard);
         Ok(self)
     }

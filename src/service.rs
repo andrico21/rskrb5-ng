@@ -608,10 +608,15 @@ impl<'keytab> Validator<'keytab> {
         Ok(())
     }
 
-    /// Attach shared state already checked by the HTTP construction boundary.
+    /// Attach shared state only when its retention covers this validator.
+    ///
+    /// # Errors
+    /// Returns a skew-policy error or a poisoned-cache error before replacement.
     #[cfg(feature = "tower")]
-    pub(crate) fn attach_replay_cache(&mut self, cache: SharedReplayCache) {
+    pub(crate) fn attach_replay_cache(&mut self, cache: SharedReplayCache) -> Result<(), Error> {
+        cache.ensure_skew(self.max_clock_skew)?;
         self.shared_replay_cache = Some(cache);
+        Ok(())
     }
     /// Apply replay settings already checked by the HTTP construction boundary.
     #[cfg(feature = "tower")]
