@@ -997,6 +997,16 @@ impl Tokio {
         protocol: KdcProtocol,
         cache: &ccache::CCache,
     ) -> Result<Self, Error> {
+        let policy = crypto_policy::configured(&config.libdefaults)?;
+        for credential in cache.entries() {
+            if same_ccache_client_identity(&credential.client, cache.default_principal()) {
+                crypto_policy::session(
+                    &policy,
+                    &ccache_credential_session(credential),
+                    Use::ImportedCredential,
+                )?;
+            }
+        }
         let client = Self::from_ccache(config, protocol, cache);
         crypto_policy::ready(&client)?;
         Ok(client)
@@ -5257,6 +5267,10 @@ mod tests {
         )
         .map_err(|error| Error::Transport(error.to_string()))?
         .into();
+        let mut wire = ticket::decode(&session.ticket).map_err(super::ticket_error)?;
+        wire.realm = super::kerberos_string(&session.service.realm)?;
+        wire.sname = super::principal_to_rasn(&session.service)?;
+        session.ticket = ticket::encode(&wire).map_err(super::ticket_error)?.into();
         let now = SystemTime::now();
         session.auth_time = now - Duration::from_secs(55);
         session.start_time = session.auth_time;

@@ -48,6 +48,8 @@ with the encoded ticket realm and ordered server components. Relabeling a
 ticket now fails cache admission or AP construction with
 `error::Client::ServicePrincipalMismatch`; advisory name-type changes remain
 accepted. Legacy infallible ccache import skips rejected entries.
+Fallible `try_from_ccache` and file-loading constructors return the mismatch
+before constructing the client.
 
 Keytab diagnostics (FU-CLI-R05) now report usable enctypes for the exact client
 realm and ordered components, not every principal in that realm. Provision keys

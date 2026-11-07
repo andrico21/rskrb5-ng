@@ -24,6 +24,17 @@ mod tests {
         ] {
             let mut mislabeled = tgt.clone();
             mislabeled.service = service;
+            let mut imported = before.clone();
+            imported
+                .credentials_mut()
+                .push(mislabeled.to_ccache_credential()?);
+            assert!(matches!(
+                Tokio::try_from_ccache(config_without_kdcs()?, KdcProtocol::Tcp, &imported),
+                Err(Error::ServicePrincipalMismatch {
+                    expected: _,
+                    actual: _
+                })
+            ));
             assert!(matches!(
                 client.cache_service_ticket(mislabeled.clone()),
                 Err(Error::ServicePrincipalMismatch {
