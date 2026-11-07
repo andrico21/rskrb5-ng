@@ -2004,7 +2004,7 @@ mod tests {
                 Principal::user(REALM, USER),
                 Principal::tgt_service(REALM),
                 EncryptionKey::new(18, vec![0x11; 32]),
-                ticket::encode(&ticket)?,
+                ticket::encode(&ticket)?.into(),
                 [0; 4],
                 now,
                 now,

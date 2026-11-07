@@ -964,7 +964,7 @@ mod tests {
                 Principal::user("TEST.GOKRB5", "testuser1"),
                 Principal::new("TEST.GOKRB5", 2, ["HTTP", "host.test.gokrb5"]),
                 session_key,
-                ticket::encode(&encrypted)?,
+                ticket::encode(&encrypted)?.into(),
                 [0; 4],
                 now,
                 now,

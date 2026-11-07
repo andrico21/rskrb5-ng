@@ -172,7 +172,7 @@ mod tests {
                 Principal::user("TEST.GOKRB5", "testuser1"),
                 Principal::new("TEST.GOKRB5", 2, ["kadmin", "changepw"]),
                 EncryptionKey::new(id, vec![0x11; etype.key_len()]),
-                ticket::encode(&fixture.ap_req.ticket)?,
+                ticket::encode(&fixture.ap_req.ticket)?.into(),
                 [0; 4],
                 time,
                 time,
