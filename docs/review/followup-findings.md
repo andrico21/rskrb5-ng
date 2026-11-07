@@ -22,6 +22,7 @@ is a parity feature, not a defect>`.
 | critic:critics-f22ea5b/u6.md#U6-06 | FU-OPS-R01 | no |
 | critic:critics-f22ea5b/u6.md#U6-07 | FU-FUZ-R02 | no |
 | critic:critics-f22ea5b/u6.md#U6-08 | FU-GATE-R04 | no |
+| critic:critics-f22ea5b/u6.md#U6-09 | FU-DOC-R13 | no |
 | critic:critics-fb19af4/u1.md#U1-01 | FU-SPN-R05 | no |
 | critic:critics-fb19af4/u1.md#U1-02 | FU-SPN-R06 | no |
 | critic:critics-fb19af4/u1.md#U1-03 | FU-HTTP-R04 | no |
