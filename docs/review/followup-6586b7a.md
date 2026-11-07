@@ -70,6 +70,8 @@ Critic round `critics-fb19af4`, unit u5:
 
 | FU-FIL-R02 | major | Ccache Debug exposes ticket and configuration payloads | fixed | `cache_debug_redacts_payloads`; ccache39; commit containing this row | Credential, ConfigEntry and AuthorizationDataEntry Debug render metadata and payload lengths, protecting nested CCache formatting. | task-22b real config/ticket/authorization markers disclosed red; exhaustive formatters green. |
 
+| FU-AMB-R01 | minor | The ambient guard does not resolve extern-crate aliases | fixed | `guard_rejects_reader_and_attribute_evasions`, ambient_guard4; commit containing this row | No library behavior change; guard resolves extern-crate aliases before classifying var/var_os/enumeration access. | task-22b exact alias bypass red, four owner-attributed alias fixtures green. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
