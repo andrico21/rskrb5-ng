@@ -14,6 +14,7 @@ use std::{
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
+
 use zeroize::Zeroizing;
 
 /// Password ownership retained through derivation and every early error.

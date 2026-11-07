@@ -812,15 +812,18 @@ pub(crate) mod tests {
     /// Every supplied evasion must produce a named rejection, not a vacuous pass.
     #[test]
     fn guard_rejects_reader_and_attribute_evasions() {
-        for member in ["var(\"HOME\")", "var_os(\"HOME\")", "vars()", "vars_os()"] {
-            let source =
-                format!("extern crate std as platform; fn hidden() {{ platform::env::{member}; }}");
-            assert!(
-                access_violations("src/config.rs", &source)
-                    .iter()
-                    .any(|failure| failure.contains("hidden"))
-            );
-        }
+        assert!({
+            ["var(\"HOME\")", "var_os(\"HOME\")", "vars()", "vars_os()"]
+                .iter()
+                .all(|member| {
+                    let source = format!(
+                        "extern crate std as platform; fn hidden() {{ platform::env::{member}; }}"
+                    );
+                    access_violations("src/config.rs", &source)
+                        .iter()
+                        .any(|failure| failure.contains("hidden"))
+                })
+        });
         assert!({
             // Given: FU-AMB-02 Proof cases plus alias and unknown-access boundaries.
             [

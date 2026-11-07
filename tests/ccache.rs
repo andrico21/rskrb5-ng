@@ -46,7 +46,7 @@ mod tests {
 
     /// Cache, credential, config and authorization diagnostics hide all payload bytes.
     #[test]
-    fn cache_debug_redacts_payloads() {
+    fn cache_debug_redacts_payloads() -> Result<(), TestError> {
         let principal = Principal::new("R", 1, vec!["alice".to_owned()]);
         let mut credential = Credential::config_entry(
             principal.clone(),
@@ -60,8 +60,10 @@ mod tests {
             .push(AuthorizationDataEntry::new(1, vec![221, 222, 223, 224]));
         let mut cache = CCache::new(principal);
         cache.credentials_mut().push(credential.clone());
+        let encoded = cache.to_bytes()?;
+        let parsed = CCache::parse(&encoded)?;
         let rendered = format!(
-            "{cache:?} {credential:?} {:?} {:?}",
+            "{parsed:?} {credential:?} {:?} {:?}",
             cache.config_entries(),
             credential.auth_data
         );
@@ -73,6 +75,7 @@ mod tests {
             assert!(!rendered.contains(marker), "credential payload disclosed");
         }
         assert!(rendered.contains("alice") && rendered.contains("len"));
+        Ok(())
     }
 
     /// External callers can construct validated headers and both IP families without serde.

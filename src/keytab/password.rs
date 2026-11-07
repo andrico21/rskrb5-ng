@@ -25,9 +25,10 @@ impl Drop for Owner {
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    use crate::keytab::{Keytab, Principal};
     use core::{cell::RefCell, error::Error, time::Duration};
     use std::time::UNIX_EPOCH;
+
+    use crate::keytab::{Keytab, Principal};
 
     std::thread_local! {
         /// Live owner lengths and erasure state before deallocation.

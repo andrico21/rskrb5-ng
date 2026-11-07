@@ -11,7 +11,6 @@
 mod tests {
     use core::{error::Error, time::Duration};
     use std::time::UNIX_EPOCH;
-    use tokio::runtime::Builder;
 
     use rskrb5_ng::{
         Config, Principal,
@@ -22,6 +21,7 @@ mod tests {
         },
         error::Client,
     };
+    use tokio::runtime::Builder;
 
     /// Serde and programmatic defaults cannot silently weaken unavailable restrictions.
     #[test]

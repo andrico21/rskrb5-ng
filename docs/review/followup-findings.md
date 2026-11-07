@@ -23,7 +23,6 @@ is a parity feature, not a defect>`.
 | critic:critics-fb19af4/u4.md#U4-05 | FU-PAC-R04 | no |
 | critic:critics-fb19af4/u4.md#U4-06 | FU-PAC-R05 | no |
 | critic:critics-fb19af4/u4.md#U4-07 | FU-PAC-R06 | no |
-| executor:todo-16#transit-validator-rustdoc | FU-DOC-R02 | no |
 | critic:critics-fb19af4/u5.md#U5-01 | FU-CFG-R01 | no |
 | critic:critics-fb19af4/u5.md#U5-02 | FU-CFG-R02 | no |
 | critic:critics-fb19af4/u5.md#U5-03 | FU-CFG-R03 | no |
@@ -38,3 +37,4 @@ is a parity feature, not a defect>`.
 | critic:critics-fb19af4/u5.md#U5-12 | FU-API-R01 | no |
 | critic:critics-fb19af4/u5.md#U5-13 | FU-API-R02 | no |
 | critic:critics-fb19af4/u5.md#U5-14 | FU-DOC-R05 | no |
+| executor:todo-16#transit-validator-rustdoc | FU-DOC-R02 | no |
