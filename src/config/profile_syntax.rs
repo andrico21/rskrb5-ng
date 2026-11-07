@@ -65,11 +65,11 @@ impl State {
         if tag.eq_ignore_ascii_case("module") {
             return Err(Error::UnsupportedDynamicModule);
         }
-        if tag.is_empty() {
-            return Err(invalid(line));
-        }
+        (!tag.is_empty()).ok_or_else(|| invalid(line))?;
         let section = self.scopes.first().map_or("", |scope| scope.name.as_str());
-        let key = if (self.scopes.len() == 1 && section == "realms")
+        let key = if section == "libdefaults" && tag.eq_ignore_ascii_case("no_addresses") {
+            "noaddresses".to_owned()
+        } else if (self.scopes.len() == 1 && section == "realms")
             || matches!(section, "capaths" | "appdefaults")
             || self
                 .scopes

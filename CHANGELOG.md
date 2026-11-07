@@ -96,6 +96,9 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- `no_addresses` and `noaddresses` now share first-occurrence precedence and
+  final markers instead of overwriting by lexical spelling (FU-CFG-R01).
+
 - PAC NDR arrays validate aligned descriptor/element extent before reserving
   from peer counts, preventing large allocations for truncated inputs
   (FU-PAC-R05).

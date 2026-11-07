@@ -61,6 +61,10 @@ values to or from this crate needs the same versions.
 
 ## New configuration keys
 
+Address aliases (FU-CFG-R01): the first occurrence of either `no_addresses`
+or `noaddresses` wins. A final marker on either spelling closes both; an
+initial false value cannot be repaired by a later true alias.
+
 Direct AS processing (FU-CLI-R07): include the reply-key enctype in the AS
 request's offered list. `process_as_rep` and its exchange callers now return
 `EnctypeNotRequested` for an unoffered reply wrapping type even when the

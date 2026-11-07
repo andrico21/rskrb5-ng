@@ -48,6 +48,12 @@ Critic round `critics-fb19af4`, unit u4:
 | FU-PAC-R05 | minor | Claims and group array readers reserve from peer counts before checking descriptor extent | fixed | `truncated_arrays_never_reserve`, `complete_group_extent_at_ceiling_is_admitted`; `9d39974` | Fixed wire extent and alignment checked before NDR descriptor/element reservations; truncated counts return Truncated without amplified allocation. UTF-16 arrays already borrow admitted bytes after FU-PAC-R03. | task-22b: ten reservation entries on truncated million-count inputs before guard, zero after; full million-group boundary admitted once. |
 | FU-PAC-R06 | minor | Validation-info session-key bytes lack redaction and value-attached erasure | fixed | `validation_info_key_debug_is_redacted`, `validation_key_erased_on_success_and_failure`; `3b3b764` | UserSessionKey becomes redacted owning SessionKey with Zeroizing storage; raw Pac data and zero_signature_data become Zeroizing vectors and Debug reports lengths only. Parse staging erases on later errors. | task-22b: real parsed nonzero key disclosed before fix; redaction green. Removed-wipe mutation observes false before release; restored success/error paths observe true. Zero-slot fixture retained. |
 
+Critic round `critics-fb19af4`, unit u5:
+
+| ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
+| --- | --- | --- | --- | --- | --- | --- |
+| FU-CFG-R01 | minor | The noaddresses alias composes by sorted key rather than first occurrence | fixed | `address_aliases_share_profile_order`; commit containing this row | no_addresses/noaddresses share first-value and finality identity, within/across sources; first false fails closed. | task-22b red accepted-first-true errored; green both orders and final markers. MIT prof_parse.c preserves ordered relations; alias is this crate's extension. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |

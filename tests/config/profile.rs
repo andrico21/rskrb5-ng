@@ -23,6 +23,45 @@ mod tests {
     /// Process-local sequence avoids clock-resolution assumptions.
     static NEXT: AtomicU64 = AtomicU64::new(0);
 
+    /// Alias spellings share first-value and final-marker identity across files.
+    #[test]
+    fn address_aliases_share_profile_order() -> Result<(), Box<dyn Error>> {
+        for (first, second) in [
+            ("no_addresses", "noaddresses"),
+            ("noaddresses", "no_addresses"),
+        ] {
+            for marker in ["", "*"] {
+                let accepted = format!("[libdefaults]\n{first}{marker} = true\n{second} = false\n");
+                assert!(
+                    Config::parse(&accepted)?
+                        .libdefaults
+                        .no_addresses
+                        .is_enabled()
+                );
+                let refused = format!("[libdefaults]\n{first}{marker} = false\n{second} = true\n");
+                assert!(matches!(
+                    Config::parse(&refused),
+                    Err(ConfigError::NotYetEffective {
+                        relation: _,
+                        package: _
+                    })
+                ));
+                let dir = Fixture::new()?;
+                let one = dir.path().join("one");
+                let two = dir.path().join("two");
+                fs::write(&one, format!("[libdefaults]\n{first}{marker} = true\n"))?;
+                fs::write(&two, format!("[libdefaults]\n{second} = false\n"))?;
+                assert!(
+                    Config::load_paths(&[one, two])?
+                        .libdefaults
+                        .no_addresses
+                        .is_enabled()
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Fixture directory owned by one test invocation.
     struct Fixture(PathBuf);
 
