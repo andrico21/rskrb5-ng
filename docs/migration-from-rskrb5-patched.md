@@ -7,6 +7,10 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Ccache diagnostics (FU-FIL-R02): Debug no longer exposes primary/second ticket,
+configuration-value or authorization payload bytes, including nested CCache
+formatting. Use explicit borrowed fields only where needed; never log them.
+
 PAC key ownership (FU-PAC-R06): use `user_session_key.as_bytes()` to borrow
 the sixteen-byte key; construct replacements with
 `pac::session_key::SessionKey::new(Zeroizing::new(bytes))`. The key is no longer

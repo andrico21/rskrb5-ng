@@ -68,6 +68,8 @@ Critic round `critics-fb19af4`, unit u5:
 
 | FU-FIL-R01 | major | Keytab password-generation APIs consume ordinary passwords without erasing them | fixed | `moved_password_owner_erasure_probe`, `keytab_password_erases_on_every_exit`; commit containing this row | Password generation methods require Zeroizing<Vec<u8>> instead of generic AsRef owners; borrowed _ref method documents caller erasure. Success/enctype/time/name failures erase moved owner. | task-22b original owner red; replacement allocation identity control, live wipe matrix and removed-wipe mutation red/green. |
 
+| FU-FIL-R02 | major | Ccache Debug exposes ticket and configuration payloads | fixed | `cache_debug_redacts_payloads`; ccache39; commit containing this row | Credential, ConfigEntry and AuthorizationDataEntry Debug render metadata and payload lengths, protecting nested CCache formatting. | task-22b real config/ticket/authorization markers disclosed red; exhaustive formatters green. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |

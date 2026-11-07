@@ -44,6 +44,37 @@ mod tests {
     /// Error type of the `Result`-returning tests.
     type TestError = Box<dyn error::Error>;
 
+    /// Cache, credential, config and authorization diagnostics hide all payload bytes.
+    #[test]
+    fn cache_debug_redacts_payloads() {
+        let principal = Principal::new("R", 1, vec!["alice".to_owned()]);
+        let mut credential = Credential::config_entry(
+            principal.clone(),
+            "metadata",
+            None,
+            vec![201, 202, 203, 204],
+        );
+        credential.second_ticket = vec![211, 212, 213, 214];
+        credential
+            .auth_data
+            .push(AuthorizationDataEntry::new(1, vec![221, 222, 223, 224]));
+        let mut cache = CCache::new(principal);
+        cache.credentials_mut().push(credential.clone());
+        let rendered = format!(
+            "{cache:?} {credential:?} {:?} {:?}",
+            cache.config_entries(),
+            credential.auth_data
+        );
+        for marker in [
+            "201, 202, 203, 204",
+            "211, 212, 213, 214",
+            "221, 222, 223, 224",
+        ] {
+            assert!(!rendered.contains(marker), "credential payload disclosed");
+        }
+        assert!(rendered.contains("alice") && rendered.contains("len"));
+    }
+
     /// External callers can construct validated headers and both IP families without serde.
     #[test]
     fn constructs_header_and_ip_addresses() -> Result<(), TestError> {

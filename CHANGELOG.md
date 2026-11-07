@@ -100,6 +100,9 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Ccache credential, configuration-entry and authorization-data Debug now
+  report payload lengths rather than credential bytes (FU-FIL-R02).
+
 - Escaped permanently rejected protocol selectors are rejected before finalized
   or unknown profile scopes can discard them (FU-CFG-R06).
 
