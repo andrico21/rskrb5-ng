@@ -4,10 +4,169 @@
 use core::{cell::Cell, num::TryFromIntError, time::Duration};
 use std::{
     collections::HashMap,
+    panic::{catch_unwind, resume_unwind},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use super::{Error, Principal, ReplayCache, ReplayKey};
+use crate::{keytab::Keytab, pac::AD_WIN2K_PAC};
+
+/// Shared maintenance reports poisoned admission locks instead of fabricated counts.
+#[test]
+fn shared_pruning_preserves_lock_errors() -> Result<(), Error> {
+    let shared = super::SharedReplayCache::new();
+    assert_eq!(shared.prune_expired_at(at(0))?, 0);
+    let owned = shared.clone();
+    let poisoned = catch_unwind(move || -> Result<(), ()> {
+        let _guard = owned.inner.lock().map_err(|_poisoned| ())?;
+        resume_unwind(Box::new("poisoned fixture"))
+    });
+    assert!(poisoned.is_err(), "fixture poisons the shared lock");
+    assert!(matches!(
+        shared.prune_expired(),
+        Err(Error::ReplayCachePoisoned)
+    ));
+    assert!(matches!(
+        shared.prune_expired_at(at(0)),
+        Err(Error::ReplayCachePoisoned)
+    ));
+    Ok(())
+}
+
+/// Ticket boundary skew includes equality in both temporal directions.
+#[test]
+fn ticket_skew_boundaries_are_inclusive() {
+    assert!(!super::starts_after_skew(at(4), at(0), SWEEP_SKEW));
+    assert!(!super::expired_after_skew(at(4), at(0), SWEEP_SKEW));
+}
+
+/// A PAC is not a supported mandatory authenticator authorization element.
+#[test]
+fn mandatory_authenticator_pac_is_rejected() {
+    let data = vec![rasn_kerberos::AuthorizationDataValue {
+        r#type: AD_WIN2K_PAC,
+        data: vec![].into(),
+    }];
+    let mut remaining = 8;
+    assert!(matches!(
+        super::validate_authorization_elements(
+            &data,
+            super::AuthorizationScope {
+                critical: true,
+                ticket: false,
+                depth: 0
+            },
+            &mut remaining
+        ),
+        Err(Error::UnsupportedAuthorizationData { kind: _ })
+    ));
+}
+
+/// Whole-second pre-epoch values remain whole seconds when split for replay keys.
+#[test]
+fn replay_time_preserves_pre_epoch_whole_seconds() -> Result<(), Error> {
+    assert_eq!(
+        super::unix_timestamp_parts(UNIX_EPOCH - Duration::from_secs(1))?,
+        (-1, 0)
+    );
+    Ok(())
+}
+
+/// Configured per-client shares retain room for other identities at capacity boundaries.
+#[test]
+fn principal_share_boundaries_are_enforced() -> Result<(), Error> {
+    for (total, requested, accepted) in
+        [(1_usize, 1_usize, 1_usize), (2, 2, 1), (3, 3, 2), (8, 2, 2)]
+    {
+        let mut cache =
+            ReplayCache::with_limits(SWEEP_SKEW, total).with_principal_capacity(requested);
+        for id in 0..accepted {
+            assert!(cache.insert(
+                key(
+                    "host",
+                    1,
+                    i64::try_from(id).map_err(|error| Error::Decode {
+                        target: "fixture",
+                        message: error.to_string()
+                    })?,
+                    0
+                ),
+                digest(u64::try_from(id).map_err(|error| Error::Decode {
+                    target: "fixture",
+                    message: error.to_string()
+                })?),
+                at(0),
+                SWEEP_SKEW
+            )?);
+        }
+        assert!(matches!(
+            cache.insert(key("host", 1, 99, 0), digest(99), at(0), SWEEP_SKEW),
+            Err(Error::ReplayCacheCapacityExceeded { capacity: _ })
+        ));
+    }
+    Ok(())
+}
+
+/// Force clearing removes all old evidence and reports its exact count through shared clones.
+#[test]
+fn force_clear_reports_removed_pairs() -> Result<(), Error> {
+    let mut local = ReplayCache::with_limits(SWEEP_SKEW, 16).with_principal_capacity(8);
+    for id in 0_i64..2 {
+        assert!(local.insert(
+            key("host", 1, id, 0),
+            digest(id.unsigned_abs()),
+            at(0),
+            SWEEP_SKEW
+        )?);
+    }
+    assert_eq!(local.force_clear_older_than(Duration::ZERO), 2);
+    for id in 0_i64..2 {
+        assert!(local.insert(
+            key("host", 1, id, 0),
+            digest(id.unsigned_abs()),
+            at(0),
+            SWEEP_SKEW
+        )?);
+    }
+    let shared = super::SharedReplayCache::from_cache(local);
+    assert!(
+        !shared.is_empty()?,
+        "shared cache retains admitted evidence"
+    );
+    assert_eq!(shared.force_clear_older_than(Duration::ZERO)?, 2);
+    assert!(shared.is_empty()?, "force clear discards both records");
+    assert_eq!(shared.force_clear_older_than(Duration::ZERO)?, 0);
+    Ok(())
+}
+
+/// Shared clear updates every clone's admission evidence.
+#[test]
+fn shared_clear_discards_live_evidence() -> Result<(), Error> {
+    let mut local = ReplayCache::with_limits(SWEEP_SKEW, 16);
+    assert!(local.insert(key("host", 1, 1, 0), digest(1), at(0), SWEEP_SKEW)?);
+    let shared = super::SharedReplayCache::from_cache(local);
+    let other = shared.clone();
+    shared.clear()?;
+    assert!(other.is_empty()?, "clear applies across shared handles");
+    Ok(())
+}
+
+/// HTTP's checked attachment path exposes and uses the supplied shared replay cache.
+#[cfg(feature = "tower")]
+#[test]
+fn checked_attachment_keeps_shared_cache() -> Result<(), Error> {
+    let keytab = Keytab::parse(&[5, 2]).map_err(|error| Error::Decode {
+        target: "Keytab fixture",
+        message: error.to_string(),
+    })?;
+    let mut validator = super::Validator::new(&keytab);
+    validator.attach_replay_cache(super::SharedReplayCache::new());
+    assert!(
+        validator.shared_replay_cache().is_some(),
+        "checked attachment retains shared state"
+    );
+    Ok(())
+}
 
 std::thread_local! {
     /// Key-index records visited by purges on this test thread.

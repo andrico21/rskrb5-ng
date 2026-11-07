@@ -538,6 +538,10 @@ mod service {
         let mut second = Validator::new(&keytab)
             .with_now(now)
             .with_shared_replay_cache(replay_cache.clone())?;
+        assert!(
+            first.shared_replay_cache().is_some(),
+            "shared cache accessor exposes attached state"
+        );
 
         assert!(
             replay_cache
