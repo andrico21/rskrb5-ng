@@ -1830,6 +1830,25 @@ impl Tokio {
         &mut self,
         requested: Principal,
     ) -> Result<TgsRepSession, Error> {
+        self.get_service_ticket_with_clock(requested, SystemTime::now)
+            .await
+    }
+
+    /// Acquire a service ticket with a clock shared by the cache-selection decisions.
+    ///
+    /// # Errors
+    /// Returns the same policy, discovery and exchange errors as service acquisition.
+    ///
+    /// # Cancel safety
+    /// cancel-safe: cache updates occur only after authenticated exchanges complete.
+    async fn get_service_ticket_with_clock<F>(
+        &mut self,
+        requested: Principal,
+        mut clock: F,
+    ) -> Result<TgsRepSession, Error>
+    where
+        F: FnMut() -> SystemTime,
+    {
         crypto_policy::ready(self)?;
         let service = self.resolve_service_principal(requested);
         let key = service_cache_key(&service);
@@ -1839,7 +1858,7 @@ impl Tokio {
                 &ticket,
                 Use::SessionKey,
             )?;
-            let now = SystemTime::now();
+            let now = clock();
             if session_valid_at(&ticket, now) {
                 ticket.service = service;
                 return Ok(ticket);
@@ -1860,10 +1879,10 @@ impl Tokio {
                 return Ok(renewed);
             }
         }
-        let tgt = match self.cached_tgt_session_for_realm(&service.realm) {
+        let tgt = match self.cached_tgt_session_for_realm(&service.realm, clock()) {
             Some(tgt) => tgt,
             None if service.realm != self.client.realm => match self
-                .renew_cached_tgt_session_for_realm(&service.realm)
+                .renew_cached_tgt_session_for_realm(&service.realm, clock())
                 .await?
             {
                 Some(tgt) => tgt,
@@ -2170,9 +2189,9 @@ impl Tokio {
     }
 
     /// The cached TGT session for `realm`, if it is currently valid.
-    fn cached_tgt_session_for_realm(&self, realm: &str) -> Option<AsRepSession> {
+    fn cached_tgt_session_for_realm(&self, realm: &str, now: SystemTime) -> Option<AsRepSession> {
         let tgt = self.tgt_sessions.get(realm)?;
-        session_valid_at(tgt, SystemTime::now()).then(|| tgt.clone())
+        session_valid_at(tgt, now).then(|| tgt.clone())
     }
 
     /// Renew the cached TGT session for `realm` when it is renewable.
@@ -2188,11 +2207,12 @@ impl Tokio {
     async fn renew_cached_tgt_session_for_realm(
         &mut self,
         realm: &str,
+        now: SystemTime,
     ) -> Result<Option<AsRepSession>, Error> {
         let Some(tgt) = self.tgt_sessions.get(realm).cloned() else {
             return Ok(None);
         };
-        if !session_renewable_at(&tgt, SystemTime::now()) {
+        if !session_renewable_at(&tgt, now) {
             return Ok(None);
         }
 
@@ -5083,6 +5103,8 @@ fn system_time_to_u32_seconds(time: SystemTime) -> Result<u32, Error> {
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
+    #[cfg(feature = "tokio")]
+    mod realm_mutations;
     use core::time::Duration;
     use std::time::UNIX_EPOCH;
 
@@ -5234,6 +5256,24 @@ mod tests {
         Ok(())
     }
 
+    /// Invalid principal diagnostics distinguish missing and repeated realm separators.
+    #[test]
+    fn principal_separator_reasons_are_specific() -> Result<(), Error> {
+        drop(Principal::parse_user("user@A")?);
+        for (input, expected) in [
+            ("user", "principal realm separator is missing"),
+            (
+                "u@A@B",
+                "principal contains more than one unescaped realm separator",
+            ),
+        ] {
+            assert!(
+                matches!(Principal::parse_user(input), Err(Error::InvalidPrincipalName { value, reason }) if value == input && reason == expected)
+            );
+        }
+        Ok(())
+    }
+
     /// Ticket flag conversion retains wire bytes and zero-pads short bitstrings.
     #[test]
     fn ticket_flag_conversion_preserves_bytes() {
@@ -5306,7 +5346,7 @@ mod tests {
                 .insert("EXAMPLE.TEST".to_owned(), session.clone()),
         );
         assert_eq!(
-            client.cached_tgt_session_for_realm("EXAMPLE.TEST"),
+            client.cached_tgt_session_for_realm("EXAMPLE.TEST", SystemTime::now()),
             Some(session)
         );
         Ok(())
