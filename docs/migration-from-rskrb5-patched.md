@@ -915,8 +915,10 @@ drop(validator);
 
 ### Removed configuration twins (FU-CFG-02, FU-CFG-08)
 
-Every remaining configuration constructor is environment-free, so the
-`*_without_env` twins are gone:
+`Config::new`, `Config::parse` and `LibDefaults::new` are environment-free, so
+their `*_without_env` twins are gone. Named ambient discovery remains explicit:
+`Config::load_from_env` and `Config::load_default` read `KRB5_CONFIG`, and
+`LibDefaults::from_env` reads `HOME`.
 
 | Removed | Use |
 | --- | --- |
