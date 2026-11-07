@@ -218,6 +218,19 @@ pub fn build_change_password_request_with_confounder(
     options: EncKrbPrivPartOptions,
     confounder: &[u8],
 ) -> Result<BuiltChangePasswordRequest, Error> {
+    if let Some(time) = &options.timestamp {
+        messages::whole_seconds(time).map_err(|source| Error::Encode {
+            target: "kpasswd KRB-PRIV time",
+            message: source.to_string(),
+        })?;
+    }
+    if let Some(usec) = &options.usec {
+        let _micros =
+            messages::microseconds("krb-priv.usec", usec).map_err(|source| Error::Encode {
+                target: "kpasswd KRB-PRIV time",
+                message: source.to_string(),
+            })?;
+    }
     let plaintext = secret_der::private_part(&secret_der::change_data(change_data)?, options)?;
     let krb_priv = payload::encrypt(&plaintext, &reply_key, confounder)?;
     build_change_password_request_from_parts(ap_req, krb_priv, reply_key)

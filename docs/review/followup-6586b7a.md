@@ -227,6 +227,11 @@ Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 - RVX-u1-08 → FU-AMB-01
 
 ## Added rows
+ 
+| ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
+| --- | --- | --- | --- | --- | --- | --- |
+| FU-TRN-R02 | minor | Password-specific DER replacement bypasses KRB-PRIV scalar validation | fixed | `password_request_builders_validate_scalars`; commit containing this row | Both complete password request builders reject fractional timestamps and microseconds outside 0..999999 as local Kadmin::Encode errors before encrypted request construction. | Task 22 invalid/valid boundary matrix red then green; raw part-builder contract unchanged. |
+
 
 Rows added after the ledger from revmux unit-1 run 02, with the owning todo of plan `rskrb5-ng-zero-open-items`:
 

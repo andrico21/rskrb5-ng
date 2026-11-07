@@ -56,6 +56,11 @@ policy" below have the details.
 
 ## Behaviour changes before the review backlog
 
+Complete password request builders require whole-second timestamps and
+microseconds in `0..=999999`, including directly mutated option fields
+(FU-TRN-R02). Invalid values return a local `Kadmin::Encode` error; split clock
+samples before construction rather than passing fractional timestamps.
+
 Checked kpasswd transport now enforces crypto policy before delivery and on
 authenticated replies (FU-TRN-R01). `RequestOptions.crypto_policy` is optional
 (secure defaults when absent); `BuiltKpasswdRequest.crypto_policy` binds the

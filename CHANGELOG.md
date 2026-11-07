@@ -87,6 +87,9 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Both password request builders reject fractional KRB-PRIV timestamps and
+  out-of-range microseconds before producing a mutation frame (FU-TRN-R02).
+
 - Checked kpasswd replies enforce runtime encryption permission on AP-REP and
   KRB-PRIV keys, including server-selected subkeys. Policy refusal after delivery
   is an unknown outcome; prohibited outgoing keys fail before delivery. Kpasswd
