@@ -203,6 +203,8 @@ limits are recorded under FU-OPS-03.
 
 | FU-HTTP-R06 | nit | The example leaks its keytab despite already supporting an owning validator | fixed | Axum example target; commit `http: own the example service keytab (FU-HTTP-R06)` | Example shutdown releases the service keytab through the owning validator instead of leaking it for process lifetime. | Task 22 evidence: explicit Box::leak on the construction path replaced with Validator::from_keytab. |
 
+| FU-SPN-R07 | minor | Consuming GSS constructors reject the key before adopting the plaintext owner | fixed | `rejected_constructors_adopt_plaintext`, erasure_tests; commit `spnego: adopt plaintext before fallible key selection (FU-SPN-R07)` | MIC and both Wrap convenience constructors adopt consumed plaintext into Zeroizing before any fallible selection, including unknown and rejected keys. | Task 22 evidence: conversion observer red before fix, all 5 erasure tests green after fix. |
+
 ## Source notes
 
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):

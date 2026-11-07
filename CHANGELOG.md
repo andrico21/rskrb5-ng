@@ -87,6 +87,9 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Consuming MIC and Wrap constructors adopt plaintext into zeroizing storage
+  before rejecting an unsupported key, so early errors also erase it (FU-SPN-R07).
+
 - The Axum example owns its keytab and releases it on shutdown instead of
   leaking the allocation for process lifetime (FU-HTTP-R06).
 

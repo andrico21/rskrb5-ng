@@ -15,4 +15,5 @@ is a parity feature, not a defect>`.
 | critic:critics-fb19af4/u1.md#U1-05 | FU-SVC-R05 | no |
 | critic:critics-fb19af4/u1.md#U1-06 | FU-HTTP-R05 | no |
 | critic:critics-fb19af4/u1.md#U1-07 | FU-HTTP-R06 | no |
+| critic:critics-fb19af4/u1.md#U1-08 | FU-SPN-R07 | no |
 | executor:todo-16#transit-validator-rustdoc | FU-DOC-R02 | no |

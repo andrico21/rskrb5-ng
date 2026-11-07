@@ -1,11 +1,48 @@
 //! Independent owner observations for GSS plaintext staging.
 
-use core::cell::RefCell;
+use core::cell::{Cell, RefCell};
 
 use zeroize::Zeroizing;
 
 use super::{Error, GSSAPI_INITIATOR_SEAL_USAGE, GSSAPI_INITIATOR_SIGN_USAGE, MicToken, WrapToken};
 use crate::keytab::EncryptionKey;
+
+/// A moved plaintext owner records whether the constructor adopts it before failing.
+struct Adoption<'observer>(&'observer Cell<bool>);
+
+impl From<Adoption<'_>> for Zeroizing<Vec<u8>> {
+    #[inline]
+    fn from(value: Adoption<'_>) -> Self {
+        value.0.set(true);
+        Self::new(vec![0x77; 5])
+    }
+}
+
+/// Invalid key selection cannot bypass adoption of a consumed plaintext owner.
+#[test]
+fn rejected_constructors_adopt_plaintext() {
+    for etype in [1_i32, 999_i32] {
+        let key = EncryptionKey::new(etype, vec![0; 16]);
+        for constructor in 0_u8..3 {
+            let adopted = Cell::new(false);
+            match constructor {
+                0 => {
+                    drop(MicToken::new_initiator(Adoption(&adopted), &key));
+                }
+                1 => {
+                    drop(WrapToken::new_initiator(Adoption(&adopted), &key));
+                }
+                _ => {
+                    drop(WrapToken::new_initiator_sealed(Adoption(&adopted), &key));
+                }
+            }
+            assert!(
+                adopted.get(),
+                "constructor {constructor} failed before adopting plaintext"
+            );
+        }
+    }
+}
 
 thread_local! {
     /// Drop events scoped to this test thread, never mixed with another operation.

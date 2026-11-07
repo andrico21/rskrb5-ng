@@ -308,11 +308,12 @@ impl MicToken {
     where
         P: Into<Zeroizing<Vec<u8>>>,
     {
+        let owned_payload = payload.into();
         selection::reject_enctype(key.etype)?;
         let mut token = Self {
             flags: 0,
             snd_seq_num: 0,
-            payload: Some(payload.into()),
+            payload: Some(owned_payload),
             checksum: None,
         };
         token.set_checksum(key, GSSAPI_INITIATOR_SIGN_USAGE)?;
@@ -675,8 +676,8 @@ impl WrapToken {
     where
         P: Into<Zeroizing<Vec<u8>>>,
     {
-        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let owned_payload = payload.into();
+        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let mut token = Self {
             flags: 0,
             ec: u16::try_from(etype.hmac_len()).map_err(|_overflow| {
@@ -706,8 +707,8 @@ impl WrapToken {
     where
         P: Into<Zeroizing<Vec<u8>>>,
     {
-        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let owned_payload = payload.into();
+        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let mut confounder = vec![0; etype.confounder_len()];
         getrandom::fill(&mut confounder)?;
         Self::new_initiator_sealed_with_confounder(owned_payload, key, &confounder)

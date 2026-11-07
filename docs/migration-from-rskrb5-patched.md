@@ -56,6 +56,10 @@ policy" below have the details.
 
 ## Behaviour changes before the review backlog
 
+Consuming GSS constructors erase adopted plaintext even when key selection fails
+(FU-SPN-R07). No call-site change is required; passing a zeroizing owner remains
+the preferred way to retain erasure responsibility across the call boundary.
+
 Use `Validator::from_keytab(keytab)` for an owning service, as the Axum example
 now does (FU-HTTP-R06). Do not leak a keytab merely to obtain a static validator.
 
