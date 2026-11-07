@@ -56,6 +56,8 @@ Critic round `critics-fb19af4`, unit u5:
 
 | FU-CFG-R02 | minor | Reconstructing assignments loses significant quoted whitespace | fixed | `quoted_values_preserve_edge_whitespace`; commit containing this row | Decoded quoted values retain edge spaces, tabs and newlines; unquoted assignment whitespace still trims. | MIT prof_parse.c parse_quoted_string/need_double_quotes preserve content. Red padded became unpadded; green byte-exact appdefault/keytab controls. |
 
+| FU-CFG-R03 | minor | Endpoint decoding interprets quoted literal stars as finals a second time | fixed | `quoted_endpoint_stars_remain_literal`, config231 including final-marker controls; commit containing this row | Endpoint consumers preserve literal trailing stars and later admitted endpoints; profile alone determines finality. | MIT quote parser retains stars. Red first*:88/second collapsed to first:88; green all four endpoint lists. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |

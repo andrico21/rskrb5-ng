@@ -61,6 +61,10 @@ values to or from this crate needs the same versions.
 
 ## New configuration keys
 
+Endpoint stars (FU-CFG-R03): `kdc = "host*"` denotes literal `host*`, not a
+final relation. Use `kdc* = host` to finalize. The existing unquoted value-final
+extension remains supported.
+
 Quoted values (FU-CFG-R02): spaces, tabs and newlines inside quotes are now
 literal content, including at the edges. Remove accidental quoted whitespace
 from credential paths; unquoted assignment whitespace continues to be ignored.

@@ -1299,10 +1299,6 @@ impl Realm {
     /// [`Error::Policy`] for an enabled removed-protocol directive.
     fn parse(name: &str, lines: &[Line]) -> Result<Self, Error> {
         let mut realm = Self::new(name.to_owned())?;
-        let mut admin_final = false;
-        let mut kdc_final = false;
-        let mut kpasswd_final = false;
-        let mut master_final = false;
 
         for line in lines {
             let (raw_key, value) = parse_assignment(line, "realms")?;
@@ -1312,18 +1308,18 @@ impl Realm {
 
             match key {
                 "admin_server" => {
-                    append_until_final(&mut realm.admin_server, value, &mut admin_final);
+                    realm.admin_server.push(value.to_owned());
                 }
                 "default_domain" => value.clone_into(&mut realm.default_domain),
                 "kdc" => {
                     let with_port = add_default_port(value, 88);
-                    append_until_final(&mut realm.kdc, &with_port, &mut kdc_final);
+                    realm.kdc.push(with_port);
                 }
                 "kpasswd_server" => {
-                    append_until_final(&mut realm.kpasswd_server, value, &mut kpasswd_final);
+                    realm.kpasswd_server.push(value.to_owned());
                 }
                 "master_kdc" => {
-                    append_until_final(&mut realm.master_kdc, value, &mut master_final);
+                    realm.master_kdc.push(value.to_owned());
                 }
                 "primary_kdc" => realm.primary_kdc.push(value.to_owned()),
                 _ => {}
@@ -1925,38 +1921,13 @@ fn parse_ip_addresses(value: &str) -> Result<Vec<IpAddr>, Error> {
         .collect()
 }
 
-/// `value` with `:port` appended when it names no port, keeping a trailing
-/// `*` final marker last.
+/// Append a default port to a literal endpoint already admitted by the profile.
 fn add_default_port(value: &str, port: u16) -> String {
-    let trimmed = value.trim();
-    let final_marker = trimmed.ends_with('*');
-    let host = trimmed.trim_end_matches('*').trim();
-    if host.contains(':') {
-        if final_marker {
-            format!("{host}*")
-        } else {
-            host.to_owned()
-        }
-    } else if final_marker {
-        format!("{host}:{port}*")
+    if value.contains(':') {
+        value.to_owned()
     } else {
-        format!("{host}:{port}")
+        format!("{value}:{port}")
     }
-}
-
-/// Append `value` to `values` unless an earlier value was marked final; a
-/// trailing `*` marks this value final.
-fn append_until_final(values: &mut Vec<String>, value: &str, final_seen: &mut bool) {
-    if *final_seen {
-        return;
-    }
-
-    let mut trimmed = value.trim();
-    if let Some(stripped) = trimmed.strip_suffix('*') {
-        *final_seen = true;
-        trimmed = stripped.trim_end();
-    }
-    values.push(trimmed.to_owned());
 }
 
 /// One `include`/`includedir` directive, split from its argument.

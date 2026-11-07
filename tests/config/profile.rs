@@ -23,6 +23,25 @@ mod tests {
     /// Process-local sequence avoids clock-resolution assumptions.
     static NEXT: AtomicU64 = AtomicU64::new(0);
 
+    /// Quoted endpoint stars are literal; only profile syntax determines finality.
+    #[test]
+    fn quoted_endpoint_stars_remain_literal() -> Result<(), Box<dyn Error>> {
+        for key in ["kdc", "admin_server", "master_kdc", "kpasswd_server"] {
+            let config = Config::parse(&format!(
+                "[realms]\nR = {{\n{key} = \"first*\"\n{key} = second\n}}\n"
+            ))?;
+            let realm = config.realms.first().ok_or("realm")?;
+            let (values, expected) = match key {
+                "kdc" => (&realm.kdc, vec!["first*:88", "second:88"]),
+                "admin_server" => (&realm.admin_server, vec!["first*", "second"]),
+                "master_kdc" => (&realm.master_kdc, vec!["first*", "second"]),
+                _ => (&realm.kpasswd_server, vec!["first*", "second"]),
+            };
+            assert_eq!(values, &expected);
+        }
+        Ok(())
+    }
+
     /// MIT quoted strings preserve significant edge whitespace after escape decoding.
     #[test]
     fn quoted_values_preserve_edge_whitespace() -> Result<(), Box<dyn Error>> {

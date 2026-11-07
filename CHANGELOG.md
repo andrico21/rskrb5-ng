@@ -96,6 +96,9 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Quoted endpoint stars remain literal and no longer suppress subsequent
+  endpoints; final markers are handled only by the profile parser (FU-CFG-R03).
+
 - Quoted profile values preserve leading/trailing whitespace after escape
   decoding, including credential names and appdefaults (FU-CFG-R02).
 
