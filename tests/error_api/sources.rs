@@ -176,6 +176,12 @@ macro_rules! crypto_random_sources {
 }
 
 crypto_random_sources!(ApRep, ap_rep_crypto_source, ap_rep_random_source);
+#[cfg(feature = "messages")]
+retains_source!(
+    krb_error_utf8_source,
+    str::Utf8Error,
+    error::KrbErrorCodec::InvalidString(utf8_cause()?)
+);
 crypto_random_sources!(ApReq, ap_req_crypto_source, ap_req_random_source);
 crypto_random_sources!(Client, client_crypto_source, client_random_source);
 crypto_random_sources!(KdcRep, kdc_rep_crypto_source, kdc_rep_random_source);

@@ -1361,7 +1361,7 @@ pub enum KrbErrorCodec {
     },
     /// ASN.1 string value was not valid UTF-8.
     #[error("invalid Kerberos string: {0}")]
-    InvalidString(String),
+    InvalidString(#[from] Utf8Error),
     /// A Kerberos integer could not fit in the expected Rust type.
     #[error("integer field {field} is out of range: {value}")]
     IntegerOutOfRange {

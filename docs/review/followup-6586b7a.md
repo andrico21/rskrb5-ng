@@ -74,6 +74,8 @@ Critic round `critics-fb19af4`, unit u5:
 
 | FU-FIL-R03 | minor | Version-one keytabs silently lose publicly admitted principal name types | fixed | `version_one_rejects_unrepresentable_name_type`; commit containing this row | Version1 serialization rejects nonzero name_type with UnrepresentableNameType instead of dropping metadata. | task-22b name42 red accepted/lost, typed rejection and name0 round-trip green. |
 
+| FU-API-R01 | minor | KRB-ERROR conversion erases the concrete UTF-8 error source | fixed | `krb_error_utf8_source`; error_api80; commit containing this row | KrbErrorCodec::InvalidString carries Utf8Error with source/from instead of String; adapter moves original cause. | task-22b retained-cause missing red, source downcast green. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |

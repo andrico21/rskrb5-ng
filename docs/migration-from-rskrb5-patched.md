@@ -7,6 +7,10 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+KRB-ERROR UTF-8 causes (FU-API-R01): `KrbErrorCodec::InvalidString` now contains
+`core::str::Utf8Error`, available through `Error::source()` and preserving
+`valid_up_to()`/`error_len()`. Construct it from the original error, not its text.
+
 Version-one keytabs (FU-FIL-R03): nonzero principal name types cannot be saved
 in that format and now return `error::Keytab::UnrepresentableNameType`.
 Use version two to preserve the value, or explicitly choose name type zero.

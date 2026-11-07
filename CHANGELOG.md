@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- `KrbErrorCodec::InvalidString` retains `Utf8Error` as its source instead of
+  a stringified cause (FU-API-R01).
+
 - Keytab password-generation methods now consume `Zeroizing<Vec<u8>>`, erasing
   moved input on every exit. `add_entry_from_password_ref` provides explicitly
   borrowed input with caller erasure duties (FU-FIL-R01).
