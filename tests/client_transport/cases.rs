@@ -545,22 +545,27 @@ mod tests {
                     limit: 65_507
                 })
             ));
-            let server = async {
-                let mut bytes = vec![0; 65_507];
-                let (length, client) = bounded(
-                    Duration::from_secs(10),
-                    "maximum UDP request",
-                    peer.recv_from(&mut bytes),
-                )
-                .await??;
-                assert_eq!(length, 65_507);
-                let _: usize = peer.send_to(&[17], client).await?;
-                Ok::<_, TestError>(())
-            };
-            let request = vec![42; 65_507];
-            let (sent, response) = tokio::join!(server, transport.send_udp(addr, &request));
-            sent?;
-            assert_eq!(response?, [17]);
+            // macOS refuses loopback datagrams above `net.inet.udp.maxdgram`
+            // (9216 bytes by default), so the accepted maximum is sent elsewhere.
+            #[cfg(not(target_os = "macos"))]
+            {
+                let server = async {
+                    let mut bytes = vec![0; 65_507];
+                    let (length, client) = bounded(
+                        Duration::from_secs(10),
+                        "maximum UDP request",
+                        peer.recv_from(&mut bytes),
+                    )
+                    .await??;
+                    assert_eq!(length, 65_507);
+                    let _: usize = peer.send_to(&[17], client).await?;
+                    Ok::<_, TestError>(())
+                };
+                let request = vec![42; 65_507];
+                let (sent, response) = tokio::join!(server, transport.send_udp(addr, &request));
+                sent?;
+                assert_eq!(response?, [17]);
+            }
             Ok(())
         })
     }
@@ -584,25 +589,35 @@ mod tests {
                     failures: _
                 })
             ));
-            let server = async {
-                let mut bytes = vec![0; 65_507];
-                let (length, client) = bounded(
-                    Duration::from_secs(10),
-                    "maximum password UDP request",
-                    peer.recv_from(&mut bytes),
-                )
-                .await??;
-                assert_eq!(length, 65_507);
-                let _: usize = peer.send_to(&[17], client).await?;
-                Ok::<_, TestError>(())
-            };
-            let request = vec![42; 65_507];
-            let (sent, response) = tokio::join!(
-                server,
-                transport.send_to_kpasswd_realm(&config, KdcProtocol::Udp, "TEST.GOKRB5", &request)
-            );
-            sent?;
-            assert_eq!(response?, [17]);
+            // macOS refuses loopback datagrams above `net.inet.udp.maxdgram`
+            // (9216 bytes by default), so the accepted maximum is sent elsewhere.
+            #[cfg(not(target_os = "macos"))]
+            {
+                let server = async {
+                    let mut bytes = vec![0; 65_507];
+                    let (length, client) = bounded(
+                        Duration::from_secs(10),
+                        "maximum password UDP request",
+                        peer.recv_from(&mut bytes),
+                    )
+                    .await??;
+                    assert_eq!(length, 65_507);
+                    let _: usize = peer.send_to(&[17], client).await?;
+                    Ok::<_, TestError>(())
+                };
+                let request = vec![42; 65_507];
+                let (sent, response) = tokio::join!(
+                    server,
+                    transport.send_to_kpasswd_realm(
+                        &config,
+                        KdcProtocol::Udp,
+                        "TEST.GOKRB5",
+                        &request
+                    )
+                );
+                sent?;
+                assert_eq!(response?, [17]);
+            }
             Ok(())
         })
     }

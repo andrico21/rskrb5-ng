@@ -33,7 +33,11 @@ mod tests {
     }
 
     /// Metadata errors other than absence must survive the symlink check.
+    ///
+    /// Unix only: Windows reports a path below a regular file as `NotFound`,
+    /// which the check deliberately accepts.
     #[test]
+    #[cfg(unix)]
     fn symlink_check_preserves_non_directory_error() -> Result<(), Box<dyn Error>> {
         let directory = fixture_directory()?;
         let parent = directory.join("file");
