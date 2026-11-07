@@ -1763,9 +1763,36 @@ impl Default for NegotiateResponseOptions {
 mod tests {
     use core::error;
 
-    use http_types::{Response, StatusCode};
+    use http_types::{Response, StatusCode, header::HeaderValue};
 
     use super::{NegotiateHttpError, unchallenged_result};
+
+    /// Challenge splitting respects quoted commas, escaped quotes and unquoted backslashes.
+    #[test]
+    fn challenge_segments_preserve_quoted_boundaries() -> Result<(), Box<dyn error::Error>> {
+        drop(HeaderValue::from_str("Negotiate")?);
+        for (input, expected) in [
+            (
+                "Basic realm=\"a,b\", Negotiate token",
+                vec!["Basic realm=\"a,b\"", "Negotiate token"],
+            ),
+            (
+                "Basic realm=\"a\\\",b\", Negotiate token",
+                vec!["Basic realm=\"a\\\",b\"", "Negotiate token"],
+            ),
+            (
+                "Basic x=\\, Negotiate token",
+                vec!["Basic x=\\", "Negotiate token"],
+            ),
+        ] {
+            let mut segments = super::WwwAuthenticateSegments::new(input);
+            for value in expected {
+                assert_eq!(segments.next(), Some(value));
+            }
+            assert_eq!(segments.next(), None);
+        }
+        Ok(())
+    }
 
     /// A poisoned validator retains a typed cause without exposing it on the wire.
     #[cfg(feature = "tower")]
