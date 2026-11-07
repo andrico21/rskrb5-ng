@@ -55,9 +55,10 @@ independently and compares its seq-number with the MIC's SND_SEQ. The
 first-choice no-MIC fixture remains byte-identical. Tests construct MIC headers independently and
 call only the lower-level AES checksum primitive, not the MIC implementation.
 
-Only RFC 4121 MIC tokens with AES session enctypes are supported for mechListMIC.
-RC4 (RFC 4757) and DES3 (RFC 1964) MIC formats fail closed as `InvalidMechListMic`;
-support for their Kerberos AP-REQs does not imply support for those MIC formats.
+RFC 4121 CFX MIC tokens use the implemented checksum families, including RC4 and
+DES3 when the context's policy permits those legacy enctypes. The older RFC 4757
+and RFC 1964 per-message token formats remain unsupported and fail closed as
+`InvalidMechListMic`; their format is distinct from CFX using a legacy enctype.
 
 Absent required MICs return `MissingMechListMic`; malformed, tampered, wrong-list
 or context-inconsistent MICs return `InvalidMechListMic`. Unsupported mechanisms

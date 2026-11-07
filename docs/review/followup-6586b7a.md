@@ -207,6 +207,8 @@ limits are recorded under FU-OPS-03.
 
 | FU-SPN-R08 | minor | SPNEGO reqFlags is accepted and emitted without BIT STRING validation | fixed | `req_flags_reject_malformed_bit_strings`; commit `spnego: validate reqFlags BIT STRING contents (FU-SPN-R08)` | Encoding and decoding reject missing or invalid unused-bit counts and nonzero padding with Spnego::InvalidReqFlags; legal empty-bit and padded encodings remain accepted. | Task 22 evidence: independently framed malformed contents red then green. |
 
+| FU-DOC-R03 | nit | Review documentation inaccurately says CFX mechListMIC is AES-only | fixed | `mic_token_matches_gokrb5_rc4_hmac_vectors`, `mic_token_matches_gokrb5_des3_vectors`; commit `docs: distinguish CFX enctypes from legacy MIC formats (FU-DOC-R03)` | none | Existing vector tests passed while the AES-only sentence contradicted them; corrected prose, no prose-pinning test. |
+
 ## Source notes
 
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
