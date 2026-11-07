@@ -1012,10 +1012,21 @@ fn validate_authorization_data(
                 ticket,
                 depth: 0,
             },
-            &mut 0x0010_0000,
+            &mut AuthorizationBudget {
+                remaining: 0x0010_0000,
+                pac_seen: false,
+            },
         )?;
     }
     Ok(())
+}
+
+/// Shared bounds across sibling and nested authorization restrictions.
+struct AuthorizationBudget {
+    /// Bytes left to decode.
+    remaining: usize,
+    /// Whether this ticket already supplied a PAC.
+    pac_seen: bool,
 }
 
 /// Interpret wrapper criticality with a shared decoded-byte budget.
@@ -1026,10 +1037,11 @@ fn validate_authorization_data(
 fn validate_authorization_elements(
     data: &rasn_kerberos::AuthorizationData,
     scope: AuthorizationScope,
-    remaining: &mut usize,
+    budget: &mut AuthorizationBudget,
 ) -> Result<(), Error> {
     for entry in data {
-        *remaining = remaining
+        budget.remaining = budget
+            .remaining
             .checked_sub(entry.data.len())
             .ok_or(Error::AuthorizationDataLimit)?;
         match entry.r#type {
@@ -1050,10 +1062,14 @@ fn validate_authorization_elements(
                         ticket: scope.ticket,
                         depth: scope.depth.saturating_add(1),
                     },
-                    remaining,
+                    budget,
                 )?;
             }
-            pac::AD_WIN2K_PAC if scope.ticket => {}
+            pac::AD_WIN2K_PAC if scope.ticket => {
+                (!budget.pac_seen)
+                    .ok_or(Error::UnsupportedAuthorizationData { kind: entry.r#type })?;
+                budget.pac_seen = true;
+            }
             4_i32 | 5_i32 => {
                 return Err(Error::UnsupportedAuthorizationData { kind: entry.r#type });
             }

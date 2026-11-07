@@ -49,7 +49,10 @@ fn mandatory_authenticator_pac_is_rejected() {
         r#type: AD_WIN2K_PAC,
         data: vec![].into(),
     }];
-    let mut remaining = 8;
+    let mut remaining = super::AuthorizationBudget {
+        remaining: 8,
+        pac_seen: false,
+    };
     assert!(matches!(
         super::validate_authorization_elements(
             &data,

@@ -56,6 +56,10 @@ policy" below have the details.
 
 ## Behaviour changes before the review backlog
 
+Tickets must supply at most one PAC across their authorization-data tree
+(FU-SVC-R05). Duplicate PACs now return `UnsupportedAuthorizationData { kind: 128 }`
+before replay admission; issuers must remove duplicates, not rely on first-PAC selection.
+
 AuthorizationData wrapper contents must contain exactly one DER value
 (FU-PAC-R01). Trailing values or garbage now return the existing service Decode
 or PAC DerDecode error; remove the suffix rather than relying on prefix decoding.

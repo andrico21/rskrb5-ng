@@ -1660,6 +1660,39 @@ mod service {
 
     /// A valid PAC must not stop validation of a subsequent critical sibling.
     #[test]
+    fn authdata_rejects_duplicate_pac_before_replay() -> Result<(), TestError> {
+        for nested in [false, true] {
+            let keytab = syshttp_keytab()?;
+            let (key, _) = keytab.find_key(&["sysHTTP"], "TEST.GOKRB5", 2, 18)?;
+            let mut request: rasn_kerberos::ApReq = der::decode(&ap_req_with_pac()?)?;
+            let mut ticket = decrypt_ticket_enc_part(&request.ticket, key)?;
+            let data = ticket.authorization_data.as_mut().context("PAC data")?;
+            data.push(rasn_kerberos::AuthorizationDataValue {
+                r#type: pac::AD_WIN2K_PAC,
+                data: vec![0xff].into(),
+            });
+            if nested {
+                ticket.authorization_data = Some(authorization_element(8, der::encode(data)?));
+            }
+            request.ticket.enc_part.cipher = encrypt_message(
+                key,
+                &der::encode(&ticket)?,
+                KDC_REP_TICKET_USAGE_FOR_TEST,
+                PAC_TICKET_CONFOUNDER,
+            )?
+            .into();
+            let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+            assert!(matches!(
+                validator.validate_ap_req(&der::encode(&request)?),
+                Err(Error::UnsupportedAuthorizationData { kind: 128_i32 })
+            ));
+            assert_eq!(validator.replay_cache_mut().len(), 0);
+        }
+        Ok(())
+    }
+
+    /// A valid PAC must not stop validation of a subsequent critical sibling.
+    #[test]
     fn authdata_rejects_critical_sibling_after_verified_pac() -> Result<(), TestError> {
         let keytab = syshttp_keytab()?;
         let (key, _) = keytab.find_key(&["sysHTTP"], "TEST.GOKRB5", 2, 18)?;

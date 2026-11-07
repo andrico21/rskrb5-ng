@@ -87,6 +87,10 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Service validation rejects duplicate ticket PACs, including nested siblings,
+  with `UnsupportedAuthorizationData { kind: 128 }` before replay admission
+  instead of interpreting only the first PAC (FU-SVC-R05).
+
 - AuthorizationData wrappers reject trailing DER or arbitrary suffix bytes in
   both service validation and PAC discovery (FU-PAC-R01).
 

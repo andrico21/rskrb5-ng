@@ -197,6 +197,8 @@ limits are recorded under FU-OPS-03.
 
 | FU-PAC-R01 | minor | Authorization wrapper decoders accept trailing bytes at a complete restriction boundary | fixed | `authdata_rejects_wrapper_suffixes`; commit `pac: require complete authorization wrapper DER (FU-PAC-R01)` | Service validation and PAC discovery reject trailing bytes in types 1 and 8 with existing decode errors before replay admission. | Task 22 evidence: suffix acceptance reproduced; 8 authorization tests pass after complete decoding. |
 
+| FU-SVC-R05 | minor | A second mandatory PAC is accepted without parsing or verification | fixed | `authdata_rejects_duplicate_pac_before_replay`; commit `service: reject duplicate ticket PACs (FU-SVC-R05)` | Duplicate PACs anywhere in the ticket authorization tree return UnsupportedAuthorizationData kind 128 before replay admission. | Task 22 evidence: reencrypted signed-PAC fixture plus malformed sibling accepted before fix, rejected directly and under type 8 after fix. |
+
 ## Source notes
 
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
