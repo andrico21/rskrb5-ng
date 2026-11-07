@@ -19,6 +19,53 @@ mod tests {
 
     use super::*;
 
+    /// PA and TGS accept the maximum microseconds without truncating whole seconds.
+    #[test]
+    fn maximum_pa_and_tgs_microseconds_roundtrip() -> Result<(), TestError> {
+        use rasn::der;
+        let session = sample_tgt_session()?;
+        let key = &session.session_key;
+        for seconds in [-1_i64, 0, 1_893_553_452] {
+            let time = if seconds < 0 {
+                UNIX_EPOCH.checked_sub(Duration::from_secs(seconds.unsigned_abs()))
+            } else {
+                UNIX_EPOCH.checked_add(Duration::from_secs(u64::try_from(seconds)?))
+            }
+            .context("whole seconds")?;
+            let pa = pa_enc_timestamp_with_confounder(key, time, 999_999, &[0; 16], None)?;
+            let encrypted: rasn_kerberos::EncryptedData = der::decode(&pa.value)?;
+            let plaintext = AesSha1Etype::Aes256.decrypt_message(
+                &key.value,
+                &encrypted.cipher,
+                AS_REQ_PA_ENC_TIMESTAMP_USAGE,
+            )?;
+            let decoded: rasn_kerberos::PaEncTsEnc = der::decode(&plaintext)?;
+            assert_eq!(decoded.patimestamp.0.timestamp(), seconds);
+            assert_eq!(decoded.pausec, Some(Integer::from(999_999_u32)));
+            let tgs = build_tgs_req_with_confounder(
+                &session,
+                sample_service_principal(),
+                TgsReq::new(timestamp(1_893_553_452)?, 42),
+                time,
+                999_999,
+                &[0; 16],
+            )?;
+            let pa_tgs = tgs
+                .message
+                .0
+                .padata
+                .as_ref()
+                .and_then(|values| values.first())
+                .context("PA-TGS-REQ")?;
+            let ap = ap_req::decode(&pa_tgs.value)?;
+            let authenticator =
+                ap_req::decrypt_ap_req_authenticator(&ap, key, TGS_REQ_AUTHENTICATOR_USAGE)?;
+            assert_eq!(authenticator.ctime.0.timestamp(), seconds);
+            assert_eq!(authenticator.cusec, Integer::from(999_999_u32));
+        }
+        Ok(())
+    }
+
     /// Complete builders reject invalid split timestamp scalars before encryption.
     #[test]
     fn complete_authenticators_reject_invalid_scalars() -> Result<(), TestError> {
