@@ -46,9 +46,7 @@ struct AppState {
 /// The server future owns every resource; dropping it stops the server.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let state = AppState {
-        validator: Arc::new(Mutex::new(Validator::from_keytab(load_keytab()?))),
-    };
+    let state = app_state(load_keytab()?);
 
     let app = Router::new()
         .route("/", get(index))
@@ -59,6 +57,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind("127.0.0.1:3000").await?;
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+/// Own the service keytab until the last application state is dropped.
+fn app_state(keytab: Keytab) -> AppState {
+    AppState {
+        validator: Arc::new(Mutex::new(Validator::from_keytab(keytab))),
+    }
 }
 
 /// Answers with the authenticated client principal.
@@ -230,6 +235,132 @@ mod tests {
     use std::{fs, panic::catch_unwind, process};
 
     use super::*;
+
+    /// Cache exhaustion is infrastructure failure while malformed credentials remain unauthorized.
+    #[cfg(feature = "tower")]
+    #[tokio::test]
+    async fn exhausted_cache_returns_internal_error() -> Result<(), Box<dyn Error>> {
+        use core::{
+            sync::atomic::{AtomicUsize, Ordering},
+            time::Duration,
+        };
+        use std::time::UNIX_EPOCH;
+
+        use rskrb5_ng::{
+            ap_req,
+            keytab::{EncryptionKey, Entry, Principal},
+            service::{ReplayCache, SharedReplayCache},
+            spnego::{self, Krb5MechToken, NegTokenInit, Token},
+        };
+        use tower_service::Service as _;
+        let mut keys = Keytab::new();
+        keys.entries_mut().push(Entry::new(
+            Principal::new(
+                "TEST.GOKRB5",
+                1,
+                vec!["HTTP".to_owned(), "host.test.gokrb5".to_owned()],
+            ),
+            0,
+            1,
+            EncryptionKey::new(
+                18,
+                hex::decode("9cad00bbc72d703258e911dc18e6d5487cf737bf67fd111f0c2463ad6033bf51")?,
+            ),
+            1,
+        ));
+        let original = ap_req::decode(include_bytes!("../fuzz/fixtures/valid_ap_req.der"))?;
+        let session = EncryptionKey::new(
+            18,
+            hex::decode("8845cbaccbf11cb9f467fd577ba51c70d73de6554980a05395bf319e18bdda07")?,
+        );
+        let mut auth = ap_req::decrypt_ap_req_authenticator(&original, &session, 11)?;
+        auth.cksum = Some(rasn_kerberos::Checksum {
+            r#type: 0x8003,
+            checksum: spnego::authenticator_checksum(&[]).into(),
+        });
+        auth.seq_number = Some(42);
+        let ap_request = ap_req::build_ap_req_with_confounder(
+            original.ticket,
+            original.ap_options,
+            &auth,
+            &session,
+            11,
+            None,
+            &[0; 16],
+        )?;
+        let valid = spnego::negotiate_header(&Token::Init(NegTokenInit::krb5(
+            Krb5MechToken::ap_req(ap_req::encode(&ap_request)?).encode()?,
+        )))?;
+        let validator = Validator::from_keytab(keys)
+            .with_now(
+                UNIX_EPOCH
+                    .checked_add(Duration::from_secs(1_893_553_447))
+                    .ok_or("clock")?,
+            )
+            .with_shared_replay_cache(SharedReplayCache::from_cache(ReplayCache::with_limits(
+                Duration::from_mins(5),
+                0,
+            )))?;
+        let state = AppState {
+            validator: Arc::new(Mutex::new(validator)),
+        };
+        let calls = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&calls);
+        let mut app = Router::new()
+            .route(
+                "/",
+                get(move || {
+                    let counter = Arc::clone(&observed);
+                    async move {
+                        let _: usize = counter.fetch_add(1, Ordering::SeqCst);
+                        "protected"
+                    }
+                }),
+            )
+            .layer(middleware::from_fn_with_state(state, negotiate))
+            .layer(middleware::map_response(security_response));
+        for (header, expected) in [
+            (valid.as_str(), StatusCode::INTERNAL_SERVER_ERROR),
+            ("Negotiate invalid", StatusCode::UNAUTHORIZED),
+        ] {
+            let mut request = Request::new(Body::empty());
+            krb_http::set_authorization_header(&mut request, header)?;
+            let response = app.call(request).await?;
+            assert_eq!(response.status(), expected);
+            assert_eq!(calls.load(Ordering::SeqCst), 0);
+            if expected == StatusCode::INTERNAL_SERVER_ERROR {
+                assert!(matches!(
+                    response
+                        .extensions()
+                        .get::<Arc<HttpError>>()
+                        .map(AsRef::as_ref),
+                    Some(HttpError::Spnego(SpnegoError::Service(
+                        ServiceError::ReplayCacheCapacityExceeded { capacity: 0 }
+                    )))
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Dropping application state releases a distinctive key allocation for the leak probe.
+    #[test]
+    fn application_state_releases_keytab() -> Result<(), Box<dyn Error>> {
+        use rskrb5_ng::keytab::{EncryptionKey, Entry, Principal};
+        let mut keytab = Keytab::parse(&[5, 2])?;
+        keytab.entries_mut().push(Entry::new(
+            Principal::new("EXAMPLE.TEST", 2, vec!["HTTP".to_owned()]),
+            0,
+            1,
+            EncryptionKey::new(18, vec![0x42; 0x0010_0000]),
+            1,
+        ));
+        let state = app_state(keytab);
+        let observer = Arc::downgrade(&state.validator);
+        drop(state);
+        assert!(observer.upgrade().is_none());
+        Ok(())
+    }
 
     /// A poisoned validator returns a hardened infrastructure error with a local typed cause.
     #[cfg(feature = "tower")]
