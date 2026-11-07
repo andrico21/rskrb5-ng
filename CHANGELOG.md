@@ -87,6 +87,9 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Release tag discovery fails on invalid commit IDs or Git failures instead of
+  reporting a successful non-release invocation (FU-CI-R01).
+
 - The gated integration runner preserves explicit test-time environment overrides
   instead of replacing them with saved fixture defaults, including strict AD and
   password-change flags (FU-TST-R07).

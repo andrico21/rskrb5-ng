@@ -56,6 +56,10 @@ policy" below have the details.
 
 ## Behaviour changes before the review backlog
 
+Release automation must pass a valid commit to `find-tag` (FU-CI-R01). Invalid
+objects and Git lookup failures now exit nonzero; only verified untagged commits
+produce the successful no-dispatch result.
+
 The gated integration runner now gives explicitly supplied test-time fixture
 variables precedence over its saved environment (FU-TST-R07). Omit a variable
 to reuse the saved value; explicit empty values also override it.

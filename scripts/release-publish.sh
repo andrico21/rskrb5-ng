@@ -49,8 +49,13 @@ manifest_identity() {
 }
 
 find_tag() {
-  local sha="$1" head_branch="$2" tags count
-  tags="$(git -C "$ROOT_DIR" tag --points-at "$sha" | grep -E "$RELEASE_TAG" || true)"
+  local sha="$1" head_branch="$2" tags count all_tags status
+  git -C "$ROOT_DIR" rev-parse --verify "$sha^{commit}" >/dev/null || die "invalid release commit $sha"
+  all_tags="$(git -C "$ROOT_DIR" tag --points-at "$sha")" || die "release tag lookup failed"
+  tags="$(grep -E "$RELEASE_TAG" <<<"$all_tags")" || {
+    status=$?
+    [[ "$status" == 1 ]] || die "release tag filtering failed (exit $status)"
+  }
   if [[ -z "$tags" ]]; then
     echo "::notice::No N.N.N tag points at $sha - this run is not a release invocation; nothing is dispatched."
     output tag ""
@@ -242,6 +247,12 @@ self_test() {
   git -C "$work" checkout --quiet main
 
   local out
+  if "${run[@]}" find-tag 0000000000000000000000000000000000000000 main >/dev/null 2>&1; then
+    st_fail "find-tag accepted a nonexistent commit"
+  fi
+  if (git() { return 73; }; find_tag "$sha" main) >/dev/null 2>&1; then
+    st_fail "find-tag swallowed a Git failure"
+  fi
   out="$("${run[@]}" find-tag "$untagged" main 2>&1)"
   [[ "$out" == *"No N.N.N tag points at"* ]] || st_fail "find-tag on an untagged commit: $out"
   GITHUB_OUTPUT="$scratch/find-out" "${run[@]}" find-tag "$sha" 0.3.0 >/dev/null

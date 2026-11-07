@@ -34,3 +34,4 @@ is a parity feature, not a defect>`.
 | critic:critics-fb19af4/u6.md#U6-04 | FU-DOC-R07 | no |
 | critic:critics-fb19af4/u6.md#U6-05 | FU-DOC-R08 | no |
 | critic:critics-fb19af4/u6.md#U6-06 | FU-DOC-R09 | no |
+| critic:critics-fb19af4/u6.md#U6-07 | FU-CI-R01 | no |
