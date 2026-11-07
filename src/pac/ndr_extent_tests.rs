@@ -11,7 +11,7 @@ std::thread_local! {
 
 /// Each million-element declaration is rejected before entering allocation.
 #[test]
-fn truncated_arrays_never_reserve() {
+fn truncated_arrays_never_reserve() -> Result<(), Error> {
     let bytes = 1_000_000_u32.to_le_bytes();
     RESERVATIONS.with(|count| count.set(0));
     let errors = [
@@ -27,15 +27,19 @@ fn truncated_arrays_never_reserve() {
         read_deferred_domain_group_memberships(&mut Reader::new(&bytes), 1, 1_000_000, "domains")
             .err(),
     ];
-    assert!(errors.iter().all(|error| matches!(
-        error,
-        Some(Error::Truncated {
-            offset: _,
-            needed: _,
-            remaining: _
-        })
-    )));
+    for candidate in errors {
+        let error = candidate.ok_or(Error::LengthOverflow)?;
+        assert!(matches!(
+            error,
+            Error::Truncated {
+                offset: _,
+                needed: _,
+                remaining: _
+            }
+        ));
+    }
     RESERVATIONS.with(|count| assert_eq!(count.get(), 0));
+    Ok(())
 }
 
 /// Full fixed extent at the inclusive count ceiling is admitted once.

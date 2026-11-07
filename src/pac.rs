@@ -25,10 +25,10 @@ use crate::{
 #[cfg(feature = "messages")]
 mod authorization;
 mod credential_secrets;
-/// Redacted, erased validation-info session keys.
-pub mod session_key;
 mod ndr;
 mod reader;
+/// Redacted, erased validation-info session keys.
+pub mod session_key;
 
 #[cfg(test)]
 /// PAC mutation regression tests.
