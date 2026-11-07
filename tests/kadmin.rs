@@ -39,6 +39,24 @@ mod tests {
     /// Error type of the `Result`-returning tests.
     type TestError = Box<dyn error::Error>;
 
+    /// Public encryption preserves the concrete cause of an invalid key.
+    #[test]
+    fn public_encrypt_retains_crypto_source() -> Result<(), TestError> {
+        use core::error::Error as _;
+
+        use rskrb5_ng::error::Crypto;
+        let failure = build_krb_priv_with_confounder(
+            b"payload",
+            EncKrbPrivPartOptions::new(ipv4_host_address([127, 0, 0, 1])),
+            &EncryptionKey::new(18, vec![0; 1]),
+            &[0; 16],
+        )
+        .err()
+        .context("invalid key")?;
+        assert!(failure.source().context("crypto cause")?.is::<Crypto>());
+        Ok(())
+    }
+
     /// Password byte equality rejects other values while diagnostics remain explicitly redacted.
     #[test]
     fn password_bytes_compare_and_identify_redaction() -> Result<(), TestError> {
