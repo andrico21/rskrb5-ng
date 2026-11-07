@@ -209,6 +209,8 @@ limits are recorded under FU-OPS-03.
 
 | FU-DOC-R03 | nit | Review documentation inaccurately says CFX mechListMIC is AES-only | fixed | `mic_token_matches_gokrb5_rc4_hmac_vectors`, `mic_token_matches_gokrb5_des3_vectors`; commit `docs: distinguish CFX enctypes from legacy MIC formats (FU-DOC-R03)` | none | Existing vector tests passed while the AES-only sentence contradicted them; corrected prose, no prose-pinning test. |
 
+| FU-TST-R02 | minor | The inner ticket-key policy regression is masked by the authenticator-envelope policy check | fixed | `acceptor_checks_inner_keys_before_replay`; commit `test: isolate decrypted ticket-key policy enforcement (FU-TST-R02)` | none | Task 22 mutation removes only decrypted ticket-key check: corrected fixture fails with wrong cause; restored production check passes. Authenticator envelope now allowed independently of inner key. |
+
 ## Source notes
 
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
