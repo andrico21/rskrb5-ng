@@ -1974,15 +1974,44 @@ mod tests {
         })
     }
 
-    /// Builds AS-REQ options with AES256 and a nonce unique to `protocol` and `sequence`.
+    /// Live legacy options encode exactly their selected enctypes under explicit permission.
     #[test]
     fn legacy_live_options_have_explicit_permission() -> Result<(), Box<dyn Error>> {
-        use rskrb5_ng::{crypto::Use, error::Policy};
+        use rasn::der;
+        use rskrb5_ng::{ap_req, crypto::Use, error::Policy, ticket};
         for id in [16_i32, 23_i32] {
             let as_options = login_options_with_etypes(KdcProtocol::Tcp, 1, vec![id])?;
             let tgs_options = tgs_options_with_etypes(KdcProtocol::Tcp, 2, vec![id])?;
-            as_options.crypto_policy?.check_use(id, Use::RequestList)?;
-            tgs_options.crypto_policy?.check_use(id, Use::RequestList)?;
+            as_options
+                .crypto_policy
+                .as_ref()
+                .map_err(Clone::clone)?
+                .check_use(id, Use::RequestList)?;
+            tgs_options
+                .crypto_policy
+                .as_ref()
+                .map_err(Clone::clone)?
+                .check_use(id, Use::RequestList)?;
+            let built = build_tgt_as_req(Principal::user(REALM, USER), as_options)?;
+            let decoded: rasn_kerberos::AsReq = der::decode(&built.der)?;
+            assert_eq!(decoded.0.req_body.etype, vec![id]);
+            let ticket =
+                ap_req::decode(include_bytes!("../fuzz/fixtures/valid_ap_req.der"))?.ticket;
+            let now = SystemTime::UNIX_EPOCH
+                .checked_add(Duration::from_secs(1_893_553_447))
+                .ok_or("time")?;
+            let session = AsRepSession::new(
+                Principal::user(REALM, USER),
+                Principal::tgt_service(REALM),
+                EncryptionKey::new(18, vec![0x11; 32]),
+                ticket::encode(&ticket)?,
+                [0; 4],
+                now,
+                now,
+            );
+            let tgs = build_tgs_req(&session, service_principal(), tgs_options)?;
+            let decoded_tgs: rasn_kerberos::TgsReq = der::decode(&tgs.der)?;
+            assert_eq!(decoded_tgs.0.req_body.etype, vec![id]);
             assert!(matches!(
                 CryptoPolicy::default().check_use(id, Use::RequestList),
                 Err(Policy::EnctypeNotPermitted { etype: _, usage: _ })
