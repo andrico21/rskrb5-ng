@@ -112,7 +112,7 @@ pub(crate) fn check_test_name(name: &str) -> Result<(), TestError> {
     Ok(())
 }
 
-/// Whether the final path segment of `symbol` is declared publicly in `sources`.
+/// Same-named methods must not prove a different module or owning type.
 #[test]
 fn symbol_evidence_requires_full_owner_path() {
     let sources = vec![(
@@ -123,6 +123,11 @@ fn symbol_evidence_requires_full_owner_path() {
     assert!(declares(&sources, "keytab::Principal::from_name"));
     assert!(!declares(&sources, "keytab::Keytab::from_name"));
     assert!(!declares(&sources, "ccache::Principal::from_name"));
+    let child = vec![(
+        "src/keytab/child.rs".to_owned(),
+        "pub struct Keytab;\nimpl Keytab {\n pub fn from_name() {}\n}".to_owned(),
+    )];
+    assert!(!declares(&child, "keytab::Keytab::from_name"));
 }
 
 /// Resolve the module and enclosing impl or enum, not an unrelated same-named item.
@@ -229,6 +234,7 @@ pub(crate) fn declares(sources: &[(String, String)], symbol: &str) -> bool {
                                 if let Some((expected_module, expected_type)) =
                                     expected.rsplit_once("::")
                                     && expected_type == ty
+                                    && declares(sources, &expected)
                                     && (module_name == expected_module
                                         || module_name.starts_with(&format!("{expected_module}::")))
                                 {
