@@ -22,6 +22,8 @@ pub(super) struct State {
     scopes: Vec<Scope>,
     /// An empty assignment requires the next structural line to open its subsection.
     pending_brace: bool,
+    /// An empty scalar extension awaiting structural lookahead.
+    pending_scalar: Option<Line>,
 }
 
 impl State {
@@ -30,9 +32,35 @@ impl State {
     /// # Errors
     /// Rejects malformed headers, assignments, quotes and unbalanced braces.
     pub(super) fn line(&mut self, line: &Line, profile: &mut Profile) -> Result<(), Error> {
+        if let Some(mut pending) = self.pending_scalar.take() {
+            if line.text == "{" {
+                pending.text.push_str(" {");
+                return self.content(&pending, profile);
+            }
+            pending.text.push_str(" \"\"");
+            self.content(&pending, profile)?;
+        }
         if self.pending_brace {
             self.pending_brace = false;
             return (line.text == "{").ok_or_else(|| invalid(line));
+        }
+        if line
+            .text
+            .split_once('=')
+            .is_some_and(|(_, value)| value.trim().is_empty())
+            && self.scopes.first().is_some_and(|scope| {
+                !matches!(
+                    scope.name.as_str(),
+                    "realms" | "appdefaults" | "plugins" | "capaths"
+                )
+            })
+        {
+            self.pending_scalar = Some(Line {
+                number: line.number,
+                text: line.text.clone(),
+                value: None,
+            });
+            return Ok(());
         }
         self.content(line, profile)
     }
@@ -147,6 +175,10 @@ impl State {
     /// # Errors
     /// An open subsection is always an error, even in an unknown section.
     pub(super) fn finish(&mut self, profile: &mut Profile) -> Result<(), Error> {
+        if let Some(mut pending) = self.pending_scalar.take() {
+            pending.text.push_str(" \"\"");
+            self.content(&pending, profile)?;
+        }
         if self.pending_brace || self.scopes.len() > 1 {
             return Err(Error::InvalidRealmsSection(
                 "unclosed profile subsection".to_owned(),

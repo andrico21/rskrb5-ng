@@ -7,6 +7,13 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Profile braces (FU-CFG-R08): `name =` followed by `{` has the same subsection
+meaning as `name = {` in every section, matching MIT's generic profile grammar.
+Unknown and deferred sections reach their normal diagnostics instead of a
+brace syntax error. Quoted empty strings remain scalars; the existing unquoted
+empty-scalar extension remains available outside mandatory subsection sections
+when no brace follows.
+
 Checked derivation (FU-CRY-R02): `crypto::checked::Etype` snapshots the authorized
 family's minimum. Counts below it now return `S2kIterationsTooLow` before PBKDF2.
 For trusted count-one vectors, construct a policy from `LibDefaults` with

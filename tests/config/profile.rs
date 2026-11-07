@@ -10,6 +10,7 @@
 mod tests {
     use core::{
         error::Error,
+        mem::discriminant,
         sync::atomic::{AtomicU64, Ordering},
     };
     use std::{
@@ -37,6 +38,30 @@ mod tests {
                 ));
             }
         }
+    }
+
+    /// MIT permits an opening brace on the line after an empty assignment.
+    #[test]
+    fn generic_next_line_braces_match_inline_grammar() -> Result<(), Box<dyn Error>> {
+        for section in ["libdefaults", "domain_realm", "unknown", "logging"] {
+            let inline = format!("[{section}]\nR = {{\noption = value\n}}\n");
+            let next_line = format!("[{section}]\nR =\n{{\noption = value\n}}\n");
+            assert_eq!(Config::parse(&next_line)?, Config::parse(&inline)?);
+            let inline_error = Config::parse_with_mode(&inline, ParseMode::Strict)
+                .err()
+                .ok_or("strict accepted unknown scope")?;
+            let next_error = Config::parse_with_mode(&next_line, ParseMode::Strict)
+                .err()
+                .ok_or("strict accepted unknown scope")?;
+            assert_eq!(discriminant(&next_error), discriminant(&inline_error));
+        }
+        assert_eq!(
+            Config::parse("[libdefaults]\ndefault_realm = \"\"\n")?
+                .libdefaults
+                .default_realm,
+            ""
+        );
+        Ok(())
     }
 
     /// MIT permits an opening brace on the line after an empty assignment.
