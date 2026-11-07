@@ -11,6 +11,7 @@ is a parity feature, not a defect>`.
 | critic:critics-f22ea5b/u2.md#U2-01 | FU-CLI-R08 | no |
 | critic:critics-f22ea5b/u2.md#U2-02 | FU-CLI-R09 | no |
 | critic:critics-f22ea5b/u2.md#U2-03 | FU-TST-R11 | no |
+| critic:critics-f22ea5b/u2.md#U2-04 | FU-CLI-R10 | no |
 | critic:critics-f22ea5b/u4.md#U4-01 | FU-CRY-R02 | no |
 | critic:critics-f22ea5b/u5.md#U5-02 | FU-FIL-R04 | no |
 | critic:critics-f22ea5b/u5.md#U5-01 | FU-CFG-R07 | no |

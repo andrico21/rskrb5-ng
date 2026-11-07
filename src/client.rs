@@ -3576,6 +3576,11 @@ where
 }
 
 /// Perform a TGT AS login using password credentials and KDC preauth hints.
+///
+/// # Security
+/// The caller retains erasure duties for the borrowed password and all caller-created
+/// copies. Prefer a caller-owned [`Password`] or [`Zeroizing`] buffer; library
+/// erasure of derived keys does not erase the original password.
 /// # Errors
 ///
 /// Returns the errors of [`login_as_service_with_password`].
@@ -3594,6 +3599,11 @@ where
 }
 
 /// Perform an AS login for an explicit service using password credentials and KDC preauth hints.
+///
+/// # Security
+/// The caller retains erasure duties for the borrowed password and all caller-created
+/// copies. Prefer a caller-owned [`Password`] or [`Zeroizing`] buffer; library
+/// erasure of derived keys does not erase the original password.
 /// # Errors
 ///
 /// Returns the transport's error, [`Error::Kdc`] when the KDC rejects the login,
@@ -4087,6 +4097,11 @@ pub fn default_password_salt(client: &Principal) -> String {
 /// Applies RFC-default minimum work factors to peer parameters. Application
 /// overrides on `LibDefaults` are carried by the high-level request/login APIs.
 /// Raw `KerberosEtype::string_to_key` remains policy-free for trusted RFC vectors.
+///
+/// # Security
+/// The caller retains erasure duties for the borrowed password and all caller-created
+/// copies. Prefer a caller-owned [`Password`] or [`Zeroizing`] buffer; library
+/// erasure of derived keys does not erase the original password.
 /// # Errors
 ///
 /// Returns [`Error::UnsupportedEtype`] for an unknown enctype and
