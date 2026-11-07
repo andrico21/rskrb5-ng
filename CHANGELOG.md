@@ -87,6 +87,9 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- AuthorizationData wrappers reject trailing DER or arbitrary suffix bytes in
+  both service validation and PAC discovery (FU-PAC-R01).
+
 - Cloned HTTP services reject replay-cache attachment incompatible with the
   actual shared validator; lowering a cloned layer's skew no longer shortens
   its siblings' replay retention (FU-HTTP-R04).

@@ -195,6 +195,8 @@ limits are recorded under FU-OPS-03.
 
 | FU-HTTP-R04 | major | Clone-local HTTP settings can attach an incompatible cache to a shared validator | fixed | `cloned_service_rejects_incompatible_cache`, `cloned_layer_preserves_shared_cache_ceiling`; commit `http: preserve replay compatibility across clones (FU-HTTP-R04)` | Cache attachment validates actual shared validator skew before replacement; lowering a layer window never lowers the shared retention ceiling. | Task 22 evidence: both new clone regressions red then green; original shared service remains usable after rejected attachment. |
 
+| FU-PAC-R01 | minor | Authorization wrapper decoders accept trailing bytes at a complete restriction boundary | fixed | `authdata_rejects_wrapper_suffixes`; commit `pac: require complete authorization wrapper DER (FU-PAC-R01)` | Service validation and PAC discovery reject trailing bytes in types 1 and 8 with existing decode errors before replay admission. | Task 22 evidence: suffix acceptance reproduced; 8 authorization tests pass after complete decoding. |
+
 ## Source notes
 
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):

@@ -15,7 +15,8 @@ use std::{
     time::{SystemTime, SystemTimeError, UNIX_EPOCH},
 };
 
-use rasn::{der, types::Integer};
+use crate::der::decode_complete;
+use rasn::types::Integer;
 
 use crate::{
     ap_rep,
@@ -1036,11 +1037,12 @@ fn validate_authorization_elements(
                 if scope.depth >= 8 {
                     return Err(Error::AuthorizationDataLimit);
                 }
-                let nested = der::decode::<rasn_kerberos::AuthorizationData>(entry.data.as_ref())
-                    .map_err(|source| Error::Decode {
-                    target: "AuthorizationData",
-                    message: source.to_string(),
-                })?;
+                let nested =
+                    decode_complete::<rasn_kerberos::AuthorizationData>(entry.data.as_ref())
+                        .map_err(|source| Error::Decode {
+                            target: "AuthorizationData",
+                            message: source,
+                        })?;
                 validate_authorization_elements(
                     &nested,
                     AuthorizationScope {

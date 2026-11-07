@@ -56,6 +56,10 @@ policy" below have the details.
 
 ## Behaviour changes before the review backlog
 
+AuthorizationData wrapper contents must contain exactly one DER value
+(FU-PAC-R01). Trailing values or garbage now return the existing service Decode
+or PAC DerDecode error; remove the suffix rather than relying on prefix decoding.
+
 HTTP clone configuration now checks cache compatibility against the shared
 validator under its lock (FU-HTTP-R04). Handle the existing typed skew error
 from `with_shared_replay_cache` even when that clone's original settings used
