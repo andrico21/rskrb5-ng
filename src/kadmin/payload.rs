@@ -104,11 +104,12 @@ pub(super) fn encrypt(
     confounder: &[u8],
 ) -> Result<rasn_kerberos::KrbPriv, Error> {
     let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
-    let cipher = etype
-        .encrypt_message_with_confounder(&key.value, plaintext, KRB_PRIV_ENCPART_USAGE, confounder)
-        .map_err(|source| Error::Crypto {
-            message: source.to_string(),
-        })?;
+    let cipher = etype.encrypt_message_with_confounder(
+        &key.value,
+        plaintext,
+        KRB_PRIV_ENCPART_USAGE,
+        confounder,
+    )?;
     Ok(rasn_kerberos::KrbPriv {
         pvno: Integer::from(5_i32),
         msg_type: Integer::from(21_i32),

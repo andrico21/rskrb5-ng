@@ -136,12 +136,8 @@ pub(super) fn krb_priv_error(error: error::KrbPriv) -> Error {
             key_etype,
             encrypted_data_etype,
         },
-        error::KrbPriv::Crypto(source) => Error::Crypto {
-            message: source.to_string(),
-        },
-        error::KrbPriv::Random(source) => Error::Crypto {
-            message: source.to_string(),
-        },
+        error::KrbPriv::Crypto(source) => Error::Crypto(source),
+        error::KrbPriv::Random(source) => Error::Random(source),
     }
 }
 
@@ -229,12 +225,10 @@ pub(super) fn parse_header(bytes: &[u8]) -> Result<Frame<'_>, Error> {
 ///
 /// # Errors
 ///
-/// Returns [`Error::Crypto`] when the random source fails.
+/// Returns [`Error::Random`] when the random source fails.
 pub(super) fn random_key_material(size: usize) -> Result<Vec<u8>, Error> {
     let mut value = vec![0_u8; size];
-    getrandom::fill(&mut value).map_err(|source| Error::Crypto {
-        message: source.to_string(),
-    })?;
+    getrandom::fill(&mut value)?;
     Ok(value)
 }
 

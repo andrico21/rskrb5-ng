@@ -994,11 +994,11 @@ pub enum Kadmin {
         encrypted_data_etype: i32,
     },
     /// Cryptographic decrypt or integrity verification failed.
-    #[error("kadmin crypto operation failed: {message}")]
-    Crypto {
-        /// Crypto error message.
-        message: String,
-    },
+    #[error("kadmin crypto operation failed: {0}")]
+    Crypto(#[from] Crypto),
+    /// The operating system randomness source failed.
+    #[error("kadmin random source failed: {0}")]
+    Random(#[from] getrandom::Error),
     /// kpasswd returned a non-success result code.
     #[error("kpasswd failed with code {code}: {text}")]
     PasswordChangeFailed {

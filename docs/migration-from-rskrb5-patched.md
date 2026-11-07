@@ -7,6 +7,10 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Kadmin causes (FU-API-R02): replace `Crypto { message }` matches with
+`Crypto(source)` and handle `Random(source)` separately. Both expose typed
+`Error::source()` chains; post-delivery unknown-outcome classification is unchanged.
+
 KRB-ERROR UTF-8 causes (FU-API-R01): `KrbErrorCodec::InvalidString` now contains
 `core::str::Utf8Error`, available through `Error::source()` and preserving
 `valid_up_to()`/`error_len()`. Construct it from the original error, not its text.

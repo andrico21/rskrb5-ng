@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Kadmin retains typed `Crypto` and `getrandom::Error` sources through separate
+  `Crypto` and `Random` tuple variants (FU-API-R02).
+
 - `KrbErrorCodec::InvalidString` retains `Utf8Error` as its source instead of
   a stringified cause (FU-API-R01).
 
