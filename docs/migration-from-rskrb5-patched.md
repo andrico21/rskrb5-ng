@@ -38,6 +38,12 @@ values to or from this crate needs the same versions.
 
 ## New configuration keys
 
+Session service identity (FU-CLI-R06): keep `AsRepSession::service` consistent
+with the encoded ticket realm and ordered server components. Relabeling a
+ticket now fails cache admission or AP construction with
+`error::Client::ServicePrincipalMismatch`; advisory name-type changes remain
+accepted. Legacy infallible ccache import skips rejected entries.
+
 Keytab diagnostics (FU-CLI-R05) now report usable enctypes for the exact client
 realm and ordered components, not every principal in that realm. Provision keys
 for that client when missing-key diagnostics appear; advisory name type does

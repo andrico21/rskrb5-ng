@@ -583,7 +583,27 @@ mod harness {
         tgt.service = Principal::new("TEST.GOKRB5", 2, ["krbtgt".to_owned(), realm.to_owned()]);
         tgt.session_key.value = vec![0x9a; 32];
         tgt.ticket = marked_ticket(format!("referral-ticket-{realm}").as_bytes())?.into();
+        align_ticket_service(&mut tgt)?;
         Ok(tgt)
+    }
+
+    /// Keep synthetic ticket envelopes consistent when a test changes service metadata.
+    #[cfg(feature = "tokio")]
+    pub(crate) fn align_ticket_service(session: &mut AsRepSession) -> Result<(), TestError> {
+        use rskrb5_ng::ticket;
+        let mut wire = ticket::decode(&session.ticket)?;
+        wire.realm = kerberos_string(&session.service.realm)?;
+        wire.sname = rasn_kerberos::PrincipalName {
+            r#type: session.service.name_type,
+            string: session
+                .service
+                .components
+                .iter()
+                .map(|value| kerberos_string(value))
+                .collect::<Result<_, _>>()?,
+        };
+        session.ticket = ticket::encode(&wire)?.into();
+        Ok(())
     }
 
     /// Encode cache-test marker bytes inside a real Ticket encrypted-data field.

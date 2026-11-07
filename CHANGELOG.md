@@ -87,6 +87,10 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Cached/imported sessions and AP construction reject service metadata that
+  disagrees with the encoded ticket's realm or ordered components
+  (`ServicePrincipalMismatch`, FU-CLI-R06).
+
 - Keytab diagnostics count only keys for the client's realm and ordered name
   components, ignoring advisory name type; other users' keys no longer hide
   missing credentials (FU-CLI-R05).

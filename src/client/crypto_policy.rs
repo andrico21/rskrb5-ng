@@ -68,6 +68,13 @@ pub(super) fn session(
         | Use::CheckedLowLevel => Use::TicketKey,
     };
     policy.check_use(ticket.enc_part.etype, ticket_usage)?;
+    let service = super::principal_from_parts(&ticket.realm, &ticket.sname)?;
+    super::principal_matches(&service, &session.service).ok_or_else(|| {
+        Error::ServicePrincipalMismatch {
+            expected: session.service.name(),
+            actual: service.name(),
+        }
+    })?;
     Ok(())
 }
 

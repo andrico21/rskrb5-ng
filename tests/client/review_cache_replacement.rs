@@ -21,6 +21,7 @@ mod tests {
         longer.end_time = now.checked_add(Duration::from_hours(2)).context("end")?;
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, longer.clone());
         longer.service = Principal::user("TEST.GOKRB5", "service");
+        align_ticket_service(&mut longer)?;
         let mut shorter = longer.clone();
         shorter.end_time = now
             .checked_add(Duration::from_hours(1))

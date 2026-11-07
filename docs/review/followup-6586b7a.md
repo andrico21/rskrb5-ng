@@ -39,6 +39,8 @@ Critic round `critics-fb19af4`, unit u2:
 
 | FU-CLI-R05 | minor | Keytab diagnostics count keys for other principals as usable client keys | fixed | `diagnostics_require_client_keys`; commit containing this row | Diagnostics filter realm and ordered client components, ignoring advisory name type; other principals' keys now yield missing-key errors. | task-22b: Bob-only keytab red reported four keys; green empty with four errors, Alice/name-type10 control healthy. |
 
+| FU-CLI-R06 | minor | Cache admission does not bind session service metadata to the encoded ticket | fixed | `cache_rejects_mislabeled_ticket_service`; client224; commit containing this row | Shared admission/use validator rejects ticket realm/components differing from session.service with ServicePrincipalMismatch before insertion/AP construction; advisory name type remains accepted. | task-22b: pre-fix admission succeeded; post-fix rejection preserves cache. Synthetic marker/referral fixtures now encode matching service names, preserving original assertions. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |

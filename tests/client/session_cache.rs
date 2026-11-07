@@ -130,6 +130,7 @@ mod tests {
             let now = SystemTime::now();
             let mut service_ticket = sample_service_ticket_session(&tgt)?;
             service_ticket.ticket = marked_ticket(ticket)?.into();
+            align_ticket_service(&mut service_ticket)?;
             service_ticket.auth_time = now
                 .checked_sub(Duration::from_mins(5))
                 .context("auth time")?;
@@ -153,7 +154,7 @@ mod tests {
                 .context("longer service ticket remains")?
                 .ticket
                 .as_slice(),
-            marked_ticket(b"service-long")?.as_slice()
+            service_session(120, b"service-long")?.ticket.as_slice()
         );
 
         client.cache_service_ticket(service_session(180, b"service-longer")?)?;
@@ -163,7 +164,7 @@ mod tests {
                 .context("longer service ticket is selected")?
                 .ticket
                 .as_slice(),
-            marked_ticket(b"service-longer")?.as_slice()
+            service_session(180, b"service-longer")?.ticket.as_slice()
         );
         assert_eq!(client.cached_service_ticket_count(), 1);
         Ok(())
@@ -260,6 +261,7 @@ mod tests {
         let mut expired_service_ticket = sample_service_ticket_session(&tgt)?;
         expired_service_ticket.service =
             Principal::new("TEST.GOKRB5", 2, ["HTTP", "expired.test.gokrb5"]);
+        align_ticket_service(&mut expired_service_ticket)?;
         expired_service_ticket.start_time = expired_start;
         expired_service_ticket.end_time = expired_end;
         expired_service_ticket.renew_till = None;
@@ -268,6 +270,7 @@ mod tests {
         let mut renewable_service_ticket = sample_service_ticket_session(&tgt)?;
         renewable_service_ticket.service =
             Principal::new("TEST.GOKRB5", 2, ["HTTP", "renewable.test.gokrb5"]);
+        align_ticket_service(&mut renewable_service_ticket)?;
         renewable_service_ticket.start_time = expired_start;
         renewable_service_ticket.end_time = expired_end;
         renewable_service_ticket.renew_till = Some(future_renew_till);
@@ -433,8 +436,10 @@ mod tests {
         let mut older_service_ticket = fresh_service_ticket.clone();
         fresh_service_ticket.session_key.value = vec![0xf1];
         fresh_service_ticket.ticket = marked_ticket(b"fresh-service-ticket")?.into();
+        align_ticket_service(&mut fresh_service_ticket)?;
         older_service_ticket.session_key.value = vec![0x0d];
         older_service_ticket.ticket = marked_ticket(b"older-service-ticket")?.into();
+        align_ticket_service(&mut older_service_ticket)?;
         let now = u32::try_from(
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -798,8 +803,10 @@ mod tests {
         let mut future_service_ticket = current_service_ticket.clone();
         current_service_ticket.session_key.value = vec![0xc2];
         current_service_ticket.ticket = marked_ticket(b"current-service-ticket")?.into();
+        align_ticket_service(&mut current_service_ticket)?;
         future_service_ticket.session_key.value = vec![0xf2];
         future_service_ticket.ticket = marked_ticket(b"future-service-ticket")?.into();
+        align_ticket_service(&mut future_service_ticket)?;
         let now = u32::try_from(
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -1885,6 +1892,7 @@ mod tests {
                 2,
                 ["krbtgt".to_owned(), "RESDOM.GOKRB5".to_owned()],
             );
+            align_ticket_service(&mut tgt)?;
             Ok(tgt)
         };
 
@@ -1936,7 +1944,7 @@ mod tests {
                 .context("longer referral TGT remains")?
                 .ticket
                 .as_slice(),
-            marked_ticket(b"referral-long")?.as_slice()
+            referral_session(90, b"referral-long")?.ticket.as_slice()
         );
 
         client
@@ -1948,7 +1956,7 @@ mod tests {
                 .context("longer referral TGT is selected")?
                 .ticket
                 .as_slice(),
-            marked_ticket(b"referral-longer")?.as_slice()
+            referral_session(180, b"referral-longer")?.ticket.as_slice()
         );
         Ok(())
     }
@@ -2106,6 +2114,7 @@ mod tests {
         let session_for = |host: &str| -> Result<_, TestError> {
             let mut ticket = sample_service_ticket_session(&tgt)?;
             ticket.service = Principal::host_based_service_in_realm("HTTP", host, "CERN.CH")?;
+            align_ticket_service(&mut ticket)?;
             ticket.start_time = now
                 .checked_sub(Duration::from_mins(1))
                 .ok_or("start time")?;
@@ -2705,6 +2714,7 @@ mod tests {
             .ok_or("start time")?;
         service_ticket.end_time = now.checked_add(Duration::from_hours(1)).ok_or("end time")?;
         service_ticket.service = Principal::new("PARTNER.REALM", 2, ["HTTP", "Host.Example.COM"]);
+        align_ticket_service(&mut service_ticket)?;
 
         let mut client = Tokio::from_tgt_session(config, KdcProtocol::Tcp, tgt);
         client.cache_service_ticket(service_ticket.clone())?;
