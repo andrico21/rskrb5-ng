@@ -7,6 +7,10 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Parity evidence (FU-TST-R14): symbol claims must resolve to the declared module
+and actual impl owner. Comments, string contents and child-local same-named
+types cannot prove a parent method; explicit parent paths remain supported.
+
 AD preflight (FU-TST-R13): usable keytab entries must precede the zero-length
 terminator. Regenerate an override whose only key follows that terminator;
 negative-length deleted slots remain skippable, matching the Rust loader.

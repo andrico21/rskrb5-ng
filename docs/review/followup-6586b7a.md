@@ -305,6 +305,8 @@ Original review rows:
 
 | FU-TST-R13 | minor | AD preflight searches past a keytab terminator and certifies a key the Rust loader ignores | fixed | AD preflight smoke red/green; commit `test: stop AD keytab preflight at terminator (FU-TST-R13)` | Preflight requires a usable key before zero-length termination; negative deleted slots remain skippable. | task-22d-rskrb5-ng-zero-open-items.log: post-terminator key previously exit0, now exit1; immediate key and deleted-slot control exit0. |
 
+| FU-TST-R14 | minor | Parity guard still accepts invented symbols in comments and a child module's unrelated same-named type | fixed | `symbol_evidence_requires_full_owner_path` red/green; MIT6/GO18 tests; scoped clippy; commit `test: resolve parity evidence beyond type basenames (FU-TST-R14)` | Existing comment/string lexer removes declaration decoys; impl owners resolve parent and local identities separately. | task-22d-rskrb5-ng-zero-open-items.log: block-comment Ghost and combined parent/child Keytab fixture reject; explicit parent impl accepted. |
+
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 
 - RVX-u1-01 → FU-TST-01 (also: the test never exercises the router wiring cited by the review doc; covered by FU-TST-01's Proof)

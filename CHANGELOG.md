@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Parity symbol evidence ignores Rust comments/literals and distinguishes a
+  child-local type from its parent type when resolving methods (FU-TST-R14).
+
 - AD keytab preflight stops at zero-length terminators like the Rust loader;
   a usable key after a terminator no longer certifies readiness (FU-TST-R13).
 
