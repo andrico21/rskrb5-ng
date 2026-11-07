@@ -127,6 +127,17 @@ mod tests {
     use rasn_kerberos::KerberosTime;
 
     use super::{change_data, private_part};
+
+    /// Secret DER reserves the exact final allocation before any body bytes are appended.
+    #[test]
+    fn wrap_capacity_matches_final_encoding() -> Result<(), Box<dyn StdError>> {
+        for length in [0_usize, 1, 127, 128, 255, 256] {
+            let body = vec![42; length];
+            let wrapped = super::wrap(4, &body)?;
+            assert_eq!(wrapped.capacity(), wrapped.len());
+        }
+        Ok(())
+    }
     use crate::{
         client::Password,
         kadmin::ChangePasswdData,

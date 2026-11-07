@@ -39,6 +39,37 @@ mod tests {
     /// Error type of the `Result`-returning tests.
     type TestError = Box<dyn error::Error>;
 
+    /// Password byte equality rejects other values while diagnostics remain explicitly redacted.
+    #[test]
+    fn password_bytes_compare_and_identify_redaction() -> Result<(), TestError> {
+        let value = ChangePasswdData::decode_der(
+            &ChangePasswdData::new(Password::copy_from_str("canary")).encode_der()?,
+        )?;
+        assert_eq!(value.new_passwd, b"canary".to_vec());
+        assert!(!(value.new_passwd == b"other".to_vec()));
+        assert_eq!(format!("{:?}", value.new_passwd), "[REDACTED]");
+        Ok(())
+    }
+
+    /// Error replies reject either independently present protected-message payload.
+    #[test]
+    fn error_reply_rejects_each_protected_payload() -> Result<(), TestError> {
+        let protected = Reply::parse(&decode_hex(MARSHALLED_KPASSWD_REP)?)?;
+        for include_ap in [false, true] {
+            let mut error = Reply::parse(&decode_hex(KRB_ERROR_WITH_EDATA)?)?;
+            if include_ap {
+                error.ap_rep = protected.ap_rep.clone();
+            } else {
+                error.krb_priv = protected.krb_priv.clone();
+            }
+            assert!(matches!(
+                error.encode(),
+                Err(KadminError::InvalidErrorReplyPayload)
+            ));
+        }
+        Ok(())
+    }
+
     /// Attaches a description to a failure, as `expect` would, but as an error
     /// that `?` propagates.
     trait Context<T> {
