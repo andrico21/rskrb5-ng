@@ -1034,9 +1034,9 @@ mod tests {
         })
     }
 
-    /// Pins that an explicit `permitted_enctypes` line narrows the TGS-REQ etype list.
+    /// Pins rejection of a mixed disabled TGS-REQ enctype list without narrowing.
     #[test]
-    fn tgs_req_etypes_are_intersected_with_permitted_enctypes() -> Result<(), TestError> {
+    fn tgs_req_rejects_mixed_disabled_enctype_list() -> Result<(), TestError> {
         let defaults = LibDefaults::default()
             .with_default_tgs_enctypes(vec![
                 "aes256-cts".into(),

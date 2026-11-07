@@ -920,7 +920,7 @@ mod tests {
     /// Pins that an expired renewable service ticket is reacquired using the current TGT.
     #[cfg(feature = "tokio")]
     #[test]
-    fn tokio_client_renews_expired_renewable_cached_service_ticket() -> Result<(), TestError> {
+    fn tokio_client_reacquires_expired_renewable_cached_service_ticket() -> Result<(), TestError> {
         runtime()?.block_on(async {
             let tgt = current_tgt_session(10, 50)?;
             let mut service_ticket = sample_service_ticket_session(&tgt)?;
@@ -994,7 +994,7 @@ mod tests {
     /// Pins that an expired ccache service ticket is reacquired with the current TGT.
     #[cfg(feature = "tokio")]
     #[test]
-    fn tokio_client_renews_ccache_loaded_renewable_service_ticket() -> Result<(), TestError> {
+    fn tokio_client_reacquires_ccache_loaded_expired_service_ticket() -> Result<(), TestError> {
         runtime()?.block_on(async {
             let tgt = sample_tgt_session()?;
             let mut service_ticket = sample_service_ticket_session(&tgt)?;
@@ -1078,7 +1078,7 @@ mod tests {
     /// Pins that an expired referral is reacquired with the current primary TGT.
     #[cfg(feature = "tokio")]
     #[test]
-    fn tokio_client_renews_cached_referral_tgt_before_reusing_it() -> Result<(), TestError> {
+    fn tokio_client_reacquires_expired_cached_referral_tgt() -> Result<(), TestError> {
         runtime()?.block_on(async {
             let primary_tgt = current_tgt_session(10, 50)?;
             let mut referral_tgt = valid_referral_tgt_session(&primary_tgt, "RESDOM.GOKRB5")?;
@@ -2381,7 +2381,7 @@ mod tests {
     /// Pins that a cache-only expired TGT is unavailable without any network renewal.
     #[cfg(feature = "tokio")]
     #[test]
-    fn tokio_client_cache_only_expired_renewable_tgt_keeps_renewal_error() -> Result<(), TestError>
+    fn tokio_client_cache_only_expired_tgt_is_unavailable_without_network() -> Result<(), TestError>
     {
         runtime()?.block_on(async {
             let listener = TcpListener::bind("127.0.0.1:0").await?;

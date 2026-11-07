@@ -5,7 +5,7 @@ use std::time::SystemTime;
 
 use super::{AsRepSession, session_valid_at};
 
-/// A session is due for refresh once less than 1/6 of its lifetime remains.
+/// A session is due for refresh once at most 1/6 of its lifetime remains.
 const SESSION_REFRESH_DIVISOR: u32 = 6;
 
 /// Whether a session is unusable or inside its refresh window at `now`.

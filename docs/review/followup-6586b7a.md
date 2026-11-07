@@ -35,6 +35,8 @@ Critic round `critics-fb19af4`, unit u2:
 
 | FU-CLI-R04 | minor | Implemented S4U2Proxy manifest claims validation before send but code validates after reply | fixed | `s4u_proxy_rejects_relabelled_evidence`, MIT manifest consistency target; commit containing this row | none; manifest now explicitly states post-transport, pre-acceptance validation instead of promising pre-build validation | task-22b: code and existing regression prove construction precedes binding; selected permitted documentation correction, not parity transfer. |
 
+| FU-TST-R03 | nit | Several renewal tests still advertise the behavior that the fixes removed | fixed | Existing encoded-request/exact-error assertions unchanged; client target; commit containing this row | none; names/docs now say reacquisition, unavailable cache-only credentials, rejected lists and inclusive refresh threshold | task-22b: old names conflicted with no-RENEW bits/NoClientCredentials assertions. Live manifest reference remapped; historical archived plans retain historical names. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
