@@ -18,10 +18,26 @@ mod tests {
         process,
     };
 
-    use rskrb5_ng::{Config, error::Config as ConfigError};
+    use rskrb5_ng::{Config, config::ParseMode, error::Config as ConfigError};
 
     /// Process-local sequence avoids clock-resolution assumptions.
     static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    /// Escape decoding cannot hide permanently rejected selectors in discarded scopes.
+    #[test]
+    fn discarded_escaped_protocols_are_rejected() {
+        for mode in [ParseMode::Compatible, ParseMode::Strict] {
+            for input in [
+                "[libdefaults]*\n[libdefaults]\npkinit_key_exchange = \"r\\sa\"\n",
+                "[unknown]\nkpasswd_protocol = \"clear\\text\"\n",
+            ] {
+                assert!(matches!(
+                    Config::parse_with_mode(input, mode),
+                    Err(ConfigError::Policy(_))
+                ));
+            }
+        }
+    }
 
     /// MIT permits an opening brace on the line after an empty assignment.
     #[test]

@@ -96,6 +96,9 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Escaped permanently rejected protocol selectors are rejected before finalized
+  or unknown profile scopes can discard them (FU-CFG-R06).
+
 - Unsupported restrictive settings now fail closed through serde and runtime
   configuration admission, not only text parsing: address inclusion, total
   deadlines, mandatory AP verification, channel-binding signaling, persistent

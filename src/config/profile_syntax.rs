@@ -94,9 +94,6 @@ impl State {
         let discarded =
             self.scopes.iter().any(|scope| scope.discarded) || profile.child_closed(&path);
         let value = raw.trim();
-        if section != "domain_realm" {
-            protocol::relation(&key, value)?;
-        }
         if value == "{"
             || (value.is_empty()
                 && matches!(section, "realms" | "appdefaults" | "plugins" | "capaths"))
@@ -127,6 +124,9 @@ impl State {
             marker(value)
         };
         let decoded = quoted(body, line)?;
+        if section != "domain_realm" {
+            protocol::relation(&key, &decoded)?;
+        }
         if !discarded {
             profile.relation(
                 path.clone(),

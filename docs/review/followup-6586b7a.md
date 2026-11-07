@@ -62,6 +62,8 @@ Critic round `critics-fb19af4`, unit u5:
 
 | FU-CFG-R05 | major | Serde and programmatic configuration bypass unsupported restrictive-policy rejection | fixed | `restrictive_defaults_fail_before_requests`, `restrictive_scopes_fail_before_login`; client226/config234/policy72; commit containing this row | Serde rejects unsupported restrictive defaults/realm/plugin selections. Runtime request policy, client readiness, service config constructors and endpoint discovery revalidate mutated fields before effects. | task-22b serde no_addresses and realm bypass red; named config refusal or retained invalid-policy request rejection green. |
 
+| FU-CFG-R06 | minor | Escaped D2 selectors can evade rejection in discarded scopes | fixed | `discarded_escaped_protocols_are_rejected`; commit containing this row | Permanent protocol refusals inspect decoded scalar values before discard, in both modes. | task-22b finalized escaped RSA red; decoded RSA and unprotected-password selectors reject in finalized/unknown scopes after fix. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |

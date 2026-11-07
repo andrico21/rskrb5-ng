@@ -61,6 +61,10 @@ values to or from this crate needs the same versions.
 
 ## New configuration keys
 
+Discarded selectors (FU-CFG-R06): quoting or escaping a forbidden RSA, draft-9,
+v4 or unprotected-password selector cannot hide it in an ignored profile scope.
+Permanent rejection now checks the decoded scalar before composition discards it.
+
 Restrictive settings (FU-CFG-R05): serde and programmatic configurations now
 receive the same refusal for unsupported restrictions as profile input. Runtime
 client/service/request boundaries revalidate mutable fields before effects.
