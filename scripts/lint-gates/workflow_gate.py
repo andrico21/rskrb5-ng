@@ -163,31 +163,34 @@ def wiring_errors(workflow: str, prek: str) -> list[str]:
         gates = workflow_yaml.only(
             structure, workflow_yaml.children(structure, jobs), "lint-gates", "jobs"
         )
+        steps = workflow_yaml.only(
+            structure, workflow_yaml.children(structure, gates), "steps", "lint-gates"
+        )
+        for index in roots:
+            if structure[index].key == "defaults":
+                errors.append("workflow defaults may not alter gate execution")
         body = workflow_yaml.subtree(structure, gates)
-        seen_run = False
+        seen: set[str] = set()
         for line in body:
             if line.item:
-                seen_run = False
-            if line.key == "run":
-                if seen_run:
-                    errors.append("duplicate run key in gate step")
-                seen_run = True
+                seen.clear()
+            if line.key in {
+                "if",
+                "continue-on-error",
+                "shell",
+                "defaults",
+                "working-directory",
+            }:
+                errors.append(f"the lint-gates job may not use `{line.key}:`")
+            if line.indent == structure[steps].indent + 4 and line.key:
+                if line.key in seen:
+                    errors.append(f"duplicate {line.key} key in gate step")
+                seen.add(line.key)
     except RuntimeError as error:
         errors.append(str(error))
     job = job_text(workflow, "lint-gates")
     if not job:
         errors.append("ci.yml has no lint-gates job")
-    for key in (
-        "continue-on-error:",
-        "if:",
-        "shell:",
-        "defaults:",
-        "working-directory:",
-    ):
-        if re.search(rf"(?m)^\s+(?:-\s+)?{re.escape(key)}", job):
-            errors.append(f"the lint-gates job may not use `{key}`")
-    if re.search(r"(?m)^defaults:", workflow):
-        errors.append("workflow defaults may not alter gate execution")
     if re.search(r"(?m)^        (?!run:)[\w-]+: [|>]", job):
         errors.append("non-run multiline step values are unsupported in lint-gates")
     hooks = [
@@ -289,6 +292,22 @@ def self_test() -> int:
         + " }]\n"
     )
     assert wiring_errors(ci, prek) == [], wiring_errors(ci, prek)
+    for key in [
+        '"if"',
+        "'if'",
+        '"continue-on-error"',
+        '"shell"',
+        '"defaults"',
+        '"working-directory"',
+    ]:
+        hostile = ci.replace(
+            "      - run: " + REQUIRED[1],
+            "      - " + key + ": false\n        run: " + REQUIRED[1],
+        )
+        assert wiring_errors(hostile, prek), f"quoted execution key accepted: {key}"
+    assert wiring_errors(
+        ci.replace("  next:", "    steps:\n      - run: true\n  next:"), prek
+    ), "duplicate steps accepted"
     assert wiring_errors(ci.replace(SELF_TEST_LOOP, "SELF_TEST_LOOP"), prek)
     assert wiring_errors(
         ci.replace(

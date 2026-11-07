@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Workflow wiring rejects quoted execution-control keys and duplicate gate step
+  mappings rather than counting commands that cannot execute (FU-GATE-R02).
+
 - Configured transport password/keytab AS logins now reject unsupported realm
   and clpreauth restrictions before request construction or network I/O,
   preserving the named configuration error (FU-TRN-R06).

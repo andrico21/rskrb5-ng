@@ -7,6 +7,11 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Workflow wiring (FU-GATE-R02): quoted YAML keys obey the same restrictions as
+plain keys, and `lint-gates` must have exactly one `steps` mapping with no
+duplicate step keys. Remove conditional or overriding execution settings;
+textually retaining a required command no longer satisfies these cases.
+
 Configured transport admission (FU-TRN-R06): password and keytab configured
 AS-login helpers, including their TGT wrappers, now return the named
 `Client::Config(Config::NotYetEffective { .. })` restriction before constructing
