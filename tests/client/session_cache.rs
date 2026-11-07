@@ -234,8 +234,7 @@ mod tests {
     /// Pins that pruning drops expired sessions even with a future renewal horizon.
     #[cfg(feature = "tokio")]
     #[test]
-    fn tokio_client_prunes_unusable_sessions_but_keeps_renewable_entries() -> Result<(), TestError>
-    {
+    fn tokio_client_prunes_expired_sessions_despite_renewable_metadata() -> Result<(), TestError> {
         let tgt = current_tgt_session(10, 50)?;
         let now = SystemTime::now();
         let expired_start = now
