@@ -944,8 +944,11 @@ Configuration now follows MIT profile semantics; the details are in
   of the file; re-reading a completed source is not a cycle; the limits are
   256 files and 4 MiB in total, root files included.
 - **Unknown input.** Unknown sections and relations are diagnostics in
-  compatible mode and errors in strict mode; recognized settings that have no
-  runtime effect yet are `error::Config::NotYetEffective` in both modes.
+  compatible mode and errors in strict mode. Recognized settings without a
+  runtime effect produce `ConfigDiagnostic::NotYetEffective` in compatible mode
+  when they do not request tighter security. Unsupported tightening values fail
+  with `error::Config::NotYetEffective` in both modes. Strict mode rejects every
+  diagnostic; the [relation catalogue](config-relations.md) identifies each case.
 - **`module`.** `module` directives and relations fail with
   `error::Config::UnsupportedDynamicModule`; no code is loaded.
 - `forwardable` and `proxiable` set the request bits, `default_realm` is the
