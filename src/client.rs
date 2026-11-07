@@ -2585,7 +2585,7 @@ pub fn pa_enc_timestamp_with_confounder(
     kvno: Option<u32>,
 ) -> Result<rasn_kerberos::PaData, Error> {
     let enc_ts = rasn_kerberos::PaEncTsEnc {
-        patimestamp: kerberos_time_from_system_time(timestamp)?,
+        patimestamp: time::authenticator(timestamp, cusec, "PA-ENC-TIMESTAMP")?,
         pausec: Some(Integer::from(cusec)),
     };
     let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
@@ -3208,6 +3208,7 @@ fn build_tgs_req_for_realm_inner(
         confounder,
         subkey,
     } = authenticator_context;
+    let ctime = time::authenticator(timestamp, cusec, "TGS authenticator")?;
     if options.etypes.is_empty() {
         return Err(Error::EmptyEtypes);
     }
@@ -3257,7 +3258,7 @@ fn build_tgs_req_for_realm_inner(
             checksum: checksum.into(),
         }),
         cusec: Integer::from(cusec),
-        ctime: kerberos_time_from_system_time(timestamp)?,
+        ctime,
         subkey: subkey.map(encryption_key_to_rasn),
         seq_number: None,
         authorization_data: None,
@@ -3322,12 +3323,7 @@ pub fn build_ap_req_with_confounder(
     if let Some(subkey) = &options.subkey {
         policy.check_use(subkey.etype, Use::SessionKey)?;
     }
-    let (_, nanos) = unix_timestamp_parts(timestamp)?;
-    (nanos == 0).ok_or_else(|| Error::Encode {
-        target: "AP-REQ timestamp",
-        message: "expected a whole-second timestamp".to_owned(),
-    })?;
-    let ctime = time::to_kerberos(timestamp).ok_or(Error::TimeOverflow)?;
+    let ctime = time::authenticator(timestamp, cusec, "AP-REQ timestamp")?;
     let ticket = ticket::decode(&service_ticket.ticket).map_err(ticket_error)?;
     let authenticator = rasn_kerberos::Authenticator {
         authenticator_vno: Integer::from(KRB5_PVNO),

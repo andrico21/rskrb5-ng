@@ -38,6 +38,11 @@ values to or from this crate needs the same versions.
 
 ## New configuration keys
 
+Explicit authenticator times (FU-CLI-R03): pass whole seconds and a separate
+microsecond value from 0 through 999999 to PA/TGS/AP builders. Fractions and
+out-of-range microseconds now return `error::Client::Encode`; whole-second
+pre-epoch timestamps remain supported.
+
 Two `[libdefaults]` flags gate the legacy enctypes. Both default to false,
 independently of `allow_weak_crypto`:
 

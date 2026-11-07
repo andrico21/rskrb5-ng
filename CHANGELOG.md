@@ -87,6 +87,9 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Complete PA/TGS/AP authenticator builders reject fractional explicit seconds
+  and microseconds above 999999 before encryption (`Client::Encode`, FU-CLI-R03).
+
 - Ccache parsing bounds every record count (principal components, addresses,
   authorization data) against the remaining input before reserving memory, so
   a short malformed cache returns `error::Ccache::Truncated` instead of
