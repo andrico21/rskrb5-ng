@@ -91,7 +91,8 @@ pub(super) fn plugins(value: &Plugins) -> Result<(), Error> {
 pub(super) fn reject(relation: &'static str, restricted: bool) -> Result<(), Error> {
     if restricted {
         let package = match relation {
-            "disable" | "enable_only" | "disable_encrypted_timestamp" => "plan 2 WP-16",
+            "disable" | "enable_only" => "plan 2 WP-16",
+            "disable_encrypted_timestamp" => "plan 2 WP-07",
             "default_rcache_name" => "plan 2 WP-20",
             _ => super::libdefaults::relations::RELATIONS
                 .iter()

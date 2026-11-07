@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Runtime/serde timestamp-restriction errors now identify preauthentication
+  work package WP-07, matching text parsing (FU-CFG-R07).
+
 - Next-line profile subsection braces now work in every section, including
   unknown and server-only sections; existing empty scalar extensions remain
   supported when no opening brace follows (FU-CFG-R08).

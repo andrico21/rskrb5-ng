@@ -7,6 +7,10 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Timestamp restriction diagnostics (FU-CFG-R07): the deferred package for
+`disable_encrypted_timestamp` is now `plan 2 WP-07` for runtime/serde admission,
+matching text parsing. Plugin `disable` and `enable_only` remain WP-16.
+
 Profile braces (FU-CFG-R08): `name =` followed by `{` has the same subsection
 meaning as `name = {` in every section, matching MIT's generic profile grammar.
 Unknown and deferred sections reach their normal diagnostics instead of a
