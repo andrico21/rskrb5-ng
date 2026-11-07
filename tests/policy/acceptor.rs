@@ -155,6 +155,14 @@ fn acceptor_checks_inner_keys_before_replay() -> Result<(), Box<dyn Error>> {
         let mut request = ap_req::decode(&bytes)?;
         request.authenticator.etype = 17_i32;
         let encoded = ap_req::encode(&request)?;
+        if session_id == 18_i32 {
+            let broad_error = Validator::new(&keys)
+                .with_now(now)
+                .validate_ap_req(&encoded)
+                .err()
+                .ok_or("mismatched envelope accepted")?;
+            assert!(policy_cause(&broad_error).is_none());
+        }
         let mut validator = Validator::new(&keys)
             .with_now(now)
             .with_crypto_policy(CryptoPolicy::from_libdefaults(&config.libdefaults)?);
