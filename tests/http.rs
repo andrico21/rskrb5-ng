@@ -209,6 +209,29 @@ mod tests {
     #[derive(Clone)]
     struct PolicyService;
 
+    /// A pending authenticated response never formats its retained AP-REP credential.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn pending_response_debug_redacts_credentials() -> Result<(), TestError> {
+        let keytab = keytab()?;
+        let mut service = krb_http::NegotiateLayer::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .layer(PolicyService);
+        let mut request = Request::new(());
+        krb_http::set_authorization_header(&mut request, &valid_authorization_header()?)?;
+        let future = service.call(request);
+        let diagnostic = format!("{future:?}");
+        let response = run_ready(future)??;
+        let credential = response
+            .headers()
+            .get(WWW_AUTHENTICATE)
+            .context("AP-REP")?
+            .to_str()?;
+        assert!(!diagnostic.contains(credential));
+        assert!(diagnostic.contains("header_len"));
+        Ok(())
+    }
+
     /// Replay-cache incompatibility is rejected before serving requests.
     #[cfg(feature = "tower")]
     #[test]
@@ -401,7 +424,7 @@ mod tests {
         let mut wrong_mech = response.clone();
         wrong_mech.supported_mech = Some(spnego::oid::ObjectIdentifier::from_arcs(vec![1, 2, 3])?);
         let mut mic = response;
-        mic.mech_list_mic = Some(vec![0; 28]);
+        mic.mech_list_mic = Some(vec![0; 28].into());
         for altered in [
             incomplete,
             request_mic,
@@ -532,7 +555,7 @@ mod tests {
         let context = initiator_context()?;
         // When formatted for diagnostics, then both credential representations are absent.
         let rendered = format!("{context:?}");
-        assert!(!rendered.contains(&context.header));
+        assert!(!rendered.contains(context.header.as_str()));
         assert!(!rendered.contains(&format!("{:?}", context.ap_req_der)));
         #[cfg(feature = "tokio")]
         {
@@ -552,10 +575,16 @@ mod tests {
                     }))
                 },
             ))?;
-            assert!(!format!("{result:?}").contains(&header));
+            assert!(!format!("{result:?}").contains(header.as_str()));
             assert!(
-                !format!("{result:?}")
-                    .contains(&result.context.as_ref().context("retry context")?.header)
+                !format!("{result:?}").contains(
+                    result
+                        .context
+                        .as_ref()
+                        .context("retry context")?
+                        .header
+                        .as_str()
+                )
             );
         }
         Ok(())
@@ -701,7 +730,7 @@ mod tests {
             assert_eq!(context.sequence_number, Some(42));
             assert_eq!(
                 krb_http::authorization_header(&request).context("Authorization header exists")?,
-                context.header
+                context.header.as_str()
             );
             Ok(())
         })
@@ -764,7 +793,7 @@ mod tests {
             assert_eq!(context.sequence_number, Some(7));
             assert_eq!(
                 krb_http::authorization_header(&request).context("Authorization header exists")?,
-                context.header
+                context.header.as_str()
             );
 
             service_ticket.session_key.value = vec![0x55; 32];

@@ -178,7 +178,11 @@ impl Client {
     /// can be repeated.
     #[inline]
     pub async fn authorization_header(&mut self, service: Principal) -> Result<String, Error> {
-        Ok(self.authorization_context(service).await?.header)
+        Ok(self
+            .authorization_context(service)
+            .await?
+            .header
+            .to_string())
     }
 
     /// Build an HTTP `Authorization` header for a host-based service.
@@ -210,7 +214,8 @@ impl Client {
         Ok(self
             .authorization_context_for_host(service, host)
             .await?
-            .header)
+            .header
+            .to_string())
     }
 
     /// Build a SPNEGO initiator context for a Kerberos service principal.

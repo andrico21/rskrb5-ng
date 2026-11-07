@@ -23,6 +23,11 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Retained SPNEGO token bytes, initiator DER/header fields and pending Tower
+  AP-REP headers now use zeroizing owners; token and future Debug expose only
+  metadata and lengths (FU-SPN-R05). Plain returned wire buffers remain the
+  caller's erasure responsibility.
+
 - Add opt-in `service::TransitPolicy::{direct, domain_x500_paths}` presets for
   AD cross-domain tickets without TRANSITED-POLICY-CHECKED. Both pin endpoint
   realms; the latter allow-lists exact complete encoded paths. Default rejection

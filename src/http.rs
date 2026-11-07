@@ -12,7 +12,7 @@ use core::task::{Context, Poll};
 #[cfg(feature = "tower")]
 use core::time::Duration;
 #[cfg(feature = "tower")]
-use core::{mem, pin::Pin};
+use core::{fmt, mem, pin::Pin};
 #[cfg(feature = "tower")]
 use std::{sync::Mutex, time::SystemTime};
 
@@ -1591,7 +1591,7 @@ where
         NegotiateFuture {
             inner: Some(Box::pin(self.inner.call(req))),
             ready: None,
-            header: ap_rep_header,
+            header: ap_rep_header.map(zeroize::Zeroizing::new),
             harden: self.response.harden_inner,
         }
     }
@@ -1599,16 +1599,34 @@ where
 
 /// Negotiate response future, preserving the inner future's Send capability.
 #[cfg(feature = "tower")]
-#[derive(Debug)]
 pub struct NegotiateFuture<F, B, E> {
     /// Pinned inner operation, absent for immediate authentication responses.
     inner: Option<Pin<Box<F>>>,
     /// Immediate outcome, boxed so moving the adapter never moves its body.
     ready: Option<Box<CoreResult<Response<B>, TowerError<E>>>>,
     /// Credential header to attach after inner completion.
-    header: Option<String>,
+    header: Option<zeroize::Zeroizing<String>>,
     /// Whether the inner response receives secure defaults.
     harden: bool,
+}
+
+#[cfg(feature = "tower")]
+impl<F, B, E> fmt::Debug for NegotiateFuture<F, B, E> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            inner,
+            ready,
+            header,
+            harden,
+        } = self;
+        f.debug_struct("NegotiateFuture")
+            .field("pending", &inner.is_some())
+            .field("ready", &ready.is_some())
+            .field("header_len", &header.as_ref().map(|value| value.len()))
+            .field("harden", harden)
+            .finish()
+    }
 }
 
 #[cfg(feature = "tower")]

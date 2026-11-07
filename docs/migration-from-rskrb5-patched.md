@@ -8,6 +8,15 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Retained SPNEGO credentials now use `zeroize::Zeroizing`: `Krb5MechToken.message`,
+`NegTokenInit.{mech_token, mech_list_mic}`, `NegTokenResp.{response_token,
+mech_list_mic}`, and `InitiatorContext.{ap_req_der, header}` (FU-SPN-R05).
+For direct field assignment, convert owned vectors with `.into()`; borrow bytes
+with `.as_slice()` and headers with `.as_str()`. Token and pending response
+diagnostics show metadata and lengths, never credential contents. Plain vectors
+and strings returned by encoding/header convenience APIs still require caller
+erasure after use.
+
 Replace the dependency:
 
 ```toml

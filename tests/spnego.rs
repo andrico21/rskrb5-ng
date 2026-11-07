@@ -72,6 +72,24 @@ mod tests {
             &decode_hex(AP_REP_CONFOUNDER)?,
         )?;
         assert!(format!("{context:?}").starts_with("InitiatorContext"));
+        let credential = format!("{:?}", context.krb5_token.message);
+        assert!(!format!("{:?}", context.krb5_token).contains(&credential));
+        let Token::Init(init) = &context.spnego_token else {
+            return Err(TestError::from("expected initial token"));
+        };
+        let wire = format!("{:?}", init.mech_token.as_ref().context("mechanism token")?);
+        for diagnostic in [
+            format!("{init:?}"),
+            format!("{:?}", context.spnego_token),
+            format!("{:?}", NegotiationToken::Init(init.clone())),
+            format!(
+                "{:?}",
+                NegTokenResp::accept_completed().with_response_token(context.ap_req_der.to_vec())
+            ),
+        ] {
+            assert!(!diagnostic.contains(&credential));
+            assert!(!diagnostic.contains(&wire));
+        }
         Ok(())
     }
 
@@ -145,7 +163,7 @@ mod tests {
         let mut mic =
             MicToken::new(GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR, 1).with_payload(decode_hex(KRB5_ONLY)?);
         mic.set_checksum(&session.session_key, GSSAPI_ACCEPTOR_SIGN_USAGE)?;
-        response.mech_list_mic = Some(mic.encode()?);
+        response.mech_list_mic = Some(mic.encode()?.into());
         assert!(matches!(
             context
                 .verify_ap_rep_response_header(&spnego::negotiate_header(&Token::Resp(response))?),
@@ -428,7 +446,7 @@ mod tests {
         assert!(matches!(parsed, Token::Init(_)));
         assert_eq!(
             parsed.krb5_ap_req().context("AP-REQ unwraps")?,
-            krb5.message
+            *krb5.message
         );
         Ok(())
     }
@@ -498,7 +516,7 @@ mod tests {
         assert_eq!(parsed, context.spnego_token);
         assert_eq!(
             parsed.krb5_ap_req().context("AP-REQ in SPNEGO")?,
-            context.ap_req_der
+            *context.ap_req_der
         );
 
         let ap_req: rasn_kerberos::ApReq =
@@ -660,11 +678,19 @@ mod tests {
     }
 
     /// Construct RFC 4121 wire bytes without using the SPNEGO MIC implementation.
-    fn independent_mic(list: &str, key: &[u8], acceptor: bool) -> Result<Vec<u8>, TestError> {
+    fn independent_mic(
+        list: &str,
+        key: &[u8],
+        acceptor: bool,
+    ) -> Result<zeroize::Zeroizing<Vec<u8>>, TestError> {
         independent_mic_flags(list, key, u8::from(acceptor))
     }
 
-    fn independent_mic_flags(list: &str, key: &[u8], flags: u8) -> Result<Vec<u8>, TestError> {
+    fn independent_mic_flags(
+        list: &str,
+        key: &[u8],
+        flags: u8,
+    ) -> Result<zeroize::Zeroizing<Vec<u8>>, TestError> {
         let mut header = vec![4, 4, flags, 255, 255, 255, 255, 255];
         header.extend_from_slice(&42_u64.to_be_bytes());
         let mut signed = decode_hex(list)?;
@@ -672,7 +698,7 @@ mod tests {
         let checksum =
             AesSha1Etype::Aes256.checksum(key, &signed, if flags & 1 != 0 { 23 } else { 25 })?;
         header.extend_from_slice(&checksum);
-        Ok(header)
+        Ok(header.into())
     }
 
     fn mic_init() -> Result<NegTokenInit, TestError> {
@@ -812,7 +838,7 @@ mod tests {
             &decode_hex(AP_REP_CONFOUNDER)?,
         )?;
         let mut init = mic_init()?;
-        init.mech_token = Some(Krb5MechToken::ap_req(built.der).encode()?);
+        init.mech_token = Some(Krb5MechToken::ap_req(built.der).encode()?.into());
         assert!(matches!(
             accept_token(&Token::Init(init.clone()))?,
             Err(Spnego::InvalidMechListMic)
@@ -853,7 +879,7 @@ mod tests {
         )?;
         Ok((
             der::decode(&part).context("EncAPRepPart decodes")?,
-            response.mech_list_mic,
+            response.mech_list_mic.map(|bytes| bytes.to_vec()),
         ))
     }
 
@@ -968,7 +994,7 @@ mod tests {
         assert_eq!(inner.oid, ObjectIdentifier::krb5());
         assert_eq!(init.mech_list_mic, None);
         // When selected, then the captured AP-REQ is extracted unchanged.
-        assert_eq!(init.krb5_ap_req()?, inner.message);
+        assert_eq!(init.krb5_ap_req()?, *inner.message);
         // Capture keys are unavailable. Keep its offer/OID/MIC shape, but
         // substitute our test AP-REQ for full validation and reply verification.
         init.mech_token = acceptor_init(inner.oid)?.mech_token;
@@ -1008,7 +1034,7 @@ mod tests {
     fn acceptor_rejects_unverified_mech_list_mic() -> Result<(), TestError> {
         for mic in [Vec::new(), vec![0xde, 0xad]] {
             let mut init = acceptor_init(ObjectIdentifier::krb5())?;
-            init.mech_list_mic = Some(mic);
+            init.mech_list_mic = Some(mic.into());
             assert!(matches!(
                 accept_token(&Token::Init(init))?,
                 Err(Spnego::InvalidMechListMic)
@@ -1022,7 +1048,7 @@ mod tests {
     fn acceptor_rejects_stateless_continuation() -> Result<(), TestError> {
         let init = acceptor_init(ObjectIdentifier::krb5())?;
         let mut token = NegTokenResp::accept_completed()
-            .with_response_token(init.mech_token.context("mechanism token")?);
+            .with_response_token(init.mech_token.context("mechanism token")?.to_vec());
         for state in [
             None,
             Some(NegState::AcceptCompleted),
@@ -1072,7 +1098,7 @@ mod tests {
         let unsupported = ObjectIdentifier::from_arcs(vec![1, 3, 6, 1, 4, 1, 311, 2, 2, 10])?;
         init.mech_types = vec![unsupported.clone()];
         let mut resp = NegTokenResp::accept_completed()
-            .with_response_token(init.mech_token.clone().context("mechanism token")?);
+            .with_response_token(init.mech_token.clone().context("mechanism token")?.to_vec());
         resp.supported_mech = Some(unsupported.clone());
         for token in [Token::Init(init), Token::Resp(resp)] {
             assert!(
@@ -1117,7 +1143,7 @@ mod tests {
     #[test]
     fn acceptor_rejection_preserves_replay_cache() -> Result<(), TestError> {
         let mut init = acceptor_init(ObjectIdentifier::krb5())?;
-        init.mech_list_mic = Some(vec![0xde, 0xad]);
+        init.mech_list_mic = Some(vec![0xde, 0xad].into());
         let bad = spnego::negotiate_header(&Token::Init(init.clone()))?;
         init.mech_list_mic = None;
         let good = spnego::negotiate_header(&Token::Init(init))?;

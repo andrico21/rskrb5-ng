@@ -2014,7 +2014,7 @@ impl Tokio {
     #[cfg(feature = "spnego")]
     #[inline]
     pub async fn spnego_header(&mut self, service: Principal) -> Result<String, Error> {
-        Ok(self.spnego_context(service).await?.header)
+        Ok(self.spnego_context(service).await?.header.to_string())
     }
     /// Build a SPNEGO HTTP `Authorization` header with explicit initiator options.
     ///
@@ -2036,7 +2036,8 @@ impl Tokio {
         Ok(self
             .spnego_context_with_options(service, options)
             .await?
-            .header)
+            .header
+            .to_string())
     }
     /// Build a SPNEGO initiator context for a service.
     ///

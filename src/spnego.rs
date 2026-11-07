@@ -4,6 +4,9 @@
 //! [`crate::client`] and [`crate::service`]: GSS-API KRB5 mech tokens, SPNEGO
 //! NegTokenInit/NegTokenResp negotiation tokens, and HTTP `Negotiate` header
 //! encoding/decoding.
+//!
+//! Returned plain wire vectors and header strings belong to the caller, who must
+//! erase them after use. Retained token fields use zeroizing owners.
 
 use core::{fmt, iter, time::Duration};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -39,6 +42,8 @@ mod negotiation;
 pub mod oid;
 /// Plaintext staging owners.
 mod scratch;
+/// Redacted formatting for retained wire credentials.
+mod token_debug;
 
 /// HTTP Negotiate header size boundary regressions.
 #[cfg(test)]
@@ -947,7 +952,7 @@ impl Krb5TokenId {
 }
 
 /// GSS-API KRB5 mech token containing one Kerberos message.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct Krb5MechToken {
     /// Token mechanism OID. RFC 4121 KRB5 tokens use [`ObjectIdentifier::krb5`].
@@ -955,7 +960,7 @@ pub struct Krb5MechToken {
     /// Two-byte KRB5 token ID.
     pub token_id: Krb5TokenId,
     /// DER-encoded Kerberos message carried by this token.
-    pub message: Vec<u8>,
+    pub message: Zeroizing<Vec<u8>>,
 }
 
 impl Krb5MechToken {
@@ -980,7 +985,7 @@ impl Krb5MechToken {
         Self {
             oid: ObjectIdentifier::krb5(),
             token_id,
-            message,
+            message: Zeroizing::new(message),
         }
     }
 
@@ -1014,7 +1019,7 @@ impl Krb5MechToken {
         }
 
         let token_id = Krb5TokenId::from_bytes(*content.read_array::<2>()?)?;
-        let message = content.remaining().to_vec();
+        let message = Zeroizing::new(content.remaining().to_vec());
         if message.is_empty() {
             return Err(Error::MissingKerberosMessage);
         }
@@ -1100,7 +1105,7 @@ impl NegState {
 }
 
 /// SPNEGO `NegTokenInit`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct NegTokenInit {
     /// Offered mechanism OIDs.
@@ -1108,9 +1113,9 @@ pub struct NegTokenInit {
     /// Optional DER BIT STRING contents, including the unused-bit count byte.
     pub req_flags: Option<Vec<u8>>,
     /// Optional mechanism token bytes.
-    pub mech_token: Option<Vec<u8>>,
+    pub mech_token: Option<Zeroizing<Vec<u8>>>,
     /// Optional mechanism list MIC bytes.
-    pub mech_list_mic: Option<Vec<u8>>,
+    pub mech_list_mic: Option<Zeroizing<Vec<u8>>>,
 }
 
 impl NegTokenInit {
@@ -1122,7 +1127,7 @@ impl NegTokenInit {
         Self {
             mech_types: vec![ObjectIdentifier::krb5()],
             req_flags: None,
-            mech_token: Some(mech_token),
+            mech_token: Some(Zeroizing::new(mech_token)),
             mech_list_mic: None,
         }
     }
@@ -1211,12 +1216,12 @@ impl NegTokenInit {
         if self.mech_list_mic.is_some() {
             return Err(Error::MechListMicRequiresState);
         }
-        Ok(krb5.message)
+        Ok(krb5.message.to_vec())
     }
 }
 
 /// SPNEGO `NegTokenResp` / `NegTokenTarg`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct NegTokenResp {
     /// Optional negotiation state.
@@ -1224,9 +1229,9 @@ pub struct NegTokenResp {
     /// Optional selected mechanism OID.
     pub supported_mech: Option<ObjectIdentifier>,
     /// Optional response token bytes.
-    pub response_token: Option<Vec<u8>>,
+    pub response_token: Option<Zeroizing<Vec<u8>>>,
     /// Optional mechanism list MIC bytes.
-    pub mech_list_mic: Option<Vec<u8>>,
+    pub mech_list_mic: Option<Zeroizing<Vec<u8>>>,
 }
 
 impl NegTokenResp {
@@ -1270,7 +1275,7 @@ impl NegTokenResp {
     /// Attach a mechanism response token.
     #[inline]
     pub fn with_response_token(mut self, response_token: Vec<u8>) -> Self {
-        self.response_token = Some(response_token);
+        self.response_token = Some(Zeroizing::new(response_token));
         self
     }
 
@@ -1561,13 +1566,13 @@ pub struct InitiatorContext {
     /// ASN.1 AP-REQ message.
     pub ap_req: rasn_kerberos::ApReq,
     /// DER-encoded AP-REQ bytes.
-    pub ap_req_der: Vec<u8>,
+    pub ap_req_der: Zeroizing<Vec<u8>>,
     /// KRB5 mech token carrying the AP-REQ.
     pub krb5_token: Krb5MechToken,
     /// SPNEGO `NegTokenInit` context token.
     pub spnego_token: Token,
     /// HTTP `Authorization` header value.
-    pub header: String,
+    pub header: Zeroizing<String>,
     /// Client principal placed in the authenticator.
     pub client: Principal,
     /// Service principal from the ticket.
@@ -1650,7 +1655,7 @@ impl InitiatorContext {
             let token = Krb5MechToken::decode(
                 response
                     .response_token
-                    .as_deref()
+                    .as_ref()
                     .ok_or(Error::MissingApRep)?,
             )?;
             if token.token_id != Krb5TokenId::ApRep {
@@ -1813,11 +1818,11 @@ impl AcceptedContext {
             NegTokenResp::accept_completed().with_response_token(krb5_token.encode()?);
         response.supported_mech = Some(self.selected_mechanism.clone());
         if let Some(list) = &self.mech_types_der {
-            response.mech_list_mic = Some(negotiation::response_mic(
+            response.mech_list_mic = Some(Zeroizing::new(negotiation::response_mic(
                 list,
                 &self.ap_req,
                 reply_options,
-            )?);
+            )?));
         }
         response_token_header(&response)
     }
@@ -1956,11 +1961,11 @@ pub fn init_sec_context_with_confounder(
     let built_ap_req =
         build_ap_req_with_confounder(service_ticket, ap_req_options, timestamp, cusec, confounder)
             .map_err(client_error_to_spnego)?;
-    let ap_req_der = built_ap_req.der.clone();
-    let krb5_token = Krb5MechToken::ap_req(ap_req_der.clone());
+    let ap_req_der = Zeroizing::new(built_ap_req.der.clone());
+    let krb5_token = Krb5MechToken::ap_req(ap_req_der.to_vec());
     let krb5_token_der = krb5_token.encode()?;
     let spnego_token = Token::Init(NegTokenInit::krb5(krb5_token_der));
-    let header = negotiate_header(&spnego_token)?;
+    let header = Zeroizing::new(negotiate_header(&spnego_token)?);
 
     Ok(InitiatorContext {
         crypto_policy,
@@ -1991,7 +1996,9 @@ pub fn authorization_header(
     service_ticket: &TgsRepSession,
     options: InitiatorContextOptions,
 ) -> Result<String, Error> {
-    Ok(init_sec_context(service_ticket, options)?.header)
+    Ok(init_sec_context(service_ticket, options)?
+        .header
+        .to_string())
 }
 
 /// Decode an HTTP `Negotiate` header into a SPNEGO token.
@@ -2442,8 +2449,8 @@ fn decode_neg_token_init(bytes: &[u8]) -> Result<NegTokenInit, Error> {
     Ok(NegTokenInit {
         mech_types,
         req_flags,
-        mech_token,
-        mech_list_mic,
+        mech_token: mech_token.map(Zeroizing::new),
+        mech_list_mic: mech_list_mic.map(Zeroizing::new),
     })
 }
 
@@ -2509,8 +2516,8 @@ fn decode_neg_token_resp(bytes: &[u8]) -> Result<NegTokenResp, Error> {
     Ok(NegTokenResp {
         neg_state,
         supported_mech,
-        response_token,
-        mech_list_mic,
+        response_token: response_token.map(Zeroizing::new),
+        mech_list_mic: mech_list_mic.map(Zeroizing::new),
     })
 }
 
