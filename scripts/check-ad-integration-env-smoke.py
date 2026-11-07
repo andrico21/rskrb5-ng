@@ -53,6 +53,28 @@ RESERVED_ENDPOINTS = {
 
 def main() -> int:
     failures: list[str] = []
+    realm = b"USER.GOKRB5"
+    name = b"testuser1"
+    entry = (
+        b"\x00\x01"
+        + len(realm).to_bytes(2, "big")
+        + realm
+        + len(name).to_bytes(2, "big")
+        + name
+        + (1).to_bytes(4, "big")
+        + bytes(4)
+        + b"\x01\x00\x12\x00\x20"
+        + bytes(32)
+    )
+    valid = b"\x05\x02" + len(entry).to_bytes(4, "big") + entry
+    failures.extend(
+        check_case(
+            "complete keytab override passes",
+            {**strict_dry_run_env(), "TEST_AD_TESTUSER1_KEYTAB_HEX": valid.hex()},
+            expected_returncode=0,
+            expected_text=["environment is ready"],
+        )
+    )
 
     failures.extend(
         check_case(
@@ -123,6 +145,16 @@ def main() -> int:
             ],
         )
     )
+
+    for malformed in ["050200", "0502000000100001", "0502000000020001"]:
+        failures.extend(
+            check_case(
+                "truncated keytab fails",
+                {**strict_dry_run_env(), "TEST_AD_TESTUSER1_KEYTAB_HEX": malformed},
+                expected_returncode=1,
+                expected_text=["truncated keytab"],
+            )
+        )
 
     if failures:
         print("AD preflight smoke tests failed:", file=sys.stderr)

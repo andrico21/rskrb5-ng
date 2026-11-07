@@ -87,6 +87,9 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- AD preflight rejects truncated or unusable keytab overrides rather than
+  treating a valid two-byte header as readiness evidence (FU-TST-R09).
+
 - Configuration defaults `k5login_authoritative` to true instead of false;
   local-login authorization remains deferred, so this grants no login.
   Ticket and renewable lifetimes use the checked MIT interval parser, rejecting

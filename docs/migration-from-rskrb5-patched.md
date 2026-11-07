@@ -56,6 +56,10 @@ policy" below have the details.
 
 ## Behaviour changes before the review backlog
 
+AD keytab overrides must contain complete records and a correctly sized supported
+key for the named fixture principal (FU-TST-R09). Header-only placeholders no
+longer pass strict preflight; structural readiness still does not prove a live login.
+
 Gate wiring accepts only the sanctioned fail-closed command blocks
 (FU-GATE-R01). Keep required CI commands as direct run steps and prek commands
 in the success-dependent chain; shell wrappers that merely mention them fail.

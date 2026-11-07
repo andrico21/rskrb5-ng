@@ -39,3 +39,4 @@ is a parity feature, not a defect>`.
 | critic:critics-fb19af4/u6.md#U6-09 | FU-GATE-R01 | no |
 | critic:critics-fb19af4/u6.md#U6-10 | FU-TST-R08 | no |
 | critic:critics-fb19af4/u6.md#U6-11 | FU-DOC-R10 | no |
+| critic:critics-fb19af4/u6.md#U6-12 | FU-TST-R09 | no |
