@@ -38,6 +38,38 @@ mod tests {
 
     use super::context::{Context as _, TestError};
 
+    /// Kerberos token accessors expose only their matching message kind and original bytes.
+    #[test]
+    fn mech_token_accessors_preserve_kind_and_bytes() -> Result<(), TestError> {
+        for id in [Krb5TokenId::ApReq, Krb5TokenId::ApRep] {
+            let token = Krb5MechToken::decode(&Krb5MechToken::new(id, vec![42, 17]).encode()?)?;
+            assert_eq!(
+                token.ap_req_bytes(),
+                (id == Krb5TokenId::ApReq).then_some([42, 17].as_slice())
+            );
+            assert_eq!(
+                token.ap_rep_bytes(),
+                (id == Krb5TokenId::ApRep).then_some([42, 17].as_slice())
+            );
+        }
+        Ok(())
+    }
+
+    /// Header parsing rejects either a wrong scheme or an empty encoded token.
+    #[test]
+    fn header_scheme_and_empty_token_are_independent() -> Result<(), TestError> {
+        let token = Token::Resp(NegTokenResp::accept_completed());
+        let header = spnego::negotiate_header(&token)?;
+        let wrong = header.replacen("Negotiate", "Basic", 1);
+        for input in [wrong.as_str(), "Negotiate "] {
+            assert!(matches!(
+                spnego::parse_negotiate_header(input),
+                Err(Spnego::InvalidNegotiateHeader)
+            ));
+        }
+        Ok(())
+    }
+
     const KRB5_TOKEN: &str = concat!(
         "6082026306092a864886f71201020201006e8202523082024ea003020105a10302010ea207030",
         "50000000000a382015d6182015930820155a003020105a10d1b0b544553542e474f4b524235",
