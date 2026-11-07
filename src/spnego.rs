@@ -2433,18 +2433,18 @@ fn decode_neg_token_init(bytes: &[u8]) -> Result<NegTokenInit, Error> {
                 );
             }
             TAG_CONTEXT_2 => {
-                mech_token = Some(
+                mech_token = Some(Zeroizing::new(
                     read_single_tlv(field.value(), TAG_OCTET_STRING)?
                         .value()
                         .to_vec(),
-                );
+                ));
             }
             TAG_CONTEXT_3 => {
-                mech_list_mic = Some(
+                mech_list_mic = Some(Zeroizing::new(
                     read_single_tlv(field.value(), TAG_OCTET_STRING)?
                         .value()
                         .to_vec(),
-                );
+                ));
             }
             0xa4..=0xbe => {}
             actual => {
@@ -2465,8 +2465,8 @@ fn decode_neg_token_init(bytes: &[u8]) -> Result<NegTokenInit, Error> {
     Ok(NegTokenInit {
         mech_types,
         req_flags,
-        mech_token: mech_token.map(Zeroizing::new),
-        mech_list_mic: mech_list_mic.map(Zeroizing::new),
+        mech_token,
+        mech_list_mic,
     })
 }
 
@@ -2506,18 +2506,18 @@ fn decode_neg_token_resp(bytes: &[u8]) -> Result<NegTokenResp, Error> {
                 )?)?);
             }
             TAG_CONTEXT_2 => {
-                response_token = Some(
+                response_token = Some(Zeroizing::new(
                     read_single_tlv(field.value(), TAG_OCTET_STRING)?
                         .value()
                         .to_vec(),
-                );
+                ));
             }
             TAG_CONTEXT_3 => {
-                mech_list_mic = Some(
+                mech_list_mic = Some(Zeroizing::new(
                     read_single_tlv(field.value(), TAG_OCTET_STRING)?
                         .value()
                         .to_vec(),
-                );
+                ));
             }
             0xa4..=0xbe => {}
             actual => {
@@ -2532,8 +2532,8 @@ fn decode_neg_token_resp(bytes: &[u8]) -> Result<NegTokenResp, Error> {
     Ok(NegTokenResp {
         neg_state,
         supported_mech,
-        response_token: response_token.map(Zeroizing::new),
-        mech_list_mic: mech_list_mic.map(Zeroizing::new),
+        response_token,
+        mech_list_mic,
     })
 }
 
