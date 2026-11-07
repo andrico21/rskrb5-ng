@@ -7,6 +7,11 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Lint interpreter admission (FU-GATE-R03): workflow/job/step environment settings
+must use the gate allowlist (`PYTHONDONTWRITEBYTECODE=1`, and workflow-level
+`CARGO_TERM_COLOR=always`). PATH, Python startup/optimization, shell startup,
+shell/default overrides and unapproved setup action inputs are rejected.
+
 Parity evidence (FU-TST-R14): symbol claims must resolve to the declared module
 and actual impl owner. Comments, string contents and child-local same-named
 types cannot prove a parent method; explicit parent paths remain supported.

@@ -307,6 +307,8 @@ Original review rows:
 
 | FU-TST-R14 | minor | Parity guard still accepts invented symbols in comments and a child module's unrelated same-named type | fixed | `symbol_evidence_requires_full_owner_path` red/green; MIT6/GO18 tests; scoped clippy; commit `test: resolve parity evidence beyond type basenames (FU-TST-R14)` | Existing comment/string lexer removes declaration decoys; impl owners resolve parent and local identities separately. | task-22d-rskrb5-ng-zero-open-items.log: block-comment Ghost and combined parent/child Keytab fixture reject; explicit parent impl accepted. |
 
+| FU-GATE-R03 | major | Lint-job environment can replace Python execution without any required gate noticing | fixed | workflow_gate hostile self-tests red/green and enforcement; commit `gates: reject lint interpreter overrides (FU-GATE-R03)` | Workflow/job/step env values allowlisted; shell/default overrides, unapproved setup actions and execution-affecting inputs rejected. | task-22d-rskrb5-ng-zero-open-items.log: BASH_ENV/PYTHONOPTIMIZE/PATH/PYTHONPATH/ENV/SHELL at all three scopes; plain/quoted shell/defaults at all scopes. |
+
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 
 - RVX-u1-01 → FU-TST-01 (also: the test never exercises the router wiring cited by the review doc; covered by FU-TST-01's Proof)

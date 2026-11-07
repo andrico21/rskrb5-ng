@@ -166,6 +166,45 @@ def wiring_errors(workflow: str, prek: str) -> list[str]:
         steps = workflow_yaml.only(
             structure, workflow_yaml.children(structure, gates), "steps", "lint-gates"
         )
+        relevant = roots + list(
+            range(gates + 1, gates + 1 + len(workflow_yaml.subtree(structure, gates)))
+        )
+        for index in relevant:
+            line = structure[index]
+            if line.key == "env":
+                allowed = {"PYTHONDONTWRITEBYTECODE": "1"}
+                if index in roots:
+                    allowed["CARGO_TERM_COLOR"] = "always"
+                if line.value:
+                    errors.append("gate environment must be a block mapping")
+                names: set[str] = set()
+                for child in workflow_yaml.children(structure, index):
+                    setting = structure[child]
+                    if (
+                        setting.key in names
+                        or setting.key not in allowed
+                        or workflow_yaml.scalar(setting.value, "gate env")
+                        != allowed.get(setting.key)
+                    ):
+                        errors.append(
+                            f"gate environment may not override {setting.key}"
+                        )
+                    if setting.key:
+                        names.add(setting.key)
+            if index in roots and line.key in {"shell", "working-directory"}:
+                errors.append("workflow execution overrides are forbidden")
+            if line.key == "uses":
+                action = line.value.split("@", 1)[0]
+                if action not in {"actions/checkout", "dtolnay/rust-toolchain"}:
+                    errors.append("gate setup action may alter interpreter execution")
+            if line.key == "with":
+                for child in workflow_yaml.children(structure, index):
+                    setting = structure[child]
+                    if (setting.key, setting.value) not in {
+                        ("toolchain", "nightly-2026-10-03"),
+                        ("components", "clippy"),
+                    }:
+                        errors.append("gate setup action input may alter execution")
         for index in roots:
             if structure[index].key == "defaults":
                 errors.append("workflow defaults may not alter gate execution")
@@ -292,6 +331,38 @@ def self_test() -> int:
         + " }]\n"
     )
     assert wiring_errors(ci, prek) == [], wiring_errors(ci, prek)
+    for key in ("shell", "defaults", '"shell"', '"defaults"'):
+        for hostile in (
+            f"{key}: hostile\n" + ci,
+            ci.replace("    steps:\n", f"    {key}: hostile\n    steps:\n", 1),
+            ci.replace(
+                "      - run: " + REQUIRED[1],
+                f"      - {key}: hostile\n        run: " + REQUIRED[1],
+            ),
+        ):
+            assert wiring_errors(hostile, prek), f"execution override accepted: {key}"
+    for variable in (
+        "BASH_ENV",
+        "PYTHONOPTIMIZE",
+        "PATH",
+        "PYTHONPATH",
+        "ENV",
+        "SHELL",
+    ):
+        for hostile in (
+            f"env:\n  {variable}: hostile\n" + ci,
+            ci.replace(
+                "    steps:\n", f"    env:\n      {variable}: hostile\n    steps:\n", 1
+            ),
+            ci.replace(
+                "      - run: " + REQUIRED[1],
+                f"      - env:\n          {variable}: hostile\n        run: "
+                + REQUIRED[1],
+            ),
+        ):
+            assert wiring_errors(hostile, prek), (
+                f"interpreter override accepted: {variable}"
+            )
     for key in [
         '"if"',
         "'if'",

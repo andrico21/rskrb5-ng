@@ -23,6 +23,10 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Lint workflow admission allowlists environment values and setup inputs and
+  rejects interpreter, PATH, shell and defaults overrides at every scope
+  (FU-GATE-R03).
+
 - Parity symbol evidence ignores Rust comments/literals and distinguishes a
   child-local type from its parent type when resolving methods (FU-TST-R14).
 
