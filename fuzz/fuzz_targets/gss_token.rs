@@ -13,14 +13,16 @@
 
 #![no_main]
 
+mod session_ticket;
+
 use core::time::Duration;
 use std::time::SystemTime;
 
 use libfuzzer_sys::fuzz_target;
 use rskrb5_ng::{
-    Principal, ap_rep,
+    Config, Principal, ap_rep,
     client::AsRepSession,
-    crypto::KerberosEtype,
+    crypto::{CryptoPolicy, KerberosEtype},
     keytab::EncryptionKey,
     spnego::{
         self, GSSAPI_ACCEPTOR_SEAL_USAGE, GSSAPI_ACCEPTOR_SIGN_USAGE, GSSAPI_INITIATOR_SEAL_USAGE,
@@ -56,9 +58,6 @@ const AES128_SHA2_KEY: [u8; 16] = [0x37; 16];
 
 /// A synthetic AES256-CTS-HMAC-SHA384-192 session key.
 const AES256_SHA2_KEY: [u8; 32] = [0x38; 32];
-
-/// A DER Ticket from the gokrb5 test vectors, carried by the service session.
-const TICKET: &[u8] = include_bytes!("../fixtures/ticket.der");
 
 /// Fixed context time, so every run builds the same AP-REQ.
 const NOW: Duration = Duration::from_secs(1_893_553_447);
@@ -146,16 +145,24 @@ fn sealed(input: &[u8], key: &EncryptionKey, from_acceptor: bool) -> Option<()> 
 fn initiator(key: &EncryptionKey) -> Option<InitiatorContext> {
     let now = SystemTime::UNIX_EPOCH.checked_add(NOW)?;
     let end = now.checked_add(Duration::from_secs(36_000))?;
+    let service = Principal::new("TEST.GOKRB5", 2, ["HTTP", "host.test.gokrb5"]);
+    let ticket = session_ticket::encoded(&service, key)?;
     let session = AsRepSession::new(
         Principal::user("TEST.GOKRB5", "testuser1"),
-        Principal::new("TEST.GOKRB5", 2, ["HTTP", "host.test.gokrb5"]),
+        service,
         key.clone(),
-        TICKET.to_vec().into(),
+        ticket.into(),
         [0x40, 0xe1, 0x00, 0x00],
         now,
         end,
     );
-    let options = InitiatorContextOptions::new().with_sequence_number(Some(1));
+    let config = Config::parse(
+        "[libdefaults]\nallow_rc4 = true\nallow_des3 = true\npermitted_enctypes = DEFAULT rc4 des3",
+    )
+    .ok()?;
+    let options = InitiatorContextOptions::new()
+        .with_sequence_number(Some(1))
+        .with_crypto_policy(CryptoPolicy::from_libdefaults(&config.libdefaults).ok()?);
     let confounder = CONFOUNDER.get(..KerberosEtype::from_etype_id(key.etype)?.confounder_len())?;
     spnego::init_sec_context_with_confounder(&session, options, now, 0, confounder).ok()
 }
@@ -182,6 +189,12 @@ fn structured_ap_rep(input: &[u8], key: &EncryptionKey) -> Option<()> {
 }
 
 fuzz_target!(|data: &[u8]| {
+    for choice in 0..6 {
+        assert!(
+            initiator(&session_key(choice)).is_some(),
+            "every fixed GSS context must be reachable"
+        );
+    }
     let Some((selector, input)) = data.split_first() else {
         return;
     };
