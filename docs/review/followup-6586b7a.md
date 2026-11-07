@@ -72,6 +72,8 @@ Critic round `critics-fb19af4`, unit u5:
 
 | FU-AMB-R01 | minor | The ambient guard does not resolve extern-crate aliases | fixed | `guard_rejects_reader_and_attribute_evasions`, ambient_guard4; commit containing this row | No library behavior change; guard resolves extern-crate aliases before classifying var/var_os/enumeration access. | task-22b exact alias bypass red, four owner-attributed alias fixtures green. |
 
+| FU-FIL-R03 | minor | Version-one keytabs silently lose publicly admitted principal name types | fixed | `version_one_rejects_unrepresentable_name_type`; commit containing this row | Version1 serialization rejects nonzero name_type with UnrepresentableNameType instead of dropping metadata. | task-22b name42 red accepted/lost, typed rejection and name0 round-trip green. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |

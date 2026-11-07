@@ -661,6 +661,26 @@ mod tests {
         Ok(())
     }
 
+    /// Version-one serialization must not silently erase a nonzero name type.
+    #[test]
+    fn version_one_rejects_unrepresentable_name_type() -> Result<(), TestError> {
+        let mut keys = Keytab::parse(&[5, 1])?;
+        let mut entry = synthetic_entry("alice", 1, 18, 100);
+        entry.principal.name_type = 42_i32;
+        keys.entries_mut().push(entry);
+        assert!(matches!(
+            keys.to_bytes(),
+            Err(Error::UnrepresentableNameType(42_i32))
+        ));
+        keys.entries_mut()
+            .first_mut()
+            .context("entry")?
+            .principal
+            .name_type = 0_i32;
+        assert_eq!(Keytab::parse(&keys.to_bytes()?)?, keys);
+        Ok(())
+    }
+
     /// Construction makes the extended-zero fallback explicit before lookup or save.
     #[test]
     fn zero_extended_kvno_is_canonical_at_construction() -> Result<(), TestError> {

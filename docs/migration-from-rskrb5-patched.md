@@ -7,6 +7,10 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Version-one keytabs (FU-FIL-R03): nonzero principal name types cannot be saved
+in that format and now return `error::Keytab::UnrepresentableNameType`.
+Use version two to preserve the value, or explicitly choose name type zero.
+
 Ccache diagnostics (FU-FIL-R02): Debug no longer exposes primary/second ticket,
 configuration-value or authorization payload bytes, including nested CCache
 formatting. Use explicit borrowed fields only where needed; never log them.

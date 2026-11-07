@@ -100,6 +100,9 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Version-one keytab serialization rejects nonzero principal name types with
+  `UnrepresentableNameType` instead of silently losing them (FU-FIL-R03).
+
 - Ccache credential, configuration-entry and authorization-data Debug now
   report payload lengths rather than credential bytes (FU-FIL-R02).
 

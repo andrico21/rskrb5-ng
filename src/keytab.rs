@@ -748,6 +748,8 @@ impl Principal {
     /// Returns [`Error::LengthOverflow`] when the component count or a string
     /// length exceeds `i16::MAX`.
     fn write_to(&self, out: &mut Vec<u8>, version: u8, endian: Endian) -> Result<(), Error> {
+        (version != 1 || self.name_type == 0_i32)
+            .ok_or(Error::UnrepresentableNameType(self.name_type))?;
         let component_count = if version == 1 {
             self.components
                 .len()
