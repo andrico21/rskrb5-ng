@@ -11,6 +11,7 @@ is a parity feature, not a defect>`.
 | critic:critics-f22ea5b/u1.md#U1-01 | FU-HTTP-R07 | no |
 | critic:critics-f22ea5b/u1.md#U1-02 | FU-SPN-R10 | no |
 | critic:critics-f22ea5b/u1.md#U1-03 | FU-SPN-R11 | no |
+| critic:critics-f22ea5b/u2.md#Round-1 | FU-OPS-R02 | no |
 | critic:critics-f22ea5b/u2.md#U2-01 | FU-CLI-R08 | no |
 | critic:critics-f22ea5b/u2.md#U2-02 | FU-CLI-R09 | no |
 | critic:critics-f22ea5b/u2.md#U2-03 | FU-TST-R11 | no |
@@ -21,6 +22,7 @@ is a parity feature, not a defect>`.
 | critic:critics-f22ea5b/u4.md#U4-01 | FU-CRY-R02 | no |
 | critic:critics-f22ea5b/u4.md#U4-02 | FU-PAC-R07 | no |
 | critic:critics-f22ea5b/u4.md#U4-03 | FU-PAC-R08 | no |
+| critic:critics-f22ea5b/u5.md#Round-1 | FU-OPS-R02 | no |
 | critic:critics-f22ea5b/u5.md#U5-01 | FU-CFG-R07 | no |
 | critic:critics-f22ea5b/u5.md#U5-02 | FU-FIL-R04 | no |
 | critic:critics-f22ea5b/u5.md#U5-03 | FU-FIL-R05 | no |

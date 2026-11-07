@@ -332,6 +332,8 @@ Original review rows:
 
 | FU-OPS-R01 | minor | The committed follow-up register retains two open items | fixed | FU-OPS-02 metadata reconciliation; FU-FIL-03 explicitly owned by parallel lane B; commit `review: reconcile stale checkout and review scratch (FU-OPS-R01)` | none in library/API | task-22d-rskrb5-ng-zero-open-items.log: actual checkout alignment and obsolete scratch removal completed; no false closure of lane B's file-publication row. |
 
+| FU-OPS-R02 | nit | Two critic coverage subsections carry finding-shaped heading ids | dismissed | - | none | Not findings: `critics-f22ea5b/u2.md` line 71 `### Round-1 rows and scratch-revert sample` and `u5.md` line 89 `### Round-1 reversion sample (nine rows)` are coverage sections that review round-1 rows; neither states a defect, and the round's id map `critics-f22ea5b/id-map.tsv` lists only the U2-01..04 and U5-01..06 findings. `register_check.py` indexes every `### <word>-<word>` heading, so both are indexed here against this dismissal (task-22f convergence; reports and checker are read-only). |
+
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 
 - RVX-u1-01 → FU-TST-01 (also: the test never exercises the router wiring cited by the review doc; covered by FU-TST-01's Proof)
