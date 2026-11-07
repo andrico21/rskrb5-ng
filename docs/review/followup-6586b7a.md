@@ -43,6 +43,8 @@ Critic round `critics-fb19af4`, unit u4:
 | FU-CRY-R01 | minor | RC4 random-to-key hashes a seed instead of preserving its 128 key bits | fixed | `rc4_random_to_key_preserves_seed`; crypto_rc45/crypto_mutations18; commit containing this row | random_to_key now returns Result, requires 16 bytes and preserves them; password string-to-key unchanged. | RFC3961 section3 distinguishes random seeds from passwords; RFC4757 section2 MD4 is password-only; MIT1.22.2 etypes.c selects k5_rand2key_direct. Independent RFC6229 key/keystream plus 000102..0f equality and short/long rejection. |
 | FU-MSG-R01 | minor | Enctype-aware DER padding enforcement is missing from four sibling decryptors | fixed | `sibling_decryptors_enforce_enctype_padding`, existing krb_padding/message_padding_mutations; `c32196d` | AP authenticator, ticket, KDC reply and KRB-PRIV reject authenticated trailing zeros except DES3 padding shorter than eight bytes; six families share admission. | task-22b: all four accepted surplus DES3 block before fix; six-enctype, eight-length positive/negative matrix green. |
 
+| FU-PAC-R02 | minor | PAC parser accepts an unsupported nonzero format version | fixed | `pac_rejects_unknown_versions`; commit containing this row | Nonzero PAC versions return InvalidPacVersion before table allocation. | task-22b: empty version1 accepted before fix; empty/full fixture negatives and version0 controls pass after. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |

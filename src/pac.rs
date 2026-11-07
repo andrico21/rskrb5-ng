@@ -136,7 +136,7 @@ pub const NTLM_SUPPLEMENTAL_CRED_NTOWF: u32 = 2;
 pub struct Pac {
     /// Number of PAC info buffers.
     pub c_buffers: u32,
-    /// PAC version, normally zero.
+    /// PAC version; parsing accepts only zero.
     pub version: u32,
     /// PAC info buffer table.
     pub buffers: Vec<InfoBuffer>,
@@ -182,6 +182,7 @@ impl Pac {
         let mut reader = Reader::new(bytes);
         let c_buffers = reader.read_u32()?;
         let version = reader.read_u32()?;
+        (version == 0).ok_or(Error::InvalidPacVersion(version))?;
         let buffer_count =
             usize::try_from(c_buffers).map_err(|_out_of_range| Error::LengthOverflow)?;
         let table_len = buffer_count

@@ -91,6 +91,9 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- PAC parsing rejects nonzero format versions with `Pac::InvalidPacVersion`
+  before allocating the buffer table (FU-PAC-R02).
+
 - AP authenticators, tickets, KDC replies and KRB-PRIV now reject authenticated
   trailing zero bytes unless they are DES3 padding shorter than eight bytes
   (FU-MSG-R01).

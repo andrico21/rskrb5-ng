@@ -1553,6 +1553,9 @@ pub enum Messages {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Pac {
+    /// The PAC format version is not supported by MS-PAC.
+    #[error("unsupported PAC version {0}; expected zero")]
+    InvalidPacVersion(u32),
     /// Input was too short.
     #[error("{target} is too short: expected at least {minimum} bytes, got {actual}")]
     TooShort {

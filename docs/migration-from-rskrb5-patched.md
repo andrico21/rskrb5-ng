@@ -7,6 +7,9 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+PAC versions (FU-PAC-R02): only version zero is supported. Nonzero versions
+now return `error::Pac::InvalidPacVersion(u32)` before buffer processing.
+
 Encrypted message padding (FU-MSG-R01): complete decryptors require exact DER
 for AES and RC4, and accept only fewer than eight zero padding bytes for DES3.
 Previously accepted authenticated surplus bytes now return the family's Decode

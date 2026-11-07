@@ -92,6 +92,23 @@ mod tests {
         Ok(())
     }
 
+    /// Only version zero is defined by MS-PAC, for empty and complete PACs alike.
+    #[test]
+    fn pac_rejects_unknown_versions() -> Result<(), TestError> {
+        for mut bytes in [vec![0; 8], decode_hex(pac_ad_win2k::PAC_AD_WIN2K)?] {
+            assert_eq!(Pac::parse(&bytes)?.version, 0);
+            bytes
+                .get_mut(4..8)
+                .context("version")?
+                .copy_from_slice(&1_u32.to_le_bytes());
+            assert!(matches!(
+                Pac::parse(&bytes),
+                Err(PacError::InvalidPacVersion(1))
+            ));
+        }
+        Ok(())
+    }
+
     /// Pins the AD credential summary derived from the validation info.
     #[test]
     fn derives_ad_credentials_from_kerb_validation_info() -> Result<(), TestError> {

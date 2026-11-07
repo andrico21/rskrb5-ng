@@ -19,3 +19,4 @@ is a parity feature, not a defect>`.
 | critic:critics-fb19af4/u4.md#U4-01 | FU-MSG-R01 | no |
 | critic:critics-fb19af4/u4.md#U4-02 | FU-CRY-R01 | no |
 | executor:todo-16#transit-validator-rustdoc | FU-DOC-R02 | no |
+| critic:critics-fb19af4/u4.md#U4-03 | FU-PAC-R02 | no |
