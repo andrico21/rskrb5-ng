@@ -4,7 +4,7 @@ use super::{Error, NegTokenInit, NegTokenResp, der::encode_tlv};
 
 /// Both codec boundaries enforce BIT STRING unused-bit and padding rules.
 #[test]
-fn req_flags_reject_malformed_bit_strings() {
+fn req_flags_reject_malformed_bit_strings() -> Result<(), Error> {
     for (contents, valid) in [
         (vec![], false),
         (vec![8], false),
@@ -20,10 +20,14 @@ fn req_flags_reject_malformed_bit_strings() {
         .concat();
         let decoded = NegTokenInit::decode(&encode_tlv(0xa0, &encode_tlv(0x30, &fields)));
         assert_eq!(decoded.is_ok(), valid);
+        if valid {
+            drop(decoded?);
+        }
         let mut token = NegTokenInit::krb5(vec![1]);
         token.req_flags = Some(contents);
         assert_eq!(token.encode().is_ok(), valid);
     }
+    Ok(())
 }
 
 /// Diagnostic formatting never emits MIC or Wrap application plaintext.
