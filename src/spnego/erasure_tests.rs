@@ -20,20 +20,32 @@ impl From<Adoption<'_>> for Zeroizing<Vec<u8>> {
 
 /// Invalid key selection cannot bypass adoption of a consumed plaintext owner.
 #[test]
-fn rejected_constructors_adopt_plaintext() {
+fn rejected_constructors_adopt_plaintext() -> Result<(), Error> {
     for etype in [1_i32, 999_i32] {
         let key = EncryptionKey::new(etype, vec![0; 16]);
         for constructor in 0_u8..3 {
             let adopted = Cell::new(false);
             match constructor {
                 0 => {
-                    drop(MicToken::new_initiator(Adoption(&adopted), &key));
+                    drop(
+                        MicToken::new_initiator(Adoption(&adopted), &key)
+                            .err()
+                            .ok_or(Error::MissingGssChecksum)?,
+                    );
                 }
                 1 => {
-                    drop(WrapToken::new_initiator(Adoption(&adopted), &key));
+                    drop(
+                        WrapToken::new_initiator(Adoption(&adopted), &key)
+                            .err()
+                            .ok_or(Error::MissingGssChecksum)?,
+                    );
                 }
                 _ => {
-                    drop(WrapToken::new_initiator_sealed(Adoption(&adopted), &key));
+                    drop(
+                        WrapToken::new_initiator_sealed(Adoption(&adopted), &key)
+                            .err()
+                            .ok_or(Error::MissingGssChecksum)?,
+                    );
                 }
             }
             assert!(
@@ -42,6 +54,7 @@ fn rejected_constructors_adopt_plaintext() {
             );
         }
     }
+    Ok(())
 }
 
 thread_local! {
