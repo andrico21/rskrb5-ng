@@ -138,12 +138,33 @@ def check(root: Path) -> list[str]:
         path.name: path.read_text(encoding="utf-8")
         for path in sorted((root / ".github/workflows").glob("*.yml"))
     }
-    return wiring_errors(
-        workflows.get("ci.yml", ""), (root / "prek.toml").read_text(encoding="utf-8")
-    ) + pin_errors(workflows)
+    link_errors = []
+    docs = job_text(workflows.get("ci.yml", ""), "docs-validate")
+    if not any(
+        "args:" in line
+        and "--offline" in line
+        and "--include-fragments" in line
+        and "'docs/**/*.md'" in line
+        for line in docs.splitlines()
+    ):
+        link_errors.append(
+            "docs-validate must check nested Markdown offline with fragments"
+        )
+    return (
+        link_errors
+        + wiring_errors(
+            workflows.get("ci.yml", ""),
+            (root / "prek.toml").read_text(encoding="utf-8"),
+        )
+        + pin_errors(workflows)
+    )
 
 
 def self_test() -> int:
+    actual_ci = (ROOT / ".github/workflows/ci.yml").read_text()
+    assert "'docs/**/*.md'" in job_text(actual_ci, "docs-validate"), (
+        "nested docs omitted"
+    )
     run = "".join(f"      - run: {command}\n" for command in REQUIRED)
     ci = (
         "jobs:\n  lint-gates:\n    runs-on: ubuntu-latest\n    steps:\n"
