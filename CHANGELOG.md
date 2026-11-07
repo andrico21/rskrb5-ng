@@ -23,6 +23,10 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Config-backed HTTP layer and service constructors now reject unsupported realm
+  and client-preauthentication restrictions before keytab discovery, matching
+  direct validators (FU-HTTP-R07).
+
 - Retained SPNEGO token bytes, initiator DER/header fields and pending Tower
   AP-REP headers now use zeroizing owners; token and future Debug expose only
   metadata and lengths (FU-SPN-R05). Plain returned wire buffers remain the

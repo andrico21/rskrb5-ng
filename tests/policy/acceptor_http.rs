@@ -10,7 +10,12 @@ use http_types::{Request, Response, StatusCode};
 use rskrb5_ng::{
     Config,
     client::random_nonce,
+    config::{
+        Toggle,
+        section_values::{Plugins, Value},
+    },
     crypto::CryptoPolicy,
+    error::Policy,
     http::{NegotiateLayer, NegotiateService},
     service::Validator,
     spnego::{self, Krb5MechToken, NegTokenInit, Token},
@@ -42,6 +47,42 @@ impl Service<Request<()>> for Accepted {
     fn call(&mut self, _req: Request<()>) -> Self::Future {
         ready(Ok(Response::new(())))
     }
+}
+
+/// Config-backed HTTP constructors refuse unsupported restrictions before keytab discovery.
+#[test]
+fn http_constructors_reject_restrictive_scopes() -> Result<(), Box<dyn Error>> {
+    for scope in ["realm", "disable", "enable_only"] {
+        let mut config = Config::parse("[realms]\nR = {\nkdc = 127.0.0.1:1\n}\n")?;
+        config.libdefaults.default_keytab_name = "unsupported:policy-must-run-first".to_owned();
+        if scope == "realm" {
+            drop(config.realms.first_mut().ok_or("realm")?.relations.insert(
+                "disable_encrypted_timestamp".to_owned(),
+                Value::Boolean(Toggle::Enabled),
+            ));
+        } else {
+            let mut plugins = Plugins::default();
+            if scope == "disable" {
+                plugins.disable.push("encrypted_timestamp".to_owned());
+            } else {
+                plugins.enable_only.push("other".to_owned());
+            }
+            drop(config.plugins.insert("clpreauth".to_owned(), plugins));
+        }
+        for result in [
+            NegotiateLayer::from_default_keytab_name(&config).err(),
+            NegotiateLayer::from_default_keytab(&config).err(),
+            NegotiateService::from_default_keytab_name(Accepted, &config).err(),
+            NegotiateService::from_default_keytab(Accepted, &config).err(),
+        ] {
+            let error = result.ok_or("restriction admitted")?;
+            assert!(
+                matches!(policy_cause(&error), Some(Policy::InvalidConfiguration)),
+                "HTTP constructor bypassed whole-config admission for {scope}"
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Config-based Validator and both HTTP constructors honor the exact permitted list.

@@ -287,6 +287,12 @@ Original review rows:
 | FU-TST-R10 | minor | Mutation-discovered quota regression gap is missing from the follow-up findings index and register | fixed | `partial_expiry_keeps_the_remaining_share_counted`, `4d3995d`; `4278012` | none; tests only | Critic and executor mutation source keys map to this one row; missing row first rejected by register checker. |
 
 
+## Critic round 2
+
+| ID | Sev | Title | Status | Proof (tests, commit) | Behaviour change | Evidence or plan-2 todo |
+| --- | --- | --- | --- | --- | --- | --- |
+| FU-HTTP-R07 | minor | HTTP config constructors omit whole-configuration restrictive-policy admission | fixed | `http_constructors_reject_restrictive_scopes` red/green; all three `acceptor_http` tests pass; commit `http: admit whole configuration before keytab discovery (FU-HTTP-R07)` | Both config-backed layer constructors and forwarding service constructors reject unsupported realm/plugin restrictions with Policy::InvalidConfiguration before keytab discovery. | task-22d-rskrb5-ng-zero-open-items.log: pre-fix realm assertion failed; realm, disable and enable_only now rejected by all four entry points. |
+
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 
 - RVX-u1-01 → FU-TST-01 (also: the test never exercises the router wiring cited by the review doc; covered by FU-TST-01's Proof)

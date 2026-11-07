@@ -31,7 +31,7 @@ use crate::client::{
     negotiate::Client as NegotiateClient, principal::Principal,
 };
 #[cfg(feature = "tower")]
-use crate::config::{Config, parameters::DefaultName};
+use crate::config::{Config, parameters::DefaultName, restrictions};
 #[cfg(feature = "tower")]
 use crate::keytab::{self, Keytab};
 #[cfg(feature = "tower")]
@@ -1184,6 +1184,7 @@ impl NegotiateLayer<'static> {
     /// or the file cannot be read or parsed.
     #[inline]
     pub fn from_default_keytab_name(config: &Config) -> Result<Self> {
+        restrictions::config(config).map_err(|_invalid| Policy::InvalidConfiguration)?;
         let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)
             .map_err(|_invalid| Policy::InvalidConfiguration)?;
         Self::from_keytab(keytab::configured_keytab(
@@ -1213,6 +1214,7 @@ impl NegotiateLayer<'static> {
     /// or the file cannot be read or parsed.
     #[inline]
     pub fn from_default_keytab(config: &Config) -> Result<Self> {
+        restrictions::config(config).map_err(|_invalid| Policy::InvalidConfiguration)?;
         let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)
             .map_err(|_invalid| Policy::InvalidConfiguration)?;
         Self::from_keytab(keytab::default_keytab_name(&config.libdefaults)?)

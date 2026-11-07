@@ -7,6 +7,13 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+HTTP configuration admission (FU-HTTP-R07): `NegotiateLayer` and
+`NegotiateService` constructors taking `Config` now return
+`Policy::InvalidConfiguration` for unsupported restrictive realm or clpreauth
+settings, before discovering or loading a keytab. Programmatic configuration
+has the same fail-closed admission as direct validators; do not rely on these
+constructors silently ignoring a restriction.
+
 Retained SPNEGO credentials now use `zeroize::Zeroizing`: `Krb5MechToken.message`,
 `NegTokenInit.{mech_token, mech_list_mic}`, `NegTokenResp.{response_token,
 mech_list_mic}`, and `InitiatorContext.{ap_req_der, header}` (FU-SPN-R05).
