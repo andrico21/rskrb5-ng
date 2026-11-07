@@ -3,6 +3,7 @@
 extern crate alloc;
 
 use alloc::collections::BTreeSet;
+use core::str;
 use std::{
     fs,
     io::Write as _,
@@ -200,10 +201,23 @@ pub(crate) fn declares(sources: &[(String, String)], symbol: &str) -> bool {
 }
 
 /// Reuse the gate lexer so nested comments and literal contents cannot become declarations.
+///
+/// Paths and texts cross the pipe as NUL-terminated UTF-8 fields, so every feature closure
+/// builds this without the optional `serde_json` dependency.
 fn sanitized_sources(sources: &[(String, String)]) -> Result<Vec<(String, String)>, TestError> {
+    let mut input = String::new();
+    for (path, text) in sources {
+        if path.contains('\0') || text.contains('\0') {
+            return Err(format!("{path}: NUL cannot cross the lexer pipe").into());
+        }
+        input.push_str(path);
+        input.push('\0');
+        input.push_str(text);
+        input.push('\0');
+    }
     let mut child = Command::new("python3")
         .arg("-c")
-        .arg("import json,sys; sys.path.insert(0,'scripts/lint-gates'); from rust_lex import strip_comments_and_strings; print(json.dumps([(p,strip_comments_and_strings(s)) for p,s in json.load(sys.stdin)]))")
+        .arg("import sys; sys.path.insert(0,'scripts/lint-gates'); from rust_lex import strip_comments_and_strings as strip; f=sys.stdin.buffer.read().decode('utf-8').split('\\0')[:-1]; sys.stdout.buffer.write(''.join((x if i%2==0 else strip(x))+'\\0' for i,x in enumerate(f)).encode('utf-8'))")
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .env("PYTHONDONTWRITEBYTECODE", "1")
         .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn()?;
@@ -211,12 +225,23 @@ fn sanitized_sources(sources: &[(String, String)]) -> Result<Vec<(String, String
         .stdin
         .take()
         .ok_or("lexer stdin")?
-        .write_all(&serde_json::to_vec(sources)?)?;
+        .write_all(input.as_bytes())?;
     let output = child.wait_with_output()?;
     if !output.status.success() {
         return Err("Rust lexer failed".into());
     }
-    Ok(serde_json::from_slice(&output.stdout)?)
+    let fields: Vec<&str> = str::from_utf8(&output.stdout)?
+        .split_terminator('\0')
+        .collect();
+    if sources.len().checked_mul(2) != Some(fields.len()) {
+        return Err("Rust lexer output lost a source".into());
+    }
+    let paths = fields.iter().step_by(2);
+    let texts = fields.iter().skip(1).step_by(2);
+    Ok(paths
+        .zip(texts)
+        .map(|(path, text)| ((*path).to_owned(), (*text).to_owned()))
+        .collect())
 }
 
 /// Resolve declarations after lexical removal of comments and literals.
