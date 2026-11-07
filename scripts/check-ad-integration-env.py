@@ -220,7 +220,9 @@ def validate_keytab_header(data: bytes, identity: str = "") -> str | None:
             return "has truncated keytab record payload"
         record = data[offset : offset + size]
         offset += size
-        if length <= 0:
+        if length == 0:
+            break
+        if length < 0:
             continue
         position = 0
 

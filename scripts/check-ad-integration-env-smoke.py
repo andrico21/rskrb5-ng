@@ -69,6 +69,32 @@ def main() -> int:
     valid = b"\x05\x02" + len(entry).to_bytes(4, "big") + entry
     failures.extend(
         check_case(
+            "key after terminator is not usable",
+            {
+                **strict_dry_run_env(),
+                "TEST_AD_TESTUSER1_KEYTAB_HEX": (
+                    valid[:2] + bytes(4) + valid[2:]
+                ).hex(),
+            },
+            expected_returncode=1,
+            expected_text=["no usable key"],
+        )
+    )
+    failures.extend(
+        check_case(
+            "deleted slot before key remains usable",
+            {
+                **strict_dry_run_env(),
+                "TEST_AD_TESTUSER1_KEYTAB_HEX": (
+                    valid[:2] + (-1).to_bytes(4, "big", signed=True) + b"x" + valid[2:]
+                ).hex(),
+            },
+            expected_returncode=0,
+            expected_text=["environment is ready"],
+        )
+    )
+    failures.extend(
+        check_case(
             "complete keytab override passes",
             {**strict_dry_run_env(), "TEST_AD_TESTUSER1_KEYTAB_HEX": valid.hex()},
             expected_returncode=0,

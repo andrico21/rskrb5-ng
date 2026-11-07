@@ -7,6 +7,10 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+AD preflight (FU-TST-R13): usable keytab entries must precede the zero-length
+terminator. Regenerate an override whose only key follows that terminator;
+negative-length deleted slots remain skippable, matching the Rust loader.
+
 Package links (FU-CI-R03): multiline Markdown destinations and unquoted HTML
 `href`/`src` attributes now participate in package-membership validation.
 Correct missing/excluded local destinations or use an existing repository URL.
