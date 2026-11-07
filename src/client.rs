@@ -3332,6 +3332,9 @@ pub fn build_ap_req_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<BuiltApReq, Error> {
+    if let Some(checksum) = &options.checksum {
+        selection::reject_checksum(checksum.r#type)?;
+    }
     let policy = options.crypto_policy.clone().unwrap_or_default();
     crypto_policy::session(&policy, service_ticket, Use::SessionKey)?;
     if let Some(subkey) = &options.subkey {

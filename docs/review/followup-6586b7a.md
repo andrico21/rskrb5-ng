@@ -23,6 +23,12 @@ limits are recorded under FU-OPS-03.
 
 ## Register
 
+Critic round `critics-f22ea5b`, lane B:
+
+| ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
+| --- | --- | --- | --- | --- | --- | --- |
+| FU-CLI-R08 | minor | Complete AP builder accepts explicitly prohibited unkeyed checksums | fixed | `ap_rejects_prohibited_checksums_before_crypto`, `ap_preserves_keyed_and_gss_checksums`; commit `client: reject prohibited AP checksums (FU-CLI-R08)` | Complete AP construction rejects explicit checksum IDs 1..10 and 14 with UnauthenticatedChecksum before any crypto; keyed and GSS selections remain accepted. | task-22e: pre-fix rejection test failed, preservation control passed; post-fix both passed. Invalid confounder proves rejection precedes encryption. |
+
 Critic round `critics-fb19af4`, unit u2:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |

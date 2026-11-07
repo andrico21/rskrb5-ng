@@ -23,6 +23,10 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Complete client AP builders reject explicitly selected unkeyed/weak checksum
+  IDs with `RejectedFeature::UnauthenticatedChecksum` before cryptographic work;
+  keyed and GSS checksum selections remain supported (FU-CLI-R08).
+
 - Retained SPNEGO token bytes, initiator DER/header fields and pending Tower
   AP-REP headers now use zeroizing owners; token and future Debug expose only
   metadata and lengths (FU-SPN-R05). Plain returned wire buffers remain the

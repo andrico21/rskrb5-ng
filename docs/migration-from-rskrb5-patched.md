@@ -7,6 +7,12 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Explicit AP checksums (FU-CLI-R08): `client::build_ap_req_with_confounder`
+rejects checksum IDs 1 through 10 and 14 through
+`Client::Crypto(Crypto::Policy(Policy::RejectedFeature { .. }))`, identifying
+`RejectedFeature::UnauthenticatedChecksum`. Select a supported keyed checksum
+or the protocol's GSS checksum instead. No unkeyed fallback is performed.
+
 Retained SPNEGO credentials now use `zeroize::Zeroizing`: `Krb5MechToken.message`,
 `NegTokenInit.{mech_token, mech_list_mic}`, `NegTokenResp.{response_token,
 mech_list_mic}`, and `InitiatorContext.{ap_req_der, header}` (FU-SPN-R05).
