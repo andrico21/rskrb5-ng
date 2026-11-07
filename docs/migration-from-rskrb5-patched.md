@@ -56,6 +56,10 @@ policy" below have the details.
 
 ## Behaviour changes before the review backlog
 
+SPNEGO reqFlags contents must include an unused-bit count from 0 to 7, with zero
+padding bits and a payload when the count is nonzero (FU-SPN-R08). Malformed
+values now return `Spnego::InvalidReqFlags` on encode and decode; `[0]` remains valid.
+
 Consuming GSS constructors erase adopted plaintext even when key selection fails
 (FU-SPN-R07). No call-site change is required; passing a zeroizing owner remains
 the preferred way to retain erasure responsibility across the call boundary.

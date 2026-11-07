@@ -87,6 +87,9 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- SPNEGO reqFlags encode/decode rejects malformed DER BIT STRING contents with
+  the new `Spnego::InvalidReqFlags` error (FU-SPN-R08).
+
 - Consuming MIC and Wrap constructors adopt plaintext into zeroizing storage
   before rejecting an unsupported key, so early errors also erase it (FU-SPN-R07).
 

@@ -205,6 +205,8 @@ limits are recorded under FU-OPS-03.
 
 | FU-SPN-R07 | minor | Consuming GSS constructors reject the key before adopting the plaintext owner | fixed | `rejected_constructors_adopt_plaintext`, erasure_tests; commit `spnego: adopt plaintext before fallible key selection (FU-SPN-R07)` | MIC and both Wrap convenience constructors adopt consumed plaintext into Zeroizing before any fallible selection, including unknown and rejected keys. | Task 22 evidence: conversion observer red before fix, all 5 erasure tests green after fix. |
 
+| FU-SPN-R08 | minor | SPNEGO reqFlags is accepted and emitted without BIT STRING validation | fixed | `req_flags_reject_malformed_bit_strings`; commit `spnego: validate reqFlags BIT STRING contents (FU-SPN-R08)` | Encoding and decoding reject missing or invalid unused-bit counts and nonzero padding with Spnego::InvalidReqFlags; legal empty-bit and padded encodings remain accepted. | Task 22 evidence: independently framed malformed contents red then green. |
+
 ## Source notes
 
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):

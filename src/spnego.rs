@@ -1164,6 +1164,7 @@ impl NegTokenInit {
         ));
 
         if let Some(req_flags) = &self.req_flags {
+            validate_req_flags(req_flags)?;
             fields.extend_from_slice(&encode_explicit(
                 TAG_CONTEXT_1,
                 &encode_tlv(TAG_BIT_STRING, req_flags),
@@ -2221,6 +2222,22 @@ fn rotate_left(bytes: &[u8], count: usize) -> Vec<u8> {
 
 use crate::error::Spnego as Error;
 
+/// Enforce DER BIT STRING content rules at both reqFlags boundaries.
+///
+/// # Errors
+/// Returns `InvalidReqFlags` for missing count bytes or invalid padding.
+fn validate_req_flags(bytes: &[u8]) -> Result<(), Error> {
+    let Some((&unused, bits)) = bytes.split_first() else {
+        return Err(Error::InvalidReqFlags);
+    };
+    (unused <= 7
+        && (unused == 0
+            || bits
+                .last()
+                .is_some_and(|last| last & (1_u8 << unused).wrapping_sub(1) == 0)))
+    .ok_or(Error::InvalidReqFlags)
+}
+
 /// Map an AP-REP processing error onto the SPNEGO error type.
 fn ap_rep_error(error: error::ApRep) -> Error {
     match error {
@@ -2439,6 +2456,9 @@ fn decode_neg_token_init(bytes: &[u8]) -> Result<NegTokenInit, Error> {
         }
     }
 
+    if let Some(flags) = &req_flags {
+        validate_req_flags(flags)?;
+    }
     let mech_types = offered_mechs
         .filter(|oids| !oids.is_empty())
         .ok_or(Error::MissingMechTypes)?;
