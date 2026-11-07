@@ -41,4 +41,5 @@ is a parity feature, not a defect>`.
 | critic:critics-fb19af4/u6.md#U6-11 | FU-DOC-R10 | no |
 | critic:critics-fb19af4/u6.md#U6-12 | FU-TST-R09 | no |
 | critic:critics-fb19af4/u6.md#U6-13 | FU-TST-R10 | no |
+| critic:critics-fb19af4/u6.md#U6-14 | FU-DOC-R11 | no |
 | executor:todo-21#replay-quota-partial-expiry | FU-TST-R10 | no |
