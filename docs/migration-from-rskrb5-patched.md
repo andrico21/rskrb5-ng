@@ -56,6 +56,11 @@ policy" below have the details.
 
 ## Behaviour changes before the review backlog
 
+Treat `with_ap_rep(false)` as an optional-reply preference (FU-SPN-R09). A valid
+initiator mechListMIC still receives a completion carrying a reciprocal MIC and
+the AP-REP that binds its sequence number. First-choice exchanges without a MIC
+retain the no-reply behavior.
+
 SPNEGO reqFlags contents must include an unused-bit count from 0 to 7, with zero
 padding bits and a payload when the count is nonzero (FU-SPN-R08). Malformed
 values now return `Spnego::InvalidReqFlags` on encode and decode; `[0]` remains valid.

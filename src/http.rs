@@ -1579,7 +1579,7 @@ where
         };
 
         drop(validator);
-        let ap_rep_header = if self.response.emit_ap_rep {
+        let ap_rep_header = if self.response.emit_ap_rep || accepted.mech_types_der.is_some() {
             match accepted.ap_rep_response_header(&self.response.ap_rep_options.clone()) {
                 Ok(header) => Some(header),
                 Err(error) => {

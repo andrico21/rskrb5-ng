@@ -211,6 +211,8 @@ limits are recorded under FU-OPS-03.
 
 | FU-TST-R02 | minor | The inner ticket-key policy regression is masked by the authenticator-envelope policy check | fixed | `acceptor_checks_inner_keys_before_replay`; commit `test: isolate decrypted ticket-key policy enforcement (FU-TST-R02)` | none | Task 22 mutation removes only decrypted ticket-key check: corrected fixture fails with wrong cause; restored production check passes. Authenticator envelope now allowed independently of inner key. |
 
+| FU-SPN-R09 | minor | Disabling AP-REP also suppresses a required reciprocal mechanism-list MIC | fixed | `ap_rep_disabled_completes_required_mic`; commit `http: complete required MIC exchanges despite AP-REP preference (FU-SPN-R09)` | with_ap_rep(false) suppresses only optional replies; authenticated mechListMIC exchanges still receive AP-REP and reciprocal MIC before protected response delivery. | Task 22 evidence: independent NTLM-first MIC fixture lacked completion before fix; reciprocal MIC verifies after fix. |
+
 ## Source notes
 
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):

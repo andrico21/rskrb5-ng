@@ -209,6 +209,55 @@ mod tests {
     #[derive(Clone)]
     struct PolicyService;
 
+    /// Disabling optional AP-REP cannot discard required reciprocal mechanism integrity.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn ap_rep_disabled_completes_required_mic() -> Result<(), TestError> {
+        use rskrb5_ng::{
+            crypto::AesSha1Etype,
+            spnego::{MicToken, oid::ObjectIdentifier},
+        };
+        let Token::Init(mut init) = spnego::parse_negotiate_header(&initiator_context()?.header)?
+        else {
+            return Err("initial token".into());
+        };
+        init.mech_types.insert(
+            0,
+            ObjectIdentifier::from_arcs(vec![1, 3, 6, 1, 4, 1, 311, 2, 2, 10])?,
+        );
+        let list = decode_hex("3017060a2b06010401823702020a06092a864886f712010202")?;
+        let key = decode_hex(VALID_SESSION_KEY)?;
+        let mut mic = vec![4, 4, 0, 255, 255, 255, 255, 255];
+        mic.extend_from_slice(&42_u64.to_be_bytes());
+        let mut signed = list.clone();
+        signed.extend_from_slice(&mic);
+        mic.extend_from_slice(&AesSha1Etype::Aes256.checksum(&key, &signed, 25)?);
+        init.mech_list_mic = Some(mic.into());
+        let keytab = keytab()?;
+        let mut service = krb_http::NegotiateLayer::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .with_ap_rep(false)
+            .layer(PolicyService);
+        let mut request = Request::new(());
+        krb_http::set_authorization_header(
+            &mut request,
+            &spnego::negotiate_header(&Token::Init(init))?,
+        )?;
+        let response = run_ready(service.call(request))??;
+        let header = response
+            .headers()
+            .get(WWW_AUTHENTICATE)
+            .context("required completion")?
+            .to_str()?;
+        let Token::Resp(completion) = spnego::parse_negotiate_header(header)? else {
+            return Err("completion token".into());
+        };
+        MicToken::decode(&completion.mech_list_mic.context("reciprocal MIC")?, true)?
+            .with_payload(list)
+            .verify(&EncryptionKey::new(18, key), 23)?;
+        Ok(())
+    }
+
     /// Cache replacement checks the shared validator rather than stale clone settings.
     #[cfg(feature = "tower")]
     #[test]

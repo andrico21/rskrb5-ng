@@ -87,6 +87,9 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- `with_ap_rep(false)` no longer suppresses mandatory SPNEGO completion: a
+  supplied valid mechListMIC receives its reciprocal MIC and AP-REP (FU-SPN-R09).
+
 - SPNEGO reqFlags encode/decode rejects malformed DER BIT STRING contents with
   the new `Spnego::InvalidReqFlags` error (FU-SPN-R08).
 
