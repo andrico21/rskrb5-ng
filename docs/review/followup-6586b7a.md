@@ -201,6 +201,8 @@ limits are recorded under FU-OPS-03.
 
 | FU-HTTP-R05 | minor | The Axum example still turns internal validation faults into authentication rejection | fixed | `poisoned_validator_retains_cause`; commit `http: retain example infrastructure fault causes (FU-HTTP-R05)` | Example replay infrastructure faults now produce opaque hardened 500 responses with Arc<Http> response-extension causes instead of 401 or discarded causes. | Task 22 evidence: actual router lost poison cause before fix, retained it after fix. |
 
+| FU-HTTP-R06 | nit | The example leaks its keytab despite already supporting an owning validator | fixed | Axum example target; commit `http: own the example service keytab (FU-HTTP-R06)` | Example shutdown releases the service keytab through the owning validator instead of leaking it for process lifetime. | Task 22 evidence: explicit Box::leak on the construction path replaced with Validator::from_keytab. |
+
 ## Source notes
 
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):

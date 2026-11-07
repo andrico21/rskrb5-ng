@@ -56,6 +56,9 @@ policy" below have the details.
 
 ## Behaviour changes before the review backlog
 
+Use `Validator::from_keytab(keytab)` for an owning service, as the Axum example
+now does (FU-HTTP-R06). Do not leak a keytab merely to obtain a static validator.
+
 The Axum example now distinguishes replay infrastructure failures from invalid
 credentials (FU-HTTP-R05): expect HTTP 500 and inspect `Arc<error::Http>` in local
 response extensions, rather than retrying credentials after an apparent 401.

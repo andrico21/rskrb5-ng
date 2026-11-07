@@ -46,9 +46,8 @@ struct AppState {
 /// The server future owns every resource; dropping it stops the server.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let keytab = Box::leak(Box::new(load_keytab()?));
     let state = AppState {
-        validator: Arc::new(Mutex::new(Validator::new(keytab))),
+        validator: Arc::new(Mutex::new(Validator::from_keytab(load_keytab()?))),
     };
 
     let app = Router::new()

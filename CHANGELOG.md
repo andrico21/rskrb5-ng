@@ -87,6 +87,9 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- The Axum example owns its keytab and releases it on shutdown instead of
+  leaking the allocation for process lifetime (FU-HTTP-R06).
+
 - The Axum example reports replay infrastructure faults as hardened 500 responses
   and retains typed causes in local response extensions (FU-HTTP-R05).
 
