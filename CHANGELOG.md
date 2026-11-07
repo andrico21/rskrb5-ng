@@ -23,6 +23,10 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Checked string-to-key retains the policy's per-family iteration minimum and
+  rejects lower counts before PBKDF2. Raw vector APIs remain policy-free
+  (FU-CRY-R02).
+
 - Programmatic and serde realm timestamp restrictions reject every non-Boolean
   value with a named invalid-policy error instead of treating it as absent
   (FU-CFG-R09).

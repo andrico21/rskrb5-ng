@@ -7,6 +7,12 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Checked derivation (FU-CRY-R02): `crypto::checked::Etype` snapshots the authorized
+family's minimum. Counts below it now return `S2kIterationsTooLow` before PBKDF2.
+For trusted count-one vectors, construct a policy from `LibDefaults` with
+`with_min_s2k_iterations(Family::AesSha1, 1)` (or AesSha2), or use the explicitly
+policy-free raw primitive. The upper work limit still applies.
+
 Realm restriction values (FU-CFG-R09): `disable_encrypted_timestamp` accepts only
 `Value::Boolean(Toggle::Disabled)` or an absent entry. The enabled restriction
 remains unsupported; Text, List, Choice and Locations now return `InvalidBoolean`

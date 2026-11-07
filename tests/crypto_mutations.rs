@@ -14,7 +14,7 @@ mod tests {
         config::LibDefaults,
         crypto::{
             AesSha2Etype, CryptoPolicy, Des3CbcSha1KdEtype, Rc4HmacEtype, Use, checked,
-            kerb_checksum_hmac_md5, nfold, selection,
+            kerb_checksum_hmac_md5, nfold, s2k::Family, selection,
         },
         error::Crypto,
     };
@@ -123,7 +123,8 @@ mod tests {
     /// Checked dispatch retains the RFC3962 Appendix B known answer.
     #[test]
     fn checked_s2k_matches_rfc3962() -> Result<(), TestError> {
-        let etype = checked::Etype::new(&CryptoPolicy::default(), 17)?;
+        let defaults = LibDefaults::new().with_min_s2k_iterations(Family::AesSha1, 1)?;
+        let etype = checked::Etype::new(&CryptoPolicy::from_libdefaults(&defaults)?, 17)?;
         assert_eq!(
             hex::encode(etype.string_to_key(b"password", b"ATHENA.MIT.EDUraeburn", "00000001")?),
             "42263c6e89f4fc28b8df68ee09799f15"
