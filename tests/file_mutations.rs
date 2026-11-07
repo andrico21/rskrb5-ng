@@ -162,7 +162,7 @@ mod tests {
                 CacheKey::new(0, Vec::new()),
                 CredentialTimes::default(),
                 [0; 4],
-                vec![1],
+                vec![1].into(),
             ));
             assert!(
                 CCache::parse(&cache.to_bytes()?)?

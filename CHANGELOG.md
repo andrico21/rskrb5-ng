@@ -23,6 +23,10 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Ccache ticket, second-ticket, configuration and authorization payloads now use
+  `Zeroizing<Vec<u8>>`, including partially parsed records. Owning constructors
+  and setters require zeroizing buffers (FU-FIL-R05).
+
 - TGT classification now requires exactly `krbtgt/<nonempty destination>`,
   with case-sensitive service components. Extra components and `KRBTGT` no
   longer enter the TGT cache or renewal path (FU-CLI-R09).

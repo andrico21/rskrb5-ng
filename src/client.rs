@@ -447,8 +447,8 @@ impl AsRepSession {
             ticket_flags: self.ticket_flags,
             addresses: Vec::new(),
             auth_data: Vec::new(),
-            ticket: self.ticket.to_vec(),
-            second_ticket: Vec::new(),
+            ticket: self.ticket.clone(),
+            second_ticket: Zeroizing::default(),
         })
     }
 }
@@ -4905,7 +4905,7 @@ fn ccache_credential_session(credential: &ccache::Credential) -> AsRepSession {
             etype: credential.key.etype,
             value: credential.key.value.clone(),
         },
-        ticket: Zeroizing::new(credential.ticket.clone()),
+        ticket: credential.ticket.clone(),
         ticket_flags: credential.ticket_flags,
         auth_time,
         start_time,

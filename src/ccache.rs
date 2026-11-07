@@ -16,6 +16,7 @@ use std::{
 
 #[cfg(feature = "serde")]
 use serde::de::Error as _;
+use zeroize::Zeroizing;
 
 use crate::file_name;
 
@@ -51,6 +52,13 @@ pub enum CacheName {
 
 /// Redaction of credential-bearing diagnostics.
 mod credential_debug;
+
+/// Erasure of retained credential payloads.
+mod payload;
+
+/// Credential payload lifetime regressions.
+#[cfg(test)]
+mod payload_tests;
 
 /// Credential cache configuration entry.
 ///
@@ -451,15 +459,14 @@ impl CCache {
 
     /// Insert or replace a cache configuration entry for the default client.
     #[inline]
-    pub fn upsert_config_entry<P, Q>(
+    pub fn upsert_config_entry<P>(
         &mut self,
         key: P,
         principal: Option<String>,
-        value: Q,
+        value: Zeroizing<Vec<u8>>,
     ) -> Option<Credential>
     where
         P: Into<String>,
-        Q: Into<Vec<u8>>,
     {
         self.upsert_credential(Credential::config_entry(
             self.default_principal.clone(),
@@ -980,22 +987,24 @@ pub struct Credential {
     /// Authorization data entries.
     pub auth_data: Vec<AuthorizationDataEntry>,
     /// Primary ticket DER bytes.
-    pub ticket: Vec<u8>,
+    #[cfg_attr(feature = "serde", serde(with = "payload"))]
+    pub ticket: Zeroizing<Vec<u8>>,
     /// Second ticket DER bytes.
-    pub second_ticket: Vec<u8>,
+    #[cfg_attr(feature = "serde", serde(with = "payload"))]
+    pub second_ticket: Zeroizing<Vec<u8>>,
 }
 
 impl Credential {
     /// Creates a `Credential` from its required fields.
     #[must_use]
     #[inline]
-    pub const fn new(
+    pub fn new(
         client: Principal,
         server: Principal,
         key: EncryptionKey,
         times: CredentialTimes,
         ticket_flags: [u8; 4],
-        ticket: Vec<u8>,
+        ticket: Zeroizing<Vec<u8>>,
     ) -> Self {
         Self {
             client,
@@ -1007,7 +1016,7 @@ impl Credential {
             addresses: Vec::new(),
             auth_data: Vec::new(),
             ticket,
-            second_ticket: Vec::new(),
+            second_ticket: Zeroizing::default(),
         }
     }
     /// Sets `is_skey`, preserving the other fields.
@@ -1034,7 +1043,7 @@ impl Credential {
     /// Sets `second_ticket`, preserving the other fields.
     #[must_use]
     #[inline]
-    pub fn with_second_ticket(mut self, value: Vec<u8>) -> Self {
+    pub fn with_second_ticket(mut self, value: Zeroizing<Vec<u8>>) -> Self {
         self.second_ticket = value;
         self
     }
@@ -1044,15 +1053,14 @@ impl Credential {
     /// The `value` is stored in the ticket field, matching MIT's X-CACHECONF
     /// convention.
     #[inline]
-    pub fn config_entry<P, Q>(
+    pub fn config_entry<P>(
         client: Principal,
         key: P,
         principal: Option<String>,
-        value: Q,
+        value: Zeroizing<Vec<u8>>,
     ) -> Self
     where
         P: Into<String>,
-        Q: Into<Vec<u8>>,
     {
         let mut components = vec![X_CACHECONF_COMPONENT.to_owned(), key.into()];
         if let Some(associated) = principal {
@@ -1070,8 +1078,8 @@ impl Credential {
             ticket_flags: [0; 4],
             addresses: Vec::new(),
             auth_data: Vec::new(),
-            ticket: value.into(),
-            second_ticket: Vec::new(),
+            ticket: value,
+            second_ticket: Zeroizing::default(),
         }
     }
 
@@ -1122,10 +1130,9 @@ impl Credential {
             auth_data.push(AuthorizationDataEntry::parse(bytes, offset, endian)?);
         }
 
-        let ticket = read_data(bytes, offset, endian)?;
-        let second_ticket = read_data(bytes, offset, endian)?;
+        let ticket = Zeroizing::new(read_data(bytes, offset, endian)?);
 
-        Ok(Self {
+        let mut credential = Self {
             client,
             server,
             key,
@@ -1135,8 +1142,10 @@ impl Credential {
             addresses,
             auth_data,
             ticket,
-            second_ticket,
-        })
+            second_ticket: Zeroizing::default(),
+        };
+        credential.second_ticket = Zeroizing::new(read_data(bytes, offset, endian)?);
+        Ok(credential)
     }
 
     /// Append the credential to `out` in the encoding of `version`.
@@ -1358,14 +1367,15 @@ pub struct AuthorizationDataEntry {
     /// Authorization data type id.
     pub ad_type: i32,
     /// Raw authorization data bytes.
-    pub data: Vec<u8>,
+    #[cfg_attr(feature = "serde", serde(with = "payload"))]
+    pub data: Zeroizing<Vec<u8>>,
 }
 
 impl AuthorizationDataEntry {
     /// Creates a `AuthorizationDataEntry` from its required fields.
     #[must_use]
     #[inline]
-    pub const fn new(ad_type: i32, data: Vec<u8>) -> Self {
+    pub const fn new(ad_type: i32, data: Zeroizing<Vec<u8>>) -> Self {
         Self { ad_type, data }
     }
 
@@ -1379,7 +1389,7 @@ impl AuthorizationDataEntry {
     fn parse(bytes: &[u8], offset: &mut usize, endian: Endian) -> Result<Self, Error> {
         Ok(Self {
             ad_type: i32::from(read_i16(bytes, offset, endian)?),
-            data: read_data(bytes, offset, endian)?,
+            data: Zeroizing::new(read_data(bytes, offset, endian)?),
         })
     }
 

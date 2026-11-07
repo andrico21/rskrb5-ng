@@ -7,6 +7,17 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Ccache payload ownership (FU-FIL-R05): `Credential.ticket`, `second_ticket` and
+`AuthorizationDataEntry.data` are `Zeroizing<Vec<u8>>`. Pass zeroizing buffers to
+`Credential::new`, `with_second_ticket`, `config_entry`, `upsert_config_entry`
+and `AuthorizationDataEntry::new`; convert a moved vector with `.into()` and
+borrow with `.as_slice()`. Payload owners erase on drop, replacement and parse
+failure. `Credential` and `AuthorizationDataEntry` now implement Drop; borrow
+their fields or use `core::mem::take` rather than moving fields out. Construction
+is no longer const. Binary and serde byte encodings are unchanged.
+Caller-owned serialized output and borrowed source buffers remain the caller's
+erasure responsibility.
+
 TGT identity (FU-CLI-R09): use exactly two components, `krbtgt` and a nonempty
 destination realm. `KRBTGT`, extra components and empty destinations are not
 TGTs and return `InvalidTgtSession` from TGT insertion/renewal. Cross-realm
@@ -1580,9 +1591,9 @@ kpasswd result helpers, `MicToken::verify`/`WrapToken::verify` and others).
 - `ccache::CCache::default_principal`: `pub const fn default_principal(&self) -> &Principal`.
 - `ccache::CCache::default_principal_mut`: `pub const fn default_principal_mut(&mut self) -> &mut Principal`.
 - `ccache::CCache::credentials_mut`: `pub const fn credentials_mut(&mut self) -> &mut Vec<Credential>`.
-- `ccache::CCache::upsert_config_entry`: `pub fn upsert_config_entry<P, Q>( &mut self, key: P, principal: Option<String>, value: Q, ) -> Option<Credential> where P: Into<String>, Q: Into<Vec<u8>>,`.
+- `ccache::CCache::upsert_config_entry`: `pub fn upsert_config_entry<P>(&mut self, key: P, principal: Option<String>, value: Zeroizing<Vec<u8>>) -> Option<Credential> where P: Into<String>`.
 - `ccache::Principal::new`: `pub fn new<P>(realm: P, name_type: i32, components: Vec<String>) -> Self where P: Into<String>,`.
-- `ccache::Credential::config_entry`: `pub fn config_entry<P, Q>( client: Principal, key: P, principal: Option<String>, value: Q, ) -> Self where P: Into<String>, Q: Into<Vec<u8>>,`.
+- `ccache::Credential::config_entry`: `pub fn config_entry<P>(client: Principal, key: P, principal: Option<String>, value: Zeroizing<Vec<u8>>) -> Self where P: Into<String>`.
 - `client::kpasswd::RequestOptions::new`: `pub const fn new( timestamp: SystemTime, cusec: u32, sequence_number: u32, sender_address: rasn_kerberos::HostAddress, ) -> Self`.
 - `client::kpasswd::build_kpasswd_request_with_confounders`: `pub fn build_kpasswd_request_with_confounders( service_ticket: &TgsRepSession, change_data: &kadmin::ChangePasswdData, reply_key: EncryptionKey, options: &RequestOptions, ap_req_confounder: &[u8], krb_priv_confounder: &[u8], ) -> Result<BuiltKpasswdRequest, Error>`.
 - `client::kpasswd::build_kpasswd_request`: `pub fn build_kpasswd_request( service_ticket: &TgsRepSession, change_data: &kadmin::ChangePasswdData, options: &RequestOptions, ) -> Result<BuiltKpasswdRequest, Error>`.

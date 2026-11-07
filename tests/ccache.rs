@@ -52,12 +52,13 @@ mod tests {
             principal.clone(),
             "metadata",
             None,
-            vec![201, 202, 203, 204],
+            vec![201, 202, 203, 204].into(),
         );
-        credential.second_ticket = vec![211, 212, 213, 214];
-        credential
-            .auth_data
-            .push(AuthorizationDataEntry::new(1, vec![221, 222, 223, 224]));
+        credential.second_ticket = vec![211, 212, 213, 214].into();
+        credential.auth_data.push(AuthorizationDataEntry::new(
+            1,
+            vec![221, 222, 223, 224].into(),
+        ));
         let mut cache = CCache::new(principal);
         cache.credentials_mut().push(credential.clone());
         let encoded = cache.to_bytes()?;
@@ -772,8 +773,12 @@ mod tests {
     #[test]
     fn builds_and_upserts_x_cacheconf_entries() -> Result<(), TestError> {
         let client = Principal::new("TEST.GOKRB5", 1, vec!["testuser1".to_owned()]);
-        let credential =
-            Credential::config_entry(client.clone(), "start_realm", None, b"TEST.GOKRB5".to_vec());
+        let credential = Credential::config_entry(
+            client.clone(),
+            "start_realm",
+            None,
+            b"TEST.GOKRB5".to_vec().into(),
+        );
 
         assert_eq!(credential.client, client);
         assert_eq!(credential.server.realm, "X-CACHECONF:");
@@ -781,14 +786,14 @@ mod tests {
             credential.server.components,
             ["krb5_ccache_conf_data", "start_realm"]
         );
-        assert_eq!(credential.ticket, b"TEST.GOKRB5");
+        assert_eq!(credential.ticket.as_slice(), b"TEST.GOKRB5");
         assert_eq!(credential.key.etype, 0_i32);
         assert!(credential.key.value.is_empty(), "a config entry has no key");
 
-        let mut cache = CCache::new(credential.client);
+        let mut cache = CCache::new(credential.client.clone());
         assert!(
             cache
-                .upsert_config_entry("start_realm", None, b"TEST.GOKRB5".to_vec())
+                .upsert_config_entry("start_realm", None, b"TEST.GOKRB5".to_vec().into())
                 .is_none(),
             "the first upsert replaces nothing"
         );
@@ -799,9 +804,9 @@ mod tests {
         );
 
         let replaced = cache
-            .upsert_config_entry("start_realm", None, b"OTHER.GOKRB5".to_vec())
+            .upsert_config_entry("start_realm", None, b"OTHER.GOKRB5".to_vec().into())
             .context("config entry is replaced")?;
-        assert_eq!(replaced.ticket, b"TEST.GOKRB5");
+        assert_eq!(replaced.ticket.as_slice(), b"TEST.GOKRB5");
         assert_eq!(
             cache.config_entry_value("start_realm", None),
             Some(b"OTHER.GOKRB5".as_slice())
@@ -863,7 +868,7 @@ mod tests {
                 .clone();
             replacement.client.name_type = client_type;
             replacement.server.name_type = server_type;
-            replacement.ticket = b"replacement ticket".to_vec();
+            replacement.ticket = b"replacement ticket".to_vec().into();
 
             // When upserting the replacement.
             let previous = cache.upsert_credential(replacement.clone());
@@ -1254,7 +1259,7 @@ mod tests {
             EncryptionKey::new(i32::from(etype), key),
             times,
             flags,
-            ticket,
+            ticket.into(),
         )
         .with_is_skey(is_skey)
         .with_addresses(
@@ -1266,10 +1271,10 @@ mod tests {
         .with_auth_data(
             auth_data
                 .into_iter()
-                .map(|(ad_type, data)| AuthorizationDataEntry::new(i32::from(ad_type), data))
+                .map(|(ad_type, data)| AuthorizationDataEntry::new(i32::from(ad_type), data.into()))
                 .collect(),
         )
-        .with_second_ticket(second_ticket)
+        .with_second_ticket(second_ticket.into())
     }
 
     proptest! {
