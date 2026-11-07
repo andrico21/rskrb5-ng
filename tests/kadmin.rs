@@ -61,6 +61,7 @@ mod tests {
     #[test]
     fn full_message_retains_ap_crypto_source() -> Result<(), TestError> {
         use core::error::Error as _;
+
         use rskrb5_ng::{error::Crypto, kadmin::PasswordEncryption};
 
         let fixture = Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)?;

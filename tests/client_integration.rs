@@ -1769,6 +1769,7 @@ mod tests {
     #[test]
     fn replay_scenario_accepts_fractional_clock() -> Result<(), Box<dyn Error>> {
         use core::str;
+
         use rskrb5_ng::{ap_req, ticket};
         let request = ap_req::decode(include_bytes!("../fuzz/fixtures/valid_ap_req.der"))?;
         let key = EncryptionKey::new(

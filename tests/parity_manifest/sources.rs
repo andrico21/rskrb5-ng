@@ -133,9 +133,10 @@ fn symbol_evidence_requires_full_owner_path() {
         "pub struct Keytab;\nimpl Keytab {\n pub fn from_name() {}\n}".to_owned(),
     )];
     assert!(!declares(&child, "keytab::Keytab::from_name"));
-    let mut both = sources;
-    both.extend(child);
-    assert!(!declares(&both, "keytab::Keytab::from_name"));
+    assert!(!declares(
+        &[sources, child].concat(),
+        "keytab::Keytab::from_name"
+    ));
     let ghost = vec![(
         "src/keytab.rs".to_owned(),
         "/*\npub struct Ghost;\n*/".to_owned(),

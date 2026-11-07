@@ -1,15 +1,4 @@
 use core::error::Error;
-
-use rskrb5_ng::{
-    Config,
-    crypto::CryptoPolicy,
-    keytab::EncryptionKey,
-    service::{ApRepOptions, Validator},
-    spnego::{self, Krb5MechToken, NegTokenInit, Token},
-};
-
-use super::{acceptor::fixture, client::policy_cause};
-
 #[cfg(feature = "tower")]
 use core::{
     cell::Cell,
@@ -17,10 +6,20 @@ use core::{
     future::{Ready, ready},
     task::{Context, Poll},
 };
+
 #[cfg(feature = "tower")]
 use http_types::{Request, Response};
+use rskrb5_ng::{
+    Config,
+    crypto::CryptoPolicy,
+    keytab::EncryptionKey,
+    service::{ApRepOptions, Validator},
+    spnego::{self, Krb5MechToken, NegTokenInit, Token},
+};
 #[cfg(feature = "tower")]
 use tower_service::Service;
+
+use super::{acceptor::fixture, client::policy_cause};
 
 /// Counts protected handler entry independently of its response.
 #[cfg(feature = "tower")]
