@@ -97,7 +97,9 @@ mod tests {
         let transport = Tokio::new().with_udp_response_limit(4);
         let server = async {
             let mut request = [0; 32];
-            let (_, client) = peer.recv_from(&mut request).await?;
+            // A client that never sends fails here instead of hanging the suite.
+            let (_, client) =
+                timeout(Duration::from_secs(10), peer.recv_from(&mut request)).await??;
             let _: usize = peer.send_to(&[42; 16], client).await?;
             Ok::<_, io::Error>(())
         };

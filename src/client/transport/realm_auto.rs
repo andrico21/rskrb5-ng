@@ -72,12 +72,13 @@ async fn send_explicit(
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    use core::error::Error as StdError;
+    use core::{error::Error as StdError, time::Duration};
     use std::io;
 
     use tokio::{
         io::{AsyncReadExt as _, AsyncWriteExt as _},
         net::TcpListener,
+        time::timeout,
     };
 
     use super::{Config, KdcProtocol, Tokio};
@@ -101,10 +102,11 @@ mod tests {
         };
         // When the shared configured login dispatch completes.
         let (peer, outcome) = tokio::join!(
-            server,
+            // A client that never connects or never sends fails here instead of hanging the suite.
+            timeout(Duration::from_secs(10), server),
             transport.send_to_realm_pinned(&config, KdcProtocol::Auto, "TEST.GOKRB5", &[1])
         );
-        let connection = peer?;
+        let connection = peer??;
         let (response, stream) = outcome?;
         // Then the caller receives the original connected stream, not only its bytes.
         assert_eq!(response, [42]);
