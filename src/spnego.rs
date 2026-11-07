@@ -285,9 +285,13 @@ impl MicToken {
     /// [`Error::GssChecksumMismatch`] when the checksum does not match.
     #[inline]
     pub fn verify(&self, key: &EncryptionKey, key_usage: u32) -> Result<(), Error> {
-        let expected = self.compute_checksum(key, key_usage)?;
+        selection::reject_enctype(key.etype)?;
+        let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
+        let mut data = scratch::Scratch::new(payload.to_vec(), "mic-checksum");
+        data.extend_from_slice(&self.checksum_header());
+        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let actual = self.checksum.as_ref().ok_or(Error::MissingGssChecksum)?;
-        if !constant_time_eq(&expected, actual) {
+        if !etype.verify_checksum(&key.value, &data, actual, key_usage) {
             return Err(Error::GssChecksumMismatch);
         }
         Ok(())
@@ -647,9 +651,13 @@ impl WrapToken {
             return Ok(());
         }
 
-        let expected = self.compute_checksum(key, key_usage)?;
+        selection::reject_enctype(key.etype)?;
+        let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
+        let mut data = scratch::Scratch::new(payload.to_vec(), "wrap-checksum");
+        data.extend_from_slice(&wrap_checksum_header(self.flags, self.snd_seq_num));
+        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let actual = self.checksum.as_ref().ok_or(Error::MissingGssChecksum)?;
-        if !constant_time_eq(&expected, actual) {
+        if !etype.verify_checksum(&key.value, &data, actual, key_usage) {
             return Err(Error::GssChecksumMismatch);
         }
         Ok(())
@@ -2208,19 +2216,6 @@ fn rotate_left(bytes: &[u8], count: usize) -> Vec<u8> {
         out.rotate_left(shift);
     }
     out
-}
-
-/// Compare two byte strings without stopping at the first differing byte.
-fn constant_time_eq(expected: &[u8], actual: &[u8]) -> bool {
-    if expected.len() != actual.len() {
-        return false;
-    }
-
-    let mut diff = 0;
-    for (left, right) in expected.iter().zip(actual) {
-        diff |= left ^ right;
-    }
-    diff == 0
 }
 
 use crate::error::Spnego as Error;

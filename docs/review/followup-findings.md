@@ -9,4 +9,5 @@ is a parity feature, not a defect>`.
 | Source finding | Register ID | Parity |
 | --- | --- | --- |
 | critic:critics-fb19af4/u1.md#U1-01 | FU-SPN-R05 | no |
+| critic:critics-fb19af4/u1.md#U1-02 | FU-SPN-R06 | no |
 | executor:todo-16#transit-validator-rustdoc | FU-DOC-R02 | no |

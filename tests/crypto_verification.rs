@@ -36,6 +36,11 @@ mod tests {
             !dispatch.contains("constant_time_eq"),
             "handwritten equality remains reachable"
         );
+        let spnego = fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/spnego.rs"))?;
+        assert!(
+            !spnego.contains("constant_time_eq"),
+            "SPNEGO still uses handwritten MAC equality"
+        );
         Ok(())
     }
 

@@ -191,6 +191,8 @@ limits are recorded under FU-OPS-03.
 
 | FU-SPN-R05 | major | Token owners outside InitiatorContext still disclose and retain live credentials | fixed | `initiator_debug_keeps_diagnostic_kind`, `pending_response_debug_redacts_credentials`; commit `spnego: erase retained wire credentials and redact token diagnostics (FU-SPN-R05)` | Retained token bytes and initiator DER/header fields become Zeroizing owners; token and future Debug expose only metadata and lengths. Plain returned wire buffers require caller erasure. | Task 22 evidence: genuine AP-REQ nested Debug assertion red before fix; zeroizing field ownership and pending response regression. |
 
+| FU-SPN-R06 | minor | SPNEGO MIC and unsealed Wrap verification still uses handwritten MAC equality | fixed | `verification_requires_audited_hmac_api`, `checksum_rejects_each_mismatch_and_wrong_length`, GSSAPI and SPNEGO targets; commit `spnego: verify MICs through audited HMAC boundary (FU-SPN-R06)` | MIC and unsealed Wrap verification delegates to the existing enctype verifier; malformed tags remain GssChecksumMismatch. | Task 22 evidence: audit regression red, then all 77 targeted tests green. |
+
 ## Source notes
 
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
