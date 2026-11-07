@@ -7,13 +7,14 @@ use super::*;
 fn checked_replies_enforce_legacy_policy() -> Result<(), TestError> {
     use rskrb5_ng::{
         config::Toggle,
-        crypto::Use,
+        crypto::{CryptoPolicy, Use},
         error::{Crypto, Policy},
     };
     runtime()?.block_on(async {
         for id in [16_i32, 23_i32] {
+          for configured in [false, true] {
             for permitted in [false, true] {
-                let (built, options) = kpasswd_context::request()?;
+                let (mut built, options) = kpasswd_context::request()?;
                 let response = kpasswd_context::reply(&built, kpasswd_context::ReplyCase::LegacySubkey(id))?;
                 let listener = TcpListener::bind("127.0.0.1:0").await?;
                 let addr = listener.local_addr()?;
@@ -23,12 +24,16 @@ fn checked_replies_enforce_legacy_policy() -> Result<(), TestError> {
                     config.libdefaults.allow_des3 = Toggle::from(true);
                     config.libdefaults.permitted_enctypes = vec!["DEFAULT".to_owned(), "rc4".to_owned(), "des3".to_owned()];
                 }
+                if !configured { built.crypto_policy = CryptoPolicy::from_libdefaults(&config.libdefaults)?; }
                 let transport = Tokio::new().with_timeout(Duration::from_secs(1));
                 let server = async {
                     let (_, mut stream) = read_tcp_request(&listener).await?;
                     write_tcp_response(&mut stream, &response).await
                 };
-                let client = transport.exchange_kpasswd_result_with_config(&config, KdcProtocol::Tcp, "TEST.GOKRB5", &built, &options);
+                let client = async {
+                    if configured { transport.exchange_kpasswd_result_with_config(&config, KdcProtocol::Tcp, "TEST.GOKRB5", &built, &options).await }
+                    else { transport.exchange_kpasswd_result(KdcProtocol::Tcp, addr, &built, &options).await }
+                };
                 let (delivery, result) = tokio::join!(server, client);
                 delivery?;
                 if permitted {
@@ -37,7 +42,54 @@ fn checked_replies_enforce_legacy_policy() -> Result<(), TestError> {
                     assert!(matches!(result, Err(ClientError::KpasswdOutcomeUnknown(source)) if matches!(*source, ClientError::Crypto(Crypto::Policy(Policy::EnctypeNotPermitted { etype, usage: Use::SessionKey })) if etype == id)));
                 }
             }
+          }
         }
+        Ok(())
+    })
+}
+
+/// Disallowed outgoing keys fail locally before address or realm discovery.
+#[test]
+fn checked_password_policy_rejects_before_endpoint_resolution() -> Result<(), TestError> {
+    use rskrb5_ng::{
+        crypto::Use,
+        error::{Crypto, Policy},
+    };
+    runtime()?.block_on(async {
+        let (mut built, options) = kpasswd_context::request()?;
+        built.reply_key.etype = 23_i32;
+        let transport = Tokio::new();
+        let result = transport
+            .exchange_kpasswd_result(KdcProtocol::Tcp, "invalid endpoint", &built, &options)
+            .await;
+        assert!(matches!(
+            result,
+            Err(ClientError::Crypto(Crypto::Policy(
+                Policy::EnctypeNotPermitted {
+                    etype: 23_i32,
+                    usage: Use::SessionKey
+                }
+            )))
+        ));
+        let config = Config::new();
+        let configured = transport
+            .exchange_kpasswd_result_with_config(
+                &config,
+                KdcProtocol::Tcp,
+                "NO-SUCH-REALM",
+                &built,
+                &options,
+            )
+            .await;
+        assert!(matches!(
+            configured,
+            Err(ClientError::Crypto(Crypto::Policy(
+                Policy::EnctypeNotPermitted {
+                    etype: 23_i32,
+                    usage: Use::SessionKey
+                }
+            )))
+        ));
         Ok(())
     })
 }
