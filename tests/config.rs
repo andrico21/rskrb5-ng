@@ -50,6 +50,15 @@ mod compatibility_e;
 #[path = "config/unavailable_e.rs"]
 mod unavailable_e;
 
+#[path = "config/mutation_profile.rs"]
+mod mutation_profile;
+
+#[path = "config/mutation_values.rs"]
+mod mutation_values;
+
+#[path = "config/mutation_core.rs"]
+mod mutation_core;
+
 /// Configuration parsing, loading and realm resolution tests.
 #[cfg(test)]
 #[expect(
