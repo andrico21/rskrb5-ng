@@ -187,3 +187,82 @@ fn assert_events(expected: &[(&str, usize, bool)]) {
         events.clear();
     });
 }
+
+/// Genuine credential encoding and both successful and failing parsing erase their staging.
+#[test]
+fn credential_staging_is_erased() -> Result<(), Error> {
+    let credential = include_bytes!("../../fuzz/fixtures/valid_ap_req.der");
+    EVENTS.with_borrow_mut(Vec::clear);
+    let mechanism = super::Krb5MechToken::ap_req(credential.to_vec()).encode()?;
+    EVENTS.with_borrow_mut(|events| {
+        assert_eq!(events.len(), 1, "mechanism staging erasure missing");
+        assert!(
+            events.iter().all(|event| event.2),
+            "staging retained credential bytes"
+        );
+        events.clear();
+    });
+    let mut init = super::NegTokenInit::krb5(mechanism.clone());
+    init.mech_list_mic = Some(Zeroizing::new(vec![0x42; 16]));
+    let token = super::Token::Init(init);
+    let header = super::negotiate_header(&token)?;
+    EVENTS.with_borrow_mut(|events| {
+        assert_eq!(
+            events.iter().map(|event| event.0).collect::<Vec<_>>(),
+            [
+                "init-token-field",
+                "init-token-octets",
+                "init-mic-field",
+                "init-mic-octets",
+                "init-sequence",
+                "init-fields",
+                "token-choice",
+                "token-content",
+                "header-encode",
+            ]
+        );
+        assert!(
+            events.iter().all(|event| event.2),
+            "encoder staging retained bytes"
+        );
+        events.clear();
+    });
+    drop(super::parse_negotiate_header(&header)?);
+    EVENTS.with_borrow_mut(|events| {
+        assert_eq!(events.len(), 1, "decoded header staging missing");
+        assert!(
+            events.iter().all(|event| event.2),
+            "decoded credential retained"
+        );
+        events.clear();
+    });
+    drop(
+        super::parse_negotiate_header("Negotiate AQIDBA==")
+            .err()
+            .ok_or(Error::EmptyInput)?,
+    );
+    assert_events(&[("header-decode", 4, true)]);
+    let mut response = super::NegTokenResp::accept_completed().with_response_token(mechanism);
+    response.mech_list_mic = Some(Zeroizing::new(vec![0x42; 16]));
+    drop(super::response_token_header(&response)?);
+    EVENTS.with_borrow_mut(|events| {
+        assert_eq!(
+            events.iter().map(|event| event.0).collect::<Vec<_>>(),
+            [
+                "response-token-field",
+                "response-token-octets",
+                "response-mic-field",
+                "response-mic-octets",
+                "response-sequence",
+                "response-fields",
+                "header-encode",
+            ]
+        );
+        assert!(
+            events.iter().all(|event| event.2),
+            "response staging retained bytes"
+        );
+        events.clear();
+    });
+    Ok(())
+}

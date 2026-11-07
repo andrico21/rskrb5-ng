@@ -143,6 +143,18 @@ mod import_guard;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod acceptor;
 
+/// Outgoing accepted-context policy enforcement.
+#[cfg(test)]
+#[cfg(all(feature = "tokio", feature = "spnego"))]
+#[path = "policy/acceptor_reply.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod acceptor_reply;
+
 /// Config and HTTP constructor policy propagation.
 #[cfg(test)]
 #[cfg(feature = "tower")]

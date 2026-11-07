@@ -1698,20 +1698,7 @@ mod tests {
             .with_transport(TokioKdcTransport::new().with_timeout(Duration::from_secs(10)));
             let service_ticket = client.get_service_ticket(service_principal()).await?;
             let now = SystemTime::now();
-            let first = spnego::init_sec_context_with_confounder(
-                &service_ticket,
-                spnego::InitiatorContextOptions::new().with_sequence_number(Some(1)),
-                now,
-                111_111,
-                &[0x11; 16],
-            )?;
-            let second = spnego::init_sec_context_with_confounder(
-                &service_ticket,
-                spnego::InitiatorContextOptions::new().with_sequence_number(Some(2)),
-                now,
-                222_222,
-                &[0x22; 16],
-            )?;
+            let [first, second] = replay_contexts(&service_ticket, now)?;
 
             let keytab = http_keytab()?;
             let mut validator = Validator::new(&keytab).with_now(now);
@@ -1742,6 +1729,113 @@ mod tests {
 
             Ok::<_, Box<dyn Error>>(())
         })
+    }
+
+    /// Builds the two distinct authentications used by live and offline replay scenarios.
+    #[cfg(feature = "spnego")]
+    fn replay_contexts(
+        session: &AsRepSession,
+        now: SystemTime,
+    ) -> Result<[spnego::InitiatorContext; 2], Box<dyn Error>> {
+        let elapsed = now.duration_since(UNIX_EPOCH)?;
+        let seconds = UNIX_EPOCH
+            .checked_add(Duration::from_secs(elapsed.as_secs()))
+            .ok_or("time")?;
+        let cusec = elapsed.subsec_micros();
+        let next_cusec = cusec
+            .checked_add(1)
+            .filter(|value| *value < 1_000_000)
+            .unwrap_or(0);
+        Ok([
+            spnego::init_sec_context_with_confounder(
+                session,
+                spnego::InitiatorContextOptions::new().with_sequence_number(Some(1)),
+                seconds,
+                cusec,
+                &[0x11; 16],
+            )?,
+            spnego::init_sec_context_with_confounder(
+                session,
+                spnego::InitiatorContextOptions::new().with_sequence_number(Some(2)),
+                seconds,
+                next_cusec,
+                &[0x22; 16],
+            )?,
+        ])
+    }
+
+    /// A fractional clock still allows two fresh authentications and rejects both replays.
+    #[cfg(feature = "spnego")]
+    #[test]
+    fn replay_scenario_accepts_fractional_clock() -> Result<(), Box<dyn Error>> {
+        use core::str;
+
+        use rskrb5_ng::{ap_req, ticket};
+        let request = ap_req::decode(include_bytes!("../fuzz/fixtures/valid_ap_req.der"))?;
+        let key = EncryptionKey::new(
+            18,
+            hex::decode("9cad00bbc72d703258e911dc18e6d5487cf737bf67fd111f0c2463ad6033bf51")?,
+        );
+        let part = ticket::decrypt_ticket_enc_part(&request.ticket, &key)?;
+        let session_key = EncryptionKey::new(part.key.r#type, part.key.value.as_ref().to_vec());
+        let auth = ap_req::decrypt_ap_req_authenticator(&request, &session_key, 11)?;
+        let now = UNIX_EPOCH
+            .checked_add(Duration::from_secs(u64::try_from(
+                auth.ctime.0.timestamp(),
+            )?))
+            .ok_or("time")?
+            .checked_add(Duration::from_millis(500))
+            .ok_or("time")?;
+        let realm = str::from_utf8(request.ticket.realm.as_bytes())?.to_owned();
+        let names = request
+            .ticket
+            .sname
+            .string
+            .iter()
+            .map(|name| str::from_utf8(name.as_bytes()).map(str::to_owned))
+            .collect::<Result<Vec<_>, _>>()?;
+        let client_names = auth
+            .cname
+            .string
+            .iter()
+            .map(|name| str::from_utf8(name.as_bytes()).map(str::to_owned))
+            .collect::<Result<Vec<_>, _>>()?;
+        let session = AsRepSession::new(
+            Principal::new(
+                str::from_utf8(auth.crealm.as_bytes())?,
+                auth.cname.r#type,
+                client_names,
+            ),
+            Principal::new(realm.clone(), request.ticket.sname.r#type, names.clone()),
+            session_key,
+            ticket::encode(&request.ticket)?.into(),
+            [0; 4],
+            now,
+            now,
+        );
+        let contexts = replay_contexts(&session, now)?;
+        let mut keys = Keytab::new();
+        keys.entries_mut().push(KeytabEntry::new(
+            KeytabPrincipal::new(realm, request.ticket.sname.r#type, names),
+            0,
+            1,
+            key,
+            1,
+        ));
+        let mut validator = Validator::new(&keys).with_now(now);
+        for context in &contexts {
+            drop(spnego::accept_sec_context_header(
+                &mut validator,
+                &context.header,
+            )?);
+        }
+        for context in &contexts {
+            assert!(matches!(
+                spnego::accept_sec_context_header(&mut validator, &context.header),
+                Err(SpnegoError::Service(ServiceError::Replay))
+            ));
+        }
+        Ok(())
     }
 
     /// Pins that the client SPNEGO header authenticates to the Docker `mod_auth_gssapi` server.

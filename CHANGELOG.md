@@ -23,6 +23,45 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Mutation completeness rejects empty shards, absent or failed baselines, and
+  generated/tested identity mismatches rather than accepting equal counts alone
+  (FU-GATE-R04).
+
+- Lint workflow admission allowlists environment values and setup inputs and
+  rejects interpreter, PATH, shell and defaults overrides at every scope
+  (FU-GATE-R03).
+
+- Parity symbol evidence ignores Rust comments/literals and distinguishes a
+  child-local type from its parent type when resolving methods (FU-TST-R14).
+
+- AD keytab preflight stops at zero-length terminators like the Rust loader;
+  a usable key after a terminator no longer certifies readiness (FU-TST-R13).
+
+- Package-link validation now scans multiline Markdown destinations and tokenizes
+  HTML attributes, including unquoted `href` and `src` values (FU-CI-R03).
+
+- Workflow wiring rejects quoted execution-control keys and duplicate gate step
+  mappings rather than counting commands that cannot execute (FU-GATE-R02).
+
+- Configured transport password/keytab AS logins now reject unsupported realm
+  and clpreauth restrictions before request construction or network I/O,
+  preserving the named configuration error (FU-TRN-R06).
+
+- Full-message kadmin AP-REQ/AP-REP adapters retain typed crypto and randomness
+  causes instead of classifying them as string-only decode failures (FU-TRN-R05).
+
+- SPNEGO token encoders and header decoders now erase first-party credential
+  staging, including nested DER buffers and parse-failure exits; header encoding
+  writes base64 directly into the returned string (FU-SPN-R11).
+
+- Validated AP contexts retain their effective `crypto_policy`; AP-REP builders
+  reject wrapping keys and outgoing subkeys outside it before producing a reply
+  or calling the protected Tower handler (FU-SPN-R10).
+
+- Config-backed HTTP layer and service constructors now reject unsupported realm
+  and client-preauthentication restrictions before keytab discovery, matching
+  direct validators (FU-HTTP-R07).
+
 - Retained SPNEGO token bytes, initiator DER/header fields and pending Tower
   AP-REP headers now use zeroizing owners; token and future Debug expose only
   metadata and lengths (FU-SPN-R05). Plain returned wire buffers remain the

@@ -3,7 +3,12 @@
 extern crate alloc;
 
 use alloc::collections::BTreeSet;
-use std::{fs, path::Path};
+use std::{
+    fs,
+    io::Write as _,
+    path::Path,
+    process::{Command, Stdio},
+};
 
 use toml::{Table, Value};
 
@@ -128,6 +133,23 @@ fn symbol_evidence_requires_full_owner_path() {
         "pub struct Keytab;\nimpl Keytab {\n pub fn from_name() {}\n}".to_owned(),
     )];
     assert!(!declares(&child, "keytab::Keytab::from_name"));
+    assert!(!declares(
+        &[sources, child].concat(),
+        "keytab::Keytab::from_name"
+    ));
+    let ghost = vec![(
+        "src/keytab.rs".to_owned(),
+        "/*\npub struct Ghost;\n*/".to_owned(),
+    )];
+    assert!(!declares(&ghost, "keytab::Ghost"));
+    let real = vec![
+        ("src/keytab.rs".to_owned(), "pub struct Keytab;".to_owned()),
+        (
+            "src/keytab/child.rs".to_owned(),
+            "impl super::Keytab {\n pub fn from_name() {}\n}".to_owned(),
+        ),
+    ];
+    assert!(declares(&real, "keytab::Keytab::from_name"));
 }
 
 /// Resolve the module and enclosing impl or enum, not an unrelated same-named item.
@@ -173,6 +195,36 @@ fn resolve_alias(sources: &[(String, String)], symbol: &str) -> String {
 
 /// Match a qualified public symbol against its module and owning type.
 pub(crate) fn declares(sources: &[(String, String)], symbol: &str) -> bool {
+    let clean = sanitized_sources(sources);
+    clean.is_ok_and(|cleaned| declares_clean(&cleaned, sources, symbol))
+}
+
+/// Reuse the gate lexer so nested comments and literal contents cannot become declarations.
+fn sanitized_sources(sources: &[(String, String)]) -> Result<Vec<(String, String)>, TestError> {
+    let mut child = Command::new("python3")
+        .arg("-c")
+        .arg("import json,sys; sys.path.insert(0,'scripts/lint-gates'); from rust_lex import strip_comments_and_strings; print(json.dumps([(p,strip_comments_and_strings(s)) for p,s in json.load(sys.stdin)]))")
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .env("PYTHONDONTWRITEBYTECODE", "1")
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn()?;
+    child
+        .stdin
+        .take()
+        .ok_or("lexer stdin")?
+        .write_all(&serde_json::to_vec(sources)?)?;
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        return Err("Rust lexer failed".into());
+    }
+    Ok(serde_json::from_slice(&output.stdout)?)
+}
+
+/// Resolve declarations after lexical removal of comments and literals.
+fn declares_clean(
+    sources: &[(String, String)],
+    originals: &[(String, String)],
+    symbol: &str,
+) -> bool {
     let resolved = resolve_alias(sources, symbol);
     let segments: Vec<&str> = resolved.split("::").collect();
     let Some((item, parents)) = segments.split_last() else {
@@ -184,7 +236,7 @@ pub(crate) fn declares(sources: &[(String, String)], symbol: &str) -> bool {
             .unwrap_or(file)
             .trim_end_matches(".rs")
             .replace('/', "::");
-        let included = sources.iter().find(|(_, parent)| {
+        let included = originals.iter().find(|(_, parent)| {
             parent.contains(&format!(
                 "include!(\"{}\")",
                 file.trim_start_matches("src/")
@@ -196,7 +248,7 @@ pub(crate) fn declares(sources: &[(String, String)], symbol: &str) -> bool {
                 .trim_end_matches(".rs")
                 .replace('/', "::")
         });
-        let module_name = path_module(sources, file).unwrap_or(effective_module);
+        let module_name = path_module(originals, file).unwrap_or(effective_module);
         let mut depth = 0_usize;
         let mut owner: Option<(String, usize)> = None;
         for line in source.lines().map(str::trim) {
@@ -215,11 +267,14 @@ pub(crate) fn declares(sources: &[(String, String)], symbol: &str) -> bool {
                     .map_or(after_generics, |(_, target)| target);
                 let name: String = target
                     .chars()
-                    .take_while(|character| character.is_alphanumeric() || *character == '_')
+                    .take_while(|character| {
+                        character.is_alphanumeric() || matches!(character, '_' | ':')
+                    })
                     .collect();
-                owner = Some((name, depth));
+                let qualified = impl_owner(source, &module_name, &name);
+                owner = Some((qualified, depth));
             } else if let Some(header) = line.strip_prefix("pub enum ") {
-                owner = Some((identifier(header), depth));
+                owner = Some((format!("{module_name}::{}", identifier(header)), depth));
             } else {
                 // Other lines retain their enclosing owner until its closing brace.
             }
@@ -231,12 +286,7 @@ pub(crate) fn declares(sources: &[(String, String)], symbol: &str) -> bool {
                         let expected = parents.join("::");
                         if method {
                             if let Some((ty, _)) = &owner {
-                                if let Some((expected_module, expected_type)) =
-                                    expected.rsplit_once("::")
-                                    && expected_type == ty
-                                    && declares(sources, &expected)
-                                    && (module_name == expected_module
-                                        || module_name.starts_with(&format!("{expected_module}::")))
+                                if expected == *ty && declares_clean(sources, originals, &expected)
                                 {
                                     return true;
                                 }
@@ -256,10 +306,7 @@ pub(crate) fn declares(sources: &[(String, String)], symbol: &str) -> bool {
             if let Some((ty, _)) = &owner
                 && identifier(line) == *item
                 && !line.starts_with("pub ")
-                && let Some((expected_module, expected_type)) = parents.join("::").rsplit_once("::")
-                && expected_type == ty
-                && (module_name == expected_module
-                    || module_name.starts_with(&format!("{expected_module}::")))
+                && parents.join("::") == *ty
             {
                 return true;
             }
@@ -292,6 +339,39 @@ fn path_module(sources: &[(String, String)], file: &str) -> Option<String> {
             .replace('/', "::");
         Some(format!("{parent_module}::{}", identifier(declaration)))
     })
+}
+
+/// Resolve explicit parent paths and imported parent types without basename conflation.
+fn impl_owner(source: &str, module: &str, name: &str) -> String {
+    let parent = module.rsplit_once("::").map_or("", |(prefix, _)| prefix);
+    if let Some(path) = name.strip_prefix("super::") {
+        return format!("{parent}::{path}");
+    }
+    if let Some(path) = name.strip_prefix("crate::") {
+        return path.to_owned();
+    }
+    let local = source.lines().any(|entry| {
+        entry.trim().starts_with(&format!("pub struct {name}"))
+            || entry.trim().starts_with(&format!("struct {name}"))
+    });
+    let imported = source.split(';').any(|statement| {
+        statement
+            .trim()
+            .strip_prefix("use super::")
+            .is_some_and(|imports| {
+                imports
+                    .trim()
+                    .trim_start_matches('{')
+                    .trim_end_matches('}')
+                    .split(',')
+                    .any(|entry| entry.trim() == name)
+            })
+    });
+    if imported && !local {
+        format!("{parent}::{name}")
+    } else {
+        format!("{module}::{name}")
+    }
 }
 
 /// First Rust identifier at a declaration boundary.

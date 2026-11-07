@@ -42,6 +42,7 @@ mod negotiation;
 pub mod oid;
 /// Plaintext staging owners.
 mod scratch;
+use scratch::Scratch;
 /// Redacted formatting for retained wire credentials.
 mod token_debug;
 
@@ -287,7 +288,7 @@ impl MicToken {
     pub fn verify(&self, key: &EncryptionKey, key_usage: u32) -> Result<(), Error> {
         selection::reject_enctype(key.etype)?;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
-        let mut data = scratch::Scratch::new(payload.to_vec(), "mic-checksum");
+        let mut data = Scratch::new(payload.to_vec(), "mic-checksum");
         data.extend_from_slice(&self.checksum_header());
         let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let actual = self.checksum.as_ref().ok_or(Error::MissingGssChecksum)?;
@@ -329,7 +330,7 @@ impl MicToken {
     fn compute_checksum(&self, key: &EncryptionKey, key_usage: u32) -> Result<Vec<u8>, Error> {
         selection::reject_enctype(key.etype)?;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
-        let mut data = scratch::Scratch::new(
+        let mut data = Scratch::new(
             Vec::with_capacity(payload.len().saturating_add(GSS_MIC_HEADER_LEN)),
             "mic-checksum",
         );
@@ -517,7 +518,7 @@ impl WrapToken {
             });
         }
 
-        let unrotated = scratch::Scratch::new(rotate_left(body, usize::from(rrc)), "wrap-decode");
+        let unrotated = Scratch::new(rotate_left(body, usize::from(rrc)), "wrap-decode");
         let checksum_len = usize::from(ec);
         let Some((payload, checksum)) = unrotated
             .len()
@@ -571,7 +572,7 @@ impl WrapToken {
             });
         }
 
-        let mut bytes = scratch::Scratch::new(
+        let mut bytes = Scratch::new(
             Vec::with_capacity(
                 GSS_WRAP_HEADER_LEN
                     .saturating_add(payload.len())
@@ -645,7 +646,7 @@ impl WrapToken {
     #[inline]
     pub fn verify(&self, key: &EncryptionKey, key_usage: u32) -> Result<(), Error> {
         if self.is_sealed() {
-            drop(scratch::Scratch::new(
+            drop(Scratch::new(
                 self.decrypt_payload(key, key_usage)?,
                 "wrap-verify",
             ));
@@ -654,7 +655,7 @@ impl WrapToken {
 
         selection::reject_enctype(key.etype)?;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
-        let mut data = scratch::Scratch::new(payload.to_vec(), "wrap-checksum");
+        let mut data = Scratch::new(payload.to_vec(), "wrap-checksum");
         data.extend_from_slice(&wrap_checksum_header(self.flags, self.snd_seq_num));
         let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let actual = self.checksum.as_ref().ok_or(Error::MissingGssChecksum)?;
@@ -776,7 +777,7 @@ impl WrapToken {
             }
             KerberosEtype::Sha1(_) | KerberosEtype::Sha2(_) | KerberosEtype::Rc4Hmac(_) => self.ec,
         };
-        let mut plaintext = scratch::Scratch::new(
+        let mut plaintext = Scratch::new(
             Vec::with_capacity(
                 payload
                     .len()
@@ -821,7 +822,7 @@ impl WrapToken {
             .ok_or(Error::MissingGssEncryptedBody)?;
         let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let encrypted = rotate_left(encrypted_body, usize::from(self.rrc));
-        let mut plaintext = scratch::Scratch::new(
+        let mut plaintext = Scratch::new(
             etype.decrypt_message(&key.value, &encrypted, key_usage)?,
             "wrap-decrypt",
         );
@@ -878,7 +879,7 @@ impl WrapToken {
     fn compute_checksum(&self, key: &EncryptionKey, key_usage: u32) -> Result<Vec<u8>, Error> {
         selection::reject_enctype(key.etype)?;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
-        let mut data = scratch::Scratch::new(
+        let mut data = Scratch::new(
             Vec::with_capacity(payload.len().saturating_add(GSS_WRAP_HEADER_LEN)),
             "wrap-checksum",
         );
@@ -1051,7 +1052,8 @@ impl Krb5MechToken {
             return Err(Error::MissingKerberosMessage);
         }
 
-        let mut content = encode_oid(&self.oid)?;
+        let mut content = Scratch::new(encode_oid(&self.oid)?, "mechanism-encode");
+        content.reserve(self.message.len().saturating_add(2));
         content.extend_from_slice(&self.token_id.bytes());
         content.extend_from_slice(&self.message);
         Ok(encode_tlv(TAG_APPLICATION_0, &content))
@@ -1153,7 +1155,7 @@ impl NegTokenInit {
             return Err(Error::MissingMechTypes);
         }
 
-        let mut fields = Vec::new();
+        let mut fields = Scratch::new(Vec::new(), "init-fields");
         let mut mech_types = Vec::new();
         for oid in &self.mech_types {
             mech_types.extend_from_slice(&encode_oid(oid)?);
@@ -1171,21 +1173,40 @@ impl NegTokenInit {
             ));
         }
         if let Some(mech_token) = &self.mech_token {
-            fields.extend_from_slice(&encode_explicit(
-                TAG_CONTEXT_2,
-                &encode_tlv(TAG_OCTET_STRING, mech_token),
+            fields.reserve(
+                mech_token
+                    .len()
+                    .saturating_add(self.mech_list_mic.as_ref().map_or(0, |mic| mic.len()))
+                    .saturating_add(64),
+            );
+            fields.extend_from_slice(&Scratch::new(
+                encode_explicit(
+                    TAG_CONTEXT_2,
+                    &Scratch::new(
+                        encode_tlv(TAG_OCTET_STRING, mech_token),
+                        "init-token-octets",
+                    ),
+                ),
+                "init-token-field",
             ));
         }
         if let Some(mech_list_mic) = &self.mech_list_mic {
-            fields.extend_from_slice(&encode_explicit(
-                TAG_CONTEXT_3,
-                &encode_tlv(TAG_OCTET_STRING, mech_list_mic),
+            fields.reserve(mech_list_mic.len().saturating_add(32));
+            fields.extend_from_slice(&Scratch::new(
+                encode_explicit(
+                    TAG_CONTEXT_3,
+                    &Scratch::new(
+                        encode_tlv(TAG_OCTET_STRING, mech_list_mic),
+                        "init-mic-octets",
+                    ),
+                ),
+                "init-mic-field",
             ));
         }
 
         Ok(encode_explicit(
             TAG_CONTEXT_0,
-            &encode_tlv(TAG_SEQUENCE, &fields),
+            &Scratch::new(encode_tlv(TAG_SEQUENCE, &fields), "init-sequence"),
         ))
     }
 
@@ -1296,7 +1317,7 @@ impl NegTokenResp {
     /// Returns [`Error::InvalidOid`] when the selected mechanism OID is invalid.
     #[inline]
     pub fn encode(&self) -> Result<Vec<u8>, Error> {
-        let mut fields = Vec::new();
+        let mut fields = Scratch::new(Vec::new(), "response-fields");
         if let Some(neg_state) = self.neg_state {
             fields.extend_from_slice(&encode_explicit(
                 TAG_CONTEXT_0,
@@ -1310,20 +1331,39 @@ impl NegTokenResp {
             ));
         }
         if let Some(response_token) = &self.response_token {
-            fields.extend_from_slice(&encode_explicit(
-                TAG_CONTEXT_2,
-                &encode_tlv(TAG_OCTET_STRING, response_token),
+            fields.reserve(
+                response_token
+                    .len()
+                    .saturating_add(self.mech_list_mic.as_ref().map_or(0, |mic| mic.len()))
+                    .saturating_add(64),
+            );
+            fields.extend_from_slice(&Scratch::new(
+                encode_explicit(
+                    TAG_CONTEXT_2,
+                    &Scratch::new(
+                        encode_tlv(TAG_OCTET_STRING, response_token),
+                        "response-token-octets",
+                    ),
+                ),
+                "response-token-field",
             ));
         }
         if let Some(mech_list_mic) = &self.mech_list_mic {
-            fields.extend_from_slice(&encode_explicit(
-                TAG_CONTEXT_3,
-                &encode_tlv(TAG_OCTET_STRING, mech_list_mic),
+            fields.reserve(mech_list_mic.len().saturating_add(32));
+            fields.extend_from_slice(&Scratch::new(
+                encode_explicit(
+                    TAG_CONTEXT_3,
+                    &Scratch::new(
+                        encode_tlv(TAG_OCTET_STRING, mech_list_mic),
+                        "response-mic-octets",
+                    ),
+                ),
+                "response-mic-field",
             ));
         }
         Ok(encode_explicit(
             TAG_CONTEXT_1,
-            &encode_tlv(TAG_SEQUENCE, &fields),
+            &Scratch::new(encode_tlv(TAG_SEQUENCE, &fields), "response-sequence"),
         ))
     }
 
@@ -1451,8 +1491,9 @@ impl Token {
     pub fn encode(&self) -> Result<Vec<u8>, Error> {
         match self {
             Self::Init(token) => {
-                let mut content = encode_oid(&ObjectIdentifier::spnego())?;
-                content.extend_from_slice(&token.encode()?);
+                let mut content =
+                    Scratch::new(encode_oid(&ObjectIdentifier::spnego())?, "token-content");
+                content.extend_from_slice(&Scratch::new(token.encode()?, "token-choice"));
                 Ok(encode_tlv(TAG_APPLICATION_0, &content))
             }
             Self::Resp(token) => token.encode(),
@@ -2034,7 +2075,7 @@ pub fn parse_negotiate_header(header: &str) -> Result<Token, Error> {
 ///
 /// # Errors
 /// Returns header size, scheme, missing-token or base64 decoding errors.
-fn decode_negotiate_header(header: &str) -> Result<Vec<u8>, Error> {
+fn decode_negotiate_header(header: &str) -> Result<Scratch, Error> {
     if header.len() > MAX_NEGOTIATE_HEADER_LEN {
         return Err(Error::NegotiateHeaderTooLong {
             maximum: MAX_NEGOTIATE_HEADER_LEN,
@@ -2047,9 +2088,11 @@ fn decode_negotiate_header(header: &str) -> Result<Vec<u8>, Error> {
     if !scheme.eq_ignore_ascii_case(HTTP_NEGOTIATE) || encoded.trim().is_empty() {
         return Err(Error::InvalidNegotiateHeader);
     }
+    let mut decoded = Scratch::new(Vec::with_capacity(encoded.len()), "header-decode");
     general_purpose::STANDARD
-        .decode(encoded.trim())
-        .map_err(Error::Base64)
+        .decode_vec(encoded.trim(), &mut decoded)
+        .map_err(Error::Base64)?;
+    Ok(decoded)
 }
 
 /// Encode a SPNEGO token as an HTTP `Negotiate` header value.
@@ -2059,10 +2102,11 @@ fn decode_negotiate_header(header: &str) -> Result<Vec<u8>, Error> {
 /// Returns the errors of [`Token::encode`].
 #[inline]
 pub fn negotiate_header(token: &Token) -> Result<String, Error> {
-    Ok(format!(
-        "{HTTP_NEGOTIATE} {}",
-        general_purpose::STANDARD.encode(token.encode()?)
-    ))
+    let bytes = Scratch::new(token.encode()?, "header-encode");
+    let mut header = String::with_capacity(bytes.len().saturating_mul(2).saturating_add(16));
+    header.push_str("Negotiate ");
+    general_purpose::STANDARD.encode_string(bytes.as_slice(), &mut header);
+    Ok(header)
 }
 
 /// Wrap a raw KRB5 mech token in the equivalent SPNEGO shape: an AP-REQ becomes a `NegTokenInit`,
@@ -2133,10 +2177,11 @@ pub fn reject_header() -> Result<String, Error> {
 ///
 /// Returns the errors of [`NegTokenResp::encode`].
 fn response_token_header(token: &NegTokenResp) -> Result<String, Error> {
-    Ok(format!(
-        "{HTTP_NEGOTIATE} {}",
-        general_purpose::STANDARD.encode(token.encode()?)
-    ))
+    let bytes = Scratch::new(token.encode()?, "header-encode");
+    let mut header = String::with_capacity(bytes.len().saturating_mul(2).saturating_add(16));
+    header.push_str("Negotiate ");
+    general_purpose::STANDARD.encode_string(bytes.as_slice(), &mut header);
+    Ok(header)
 }
 
 #[must_use]

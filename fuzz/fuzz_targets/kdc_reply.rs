@@ -10,6 +10,8 @@
 
 #![no_main]
 
+mod session_ticket;
+
 use core::time::Duration;
 use std::time::SystemTime;
 
@@ -36,9 +38,6 @@ const SESSION_KEY: [u8; 32] = [
     0x88, 0x45, 0xcb, 0xac, 0xcb, 0xf1, 0x1c, 0xb9, 0xf4, 0x67, 0xfd, 0x57, 0x7b, 0xa5, 0x1c, 0x70,
     0xd7, 0x3d, 0xe6, 0x55, 0x49, 0x80, 0xa0, 0x53, 0x95, 0xbf, 0x31, 0x9e, 0x18, 0xbd, 0xda, 0x07,
 ];
-
-/// A DER Ticket from the gokrb5 test vectors, carried as the TGT.
-const TICKET: &[u8] = include_bytes!("../fixtures/ticket.der");
 
 /// The gokrb5 AS-REP vector, the template of the structured AS mode.
 const AS_REP: &[u8] = include_bytes!("../fixtures/as_rep.der");
@@ -80,35 +79,32 @@ fn process_as_rep(input: &[u8]) {
 
 /// Process `input` as a TGS-REP answering a fixed TGS-REQ, with and without
 /// referrals permitted.
-fn process_tgs_rep(input: &[u8]) {
-    let Some(now) = SystemTime::UNIX_EPOCH.checked_add(NOW) else {
-        return;
-    };
-    let Some(end) = now.checked_add(Duration::from_secs(36_000)) else {
-        return;
-    };
+fn process_tgs_rep(input: &[u8]) -> Option<()> {
+    let now = SystemTime::UNIX_EPOCH.checked_add(NOW)?;
+    let end = now.checked_add(Duration::from_secs(36_000))?;
     let session_key = EncryptionKey::new(AES256, SESSION_KEY.to_vec());
+    let service = Principal::tgt_service("TEST.GOKRB5");
+    let ticket = session_ticket::encoded(&service, &session_key)?;
     let tgt = AsRepSession::new(
         client_principal(),
-        Principal::tgt_service("TEST.GOKRB5"),
+        service,
         session_key.clone(),
-        TICKET.to_vec().into(),
+        ticket.into(),
         [0x40, 0xe1, 0x00, 0x00],
         now,
         end,
     );
-    let service = Principal::new("TEST.GOKRB5", 2, ["HTTP", "host.test.gokrb5"]);
-    let Ok(request) =
-        client::build_tgs_req_with_confounder(&tgt, service, TgsReq::new(now, 1), now, 0, &[0; 16])
-    else {
-        return;
-    };
+    let target = Principal::new("TEST.GOKRB5", 2, ["HTTP", "host.test.gokrb5"]);
+    let request =
+        client::build_tgs_req_with_confounder(&tgt, target, TgsReq::new(now, 1), now, 0, &[0; 16])
+            .ok()?;
     drop(client::process_tgs_rep(&request, input, &session_key));
     drop(client::process_tgs_rep_with_referral(
         &request,
         input,
         &session_key,
     ));
+    Some(())
 }
 
 /// The client and service principal of the gokrb5 reply vectors.
@@ -155,11 +151,13 @@ fn structured_tgs_rep(input: &[u8]) -> Option<()> {
     .ok()?;
     let now = SystemTime::UNIX_EPOCH.checked_add(NOW)?;
     let end = now.checked_add(Duration::from_secs(36_000))?;
+    let service = Principal::tgt_service("ATHENA.MIT.EDU");
+    let ticket = session_ticket::encoded(&service, &session_key)?;
     let tgt = AsRepSession::new(
         template_principal(),
-        Principal::tgt_service("ATHENA.MIT.EDU"),
+        service,
         session_key.clone(),
-        TICKET.to_vec().into(),
+        ticket.into(),
         [0x40, 0xe1, 0x00, 0x00],
         now,
         end,
@@ -202,6 +200,16 @@ fn process_kdc_error(input: &[u8]) {
 }
 
 fuzz_target!(|data: &[u8]| {
+    assert!(
+        process_tgs_rep(&[]).is_some(),
+        "fixed TGS request must be reachable"
+    );
+    assert!(
+        include_bytes!("../corpus/kdc_reply/structured-tgs-matching-request")
+            .split_first()
+            .is_some_and(|(_, input)| structured_tgs_rep(input).is_some()),
+        "fixed structured TGS request must be reachable"
+    );
     let Some((selector, input)) = data.split_first() else {
         return;
     };
@@ -216,7 +224,7 @@ fuzz_target!(|data: &[u8]| {
         }
         4 => process_kdc_error(input),
         5 => process_as_rep(input),
-        6 => process_tgs_rep(input),
+        6 => process_tgs_rep(input).unwrap_or_default(),
         8 => structured_as_rep(input).unwrap_or_default(),
         9 => structured_tgs_rep(input).unwrap_or_default(),
         _ => {

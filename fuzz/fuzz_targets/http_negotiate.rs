@@ -9,6 +9,8 @@
 
 #![no_main]
 
+mod session_ticket;
+
 use core::time::Duration;
 use std::time::SystemTime;
 
@@ -24,9 +26,6 @@ use rskrb5_ng::{
 
 /// The synthetic `HTTP/host.test.gokrb5` keytab of the service tests.
 const HTTP_KEYTAB: &[u8] = include_bytes!("../fixtures/http.keytab");
-
-/// A DER Ticket from the gokrb5 test vectors, carried by the client session.
-const TICKET: &[u8] = include_bytes!("../fixtures/ticket.der");
 
 /// The AES256 key of the gokrb5 AP-REP vectors, used as the session key.
 const SESSION_KEY: [u8; 32] = [
@@ -70,11 +69,14 @@ fn server(header: &str) {
 fn initiator() -> Option<InitiatorContext> {
     let now = SystemTime::UNIX_EPOCH.checked_add(NOW)?;
     let end = now.checked_add(Duration::from_secs(36_000))?;
+    let service = Principal::new("TEST.GOKRB5", 2, ["HTTP", "host.test.gokrb5"]);
+    let key = EncryptionKey::new(AES256, SESSION_KEY.to_vec());
+    let ticket = session_ticket::encoded(&service, &key)?;
     let session = AsRepSession::new(
         Principal::user("TEST.GOKRB5", "testuser1"),
-        Principal::new("TEST.GOKRB5", 2, ["HTTP", "host.test.gokrb5"]),
-        EncryptionKey::new(AES256, SESSION_KEY.to_vec()),
-        TICKET.to_vec().into(),
+        service,
+        key,
+        ticket.into(),
         [0x40, 0xe1, 0x00, 0x00],
         now,
         end,
@@ -102,6 +104,10 @@ fn client(values: &[u8]) {
 }
 
 fuzz_target!(|data: &[u8]| {
+    assert!(
+        initiator().is_some(),
+        "fixed HTTP context must be reachable"
+    );
     let Some((selector, input)) = data.split_first() else {
         return;
     };

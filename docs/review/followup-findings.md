@@ -8,6 +8,21 @@ is a parity feature, not a defect>`.
 
 | Source finding | Register ID | Parity |
 | --- | --- | --- |
+| critic:critics-f22ea5b/u1.md#U1-01 | FU-HTTP-R07 | no |
+| critic:critics-f22ea5b/u1.md#U1-02 | FU-SPN-R10 | no |
+| critic:critics-f22ea5b/u1.md#U1-03 | FU-SPN-R11 | no |
+| critic:critics-f22ea5b/u3.md#U3-01 | FU-TRN-R05 | no |
+| critic:critics-f22ea5b/u3.md#U3-02 | FU-TST-R12 | no |
+| critic:critics-f22ea5b/u3.md#U3-03 | FU-TRN-R06 | no |
+| critic:critics-f22ea5b/u6.md#U6-01 | FU-GATE-R02 | no |
+| critic:critics-f22ea5b/u6.md#U6-02 | FU-CI-R03 | no |
+| critic:critics-f22ea5b/u6.md#U6-03 | FU-TST-R13 | no |
+| critic:critics-f22ea5b/u6.md#U6-04 | FU-TST-R14 | no |
+| critic:critics-f22ea5b/u6.md#U6-05 | FU-GATE-R03 | no |
+| critic:critics-f22ea5b/u6.md#U6-06 | FU-OPS-R01 | no |
+| critic:critics-f22ea5b/u6.md#U6-07 | FU-FUZ-R02 | no |
+| critic:critics-f22ea5b/u6.md#U6-08 | FU-GATE-R04 | no |
+| critic:critics-f22ea5b/u6.md#U6-09 | FU-DOC-R13 | no |
 | critic:critics-fb19af4/u1.md#U1-01 | FU-SPN-R05 | no |
 | critic:critics-fb19af4/u1.md#U1-02 | FU-SPN-R06 | no |
 | critic:critics-fb19af4/u1.md#U1-03 | FU-HTTP-R04 | no |

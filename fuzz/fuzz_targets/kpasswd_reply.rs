@@ -7,6 +7,8 @@
 
 #![no_main]
 
+mod session_ticket;
+
 use core::time::Duration;
 use std::time::SystemTime;
 
@@ -28,9 +30,6 @@ const KEY: [u8; 32] = [
     0x7c, 0xf7, 0x37, 0xbf, 0x67, 0xfd, 0x11, 0x1f, 0x0c, 0x24, 0x63, 0xad, 0x60, 0x33, 0xbf, 0x51,
 ];
 
-/// A DER Ticket from the gokrb5 test vectors, carried by the kadmin session.
-const TICKET: &[u8] = include_bytes!("../fixtures/ticket.der");
-
 /// AES256-CTS-HMAC-SHA1-96.
 const AES256: i32 = 18;
 
@@ -42,11 +41,13 @@ fn request() -> Option<BuiltKpasswdRequest> {
     let now = SystemTime::UNIX_EPOCH.checked_add(NOW)?;
     let end = now.checked_add(Duration::from_secs(36_000))?;
     let key = EncryptionKey::new(AES256, KEY.to_vec());
+    let service = Principal::new("TEST.GOKRB5", 2, ["kadmin", "changepw"]);
+    let ticket = session_ticket::encoded(&service, &key)?;
     let session = AsRepSession::new(
         Principal::user("TEST.GOKRB5", "testuser1"),
-        Principal::new("TEST.GOKRB5", 2, ["kadmin", "changepw"]),
+        service,
         key.clone(),
-        TICKET.to_vec().into(),
+        ticket.into(),
         [0x40, 0xe1, 0x00, 0x00],
         now,
         end,
@@ -64,12 +65,14 @@ fn request() -> Option<BuiltKpasswdRequest> {
 }
 
 fuzz_target!(|data: &[u8]| {
+    let built = request();
+    assert!(built.is_some(), "fixed password request must be reachable");
     // Only returning matters: a rejected input is the `Err` arm, and an
     // accepted one is dropped unused.
     if let Ok(reply) = Reply::parse(data) {
         drop(reply.decrypt_result(&EncryptionKey::new(AES256, KEY.to_vec())));
-        if let Some(built) = request() {
-            drop(kpasswd::verify_kpasswd_ap_rep(&reply, &built));
+        if let Some(request) = built {
+            drop(kpasswd::verify_kpasswd_ap_rep(&reply, &request));
         }
     }
     if let Ok(result) = ChangePasswordResult::parse(data) {

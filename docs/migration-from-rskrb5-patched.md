@@ -7,6 +7,65 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Mutation evidence (FU-GATE-R04): each whole-crate campaign shard must retain
+one successful baseline and a nonempty `mutants.json` with the exact tested
+mutant names. Rerun filtered, baseline-free or incomplete shards; an end time
+and matching counts alone no longer certify completeness.
+
+Lint interpreter admission (FU-GATE-R03): workflow/job/step environment settings
+must use the gate allowlist (`PYTHONDONTWRITEBYTECODE=1`, and workflow-level
+`CARGO_TERM_COLOR=always`). PATH, Python startup/optimization, shell startup,
+shell/default overrides and unapproved setup action inputs are rejected.
+
+Parity evidence (FU-TST-R14): symbol claims must resolve to the declared module
+and actual impl owner. Comments, string contents and child-local same-named
+types cannot prove a parent method; explicit parent paths remain supported.
+
+AD preflight (FU-TST-R13): usable keytab entries must precede the zero-length
+terminator. Regenerate an override whose only key follows that terminator;
+negative-length deleted slots remain skippable, matching the Rust loader.
+
+Package links (FU-CI-R03): multiline Markdown destinations and unquoted HTML
+`href`/`src` attributes now participate in package-membership validation.
+Correct missing/excluded local destinations or use an existing repository URL.
+
+Workflow wiring (FU-GATE-R02): quoted YAML keys obey the same restrictions as
+plain keys, and `lint-gates` must have exactly one `steps` mapping with no
+duplicate step keys. Remove conditional or overriding execution settings;
+textually retaining a required command no longer satisfies these cases.
+
+Configured transport admission (FU-TRN-R06): password and keytab configured
+AS-login helpers, including their TGT wrappers, now return the named
+`Client::Config(Config::NotYetEffective { .. })` restriction before constructing
+preauthentication or contacting a KDC. Programmatically supplied realm
+`disable_encrypted_timestamp` and clpreauth restrictions have the same
+fail-closed handling as high-level clients.
+
+Full-message kadmin errors (FU-TRN-R05): AP-REQ and AP-REP crypto/random failures
+now use `Kadmin::Crypto` and `Kadmin::Random`, with their original typed sources,
+rather than `Kadmin::Decode`. Update matches that previously treated encryption
+failure as malformed input; password delivery-outcome rules are unchanged.
+
+Token staging (FU-SPN-R11): token encoding and header parsing now erase their
+internal credential buffers, including nested DER allocations and error exits.
+Header encoding avoids a separate base64 string. Public returned `Vec<u8>` and
+`String` signatures are unchanged; callers must still erase those returned
+credentials and their own copies after use.
+
+Accepted-context reply policy (FU-SPN-R10): `ValidatedApReq.crypto_policy`
+retains the validator's policy. Its AP-REP builder and SPNEGO/HTTP response
+helpers reject excluded wrapping keys and server subkeys with a typed policy
+error before encoding or invoking a protected handler. Configure legacy opt-in
+and permitted membership on the validator; the default remains AES-only.
+Raw `ap_rep` codecs remain policy-free vector APIs.
+
+HTTP configuration admission (FU-HTTP-R07): `NegotiateLayer` and
+`NegotiateService` constructors taking `Config` now return
+`Policy::InvalidConfiguration` for unsupported restrictive realm or clpreauth
+settings, before discovering or loading a keytab. Programmatic configuration
+has the same fail-closed admission as direct validators; do not rely on these
+constructors silently ignoring a restriction.
+
 Retained SPNEGO credentials now use `zeroize::Zeroizing`: `Krb5MechToken.message`,
 `NegTokenInit.{mech_token, mech_list_mic}`, `NegTokenResp.{response_token,
 mech_list_mic}`, and `InitiatorContext.{ap_req_der, header}` (FU-SPN-R05).

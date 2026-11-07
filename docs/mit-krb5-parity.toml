@@ -632,7 +632,7 @@ doc_anchor = "docs/security-policy.md#policy"
 id = "MIT-crypto-8"
 area = "crypto"
 upstream_ref = "krb5-1.22.2-final"
-capability = "Enctype list operators (`+`/`-`), `DEFAULT` and `ALL` policy keywords"
+capability = "Enctype list operators (`+`/`-`), `DEFAULT` and enctype-family selectors"
 implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
@@ -645,7 +645,7 @@ test_names = [
   "tests/policy/expressions.rs::empty_results_fail_closed",
 ]
 feature_flags = []
-security_divergence = "MIT 1.22.2's parser (init_ctx.c) knows only the DEFAULT keyword, so ALL is an unknown token here as there. DEFAULT expands to the secure AES list, never DES3/RC4; unknown tokens, forbidden positive terms and empty results are errors."
+security_divergence = "MIT 1.22.2's parser (init_ctx.c) recognizes DEFAULT, aes, des3, rc4 and camellia selectors; ALL is an unknown token here as there. DEFAULT expands to the secure AES list, never DES3/RC4; Camellia remains unimplemented. Unknown tokens, forbidden positive terms and empty results are errors."
 disposition = "WP-02"
 closing_plan = 1
 closing_todo = 14

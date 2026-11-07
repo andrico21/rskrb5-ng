@@ -169,6 +169,7 @@ impl Validator<'_> {
             cusec,
         };
         let validated = ValidatedApReq {
+            crypto_policy: self.crypto_policy.clone(),
             client: ticket_client,
             service: Principal {
                 realm: ticket_service.realm,

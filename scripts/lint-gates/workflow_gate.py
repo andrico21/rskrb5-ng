@@ -163,31 +163,73 @@ def wiring_errors(workflow: str, prek: str) -> list[str]:
         gates = workflow_yaml.only(
             structure, workflow_yaml.children(structure, jobs), "lint-gates", "jobs"
         )
+        steps = workflow_yaml.only(
+            structure, workflow_yaml.children(structure, gates), "steps", "lint-gates"
+        )
+        relevant = roots + list(
+            range(gates + 1, gates + 1 + len(workflow_yaml.subtree(structure, gates)))
+        )
+        for index in relevant:
+            line = structure[index]
+            if line.key == "env":
+                allowed = {"PYTHONDONTWRITEBYTECODE": "1"}
+                if index in roots:
+                    allowed["CARGO_TERM_COLOR"] = "always"
+                if line.value:
+                    errors.append("gate environment must be a block mapping")
+                names: set[str] = set()
+                for child in workflow_yaml.children(structure, index):
+                    setting = structure[child]
+                    if (
+                        setting.key in names
+                        or setting.key not in allowed
+                        or workflow_yaml.scalar(setting.value, "gate env")
+                        != allowed.get(setting.key)
+                    ):
+                        errors.append(
+                            f"gate environment may not override {setting.key}"
+                        )
+                    if setting.key:
+                        names.add(setting.key)
+            if index in roots and line.key in {"shell", "working-directory"}:
+                errors.append("workflow execution overrides are forbidden")
+            if line.key == "uses":
+                action = line.value.split("@", 1)[0]
+                if action not in {"actions/checkout", "dtolnay/rust-toolchain"}:
+                    errors.append("gate setup action may alter interpreter execution")
+            if line.key == "with":
+                for child in workflow_yaml.children(structure, index):
+                    setting = structure[child]
+                    if (setting.key, setting.value) not in {
+                        ("toolchain", "nightly-2026-10-03"),
+                        ("components", "clippy"),
+                    }:
+                        errors.append("gate setup action input may alter execution")
+        for index in roots:
+            if structure[index].key == "defaults":
+                errors.append("workflow defaults may not alter gate execution")
         body = workflow_yaml.subtree(structure, gates)
-        seen_run = False
+        seen: set[str] = set()
         for line in body:
             if line.item:
-                seen_run = False
-            if line.key == "run":
-                if seen_run:
-                    errors.append("duplicate run key in gate step")
-                seen_run = True
+                seen.clear()
+            if line.key in {
+                "if",
+                "continue-on-error",
+                "shell",
+                "defaults",
+                "working-directory",
+            }:
+                errors.append(f"the lint-gates job may not use `{line.key}:`")
+            if line.indent == structure[steps].indent + 4 and line.key:
+                if line.key in seen:
+                    errors.append(f"duplicate {line.key} key in gate step")
+                seen.add(line.key)
     except RuntimeError as error:
         errors.append(str(error))
     job = job_text(workflow, "lint-gates")
     if not job:
         errors.append("ci.yml has no lint-gates job")
-    for key in (
-        "continue-on-error:",
-        "if:",
-        "shell:",
-        "defaults:",
-        "working-directory:",
-    ):
-        if re.search(rf"(?m)^\s+(?:-\s+)?{re.escape(key)}", job):
-            errors.append(f"the lint-gates job may not use `{key}`")
-    if re.search(r"(?m)^defaults:", workflow):
-        errors.append("workflow defaults may not alter gate execution")
     if re.search(r"(?m)^        (?!run:)[\w-]+: [|>]", job):
         errors.append("non-run multiline step values are unsupported in lint-gates")
     hooks = [
@@ -289,6 +331,54 @@ def self_test() -> int:
         + " }]\n"
     )
     assert wiring_errors(ci, prek) == [], wiring_errors(ci, prek)
+    for key in ("shell", "defaults", '"shell"', '"defaults"'):
+        for hostile in (
+            f"{key}: hostile\n" + ci,
+            ci.replace("    steps:\n", f"    {key}: hostile\n    steps:\n", 1),
+            ci.replace(
+                "      - run: " + REQUIRED[1],
+                f"      - {key}: hostile\n        run: " + REQUIRED[1],
+            ),
+        ):
+            assert wiring_errors(hostile, prek), f"execution override accepted: {key}"
+    for variable in (
+        "BASH_ENV",
+        "PYTHONOPTIMIZE",
+        "PATH",
+        "PYTHONPATH",
+        "ENV",
+        "SHELL",
+    ):
+        for hostile in (
+            f"env:\n  {variable}: hostile\n" + ci,
+            ci.replace(
+                "    steps:\n", f"    env:\n      {variable}: hostile\n    steps:\n", 1
+            ),
+            ci.replace(
+                "      - run: " + REQUIRED[1],
+                f"      - env:\n          {variable}: hostile\n        run: "
+                + REQUIRED[1],
+            ),
+        ):
+            assert wiring_errors(hostile, prek), (
+                f"interpreter override accepted: {variable}"
+            )
+    for key in [
+        '"if"',
+        "'if'",
+        '"continue-on-error"',
+        '"shell"',
+        '"defaults"',
+        '"working-directory"',
+    ]:
+        hostile = ci.replace(
+            "      - run: " + REQUIRED[1],
+            "      - " + key + ": false\n        run: " + REQUIRED[1],
+        )
+        assert wiring_errors(hostile, prek), f"quoted execution key accepted: {key}"
+    assert wiring_errors(
+        ci.replace("  next:", "    steps:\n      - run: true\n  next:"), prek
+    ), "duplicate steps accepted"
     assert wiring_errors(ci.replace(SELF_TEST_LOOP, "SELF_TEST_LOOP"), prek)
     assert wiring_errors(
         ci.replace(

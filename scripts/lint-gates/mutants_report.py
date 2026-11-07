@@ -9,8 +9,8 @@
 `--artifacts DIR` holds one `mutants-out-shard-<k>` directory per shard (the
 `mutants.out` of `cargo mutants --shard k/N`, as CI uploads it). The campaign
 is incomplete when a shard is missing or did not finish: no `outcomes.json`,
-`end_time` null, no `mutants.json`, or fewer tested mutants than the shard
-lists.
+`end_time` null, no successful baseline, an empty `mutants.json`, or tested
+mutant identities that differ from the generated inventory.
 
 With `--register FILE` (docs/review/mutants.md) every missed or timed-out
 mutant of the campaign needs a row with a final status in the table
@@ -111,6 +111,13 @@ def shard_report(directory: Path, shard: int) -> tuple[list[str], dict[str, str]
                 entry["summary"], entry["summary"]
             )
     problems = []
+    baselines = [
+        entry["summary"]
+        for entry in outcomes["outcomes"]
+        if entry["scenario"] == "Baseline"
+    ]
+    if baselines != ["Success"]:
+        problems.append(f"shard {shard}: expected one successful baseline")
     if outcomes.get("end_time") is None:
         problems.append(f"shard {shard}: did not finish (end_time is null)")
     listing = directory / "mutants.json"
@@ -119,10 +126,18 @@ def shard_report(directory: Path, shard: int) -> tuple[list[str], dict[str, str]
             f"shard {shard}: no mutants.json, so its listed count is unknown"
         )
     else:
-        listed = len(json.loads(listing.read_text(encoding="utf-8")))
-        if listed != len(mutants):
+        listed = [
+            entry["name"] for entry in json.loads(listing.read_text(encoding="utf-8"))
+        ]
+        if not listed:
+            problems.append(f"shard {shard}: empty generated mutation inventory")
+        if len(listed) != len(mutants):
             problems.append(
-                f"shard {shard}: did not finish (tested {len(mutants)} of {listed} listed)"
+                f"shard {shard}: did not finish (tested {len(mutants)} of {len(listed)} listed)"
+            )
+        if set(listed) != set(mutants):
+            problems.append(
+                f"shard {shard}: generated and tested mutant identities differ"
             )
     return problems, mutants
 
@@ -190,7 +205,13 @@ def self_test() -> int:
         (directory / "outcomes.json").write_text(
             json.dumps({"outcomes": outcomes, "end_time": "t" if done else None})
         )
-        (directory / "mutants.json").write_text(json.dumps([{}] * listed))
+        inventory = [name for name, _ in names]
+        inventory.extend(
+            f"src/missing.rs:{index}:1: x" for index in range(len(names), listed)
+        )
+        (directory / "mutants.json").write_text(
+            json.dumps([{"name": name} for name in inventory])
+        )
 
     missed = "src/client.rs:4950:17: replace | with ^ in renewal_kdc_option_bits"
     missed_col = "src/client.rs:4950:21: replace | with ^ in renewal_kdc_option_bits"
@@ -269,6 +290,49 @@ def self_test() -> int:
         out = run("--expect-shards", "3")[1]
         assert "shard 2: did not finish (end_time is null)" in out, out
         assert "shard 2: did not finish (tested 1 of 4 listed)" in out, out
+        empty = root / "empty"
+        empty.mkdir()
+        (empty / "outcomes.json").write_text(
+            json.dumps({"outcomes": [], "end_time": "done"})
+        )
+        (empty / "mutants.json").write_text("[]")
+        problems, _ = shard_report(empty, 0)
+        assert any("baseline" in problem for problem in problems), problems
+        assert any("empty" in problem for problem in problems), problems
+        for baseline in ([], [{"scenario": "Baseline", "summary": "Failure"}]):
+            (empty / "outcomes.json").write_text(
+                json.dumps(
+                    {
+                        "outcomes": baseline
+                        + [
+                            {
+                                "scenario": {"Mutant": {"name": missed}},
+                                "summary": "CaughtMutant",
+                            }
+                        ],
+                        "end_time": "done",
+                    }
+                )
+            )
+            (empty / "mutants.json").write_text(json.dumps([{"name": missed}]))
+            assert any("baseline" in problem for problem in shard_report(empty, 0)[0])
+        (empty / "outcomes.json").write_text(
+            json.dumps(
+                {
+                    "outcomes": [
+                        {"scenario": "Baseline", "summary": "Success"},
+                        {
+                            "scenario": {"Mutant": {"name": missed}},
+                            "summary": "CaughtMutant",
+                        },
+                    ],
+                    "end_time": "done",
+                }
+            )
+        )
+        assert shard_report(empty, 0) == ([], {missed: "caught"})
+        (empty / "mutants.json").write_text(json.dumps([{"name": missed_col}]))
+        assert any("identities" in problem for problem in shard_report(empty, 0)[0])
     print(
         "mutants_report self-test: ok (missing and unfinished shards, unrecorded, open, misplaced hang, escaped names)"
     )

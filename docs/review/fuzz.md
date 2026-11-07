@@ -90,7 +90,43 @@ timeout artifact:
 | `krb5_conf` | 140,698 (todo 15 F, 2026-11-01) | 121 s | 0 |
 | `name_parse` | 2,629,623 | 121 s | 0 |
 
-### Crashes
+### Round-2 session admission repair (FU-FUZ-R02)
+
+The original `ticket.der` is a NULL-enctype codec vector, not an admissible
+session ticket. The four reply harnesses now share a deterministic AES ticket
+builder that decrypts the genuine AP-REQ fixture and re-encrypts its body with
+the advertised session key and service. GSS legacy modes explicitly enable
+RC4 and DES3 in their policy. Fixed request/context construction is asserted
+before arbitrary-input processing, including all six GSS keys and both TGS
+request modes, so admission failures cannot silently remove those paths.
+
+On 2026-11-08 all thirteen targets built. Each affected target ran with
+`cargo +nightly-2026-10-03 fuzz run <target> -- -max_total_time=60`,
+`RUSTFLAGS=--cap-lints=warn` and `CARGO_BUILD_WARNINGS=allow`:
+
+| Target | Runs | Time | New crash, OOM or timeout artifacts |
+| --- | ---: | ---: | ---: |
+| `kpasswd_reply` | 43,053 | 61 s | 0 |
+| `gss_token` | 7,138 | 61 s | 0 |
+| `http_negotiate` | 31,346 | 61 s | 0 |
+| `kdc_reply` | 20,475 | 61 s | 0 |
+
+The failing-first `kpasswd_reply` construction assertion exited 77 before
+the fixture repair. An initial repair used the wrong fixture decryption key
+and failed the same assertion; both setup failures were corrected before the
+four clean runs above. Their artifacts were removed, and the separate fuzz
+target directory was deleted after the runs. `fuzz_lint.py --enforce` passes.
+
+Fresh per-target coverage exports from the committed seeds prove all seven
+AP-REP/TGS mappings affected by this finding: `process_tgs_rep` 53,
+`process_tgs_rep_inner` 106, `process_tgs_rep_with_referral` 53,
+`verify_kpasswd_ap_rep` 1, HTTP `verify_ap_rep_response` 3, initiator
+`verify_ap_rep` 4 and `verify_ap_rep_response_header` 2. This is a scoped
+reachability proof, not a refreshed whole-inventory proof: checking all 71
+mappings of those four targets matched 51 and reported 20 unmatched mappings
+(including moved source owners and deeper reply-validation paths).
+
+### Earlier campaign crashes
 
 None. No run produced a crash, OOM or timeout artifact, so there is no
 regression test or fix to record. A crash in a later run is a defect:

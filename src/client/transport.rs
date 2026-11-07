@@ -67,7 +67,7 @@ use super::{
 };
 use crate::{
     client::kpasswd::{BuiltKpasswdRequest, RequestOptions},
-    config::Config,
+    config::{Config, restrictions},
     crypto::CryptoPolicy,
     error::Config as ConfigError,
     kadmin,
@@ -1733,6 +1733,7 @@ impl Tokio {
         password: &[u8],
         mut options: AsReq,
     ) -> Result<AsRepSession, Error> {
+        restrictions::config(config)?;
         options.crypto_policy = Ok(super::crypto_policy::configured(&config.libdefaults)?);
         let initial_request =
             password_initial_as_req(client.clone(), service.clone(), password, options.clone())?;
@@ -1918,6 +1919,7 @@ impl Tokio {
         keytab: &Keytab,
         mut options: AsReq,
     ) -> Result<AsRepSession, Error> {
+        restrictions::config(config)?;
         options.crypto_policy = Ok(super::crypto_policy::configured(&config.libdefaults)?);
         let initial_request =
             keytab_initial_as_req(client.clone(), service.clone(), keytab, options.clone())?;
