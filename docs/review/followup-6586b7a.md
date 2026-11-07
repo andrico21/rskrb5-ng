@@ -33,6 +33,8 @@ Critic round `critics-fb19af4`, unit u2:
 
 | FU-CLI-R03 | minor | Complete client authenticator builders accept invalid microseconds | fixed | `complete_authenticators_reject_invalid_scalars`, `whole_second_ap_req_metadata_matches_wire`; commit containing this row | PA/TGS/AP construction rejects fractional explicit seconds and cusec >= 1000000 with Client::Encode before encryption; pre-epoch whole seconds remain valid. | task-22b: invalid PA accepted before fix (exit 101), all three time tests pass after; all-target clippy clean. |
 
+| FU-CLI-R04 | minor | Implemented S4U2Proxy manifest claims validation before send but code validates after reply | fixed | `s4u_proxy_rejects_relabelled_evidence`, MIT manifest consistency target; commit containing this row | none; manifest now explicitly states post-transport, pre-acceptance validation instead of promising pre-build validation | task-22b: code and existing regression prove construction precedes binding; selected permitted documentation correction, not parity transfer. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
