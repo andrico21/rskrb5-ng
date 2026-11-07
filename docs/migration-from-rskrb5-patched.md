@@ -7,6 +7,11 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Mutation evidence (FU-GATE-R04): each whole-crate campaign shard must retain
+one successful baseline and a nonempty `mutants.json` with the exact tested
+mutant names. Rerun filtered, baseline-free or incomplete shards; an end time
+and matching counts alone no longer certify completeness.
+
 Lint interpreter admission (FU-GATE-R03): workflow/job/step environment settings
 must use the gate allowlist (`PYTHONDONTWRITEBYTECODE=1`, and workflow-level
 `CARGO_TERM_COLOR=always`). PATH, Python startup/optimization, shell startup,
