@@ -109,6 +109,24 @@ fn principal_share_boundaries_are_enforced() -> Result<(), Error> {
     Ok(())
 }
 
+/// Expiring one of a client's records frees one slot of its share, not the whole share.
+#[test]
+fn partial_expiry_keeps_the_remaining_share_counted() -> Result<(), Error> {
+    let mut cache = ReplayCache::with_limits(SWEEP_SKEW, 16).with_principal_capacity(2);
+    assert!(cache.insert(key("host", 1, 0, 0), digest(0), at(0), SWEEP_SKEW)?);
+    assert!(cache.insert(key("host", 1, 1, 0), digest(1), at(4), SWEEP_SKEW)?);
+    assert_eq!(
+        cache.force_clear_older_than_at(Duration::from_secs(1), at(4)),
+        1
+    );
+    assert!(cache.insert(key("host", 1, 2, 0), digest(2), at(4), SWEEP_SKEW)?);
+    assert!(matches!(
+        cache.insert(key("host", 1, 3, 0), digest(3), at(4), SWEEP_SKEW),
+        Err(Error::ReplayCacheCapacityExceeded { capacity: 2 })
+    ));
+    Ok(())
+}
+
 /// Force clearing removes all old evidence and reports its exact count through shared clones.
 #[test]
 fn force_clear_reports_removed_pairs() -> Result<(), Error> {
