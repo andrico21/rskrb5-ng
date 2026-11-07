@@ -87,6 +87,13 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Configuration defaults `k5login_authoritative` to true instead of false;
+  local-login authorization remains deferred, so this grants no login.
+  Ticket and renewable lifetimes use the checked MIT interval parser, rejecting
+  negative totals, overflow, malformed unit order and trailing garbage.
+  Auto transport normalizes negative `udp_preference_limit` to 1465, caps values
+  above 32700, and sends UDP first at equality (FU-DOC-R10).
+
 - Workflow wiring validation now requires executed gate commands, rejecting
   printed, commented, conditional or failure-swallowing substitutes (FU-GATE-R01).
 

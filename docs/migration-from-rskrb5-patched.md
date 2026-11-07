@@ -939,6 +939,14 @@ their `*_without_env` twins are gone. Named ambient discovery remains explicit:
 
 ### Configuration composition (FU-CFG-01, FU-CFG-03, FU-CFG-06, FU-CFG-07, FU-CFG-09)
 
+`k5login_authoritative` now defaults to true rather than false; its deferred
+local-login consumer still grants no authorization. Ticket and renewable
+lifetimes use checked MIT intervals: negative totals, overflow, malformed unit
+order and trailing garbage are rejected. Zero renewable lifetime disables renewal.
+Auto transport uses 1465 for a negative `udp_preference_limit`, caps values above
+32700, and selects UDP first when request size equals the limit. Explicit TCP or
+UDP bypasses this preference (FU-DOC-R10).
+
 Configuration now follows MIT profile semantics; the details are in
 [`config-profile.md`](config-profile.md) and the generated
 [relation catalogue](config-relations.md).
