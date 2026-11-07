@@ -71,9 +71,7 @@ impl State {
         let (raw_tag, raw) = text.split_once('=').ok_or_else(|| invalid(line))?;
         (!self.scopes.is_empty() && !raw_tag.trim().is_empty()).ok_or_else(|| invalid(line))?;
         let (tag, tag_final) = marker(raw_tag.trim());
-        if tag.eq_ignore_ascii_case("module") {
-            return Err(Error::UnsupportedDynamicModule);
-        }
+        (!tag.eq_ignore_ascii_case("module")).ok_or(Error::UnsupportedDynamicModule)?;
         (!tag.is_empty()).ok_or_else(|| invalid(line))?;
         let section = self.scopes.first().map_or("", |scope| scope.name.as_str());
         let key = if section == "libdefaults" && tag.eq_ignore_ascii_case("no_addresses") {
@@ -99,6 +97,7 @@ impl State {
                 && matches!(section, "realms" | "appdefaults" | "plugins" | "capaths"))
         {
             self.pending_brace = value.is_empty();
+            protocol::relation(&key, "{")?;
             if self.scopes.len() > super::MAX_INCLUDE_DEPTH {
                 return Err(Error::IncludeTooDeep {
                     depth: self.scopes.len(),
