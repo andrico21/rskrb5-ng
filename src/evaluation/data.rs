@@ -1,6 +1,6 @@
 use alloc::fmt;
 
-/// Candidate crates evaluated before committing to a standalone `rskrb5`.
+/// Candidate crates evaluated for the standalone `rskrb5-ng` implementation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Candidate {
@@ -282,7 +282,7 @@ impl CandidateAssessment {
     }
 }
 
-/// The gokrb5 v8 behavior that must be matched before `rskrb5` can claim parity.
+/// The gokrb5 v8 behavior that must be matched before `rskrb5-ng` can claim parity.
 pub const V8_CONTRACT: &[ContractArea] = &[
     ContractArea {
         id: "asn1",

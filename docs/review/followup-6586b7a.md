@@ -78,6 +78,8 @@ Critic round `critics-fb19af4`, unit u5:
 
 | FU-API-R02 | minor | Kadmin stringifies first-party crypto and randomness causes | fixed | `kadmin_crypto_source`, `kadmin_random_source`; error_api82/kadmin40; commit containing this row | Kadmin::Crypto becomes typed tuple; new Random variant preserves getrandom source; direct operations/adapters retain causes. | task-22b retained crypto cause missing red; both typed downcasts green; unknown-outcome behavior unchanged. |
 
+| FU-DOC-R05 | nit | The compatibility report's decision still identifies the predecessor crate | fixed | Built report executable stdout equals docs/compatibility-report.md; commit containing this row | No API/behavior change; current recommendation and rustdoc identify rskrb5-ng. | task-22b pre-fix recommendation names predecessor; corrected artifact byte equality exit0, no prose-pin test. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
