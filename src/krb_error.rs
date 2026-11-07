@@ -157,7 +157,7 @@ fn message_error(error: MessagesError) -> Error {
         MessagesError::Policy(policy) => policy.into(),
         MessagesError::Decode { target, message } => Error::Decode { target, message },
         MessagesError::Encode { target, message } => Error::Encode { target, message },
-        MessagesError::InvalidString(source) => Error::InvalidString(source.to_string()),
+        MessagesError::InvalidString(source) => Error::InvalidString(source),
         MessagesError::IntegerOutOfRange { field, value } => {
             Error::IntegerOutOfRange { field, value }
         }

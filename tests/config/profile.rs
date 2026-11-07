@@ -18,10 +18,114 @@ mod tests {
         process,
     };
 
-    use rskrb5_ng::{Config, error::Config as ConfigError};
+    use rskrb5_ng::{Config, config::ParseMode, error::Config as ConfigError};
 
     /// Process-local sequence avoids clock-resolution assumptions.
     static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    /// Escape decoding cannot hide permanently rejected selectors in discarded scopes.
+    #[test]
+    fn discarded_escaped_protocols_are_rejected() {
+        for mode in [ParseMode::Compatible, ParseMode::Strict] {
+            for input in [
+                "[libdefaults]*\n[libdefaults]\npkinit_key_exchange = \"r\\sa\"\n",
+                "[unknown]\nkpasswd_protocol = \"clear\\text\"\n",
+            ] {
+                assert!(matches!(
+                    Config::parse_with_mode(input, mode),
+                    Err(ConfigError::Policy(_))
+                ));
+            }
+        }
+    }
+
+    /// MIT permits an opening brace on the line after an empty assignment.
+    #[test]
+    fn next_line_braces_preserve_scopes() -> Result<(), Box<dyn Error>> {
+        let config = Config::parse(
+            "[realms]\nR* =\n{\nkdc = first\n}\nR = {\nkdc = second\n}\n[appdefaults]\napp =\n{\noption = value\n}\n[plugins]\npreauth =\n{\nenable_only = custom\n}\n",
+        )?;
+        assert_eq!(config.configured_kdcs("R")?, ["first:88"]);
+        assert_eq!(config.appdefault("app", "R", "option"), Some("value"));
+        assert!(
+            Config::parse("[realms]\nR =\nkdc = first\n").is_err(),
+            "missing brace rejected"
+        );
+        Ok(())
+    }
+
+    /// Quoted endpoint stars are literal; only profile syntax determines finality.
+    #[test]
+    fn quoted_endpoint_stars_remain_literal() -> Result<(), Box<dyn Error>> {
+        for key in ["kdc", "admin_server", "master_kdc", "kpasswd_server"] {
+            let config = Config::parse(&format!(
+                "[realms]\nR = {{\n{key} = \"first*\"\n{key} = second\n}}\n"
+            ))?;
+            let realm = config.realms.first().ok_or("realm")?;
+            let (values, expected) = match key {
+                "kdc" => (&realm.kdc, vec!["first*:88", "second:88"]),
+                "admin_server" => (&realm.admin_server, vec!["first*", "second"]),
+                "master_kdc" => (&realm.master_kdc, vec!["first*", "second"]),
+                _ => (&realm.kpasswd_server, vec!["first*", "second"]),
+            };
+            assert_eq!(values, &expected);
+        }
+        Ok(())
+    }
+
+    /// MIT quoted strings preserve significant edge whitespace after escape decoding.
+    #[test]
+    fn quoted_values_preserve_edge_whitespace() -> Result<(), Box<dyn Error>> {
+        let config = Config::parse(
+            "[appdefaults]\n option = \"  padded  \"\n[libdefaults]\n default_keytab_name = \"\\tFILE:/key\\n\"\n default_realm =  EXAMPLE  \n",
+        )?;
+        assert_eq!(
+            config.appdefault("app", "REALM", "option"),
+            Some("  padded  ")
+        );
+        assert_eq!(config.libdefaults.default_keytab_name, "\tFILE:/key\n");
+        assert_eq!(config.libdefaults.default_realm, "EXAMPLE");
+        Ok(())
+    }
+
+    /// Alias spellings share first-value and final-marker identity across files.
+    #[test]
+    fn address_aliases_share_profile_order() -> Result<(), Box<dyn Error>> {
+        for (first, second) in [
+            ("no_addresses", "noaddresses"),
+            ("noaddresses", "no_addresses"),
+        ] {
+            for marker in ["", "*"] {
+                let accepted = format!("[libdefaults]\n{first}{marker} = true\n{second} = false\n");
+                assert!(
+                    Config::parse(&accepted)?
+                        .libdefaults
+                        .no_addresses
+                        .is_enabled()
+                );
+                let refused = format!("[libdefaults]\n{first}{marker} = false\n{second} = true\n");
+                assert!(matches!(
+                    Config::parse(&refused),
+                    Err(ConfigError::NotYetEffective {
+                        relation: _,
+                        package: _
+                    })
+                ));
+                let dir = Fixture::new()?;
+                let one = dir.path().join("one");
+                let two = dir.path().join("two");
+                fs::write(&one, format!("[libdefaults]\n{first}{marker} = true\n"))?;
+                fs::write(&two, format!("[libdefaults]\n{second} = false\n"))?;
+                assert!(
+                    Config::load_paths(&[one, two])?
+                        .libdefaults
+                        .no_addresses
+                        .is_enabled()
+                );
+            }
+        }
+        Ok(())
+    }
 
     /// Fixture directory owned by one test invocation.
     struct Fixture(PathBuf);

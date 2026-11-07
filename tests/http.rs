@@ -1732,7 +1732,9 @@ mod tests {
             Principal::user("TEST.GOKRB5", "testuser1"),
             Principal::new("TEST.GOKRB5", 1, ["HTTP", "host.test.gokrb5"]),
             EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?),
-            der::encode(&ap_req.ticket).context("ticket encodes")?,
+            der::encode(&ap_req.ticket)
+                .context("ticket encodes")?
+                .into(),
             [0; 4],
             timestamp(1_893_553_445)?,
             timestamp(1_893_639_845)?,

@@ -28,6 +28,30 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
   metadata and lengths (FU-SPN-R05). Plain returned wire buffers remain the
   caller's erasure responsibility.
 
+- Kadmin retains typed `Crypto` and `getrandom::Error` sources through separate
+  `Crypto` and `Random` tuple variants (FU-API-R02).
+
+- `KrbErrorCodec::InvalidString` retains `Utf8Error` as its source instead of
+  a stringified cause (FU-API-R01).
+
+- Keytab password-generation methods now consume `Zeroizing<Vec<u8>>`, erasing
+  moved input on every exit. `add_entry_from_password_ref` provides explicitly
+  borrowed input with caller erasure duties (FU-FIL-R01).
+
+- `KerbValidationInfo::user_session_key` is now an owning, redacted
+  `pac::session_key::SessionKey`; raw PAC buffers use `Zeroizing<Vec<u8>>`.
+  Debug no longer exposes key-bearing PAC bytes, and parsing erases key staging
+  on success or later failure (FU-PAC-R06).
+
+- `Rc4HmacEtype::random_to_key` now returns `Result<Vec<u8>, error::Crypto>`:
+  exactly sixteen random bytes are preserved, not MD4-hashed; other lengths
+  return `InvalidKeyLength` (FU-CRY-R01). Password string-to-key is unchanged.
+
+- Client request DER, FAST AP-REQ bytes and session tickets now use
+  `Zeroizing<Vec<u8>>`; owning constructors require that owner. Client request
+  and session `Debug` expose metadata and lengths, never credential bytes
+  (FU-CLI-R02).
+
 - Add opt-in `service::TransitPolicy::{direct, domain_x500_paths}` presets for
   AD cross-domain tickets without TRANSITED-POLICY-CHECKED. Both pin endpoint
   realms; the latter allow-lists exact complete encoded paths. Default rejection
@@ -144,6 +168,61 @@ These are breaking; the migration guide maps each one.
 - Cloned HTTP services reject replay-cache attachment incompatible with the
   actual shared validator; lowering a cloned layer's skew no longer shortens
   its siblings' replay retention (FU-HTTP-R04).
+
+- Version-one keytab serialization rejects nonzero principal name types with
+  `UnrepresentableNameType` instead of silently losing them (FU-FIL-R03).
+
+- Ccache credential, configuration-entry and authorization-data Debug now
+  report payload lengths rather than credential bytes (FU-FIL-R02).
+
+- Escaped permanently rejected protocol selectors are rejected before finalized
+  or unknown profile scopes can discard them (FU-CFG-R06).
+
+- Unsupported restrictive settings now fail closed through serde and runtime
+  configuration admission, not only text parsing: address inclusion, total
+  deadlines, mandatory AP verification, channel-binding signaling, persistent
+  replay stores and encrypted-timestamp prohibitions (FU-CFG-R05).
+
+- Profile subsections accept MIT's next-line opening brace syntax. Empty
+  libdefaults/domain_realm scalar extensions remain supported (FU-CFG-R04).
+
+- Quoted endpoint stars remain literal and no longer suppress subsequent
+  endpoints; final markers are handled only by the profile parser (FU-CFG-R03).
+
+- Quoted profile values preserve leading/trailing whitespace after escape
+  decoding, including credential names and appdefaults (FU-CFG-R02).
+
+- `no_addresses` and `noaddresses` now share first-occurrence precedence and
+  final markers instead of overwriting by lexical spelling (FU-CFG-R01).
+
+- PAC NDR arrays validate aligned descriptor/element extent before reserving
+  from peer counts, preventing large allocations for truncated inputs
+  (FU-PAC-R05).
+
+- Nonempty PAC RPC strings with null pointers now return `MissingNdrPointer`
+  instead of silently becoming empty strings (FU-PAC-R04).
+
+- PAC parsing rejects nonzero format versions with `Pac::InvalidPacVersion`
+  before allocating the buffer table (FU-PAC-R02).
+
+- AP authenticators, tickets, KDC replies and KRB-PRIV now reject authenticated
+  trailing zero bytes unless they are DES3 padding shorter than eight bytes
+  (FU-MSG-R01).
+
+- Direct AS reply processing enforces the offered reply encryption type before
+  decryption, independently of the session-key type (`EnctypeNotRequested`,
+  FU-CLI-R07); TGS reply wrapping is unchanged.
+
+- Cached/imported sessions and AP construction reject service metadata that
+  disagrees with the encoded ticket's realm or ordered components
+  (`ServicePrincipalMismatch`, FU-CLI-R06).
+
+- Keytab diagnostics count only keys for the client's realm and ordered name
+  components, ignoring advisory name type; other users' keys no longer hide
+  missing credentials (FU-CLI-R05).
+
+- Complete PA/TGS/AP authenticator builders reject fractional explicit seconds
+  and microseconds above 999999 before encryption (`Client::Encode`, FU-CLI-R03).
 
 - Ccache parsing bounds every record count (principal components, addresses,
   authorization data) against the remaining input before reserving memory, so

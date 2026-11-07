@@ -49,11 +49,14 @@ pub enum CacheName {
     File(PathBuf),
 }
 
+/// Redaction of credential-bearing diagnostics.
+mod credential_debug;
+
 /// Credential cache configuration entry.
 ///
 /// MIT stores cache metadata as synthetic credentials with realm
 /// `X-CACHECONF:`. The configuration value is the credential's ticket field.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ConfigEntry<'cache> {
     /// Configuration key.
@@ -956,7 +959,7 @@ impl Principal {
 }
 
 /// Credential cache entry.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[non_exhaustive]
 pub struct Credential {
@@ -1348,7 +1351,7 @@ impl HostAddress {
 }
 
 /// Authorization data entry stored in a ccache credential.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[non_exhaustive]
 pub struct AuthorizationDataEntry {

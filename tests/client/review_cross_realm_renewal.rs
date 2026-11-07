@@ -25,7 +25,8 @@ mod tests {
     fn referral() -> Result<AsRepSession, TestError> {
         let mut session = current_tgt_session(10, 50)?;
         session.service = Principal::new("TEST.GOKRB5", 2, ["krbtgt", "RESDOM.GOKRB5"]);
-        session.ticket = ticket::encode(&delegated_ticket(&session.client, &session.service)?)?;
+        session.ticket =
+            ticket::encode(&delegated_ticket(&session.client, &session.service)?)?.into();
         Ok(session)
     }
 
@@ -66,7 +67,7 @@ mod tests {
                     .value
                     .as_ref(),
             )?;
-            assert_eq!(ticket::encode(&ap.ticket)?, session.ticket);
+            assert_eq!(ticket::encode(&ap.ticket)?, *session.ticket);
         }
         Ok(())
     }

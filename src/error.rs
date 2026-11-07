@@ -994,11 +994,11 @@ pub enum Kadmin {
         encrypted_data_etype: i32,
     },
     /// Cryptographic decrypt or integrity verification failed.
-    #[error("kadmin crypto operation failed: {message}")]
-    Crypto {
-        /// Crypto error message.
-        message: String,
-    },
+    #[error("kadmin crypto operation failed: {0}")]
+    Crypto(#[from] Crypto),
+    /// The operating system randomness source failed.
+    #[error("kadmin random source failed: {0}")]
+    Random(#[from] getrandom::Error),
     /// kpasswd returned a non-success result code.
     #[error("kpasswd failed with code {code}: {text}")]
     PasswordChangeFailed {
@@ -1165,6 +1165,9 @@ pub enum KdcReq {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Keytab {
+    /// Version one has no field for a nonzero principal name type.
+    #[error("keytab version one cannot represent principal name type {0}")]
+    UnrepresentableNameType(i32),
     /// A configured name could not be expanded from available facts.
     #[error("keytab name expansion failed: {0}")]
     Expansion(#[from] ExpansionFailure),
@@ -1358,7 +1361,7 @@ pub enum KrbErrorCodec {
     },
     /// ASN.1 string value was not valid UTF-8.
     #[error("invalid Kerberos string: {0}")]
-    InvalidString(String),
+    InvalidString(#[from] Utf8Error),
     /// A Kerberos integer could not fit in the expected Rust type.
     #[error("integer field {field} is out of range: {value}")]
     IntegerOutOfRange {
@@ -1553,6 +1556,9 @@ pub enum Messages {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Pac {
+    /// The PAC format version is not supported by MS-PAC.
+    #[error("unsupported PAC version {0}; expected zero")]
+    InvalidPacVersion(u32),
     /// Input was too short.
     #[error("{target} is too short: expected at least {minimum} bytes, got {actual}")]
     TooShort {

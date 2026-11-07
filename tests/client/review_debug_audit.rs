@@ -17,6 +17,41 @@ mod tests {
 
     use super::*;
 
+    /// Actual session, AP and nested FAST credentials never appear in diagnostics.
+    #[test]
+    fn request_and_session_debug_redacts_actual_credentials() -> Result<(), TestError> {
+        let session = sample_tgt_session()?;
+        let ap = build_ap_req_with_confounder(
+            &session,
+            ApReq::new(),
+            timestamp(1_893_553_452)?,
+            123,
+            &hex::decode(TGS_REQ_CONFOUNDER)?,
+        )?;
+        let fast = build_tgs_req_for_realm_with_subkey(
+            &session,
+            "TEST.GOKRB5",
+            Principal::user("TEST.GOKRB5", "service"),
+            TgsReq::new(timestamp(1_893_553_452)?, 42),
+        )?;
+        for (rendered, credential) in [
+            (format!("{session:?}"), session.ticket.as_slice()),
+            (format!("{ap:?}"), ap.der.as_slice()),
+            (format!("{fast:?}"), fast.ap_req_der.as_slice()),
+        ] {
+            assert!(
+                !rendered.contains(&format!("{credential:?}")),
+                "credential bytes disclosed"
+            );
+            assert!(
+                !rendered.contains(&hex::encode(credential)),
+                "encoded credential disclosed"
+            );
+            assert!(rendered.contains("len"), "diagnostic length is retained");
+        }
+        Ok(())
+    }
+
     /// Pin explicit field audits; Rust rejects a new field until each pattern is updated.
     #[test]
     fn secret_debug_enumerates_every_field() -> Result<(), TestError> {
@@ -83,9 +118,9 @@ mod tests {
             Principal::user("TEST.GOKRB5", "service"),
             TgsReq::new(timestamp(1_893_553_452)?, 42),
         )?;
-        fast.ap_req_der = b"fast-token-audit-canary".to_vec();
+        fast.ap_req_der = b"fast-token-audit-canary".to_vec().into();
         fast.authenticator_subkey.value = b"fast-key-audit-canary".to_vec();
-        session.ticket = marked_ticket(b"ticket-audit-canary")?;
+        session.ticket = marked_ticket(b"ticket-audit-canary")?.into();
         client.cache_tgt_session(session)?;
         let credentials =
             TokioClientCredentials::Password(Zeroizing::new(b"password-audit-canary".to_vec()));

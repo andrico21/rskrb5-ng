@@ -1,5 +1,4 @@
 # Migrating from rskrb5-patched
-
 `rskrb5-patched` 0.2.x users move to `rskrb5-ng` 0.3. This guide lists every
 change a caller can see: the new package and library names, renamed paths,
 constructors that replace struct literals, changed signatures and error
@@ -16,6 +15,56 @@ with `.as_slice()` and headers with `.as_str()`. Token and pending response
 diagnostics show metadata and lengths, never credential contents. Plain vectors
 and strings returned by encoding/header convenience APIs still require caller
 erasure after use.
+
+Kadmin causes (FU-API-R02): replace `Crypto { message }` matches with
+`Crypto(source)` and handle `Random(source)` separately. Both expose typed
+`Error::source()` chains; post-delivery unknown-outcome classification is unchanged.
+
+KRB-ERROR UTF-8 causes (FU-API-R01): `KrbErrorCodec::InvalidString` now contains
+`core::str::Utf8Error`, available through `Error::source()` and preserving
+`valid_up_to()`/`error_len()`. Construct it from the original error, not its text.
+
+Version-one keytabs (FU-FIL-R03): nonzero principal name types cannot be saved
+in that format and now return `error::Keytab::UnrepresentableNameType`.
+Use version two to preserve the value, or explicitly choose name type zero.
+
+Ccache diagnostics (FU-FIL-R02): Debug no longer exposes primary/second ticket,
+configuration-value or authorization payload bytes, including nested CCache
+formatting. Use explicit borrowed fields only where needed; never log them.
+
+PAC key ownership (FU-PAC-R06): use `user_session_key.as_bytes()` to borrow
+the sixteen-byte key; construct replacements with
+`pac::session_key::SessionKey::new(Zeroizing::new(bytes))`. The key is no longer
+implicitly copied. `Pac::data` and `zero_signature_data` are zeroizing vectors;
+slice borrowing is unchanged. Caller-created copies and borrowed parser input
+remain the caller's erasure responsibility. Debug emits metadata/lengths,
+never the key or raw PAC buffers.
+
+PAC allocation admission (FU-PAC-R05): truncated claims/group/string arrays
+fail with `Truncated` before reservation. Valid counts up to the existing
+one-million-element ceiling remain accepted when the wire extent is present.
+
+RPC strings in PACs (FU-PAC-R04): a null pointer is valid only when logical
+length is zero. Nonempty null strings return `error::Pac::MissingNdrPointer`;
+maximum capacity and legitimate nonnull termination slack remain supported.
+
+PAC versions (FU-PAC-R02): only version zero is supported. Nonzero versions
+now return `error::Pac::InvalidPacVersion(u32)` before buffer processing.
+
+Encrypted message padding (FU-MSG-R01): complete decryptors require exact DER
+for AES and RC4, and accept only fewer than eight zero padding bytes for DES3.
+Previously accepted authenticated surplus bytes now return the family's Decode
+error. Remove application-added padding; let the encryption profile supply it.
+
+Client credential buffers (FU-CLI-R02): `BuiltAsReq::der`, `BuiltTgsReq::der`,
+`BuiltApReq::der`, `TgsFastRequestParts::ap_req_der` and `AsRepSession::ticket`
+are now `zeroize::Zeroizing<Vec<u8>>`. Pass an owning zeroizing buffer to
+`BuiltAsReq::new`, `BuiltTgsReq::new` and `AsRepSession::new`; use `.into()`
+on an existing owned vector to transfer it without copying. Slice borrows
+continue to work. A deliberate `.to_vec()` copy is caller-erased. Their
+`Debug` output, including nested referral/FAST results, keeps metadata and
+lengths only. Dependency-owned ASN.1 copies remain residuals as documented
+in [the security policy](security-policy.md#residual-copies).
 
 Replace the dependency:
 
@@ -36,6 +85,57 @@ It depends on `rasn` and `rasn-kerberos` 0.29; a caller that passes `rasn`
 values to or from this crate needs the same versions.
 
 ## New configuration keys
+
+Discarded selectors (FU-CFG-R06): quoting or escaping a forbidden RSA, draft-9,
+v4 or unprotected-password selector cannot hide it in an ignored profile scope.
+Permanent rejection now checks the decoded scalar before composition discards it.
+
+Restrictive settings (FU-CFG-R05): serde and programmatic configurations now
+receive the same refusal for unsupported restrictions as profile input. Runtime
+client/service/request boundaries revalidate mutable fields before effects.
+Unset these settings until their documented plan-2 consumer exists; text and
+client admission return `NotYetEffective`, while infallible request options
+retain an invalid-policy error for the eventual build.
+
+Subsections (FU-CFG-R04): in realms, appdefaults, plugins and capaths, an empty
+assignment now expects an opening brace on the next structural line. Use `""`
+for an explicitly empty scalar there. Empty libdefaults/domain_realm values
+retain the crate's existing scalar extension.
+
+Endpoint stars (FU-CFG-R03): `kdc = "host*"` denotes literal `host*`, not a
+final relation. Use `kdc* = host` to finalize. The existing unquoted value-final
+extension remains supported.
+
+Quoted values (FU-CFG-R02): spaces, tabs and newlines inside quotes are now
+literal content, including at the edges. Remove accidental quoted whitespace
+from credential paths; unquoted assignment whitespace continues to be ignored.
+
+Address aliases (FU-CFG-R01): the first occurrence of either `no_addresses`
+or `noaddresses` wins. A final marker on either spelling closes both; an
+initial false value cannot be repaired by a later true alias.
+
+Direct AS processing (FU-CLI-R07): include the reply-key enctype in the AS
+request's offered list. `process_as_rep` and its exchange callers now return
+`EnctypeNotRequested` for an unoffered reply wrapping type even when the
+session-key type was offered. This restriction does not apply to TGS wrapping.
+
+Session service identity (FU-CLI-R06): keep `AsRepSession::service` consistent
+with the encoded ticket realm and ordered server components. Relabeling a
+ticket now fails cache admission or AP construction with
+`error::Client::ServicePrincipalMismatch`; advisory name-type changes remain
+accepted. Legacy infallible ccache import skips rejected entries.
+Fallible `try_from_ccache` and file-loading constructors return the mismatch
+before constructing the client.
+
+Keytab diagnostics (FU-CLI-R05) now report usable enctypes for the exact client
+realm and ordered components, not every principal in that realm. Provision keys
+for that client when missing-key diagnostics appear; advisory name type does
+not affect selection.
+
+Explicit authenticator times (FU-CLI-R03): pass whole seconds and a separate
+microsecond value from 0 through 999999 to PA/TGS/AP builders. Fractions and
+out-of-range microseconds now return `error::Client::Encode`; whole-second
+pre-epoch timestamps remain supported.
 
 Two `[libdefaults]` flags gate the legacy enctypes. Both default to false,
 independently of `allow_weak_crypto`:
@@ -1610,7 +1710,7 @@ kpasswd result helpers, `MicToken::verify`/`WrapToken::verify` and others).
 - `crypto::Rc4HmacEtype::hmac_len`: `pub const fn hmac_len() -> usize`.
 - `crypto::Rc4HmacEtype::default_s2kparams`: `pub const fn default_s2kparams() -> &'static str`.
 - `crypto::Rc4HmacEtype::string_to_key`: `pub fn string_to_key(secret: &[u8], _salt: &[u8], _s2kparams: &str) -> Result<Vec<u8>, Error>`.
-- `crypto::Rc4HmacEtype::random_to_key`: `pub fn random_to_key(bytes: &[u8]) -> Vec<u8>`.
+- `crypto::Rc4HmacEtype::random_to_key`: `pub fn random_to_key(bytes: &[u8]) -> Result<Vec<u8>, Error>`. Supply exactly sixteen random bytes and handle `InvalidKeyLength` (FU-CRY-R01). The key equals that seed; password derivation remains `string_to_key`.
 - `crypto::Rc4HmacEtype::derive_key`: `pub fn derive_key(protocol_key: &[u8], usage: &[u8]) -> Result<Vec<u8>, Error>`.
 - `crypto::Rc4HmacEtype::checksum`: `pub fn checksum(protocol_key: &[u8], data: &[u8], usage: u32) -> Result<Vec<u8>, Error>`.
 - `crypto::Rc4HmacEtype::verify_checksum`: `pub fn verify_checksum(protocol_key: &[u8], data: &[u8], checksum: &[u8], usage: u32) -> bool`.
@@ -1645,8 +1745,8 @@ kpasswd result helpers, `MicToken::verify`/`WrapToken::verify` and others).
 - `keytab::Keytab::save_name`: `pub fn save_name<P>(&self, name: P) -> Result<(), Error> where P: AsRef<str>,`.
 - `keytab::Keytab::version`: `pub const fn version(&self) -> u8`.
 - `keytab::Keytab::entries_mut`: `pub const fn entries_mut(&mut self) -> &mut Vec<Entry>`.
-- `keytab::Keytab::add_entry_from_password`: `pub fn add_entry_from_password<P>( &mut self, principal: Principal, password: P, timestamp: SystemTime, kvno: u8, etype: i32, ) -> Result<(), Error> where P: AsRef<[u8]>,`.
-- `keytab::Keytab::add_entry_from_password_name`: `pub fn add_entry_from_password_name<P, Q, R>( &mut self, principal_name: P, realm: Q, password: R, timestamp: SystemTime, kvno: u8, etype: i32, ) -> Result<(), Error> where P: AsRef<str>, Q: Into<String>, R: AsRef<[u8]>,`.
+- `keytab::Keytab::add_entry_from_password`: password is now `Zeroizing<Vec<u8>>`; the password generic is removed (FU-FIL-R01). Move existing bytes with `.into()`; use `add_entry_from_password_ref` for `&[u8]` while retaining caller erasure responsibility.
+- `keytab::Keytab::add_entry_from_password_name<P, Q>`: password is now `Zeroizing<Vec<u8>>`; name/realm bounds and remaining parameters are unchanged. Invalid names also erase the moved password (FU-FIL-R01).
 - `keytab::Principal::new`: `pub fn new<I, S, P>(realm: P, name_type: i32, components: I) -> Self where I: IntoIterator<Item = S>, S: Into<String>, P: Into<String>,`.
 - `keytab::Principal::from_name`: `pub fn from_name<P, Q>(realm: P, name_type: i32, principal_name: Q) -> Result<Self, Error> where P: Into<String>, Q: AsRef<str>,`.
 - `krb_priv::EncKrbPrivPartOptions::new`: `pub const fn new(sender_address: rasn_kerberos::HostAddress) -> Self`.

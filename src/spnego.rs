@@ -1971,8 +1971,8 @@ pub fn init_sec_context_with_confounder(
     let built_ap_req =
         build_ap_req_with_confounder(service_ticket, ap_req_options, timestamp, cusec, confounder)
             .map_err(client_error_to_spnego)?;
-    let ap_req_der = Zeroizing::new(built_ap_req.der.clone());
-    let krb5_token = Krb5MechToken::ap_req(ap_req_der.to_vec());
+    let krb5_token = Krb5MechToken::ap_req(built_ap_req.der.to_vec());
+    let ap_req_der = built_ap_req.der;
     let krb5_token_der = krb5_token.encode()?;
     let spnego_token = Token::Init(NegTokenInit::krb5(krb5_token_der));
     let header = Zeroizing::new(negotiate_header(&spnego_token)?);

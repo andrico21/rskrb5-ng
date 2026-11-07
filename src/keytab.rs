@@ -5,6 +5,7 @@
 
 use alloc::fmt;
 use core::{
+    mem,
     str::{self, FromStr},
     time::Duration,
 };
@@ -13,6 +14,11 @@ use std::{
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
+
+use zeroize::Zeroizing;
+
+/// Password ownership retained through derivation and every early error.
+mod password;
 
 #[cfg(feature = "messages")]
 use crate::config::{LibDefaults, credential_names, parameters::DefaultName};
@@ -399,27 +405,21 @@ impl Keytab {
     /// [`Error::TimestampBeforeUnixEpoch`] or [`Error::TimestampOverflow`]
     /// when `timestamp` does not fit the file's unsigned 32-bit seconds.
     #[inline]
-    pub fn add_entry_from_password<P>(
+    pub fn add_entry_from_password(
         &mut self,
         principal: Principal,
-        password: P,
+        password: Zeroizing<Vec<u8>>,
         timestamp: SystemTime,
         kvno: u8,
         etype: i32,
-    ) -> Result<(), Error>
-    where
-        P: AsRef<[u8]>,
-    {
+    ) -> Result<(), Error> {
+        let owned = password::Owner(password);
         let etype_impl = selection::enctype(etype)?.ok_or(Error::UnsupportedEtype(etype))?;
         let salt = principal.default_password_salt();
         let seconds = system_time_to_u32_seconds(timestamp)?;
         let key = EncryptionKey::new(
             etype,
-            etype_impl.string_to_key(
-                password.as_ref(),
-                salt.as_bytes(),
-                etype_impl.default_s2kparams(),
-            )?,
+            etype_impl.string_to_key(&owned.0, salt.as_bytes(), etype_impl.default_s2kparams())?,
         );
         self.entries.push(Entry {
             principal,
@@ -442,11 +442,11 @@ impl Keytab {
     /// an empty component, and any error of
     /// [`Keytab::add_entry_from_password`].
     #[inline]
-    pub fn add_entry_from_password_name<P, Q, R>(
+    pub fn add_entry_from_password_name<P, Q>(
         &mut self,
         principal_name: P,
         realm: Q,
-        password: R,
+        password: Zeroizing<Vec<u8>>,
         timestamp: SystemTime,
         kvno: u8,
         etype: i32,
@@ -454,11 +454,29 @@ impl Keytab {
     where
         P: AsRef<str>,
         Q: Into<String>,
-        R: AsRef<[u8]>,
     {
+        let mut owned = password::Owner(password);
+        let principal = Principal::from_name(realm, 1, principal_name)?;
+        self.add_entry_from_password(principal, mem::take(&mut owned.0), timestamp, kvno, etype)
+    }
+
+    /// Derive an entry from borrowed password bytes without taking their ownership.
+    /// # Security
+    /// The caller must erase the borrowed input and copies; the temporary owner is erased here.
+    /// # Errors
+    /// Returns the derivation and timestamp errors of [`Self::add_entry_from_password`].
+    #[inline]
+    pub fn add_entry_from_password_ref(
+        &mut self,
+        principal: Principal,
+        password: &[u8],
+        timestamp: SystemTime,
+        kvno: u8,
+        etype: i32,
+    ) -> Result<(), Error> {
         self.add_entry_from_password(
-            Principal::from_name(realm, 1, principal_name)?,
-            password,
+            principal,
+            Zeroizing::new(password.to_vec()),
             timestamp,
             kvno,
             etype,
@@ -731,6 +749,8 @@ impl Principal {
     /// Returns [`Error::LengthOverflow`] when the component count or a string
     /// length exceeds `i16::MAX`.
     fn write_to(&self, out: &mut Vec<u8>, version: u8, endian: Endian) -> Result<(), Error> {
+        (version != 1 || self.name_type == 0_i32)
+            .ok_or(Error::UnrepresentableNameType(self.name_type))?;
         let component_count = if version == 1 {
             self.components
                 .len()

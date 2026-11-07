@@ -582,8 +582,28 @@ mod harness {
         let mut tgt = sample_tgt_session()?;
         tgt.service = Principal::new("TEST.GOKRB5", 2, ["krbtgt".to_owned(), realm.to_owned()]);
         tgt.session_key.value = vec![0x9a; 32];
-        tgt.ticket = marked_ticket(format!("referral-ticket-{realm}").as_bytes())?;
+        tgt.ticket = marked_ticket(format!("referral-ticket-{realm}").as_bytes())?.into();
+        align_ticket_service(&mut tgt)?;
         Ok(tgt)
+    }
+
+    /// Keep synthetic ticket envelopes consistent when a test changes service metadata.
+    #[cfg(feature = "tokio")]
+    pub(crate) fn align_ticket_service(session: &mut AsRepSession) -> Result<(), TestError> {
+        use rskrb5_ng::ticket;
+        let mut wire = ticket::decode(&session.ticket)?;
+        wire.realm = kerberos_string(&session.service.realm)?;
+        wire.sname = rasn_kerberos::PrincipalName {
+            r#type: session.service.name_type,
+            string: session
+                .service
+                .components
+                .iter()
+                .map(|value| kerberos_string(value))
+                .collect::<Result<_, _>>()?,
+        };
+        session.ticket = ticket::encode(&wire)?.into();
+        Ok(())
     }
 
     /// Encode cache-test marker bytes inside a real Ticket encrypted-data field.
@@ -1203,7 +1223,7 @@ mod harness {
         let clock = timestamp(u64::try_from(
             body.till.0.timestamp().saturating_sub(86_400),
         )?)?;
-        let mut built = BuiltAsReq::new(message, der.to_vec(), client, service, nonce);
+        let mut built = BuiltAsReq::new(message, der.to_vec().into(), client, service, nonce);
         built.reply_clock.0 = clock;
         Ok(built)
     }
@@ -1221,7 +1241,14 @@ mod harness {
         let clock = timestamp(u64::try_from(
             body.till.0.timestamp().saturating_sub(86_400),
         )?)?;
-        let mut built = BuiltTgsReq::new(message, der.to_vec(), client, service, kdc_realm, nonce);
+        let mut built = BuiltTgsReq::new(
+            message,
+            der.to_vec().into(),
+            client,
+            service,
+            kdc_realm,
+            nonce,
+        );
         built.reply_clock.0 = clock;
         Ok(built)
     }

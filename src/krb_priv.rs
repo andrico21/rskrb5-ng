@@ -5,7 +5,7 @@ use zeroize::Zeroizing;
 
 use crate::{
     crypto::selection,
-    der::{decode_complete, trim_zero_padded_der},
+    der::{decode_complete, encrypted_der},
     keytab::EncryptionKey,
 };
 
@@ -300,7 +300,7 @@ pub fn decrypt_krb_priv_enc_part(
         krb_priv.enc_part.cipher.as_ref(),
         KRB_PRIV_ENCPART_USAGE,
     )?);
-    decode_enc_krb_priv_part(trim_zero_padded_der(&plaintext))
+    decode_enc_krb_priv_part(encrypted_der(&plaintext, key.etype))
 }
 
 /// Decode a DER value with a typed error.

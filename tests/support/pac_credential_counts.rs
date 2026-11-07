@@ -101,6 +101,27 @@ mod tests {
         Ok(())
     }
 
+    /// Nonempty RPC strings cannot reference null, even with matching capacity.
+    #[test]
+    fn credentials_rejects_nonempty_null_package_name() -> Result<(), TestError> {
+        let mut bytes = count_only(1);
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        bytes.extend_from_slice(&2_u16.to_le_bytes());
+        bytes.extend_from_slice(&2_u16.to_le_bytes());
+        bytes.extend_from_slice(&[0; 16]);
+        bytes
+            .get_mut(8..12)
+            .context("length")?
+            .copy_from_slice(&32_u32.to_le_bytes());
+        assert!(matches!(
+            CredentialData::parse(&bytes),
+            Err(PacError::MissingNdrPointer(
+                "SECPKGSupplementalCred.PackageName"
+            ))
+        ));
+        Ok(())
+    }
+
     /// Pins correlation before descriptor admission or allocation.
     #[test]
     fn credentials_rejects_mismatched_conformant_count() -> Result<(), TestError> {

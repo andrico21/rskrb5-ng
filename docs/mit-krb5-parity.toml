@@ -81,7 +81,7 @@ missing = ""
 rust_symbols = ["client::process_tgs_rep_with_referral"]
 test_names = [
   "tests/client/tgs_exchange.rs::process_tgs_rep_with_referral_accepts_intermediate_tgt",
-  "tests/client/session_cache.rs::tokio_client_renews_cached_referral_tgt_before_reusing_it",
+  "tests/client/session_cache.rs::tokio_client_reacquires_expired_cached_referral_tgt",
 ]
 feature_flags = ["tokio"]
 security_divergence = "Referral chains are bounded and the final service name is bound to the request; Go's omitted TGS identity checks are not copied."
@@ -137,7 +137,7 @@ test_names = [
   "tests/client/tgs_exchange.rs::tokio_client_s4u2proxy_uses_current_service_tgt_without_service_cache",
 ]
 feature_flags = ["tokio"]
-security_divergence = "The evidence ticket's client is bound to the frontend key before the request is built."
+security_divergence = "Reply processing binds the evidence ticket's client to the frontend key before accepting the result; request construction and transport precede this validation."
 disposition = "ALREADY"
 contributors = []
 

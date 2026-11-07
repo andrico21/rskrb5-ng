@@ -17,6 +17,7 @@ mod tests {
         let tgt = current_tgt_session(1, 60)?;
         let mut ticket = tgt.clone();
         ticket.service = sample_service_principal();
+        align_ticket_service(&mut ticket)?;
         ticket.ticket_flags =
             (u32::from_be_bytes(ticket.ticket_flags) | 0x0100_0000_u32).to_be_bytes();
         let mut client = Tokio::from_tgt_session(config_without_kdcs()?, KdcProtocol::Tcp, tgt);
@@ -43,6 +44,7 @@ mod tests {
             );
             let mut ticket = tgt.clone();
             ticket.service = sample_service_principal();
+            align_ticket_service(&mut ticket)?;
             let mut client = Tokio::from_tgt_session(config_without_kdcs()?, KdcProtocol::Tcp, tgt);
             client.cache_service_ticket(ticket)?;
 

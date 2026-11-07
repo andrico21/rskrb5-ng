@@ -586,7 +586,7 @@ mod tests {
         let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key)?;
         let mut transport = MockTransport {
             expected_realm: "TEST.GOKRB5".to_owned(),
-            expected_request: request.der.clone(),
+            expected_request: request.der.to_vec(),
             response,
             called: false,
         };
@@ -1034,9 +1034,9 @@ mod tests {
         })
     }
 
-    /// Pins that an explicit `permitted_enctypes` line narrows the TGS-REQ etype list.
+    /// Pins rejection of a mixed disabled TGS-REQ enctype list without narrowing.
     #[test]
-    fn tgs_req_etypes_are_intersected_with_permitted_enctypes() -> Result<(), TestError> {
+    fn tgs_req_rejects_mixed_disabled_enctype_list() -> Result<(), TestError> {
         let defaults = LibDefaults::default()
             .with_default_tgs_enctypes(vec![
                 "aes256-cts".into(),

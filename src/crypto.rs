@@ -1270,14 +1270,13 @@ impl Rc4HmacEtype {
         Ok(out)
     }
 
-    #[must_use]
-    /// Convert random bytes into an RC4-HMAC key.
+    /// Convert a 128-bit random seed directly into an RC4-HMAC key.
+    /// # Errors
+    /// Returns [`Error::InvalidKeyLength`] unless the seed contains exactly sixteen bytes.
     #[inline]
-    pub fn random_to_key(bytes: &[u8]) -> Vec<u8> {
-        let mut digest = Md4::digest(bytes);
-        let out = digest.to_vec();
-        digest.as_mut_slice().zeroize();
-        out
+    pub fn random_to_key(bytes: &[u8]) -> Result<Vec<u8>, Error> {
+        Self::validate_key(bytes)?;
+        Ok(bytes.to_vec())
     }
 
     /// Derive a usage-specific key from a protocol key.

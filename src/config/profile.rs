@@ -125,6 +125,7 @@ impl Profile {
         }
         super::unknown::report(&mut config, &self.sections, &self.values)?;
         super::unknown::empty_scopes(&mut config, &self.scopes)?;
+        super::restrictions::config(&config)?;
         Ok(config)
     }
 }

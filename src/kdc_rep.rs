@@ -10,7 +10,7 @@ use ticket_error::ticket_error;
 
 use crate::{
     crypto::selection,
-    der::{decode_complete, trim_zero_padded_der},
+    der::{decode_complete, encrypted_der},
     error::Ticket as TicketError,
     keytab::EncryptionKey,
     ticket::validate as validate_ticket,
@@ -302,7 +302,7 @@ fn decrypt_kdc_rep_enc_part(
         etype.decrypt_message(&key.value, encrypted_data.cipher.as_ref(), usage)?,
         "kdc-rep decrypt",
     );
-    decode_enc_kdc_rep_part(trim_zero_padded_der(&plaintext))
+    decode_enc_kdc_rep_part(encrypted_der(&plaintext, key.etype))
 }
 
 /// Encrypt an encoded KDC reply part into `EncryptedData` with `key`.

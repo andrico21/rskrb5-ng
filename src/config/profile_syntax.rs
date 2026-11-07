@@ -20,6 +20,8 @@ struct Scope {
 pub(super) struct State {
     /// Section followed by open subsection scopes.
     scopes: Vec<Scope>,
+    /// An empty assignment requires the next structural line to open its subsection.
+    pending_brace: bool,
 }
 
 impl State {
@@ -28,6 +30,17 @@ impl State {
     /// # Errors
     /// Rejects malformed headers, assignments, quotes and unbalanced braces.
     pub(super) fn line(&mut self, line: &Line, profile: &mut Profile) -> Result<(), Error> {
+        if self.pending_brace {
+            self.pending_brace = false;
+            return (line.text == "{").ok_or_else(|| invalid(line));
+        }
+        self.content(line, profile)
+    }
+
+    /// Parse a line after resolving any pending opening brace.
+    /// # Errors
+    /// Returns the typed profile syntax or policy error.
+    fn content(&mut self, line: &Line, profile: &mut Profile) -> Result<(), Error> {
         let text = line.text.as_str();
         if let Some(header) = text.strip_prefix('[') {
             self.finish(profile)?;
@@ -51,25 +64,19 @@ impl State {
             return Ok(());
         }
         if matches!(text, "}" | "}*") {
-            if self.scopes.len() <= 1 {
-                return Err(invalid(line));
-            }
+            (self.scopes.len() > 1).ok_or_else(|| invalid(line))?;
             self.close(profile, text == "}*");
             return Ok(());
         }
         let (raw_tag, raw) = text.split_once('=').ok_or_else(|| invalid(line))?;
-        if self.scopes.is_empty() || raw_tag.trim().is_empty() {
-            return Err(invalid(line));
-        }
+        (!self.scopes.is_empty() && !raw_tag.trim().is_empty()).ok_or_else(|| invalid(line))?;
         let (tag, tag_final) = marker(raw_tag.trim());
-        if tag.eq_ignore_ascii_case("module") {
-            return Err(Error::UnsupportedDynamicModule);
-        }
-        if tag.is_empty() {
-            return Err(invalid(line));
-        }
+        (!tag.eq_ignore_ascii_case("module")).ok_or(Error::UnsupportedDynamicModule)?;
+        (!tag.is_empty()).ok_or_else(|| invalid(line))?;
         let section = self.scopes.first().map_or("", |scope| scope.name.as_str());
-        let key = if (self.scopes.len() == 1 && section == "realms")
+        let key = if section == "libdefaults" && tag.eq_ignore_ascii_case("no_addresses") {
+            "noaddresses".to_owned()
+        } else if (self.scopes.len() == 1 && section == "realms")
             || matches!(section, "capaths" | "appdefaults")
             || self
                 .scopes
@@ -85,10 +92,12 @@ impl State {
         let discarded =
             self.scopes.iter().any(|scope| scope.discarded) || profile.child_closed(&path);
         let value = raw.trim();
-        if section != "domain_realm" {
-            protocol::relation(&key, value)?;
-        }
-        if value == "{" {
+        if value == "{"
+            || (value.is_empty()
+                && matches!(section, "realms" | "appdefaults" | "plugins" | "capaths"))
+        {
+            self.pending_brace = value.is_empty();
+            protocol::relation(&key, "{")?;
             if self.scopes.len() > super::MAX_INCLUDE_DEPTH {
                 return Err(Error::IncludeTooDeep {
                     depth: self.scopes.len(),
@@ -114,12 +123,16 @@ impl State {
             marker(value)
         };
         let decoded = quoted(body, line)?;
+        if section != "domain_realm" {
+            protocol::relation(&key, &decoded)?;
+        }
         if !discarded {
             profile.relation(
                 path.clone(),
                 Line {
                     number: line.number,
                     text: format!("{key} = {decoded}"),
+                    value: Some(decoded),
                 },
             );
             if tag_final || value_final {
@@ -134,7 +147,7 @@ impl State {
     /// # Errors
     /// An open subsection is always an error, even in an unknown section.
     pub(super) fn finish(&mut self, profile: &mut Profile) -> Result<(), Error> {
-        if self.scopes.len() > 1 {
+        if self.pending_brace || self.scopes.len() > 1 {
             return Err(Error::InvalidRealmsSection(
                 "unclosed profile subsection".to_owned(),
             ));

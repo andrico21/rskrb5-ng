@@ -19,6 +19,100 @@ mod tests {
 
     use super::*;
 
+    /// PA and TGS accept the maximum microseconds without truncating whole seconds.
+    #[test]
+    fn maximum_pa_and_tgs_microseconds_roundtrip() -> Result<(), TestError> {
+        use rasn::der;
+        let session = sample_tgt_session()?;
+        let key = &session.session_key;
+        for seconds in [-1_i64, 0, 1_893_553_452] {
+            let time = if seconds < 0 {
+                UNIX_EPOCH.checked_sub(Duration::from_secs(seconds.unsigned_abs()))
+            } else {
+                UNIX_EPOCH.checked_add(Duration::from_secs(u64::try_from(seconds)?))
+            }
+            .context("whole seconds")?;
+            let pa = pa_enc_timestamp_with_confounder(key, time, 999_999, &[0; 16], None)?;
+            let encrypted: rasn_kerberos::EncryptedData = der::decode(&pa.value)?;
+            let plaintext = AesSha1Etype::Aes256.decrypt_message(
+                &key.value,
+                &encrypted.cipher,
+                AS_REQ_PA_ENC_TIMESTAMP_USAGE,
+            )?;
+            let decoded: rasn_kerberos::PaEncTsEnc = der::decode(&plaintext)?;
+            assert_eq!(decoded.patimestamp.0.timestamp(), seconds);
+            assert_eq!(decoded.pausec, Some(Integer::from(999_999_u32)));
+            let tgs = build_tgs_req_with_confounder(
+                &session,
+                sample_service_principal(),
+                TgsReq::new(timestamp(1_893_553_452)?, 42),
+                time,
+                999_999,
+                &[0; 16],
+            )?;
+            let pa_tgs = tgs
+                .message
+                .0
+                .padata
+                .as_ref()
+                .and_then(|values| values.first())
+                .context("PA-TGS-REQ")?;
+            let ap = ap_req::decode(&pa_tgs.value)?;
+            let authenticator =
+                ap_req::decrypt_ap_req_authenticator(&ap, key, TGS_REQ_AUTHENTICATOR_USAGE)?;
+            assert_eq!(authenticator.ctime.0.timestamp(), seconds);
+            assert_eq!(authenticator.cusec, Integer::from(999_999_u32));
+        }
+        Ok(())
+    }
+
+    /// Complete builders reject invalid split timestamp scalars before encryption.
+    #[test]
+    fn complete_authenticators_reject_invalid_scalars() -> Result<(), TestError> {
+        let session = sample_tgt_session()?;
+        let whole = timestamp(1_893_553_452)?;
+        for (time, usec) in [
+            (whole, 1_000_000),
+            (whole, u32::MAX),
+            (
+                whole
+                    .checked_add(Duration::from_millis(500))
+                    .context("fraction")?,
+                0,
+            ),
+        ] {
+            assert!(matches!(
+                pa_enc_timestamp_with_confounder(&session.session_key, time, usec, &[0; 16], None),
+                Err(Error::Encode {
+                    target: _,
+                    message: _
+                })
+            ));
+            assert!(matches!(
+                build_tgs_req_with_confounder(
+                    &session,
+                    sample_service_principal(),
+                    TgsReq::new(whole, 42),
+                    time,
+                    usec,
+                    &[0; 16]
+                ),
+                Err(Error::Encode {
+                    target: _,
+                    message: _
+                })
+            ));
+            assert!(matches!(
+                build_ap_req_with_confounder(&session, ApReq::new(), time, usec, &[0; 16]),
+                Err(Error::Encode {
+                    target: _,
+                    message: _
+                })
+            ));
+        }
+        Ok(())
+    }
+
     /// Fractional explicit input must not produce truncated wire data and fractional metadata.
     #[test]
     fn fractional_ap_req_time_is_rejected() -> Result<(), TestError> {
@@ -61,7 +155,7 @@ mod tests {
             .context("time")?;
             // When building and independently decrypting the authenticator.
             let built =
-                build_ap_req_with_confounder(&session, ApReq::new(), time, 123_456, &[0; 16])?;
+                build_ap_req_with_confounder(&session, ApReq::new(), time, 999_999, &[0; 16])?;
             let decoded = ap_req::decrypt_ap_req_authenticator(
                 &built.message,
                 &session.session_key,
@@ -69,7 +163,7 @@ mod tests {
             )?;
             // Then wire fields and retained AP-REP verification metadata agree exactly.
             assert_eq!(decoded.ctime.0.timestamp(), seconds);
-            assert_eq!(decoded.cusec, Integer::from(123_456_u32));
+            assert_eq!(decoded.cusec, Integer::from(999_999_u32));
             assert_eq!(built.authenticator_ctime, time);
             #[cfg(feature = "spnego")]
             {
@@ -77,7 +171,7 @@ mod tests {
                     &session,
                     InitiatorContextOptions::new().with_sequence_number(Some(42)),
                     time,
-                    123_456,
+                    999_999,
                     &[0; 16],
                 )?;
                 let reply = ap_rep::build_ap_rep_with_confounder(
@@ -97,7 +191,7 @@ mod tests {
             }
             assert_eq!(
                 built.authenticator_time,
-                time.checked_add(Duration::from_micros(123_456))
+                time.checked_add(Duration::from_micros(999_999))
                     .context("microseconds")?
             );
         }

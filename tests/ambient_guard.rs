@@ -386,6 +386,14 @@ pub(crate) mod tests {
         let mut names = BTreeMap::from([("env".to_owned(), "std::env".to_owned())]);
         let mut imported = Vec::new();
         for (index, word) in words.iter().enumerate() {
+            if word.text == "extern"
+                && is(words, index.saturating_add(1), "crate")
+                && let Some(root) = words.get(index.saturating_add(2))
+                && is(words, index.saturating_add(3), "as")
+                && let Some(alias) = words.get(index.saturating_add(4))
+            {
+                drop(names.insert(alias.text.clone(), root.text.clone()));
+            }
             if word.text == "use" {
                 let end = words
                     .iter()
@@ -804,6 +812,18 @@ pub(crate) mod tests {
     /// Every supplied evasion must produce a named rejection, not a vacuous pass.
     #[test]
     fn guard_rejects_reader_and_attribute_evasions() {
+        assert!({
+            ["var(\"HOME\")", "var_os(\"HOME\")", "vars()", "vars_os()"]
+                .iter()
+                .all(|member| {
+                    let source = format!(
+                        "extern crate std as platform; fn hidden() {{ platform::env::{member}; }}"
+                    );
+                    access_violations("src/config.rs", &source)
+                        .iter()
+                        .any(|failure| failure.contains("hidden"))
+                })
+        });
         assert!({
             // Given: FU-AMB-02 Proof cases plus alias and unknown-access boundaries.
             [

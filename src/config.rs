@@ -31,6 +31,9 @@ use crate::crypto::{
 /// Removed protocol mode selection boundaries.
 #[path = "config/protocol.rs"]
 pub mod protocol;
+/// Effective restrictions shared by all configuration construction paths.
+#[path = "config/restrictions.rs"]
+pub(crate) mod restrictions;
 /// Reject forbidden serde configuration selections.
 #[cfg(feature = "serde")]
 #[path = "config/serde_policy.rs"]
@@ -124,6 +127,7 @@ pub struct Config {
     /// `[libdefaults]` values.
     pub libdefaults: LibDefaults,
     /// `[realms]` entries in file order.
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::realms"))]
     pub realms: Vec<Realm>,
     /// `[domain_realm]` mappings keyed by lower-case domain names.
     pub domain_realm: BTreeMap<String, String>,
@@ -135,6 +139,7 @@ pub struct Config {
     pub applications: section_values::Applications,
     /// Plugin restrictions by interface, without executable module loading.
     #[cfg_attr(feature = "serde", serde(default))]
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::plugins"))]
     pub plugins: BTreeMap<String, section_values::Plugins>,
 }
 
@@ -544,6 +549,7 @@ impl Config {
     /// [`Error::NoKdc`] when it lists no KDC.
     #[inline]
     pub fn configured_kdcs(&self, realm: &str) -> Result<&[String], Error> {
+        restrictions::config(self)?;
         let realm_entry = self
             .realm(realm)
             .ok_or_else(|| Error::NoRealm(realm.to_owned()))?;
@@ -561,6 +567,7 @@ impl Config {
     /// [`Error::NoKpasswdServer`] when it lists no password-change server.
     #[inline]
     pub fn configured_kpasswd_servers(&self, realm: &str) -> Result<&[String], Error> {
+        restrictions::config(self)?;
         let realm_entry = self
             .realm(realm)
             .ok_or_else(|| Error::NoRealm(realm.to_owned()))?;
@@ -642,6 +649,7 @@ pub struct LibDefaults {
     pub default_keytab_name: String,
     /// Requested replay store; explicit persistent stores fail closed until WP-20.
     #[cfg_attr(feature = "serde", serde(default))]
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::replay"))]
     pub default_rcache_name: String,
     /// Default realm.
     pub default_realm: String,
@@ -690,18 +698,24 @@ pub struct LibDefaults {
     pub qualify_shortname: Option<String>,
     /// Total request deadline; nonzero profile values fail until a total budget exists.
     #[cfg_attr(feature = "serde", serde(default))]
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::deadline"))]
     pub request_timeout: Duration,
     /// Recognized SPAKE group names; no SPAKE exchange is enabled.
     #[cfg_attr(feature = "serde", serde(default))]
     pub spake_preauth_groups: Vec<String>,
     /// Requested channel-binding-aware GSS signaling; not yet implemented.
     #[cfg_attr(feature = "serde", serde(default))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(deserialize_with = "serde_policy::channel_binding")
+    )]
     pub client_aware_channel_bindings: Toggle,
     /// KDC default options bit string as a 32-bit integer.
     pub kdc_default_options: u32,
     /// KDC time sync setting.
     pub kdc_time_sync: i32,
     /// Whether addresses should be omitted from tickets.
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::addresses"))]
     pub no_addresses: Toggle,
     /// Permitted enctype names.
     #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::enctypes"))]
@@ -743,6 +757,7 @@ pub struct LibDefaults {
     /// UDP preference limit.
     pub udp_preference_limit: i32,
     /// Whether AP-REQ verification failure should be fatal.
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::verify"))]
     pub verify_ap_req_nofail: Toggle,
     /// Mode applied to secure unsupported enctype selections.
     #[cfg_attr(feature = "serde", serde(default))]
@@ -1260,6 +1275,10 @@ pub struct Realm {
     pub primary_kdc: Vec<String>,
     /// Typed explicitly configured realm relations.
     #[cfg_attr(feature = "serde", serde(default))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(deserialize_with = "serde_policy::realm_relations")
+    )]
     pub relations: BTreeMap<String, section_values::Value>,
     /// Case-sensitive local principal-name mappings; no authorization is performed.
     #[cfg_attr(feature = "serde", serde(default))]
@@ -1299,10 +1318,6 @@ impl Realm {
     /// [`Error::Policy`] for an enabled removed-protocol directive.
     fn parse(name: &str, lines: &[Line]) -> Result<Self, Error> {
         let mut realm = Self::new(name.to_owned())?;
-        let mut admin_final = false;
-        let mut kdc_final = false;
-        let mut kpasswd_final = false;
-        let mut master_final = false;
 
         for line in lines {
             let (raw_key, value) = parse_assignment(line, "realms")?;
@@ -1312,18 +1327,18 @@ impl Realm {
 
             match key {
                 "admin_server" => {
-                    append_until_final(&mut realm.admin_server, value, &mut admin_final);
+                    realm.admin_server.push(value.to_owned());
                 }
                 "default_domain" => value.clone_into(&mut realm.default_domain),
                 "kdc" => {
                     let with_port = add_default_port(value, 88);
-                    append_until_final(&mut realm.kdc, &with_port, &mut kdc_final);
+                    realm.kdc.push(with_port);
                 }
                 "kpasswd_server" => {
-                    append_until_final(&mut realm.kpasswd_server, value, &mut kpasswd_final);
+                    realm.kpasswd_server.push(value.to_owned());
                 }
                 "master_kdc" => {
-                    append_until_final(&mut realm.master_kdc, value, &mut master_final);
+                    realm.master_kdc.push(value.to_owned());
                 }
                 "primary_kdc" => realm.primary_kdc.push(value.to_owned()),
                 _ => {}
@@ -1386,6 +1401,8 @@ struct Line {
     number: usize,
     /// The line text after comment stripping and trimming.
     text: String,
+    /// Decoded scalar content, distinct from source whitespace and syntax.
+    value: Option<String>,
 }
 
 include!("config/sections.rs");
@@ -1923,38 +1940,13 @@ fn parse_ip_addresses(value: &str) -> Result<Vec<IpAddr>, Error> {
         .collect()
 }
 
-/// `value` with `:port` appended when it names no port, keeping a trailing
-/// `*` final marker last.
+/// Append a default port to a literal endpoint already admitted by the profile.
 fn add_default_port(value: &str, port: u16) -> String {
-    let trimmed = value.trim();
-    let final_marker = trimmed.ends_with('*');
-    let host = trimmed.trim_end_matches('*').trim();
-    if host.contains(':') {
-        if final_marker {
-            format!("{host}*")
-        } else {
-            host.to_owned()
-        }
-    } else if final_marker {
-        format!("{host}:{port}*")
+    if value.contains(':') {
+        value.to_owned()
     } else {
-        format!("{host}:{port}")
+        format!("{value}:{port}")
     }
-}
-
-/// Append `value` to `values` unless an earlier value was marked final; a
-/// trailing `*` marks this value final.
-fn append_until_final(values: &mut Vec<String>, value: &str, final_seen: &mut bool) {
-    if *final_seen {
-        return;
-    }
-
-    let mut trimmed = value.trim();
-    if let Some(stripped) = trimmed.strip_suffix('*') {
-        *final_seen = true;
-        trimmed = stripped.trim_end();
-    }
-    values.push(trimmed.to_owned());
 }
 
 /// One `include`/`includedir` directive, split from its argument.
@@ -2057,9 +2049,9 @@ impl IncludeExpansion {
     /// Replace every directive in `input` with what it names, recursively.
     ///
     /// `depth` is the include depth of the text itself: the configuration a
-    /// caller handed over is depth 0, and each `include` adds one. A directive
-    /// inside a `{ ... }` group is left alone - it is a setting of that group,
-    /// and the section parser refuses it by name rather than ignoring it.
+    /// caller handed over is depth 0, and each `include` adds one. Included
+    /// sources have independent grammar state at every nesting level; parsing
+    /// resumes the parent's section and open groups after each include.
     ///
     /// # Errors
     ///
@@ -2087,6 +2079,7 @@ impl IncludeExpansion {
                 &Line {
                     number: index.saturating_add(1),
                     text: cleaned.to_owned(),
+                    value: None,
                 },
                 &mut self.profile,
             )?;
@@ -3011,7 +3004,7 @@ mod fork_tests {
 
     /// Re-including a completed root is not an active-chain cycle.
     #[test]
-    fn a_path_list_root_included_by_a_child_is_a_cycle() -> Result<(), Box<dyn error::Error>> {
+    fn a_completed_path_list_root_can_be_reincluded() -> Result<(), Box<dyn error::Error>> {
         let dir = fixture_dir("path-list-root")?;
         let first = write_fixture(
             &dir,

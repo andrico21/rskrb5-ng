@@ -610,7 +610,9 @@ mod tests {
             Principal::user("TEST.GOKRB5", "testuser1"),
             Principal::new("TEST.GOKRB5", 1, ["HTTP", "host.test.gokrb5"]),
             EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?),
-            der::encode(&ap_req.ticket).context("ticket encodes")?,
+            der::encode(&ap_req.ticket)
+                .context("ticket encodes")?
+                .into(),
             [0; 4],
             timestamp(1_893_553_445)?,
             timestamp(1_893_639_845)?,
@@ -838,7 +840,7 @@ mod tests {
             &decode_hex(AP_REP_CONFOUNDER)?,
         )?;
         let mut init = mic_init()?;
-        init.mech_token = Some(Krb5MechToken::ap_req(built.der).encode()?.into());
+        init.mech_token = Some(Krb5MechToken::ap_req(built.der.to_vec()).encode()?.into());
         assert!(matches!(
             accept_token(&Token::Init(init.clone()))?,
             Err(Spnego::InvalidMechListMic)
@@ -1541,7 +1543,7 @@ mod tests {
             &decode_hex(AP_REP_CONFOUNDER)?,
         )?;
         Ok(Token::Init(NegTokenInit::krb5(
-            Krb5MechToken::ap_req(built.der).encode()?,
+            Krb5MechToken::ap_req(built.der.to_vec()).encode()?,
         )))
     }
 

@@ -5,7 +5,7 @@ use core::error::Error as _;
 
 use super::{AsRepSession, Error, ticket_error};
 #[cfg(feature = "tokio")]
-use crate::config::LibDefaults;
+use crate::config::{LibDefaults, restrictions};
 use crate::{
     crypto::{CryptoPolicy, Use, selection},
     error::Policy,
@@ -68,6 +68,13 @@ pub(super) fn session(
         | Use::CheckedLowLevel => Use::TicketKey,
     };
     policy.check_use(ticket.enc_part.etype, ticket_usage)?;
+    let service = super::principal_from_parts(&ticket.realm, &ticket.sname)?;
+    super::principal_matches(&service, &session.service).ok_or_else(|| {
+        Error::ServicePrincipalMismatch {
+            expected: session.service.name(),
+            actual: service.name(),
+        }
+    })?;
     Ok(())
 }
 
@@ -89,6 +96,7 @@ pub(super) fn cause(error: &Error) -> Option<Policy> {
 /// Returns the original policy refusal or an invalid configuration refusal.
 #[cfg(feature = "tokio")]
 pub(super) fn ready(client: &super::Tokio) -> Result<(), Error> {
+    restrictions::config(&client.config)?;
     if let Some(error) = client.import_policy_error {
         return Err(error.into());
     }

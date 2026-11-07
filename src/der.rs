@@ -5,7 +5,7 @@
 /// this returns just that value. Any other input, including malformed DER and
 /// non-zero trailing bytes, is returned unchanged so the strict decoder
 /// reports the real error.
-pub(crate) fn trim_zero_padded_der(bytes: &[u8]) -> &[u8] {
+fn trim_zero_padded_der(bytes: &[u8]) -> &[u8] {
     let Some(end) = top_level_der_end(bytes) else {
         return bytes;
     };
@@ -13,6 +13,16 @@ pub(crate) fn trim_zero_padded_der(bytes: &[u8]) -> &[u8] {
         && padding.iter().all(|byte| *byte == 0)
     {
         value
+    } else {
+        bytes
+    }
+}
+
+/// Admit only the short zero padding required by DES3; other enctypes carry exact DER.
+pub(crate) fn encrypted_der(bytes: &[u8], enctype: i32) -> &[u8] {
+    let trimmed = trim_zero_padded_der(bytes);
+    if enctype == 16 && bytes.len().saturating_sub(trimmed.len()) < 8 {
+        trimmed
     } else {
         bytes
     }

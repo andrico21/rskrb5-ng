@@ -25,7 +25,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rasn::{der, types::Integer};
 #[cfg(feature = "tokio")]
 use tokio::{sync::Mutex, time::sleep};
-#[cfg(feature = "tokio")]
 use zeroize::Zeroizing;
 
 #[cfg(feature = "tokio")]
@@ -51,6 +50,8 @@ mod cache_insert;
 /// In-memory credential-cache replacement.
 #[cfg(feature = "tokio")]
 mod cache_update;
+/// Redaction and erasure of client credential owners.
+mod credential_debug;
 /// Shared runtime policy validation before client effects.
 mod crypto_policy;
 
@@ -196,7 +197,7 @@ pub const KDC_OPTION_CNAME_IN_ADDL_TKT: u32 = 0x0002_0000;
 /// Raw KDC option mask for `renew` in RFC 4120 bit-string order.
 pub const KDC_OPTION_RENEW: u32 = 0x0000_0002;
 /// Encoded AS-REQ plus validation metadata needed when processing the AS-REP.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct BuiltAsReq {
     /// Policy used for the request and all subsequent reply validation.
@@ -206,7 +207,7 @@ pub struct BuiltAsReq {
     /// ASN.1 AS-REQ message.
     pub message: rasn_kerberos::AsReq,
     /// DER-encoded AS-REQ bytes suitable for KDC transport.
-    pub der: Vec<u8>,
+    pub der: Zeroizing<Vec<u8>>,
     /// Request client principal.
     pub client: Principal,
     /// Request service principal.
@@ -220,7 +221,7 @@ impl BuiltAsReq {
     #[inline]
     pub fn new(
         message: rasn_kerberos::AsReq,
-        der: Vec<u8>,
+        der: Zeroizing<Vec<u8>>,
         client: Principal,
         service: Principal,
         nonce: u32,
@@ -237,7 +238,7 @@ impl BuiltAsReq {
     }
 }
 /// Encoded TGS-REQ plus validation metadata needed when processing the TGS-REP.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct BuiltTgsReq {
     /// Policy used for the request and all subsequent reply validation.
@@ -249,7 +250,7 @@ pub struct BuiltTgsReq {
     /// ASN.1 TGS-REQ message.
     pub message: rasn_kerberos::TgsReq,
     /// DER-encoded TGS-REQ bytes suitable for KDC transport.
-    pub der: Vec<u8>,
+    pub der: Zeroizing<Vec<u8>>,
     /// Expected client principal in the KDC reply.
     ///
     /// This is normally the same principal that authenticated the TGS-REQ, but
@@ -268,7 +269,7 @@ impl BuiltTgsReq {
     #[inline]
     pub fn new(
         message: rasn_kerberos::TgsReq,
-        der: Vec<u8>,
+        der: Zeroizing<Vec<u8>>,
         client: Principal,
         service: Principal,
         kdc_realm: String,
@@ -301,7 +302,7 @@ pub struct TgsFastRequestParts {
     /// The request as built, with its validation metadata.
     pub request: BuiltTgsReq,
     /// DER of the AP-REQ placed in the outer `PA-TGS-REQ` padata.
-    pub ap_req_der: Vec<u8>,
+    pub ap_req_der: Zeroizing<Vec<u8>>,
     /// The authenticator's subkey. Secret, and zeroized on drop: the implicit
     /// armor key is derived from it, so it must not reach a log.
     pub authenticator_subkey: EncryptionKey,
@@ -322,13 +323,13 @@ impl fmt::Debug for TgsFastRequestParts {
     }
 }
 /// Built client AP-REQ.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct BuiltApReq {
     /// ASN.1 AP-REQ message.
     pub message: rasn_kerberos::ApReq,
     /// DER-encoded AP-REQ bytes.
-    pub der: Vec<u8>,
+    pub der: Zeroizing<Vec<u8>>,
     /// Client principal placed in the authenticator.
     pub client: Principal,
     /// Service principal from the ticket.
@@ -347,7 +348,7 @@ pub struct BuiltApReq {
     pub subkey: Option<EncryptionKey>,
 }
 /// Successful AS-REP processing result.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct AsRepSession {
     /// Client identity returned by the KDC.
@@ -357,7 +358,7 @@ pub struct AsRepSession {
     /// Session key issued by the KDC.
     pub session_key: EncryptionKey,
     /// DER-encoded ticket from the AS-REP.
-    pub ticket: Vec<u8>,
+    pub ticket: Zeroizing<Vec<u8>>,
     /// Ticket flags as raw ccache bytes.
     pub ticket_flags: [u8; 4],
     /// Initial authentication time.
@@ -379,7 +380,7 @@ impl AsRepSession {
         client: Principal,
         service: Principal,
         session_key: EncryptionKey,
-        ticket: Vec<u8>,
+        ticket: Zeroizing<Vec<u8>>,
         ticket_flags: [u8; 4],
         auth_time: SystemTime,
         end_time: SystemTime,
@@ -446,7 +447,7 @@ impl AsRepSession {
             ticket_flags: self.ticket_flags,
             addresses: Vec::new(),
             auth_data: Vec::new(),
-            ticket: self.ticket.clone(),
+            ticket: self.ticket.to_vec(),
             second_ticket: Vec::new(),
         })
     }
@@ -659,7 +660,7 @@ pub struct TokioClientDiagnostics {
     pub default_tkt_enctypes: Vec<i32>,
     /// Configured preferred preauthentication type IDs.
     pub preferred_preauth_types: Vec<i32>,
-    /// Key encryption type IDs present for the client realm in the keytab.
+    /// Key encryption type IDs for the client's realm and ordered components.
     pub keytab_enctypes: Vec<i32>,
     /// UDP KDC endpoints discovered from config or DNS.
     #[cfg_attr(feature = "serde", serde(rename = "UDPKDCs"))]
@@ -996,6 +997,16 @@ impl Tokio {
         protocol: KdcProtocol,
         cache: &ccache::CCache,
     ) -> Result<Self, Error> {
+        let policy = crypto_policy::configured(&config.libdefaults)?;
+        for credential in cache.entries() {
+            if same_ccache_client_identity(&credential.client, cache.default_principal()) {
+                crypto_policy::session(
+                    &policy,
+                    &ccache_credential_session(credential),
+                    Use::ImportedCredential,
+                )?;
+            }
+        }
         let client = Self::from_ccache(config, protocol, cache);
         crypto_policy::ready(&client)?;
         Ok(client)
@@ -1408,7 +1419,7 @@ impl Tokio {
         }
         let keytab_enctypes = match self.credentials.as_ref() {
             Some(TokioClientCredentials::Keytab(keytab)) => {
-                let enctypes = keytab_realm_enctypes(keytab, &self.client.realm);
+                let enctypes = keytab_client_enctypes(keytab, &self.client);
                 record_keytab_enctype_diagnostics(
                     &mut errors,
                     &enctypes,
@@ -1545,21 +1556,21 @@ impl Tokio {
     pub fn prune_unusable_sessions(&mut self) -> PrunedSessions {
         self.prune_unusable_sessions_at(SystemTime::now())
     }
-    /// Drop sessions that are neither valid nor renewable at `now`.
+    /// Drop sessions that are not valid at `now`.
     fn prune_unusable_sessions_at(&mut self, now: SystemTime) -> PrunedSessions {
         let primary_tgt = self
             .tgt
             .as_ref()
-            .is_some_and(|tgt| !session_usable_at(tgt, now));
+            .is_some_and(|tgt| !session_valid_at(tgt, now));
         if primary_tgt {
             self.tgt = None;
         }
         let tgt_session_count = self.tgt_sessions.len();
         self.tgt_sessions
-            .retain(|_, session| session_usable_at(session, now));
+            .retain(|_, session| session_valid_at(session, now));
         let service_ticket_count = self.service_tickets.len();
         self.service_tickets
-            .retain(|_, session| session_usable_at(session, now));
+            .retain(|_, session| session_valid_at(session, now));
         PrunedSessions {
             primary_tgt,
             // `retain` never grows a map, so these differences cannot underflow.
@@ -1655,8 +1666,7 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns [`Error::NoClientCredentials`] when a new login is needed but no
-    /// password or keytab is configured, a renewal error when no credential can
-    /// take over, and any AS exchange error of [`Self::login`].
+    /// password or keytab is configured, and any AS exchange error of [`Self::login`].
     #[inline]
     pub async fn affirm_login(&mut self) -> Result<&AsRepSession, Error> {
         crypto_policy::ready(self)?;
@@ -1665,20 +1675,6 @@ impl Tokio {
             if session_valid_at(&tgt, now) {
                 return self.tgt.as_ref().ok_or(Error::NoTgtSession);
             }
-            let has_credentials = self.credentials.is_some();
-            let expired = now >= tgt.end_time;
-            // A conforming KDC refuses renewal once the ticket expired, so an
-            // expired renewable TGT takes the AS exchange when a credential is
-            // configured; any other renewal failure falls through the same way.
-            if session_renewable_at(&tgt, now) && !(expired && has_credentials) {
-                match self.renew_tgt().await.map(|_| ()) {
-                    Ok(()) => {
-                        return self.tgt.as_ref().ok_or(Error::NoTgtSession);
-                    }
-                    Err(error) if !has_credentials => return Err(error),
-                    Err(_) => {}
-                }
-            }
         }
         self.login().await
     }
@@ -1686,7 +1682,7 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns [`Error::NoClientCredentials`] when no credential is configured and
-    /// the cached TGT is neither valid nor renewable, and any AS exchange,
+    /// the cached TGT is not valid, and any AS exchange,
     /// transport or validation error.
     /// # Cancel safety
     ///
@@ -1703,9 +1699,6 @@ impl Tokio {
             let now = SystemTime::now();
             if session_valid_at(&tgt, now) {
                 return self.tgt.as_ref().ok_or(Error::NoTgtSession);
-            }
-            if session_renewable_at(&tgt, now) {
-                return self.renew_tgt().await;
             }
             return Err(Error::NoClientCredentials);
         };
@@ -1862,21 +1855,6 @@ impl Tokio {
             if session_valid_at(&ticket, now) {
                 ticket.service = service;
                 return Ok(ticket);
-            }
-            if session_renewable_at(&ticket, now)
-                && let Ok(mut renewed) = self
-                    .transport
-                    .renew_ticket_with_config(
-                        &self.config,
-                        self.protocol,
-                        &ticket,
-                        self.tgs_req_options()?,
-                    )
-                    .await
-            {
-                renewed.service = service;
-                self.cache_service_ticket(renewed.clone())?;
-                return Ok(renewed);
             }
         }
         let tgt = match self.cached_tgt_session_for_realm(&service.realm, clock()) {
@@ -2106,13 +2084,10 @@ impl Tokio {
             }
             if session_renewable_at(&tgt, now) {
                 let has_credentials = self.credentials.is_some();
-                let expired = now >= tgt.end_time;
-                if !(expired && has_credentials) {
-                    match self.renew_tgt().await.cloned() {
-                        Ok(session) => return Ok(session),
-                        Err(error) if !has_credentials => return Err(error),
-                        Err(_) => {}
-                    }
+                match self.renew_tgt().await.cloned() {
+                    Ok(session) => return Ok(session),
+                    Err(error) if !has_credentials => return Err(error),
+                    Err(_) => {}
                 }
             }
             if session_valid_at(&tgt, now) && self.credentials.is_none() {
@@ -2496,13 +2471,15 @@ const fn credential_source(credentials: Option<&TokioClientCredentials>) -> &'st
     }
 }
 
-/// Sorted, de-duplicated enctypes of the keytab entries for `realm`.
+/// Sorted, de-duplicated enctypes for the client identity, ignoring advisory name type.
 #[cfg(feature = "tokio")]
-fn keytab_realm_enctypes(keytab: &Keytab, realm: &str) -> Vec<i32> {
+fn keytab_client_enctypes(keytab: &Keytab, client: &Principal) -> Vec<i32> {
     let mut enctypes = keytab
         .entries()
         .iter()
-        .filter(|entry| entry.principal.realm == realm)
+        .filter(|entry| {
+            entry.principal.realm == client.realm && entry.principal.components == client.components
+        })
         .map(|entry| entry.key.etype)
         .collect::<Vec<_>>();
     enctypes.sort_unstable();
@@ -2594,7 +2571,7 @@ pub fn build_as_req(
         additional_tickets: None,
     };
     let message = kdc_req::build_as_req(req_body, padata);
-    let der = kdc_req::encode_as_req(&message).map_err(kdc_req_error)?;
+    let der = Zeroizing::new(kdc_req::encode_as_req(&message).map_err(kdc_req_error)?);
 
     Ok(BuiltAsReq {
         crypto_policy,
@@ -2622,7 +2599,7 @@ pub fn pa_enc_timestamp_with_confounder(
     kvno: Option<u32>,
 ) -> Result<rasn_kerberos::PaData, Error> {
     let enc_ts = rasn_kerberos::PaEncTsEnc {
-        patimestamp: kerberos_time_from_system_time(timestamp)?,
+        patimestamp: time::authenticator(timestamp, cusec, "PA-ENC-TIMESTAMP")?,
         pausec: Some(Integer::from(cusec)),
     };
     let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
@@ -3235,7 +3212,7 @@ fn build_tgs_req_for_realm_inner(
     service: Principal,
     options: TgsReq,
     authenticator_context: TgsAuthenticatorContext<'_>,
-) -> Result<(BuiltTgsReq, Vec<u8>), Error> {
+) -> Result<(BuiltTgsReq, Zeroizing<Vec<u8>>), Error> {
     crypto_policy::padata(&options.padata)?;
     let crypto_policy = crypto_policy::request(&options.crypto_policy, &options.etypes)?;
     crypto_policy::session(&crypto_policy, tgt, Use::SessionKey)?;
@@ -3245,6 +3222,7 @@ fn build_tgs_req_for_realm_inner(
         confounder,
         subkey,
     } = authenticator_context;
+    let ctime = time::authenticator(timestamp, cusec, "TGS authenticator")?;
     if options.etypes.is_empty() {
         return Err(Error::EmptyEtypes);
     }
@@ -3294,7 +3272,7 @@ fn build_tgs_req_for_realm_inner(
             checksum: checksum.into(),
         }),
         cusec: Integer::from(cusec),
-        ctime: kerberos_time_from_system_time(timestamp)?,
+        ctime,
         subkey: subkey.map(encryption_key_to_rasn),
         seq_number: None,
         authorization_data: None,
@@ -3310,10 +3288,10 @@ fn build_tgs_req_for_realm_inner(
         confounder,
     )
     .map_err(ap_req_error)?;
-    let ap_req_der = ap_req::encode(&ap_req).map_err(ap_req_error)?;
+    let ap_req_der = Zeroizing::new(ap_req::encode(&ap_req).map_err(ap_req_error)?);
     let pa_tgs_req = rasn_kerberos::PaData {
         r#type: PA_TGS_REQ,
-        value: ap_req_der.clone().into(),
+        value: ap_req_der.to_vec().into(),
     };
     // A capacity hint only: saturating at `usize::MAX` is harmless.
     let mut padata = Vec::with_capacity(options.padata.len().saturating_add(1));
@@ -3327,7 +3305,7 @@ fn build_tgs_req_for_realm_inner(
             crypto_policy,
             reply_clock: (options.now, options.clock_skew),
             message,
-            der,
+            der: Zeroizing::new(der),
             client: tgt.client.clone(),
             kdc_realm: kdc_realm_name,
             service,
@@ -3359,12 +3337,7 @@ pub fn build_ap_req_with_confounder(
     if let Some(subkey) = &options.subkey {
         policy.check_use(subkey.etype, Use::SessionKey)?;
     }
-    let (_, nanos) = unix_timestamp_parts(timestamp)?;
-    (nanos == 0).ok_or_else(|| Error::Encode {
-        target: "AP-REQ timestamp",
-        message: "expected a whole-second timestamp".to_owned(),
-    })?;
-    let ctime = time::to_kerberos(timestamp).ok_or(Error::TimeOverflow)?;
+    let ctime = time::authenticator(timestamp, cusec, "AP-REQ timestamp")?;
     let ticket = ticket::decode(&service_ticket.ticket).map_err(ticket_error)?;
     let authenticator = rasn_kerberos::Authenticator {
         authenticator_vno: Integer::from(KRB5_PVNO),
@@ -3389,7 +3362,7 @@ pub fn build_ap_req_with_confounder(
         confounder,
     )
     .map_err(ap_req_error)?;
-    let der = ap_req::encode(&message).map_err(ap_req_error)?;
+    let der = Zeroizing::new(ap_req::encode(&message).map_err(ap_req_error)?);
     let authenticator_time = timestamp
         .checked_add(Duration::from_micros(cusec.into()))
         .ok_or(Error::TimeOverflow)?;
@@ -3731,6 +3704,7 @@ pub fn process_as_rep(
 
     let as_rep = kdc_rep::decode_as_rep(bytes).map_err(kdc_rep_error)?;
     let kdc_rep = &as_rep.0;
+    enforce_requested_enctypes(&request.message.0.req_body.etype, kdc_rep.enc_part.etype)?;
     request
         .crypto_policy
         .check_use(kdc_rep.enc_part.etype, Use::ReplyKey)?;
@@ -3781,7 +3755,7 @@ pub fn process_as_rep(
         });
     }
 
-    let ticket = ticket::encode(&kdc_rep.ticket).map_err(ticket_error)?;
+    let ticket = Zeroizing::new(ticket::encode(&kdc_rep.ticket).map_err(ticket_error)?);
     Ok(AsRepSession {
         client,
         service: enc_part_service,
@@ -3968,7 +3942,7 @@ fn process_tgs_rep_inner(
         });
     }
 
-    let ticket = ticket::encode(&kdc_rep.ticket).map_err(ticket_error)?;
+    let ticket = Zeroizing::new(ticket::encode(&kdc_rep.ticket).map_err(ticket_error)?);
     Ok(AsRepSession {
         client,
         service: enc_part_service,
@@ -4931,7 +4905,7 @@ fn ccache_credential_session(credential: &ccache::Credential) -> AsRepSession {
             etype: credential.key.etype,
             value: credential.key.value.clone(),
         },
-        ticket: credential.ticket.clone(),
+        ticket: Zeroizing::new(credential.ticket.clone()),
         ticket_flags: credential.ticket_flags,
         auth_time,
         start_time,
@@ -4995,12 +4969,6 @@ fn session_valid_at(session: &AsRepSession, now: SystemTime) -> bool {
     u32::from_be_bytes(session.ticket_flags) & TICKET_FLAG_INVALID == 0
         && session.start_time <= now
         && now < session.end_time
-}
-
-/// Whether a session is valid or renewable at `now`.
-#[cfg(feature = "tokio")]
-fn session_usable_at(session: &AsRepSession, now: SystemTime) -> bool {
-    session_valid_at(session, now) || session_renewable_at(session, now)
 }
 
 /// Convert a Kerberos time to a `SystemTime`.
@@ -5134,7 +5102,7 @@ mod tests {
             client: Principal::parse_user("client@EXAMPLE.TEST")?,
             service: Principal::parse_service("krbtgt/EXAMPLE.TEST@EXAMPLE.TEST")?,
             session_key,
-            ticket: Vec::new(),
+            ticket: Vec::new().into(),
             ticket_flags: [0_u8; 4],
             auth_time: now,
             start_time: now,
@@ -5163,7 +5131,6 @@ mod tests {
             session.end_time = UNIX_EPOCH + Duration::from_secs(end);
             session.ticket_flags = flags.to_be_bytes();
             assert_eq!(super::session_valid_at(&session, now), expected);
-            assert_eq!(super::session_usable_at(&session, now), expected);
         }
         Ok(())
     }
@@ -5300,7 +5267,12 @@ mod tests {
             .ap_req
             .ticket,
         )
-        .map_err(|error| Error::Transport(error.to_string()))?;
+        .map_err(|error| Error::Transport(error.to_string()))?
+        .into();
+        let mut wire = ticket::decode(&session.ticket).map_err(super::ticket_error)?;
+        wire.realm = super::kerberos_string(&session.service.realm)?;
+        wire.sname = super::principal_to_rasn(&session.service)?;
+        session.ticket = ticket::encode(&wire).map_err(super::ticket_error)?.into();
         let now = SystemTime::now();
         session.auth_time = now - Duration::from_secs(55);
         session.start_time = session.auth_time;

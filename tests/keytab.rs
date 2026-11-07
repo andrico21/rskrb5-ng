@@ -35,6 +35,26 @@ mod tests {
     /// Error type of the `Result`-returning tests.
     type TestError = Box<dyn error::Error>;
 
+    /// Owning keytab input retains its original allocation inside a zeroizing owner.
+    #[test]
+    fn moved_password_owner_erasure_probe() -> Result<(), TestError> {
+        use zeroize::Zeroizing;
+        let bytes = b"password".to_vec();
+        let address = bytes.as_ptr();
+        let password = Zeroizing::new(bytes);
+        assert_eq!(password.as_ptr(), address);
+        let mut keys = Keytab::new();
+        keys.add_entry_from_password(
+            Principal::new("R", 1, ["alice"]),
+            password,
+            UNIX_EPOCH,
+            1,
+            17,
+        )?;
+        assert_eq!(keys.entries().len(), 1);
+        Ok(())
+    }
+
     /// Attaches a description to a failure, as `expect` would, but as an error
     /// that `?` propagates.
     trait Context<T> {
@@ -112,7 +132,13 @@ mod tests {
 
         for etype in [18_i32, 17_i32, 23_i32] {
             keytab
-                .add_entry_from_password(principal.clone(), b"hello123", timestamp, 31, etype)
+                .add_entry_from_password(
+                    principal.clone(),
+                    b"hello123".to_vec().into(),
+                    timestamp,
+                    31,
+                    etype,
+                )
                 .context("entry is added")?;
         }
 
@@ -135,7 +161,13 @@ mod tests {
 
         for etype in [18_i32, 17_i32, 23_i32] {
             keytab
-                .add_entry_from_password(principal.clone(), b"hello456", timestamp, 10, etype)
+                .add_entry_from_password(
+                    principal.clone(),
+                    b"hello456".to_vec().into(),
+                    timestamp,
+                    10,
+                    etype,
+                )
                 .context("entry is added")?;
         }
 
@@ -161,7 +193,7 @@ mod tests {
                 .add_entry_from_password_name(
                     "HTTP/www.example.org",
                     "EXAMPLE.ORG",
-                    b"hello456",
+                    b"hello456".to_vec().into(),
                     timestamp,
                     10,
                     etype,
@@ -626,6 +658,26 @@ mod tests {
 
         // Then serialization rejects the otherwise representable entry.
         assert!(matches!(result, Err(Error::LengthOverflow)));
+        Ok(())
+    }
+
+    /// Version-one serialization must not silently erase a nonzero name type.
+    #[test]
+    fn version_one_rejects_unrepresentable_name_type() -> Result<(), TestError> {
+        let mut keys = Keytab::parse(&[5, 1])?;
+        let mut entry = synthetic_entry("alice", 1, 18, 100);
+        entry.principal.name_type = 42_i32;
+        keys.entries_mut().push(entry);
+        assert!(matches!(
+            keys.to_bytes(),
+            Err(Error::UnrepresentableNameType(42_i32))
+        ));
+        keys.entries_mut()
+            .first_mut()
+            .context("entry")?
+            .principal
+            .name_type = 0_i32;
+        assert_eq!(Keytab::parse(&keys.to_bytes()?)?, keys);
         Ok(())
     }
 

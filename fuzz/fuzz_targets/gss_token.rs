@@ -150,7 +150,7 @@ fn initiator(key: &EncryptionKey) -> Option<InitiatorContext> {
         Principal::user("TEST.GOKRB5", "testuser1"),
         Principal::new("TEST.GOKRB5", 2, ["HTTP", "host.test.gokrb5"]),
         key.clone(),
-        TICKET.to_vec(),
+        TICKET.to_vec().into(),
         [0x40, 0xe1, 0x00, 0x00],
         now,
         end,
