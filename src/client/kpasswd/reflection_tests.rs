@@ -77,7 +77,7 @@ fn reflected_reply(ap_rep_valid: bool) -> Result<Client, Box<dyn StdError>> {
         .copy_from_slice(&u16::try_from(encoded_ap_rep.len())?.to_be_bytes());
     let reply = Reply::parse(&frame)?;
     // When the same ciphertext is returned with altered unauthenticated metadata.
-    let outcome = validated_result(&reply, &built, &options);
+    let outcome = validated_result(&reply, &built, &options, &built.crypto_policy);
     // Then the ciphertext cannot reach result parsing, even with a genuine AP-REP.
     Ok(match outcome {
         Err(error) => error,

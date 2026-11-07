@@ -68,6 +68,7 @@ use super::{
 use crate::{
     client::kpasswd::{BuiltKpasswdRequest, RequestOptions},
     config::Config,
+    crypto::CryptoPolicy,
     error::Config as ConfigError,
     kadmin,
     keytab::{EncryptionKey, Keytab},
@@ -926,10 +927,11 @@ impl Tokio {
     where
         A: ToSocketAddrs,
     {
+        password_result::outgoing(request, &request.crypto_policy)?;
         let reply = self
             .exchange_kpasswd_request(protocol, addr, &request.request)
             .await?;
-        password_result::checked(&reply, request, options)
+        password_result::checked(&reply, request, options, &request.crypto_policy)
     }
 
     /// Send a framed kpasswd request to a configured server and return a checked result.
@@ -957,10 +959,12 @@ impl Tokio {
         request: &BuiltKpasswdRequest,
         options: &RequestOptions,
     ) -> Result<kadmin::ChangePasswordResult, Error> {
+        let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)?;
+        password_result::outgoing(request, &policy)?;
         let reply = self
             .exchange_kpasswd_request_with_config(config, protocol, realm, &request.request)
             .await?;
-        password_result::checked(&reply, request, options)
+        password_result::checked(&reply, request, options, &policy)
     }
 
     /// Send an AS-REQ through Tokio transport and process the returned AS-REP.

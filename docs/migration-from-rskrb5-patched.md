@@ -56,6 +56,13 @@ policy" below have the details.
 
 ## Behaviour changes before the review backlog
 
+Checked kpasswd transport now enforces crypto policy before delivery and on
+authenticated replies (FU-TRN-R01). `RequestOptions.crypto_policy` is optional
+(secure defaults when absent); `BuiltKpasswdRequest.crypto_policy` binds the
+non-configured checked exchange. Configured exchanges use their configuration
+snapshot. A disallowed server subkey after delivery means
+`KpasswdOutcomeUnknown`, not a definite password rejection or safe retry.
+
 Treat `with_ap_rep(false)` as an optional-reply preference (FU-SPN-R09). A valid
 initiator mechListMIC still receives a completion carrying a reciprocal MIC and
 the AP-REP that binds its sequence number. First-choice exchanges without a MIC

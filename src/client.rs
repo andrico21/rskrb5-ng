@@ -2434,7 +2434,7 @@ impl Tokio {
             .await?;
         // Delivery has occurred: unsigned refusals are unauthenticated diagnostics,
         // not proof of rollback. Wrap validator failures once, before ensure_success.
-        let result = validated_result(&reply, &request, &options)
+        let result = validated_result(&reply, &request, &options, &request.crypto_policy)
             .map_err(|source| Error::KpasswdOutcomeUnknown(Box::new(source)))?;
         result.ensure_success()?;
 

@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     ap_rep::{decrypt_ap_rep_enc_part, validate as validate_ap_rep},
-    crypto::selection,
+    crypto::{CryptoPolicy, Use, selection},
     kadmin,
     keytab::EncryptionKey,
     messages,
@@ -48,6 +48,8 @@ mod rejection_tests;
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct RequestOptions {
+    /// Explicit runtime permission; absent means secure defaults.
+    pub crypto_policy: Option<CryptoPolicy>,
     /// Authenticator and KRB-PRIV timestamp.
     pub timestamp: SystemTime,
     /// Authenticator and KRB-PRIV microseconds.
@@ -70,6 +72,7 @@ impl RequestOptions {
         sender_address: rasn_kerberos::HostAddress,
     ) -> Self {
         Self {
+            crypto_policy: None,
             timestamp,
             cusec,
             sequence_number,
@@ -91,6 +94,8 @@ impl RequestOptions {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct BuiltKpasswdRequest {
+    /// Policy bound to this request for checked exchanges without configuration.
+    pub crypto_policy: CryptoPolicy,
     /// Parsed kpasswd request.
     pub request: kadmin::Request,
     /// Encoded kpasswd request frame.
@@ -152,6 +157,7 @@ pub fn build_kpasswd_request_with_confounders(
     )?;
 
     Ok(BuiltKpasswdRequest {
+        crypto_policy: options.crypto_policy.clone().unwrap_or_default(),
         request: built_request.request,
         der: built_request.der,
         reply_key: built_request.reply_key,
@@ -198,6 +204,7 @@ pub fn build_kpasswd_request(
     )?;
 
     Ok(BuiltKpasswdRequest {
+        crypto_policy: options.crypto_policy.clone().unwrap_or_default(),
         request: built_request.request,
         der: built_request.der,
         reply_key: built_request.reply_key,
@@ -268,7 +275,12 @@ pub(super) fn validated_result(
     reply: &kadmin::Reply,
     request: &BuiltKpasswdRequest,
     options: &RequestOptions,
+    policy: &CryptoPolicy,
 ) -> Result<kadmin::ChangePasswordResult, Error> {
+    policy.check_use(request.ap_req.session_key.etype, Use::SessionKey)?;
+    if let Some(ap_rep) = &reply.ap_rep {
+        policy.check_use(ap_rep.enc_part.etype, Use::SessionKey)?;
+    }
     if reply
         .krb_priv
         .as_ref()
@@ -285,6 +297,10 @@ pub(super) fn validated_result(
         .into());
     };
     let key = verified.subkey.as_ref().unwrap_or(&request.reply_key);
+    policy.check_use(key.etype, Use::SessionKey)?;
+    if let Some(private) = &reply.krb_priv {
+        policy.check_use(private.enc_part.etype, Use::SessionKey)?;
+    }
     let part = kadmin::decrypt_krb_priv_enc_part(
         reply
             .krb_priv

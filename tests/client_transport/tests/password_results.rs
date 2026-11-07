@@ -2,6 +2,46 @@
 
 use super::*;
 
+/// Authenticated legacy subkeys require explicit permission at the checked reply boundary.
+#[test]
+fn checked_replies_enforce_legacy_policy() -> Result<(), TestError> {
+    use rskrb5_ng::{
+        config::Toggle,
+        crypto::Use,
+        error::{Crypto, Policy},
+    };
+    runtime()?.block_on(async {
+        for id in [16_i32, 23_i32] {
+            for permitted in [false, true] {
+                let (built, options) = kpasswd_context::request()?;
+                let response = kpasswd_context::reply(&built, kpasswd_context::ReplyCase::LegacySubkey(id))?;
+                let listener = TcpListener::bind("127.0.0.1:0").await?;
+                let addr = listener.local_addr()?;
+                let mut config = config_with_kpasswd_servers([addr.to_string()], 1)?;
+                if permitted {
+                    config.libdefaults.allow_rc4 = Toggle::from(true);
+                    config.libdefaults.allow_des3 = Toggle::from(true);
+                    config.libdefaults.permitted_enctypes = vec!["DEFAULT".to_owned(), "rc4".to_owned(), "des3".to_owned()];
+                }
+                let transport = Tokio::new().with_timeout(Duration::from_secs(1));
+                let server = async {
+                    let (_, mut stream) = read_tcp_request(&listener).await?;
+                    write_tcp_response(&mut stream, &response).await
+                };
+                let client = transport.exchange_kpasswd_result_with_config(&config, KdcProtocol::Tcp, "TEST.GOKRB5", &built, &options);
+                let (delivery, result) = tokio::join!(server, client);
+                delivery?;
+                if permitted {
+                    assert_eq!(result?.code, KPASSWD_SUCCESS);
+                } else {
+                    assert!(matches!(result, Err(ClientError::KpasswdOutcomeUnknown(source)) if matches!(*source, ClientError::Crypto(Crypto::Policy(Policy::EnctypeNotPermitted { etype, usage: Use::SessionKey })) if etype == id)));
+                }
+            }
+        }
+        Ok(())
+    })
+}
+
 /// A generic resolver input does not need the obsolete Clone bound.
 #[test]
 fn password_address_bound_is_resolver_only() -> Result<(), TestError> {
@@ -116,6 +156,9 @@ fn checked_reply_fixtures_are_valid() -> Result<(), TestError> {
                     | ReplyCase::ExcessiveUsec
                     | ReplyCase::WrongKey
                     | ReplyCase::Reflection => return Err("invalid success fixture".into()),
+                    ReplyCase::LegacySubkey(_) => {
+                        return Err("legacy fixture needs explicit policy".into());
+                    }
                 }
             }
         }

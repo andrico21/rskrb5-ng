@@ -11,7 +11,7 @@ use rskrb5_ng::{
         kpasswd::{BuiltKpasswdRequest, RequestOptions, build_kpasswd_request_with_confounders},
         principal::Principal,
     },
-    crypto::AesSha1Etype,
+    crypto::{AesSha1Etype, KerberosEtype},
     kadmin::{self, ChangePasswdData, Request},
     keytab::EncryptionKey,
     krb_priv::{EncKrbPrivPartOptions, ipv4_host_address},
@@ -90,6 +90,8 @@ pub(super) enum ReplyCase {
     Reflection,
     /// Successful reply using a server-selected subkey.
     Subkey,
+    /// Authenticated server selection of a legacy reply key.
+    LegacySubkey(i32),
     /// Authenticated contextual rejection.
     Rejected,
 }
@@ -121,10 +123,16 @@ pub(super) fn reply(request: &BuiltKpasswdRequest, case: ReplyCase) -> Result<Ve
         ReplyCase::MaximumUsec => options.usec = Some(999_999_u32.into()),
         ReplyCase::WrongKey => response_key = EncryptionKey::new(18, vec![0x66; 32]),
         ReplyCase::Reflection => sequence = None,
-        ReplyCase::Subkey => {
-            response_key = EncryptionKey::new(18, vec![0x66; 32]);
+        ReplyCase::Subkey | ReplyCase::LegacySubkey(_) => {
+            let id = if let ReplyCase::LegacySubkey(id) = case {
+                id
+            } else {
+                18_i32
+            };
+            let etype = KerberosEtype::from_etype_id(id).ok_or("enctype")?;
+            response_key = EncryptionKey::new(id, vec![0x66; etype.key_len()]);
             subkey = Some(rasn_kerberos::EncryptionKey {
-                r#type: response_key.etype,
+                r#type: id,
                 value: response_key.value.clone().into(),
             });
         }
@@ -157,8 +165,15 @@ pub(super) fn reply(request: &BuiltKpasswdRequest, case: ReplyCase) -> Result<Ve
         | ReplyCase::ExcessiveUsec
         | ReplyCase::WrongKey
         | ReplyCase::Subkey
+        | ReplyCase::LegacySubkey(_)
         | ReplyCase::Rejected => {
-            kadmin::build_krb_priv_with_confounder(data, options, &response_key, &[0x77; 16])?
+            let etype = KerberosEtype::from_etype_id(response_key.etype).ok_or("enctype")?;
+            kadmin::build_krb_priv_with_confounder(
+                data,
+                options,
+                &response_key,
+                &vec![0x77; etype.confounder_len()],
+            )?
         }
     };
     if matches!(case, ReplyCase::ExcessiveUsec) {
@@ -175,8 +190,16 @@ pub(super) fn reply(request: &BuiltKpasswdRequest, case: ReplyCase) -> Result<Ve
             .into();
     }
     private.enc_part.kvno = Some(999);
-    let ap_bytes = ap_rep::encode(&ap_rep)?;
-    let private_bytes = kadmin::encode_krb_priv(&private)?;
+    frame(&ap_rep, &private)
+}
+
+/// Frame independently encoded authenticated reply sections.
+fn frame(
+    ap_rep: &rasn_kerberos::ApRep,
+    private: &rasn_kerberos::KrbPriv,
+) -> Result<Vec<u8>, TestError> {
+    let ap_bytes = ap_rep::encode(ap_rep)?;
+    let private_bytes = kadmin::encode_krb_priv(private)?;
     let length = 6_usize
         .checked_add(ap_bytes.len())
         .and_then(|len| len.checked_add(private_bytes.len()))
