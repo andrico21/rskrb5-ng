@@ -29,6 +29,8 @@ Critic round `critics-fb19af4`, unit u2:
 | --- | --- | --- | --- | --- | --- | --- |
 | FU-CLI-R01 | minor | Impossible renewal branches remain in ordinary login and service-cache reuse | fixed | Structural before/after inspection; `session_cache` (59 tests), `session_validity_boundaries`; commit containing this row | none; removes unreachable renewal paths and redundant usable predicate; explicit and refresh-band renewal remain | task-22b evidence: renewal implies validity at the same captured time; ordinary reuse already returned. No honest behavioral red exists. |
 
+| FU-CLI-R02 | major | Client session and AP request Debug disclose credential bytes | fixed | `request_and_session_debug_redacts_actual_credentials`, `audited_debug_redacts_secret_fields`; commit containing this row | AS/TGS/AP DER, FAST AP bytes and session ticket fields become Zeroizing owners; owning constructors require them. Exhaustive Debug emits metadata/lengths only, recursively protecting referral/FAST results. | task-22b: genuine credential Debug red (credential bytes disclosed), green after redaction; compiler enforces zeroizing storage. ASN.1 residual copies remain documented. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |

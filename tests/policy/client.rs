@@ -62,7 +62,7 @@ pub(super) fn session(
         Principal::user("EXAMPLE.COM", "alice"),
         Principal::new("EXAMPLE.COM", 2, ["HTTP", "host"]),
         EncryptionKey::new(session_etype, vec![0; 32]),
-        der::encode(&ticket)?,
+        der::encode(&ticket)?.into(),
         [0; 4],
         now,
         now.checked_add(Duration::from_secs(3600))

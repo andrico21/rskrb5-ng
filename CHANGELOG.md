@@ -23,6 +23,11 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Client request DER, FAST AP-REQ bytes and session tickets now use
+  `Zeroizing<Vec<u8>>`; owning constructors require that owner. Client request
+  and session `Debug` expose metadata and lengths, never credential bytes
+  (FU-CLI-R02).
+
 - Add opt-in `service::TransitPolicy::{direct, domain_x500_paths}` presets for
   AD cross-domain tickets without TRANSITED-POLICY-CHECKED. Both pin endpoint
   realms; the latter allow-lists exact complete encoded paths. Default rejection

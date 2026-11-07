@@ -586,7 +586,7 @@ mod tests {
         let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key)?;
         let mut transport = MockTransport {
             expected_realm: "TEST.GOKRB5".to_owned(),
-            expected_request: request.der.clone(),
+            expected_request: request.der.to_vec(),
             response,
             called: false,
         };

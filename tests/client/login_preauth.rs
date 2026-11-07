@@ -300,7 +300,7 @@ mod tests {
         let response = der::encode(&reply)?;
         let mut transport = MockTransport {
             expected_realm: client.realm.clone(),
-            expected_request: request.der.clone(),
+            expected_request: request.der.to_vec(),
             response,
             called: false,
         };

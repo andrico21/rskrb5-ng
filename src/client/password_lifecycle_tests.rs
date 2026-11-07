@@ -71,7 +71,7 @@ mod tests {
             principal,
             Principal::new("TEST.GOKRB5", 2, ["kadmin", "changepw"]),
             EncryptionKey::new(18, vec![0x11; 32]),
-            ticket::encode(&fixture.ap_req.ticket)?,
+            ticket::encode(&fixture.ap_req.ticket)?.into(),
             [0; 4],
             time,
             end,

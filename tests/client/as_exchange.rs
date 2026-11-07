@@ -242,7 +242,7 @@ mod tests {
         assert_eq!(credential.times.auth_time, 1_893_553_445);
         assert_eq!(credential.times.end_time, 1_893_639_845);
         assert_eq!(credential.times.renew_till, 1_894_071_845);
-        assert_eq!(credential.ticket, session.ticket);
+        assert_eq!(credential.ticket, *session.ticket);
         assert!(
             credential.second_ticket.is_empty(),
             "the credential has no second ticket"
@@ -381,7 +381,7 @@ mod tests {
         let response = synthetic_as_rep(&request, request.nonce)?;
         let mut transport = MockTransport {
             expected_realm: "TEST.GOKRB5".to_owned(),
-            expected_request: request.der.clone(),
+            expected_request: request.der.to_vec(),
             response,
             called: false,
         };

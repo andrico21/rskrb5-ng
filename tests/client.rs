@@ -582,7 +582,7 @@ mod harness {
         let mut tgt = sample_tgt_session()?;
         tgt.service = Principal::new("TEST.GOKRB5", 2, ["krbtgt".to_owned(), realm.to_owned()]);
         tgt.session_key.value = vec![0x9a; 32];
-        tgt.ticket = marked_ticket(format!("referral-ticket-{realm}").as_bytes())?;
+        tgt.ticket = marked_ticket(format!("referral-ticket-{realm}").as_bytes())?.into();
         Ok(tgt)
     }
 
@@ -1203,7 +1203,7 @@ mod harness {
         let clock = timestamp(u64::try_from(
             body.till.0.timestamp().saturating_sub(86_400),
         )?)?;
-        let mut built = BuiltAsReq::new(message, der.to_vec(), client, service, nonce);
+        let mut built = BuiltAsReq::new(message, der.to_vec().into(), client, service, nonce);
         built.reply_clock.0 = clock;
         Ok(built)
     }
@@ -1221,7 +1221,14 @@ mod harness {
         let clock = timestamp(u64::try_from(
             body.till.0.timestamp().saturating_sub(86_400),
         )?)?;
-        let mut built = BuiltTgsReq::new(message, der.to_vec(), client, service, kdc_realm, nonce);
+        let mut built = BuiltTgsReq::new(
+            message,
+            der.to_vec().into(),
+            client,
+            service,
+            kdc_realm,
+            nonce,
+        );
         built.reply_clock.0 = clock;
         Ok(built)
     }

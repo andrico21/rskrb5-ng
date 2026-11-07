@@ -137,7 +137,7 @@ async fn realm_selection_across_start_boundary() -> Result<(), TestError> {
                 KerberosString::try_from(destination)?,
             ],
         };
-        session.ticket = ticket::encode(&wire)?;
+        session.ticket = ticket::encode(&wire)?.into();
         let config = crate::Config::parse(&format!(
             "[libdefaults]\ndns_lookup_kdc = false\n[realms]\nEXAMPLE.TEST = {{\nkdc = {address}\n}}\nOTHER.TEST = {{\nkdc = {address}\n}}\n"
         ))?;

@@ -8,6 +8,16 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Client credential buffers (FU-CLI-R02): `BuiltAsReq::der`, `BuiltTgsReq::der`,
+`BuiltApReq::der`, `TgsFastRequestParts::ap_req_der` and `AsRepSession::ticket`
+are now `zeroize::Zeroizing<Vec<u8>>`. Pass an owning zeroizing buffer to
+`BuiltAsReq::new`, `BuiltTgsReq::new` and `AsRepSession::new`; use `.into()`
+on an existing owned vector to transfer it without copying. Slice borrows
+continue to work. A deliberate `.to_vec()` copy is caller-erased. Their
+`Debug` output, including nested referral/FAST results, keeps metadata and
+lengths only. Dependency-owned ASN.1 copies remain residuals as documented
+in [the security policy](security-policy.md#residual-copies).
+
 Replace the dependency:
 
 ```toml

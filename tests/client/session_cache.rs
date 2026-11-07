@@ -129,7 +129,7 @@ mod tests {
         let service_session = |remaining_minutes: u64, ticket: &[u8]| -> Result<_, TestError> {
             let now = SystemTime::now();
             let mut service_ticket = sample_service_ticket_session(&tgt)?;
-            service_ticket.ticket = marked_ticket(ticket)?;
+            service_ticket.ticket = marked_ticket(ticket)?.into();
             service_ticket.auth_time = now
                 .checked_sub(Duration::from_mins(5))
                 .context("auth time")?;
@@ -432,9 +432,9 @@ mod tests {
         let mut fresh_service_ticket = sample_service_ticket_session(&tgt)?;
         let mut older_service_ticket = fresh_service_ticket.clone();
         fresh_service_ticket.session_key.value = vec![0xf1];
-        fresh_service_ticket.ticket = marked_ticket(b"fresh-service-ticket")?;
+        fresh_service_ticket.ticket = marked_ticket(b"fresh-service-ticket")?.into();
         older_service_ticket.session_key.value = vec![0x0d];
-        older_service_ticket.ticket = marked_ticket(b"older-service-ticket")?;
+        older_service_ticket.ticket = marked_ticket(b"older-service-ticket")?.into();
         let now = u32::try_from(
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -797,9 +797,9 @@ mod tests {
         let mut current_service_ticket = sample_service_ticket_session(&tgt)?;
         let mut future_service_ticket = current_service_ticket.clone();
         current_service_ticket.session_key.value = vec![0xc2];
-        current_service_ticket.ticket = marked_ticket(b"current-service-ticket")?;
+        current_service_ticket.ticket = marked_ticket(b"current-service-ticket")?.into();
         future_service_ticket.session_key.value = vec![0xf2];
-        future_service_ticket.ticket = marked_ticket(b"future-service-ticket")?;
+        future_service_ticket.ticket = marked_ticket(b"future-service-ticket")?.into();
         let now = u32::try_from(
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -1875,7 +1875,7 @@ mod tests {
     fn tokio_client_prefers_freshest_cached_tgt_session() -> Result<(), TestError> {
         let primary_session = |remaining_minutes: u64, ticket: &[u8]| -> Result<_, TestError> {
             let mut tgt = current_tgt_session(5, remaining_minutes)?;
-            tgt.ticket = marked_ticket(ticket)?;
+            tgt.ticket = marked_ticket(ticket)?.into();
             Ok(tgt)
         };
         let referral_session = |remaining_minutes: u64, ticket: &[u8]| -> Result<_, TestError> {

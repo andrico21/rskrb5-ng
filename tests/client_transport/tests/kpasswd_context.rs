@@ -45,7 +45,7 @@ pub(super) fn request() -> Result<(BuiltKpasswdRequest, RequestOptions), TestErr
         Principal::user("TEST.GOKRB5", "testuser1"),
         Principal::new("TEST.GOKRB5", 2, ["kadmin", "changepw"]),
         EncryptionKey::new(18, vec![0x11; 32]),
-        ticket::encode(&fixture.ap_req.ticket)?,
+        ticket::encode(&fixture.ap_req.ticket)?.into(),
         [0; 4],
         time,
         time,

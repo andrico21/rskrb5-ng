@@ -28,7 +28,7 @@ fn reflected_reply(ap_rep_valid: bool) -> Result<Client, Box<dyn StdError>> {
         Principal::user("TEST.GOKRB5", "testuser1"),
         Principal::new("TEST.GOKRB5", 2, ["kadmin", "changepw"]),
         EncryptionKey::new(18, vec![0x11; 32]),
-        ticket::encode(&fixture.ap_req.ticket)?,
+        ticket::encode(&fixture.ap_req.ticket)?.into(),
         [0; 4],
         time,
         time,
