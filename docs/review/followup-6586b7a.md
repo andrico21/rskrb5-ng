@@ -60,6 +60,8 @@ Critic round `critics-fb19af4`, unit u5:
 
 | FU-CFG-R04 | minor | MIT's next-line opening-brace grammar is rejected | fixed | `next_line_braces_preserve_scopes`, config232; commit containing this row | Subsections in realms/appdefaults/plugins/capaths accept next-line braces, including final tags. Existing empty scalar extensions in libdefaults/domain_realm remain. | MIT prof_parse.c STATE_GET_OBRACE; red rejects opening brace, green scoped/final controls and missing-brace rejection. |
 
+| FU-CFG-R05 | major | Serde and programmatic configuration bypass unsupported restrictive-policy rejection | fixed | `restrictive_defaults_fail_before_requests`, `restrictive_scopes_fail_before_login`; client226/config234/policy72; commit containing this row | Serde rejects unsupported restrictive defaults/realm/plugin selections. Runtime request policy, client readiness, service config constructors and endpoint discovery revalidate mutated fields before effects. | task-22b serde no_addresses and realm bypass red; named config refusal or retained invalid-policy request rejection green. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |

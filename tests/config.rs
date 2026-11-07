@@ -5,6 +5,8 @@ mod env;
 
 #[path = "config/profile.rs"]
 mod profile;
+#[path = "config/restrictive.rs"]
+mod restrictive;
 
 #[path = "config/profile_limits.rs"]
 mod profile_limits;

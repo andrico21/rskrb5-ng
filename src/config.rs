@@ -31,6 +31,9 @@ use crate::crypto::{
 /// Removed protocol mode selection boundaries.
 #[path = "config/protocol.rs"]
 pub mod protocol;
+/// Effective restrictions shared by all configuration construction paths.
+#[path = "config/restrictions.rs"]
+pub(crate) mod restrictions;
 /// Reject forbidden serde configuration selections.
 #[cfg(feature = "serde")]
 #[path = "config/serde_policy.rs"]
@@ -124,6 +127,7 @@ pub struct Config {
     /// `[libdefaults]` values.
     pub libdefaults: LibDefaults,
     /// `[realms]` entries in file order.
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::realms"))]
     pub realms: Vec<Realm>,
     /// `[domain_realm]` mappings keyed by lower-case domain names.
     pub domain_realm: BTreeMap<String, String>,
@@ -135,6 +139,7 @@ pub struct Config {
     pub applications: section_values::Applications,
     /// Plugin restrictions by interface, without executable module loading.
     #[cfg_attr(feature = "serde", serde(default))]
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::plugins"))]
     pub plugins: BTreeMap<String, section_values::Plugins>,
 }
 
@@ -544,6 +549,7 @@ impl Config {
     /// [`Error::NoKdc`] when it lists no KDC.
     #[inline]
     pub fn configured_kdcs(&self, realm: &str) -> Result<&[String], Error> {
+        restrictions::config(self)?;
         let realm_entry = self
             .realm(realm)
             .ok_or_else(|| Error::NoRealm(realm.to_owned()))?;
@@ -561,6 +567,7 @@ impl Config {
     /// [`Error::NoKpasswdServer`] when it lists no password-change server.
     #[inline]
     pub fn configured_kpasswd_servers(&self, realm: &str) -> Result<&[String], Error> {
+        restrictions::config(self)?;
         let realm_entry = self
             .realm(realm)
             .ok_or_else(|| Error::NoRealm(realm.to_owned()))?;
@@ -642,6 +649,7 @@ pub struct LibDefaults {
     pub default_keytab_name: String,
     /// Requested replay store; explicit persistent stores fail closed until WP-20.
     #[cfg_attr(feature = "serde", serde(default))]
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::replay"))]
     pub default_rcache_name: String,
     /// Default realm.
     pub default_realm: String,
@@ -690,18 +698,24 @@ pub struct LibDefaults {
     pub qualify_shortname: Option<String>,
     /// Total request deadline; nonzero profile values fail until a total budget exists.
     #[cfg_attr(feature = "serde", serde(default))]
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::deadline"))]
     pub request_timeout: Duration,
     /// Recognized SPAKE group names; no SPAKE exchange is enabled.
     #[cfg_attr(feature = "serde", serde(default))]
     pub spake_preauth_groups: Vec<String>,
     /// Requested channel-binding-aware GSS signaling; not yet implemented.
     #[cfg_attr(feature = "serde", serde(default))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(deserialize_with = "serde_policy::channel_binding")
+    )]
     pub client_aware_channel_bindings: Toggle,
     /// KDC default options bit string as a 32-bit integer.
     pub kdc_default_options: u32,
     /// KDC time sync setting.
     pub kdc_time_sync: i32,
     /// Whether addresses should be omitted from tickets.
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::addresses"))]
     pub no_addresses: Toggle,
     /// Permitted enctype names.
     #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::enctypes"))]
@@ -743,6 +757,7 @@ pub struct LibDefaults {
     /// UDP preference limit.
     pub udp_preference_limit: i32,
     /// Whether AP-REQ verification failure should be fatal.
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::verify"))]
     pub verify_ap_req_nofail: Toggle,
     /// Mode applied to secure unsupported enctype selections.
     #[cfg_attr(feature = "serde", serde(default))]
@@ -1260,6 +1275,10 @@ pub struct Realm {
     pub primary_kdc: Vec<String>,
     /// Typed explicitly configured realm relations.
     #[cfg_attr(feature = "serde", serde(default))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(deserialize_with = "serde_policy::realm_relations")
+    )]
     pub relations: BTreeMap<String, section_values::Value>,
     /// Case-sensitive local principal-name mappings; no authorization is performed.
     #[cfg_attr(feature = "serde", serde(default))]

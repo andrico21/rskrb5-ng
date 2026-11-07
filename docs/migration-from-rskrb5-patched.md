@@ -61,6 +61,13 @@ values to or from this crate needs the same versions.
 
 ## New configuration keys
 
+Restrictive settings (FU-CFG-R05): serde and programmatic configurations now
+receive the same refusal for unsupported restrictions as profile input. Runtime
+client/service/request boundaries revalidate mutable fields before effects.
+Unset these settings until their documented plan-2 consumer exists; text and
+client admission return `NotYetEffective`, while infallible request options
+retain an invalid-policy error for the eventual build.
+
 Subsections (FU-CFG-R04): in realms, appdefaults, plugins and capaths, an empty
 assignment now expects an opening brace on the next structural line. Use `""`
 for an explicitly empty scalar there. Empty libdefaults/domain_realm values

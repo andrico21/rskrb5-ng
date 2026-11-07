@@ -96,6 +96,11 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Unsupported restrictive settings now fail closed through serde and runtime
+  configuration admission, not only text parsing: address inclusion, total
+  deadlines, mandatory AP verification, channel-binding signaling, persistent
+  replay stores and encrypted-timestamp prohibitions (FU-CFG-R05).
+
 - Profile subsections accept MIT's next-line opening brace syntax. Empty
   libdefaults/domain_realm scalar extensions remain supported (FU-CFG-R04).
 
