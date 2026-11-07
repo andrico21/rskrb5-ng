@@ -29,3 +29,4 @@ is a parity feature, not a defect>`.
 | critic:critics-fb19af4/u3.md#U3-07 | FU-TRN-R04 | no |
 | executor:todo-16#transit-validator-rustdoc | FU-DOC-R02 | no |
 | critic:critics-fb19af4/u6.md#U6-01 | FU-TST-R07 | no |
+| critic:critics-fb19af4/u6.md#U6-02 | FU-FUZ-R01 | no |

@@ -195,7 +195,11 @@ def qualified_functions(relative: str, original: str) -> list[tuple[str, int]]:
             else:
                 path.append(name)
         qualified = "::".join(path)
-        name = f"<{qualified} as {trait}>::{match[1]}" if trait else f"{qualified}::{match[1]}"
+        name = (
+            f"<{qualified} as {trait}>::{match[1]}"
+            if trait
+            else f"{qualified}::{match[1]}"
+        )
         hits.append((name, stripped.count("\n", 0, position) + 1))
     return hits
 
@@ -228,7 +232,11 @@ def defined_functions(relative: str, original: str) -> set[str]:
             else:
                 path.append(name)
         qualified = "::".join(path)
-        names.add(f"<{qualified} as {trait}>::{match[1]}" if trait else f"{qualified}::{match[1]}")
+        names.add(
+            f"<{qualified} as {trait}>::{match[1]}"
+            if trait
+            else f"{qualified}::{match[1]}"
+        )
     return names
 
 
@@ -239,9 +247,23 @@ def check_live(rows: list[Row], read: Callable[[str], str | None]) -> list[str]:
     for row in rows:
         if row.source not in defined:
             text = read(row.source)
-            defined[row.source] = set() if text is None else defined_functions(row.source, text)
+            defined[row.source] = (
+                set() if text is None else defined_functions(row.source, text)
+            )
         if short_trait(row.function) not in defined[row.source]:
-            errors.append(f"stale inventory row: {row.function} is not defined in {row.source}")
+            errors.append(
+                f"stale inventory row: {row.function} is not defined in {row.source}"
+            )
+        if row.target not in NO_TARGET:
+            text = strip_comments_and_strings(read(row.source) or "")
+            test_functions = set(
+                re.findall(
+                    r"#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(?:const\s+)?fn\s+(\w+)",
+                    text,
+                )
+            )
+            if row.function.rsplit("::", 1)[-1] in test_functions:
+                errors.append(f"test-only function has fuzz target: {row.function}")
     return errors
 
 
@@ -529,15 +551,16 @@ def self_test() -> int:
     ], names
     # A search hit in a trait impl is a key named with the trait's last
     # segment; a row naming the full trait path satisfies it, no row is missing.
-    impl_source = (
-        "impl Decode for Bytes {\n    fn decode_with_tag(d: &mut D) {}\n}\n"
-    )
+    impl_source = "impl Decode for Bytes {\n    fn decode_with_tag(d: &mut D) {}\n}\n"
     impl_keys = {
         (name, "src/kadmin/password.rs")
         for name, _ in qualified_functions("src/kadmin/password.rs", impl_source)
     }
     assert impl_keys == {
-        ("<rskrb5_ng::kadmin::password::Bytes as Decode>::decode_with_tag", "src/kadmin/password.rs")
+        (
+            "<rskrb5_ng::kadmin::password::Bytes as Decode>::decode_with_tag",
+            "src/kadmin/password.rs",
+        )
     }, impl_keys
     impl_row = Row(
         "<rskrb5_ng::kadmin::password::Bytes as rasn::de::Decode>::decode_with_tag",
@@ -610,6 +633,12 @@ def self_test() -> int:
         Row("rskrb5_ng::config::LibDefaults::next", "src/config.rs", "-", "wrong impl"),
     ]
     sources = {"src/config.rs": config}
+    test_only = [
+        Row("rskrb5_ng::config::test_parser", "src/config.rs", "krb5_conf", "")
+    ]
+    assert check_live(
+        test_only, {"src/config.rs": "#[cfg(test)]\npub(crate) fn test_parser() {}"}.get
+    )
     assert check_live(live, sources.get) == [], check_live(live, sources.get)
     assert check_live(stale, sources.get) == [
         f"stale inventory row: {row.function} is not defined in {row.source}"
@@ -657,9 +686,11 @@ def main(argv: list[str] | None = None) -> int:
         errors += check_rows(rows, keys, fuzz_targets(root))
         errors += check_live(
             rows,
-            lambda relative: (root / relative).read_text(encoding="utf-8")
-            if (root / relative).is_file()
-            else None,
+            lambda relative: (
+                (root / relative).read_text(encoding="utf-8")
+                if (root / relative).is_file()
+                else None
+            ),
         )
         print(f"inventory: {len(keys)} searched functions, {len(rows)} rows")
     if args.coverage:

@@ -264,7 +264,7 @@ does.
 | `rskrb5_ng::config::parse_i32` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_i32_list` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_ip_addresses` | `src/config.rs` | `krb5_conf` |  |
-| `rskrb5_ng::config::parse_supported_enctype_ids` | `src/config.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::parse_supported_enctype_ids` | `src/config.rs` | - | cfg(test)-only capability mapping helper; normal fuzz dependency builds do not contain it; configuration tests cover it |
 | `rskrb5_ng::config::parse_unit_duration` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::crypto::AesSha1Etype::decrypt_message` | `src/crypto.rs` | `gss_token` |  |
 | `rskrb5_ng::crypto::AesSha2Etype::decrypt_message` | `src/crypto.rs` | `gss_token` |  |
