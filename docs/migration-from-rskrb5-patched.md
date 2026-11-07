@@ -7,6 +7,12 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Token staging (FU-SPN-R11): token encoding and header parsing now erase their
+internal credential buffers, including nested DER allocations and error exits.
+Header encoding avoids a separate base64 string. Public returned `Vec<u8>` and
+`String` signatures are unchanged; callers must still erase those returned
+credentials and their own copies after use.
+
 Accepted-context reply policy (FU-SPN-R10): `ValidatedApReq.crypto_policy`
 retains the validator's policy. Its AP-REP builder and SPNEGO/HTTP response
 helpers reject excluded wrapping keys and server subkeys with a typed policy

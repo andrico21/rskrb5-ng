@@ -295,6 +295,8 @@ Original review rows:
 
 | FU-SPN-R10 | minor | Accepted contexts can emit AP-REP subkeys forbidden by the context policy | fixed | `accepted_reply_enforces_retained_policy` red/green; `forbidden_reply_precedes_handler` mutation red/green; commit `service: retain policy for outgoing AP replies (FU-SPN-R10)` | ValidatedApReq gains crypto_policy; wrapping session key and server subkey checked before AP-REP encoding and reciprocal MIC work; forbidden reply stops Tower handler invocation. Raw codecs unchanged. | task-22d-rskrb5-ng-zero-open-items.log: default DES/RC4/DES3 refusals, AES membership, legacy opt-in plus membership, mutable session key, zero handler calls; policy75/service91/http54/spnego54 passed. |
 
+| FU-SPN-R11 | minor | Token encoding and header decoding still drop first-party credential staging without erasure | fixed | `credential_staging_is_erased` red/green; scoped lib/tests clippy; commit `spnego: erase token and header staging (FU-SPN-R11)` | First-party mechanism/init/response/full-token DER staging and decoded header bytes are zeroizing; base64 writes directly to returned header. Public return ownership unchanged. | task-22d-rskrb5-ng-zero-open-items.log: genuine AP-REQ staging observer, exact nested owner events, successful parse and malformed DER parse erasure. |
+
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 
 - RVX-u1-01 → FU-TST-01 (also: the test never exercises the router wiring cited by the review doc; covered by FU-TST-01's Proof)
