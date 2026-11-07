@@ -14,12 +14,17 @@ mod tests {
 
     use rskrb5_ng::{
         Config, Principal,
-        client::{Tokio, build_tgt_as_req, options::AsReq, transport::KdcProtocol},
+        client::{
+            Tokio, build_tgt_as_req,
+            options::AsReq,
+            transport::{KdcProtocol, Tokio as Transport},
+        },
         config::{
             Toggle,
             section_values::{Plugins, Value},
         },
-        error::Client,
+        error::{Client, Config as ConfigError},
+        keytab::Keytab,
     };
     use tokio::runtime::Builder;
 
@@ -83,6 +88,35 @@ mod tests {
                 serde_json::from_value::<Config>(serde_json::to_value(&config)?).is_err(),
                 "serde accepted {scope}"
             );
+            let transport = Transport::new();
+            let principal = Principal::user("R", "alice");
+            let options = AsReq::new(UNIX_EPOCH, 42);
+            let expected = if scope == "realm" {
+                "disable_encrypted_timestamp"
+            } else {
+                scope
+            };
+            for result in [
+                runtime.block_on(transport.login_tgt_with_password_config(
+                    &config,
+                    KdcProtocol::Tcp,
+                    principal.clone(),
+                    b"password",
+                    options.clone(),
+                )),
+                runtime.block_on(transport.login_tgt_with_keytab_config(
+                    &config,
+                    KdcProtocol::Tcp,
+                    principal,
+                    &Keytab::new(),
+                    options,
+                )),
+            ] {
+                assert!(
+                    matches!(result, Err(Client::Config(ConfigError::NotYetEffective { relation, package: _ })) if relation == expected),
+                    "transport ignored {scope}"
+                );
+            }
             let mut client = Tokio::with_password(
                 config,
                 KdcProtocol::Tcp,

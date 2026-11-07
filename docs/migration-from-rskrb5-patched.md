@@ -7,6 +7,13 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Configured transport admission (FU-TRN-R06): password and keytab configured
+AS-login helpers, including their TGT wrappers, now return the named
+`Client::Config(Config::NotYetEffective { .. })` restriction before constructing
+preauthentication or contacting a KDC. Programmatically supplied realm
+`disable_encrypted_timestamp` and clpreauth restrictions have the same
+fail-closed handling as high-level clients.
+
 Full-message kadmin errors (FU-TRN-R05): AP-REQ and AP-REP crypto/random failures
 now use `Kadmin::Crypto` and `Kadmin::Random`, with their original typed sources,
 rather than `Kadmin::Decode`. Update matches that previously treated encryption
