@@ -27,6 +27,7 @@ import subprocess
 import sys
 from contextlib import redirect_stdout
 from io import StringIO
+from html.parser import HTMLParser
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final
@@ -38,10 +39,8 @@ REPO_URL: Final = re.compile(
 )
 SCHEME: Final = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:")
 FENCE: Final = re.compile(r" {0,3}(`{3,}|~{3,})")
-CODE_SPAN: Final = re.compile(r"(`+)(?:(?!\1).)+?\1")
 REFERENCE: Final = re.compile(r" {0,3}\[(?!\^)[^\]]+\]:\s*(<[^>]*>|\S+)")
 AUTOLINK: Final = re.compile(r"<([A-Za-z][A-Za-z0-9+.-]*:[^\s<>]*)>")
-ATTRIBUTE: Final = re.compile(r"""\b(?:href|src)\s*=\s*["']([^"']*)["']""")
 ANCHOR: Final = re.compile(r"""<a\s[^>]*\b(?:id|name)\s*=\s*["']([^"']+)["']""")
 HEADING: Final = re.compile(r" {0,3}#{1,6}\s+(.*?)\s*#*\s*$")
 
@@ -109,18 +108,64 @@ def destination(line: str, start: int) -> str:
 
 
 def link_targets(text: str) -> list[tuple[int, str]]:
-    found = []
-    for number, raw in prose_lines(text):
-        line = CODE_SPAN.sub("", raw)
-        found.extend(
-            (number, destination(line, m.end())) for m in re.finditer(r"\]\(\s*", line)
-        )
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    lines = [""] * len(normalized.split("\n"))
+    for number, raw in prose_lines(normalized):
+        lines[number - 1] = raw
+    prose = "\n".join(lines)
+    chars = list(prose)
+    index = 0
+    while index < len(prose):
+        if prose[index] == "`":
+            end = index
+            while end < len(prose) and prose[end] == "`":
+                end += 1
+            close = prose.find(prose[index:end], end)
+            if close >= 0:
+                for position in range(index, close + end - index):
+                    if chars[position] != "\n":
+                        chars[position] = " "
+                index = close + end - index
+                continue
+        index += 1
+    visible = "".join(chars)
+    found: list[tuple[int, str]] = []
+    index = 0
+    while index < len(visible):
+        if visible[index] == "\\":
+            index += 2
+            continue
+        if visible.startswith("](", index):
+            start = index + 2
+            while start < len(visible) and visible[start].isspace():
+                start += 1
+            found.append(
+                (visible.count("\n", 0, index) + 1, destination(visible, start))
+            )
+        index += 1
+    for number, line in enumerate(visible.splitlines(), 1):
         reference = REFERENCE.match(line)
         if reference:
             found.append((number, reference.group(1).strip("<>")))
         found.extend((number, m.group(1)) for m in AUTOLINK.finditer(line))
-        found.extend((number, m.group(1)) for m in ATTRIBUTE.finditer(line))
+    parser = LinkAttributes()
+    parser.feed(visible)
+    parser.close()
+    found.extend(parser.targets)
     return found
+
+
+class LinkAttributes(HTMLParser):
+    """Accumulate real HTML link attributes with parser source positions."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.targets: list[tuple[int, str]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        for name, value in attrs:
+            if name in {"href", "src"} and value is not None:
+                self.targets.append((self.getpos()[0], value))
 
 
 def anchors(text: str) -> frozenset[str]:
@@ -221,6 +266,22 @@ def self_test() -> int:
         )
         assert problems(clean) == [], problems(clean)
         assert problems(clean.replace(b"\n", b"\r\n")) == [], "CRLF clean"
+        for link in (
+            "[bad](\nmissing.md)",
+            "<a href=missing.md>x</a>",
+            "<img src=missing.png>",
+        ):
+            (root / "docs/a.md").write_text(
+                "# Title\n\n## Two words `code`\n\n## Two words code\n" + link
+            )
+            assert len(problems(clean)) == 1, (link, problems(clean))
+        (root / "docs/a.md").write_text(
+            "# Title\n\n## Two words `code`\n\n## Two words code\n[good](\n../README.md)"
+        )
+        assert problems(clean) == [], "valid multiline destination"
+        (root / "docs/a.md").write_text(
+            "# Title\n\n## Two words `code`\n\n## Two words code\n"
+        )
         for bad, count in (
             (b"see [review](docs/review/README.md)\n", 1),
             (b"see [review](docs/review/README.md)\r\nmore\r\n", 1),
@@ -229,12 +290,17 @@ def self_test() -> int:
             (b"[m](docs/missing.md)\n", 1),
             (b"[f](docs/a.md#absent)\n", 1),
             (b"[o](../outside.md) [p](/README.md) <file:///etc/hosts>\n", 3),
-            (b"[u](https://github.com/andrico21/rskrb5-ng/blob/main/docs/nope.md)\n", 1),
+            (
+                b"[u](https://github.com/andrico21/rskrb5-ng/blob/main/docs/nope.md)\n",
+                1,
+            ),
             (b"[d](scripts/) ~~~\n", 1),
         ):
             assert len(problems(bad)) == count, (bad, problems(bad))
         headings = (root / "docs/a.md").read_text()
-        (root / "docs/a.md").write_text(headings + "[r](review/README.md) [s](../scripts/x.py)\n")
+        (root / "docs/a.md").write_text(
+            headings + "[r](review/README.md) [s](../scripts/x.py)\n"
+        )
         assert len(problems(clean)) == 2, problems(clean)
         (root / "Cargo.toml").write_text(
             '[package]\nname = "t"\nversion = "0.0.0"\nedition = "2021"\n'
@@ -248,7 +314,9 @@ def self_test() -> int:
             (root / "README.md").write_text(clean.decode())
             passed = main(["--enforce", "--root", str(root)])
         assert (failed, passed) == (1, 0), report.getvalue()
-        assert "README.md:1: (docs/review/README.md)" in report.getvalue(), report.getvalue()
+        assert "README.md:1: (docs/review/README.md)" in report.getvalue(), (
+            report.getvalue()
+        )
     print(
         "package_links self-test: ok (inline, reference, autolink, HTML, CRLF, fragments, cargo list)"
     )

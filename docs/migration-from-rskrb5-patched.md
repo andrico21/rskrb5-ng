@@ -7,6 +7,10 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Package links (FU-CI-R03): multiline Markdown destinations and unquoted HTML
+`href`/`src` attributes now participate in package-membership validation.
+Correct missing/excluded local destinations or use an existing repository URL.
+
 Workflow wiring (FU-GATE-R02): quoted YAML keys obey the same restrictions as
 plain keys, and `lint-gates` must have exactly one `steps` mapping with no
 duplicate step keys. Remove conditional or overriding execution settings;

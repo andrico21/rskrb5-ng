@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Package-link validation now scans multiline Markdown destinations and tokenizes
+  HTML attributes, including unquoted `href` and `src` values (FU-CI-R03).
+
 - Workflow wiring rejects quoted execution-control keys and duplicate gate step
   mappings rather than counting commands that cannot execute (FU-GATE-R02).
 
