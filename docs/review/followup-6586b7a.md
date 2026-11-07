@@ -212,6 +212,7 @@ limits are recorded under FU-OPS-03.
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
 | --- | --- | --- | --- | --- | --- | --- |
+| FU-TST-R05 | minor | AD service-ticket validation uses invalid timestamps and drops legacy policy | fixed | `ad_service_time_is_whole_seconds`, AD strict-env tests; commit containing this row | none (test harness only); AD AP construction splits fractional wall clocks and passes matching explicit RC4 policy to AP builder and validator. | Task 22 fixed 500 ms sample red/green; cross-trust call selects RC4 explicitly. Live AD/PAC scenarios not executed. |
 | FU-TST-R04 | minor | MIT legacy integration cases never opt in to the crypto they test | fixed | `legacy_live_options_have_explicit_permission`; commit containing this row | none (test harness only); MIT RC4/DES3 AS/TGS and SPNEGO fixtures carry explicit family opt-in and membership instead of relying on secure defaults. | Task 22: offline helper red/green; live realm cases not executed. |
 | FU-TRN-R01 | major | Configured checked kpasswd replies bypass the runtime encryption policy | fixed | `checked_replies_enforce_legacy_policy`; commit containing this row | Checked kpasswd exchanges enforce outgoing and authenticated reply key policy. Post-delivery refusal is exactly one unknown outcome. RequestOptions gains optional crypto_policy; BuiltKpasswdRequest retains its policy. | Task 22 u3 red/green real TCP reply matrix for RC4 and DES3, default rejection and explicit opt-in success. |
 

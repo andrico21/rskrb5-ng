@@ -24,7 +24,7 @@ use rskrb5_ng::{
         principal::Principal, transport::KdcProtocol,
     },
     config::Config,
-    crypto::KerberosEtype,
+    crypto::{CryptoPolicy, KerberosEtype},
     keytab::Keytab,
     service::Validator,
 };
@@ -236,7 +236,7 @@ mod tests {
             assert_eq!(ticket.session_key.etype, AES256_ETYPE);
 
             let service_keytab = testuser2_keytab()?;
-            let validated = validate_service_ticket(&ticket, &service_keytab, [TESTUSER2])?;
+            let validated = validate_service_ticket(&ticket, &service_keytab, [TESTUSER2], false)?;
             let pac = validated
                 .pac
                 .as_ref()
@@ -273,7 +273,7 @@ mod tests {
             assert_eq!(ticket.session_key.etype, RC4_HMAC_ETYPE);
 
             let service_keytab = syshttp_keytab()?;
-            let validated = validate_service_ticket(&ticket, &service_keytab, [SYSHTTP])?;
+            let validated = validate_service_ticket(&ticket, &service_keytab, [SYSHTTP], true)?;
             let pac = validated
                 .pac
                 .as_ref()
@@ -306,7 +306,7 @@ mod tests {
             assert_eq!(ticket.service.name(), format!("HTTP/{USER_SERVICE_HOST}"));
 
             let service_keytab = testuser2_keytab()?;
-            let validated = validate_service_ticket(&ticket, &service_keytab, [TESTUSER2])?;
+            let validated = validate_service_ticket(&ticket, &service_keytab, [TESTUSER2], false)?;
             let pac = validated
                 .pac
                 .as_ref()
@@ -887,16 +887,50 @@ mod tests {
         ticket: &TgsRepSession,
         keytab: &Keytab,
         keytab_principal: [&str; N],
+        rc4: bool,
     ) -> Result<ValidatedApReq, Box<dyn Error>> {
         let etype = KerberosEtype::from_etype_id(ticket.session_key.etype)
             .ok_or("ticket etype is supported")?;
         let confounder = vec![0x42_u8; etype.confounder_len()];
         let timestamp = SystemTime::now();
-        let ap_req = build_ap_req_with_confounder(ticket, ApReq::new(), timestamp, 0, &confounder)?;
+        let (seconds, cusec) = service_authenticator_time(timestamp)?;
+        let policy = CryptoPolicy::from_libdefaults(&ad_config(rc4)?.libdefaults)?;
+        let mut options = ApReq::new();
+        options.crypto_policy = Some(policy.clone());
+        let ap_req = build_ap_req_with_confounder(ticket, options, seconds, cusec, &confounder)?;
         let mut validator = Validator::new(keytab)
+            .with_crypto_policy(policy)
             .with_now(timestamp)
             .with_keytab_principal(keytab_principal);
         Ok(validator.validate_ap_req(&ap_req.der)?)
+    }
+
+    /// Split a clock sample into the AP builder's whole seconds and microseconds.
+    fn service_authenticator_time(time: SystemTime) -> Result<(SystemTime, u32), Box<dyn Error>> {
+        let elapsed = time.duration_since(SystemTime::UNIX_EPOCH)?;
+        Ok((
+            SystemTime::UNIX_EPOCH
+                .checked_add(Duration::from_secs(elapsed.as_secs()))
+                .ok_or("time overflow")?,
+            elapsed.subsec_micros(),
+        ))
+    }
+
+    /// Fractional wall clocks remain valid input to the live service-ticket helper.
+    #[test]
+    fn ad_service_time_is_whole_seconds() -> Result<(), Box<dyn Error>> {
+        let sample = SystemTime::UNIX_EPOCH
+            .checked_add(Duration::from_millis(1500))
+            .ok_or("time")?;
+        let (seconds, micros) = service_authenticator_time(sample)?;
+        assert_eq!(
+            seconds
+                .duration_since(SystemTime::UNIX_EPOCH)?
+                .subsec_nanos(),
+            0
+        );
+        assert_eq!(micros, 500_000);
+        Ok(())
     }
 
     /// Loads the testuser1 keytab, honouring its overrides.
