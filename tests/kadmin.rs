@@ -57,6 +57,37 @@ mod tests {
         Ok(())
     }
 
+    /// Full-message AP encryption preserves the concrete crypto source.
+    #[test]
+    fn full_message_retains_ap_crypto_source() -> Result<(), TestError> {
+        use core::error::Error as _;
+        use rskrb5_ng::{error::Crypto, kadmin::PasswordEncryption};
+
+        let fixture = Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)?;
+        let failure = build_change_password_message_with_confounders(
+            rasn_principal_name(1, ["testuser1"])?,
+            "TEST.GOKRB5",
+            &ChangePasswdData::new(Password::copy_from_str("new-password")),
+            fixture.ap_req.ticket,
+            &EncryptionKey::new(18, vec![0; 1]),
+            ChangePasswdMessageOptions::new(
+                kerberos_time(1_893_553_454)?,
+                123,
+                42,
+                ipv4_host_address([127, 0, 0, 1]),
+            ),
+            PasswordEncryption::new(EncryptionKey::new(18, vec![0x44; 32]), &[0; 16], &[0; 16]),
+        )
+        .err()
+        .context("invalid AP key")?;
+        assert!(
+            matches!(failure, KadminError::Crypto(_)),
+            "AP crypto classified as decoding"
+        );
+        assert!(failure.source().context("AP crypto source")?.is::<Crypto>());
+        Ok(())
+    }
+
     /// Password byte equality rejects other values while diagnostics remain explicitly redacted.
     #[test]
     fn password_bytes_compare_and_identify_redaction() -> Result<(), TestError> {

@@ -7,6 +7,11 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Full-message kadmin errors (FU-TRN-R05): AP-REQ and AP-REP crypto/random failures
+now use `Kadmin::Crypto` and `Kadmin::Random`, with their original typed sources,
+rather than `Kadmin::Decode`. Update matches that previously treated encryption
+failure as malformed input; password delivery-outcome rules are unchanged.
+
 Token staging (FU-SPN-R11): token encoding and header parsing now erase their
 internal credential buffers, including nested DER allocations and error exits.
 Header encoding avoids a separate base64 string. Public returned `Vec<u8>` and

@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Full-message kadmin AP-REQ/AP-REP adapters retain typed crypto and randomness
+  causes instead of classifying them as string-only decode failures (FU-TRN-R05).
+
 - SPNEGO token encoders and header decoders now erase first-party credential
   staging, including nested DER buffers and parse-failure exits; header encoding
   writes base64 directly into the returned string (FU-SPN-R11).

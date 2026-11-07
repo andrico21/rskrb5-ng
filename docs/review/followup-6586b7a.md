@@ -297,6 +297,8 @@ Original review rows:
 
 | FU-SPN-R11 | minor | Token encoding and header decoding still drop first-party credential staging without erasure | fixed | `credential_staging_is_erased` red/green; scoped lib/tests clippy; commit `spnego: erase token and header staging (FU-SPN-R11)` | First-party mechanism/init/response/full-token DER staging and decoded header bytes are zeroizing; base64 writes directly to returned header. Public return ownership unchanged. | task-22d-rskrb5-ng-zero-open-items.log: genuine AP-REQ staging observer, exact nested owner events, successful parse and malformed DER parse erasure. |
 
+| FU-TRN-R05 | minor | Full-message kadmin builder still stringifies AP-REQ crypto failures | fixed | `full_message_retains_ap_crypto_source` red/green; kadmin43 passed; commit `kadmin: preserve AP crypto error sources (FU-TRN-R05)` | AP-REQ/AP-REP adapters return Kadmin::Crypto/Random with typed sources rather than string-only Decode. | task-22d-rskrb5-ng-zero-open-items.log: public full-message builder with invalid AES key fails exact classification before fix and retains downcastable Crypto after. |
+
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 
 - RVX-u1-01 → FU-TST-01 (also: the test never exercises the router wiring cited by the review doc; covered by FU-TST-01's Proof)

@@ -38,6 +38,8 @@ where
 /// Map an AP-REQ error onto the kadmin [`Error`].
 pub(super) fn ap_req_error(error: error::ApReq) -> Error {
     match error {
+        error::ApReq::Crypto(source) => Error::Crypto(source),
+        error::ApReq::Random(source) => Error::Random(source),
         error::ApReq::Decode { target, message } => Error::Decode { target, message },
         error::ApReq::Encode { target, message } => Error::Encode { target, message },
         error::ApReq::InvalidMessage {
@@ -53,9 +55,7 @@ pub(super) fn ap_req_error(error: error::ApReq) -> Error {
         | error::ApReq::KeyEtypeMismatch {
             key_etype: _,
             encrypted_data_etype: _,
-        }
-        | error::ApReq::Random(_)
-        | error::ApReq::Crypto(_)) => Error::Decode {
+        }) => Error::Decode {
             target: "AP-REQ",
             message: other.to_string(),
         },
@@ -65,6 +65,8 @@ pub(super) fn ap_req_error(error: error::ApReq) -> Error {
 /// Map an AP-REP error onto the kadmin [`Error`].
 pub(super) fn ap_rep_error(error: error::ApRep) -> Error {
     match error {
+        error::ApRep::Crypto(source) => Error::Crypto(source),
+        error::ApRep::Random(source) => Error::Random(source),
         error::ApRep::Decode { target, message } => Error::Decode { target, message },
         error::ApRep::Encode { target, message } => Error::Encode { target, message },
         error::ApRep::InvalidMessage {
@@ -80,9 +82,7 @@ pub(super) fn ap_rep_error(error: error::ApRep) -> Error {
         | error::ApRep::KeyEtypeMismatch {
             key_etype: _,
             encrypted_data_etype: _,
-        }
-        | error::ApRep::Random(_)
-        | error::ApRep::Crypto(_)) => Error::Decode {
+        }) => Error::Decode {
             target: "AP-REP",
             message: other.to_string(),
         },
