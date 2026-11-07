@@ -56,6 +56,10 @@ policy" below have the details.
 
 ## Behaviour changes before the review backlog
 
+Gate wiring accepts only the sanctioned fail-closed command blocks
+(FU-GATE-R01). Keep required CI commands as direct run steps and prek commands
+in the success-dependent chain; shell wrappers that merely mention them fail.
+
 Release automation must pass a valid commit to `find-tag` (FU-CI-R01). Invalid
 objects and Git lookup failures now exit nonzero; only verified untagged commits
 produce the successful no-dispatch result.

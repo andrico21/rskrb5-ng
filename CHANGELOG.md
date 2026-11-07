@@ -87,6 +87,9 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Workflow wiring validation now requires executed gate commands, rejecting
+  printed, commented, conditional or failure-swallowing substitutes (FU-GATE-R01).
+
 - Release tag discovery fails on invalid commit IDs or Git failures instead of
   reporting a successful non-release invocation (FU-CI-R01).
 

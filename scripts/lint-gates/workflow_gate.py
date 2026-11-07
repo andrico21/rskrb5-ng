@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import argparse
 import re
+import shlex
+import json
 import sys
 import tomllib
 from pathlib import Path
@@ -59,6 +61,75 @@ USES: Final = re.compile(
     r"^\s*(?:-\s+)?uses:\s*([\w.-]+/[\w./-]+)@(\S+)(?:\s+#\s*(\S+))?"
 )
 
+SELF_TEST_LOOP: Final = REQUIRED[0] + " || exit 1; done"
+CI_NEGATIVE: Final = (
+    "grep -rn lint-migration src tests examples fuzz && exit 1\ntest $? -eq 1"
+)
+HOOK_NEGATIVE: Final = (
+    "{ rg -n lint-migration src tests examples fuzz; test $? -eq 1; }"
+)
+
+
+def run_blocks(job: str) -> list[str]:
+    """Read only run scalars at step indentation; reject unsupported scalar forms."""
+    lines = job.splitlines()
+    blocks = []
+    for index, line in enumerate(lines):
+        match = re.fullmatch(r"(?:      - |        )run: (.*)", line)
+        if not match:
+            continue
+        value = match[1]
+        if value == "|":
+            body = []
+            for following in lines[index + 1 :]:
+                if following.strip() and not following.startswith("          "):
+                    break
+                body.append(following[10:])
+            value = "\n".join(body).strip()
+        blocks.append(value)
+    return blocks
+
+
+def effective_commands(blocks: list[str], hook: bool = False) -> set[str]:
+    """Accept only the documented fail-closed command grammar, never shell substrings."""
+    accepted = set()
+    for block in blocks:
+        if hook:
+            try:
+                argv = shlex.split(block)
+            except ValueError:
+                continue
+            if len(argv) != 3 or argv[:2] != ["bash", "-c"]:
+                continue
+            script = argv[2]
+            prefix = "export PYTHONDONTWRITEBYTECODE=1; "
+            if not script.startswith(prefix):
+                continue
+            script = script[len(prefix) :]
+            script = script.replace(SELF_TEST_LOOP, "SELF_TEST_LOOP").replace(
+                HOOK_NEGATIVE, "NEGATIVE_SEARCH"
+            )
+            commands = script.split(" && ")
+        else:
+            commands = [
+                block.replace(SELF_TEST_LOOP, "SELF_TEST_LOOP").replace(
+                    CI_NEGATIVE, "NEGATIVE_SEARCH"
+                )
+            ]
+        mapped = []
+        for command in commands:
+            if command == "SELF_TEST_LOOP":
+                mapped.append(REQUIRED[0])
+            elif command == "NEGATIVE_SEARCH":
+                mapped.append(REQUIRED[-1])
+            elif command in REQUIRED[1:-1]:
+                mapped.append(command)
+            else:
+                mapped = []
+                break
+        accepted.update(mapped)
+    return accepted
+
 
 def job_text(workflow: str, job: str) -> str:
     """The job's lines without comment lines; empty when the job is absent."""
@@ -85,9 +156,19 @@ def wiring_errors(workflow: str, prek: str) -> list[str]:
     job = job_text(workflow, "lint-gates")
     if not job:
         errors.append("ci.yml has no lint-gates job")
-    for key in ("continue-on-error:", "if:"):
+    for key in (
+        "continue-on-error:",
+        "if:",
+        "shell:",
+        "defaults:",
+        "working-directory:",
+    ):
         if re.search(rf"(?m)^\s+(?:-\s+)?{re.escape(key)}", job):
             errors.append(f"the lint-gates job may not use `{key}`")
+    if re.search(r"(?m)^defaults:", workflow):
+        errors.append("workflow defaults may not alter gate execution")
+    if re.search(r"(?m)^        (?!run:)[\w-]+: [|>]", job):
+        errors.append("non-run multiline step values are unsupported in lint-gates")
     hooks = [
         hook
         for repo in tomllib.loads(prek).get("repos", [])
@@ -97,10 +178,12 @@ def wiring_errors(workflow: str, prek: str) -> list[str]:
     entry = hooks[0].get("entry", "") if len(hooks) == 1 else ""
     if len(hooks) != 1:
         errors.append(f"prek.toml needs exactly one lint-gates hook, has {len(hooks)}")
+    ci_commands = effective_commands(run_blocks(job))
+    hook_commands = effective_commands([entry], hook=True)
     for command in REQUIRED:
-        if command not in job:
+        if command not in ci_commands:
             errors.append(f"ci.yml lint-gates does not run `{command}`")
-        if command not in entry:
+        if command not in hook_commands:
             errors.append(f"prek.toml lint-gates does not run `{command}`")
     return errors
 
@@ -165,24 +248,51 @@ def self_test() -> int:
     assert "'docs/**/*.md'" in job_text(actual_ci, "docs-validate"), (
         "nested docs omitted"
     )
-    run = "".join(f"      - run: {command}\n" for command in REQUIRED)
+    commands = [SELF_TEST_LOOP, *REQUIRED[1:-1]]
+    run = "".join(f"      - run: {command}\n" for command in commands)
+    run += (
+        "      - run: |\n          " + CI_NEGATIVE.replace("\n", "\n          ") + "\n"
+    )
     ci = (
         "jobs:\n  lint-gates:\n    runs-on: ubuntu-latest\n    steps:\n"
         + run
         + "  next:\n    steps: []\n"
     )
     prek = (
-        '[[repos]]\nrepo = "local"\nhooks = [{ id = "lint-gates", entry = "'
-        + " && ".join(command.replace('"', '\\"') for command in REQUIRED)
-        + '" }]\n'
+        '[[repos]]\nrepo = "local"\nhooks = [{ id = "lint-gates", entry = '
+        + json.dumps(
+            "bash -c 'export PYTHONDONTWRITEBYTECODE=1; "
+            + " && ".join([*commands, HOOK_NEGATIVE])
+            + "'"
+        )
+        + " }]\n"
     )
     assert wiring_errors(ci, prek) == [], wiring_errors(ci, prek)
+    for wrapper in [
+        "echo '{command}'",
+        "printf '%s' '{command}'",
+        "# {command}",
+        "if false; then {command}; fi",
+        "{command} || true",
+        "cat <<'EOF'\n{command}\nEOF",
+    ]:
+        fake = ci.replace(
+            "run: " + REQUIRED[1], "run: " + wrapper.format(command=REQUIRED[1])
+        )
+        assert wiring_errors(fake, prek), wrapper
+        fake_hook = prek.replace(
+            REQUIRED[1],
+            wrapper.format(command=REQUIRED[1])
+            .replace('"', '\\"')
+            .replace("\n", "\\n"),
+        )
+        assert wiring_errors(ci, fake_hook), wrapper
     ad = "python3 scripts/check-ad-integration-env-smoke.py"
     dropped = ci.replace(f"      - run: {ad}\n", f"      # - run: {ad}\n")
     assert wiring_errors(dropped, prek) == [f"ci.yml lint-gates does not run `{ad}`"]
-    assert wiring_errors(ci, prek.replace(ad, "true")) == [
-        f"prek.toml lint-gates does not run `{ad}`"
-    ]
+    assert f"prek.toml lint-gates does not run `{ad}`" in wiring_errors(
+        ci, prek.replace(ad, "true")
+    )
     advisory = ci.replace(
         "    steps:\n", "    continue-on-error: true\n    steps:\n", 1
     )
