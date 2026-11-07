@@ -443,16 +443,21 @@ run_tests() {
     return 1
   fi
 
-  local name
-  local -A overrides=()
+  # Indexed arrays and ${!name+set}, not `local -A` or `[[ -v ]]`: macOS ships bash 3.2.
+  local name index=0
+  local -a override_names=() override_values=()
   for name in "${ENV_NAMES[@]}"; do
-    if [[ -v "$name" ]]; then overrides["$name"]="${!name}"; fi
+    if [[ -n "${!name+set}" ]]; then
+      override_names+=("$name")
+      override_values+=("${!name}")
+    fi
   done
   # shellcheck disable=SC1090
   source "$ENV_FILE"
-  for name in "${!overrides[@]}"; do
-    printf -v "$name" '%s' "${overrides[$name]}"
-    export "$name"
+  while ((index < ${#override_names[@]})); do
+    printf -v "${override_names[index]}" '%s' "${override_values[index]}"
+    export "${override_names[index]}"
+    index=$((index + 1))
   done
   local configure_resolver_enabled
   configure_resolver_enabled="$(default_configure_resolver_enabled)"
