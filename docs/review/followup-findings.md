@@ -25,3 +25,4 @@ is a parity feature, not a defect>`.
 | critic:critics-fb19af4/u4.md#U4-07 | FU-PAC-R06 | no |
 | executor:todo-16#transit-validator-rustdoc | FU-DOC-R02 | no |
 | critic:critics-fb19af4/u5.md#U5-01 | FU-CFG-R01 | no |
+| critic:critics-fb19af4/u5.md#U5-02 | FU-CFG-R02 | no |

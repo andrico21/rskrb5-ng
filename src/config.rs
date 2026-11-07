@@ -1386,6 +1386,8 @@ struct Line {
     number: usize,
     /// The line text after comment stripping and trimming.
     text: String,
+    /// Decoded scalar content, distinct from source whitespace and syntax.
+    value: Option<String>,
 }
 
 include!("config/sections.rs");
@@ -2087,6 +2089,7 @@ impl IncludeExpansion {
                 &Line {
                     number: index.saturating_add(1),
                     text: cleaned.to_owned(),
+                    value: None,
                 },
                 &mut self.profile,
             )?;

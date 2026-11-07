@@ -23,6 +23,21 @@ mod tests {
     /// Process-local sequence avoids clock-resolution assumptions.
     static NEXT: AtomicU64 = AtomicU64::new(0);
 
+    /// MIT quoted strings preserve significant edge whitespace after escape decoding.
+    #[test]
+    fn quoted_values_preserve_edge_whitespace() -> Result<(), Box<dyn Error>> {
+        let config = Config::parse(
+            "[appdefaults]\n option = \"  padded  \"\n[libdefaults]\n default_keytab_name = \"\\tFILE:/key\\n\"\n default_realm =  EXAMPLE  \n",
+        )?;
+        assert_eq!(
+            config.appdefault("app", "REALM", "option"),
+            Some("  padded  ")
+        );
+        assert_eq!(config.libdefaults.default_keytab_name, "\tFILE:/key\n");
+        assert_eq!(config.libdefaults.default_realm, "EXAMPLE");
+        Ok(())
+    }
+
     /// Alias spellings share first-value and final-marker identity across files.
     #[test]
     fn address_aliases_share_profile_order() -> Result<(), Box<dyn Error>> {

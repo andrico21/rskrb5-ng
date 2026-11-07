@@ -54,6 +54,8 @@ Critic round `critics-fb19af4`, unit u5:
 | --- | --- | --- | --- | --- | --- | --- |
 | FU-CFG-R01 | minor | The noaddresses alias composes by sorted key rather than first occurrence | fixed | `address_aliases_share_profile_order`; commit containing this row | no_addresses/noaddresses share first-value and finality identity, within/across sources; first false fails closed. | task-22b red accepted-first-true errored; green both orders and final markers. MIT prof_parse.c preserves ordered relations; alias is this crate's extension. |
 
+| FU-CFG-R02 | minor | Reconstructing assignments loses significant quoted whitespace | fixed | `quoted_values_preserve_edge_whitespace`; commit containing this row | Decoded quoted values retain edge spaces, tabs and newlines; unquoted assignment whitespace still trims. | MIT prof_parse.c parse_quoted_string/need_double_quotes preserve content. Red padded became unpadded; green byte-exact appdefault/keytab controls. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |

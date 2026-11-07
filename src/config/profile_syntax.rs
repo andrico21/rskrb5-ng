@@ -120,6 +120,7 @@ impl State {
                 Line {
                     number: line.number,
                     text: format!("{key} = {decoded}"),
+                    value: Some(decoded),
                 },
             );
             if tag_final || value_final {

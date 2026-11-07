@@ -96,6 +96,9 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Quoted profile values preserve leading/trailing whitespace after escape
+  decoding, including credential names and appdefaults (FU-CFG-R02).
+
 - `no_addresses` and `noaddresses` now share first-occurrence precedence and
   final markers instead of overwriting by lexical spelling (FU-CFG-R01).
 

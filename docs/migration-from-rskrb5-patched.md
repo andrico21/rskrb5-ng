@@ -61,6 +61,10 @@ values to or from this crate needs the same versions.
 
 ## New configuration keys
 
+Quoted values (FU-CFG-R02): spaces, tabs and newlines inside quotes are now
+literal content, including at the edges. Remove accidental quoted whitespace
+from credential paths; unquoted assignment whitespace continues to be ignored.
+
 Address aliases (FU-CFG-R01): the first occurrence of either `no_addresses`
 or `noaddresses` wins. A final marker on either spelling closes both; an
 initial false value cannot be repaired by a later true alias.

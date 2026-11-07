@@ -13,7 +13,10 @@ fn parse_assignment<'line>(
             text: line.text.clone(),
         });
     };
-    Ok((key.trim(), value.trim()))
+    Ok((
+        key.trim(),
+        line.value.as_deref().unwrap_or_else(|| value.trim()),
+    ))
 }
 
 /// Distinguish root-source I/O from failures in included files at the read boundary.
