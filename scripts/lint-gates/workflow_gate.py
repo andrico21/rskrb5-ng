@@ -26,6 +26,7 @@ import shlex
 import json
 import sys
 import tomllib
+import workflow_yaml
 from pathlib import Path
 from contextlib import redirect_stdout
 from io import StringIO
@@ -94,6 +95,8 @@ def effective_commands(blocks: list[str], hook: bool = False) -> set[str]:
     """Accept only the documented fail-closed command grammar, never shell substrings."""
     accepted = set()
     for block in blocks:
+        if "SELF_TEST_LOOP" in block or "NEGATIVE_SEARCH" in block:
+            continue
         if hook:
             try:
                 argv = shlex.split(block)
@@ -153,6 +156,24 @@ def job_text(workflow: str, job: str) -> str:
 
 def wiring_errors(workflow: str, prek: str) -> list[str]:
     errors = []
+    try:
+        structure = workflow_yaml.structure(workflow)
+        roots = [index for index, line in enumerate(structure) if line.indent == 0]
+        jobs = workflow_yaml.only(structure, roots, "jobs", "workflow")
+        gates = workflow_yaml.only(
+            structure, workflow_yaml.children(structure, jobs), "lint-gates", "jobs"
+        )
+        body = workflow_yaml.subtree(structure, gates)
+        seen_run = False
+        for line in body:
+            if line.item:
+                seen_run = False
+            if line.key == "run":
+                if seen_run:
+                    errors.append("duplicate run key in gate step")
+                seen_run = True
+    except RuntimeError as error:
+        errors.append(str(error))
     job = job_text(workflow, "lint-gates")
     if not job:
         errors.append("ci.yml has no lint-gates job")
@@ -268,6 +289,14 @@ def self_test() -> int:
         + " }]\n"
     )
     assert wiring_errors(ci, prek) == [], wiring_errors(ci, prek)
+    assert wiring_errors(ci.replace(SELF_TEST_LOOP, "SELF_TEST_LOOP"), prek)
+    assert wiring_errors(
+        ci.replace(
+            "      - run: " + REQUIRED[1],
+            "      - run: " + REQUIRED[1] + "\n        run: echo skipped",
+        ),
+        prek,
+    )
     for wrapper in [
         "echo '{command}'",
         "printf '%s' '{command}'",
