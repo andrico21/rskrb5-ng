@@ -1566,6 +1566,11 @@ impl Tokio {
 
     /// Perform a TGT AS login using password credentials and KDC preauth hints.
     ///
+    /// # Security
+    /// The caller owns and must erase the borrowed password and any caller-made
+    /// copies. Borrow from a `zeroize::Zeroizing<Vec<u8>>` to erase input on drop;
+    /// internal erasure does not erase the supplied allocation.
+    ///
     /// # Errors
     ///
     /// Returns an error when the AS-REQ cannot be built from the password, the
@@ -1597,6 +1602,11 @@ impl Tokio {
     }
 
     /// Perform an AS login for an explicit service using password credentials and KDC preauth hints.
+    ///
+    /// # Security
+    /// The caller owns and must erase the borrowed password and any caller-made
+    /// copies. Borrow from a `zeroize::Zeroizing<Vec<u8>>` to erase input on drop;
+    /// internal erasure does not erase the supplied allocation.
     ///
     /// # Errors
     ///
@@ -1659,6 +1669,11 @@ impl Tokio {
 
     /// Perform a password TGT AS login using KDCs discovered from `krb5.conf`.
     ///
+    /// # Security
+    /// The caller owns and must erase the borrowed password and any caller-made
+    /// copies. Borrow from a `zeroize::Zeroizing<Vec<u8>>` to erase input on drop;
+    /// internal erasure does not erase the supplied allocation.
+    ///
     /// # Errors
     ///
     /// Returns an error when the AS-REQ cannot be built from the password, the
@@ -1689,6 +1704,11 @@ impl Tokio {
     }
 
     /// Perform a password AS login for an explicit service using KDCs discovered from `krb5.conf`.
+    ///
+    /// # Security
+    /// The caller owns and must erase the borrowed password and any caller-made
+    /// copies. Borrow from a `zeroize::Zeroizing<Vec<u8>>` to erase input on drop;
+    /// internal erasure does not erase the supplied allocation.
     ///
     /// # Errors
     ///

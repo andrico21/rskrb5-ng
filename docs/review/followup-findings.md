@@ -25,3 +25,4 @@ is a parity feature, not a defect>`.
 | critic:critics-fb19af4/u3.md#U3-02 | FU-TST-R04 | no |
 | critic:critics-fb19af4/u3.md#U3-03 | FU-TST-R05 | no |
 | critic:critics-fb19af4/u3.md#U3-04 | FU-TRN-R02 | no |
+| critic:critics-fb19af4/u3.md#U3-05 | FU-TRN-R03 | no |
