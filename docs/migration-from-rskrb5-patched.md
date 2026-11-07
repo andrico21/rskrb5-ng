@@ -38,6 +38,11 @@ values to or from this crate needs the same versions.
 
 ## New configuration keys
 
+Keytab diagnostics (FU-CLI-R05) now report usable enctypes for the exact client
+realm and ordered components, not every principal in that realm. Provision keys
+for that client when missing-key diagnostics appear; advisory name type does
+not affect selection.
+
 Explicit authenticator times (FU-CLI-R03): pass whole seconds and a separate
 microsecond value from 0 through 999999 to PA/TGS/AP builders. Fractions and
 out-of-range microseconds now return `error::Client::Encode`; whole-second

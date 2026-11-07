@@ -87,6 +87,10 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Keytab diagnostics count only keys for the client's realm and ordered name
+  components, ignoring advisory name type; other users' keys no longer hide
+  missing credentials (FU-CLI-R05).
+
 - Complete PA/TGS/AP authenticator builders reject fractional explicit seconds
   and microseconds above 999999 before encryption (`Client::Encode`, FU-CLI-R03).
 

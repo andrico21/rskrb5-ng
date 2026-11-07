@@ -660,7 +660,7 @@ pub struct TokioClientDiagnostics {
     pub default_tkt_enctypes: Vec<i32>,
     /// Configured preferred preauthentication type IDs.
     pub preferred_preauth_types: Vec<i32>,
-    /// Key encryption type IDs present for the client realm in the keytab.
+    /// Key encryption type IDs for the client's realm and ordered components.
     pub keytab_enctypes: Vec<i32>,
     /// UDP KDC endpoints discovered from config or DNS.
     #[cfg_attr(feature = "serde", serde(rename = "UDPKDCs"))]
@@ -1409,7 +1409,7 @@ impl Tokio {
         }
         let keytab_enctypes = match self.credentials.as_ref() {
             Some(TokioClientCredentials::Keytab(keytab)) => {
-                let enctypes = keytab_realm_enctypes(keytab, &self.client.realm);
+                let enctypes = keytab_client_enctypes(keytab, &self.client);
                 record_keytab_enctype_diagnostics(
                     &mut errors,
                     &enctypes,
@@ -2459,13 +2459,15 @@ const fn credential_source(credentials: Option<&TokioClientCredentials>) -> &'st
     }
 }
 
-/// Sorted, de-duplicated enctypes of the keytab entries for `realm`.
+/// Sorted, de-duplicated enctypes for the client identity, ignoring advisory name type.
 #[cfg(feature = "tokio")]
-fn keytab_realm_enctypes(keytab: &Keytab, realm: &str) -> Vec<i32> {
+fn keytab_client_enctypes(keytab: &Keytab, client: &Principal) -> Vec<i32> {
     let mut enctypes = keytab
         .entries()
         .iter()
-        .filter(|entry| entry.principal.realm == realm)
+        .filter(|entry| {
+            entry.principal.realm == client.realm && entry.principal.components == client.components
+        })
         .map(|entry| entry.key.etype)
         .collect::<Vec<_>>();
     enctypes.sort_unstable();

@@ -11,6 +11,36 @@ use super::*;
 mod tests {
     use super::*;
 
+    /// Same-realm keys for another client are unavailable; advisory name type is ignored.
+    #[test]
+    fn diagnostics_require_client_keys() -> Result<(), TestError> {
+        let cases: [(&str, Vec<i32>); 2] = [("bob", Vec::new()), ("alice", vec![17, 18, 19, 20])];
+        for (name, expected) in cases {
+            let mut keys = Keytab::new();
+            let enctypes: [(i32, usize); 4] = [(17, 16), (18, 32), (19, 16), (20, 32)];
+            for (etype, length) in enctypes {
+                keys.entries_mut().push(KeytabEntry::new(
+                    KeytabPrincipal::new("TEST.GOKRB5", 10, [name]),
+                    1_893_553_440,
+                    1,
+                    EncryptionKey::new(etype, vec![0x42; length]),
+                    1,
+                ));
+            }
+            let client = Tokio::with_keytab(
+                config_with_kdc_server("127.0.0.1:88")?,
+                KdcProtocol::Tcp,
+                Principal::user("TEST.GOKRB5", "alice"),
+                keys,
+            );
+            let diagnostics = runtime()?.block_on(client.diagnostics());
+            assert_eq!(diagnostics.keytab_enctypes, expected);
+            assert_eq!(diagnostics.errors.len(), if name == "bob" { 4 } else { 0 });
+            assert_eq!(diagnostics.is_ok(), name == "alice");
+        }
+        Ok(())
+    }
+
     /// Pins that client diagnostics report the keytab and the KDC state.
     #[cfg(all(feature = "tokio", feature = "serde"))]
     #[test]

@@ -37,6 +37,8 @@ Critic round `critics-fb19af4`, unit u2:
 
 | FU-TST-R03 | nit | Several renewal tests still advertise the behavior that the fixes removed | fixed | Existing encoded-request/exact-error assertions unchanged; client target; commit containing this row | none; names/docs now say reacquisition, unavailable cache-only credentials, rejected lists and inclusive refresh threshold | task-22b: old names conflicted with no-RENEW bits/NoClientCredentials assertions. Live manifest reference remapped; historical archived plans retain historical names. |
 
+| FU-CLI-R05 | minor | Keytab diagnostics count keys for other principals as usable client keys | fixed | `diagnostics_require_client_keys`; commit containing this row | Diagnostics filter realm and ordered client components, ignoring advisory name type; other principals' keys now yield missing-key errors. | task-22b: Bob-only keytab red reported four keys; green empty with four errors, Alice/name-type10 control healthy. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
