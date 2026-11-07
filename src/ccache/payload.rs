@@ -1,16 +1,16 @@
 //! Value-attached erasure of credential payloads.
 
-use zeroize::{Zeroize as _, Zeroizing};
-
-use super::{AuthorizationDataEntry, Credential};
-
 #[cfg(feature = "serde")]
 use core::fmt;
+
 #[cfg(feature = "serde")]
 use serde::{
     Deserializer, Serialize as _, Serializer,
     de::{SeqAccess, Visitor},
 };
+use zeroize::{Zeroize as _, Zeroizing};
+
+use super::{AuthorizationDataEntry, Credential};
 
 /// Serialize payload bytes without creating an intermediate copy.
 /// # Errors

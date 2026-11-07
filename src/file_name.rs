@@ -239,9 +239,10 @@ mod tests {
     /// Interrupted staging never publishes a partial primary and removes the private stage.
     #[test]
     fn primary_partial_stage_cannot_hide_concurrent_saved_cache() -> Result<(), Box<dyn StdError>> {
-        use crate::ccache::{CCache, Principal};
         use core::time::Duration;
         use std::sync::mpsc;
+
+        use crate::ccache::{CCache, Principal};
         let directory = env::temp_dir().join(format!(
             "primary-overlap-{}",
             SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()

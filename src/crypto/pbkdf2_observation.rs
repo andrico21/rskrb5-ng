@@ -39,9 +39,9 @@ mod tests {
         };
         for (id, family, default) in [
             (17_i32, Family::AesSha1, 4096_u32),
-            (18, Family::AesSha1, 4096),
-            (19, Family::AesSha2, 32768),
-            (20, Family::AesSha2, 32768),
+            (18_i32, Family::AesSha1, 4096),
+            (19_i32, Family::AesSha2, 0x8000),
+            (20_i32, Family::AesSha2, 0x8000),
         ] {
             for minimum in [default, default.saturating_add(1), 1] {
                 let defaults = LibDefaults::new().with_min_s2k_iterations(family, minimum)?;
