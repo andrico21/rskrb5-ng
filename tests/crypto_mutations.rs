@@ -22,13 +22,26 @@ mod tests {
     /// Fallible test result.
     type TestError = Box<dyn Error>;
 
-    /// RFC 1320 Appendix A MD4 vector through the RC4 random-to-key API.
+    /// MIT direct random-to-key preserves the seed and RFC 6229's independent keystream.
     #[test]
-    fn rc4_random_to_key_matches_md4_vector() {
+    fn rc4_random_to_key_preserves_seed() -> Result<(), TestError> {
+        let seed = hex::decode("0102030405060708090a0b0c0d0e0f10")?;
+        let key = Rc4HmacEtype::random_to_key(&seed)?;
+        assert_eq!(hex::encode(&key), "0102030405060708090a0b0c0d0e0f10");
         assert_eq!(
-            hex::encode(Rc4HmacEtype::random_to_key(b"abc")),
-            "a448017aaf21d8525fc10ae87aa6729d"
+            Rc4HmacEtype::decrypt_data(&key, &hex::decode("9ac7cc9a609d1ef7b2932899cde41b97")?)?,
+            [0; 16]
         );
+        assert_eq!(
+            Rc4HmacEtype::random_to_key(&hex::decode("000102030405060708090a0b0c0d0e0f")?)?,
+            hex::decode("000102030405060708090a0b0c0d0e0f")?
+        );
+        for length in [0_usize, 3, 15, 17] {
+            assert!(
+                matches!(Rc4HmacEtype::random_to_key(&vec![0; length]), Err(Crypto::InvalidKeyLength { expected: 16, actual }) if actual == length)
+            );
+        }
+        Ok(())
     }
 
     /// RFC 2202 case 1 HMAC-MD5 with the required 16-byte protocol key.

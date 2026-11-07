@@ -1,5 +1,4 @@
 # Migrating from rskrb5-patched
-
 `rskrb5-patched` 0.2.x users move to `rskrb5-ng` 0.3. This guide lists every
 change a caller can see: the new package and library names, renamed paths,
 constructors that replace struct literals, changed signatures and error
@@ -1560,7 +1559,7 @@ kpasswd result helpers, `MicToken::verify`/`WrapToken::verify` and others).
 - `crypto::Rc4HmacEtype::hmac_len`: `pub const fn hmac_len() -> usize`.
 - `crypto::Rc4HmacEtype::default_s2kparams`: `pub const fn default_s2kparams() -> &'static str`.
 - `crypto::Rc4HmacEtype::string_to_key`: `pub fn string_to_key(secret: &[u8], _salt: &[u8], _s2kparams: &str) -> Result<Vec<u8>, Error>`.
-- `crypto::Rc4HmacEtype::random_to_key`: `pub fn random_to_key(bytes: &[u8]) -> Vec<u8>`.
+- `crypto::Rc4HmacEtype::random_to_key`: `pub fn random_to_key(bytes: &[u8]) -> Result<Vec<u8>, Error>`. Supply exactly sixteen random bytes and handle `InvalidKeyLength` (FU-CRY-R01). The key equals that seed; password derivation remains `string_to_key`.
 - `crypto::Rc4HmacEtype::derive_key`: `pub fn derive_key(protocol_key: &[u8], usage: &[u8]) -> Result<Vec<u8>, Error>`.
 - `crypto::Rc4HmacEtype::checksum`: `pub fn checksum(protocol_key: &[u8], data: &[u8], usage: u32) -> Result<Vec<u8>, Error>`.
 - `crypto::Rc4HmacEtype::verify_checksum`: `pub fn verify_checksum(protocol_key: &[u8], data: &[u8], checksum: &[u8], usage: u32) -> bool`.
