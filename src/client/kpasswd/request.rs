@@ -153,7 +153,7 @@ mod tests {
         Ok(())
     }
 
-    /// Fractional caller timestamps are rejected before request construction.
+    /// Legacy password requests require and preserve explicit caller permission.
     #[test]
     fn legacy_request_preserves_explicit_policy() -> Result<(), Box<dyn StdError>> {
         use crate::{
