@@ -25,6 +25,8 @@ use crate::{
 #[cfg(feature = "messages")]
 mod authorization;
 mod credential_secrets;
+/// Redacted, erased validation-info session keys.
+pub mod session_key;
 mod ndr;
 mod reader;
 
@@ -131,7 +133,7 @@ pub const NTLM_SUPPLEMENTAL_CRED_LMOWF: u32 = 1;
 pub const NTLM_SUPPLEMENTAL_CRED_NTOWF: u32 = 2;
 
 /// Parsed PAC container and selected processed buffers.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct Pac {
     /// Number of PAC info buffers.
@@ -141,9 +143,9 @@ pub struct Pac {
     /// PAC info buffer table.
     pub buffers: Vec<InfoBuffer>,
     /// Original PAC bytes.
-    pub data: Vec<u8>,
+    pub data: Zeroizing<Vec<u8>>,
     /// PAC bytes with server and KDC signature bytes zeroed.
-    pub zero_signature_data: Vec<u8>,
+    pub zero_signature_data: Zeroizing<Vec<u8>>,
     /// Parsed `KERB_VALIDATION_INFO`, if present and processed.
     pub kerb_validation_info: Option<KerbValidationInfo>,
     /// Parsed server checksum, if present and processed.
@@ -216,8 +218,8 @@ impl Pac {
             c_buffers,
             version,
             buffers,
-            data: bytes.to_vec(),
-            zero_signature_data: bytes.to_vec(),
+            data: Zeroizing::new(bytes.to_vec()),
+            zero_signature_data: Zeroizing::new(bytes.to_vec()),
             kerb_validation_info: None,
             server_checksum: None,
             kdc_checksum: None,
@@ -1518,7 +1520,7 @@ pub struct KerbValidationInfo {
     /// User flags.
     pub user_flags: u32,
     /// User session key bytes.
-    pub user_session_key: [u8; 16],
+    pub user_session_key: session_key::SessionKey,
     /// Logon server.
     pub logon_server: RpcUnicodeString,
     /// Logon domain name.
@@ -1602,7 +1604,7 @@ impl KerbValidationInfo {
         let group_count = reader.read_u32()?;
         let group_ids_ref = reader.read_u32()?;
         let user_flags = reader.read_u32()?;
-        let user_session_key: [u8; 16] = reader.read_array()?;
+        let user_session_key = session_key::SessionKey::new(Zeroizing::new(reader.read_array()?));
 
         let logon_server_desc = RpcUnicodeStringDescriptor::read(reader)?;
         let logon_domain_name_desc = RpcUnicodeStringDescriptor::read(reader)?;

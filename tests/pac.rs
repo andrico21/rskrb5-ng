@@ -109,6 +109,55 @@ mod tests {
         Ok(())
     }
 
+    /// Nonzero validation-info keys never appear in nested or raw PAC diagnostics.
+    #[test]
+    fn validation_info_key_debug_is_redacted() -> Result<(), TestError> {
+        let mut bytes = vec![0; 240];
+        bytes
+            .get_mut(..8)
+            .context("header")?
+            .copy_from_slice(&[1, 0x10, 8, 0, 0xcc, 0xcc, 0xcc, 0xcc]);
+        bytes
+            .get_mut(8..12)
+            .context("length")?
+            .copy_from_slice(&224_u32.to_le_bytes());
+        bytes
+            .get_mut(16..20)
+            .context("referent")?
+            .copy_from_slice(&1_u32.to_le_bytes());
+        bytes.get_mut(140..156).context("key")?.fill(0x42);
+        let info = KerbValidationInfo::parse(&bytes)?;
+        let mut pac_bytes = vec![0; 24];
+        pac_bytes
+            .get_mut(..4)
+            .context("count")?
+            .copy_from_slice(&1_u32.to_le_bytes());
+        pac_bytes
+            .get_mut(8..12)
+            .context("type")?
+            .copy_from_slice(&1_u32.to_le_bytes());
+        pac_bytes
+            .get_mut(12..16)
+            .context("size")?
+            .copy_from_slice(&240_u32.to_le_bytes());
+        pac_bytes
+            .get_mut(16..24)
+            .context("offset")?
+            .copy_from_slice(&24_u64.to_le_bytes());
+        pac_bytes.extend_from_slice(&bytes);
+        let pac = Pac::parse_and_process(&pac_bytes)?;
+        let marker = format!("{:?}", [0x42_u8; 16]);
+        assert!(
+            !format!("{info:?}").contains(&marker),
+            "session key exposed"
+        );
+        assert!(
+            !format!("{pac:?}").contains(marker.trim_matches(['[', ']'])),
+            "raw PAC key exposed"
+        );
+        Ok(())
+    }
+
     /// Pins the AD credential summary derived from the validation info.
     #[test]
     fn derives_ad_credentials_from_kerb_validation_info() -> Result<(), TestError> {
@@ -804,7 +853,7 @@ mod tests {
     /// Asserts the gokrb5 `KERB_VALIDATION_INFO` fields from `user_flags` on.
     fn assert_gokrb5_validation_domain(kvi: &KerbValidationInfo) -> Result<(), TestError> {
         assert_eq!(kvi.user_flags, 32);
-        assert_eq!(kvi.user_session_key, [0; 16]);
+        assert_eq!(kvi.user_session_key.as_bytes(), &[0; 16]);
         assert_eq!(kvi.logon_server.value, "ADDC");
         assert_eq!(kvi.logon_domain_name.value, "TEST");
         assert_eq!(

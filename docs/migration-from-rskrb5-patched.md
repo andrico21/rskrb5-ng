@@ -7,6 +7,14 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+PAC key ownership (FU-PAC-R06): use `user_session_key.as_bytes()` to borrow
+the sixteen-byte key; construct replacements with
+`pac::session_key::SessionKey::new(Zeroizing::new(bytes))`. The key is no longer
+implicitly copied. `Pac::data` and `zero_signature_data` are zeroizing vectors;
+slice borrowing is unchanged. Caller-created copies and borrowed parser input
+remain the caller's erasure responsibility. Debug emits metadata/lengths,
+never the key or raw PAC buffers.
+
 PAC allocation admission (FU-PAC-R05): truncated claims/group/string arrays
 fail with `Truncated` before reservation. Valid counts up to the existing
 one-million-element ceiling remain accepted when the wire extent is present.

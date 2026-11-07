@@ -51,6 +51,8 @@ Critic round `critics-fb19af4`, unit u4:
 
 | FU-PAC-R05 | minor | Claims and group array readers reserve from peer counts before checking descriptor extent | fixed | `truncated_arrays_never_reserve`, `complete_group_extent_at_ceiling_is_admitted`; commit containing this row | Fixed wire extent and alignment checked before NDR descriptor/element reservations; truncated counts return Truncated without amplified allocation. UTF-16 arrays already borrow admitted bytes after FU-PAC-R03. | task-22b: ten reservation entries on truncated million-count inputs before guard, zero after; full million-group boundary admitted once. |
 
+| FU-PAC-R06 | minor | Validation-info session-key bytes lack redaction and value-attached erasure | fixed | `validation_info_key_debug_is_redacted`, `validation_key_erased_on_success_and_failure`; commit containing this row | UserSessionKey becomes redacted owning SessionKey with Zeroizing storage; raw Pac data and zero_signature_data become Zeroizing vectors and Debug reports lengths only. Parse staging erases on later errors. | task-22b: real parsed nonzero key disclosed before fix; redaction green. Removed-wipe mutation observes false before release; restored success/error paths observe true. Zero-slot fixture retained. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |

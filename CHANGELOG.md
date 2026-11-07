@@ -23,6 +23,11 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- `KerbValidationInfo::user_session_key` is now an owning, redacted
+  `pac::session_key::SessionKey`; raw PAC buffers use `Zeroizing<Vec<u8>>`.
+  Debug no longer exposes key-bearing PAC bytes, and parsing erases key staging
+  on success or later failure (FU-PAC-R06).
+
 - `Rc4HmacEtype::random_to_key` now returns `Result<Vec<u8>, error::Crypto>`:
   exactly sixteen random bytes are preserved, not MD4-hashed; other lengths
   return `InvalidKeyLength` (FU-CRY-R01). Password string-to-key is unchanged.
