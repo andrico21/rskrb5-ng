@@ -36,6 +36,12 @@ Critic round `critics-fb19af4`, unit u2:
 | FU-CLI-R07 | minor | Direct AS reply processing does not enforce the advertised reply-enctype contract | fixed | `direct_as_reply_rejects_unoffered_wrapping_enctype`, independent session-key rejection control; `eae8cb0` | Direct AS processing now rejects unoffered reply wrapping enctype with EnctypeNotRequested before decryption; TGS wrapping unchanged. | task-22b: AES256 reply with requested AES128 session accepted before guard, rejected after; offering both accepts. Existing session guard fixture now wraps with offered AES128 to remain independent. |
 | FU-TST-R03 | nit | Several renewal tests still advertise the behavior that the fixes removed | fixed | Existing encoded-request/exact-error assertions unchanged; client target; `359efb8` | none; names/docs now say reacquisition, unavailable cache-only credentials, rejected lists and inclusive refresh threshold | task-22b: old names conflicted with no-RENEW bits/NoClientCredentials assertions. Live manifest reference remapped; historical archived plans retain historical names. |
 
+Critic round `critics-fb19af4`, unit u4:
+
+| ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
+| --- | --- | --- | --- | --- | --- | --- |
+| FU-MSG-R01 | minor | Enctype-aware DER padding enforcement is missing from four sibling decryptors | fixed | `sibling_decryptors_enforce_enctype_padding`, existing krb_padding/message_padding_mutations; commit containing this row | AP authenticator, ticket, KDC reply and KRB-PRIV reject authenticated trailing zeros except DES3 padding shorter than eight bytes; six families share admission. | task-22b: all four accepted surplus DES3 block before fix; six-enctype, eight-length positive/negative matrix green. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |

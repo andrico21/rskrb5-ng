@@ -4,7 +4,7 @@ use rasn::{der, types::Integer};
 
 use crate::{
     crypto::selection,
-    der::{decode_complete, trim_zero_padded_der},
+    der::{decode_complete, encrypted_der},
     keytab::EncryptionKey,
     messages::secret_der::SecretDer,
 };
@@ -110,7 +110,7 @@ pub fn decrypt_ap_req_authenticator(
         etype.decrypt_message(&key.value, ap_req.authenticator.cipher.as_ref(), usage)?,
         "ap-req decrypt",
     );
-    decode_authenticator(trim_zero_padded_der(&plaintext))
+    decode_authenticator(encrypted_der(&plaintext, key.etype))
 }
 
 /// Return the AP-REQ authenticator key usage implied by the ticket service.

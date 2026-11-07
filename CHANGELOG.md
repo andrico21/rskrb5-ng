@@ -87,6 +87,10 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- AP authenticators, tickets, KDC replies and KRB-PRIV now reject authenticated
+  trailing zero bytes unless they are DES3 padding shorter than eight bytes
+  (FU-MSG-R01).
+
 - Direct AS reply processing enforces the offered reply encryption type before
   decryption, independently of the session-key type (`EnctypeNotRequested`,
   FU-CLI-R07); TGS reply wrapping is unchanged.

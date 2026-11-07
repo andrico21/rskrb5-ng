@@ -8,6 +8,11 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Encrypted message padding (FU-MSG-R01): complete decryptors require exact DER
+for AES and RC4, and accept only fewer than eight zero padding bytes for DES3.
+Previously accepted authenticated surplus bytes now return the family's Decode
+error. Remove application-added padding; let the encryption profile supply it.
+
 Client credential buffers (FU-CLI-R02): `BuiltAsReq::der`, `BuiltTgsReq::der`,
 `BuiltApReq::der`, `TgsFastRequestParts::ap_req_der` and `AsRepSession::ticket`
 are now `zeroize::Zeroizing<Vec<u8>>`. Pass an owning zeroizing buffer to

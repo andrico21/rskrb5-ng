@@ -4,7 +4,7 @@ use rasn::{der, types::Integer};
 
 use crate::{
     crypto::selection,
-    der::{decode_complete, trim_zero_padded_der},
+    der::{decode_complete, encrypted_der},
     keytab::EncryptionKey,
     messages::secret_der::SecretDer,
 };
@@ -88,7 +88,7 @@ pub fn decrypt_ticket_enc_part(
         )?,
         "ticket decrypt",
     );
-    decode_enc_ticket_part(trim_zero_padded_der(&plaintext))
+    decode_enc_ticket_part(encrypted_der(&plaintext, key.etype))
 }
 
 /// Build a Ticket using a random confounder.

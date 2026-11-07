@@ -4,7 +4,7 @@ use rasn::{der, types::Integer};
 
 use crate::{
     crypto::selection,
-    der::{decode_complete, trim_zero_padded_der},
+    der::{decode_complete, encrypted_der},
     keytab::EncryptionKey,
     messages::secret_der::SecretDer,
 };
@@ -91,13 +91,7 @@ pub fn decrypt_ap_rep_enc_part(
         )?,
         "ap-rep decrypt",
     );
-    let trimmed = trim_zero_padded_der(&plaintext);
-    let der = if key.etype == 16_i32 && plaintext.len().saturating_sub(trimmed.len()) < 8 {
-        trimmed
-    } else {
-        &plaintext
-    };
-    decode_enc_ap_rep_part(der)
+    decode_enc_ap_rep_part(encrypted_der(&plaintext, key.etype))
 }
 
 /// Build an AP-REP message using a random confounder.

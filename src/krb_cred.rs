@@ -21,7 +21,7 @@ use rasn::{der, types::Integer};
 use crate::{
     ccache,
     crypto::selection,
-    der::{decode_complete, trim_zero_padded_der},
+    der::{decode_complete, encrypted_der},
     error::Ticket as TicketError,
     keytab::EncryptionKey,
     messages::secret_der::SecretDer,
@@ -99,13 +99,7 @@ fn decrypt_part(
         )?,
         "krb-cred decrypt",
     );
-    let trimmed = trim_zero_padded_der(&plaintext);
-    let der = if key.etype == 16_i32 && plaintext.len().saturating_sub(trimmed.len()) < 8 {
-        trimmed
-    } else {
-        &plaintext
-    };
-    decode_enc_krb_cred_part(der)
+    decode_enc_krb_cred_part(encrypted_der(&plaintext, key.etype))
 }
 
 /// Decrypt a KRB-CRED encrypted part and convert its tickets to ccache credentials.
