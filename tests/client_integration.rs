@@ -1995,14 +1995,25 @@ mod tests {
             let built = build_tgt_as_req(Principal::user(REALM, USER), as_options)?;
             let decoded: rasn_kerberos::AsReq = der::decode(&built.der)?;
             assert_eq!(decoded.0.req_body.etype, vec![id]);
-            let ticket =
+            let service = Principal::tgt_service(REALM);
+            let mut ticket =
                 ap_req::decode(include_bytes!("../fuzz/fixtures/valid_ap_req.der"))?.ticket;
+            // The session's service must match the encoded ticket (FU-CLI-R06).
+            ticket.realm = rasn_kerberos::KerberosString::from_bytes(REALM.as_bytes())?;
+            ticket.sname = rasn_kerberos::PrincipalName {
+                r#type: service.name_type,
+                string: service
+                    .components
+                    .iter()
+                    .map(|value| rasn_kerberos::KerberosString::from_bytes(value.as_bytes()))
+                    .collect::<Result<_, _>>()?,
+            };
             let now = SystemTime::UNIX_EPOCH
                 .checked_add(Duration::from_secs(1_893_553_447))
                 .ok_or("time")?;
             let session = AsRepSession::new(
                 Principal::user(REALM, USER),
-                Principal::tgt_service(REALM),
+                service,
                 EncryptionKey::new(18, vec![0x11; 32]),
                 ticket::encode(&ticket)?.into(),
                 [0; 4],

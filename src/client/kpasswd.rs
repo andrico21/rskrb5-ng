@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     ap_rep::{decrypt_ap_rep_enc_part, validate as validate_ap_rep},
-    crypto::{CryptoPolicy, Use, selection},
+    crypto::{CryptoPolicy, selection},
     kadmin,
     keytab::EncryptionKey,
     messages,
@@ -20,7 +20,7 @@ mod request;
 use request::{build_kpasswd_ap_req_with_confounder, kpasswd_krb_priv_options};
 
 #[cfg(feature = "tokio")]
-use crate::error::Kadmin;
+use crate::{crypto::Use, error::Kadmin};
 
 /// Reflected password ciphertext regressions.
 #[cfg(test)]
