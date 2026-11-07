@@ -707,6 +707,32 @@ mod tests {
         })
     }
 
+    /// The unit-returning authorization helper installs a sensitive decodable header.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn authorize_request_installs_header() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let ticket = current_service_ticket_session()?;
+            let service = ticket.service.clone();
+            let mut client = Tokio::with_password(
+                Config::new(),
+                KdcProtocol::Auto,
+                ticket.client.clone(),
+                b"unused".to_vec(),
+            );
+            client.cache_service_ticket(ticket)?;
+            let mut request = Request::new(());
+            krb_http::authorize_request(&mut client, &mut request, service).await?;
+            let header =
+                krb_http::authorization_header(&request).context("authorization header")?;
+            assert!(matches!(
+                spnego::parse_negotiate_header(header)?,
+                Token::Init(_)
+            ));
+            Ok(())
+        })
+    }
+
     /// Pins that the Negotiate client wrapper authorizes a request with its own session key copy.
     #[cfg(feature = "tokio")]
     #[test]

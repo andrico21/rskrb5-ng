@@ -91,6 +91,10 @@ mod tests {
             TokioClientCredentials::Password(Zeroizing::new(b"password-audit-canary".to_vec()));
         // When formatting the audited client and credential variant.
         let rendered = format!("{client:?} {credentials:?} {fast:?}");
+        assert!(
+            format!("{credentials:?}").starts_with("Password("),
+            "redacted credentials retain their diagnostic kind"
+        );
         // Then neither text nor byte-array renderings disclose the secret values.
         for marker in [
             b"password-audit-canary".as_slice(),

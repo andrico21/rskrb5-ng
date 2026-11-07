@@ -13,6 +13,40 @@ mod tests {
 
     use super::*;
 
+    /// S4U replaces caller PA-FOR-USER without dropping unrelated padata.
+    #[test]
+    fn s4u_replaces_only_impersonation_padata() -> Result<(), TestError> {
+        let tgt = sample_tgt_session()?;
+        let options = TgsReq::new(timestamp(1_893_553_450)?, 42).with_padata(vec![
+            rasn_kerberos::PaData {
+                r#type: 129,
+                value: vec![0].into(),
+            },
+            rasn_kerberos::PaData {
+                r#type: 777,
+                value: vec![17].into(),
+            },
+        ]);
+        let request = build_s4u2self_req_with_confounder(
+            &tgt,
+            Principal::user("TEST.GOKRB5", "alice"),
+            options,
+            timestamp(1_893_553_451)?,
+            0,
+            &decode_hex(TGS_REQ_CONFOUNDER)?,
+        )?;
+        let data = request.message.0.padata.as_ref().context("padata")?;
+        assert_eq!(
+            data.iter().filter(|entry| entry.r#type == 129_i32).count(),
+            1
+        );
+        assert!(
+            data.iter()
+                .any(|entry| entry.r#type == 777_i32 && entry.value.as_ref() == [17])
+        );
+        Ok(())
+    }
+
     /// A keyless S4U reply cannot establish its ticket's delegated client.
     #[test]
     fn s4u_reply_fails_closed_without_service_key() -> Result<(), TestError> {

@@ -101,13 +101,16 @@ mod tests {
     };
 
     /// Exercise the synchronous builder before any transport can receive a frame.
-    fn build_at(nanos: u64, cusec: u32) -> Result<(), Box<dyn StdError>> {
+    fn build_at(nanos: u64, cusec: u32, before_epoch: bool) -> Result<(), Box<dyn StdError>> {
         let fixture = Request::parse(&hex::decode(
             include_str!("../../../tests/fixtures/kpasswd-request.hex").trim(),
         )?)?;
-        let time = UNIX_EPOCH
-            .checked_add(Duration::from_secs(1_893_553_452))
-            .ok_or("fixture time overflow")?;
+        let time = if before_epoch {
+            UNIX_EPOCH.checked_sub(Duration::from_secs(1))
+        } else {
+            UNIX_EPOCH.checked_add(Duration::from_secs(1_893_553_452))
+        }
+        .ok_or("fixture time overflow")?;
         let session = TgsRepSession::new(
             Principal::user("TEST.GOKRB5", "testuser1"),
             Principal::new("TEST.GOKRB5", 2, ["kadmin", "changepw"]),
@@ -154,20 +157,26 @@ mod tests {
         // Given a fractional timestamp and valid microseconds. 100 ns is the
         // smallest fraction every platform's `SystemTime` keeps: Windows
         // counts in 100 ns ticks and drops a 1 ns addition.
-        build_at(100, 0)
+        build_at(100, 0, false)
     }
 
     /// The first invalid microsecond value is a request-side error.
     #[test]
     fn excessive_request_microseconds_are_local() -> Result<(), Box<dyn StdError>> {
         // Given whole seconds and an out-of-range microsecond field.
-        build_at(0, 1_000_000)
+        build_at(0, 1_000_000, false)
     }
 
     /// The maximum valid microsecond value still builds a complete request.
     #[test]
     fn maximum_request_microseconds_build() -> Result<(), Box<dyn StdError>> {
         // Given the valid upper microsecond boundary.
-        build_at(0, 999_999)
+        build_at(0, 999_999, false)
+    }
+
+    /// Whole-second pre-epoch request timestamps retain the same acceptance contract.
+    #[test]
+    fn whole_pre_epoch_request_builds() -> Result<(), Box<dyn StdError>> {
+        build_at(0, 0, true)
     }
 }

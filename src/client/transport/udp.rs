@@ -79,11 +79,12 @@ fn receive_error(error: io::Error, max: usize, windows: bool) -> Error {
     clippy::missing_panics_doc,
     reason = "test code is not rendered API documentation"
 )]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    use core::error::Error as StdError;
+    use core::{error::Error as StdError, time::Duration};
     use std::io;
 
-    use tokio::net::UdpSocket;
+    use tokio::{net::UdpSocket, time::timeout};
 
     use super::{Error, receive_error};
     use crate::client::transport::{KdcProtocol, Tokio};
@@ -143,5 +144,31 @@ mod tests {
             receive_error(io::Error::from_raw_os_error(10_040), 16, true),
             Error::UdpResponseTooLarge { limit: 16 }
         ));
+    }
+
+    /// Only Windows maps WSAEMSGSIZE, and other Windows errors stay I/O errors.
+    #[test]
+    fn unrelated_receive_errors_preserve_io_kind() -> Result<(), Box<dyn StdError>> {
+        for (code, windows) in [(10_040_i32, false), (10_061_i32, true)] {
+            matches!(
+                receive_error(io::Error::from_raw_os_error(code), 16, windows),
+                Error::Io(error) if error.raw_os_error() == Some(code)
+            )
+            .ok_or("unrelated receive error must retain its I/O code")?;
+        }
+        Ok(())
+    }
+
+    /// Receiving a queued datagram returns its exact bytes rather than a placeholder.
+    #[tokio::test]
+    async fn receive_preserves_datagram_bytes() -> Result<(), Box<dyn StdError>> {
+        let receiver = UdpSocket::bind("127.0.0.1:0").await?;
+        let sender = UdpSocket::bind("127.0.0.1:0").await?;
+        let _: usize = sender
+            .send_to(&[42, 17, 99], receiver.local_addr()?)
+            .await?;
+        let payload = timeout(Duration::from_secs(1), super::receive(&receiver, 16)).await??;
+        assert_eq!(payload, [42, 17, 99]);
+        Ok(())
     }
 }

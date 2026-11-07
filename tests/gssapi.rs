@@ -27,6 +27,54 @@ mod tests {
 
     use super::context::{Context as _, TestError};
 
+    /// Secret-free diagnostics still identify MIC and Wrap token kinds.
+    #[test]
+    fn token_debug_keeps_diagnostic_kind() {
+        assert!(format!("{:?}", MicToken::default()).starts_with("MicToken"));
+        assert!(format!("{:?}", WrapToken::default()).starts_with("WrapToken"));
+    }
+
+    /// MIC and Wrap decoders reject each other's token identifiers.
+    #[test]
+    fn token_ids_are_type_specific() -> Result<(), TestError> {
+        assert!(matches!(
+            MicToken::decode(&decode_hex(WRAP_FROM_INITIATOR)?, false),
+            Err(Error::InvalidGssTokenId {
+                expected: _,
+                actual: _
+            })
+        ));
+        assert!(matches!(
+            WrapToken::decode(&decode_hex(MIC_FROM_INITIATOR)?, false),
+            Err(Error::InvalidGssTokenId {
+                expected: _,
+                actual: _
+            })
+        ));
+        Ok(())
+    }
+
+    /// Explicit nonzero extra counts survive checksum installation.
+    #[test]
+    fn wrap_checksum_preserves_explicit_extra_count() -> Result<(), TestError> {
+        let mut token = WrapToken::default().with_ec(7).with_payload(vec![42]);
+        token.set_checksum(&session_key()?, GSSAPI_INITIATOR_SIGN_USAGE)?;
+        assert_eq!(token.ec, 7);
+        Ok(())
+    }
+
+    /// Random sealed construction produces an authenticated decryptable payload.
+    #[test]
+    fn random_sealed_wrap_roundtrips_payload() -> Result<(), TestError> {
+        let key = session_key()?;
+        let token = WrapToken::new_initiator_sealed(b"payload".to_vec(), &key)?;
+        assert_eq!(
+            token.decrypt_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE)?,
+            b"payload"
+        );
+        Ok(())
+    }
+
     const MIC_PAYLOAD: &str = "deadbeef";
     const MIC_FROM_ACCEPTOR: &str = "040401ffffffffff00000000575e85d6c34d12ba3e5b1b1310cd9cb3";
     const MIC_FROM_INITIATOR: &str = "040400ffffffffff00000000000000009649ca09d2f1bc51ff6e5ca3";

@@ -77,9 +77,16 @@ fn silent_probe_is_bounded() -> Result<(), TestError> {
         // Given a connected peer that consumes the request but sends no reply.
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
-        let (connection, accepted) = tokio::join!(TcpStream::connect(addr), listener.accept());
-        let mut client = connection?;
-        let (mut peer, _) = accepted?;
+        let (connection, accepted) = tokio::join!(
+            bounded(
+                Duration::from_secs(10),
+                "probe connection",
+                TcpStream::connect(addr)
+            ),
+            bounded(Duration::from_secs(10), "probe accept", listener.accept())
+        );
+        let mut client = connection??;
+        let (mut peer, _) = accepted??;
         let server = async {
             drop(read_framed(&mut peer).await?);
             Ok::<_, TestError>(())
@@ -107,9 +114,12 @@ fn hostile_probe_headers_are_bounded() -> Result<(), TestError> {
         for header in [0x8000_0001_u32, 0x0001_0001] {
             // Given a peer advertising a reserved-bit or oversized record.
             let listener = TcpListener::bind("127.0.0.1:0").await?;
-            let (connection, accepted) = tokio::join!(TcpStream::connect(listener.local_addr()?), listener.accept());
-            let mut client = connection?;
-            let (mut peer, _) = accepted?;
+            let (connection, accepted) = tokio::join!(
+                bounded(Duration::from_secs(10), "hostile probe connection", TcpStream::connect(listener.local_addr()?)),
+                bounded(Duration::from_secs(10), "hostile probe accept", listener.accept())
+            );
+            let mut client = connection??;
+            let (mut peer, _) = accepted??;
             let server = async {
                 drop(read_framed(&mut peer).await?);
                 peer.write_all(&header.to_be_bytes()).await?;
