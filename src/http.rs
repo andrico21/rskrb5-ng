@@ -1112,7 +1112,8 @@ impl<'keytab> NegotiateLayer<'keytab> {
         self
     }
 
-    /// Control whether successful requests receive a `WWW-Authenticate` AP-REP token.
+    /// Control optional `WWW-Authenticate` AP-REP replies. Required reciprocal
+    /// mechanism-list MIC completion still includes its AP-REP.
     #[must_use]
     #[inline]
     pub const fn with_ap_rep(mut self, emit_ap_rep: bool) -> Self {
@@ -1405,7 +1406,8 @@ impl<'keytab, S> NegotiateService<'keytab, S> {
         self
     }
 
-    /// Control whether successful requests receive a `WWW-Authenticate` AP-REP token.
+    /// Control optional `WWW-Authenticate` AP-REP replies. Required reciprocal
+    /// mechanism-list MIC completion still includes its AP-REP.
     #[must_use]
     #[inline]
     pub const fn with_ap_rep(mut self, emit_ap_rep: bool) -> Self {
