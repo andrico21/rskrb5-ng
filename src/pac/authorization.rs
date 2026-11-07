@@ -1,9 +1,9 @@
 //! Budgeted first-PAC traversal, independent of service authorization policy.
 
-use crate::der::decode_complete;
 use rasn_kerberos::AuthorizationData;
 
 use super::{AD_IF_RELEVANT, AD_WIN2K_PAC, Error, Pac};
+use crate::der::decode_complete;
 
 /// Finds the first PAC while sharing the byte budget across the bounded tree.
 ///
