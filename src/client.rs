@@ -5113,9 +5113,9 @@ mod tests {
         TgsReq, build_tgs_req_for_realm_with_confounder_and_subkey,
         build_tgs_req_for_realm_with_subkey, random_nonce,
     };
-    use crate::{
-        ccache::Principal as CachePrincipal, error, kadmin::Request as PasswordRequest, ticket,
-    };
+    use crate::error;
+    #[cfg(feature = "tokio")]
+    use crate::{ccache::Principal as CachePrincipal, kadmin::Request as PasswordRequest, ticket};
 
     // RFC 6113 section 5.2 registers PA-FX-COOKIE as 133, and RFC 8070
     // registers PA-AS-FRESHNESS as 150.

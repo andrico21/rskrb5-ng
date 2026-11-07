@@ -9,7 +9,9 @@ use std::{
 };
 
 use super::{Error, Principal, ReplayCache, ReplayKey};
-use crate::{keytab::Keytab, pac::AD_WIN2K_PAC};
+#[cfg(feature = "tower")]
+use crate::keytab::Keytab;
+use crate::pac::AD_WIN2K_PAC;
 
 /// Shared maintenance reports poisoned admission locks instead of fabricated counts.
 #[test]
