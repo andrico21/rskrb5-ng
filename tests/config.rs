@@ -342,7 +342,7 @@ mod tests {
 
     /// Unknown positive names are rejected even alongside a usable entry.
     #[test]
-    fn unsupported_explicit_enctype_names_are_skipped() -> Result<(), TestError> {
+    fn unsupported_explicit_enctype_names_are_rejected() -> Result<(), TestError> {
         for key in [
             "default_tkt_enctypes",
             "default_tgs_enctypes",
@@ -464,7 +464,7 @@ mod tests {
 
     /// Disabled positives cannot be silently removed from mixed lists.
     #[test]
-    fn disabled_enctypes_are_skipped_in_mixed_lists() -> Result<(), TestError> {
+    fn disabled_enctypes_are_rejected_in_mixed_lists() -> Result<(), TestError> {
         // Given each list with independent family/weak policy disabled.
         for key in [
             "default_tkt_enctypes",
@@ -1617,7 +1617,7 @@ mod tests {
     }
     /// Pins that later sections cannot replace a conflicting first request list.
     #[test]
-    fn a_later_section_can_repair_an_earlier_conflict() -> Result<(), TestError> {
+    fn a_later_section_cannot_repair_an_earlier_conflict() -> Result<(), TestError> {
         let result = Config::parse(
             "
 [libdefaults]
@@ -1670,7 +1670,7 @@ mod tests {
     }
     /// Pins that a later included file cannot replace the first request list.
     #[test]
-    fn a_later_included_file_can_repair_an_earlier_conflict() -> Result<(), TestError> {
+    fn a_later_included_file_cannot_repair_an_earlier_conflict() -> Result<(), TestError> {
         let dir = include_fixture_dir(
             "include-enctype-repair",
             &[

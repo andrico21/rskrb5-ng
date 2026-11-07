@@ -64,6 +64,8 @@ Critic round `critics-fb19af4`, unit u5:
 
 | FU-CFG-R06 | minor | Escaped D2 selectors can evade rejection in discarded scopes | fixed | `discarded_escaped_protocols_are_rejected`; commit containing this row | Permanent protocol refusals inspect decoded scalar values before discard, in both modes. | task-22b finalized escaped RSA red; decoded RSA and unprotected-password selectors reject in finalized/unknown scopes after fix. |
 
+| FU-TST-R06 | nit | Several regression names still assert the behavior their names deny | fixed | Existing config assertions unchanged; commit containing this row | none; names now describe rejection, immutable first values and completed-root reinclusion; include-state comment corrected. | task-22b source inspection compared old names with actual assertions; no prose-pin test added. Historical review names are retained as historical evidence. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |

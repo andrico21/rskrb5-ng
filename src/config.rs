@@ -2049,9 +2049,9 @@ impl IncludeExpansion {
     /// Replace every directive in `input` with what it names, recursively.
     ///
     /// `depth` is the include depth of the text itself: the configuration a
-    /// caller handed over is depth 0, and each `include` adds one. A directive
-    /// inside a `{ ... }` group is left alone - it is a setting of that group,
-    /// and the section parser refuses it by name rather than ignoring it.
+    /// caller handed over is depth 0, and each `include` adds one. Included
+    /// sources have independent grammar state at every nesting level; parsing
+    /// resumes the parent's section and open groups after each include.
     ///
     /// # Errors
     ///
@@ -3004,7 +3004,7 @@ mod fork_tests {
 
     /// Re-including a completed root is not an active-chain cycle.
     #[test]
-    fn a_path_list_root_included_by_a_child_is_a_cycle() -> Result<(), Box<dyn error::Error>> {
+    fn a_completed_path_list_root_can_be_reincluded() -> Result<(), Box<dyn error::Error>> {
         let dir = fixture_dir("path-list-root")?;
         let first = write_fixture(
             &dir,
