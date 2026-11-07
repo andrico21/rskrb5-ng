@@ -19,6 +19,11 @@
 
 use core::mem;
 
+#[cfg(test)]
+/// RFC HMAC boundary tests.
+#[path = "crypto/mutation_tests.rs"]
+mod mutation_tests;
+
 /// Shared runtime encryption policy and consumer-use categories.
 #[path = "crypto/policy.rs"]
 pub mod policy;

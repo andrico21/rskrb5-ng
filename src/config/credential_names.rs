@@ -8,6 +8,10 @@ use super::{
 };
 use crate::file_name;
 
+#[cfg(test)]
+#[path = "credential_names_tests.rs"]
+mod tests;
+
 /// Resolve one configured credential name exactly once.
 ///
 /// # Ambient input
@@ -33,6 +37,8 @@ pub(crate) fn resolve_credential_template(
     {
         let (real, effective) = file_name::process_identity()
             .map_err(|_source| Failure::Unavailable("process identity"))?;
+        #[cfg(all(test, target_os = "linux"))]
+        tests::identity::DISCOVERIES.with(|count| count.set(count.get().saturating_add(1)));
         context.uid = Some(real);
         context.euid = Some(effective);
     }
