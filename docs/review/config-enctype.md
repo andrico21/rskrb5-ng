@@ -1,5 +1,20 @@
 # Configuration and enctype review dispositions
 
+## Current follow-up
+
+The receipts and behaviour columns below are historical. FU-CFG-03 supersedes
+last-value scalar composition with first-value-wins; `first_values_win_within_file`
+and `loads_config_path_list_in_order` prove it. FU-CFG-04/05 replace silent
+positive-term filtering with typed unknown/disabled/insecure rejection and MIT
+ordered selectors (`selector_order_removal_and_readdition`,
+`profile_rejects_disabled_unknown_and_d2_terms`). Compatible mode may diagnose
+and skip secure unimplemented Camellia, while strict mode rejects it. Permanently
+insecure algorithms are rejected regardless of weak-crypto flags. See
+[the current profile contract](../config-profile.md) and
+[security policy](../security-policy.md).
+
+## Historical todo 36 receipts
+
 Commands, initial red runs and fix-reversal QA are recorded in
 `task-36-rskrb5-ng-own-way.log`.
 

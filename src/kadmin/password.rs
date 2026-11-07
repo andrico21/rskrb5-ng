@@ -48,6 +48,11 @@ impl From<Vec<u8>> for Bytes {
 }
 
 impl From<&[u8]> for Bytes {
+    /// Copy borrowed bytes into an erasing owner.
+    ///
+    /// # Security
+    /// The original slice and caller-made copies remain the caller's erasure
+    /// responsibility. Borrow from a zeroizing owner or move an owned vector.
     #[inline]
     fn from(value: &[u8]) -> Self {
         Self(Zeroizing::new(value.to_vec()))

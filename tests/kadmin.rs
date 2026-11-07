@@ -506,6 +506,50 @@ mod tests {
 
     /// Rejects invalid explicit time scalars before constructing a mutation frame.
     #[test]
+    fn password_request_builders_validate_scalars() -> Result<(), TestError> {
+        use rskrb5_ng::kadmin::{
+            build_change_password_request, build_change_password_request_with_confounder,
+        };
+        for random in [false, true] {
+            for (micros, fractional) in [
+                (-1_i32, false),
+                (1_000_000_i32, false),
+                (0_i32, true),
+                (0_i32, false),
+                (999_999_i32, false),
+            ] {
+                let fixture = Request::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)?;
+                let mut time = kerberos_time(1_893_553_452)?;
+                if fractional {
+                    time.0 += chrono::Duration::nanoseconds(1);
+                }
+                let mut options = EncKrbPrivPartOptions::new(ipv4_host_address([127, 0, 0, 1]));
+                options.timestamp = Some(time);
+                options.usec = Some(micros.into());
+                let data = ChangePasswdData::new(Password::copy_from_str("scalar-fixture"));
+                let key = EncryptionKey::new(18, vec![0x11; 32]);
+                let result = if random {
+                    build_change_password_request(fixture.ap_req, &data, key, options)
+                } else {
+                    build_change_password_request_with_confounder(
+                        fixture.ap_req,
+                        &data,
+                        key,
+                        options,
+                        &[0; 16],
+                    )
+                };
+                assert_eq!(
+                    result.is_ok(),
+                    !fractional && (0_i32..=999_999_i32).contains(&micros)
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Rejects invalid explicit time scalars before constructing a mutation frame.
+    #[test]
     fn protocol_time_kpasswd_builder_rejects_invalid_scalars() -> Result<(), TestError> {
         // Given a service ticket and explicit invalid request metadata.
         for fractional in [false, true] {

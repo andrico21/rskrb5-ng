@@ -27,6 +27,53 @@ mod tests {
 
     use super::context::{Context as _, TestError};
 
+    /// MIC and Wrap enforce exact audited tags across all supported checksum families.
+    #[test]
+    fn token_checksums_reject_corruption_and_wrong_lengths() -> Result<(), TestError> {
+        use core::cmp::Ordering;
+
+        use rskrb5_ng::crypto::KerberosEtype;
+        for id in [16_i32, 17_i32, 18_i32, 19_i32, 20_i32, 23_i32] {
+            let etype = KerberosEtype::from_etype_id(id).context("enctype")?;
+            let key = EncryptionKey::new(id, vec![0x42; etype.key_len()]);
+            let mic = MicToken::new_initiator(vec![1, 2, 3], &key)?;
+            let wrap = WrapToken::new_initiator(vec![1, 2, 3], &key)?;
+            mic.verify(&key, GSSAPI_INITIATOR_SIGN_USAGE)?;
+            wrap.verify(&key, GSSAPI_INITIATOR_SEAL_USAGE)?;
+            for position in [
+                0,
+                etype.hmac_len().div_euclid(2),
+                etype.hmac_len().saturating_sub(1),
+                etype.hmac_len(),
+                etype.hmac_len().saturating_add(1),
+            ] {
+                let mut changed_mic = mic.clone();
+                let mut changed_wrap = wrap.clone();
+                for tag in [&mut changed_mic.checksum, &mut changed_wrap.checksum] {
+                    let bytes = tag.as_mut().context("checksum")?;
+                    match position.cmp(&bytes.len()) {
+                        Ordering::Less => {
+                            *bytes.get_mut(position).context("tag byte")? ^= 1;
+                        }
+                        Ordering::Equal => {
+                            let _: Option<u8> = bytes.pop();
+                        }
+                        Ordering::Greater => bytes.push(0),
+                    }
+                }
+                assert!(matches!(
+                    changed_mic.verify(&key, GSSAPI_INITIATOR_SIGN_USAGE),
+                    Err(Error::GssChecksumMismatch)
+                ));
+                assert!(matches!(
+                    changed_wrap.verify(&key, GSSAPI_INITIATOR_SEAL_USAGE),
+                    Err(Error::GssChecksumMismatch)
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Secret-free diagnostics still identify MIC and Wrap token kinds.
     #[test]
     fn token_debug_keeps_diagnostic_kind() {

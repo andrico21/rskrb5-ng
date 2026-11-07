@@ -7,7 +7,7 @@ itself reaches the parsers mapped to it.
 
 ## Targets
 
-`cargo +nightly-2026-10-03 fuzz list` prints these twelve targets. All take
+`cargo +nightly-2026-10-03 fuzz list` prints these thirteen targets. All take
 arbitrary bytes; most use the first byte as a selector and pass the rest to
 the chosen entry point, so one target covers a family of related decoders.
 
@@ -213,7 +213,7 @@ does.
 | `rskrb5_ng::client::transport::KdcEndpoint::configured` | `src/client/transport.rs` | `name_parse` |  |
 | `rskrb5_ng::client::transport::KdcEndpoint::configured_with_default_port` | `src/client/transport.rs` | `name_parse` |  |
 | `rskrb5_ng::client::transport::Tokio::discover_srv_endpoints` | `src/client/transport.rs` | - | DNS answers are decoded by hickory-resolver (a dependency); this keeps typed SRV records only |
-| `rskrb5_ng::client::transport::Tokio::exchange_tcp_framed` | `src/client/transport.rs` | - | the TCP record-mark reader is not a separable function: it reads the 4-byte mark from a `TcpStream` inside the async exchange. The mark is checked by `validate_tcp_length` and bounded by the response limit before allocation; the record body goes to the reply decoders `kdc_reply` fuzzes; unit tests `tcp_lengths_are_service_specific` (src) and `kdc_tcp_rejects_reserved_bit_before_body_read`, `tokio_transport_uses_tcp_length_prefix` (tests/client_transport.rs) |
+| `rskrb5_ng::client::transport::Tokio::exchange_tcp_framed` | `src/client/transport.rs` | - | socket I/O is exercised by transport tests; extracted KDC record-mark validation delegates to kdc_tcp_record_length, covered by kdc_tcp_frame, before body allocation; reply bodies reach kdc_reply. Kpasswd retains its distinct unsigned record-mark rules. |
 | `rskrb5_ng::client::transport::kdc_tcp_record_length` | `src/client/transport.rs` | `kdc_tcp_frame` |  |
 | `rskrb5_ng::client::transport::Tokio::send_udp` | `src/client/transport.rs` | - | socket I/O: receives at most `udp_response_limit + 1` bytes and rejects a larger datagram before any decode; the datagram goes to the reply decoders `kdc_reply` fuzzes; covered by `udp_transport_rejects_truncated_datagram` (tests/client_transport.rs) |
 | `rskrb5_ng::client::transport::Tokio::with_dns_server` | `src/client/transport.rs` | `name_parse` |  |
@@ -226,7 +226,7 @@ does.
 | `rskrb5_ng::client::transport::resolve_dns_endpoint_host` | `src/client/transport.rs` | - | IP-literal check and resolver lookup on an SRV target name; the DNS reply is decoded by hickory-resolver |
 | `rskrb5_ng::client::transport::tests::parses_dns_server_override_ip_and_default_port` | `src/client/transport.rs` | - | unit test, not a parser |
 | `rskrb5_ng::client::transport::tests::parses_dns_server_override_ip_and_explicit_port` | `src/client/transport.rs` | - | unit test, not a parser |
-| `rskrb5_ng::client::transport::framing::validate_tcp_length` | `src/client/transport/framing.rs` | - | private `const fn` on the 4-byte record mark of `exchange_tcp_framed`; unit tests `tcp_lengths_are_service_specific` (src) and `kdc_tcp_rejects_reserved_bit_before_body_read`, `tokio_transport_uses_tcp_length_prefix` (tests/client_transport.rs) |
+| `rskrb5_ng::client::transport::framing::validate_tcp_length` | `src/client/transport/framing.rs` | - | service-specific dispatch: KDC marks delegate to kdc_tcp_record_length (kdc_tcp_frame); kpasswd marks use their separate unsigned length contract; tcp_lengths_are_service_specific covers dispatch. |
 | `rskrb5_ng::config::Config::load` | `src/config.rs` | - | delegates to bounded `load_paths`; shared grammar reached by `krb5_conf` |
 | `rskrb5_ng::config::Config::load_default` | `src/config.rs` | - | reads the platform default path, then `load_paths` |
 | `rskrb5_ng::config::Config::load_default_or_parse` | `src/config.rs` | - | the default file, else `Config::parse` on embedded text (`krb5_conf`) |
@@ -264,7 +264,7 @@ does.
 | `rskrb5_ng::config::parse_i32` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_i32_list` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_ip_addresses` | `src/config.rs` | `krb5_conf` |  |
-| `rskrb5_ng::config::parse_supported_enctype_ids` | `src/config.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::parse_supported_enctype_ids` | `src/config.rs` | - | cfg(test)-only capability mapping helper; normal fuzz dependency builds do not contain it; configuration tests cover it |
 | `rskrb5_ng::config::parse_unit_duration` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::crypto::AesSha1Etype::decrypt_message` | `src/crypto.rs` | `gss_token` |  |
 | `rskrb5_ng::crypto::AesSha2Etype::decrypt_message` | `src/crypto.rs` | `gss_token` |  |

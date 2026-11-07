@@ -2014,7 +2014,7 @@ impl Tokio {
     #[cfg(feature = "spnego")]
     #[inline]
     pub async fn spnego_header(&mut self, service: Principal) -> Result<String, Error> {
-        Ok(self.spnego_context(service).await?.header)
+        Ok(self.spnego_context(service).await?.header.to_string())
     }
     /// Build a SPNEGO HTTP `Authorization` header with explicit initiator options.
     ///
@@ -2036,7 +2036,8 @@ impl Tokio {
         Ok(self
             .spnego_context_with_options(service, options)
             .await?
-            .header)
+            .header
+            .to_string())
     }
     /// Build a SPNEGO initiator context for a service.
     ///
@@ -2379,7 +2380,7 @@ impl Tokio {
         &mut self,
         target: Principal,
         new_password: Password,
-        options: RequestOptions,
+        mut options: RequestOptions,
     ) -> Result<kadmin::ChangePasswordResult, Error> {
         let client = self.client.clone();
         let service = Principal::new(
@@ -2421,6 +2422,7 @@ impl Tokio {
             target.components.iter().map(String::as_str),
             &target.realm,
         )?;
+        options.crypto_policy = Some(crypto_policy::configured(&self.config.libdefaults)?);
         let request = build_kpasswd_request(&ticket, &change_data, &options)?;
         let reply = self
             .transport
@@ -2433,7 +2435,7 @@ impl Tokio {
             .await?;
         // Delivery has occurred: unsigned refusals are unauthenticated diagnostics,
         // not proof of rollback. Wrap validator failures once, before ensure_success.
-        let result = validated_result(&reply, &request, &options)
+        let result = validated_result(&reply, &request, &options, &request.crypto_policy)
             .map_err(|source| Error::KpasswdOutcomeUnknown(Box::new(source)))?;
         result.ensure_success()?;
 

@@ -1,9 +1,9 @@
 //! Budgeted first-PAC traversal, independent of service authorization policy.
 
-use rasn::der;
 use rasn_kerberos::AuthorizationData;
 
 use super::{AD_IF_RELEVANT, AD_WIN2K_PAC, Error, Pac};
+use crate::der::decode_complete;
 
 /// Finds the first PAC while sharing the byte budget across the bounded tree.
 ///
@@ -23,8 +23,8 @@ pub(super) fn find(
             AD_WIN2K_PAC => return Ok(Some(Pac::parse_and_process(entry.data.as_ref())?)),
             AD_IF_RELEVANT | 8_i32 => {
                 (depth < 8).ok_or(Error::AuthorizationDataDepthLimit)?;
-                let nested = der::decode::<AuthorizationData>(entry.data.as_ref())
-                    .map_err(|error| Error::DerDecode(error.to_string()))?;
+                let nested = decode_complete::<AuthorizationData>(entry.data.as_ref())
+                    .map_err(Error::DerDecode)?;
                 if let Some(pac) = find(&nested, depth.saturating_add(1), remaining)? {
                     return Ok(Some(pac));
                 }

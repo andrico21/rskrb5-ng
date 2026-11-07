@@ -209,6 +209,122 @@ mod tests {
     #[derive(Clone)]
     struct PolicyService;
 
+    /// Disabling optional AP-REP cannot discard required reciprocal mechanism integrity.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn ap_rep_disabled_completes_required_mic() -> Result<(), TestError> {
+        use rskrb5_ng::{
+            crypto::AesSha1Etype,
+            spnego::{MicToken, oid::ObjectIdentifier},
+        };
+        let Token::Init(mut init) = spnego::parse_negotiate_header(&initiator_context()?.header)?
+        else {
+            return Err("initial token".into());
+        };
+        init.mech_types.insert(
+            0,
+            ObjectIdentifier::from_arcs(vec![1, 3, 6, 1, 4, 1, 311, 2, 2, 10])?,
+        );
+        let list = decode_hex("3017060a2b06010401823702020a06092a864886f712010202")?;
+        let key = decode_hex(VALID_SESSION_KEY)?;
+        let mut mic = vec![4, 4, 0, 255, 255, 255, 255, 255];
+        mic.extend_from_slice(&42_u64.to_be_bytes());
+        let mut signed = list.clone();
+        signed.extend_from_slice(&mic);
+        mic.extend_from_slice(&AesSha1Etype::Aes256.checksum(&key, &signed, 25)?);
+        init.mech_list_mic = Some(mic.into());
+        let keytab = keytab()?;
+        let mut service = krb_http::NegotiateLayer::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .with_ap_rep(false)
+            .layer(PolicyService);
+        let mut request = Request::new(());
+        krb_http::set_authorization_header(
+            &mut request,
+            &spnego::negotiate_header(&Token::Init(init))?,
+        )?;
+        let response = run_ready(service.call(request))??;
+        let header = response
+            .headers()
+            .get(WWW_AUTHENTICATE)
+            .context("required completion")?
+            .to_str()?;
+        let Token::Resp(completion) = spnego::parse_negotiate_header(header)? else {
+            return Err("completion token".into());
+        };
+        MicToken::decode(&completion.mech_list_mic.context("reciprocal MIC")?, true)?
+            .with_payload(list)
+            .verify(&EncryptionKey::new(18, key), 23)?;
+        Ok(())
+    }
+
+    /// Cache replacement checks the shared validator rather than stale clone settings.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn cloned_service_rejects_incompatible_cache() -> Result<(), TestError> {
+        let keytab = keytab()?;
+        let service = krb_http::NegotiateLayer::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .layer(PolicyService);
+        let clone = service.clone();
+        let mut configured = service.with_max_clock_skew(Duration::from_mins(15))?;
+        assert!(matches!(
+            clone.with_shared_replay_cache(SharedReplayCache::new()),
+            Err(HttpError::Spnego(SpnegoError::Service(
+                ServiceError::ReplayCacheSkewExceeded {
+                    maximum: _,
+                    requested: _
+                }
+            )))
+        ));
+        let mut request = Request::new(());
+        krb_http::set_authorization_header(&mut request, &valid_authorization_header()?)?;
+        assert_eq!(
+            run_ready(configured.call(request))??.status(),
+            StatusCode::OK
+        );
+        Ok(())
+    }
+
+    /// Lowering one layer's window does not shorten retention for its siblings.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn cloned_layer_preserves_shared_cache_ceiling() -> Result<(), TestError> {
+        let keytab = keytab()?;
+        let layer = krb_http::NegotiateLayer::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .with_max_clock_skew(Duration::from_mins(15))?;
+        drop(layer.clone().with_max_clock_skew(Duration::from_mins(5))?);
+        let mut service = layer.layer(PolicyService);
+        let mut request = Request::new(());
+        krb_http::set_authorization_header(&mut request, &valid_authorization_header()?)?;
+        assert_eq!(run_ready(service.call(request))??.status(), StatusCode::OK);
+        Ok(())
+    }
+
+    /// A pending authenticated response never formats its retained AP-REP credential.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn pending_response_debug_redacts_credentials() -> Result<(), TestError> {
+        let keytab = keytab()?;
+        let mut service = krb_http::NegotiateLayer::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .layer(PolicyService);
+        let mut request = Request::new(());
+        krb_http::set_authorization_header(&mut request, &valid_authorization_header()?)?;
+        let future = service.call(request);
+        let diagnostic = format!("{future:?}");
+        let response = run_ready(future)??;
+        let credential = response
+            .headers()
+            .get(WWW_AUTHENTICATE)
+            .context("AP-REP")?
+            .to_str()?;
+        assert!(!diagnostic.contains(credential));
+        assert!(diagnostic.contains("header_len"));
+        Ok(())
+    }
+
     /// Replay-cache incompatibility is rejected before serving requests.
     #[cfg(feature = "tower")]
     #[test]
@@ -401,7 +517,7 @@ mod tests {
         let mut wrong_mech = response.clone();
         wrong_mech.supported_mech = Some(spnego::oid::ObjectIdentifier::from_arcs(vec![1, 2, 3])?);
         let mut mic = response;
-        mic.mech_list_mic = Some(vec![0; 28]);
+        mic.mech_list_mic = Some(vec![0; 28].into());
         for altered in [
             incomplete,
             request_mic,
@@ -532,7 +648,7 @@ mod tests {
         let context = initiator_context()?;
         // When formatted for diagnostics, then both credential representations are absent.
         let rendered = format!("{context:?}");
-        assert!(!rendered.contains(&context.header));
+        assert!(!rendered.contains(context.header.as_str()));
         assert!(!rendered.contains(&format!("{:?}", context.ap_req_der)));
         #[cfg(feature = "tokio")]
         {
@@ -552,10 +668,16 @@ mod tests {
                     }))
                 },
             ))?;
-            assert!(!format!("{result:?}").contains(&header));
+            assert!(!format!("{result:?}").contains(header.as_str()));
             assert!(
-                !format!("{result:?}")
-                    .contains(&result.context.as_ref().context("retry context")?.header)
+                !format!("{result:?}").contains(
+                    result
+                        .context
+                        .as_ref()
+                        .context("retry context")?
+                        .header
+                        .as_str()
+                )
             );
         }
         Ok(())
@@ -701,7 +823,7 @@ mod tests {
             assert_eq!(context.sequence_number, Some(42));
             assert_eq!(
                 krb_http::authorization_header(&request).context("Authorization header exists")?,
-                context.header
+                context.header.as_str()
             );
             Ok(())
         })
@@ -764,7 +886,7 @@ mod tests {
             assert_eq!(context.sequence_number, Some(7));
             assert_eq!(
                 krb_http::authorization_header(&request).context("Authorization header exists")?,
-                context.header
+                context.header.as_str()
             );
 
             service_ticket.session_key.value = vec![0x55; 32];

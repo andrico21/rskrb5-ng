@@ -71,7 +71,8 @@ Proof methods:
 
 - Trunk development happens on `main`.
 - Work branches are local `work/*` branches only and are never pushed.
-- Release tags `vX.Y.Z` are placed on `main` commits.
+- Current rskrb5-ng release tags `N.N.N` (without `v`) are placed on `main`
+  commits. The v-prefixed tags above are historical rskrb5/rskrb5-patched releases.
 - PR-head branches (the `fix/*` branches and the four other kept branches above) are frozen: they are not deleted, rebased or force-pushed.
 - `archive/*` tags hold the tips of deleted branches (`chore/deps-refresh`, `release/0.2.1`, `release/0.2.2`, `release/0.3.0`).
 

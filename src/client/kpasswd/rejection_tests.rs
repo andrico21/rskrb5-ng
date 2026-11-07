@@ -71,7 +71,7 @@ fn unsigned_rejection(framed: bool) -> Result<(), Box<dyn StdError>> {
     };
     let reply = Reply::parse(&bytes)?;
     // When the checked validator consumes an unauthenticated nonzero result.
-    let result = validated_result(&reply, &built, &options);
+    let result = validated_result(&reply, &built, &options, &built.crypto_policy);
     // Then it cannot produce a definitive password-change result.
     assert!(matches!(
         result,

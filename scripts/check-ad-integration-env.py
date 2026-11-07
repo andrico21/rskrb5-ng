@@ -82,9 +82,7 @@ def main() -> int:
     for label, names, default, required_reachability in ENDPOINTS:
         value, source = first_env_value(names, default)
         if require_explicit_endpoints and source == "default":
-            errors.append(
-                f"{label} must be explicit; set one of {', '.join(names)}"
-            )
+            errors.append(f"{label} must be explicit; set one of {', '.join(names)}")
         print(f"  {label}: {value} ({source})")
 
         try:
@@ -112,7 +110,7 @@ def main() -> int:
                 )
             print(f"  {label}: embedded test fixture")
             continue
-        keytab_error = validate_keytab_header(data)
+        keytab_error = validate_keytab_header(data, label)
         if keytab_error:
             errors.append(f"{label}: {source} {keytab_error}")
             continue
@@ -202,13 +200,66 @@ def load_keytab_override(
     return "embedded", None, None
 
 
-def validate_keytab_header(data: bytes) -> str | None:
+def validate_keytab_header(data: bytes, identity: str = "") -> str | None:
     if len(data) < 2:
         return "is too short for a keytab"
     if data[0] != 5:
         return f"has invalid first byte 0x{data[0]:02x}"
     if data[1] not in (1, 2):
         return f"has invalid keytab version {data[1]}"
+    byteorder = "big" if data[1] == 2 else sys.byteorder
+    offset = 2
+    usable = False
+    while offset < len(data):
+        if len(data) - offset < 4:
+            return "has truncated keytab record length"
+        length = int.from_bytes(data[offset : offset + 4], byteorder, signed=True)
+        offset += 4
+        size = abs(length)
+        if size > len(data) - offset:
+            return "has truncated keytab record payload"
+        record = data[offset : offset + size]
+        offset += size
+        if length <= 0:
+            continue
+        position = 0
+
+        def take(size: int) -> bytes:
+            nonlocal position
+            if size > len(record) - position:
+                raise ValueError("truncated keytab entry")
+            result = record[position : position + size]
+            position += size
+            return result
+
+        def number(size: int) -> int:
+            return int.from_bytes(take(size), byteorder)
+
+        def text() -> str:
+            return take(number(2)).decode("utf-8")
+
+        try:
+            count = number(2) - (1 if data[1] == 1 else 0)
+            if count <= 0:
+                return "has invalid keytab principal component count"
+            realm = text()
+            names = [text() for _ in range(count)]
+            if data[1] == 2:
+                take(4)
+            take(5)
+            enctype = number(2)
+            key = take(number(2))
+            if len(record) - position not in (0, 4):
+                return "has malformed keytab entry suffix"
+            key_size = {16: 24, 17: 16, 18: 32, 19: 16, 20: 32, 23: 16}.get(enctype)
+            if len(key) == key_size and (
+                not identity or f"{'/'.join(names)}@{realm}" == identity
+            ):
+                usable = True
+        except (ValueError, UnicodeDecodeError):
+            return "has truncated keytab or malformed entry"
+    if not usable:
+        return "has no usable key for the required principal"
     return None
 
 

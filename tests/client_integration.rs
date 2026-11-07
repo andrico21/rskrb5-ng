@@ -250,6 +250,7 @@ mod tests {
     use rskrb5_ng::krb_priv::ipv4_host_address;
     #[cfg(feature = "spnego")]
     use rskrb5_ng::{
+        crypto::CryptoPolicy,
         error::{Service as ServiceError, Spnego as SpnegoError},
         service::{ApRepOptions, Principal as ServicePrincipal, Validator},
         spnego,
@@ -1655,6 +1656,7 @@ mod tests {
 
                 let keytab = http_keytab()?;
                 let mut validator = Validator::new(&keytab).with_now(SystemTime::now());
+                validator = validator.with_crypto_policy(context.crypto_policy.clone());
                 let accepted = spnego::accept_sec_context_header(&mut validator, &context.header)?;
                 assert_eq!(
                     accepted.ap_req.client,
@@ -1863,13 +1865,15 @@ mod tests {
 
                 let context = spnego::init_sec_context(
                     &service_ticket,
-                    spnego::InitiatorContextOptions::new(),
+                    spnego::InitiatorContextOptions::new()
+                        .with_crypto_policy(fixture_crypto_policy(&[RC4_HMAC_ETYPE])?),
                 )?;
                 assert_eq!(context.service, service);
                 assert!(context.sequence_number.is_some());
 
                 let keytab = http_keytab()?;
                 let mut validator = Validator::new(&keytab).with_now(SystemTime::now());
+                validator = validator.with_crypto_policy(context.crypto_policy.clone());
                 let accepted = spnego::accept_sec_context_header(&mut validator, &context.header)?;
                 assert_eq!(
                     accepted.ap_req.client,
@@ -1938,13 +1942,16 @@ mod tests {
 
                 let context = spnego::init_sec_context(
                     &service_ticket,
-                    spnego::InitiatorContextOptions::new(),
+                    spnego::InitiatorContextOptions::new()
+                        .with_crypto_policy(fixture_crypto_policy(&[DES3_ETYPE])?),
                 )?;
                 assert_eq!(context.service, service);
                 assert!(context.sequence_number.is_some());
 
                 let keytab = http_keytab()?;
-                let mut validator = Validator::new(&keytab).with_now(SystemTime::now());
+                let mut validator = Validator::new(&keytab)
+                    .with_now(SystemTime::now())
+                    .with_crypto_policy(context.crypto_policy.clone());
                 let accepted = spnego::accept_sec_context_header(&mut validator, &context.header)?;
                 assert_eq!(
                     accepted.ap_req.client,
@@ -1965,6 +1972,52 @@ mod tests {
 
             Ok::<_, Box<dyn Error>>(())
         })
+    }
+
+    /// Live legacy options encode exactly their selected enctypes under explicit permission.
+    #[test]
+    fn legacy_live_options_have_explicit_permission() -> Result<(), Box<dyn Error>> {
+        use rasn::der;
+        use rskrb5_ng::{ap_req, crypto::Use, error::Policy, ticket};
+        for id in [16_i32, 23_i32] {
+            let as_options = login_options_with_etypes(KdcProtocol::Tcp, 1, vec![id])?;
+            let tgs_options = tgs_options_with_etypes(KdcProtocol::Tcp, 2, vec![id])?;
+            as_options
+                .crypto_policy
+                .as_ref()
+                .map_err(Clone::clone)?
+                .check_use(id, Use::RequestList)?;
+            tgs_options
+                .crypto_policy
+                .as_ref()
+                .map_err(Clone::clone)?
+                .check_use(id, Use::RequestList)?;
+            let built = build_tgt_as_req(Principal::user(REALM, USER), as_options)?;
+            let decoded: rasn_kerberos::AsReq = der::decode(&built.der)?;
+            assert_eq!(decoded.0.req_body.etype, vec![id]);
+            let ticket =
+                ap_req::decode(include_bytes!("../fuzz/fixtures/valid_ap_req.der"))?.ticket;
+            let now = SystemTime::UNIX_EPOCH
+                .checked_add(Duration::from_secs(1_893_553_447))
+                .ok_or("time")?;
+            let session = AsRepSession::new(
+                Principal::user(REALM, USER),
+                Principal::tgt_service(REALM),
+                EncryptionKey::new(18, vec![0x11; 32]),
+                ticket::encode(&ticket)?,
+                [0; 4],
+                now,
+                now,
+            );
+            let tgs = build_tgs_req(&session, service_principal(), tgs_options)?;
+            let decoded_tgs: rasn_kerberos::TgsReq = der::decode(&tgs.der)?;
+            assert_eq!(decoded_tgs.0.req_body.etype, vec![id]);
+            assert!(matches!(
+                CryptoPolicy::default().check_use(id, Use::RequestList),
+                Err(Policy::EnctypeNotPermitted { etype: _, usage: _ })
+            ));
+        }
+        Ok(())
     }
 
     /// Builds AS-REQ options with AES256 and a nonce unique to `protocol` and `sequence`.
@@ -1988,9 +2041,12 @@ mod tests {
 
                 _ => return Err("unexpected non-exhaustive protocol variant".into()),
             };
-        Ok(AsReq::new(now, nonce)
+        let policy = fixture_crypto_policy(&etypes)?;
+        let mut options = AsReq::new(now, nonce)
             .with_ticket_lifetime(Duration::from_hours(24))
-            .with_etypes(etypes))
+            .with_etypes(etypes);
+        options.crypto_policy = Ok(policy);
+        Ok(options)
     }
 
     /// Builds TGS-REQ options with AES256 and a nonce unique to `protocol` and `sequence`.
@@ -2014,9 +2070,29 @@ mod tests {
 
                 _ => return Err("unexpected non-exhaustive protocol variant".into()),
             };
-        Ok(TgsReq::new(now, nonce)
+        let policy = fixture_crypto_policy(&etypes)?;
+        let mut options = TgsReq::new(now, nonce)
             .with_ticket_lifetime(Duration::from_hours(24))
-            .with_etypes(etypes))
+            .with_etypes(etypes);
+        options.crypto_policy = Ok(policy);
+        Ok(options)
+    }
+
+    /// Opt in only to legacy families explicitly requested by a live fixture.
+    fn fixture_crypto_policy(etypes: &[i32]) -> Result<CryptoPolicy, Box<dyn Error>> {
+        let mut config = Config::new();
+        config.libdefaults.allow_rc4 = etypes.contains(&23_i32).into();
+        config.libdefaults.allow_des3 = etypes.contains(&16_i32).into();
+        if etypes.contains(&23_i32) {
+            config.libdefaults.permitted_enctypes.push("rc4".to_owned());
+        }
+        if etypes.contains(&16_i32) {
+            config
+                .libdefaults
+                .permitted_enctypes
+                .push("des3".to_owned());
+        }
+        Ok(CryptoPolicy::from_libdefaults(&config.libdefaults)?)
     }
 
     /// Returns the `HTTP/host.test.gokrb5` service principal.

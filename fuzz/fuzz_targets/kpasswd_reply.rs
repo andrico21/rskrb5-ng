@@ -1,6 +1,6 @@
 //! Fuzz the kadmin frame parsers on arbitrary input: `Reply`,
-//! `ChangePasswordResult` (the field patch 0002 adds carries the bytes these
-//! parse) and `Request`. None may panic; every input must return `Ok`/`Err`.
+//! `ChangePasswordResult` (numeric result code and raw result text) and `Request`.
+//! None may panic; every input must return `Ok`/`Err`.
 //! An accepted reply is also processed the way the password-change client
 //! reads it: the KRB-ERROR or KRB-PRIV result is decrypted and the AP-REP is
 //! verified against a fixed request built from synthetic keys.

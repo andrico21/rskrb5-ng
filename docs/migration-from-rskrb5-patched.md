@@ -8,6 +8,15 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Retained SPNEGO credentials now use `zeroize::Zeroizing`: `Krb5MechToken.message`,
+`NegTokenInit.{mech_token, mech_list_mic}`, `NegTokenResp.{response_token,
+mech_list_mic}`, and `InitiatorContext.{ap_req_der, header}` (FU-SPN-R05).
+For direct field assignment, convert owned vectors with `.into()`; borrow bytes
+with `.as_slice()` and headers with `.as_str()`. Token and pending response
+diagnostics show metadata and lengths, never credential contents. Plain vectors
+and strings returned by encoding/header convenience APIs still require caller
+erasure after use.
+
 Replace the dependency:
 
 ```toml
@@ -46,6 +55,72 @@ or use their `with_*` builders. "Derived enctype policy" and "Runtime crypto
 policy" below have the details.
 
 ## Behaviour changes before the review backlog
+
+AD keytab overrides must contain complete records and a correctly sized supported
+key for the named fixture principal (FU-TST-R09). Header-only placeholders no
+longer pass strict preflight; structural readiness still does not prove a live login.
+
+Gate wiring accepts only the sanctioned fail-closed command blocks
+(FU-GATE-R01). Keep required CI commands as direct run steps and prek commands
+in the success-dependent chain; shell wrappers that merely mention them fail.
+
+Release automation must pass a valid commit to `find-tag` (FU-CI-R01). Invalid
+objects and Git lookup failures now exit nonzero; only verified untagged commits
+produce the successful no-dispatch result.
+
+The gated integration runner now gives explicitly supplied test-time fixture
+variables precedence over its saved environment (FU-TST-R07). Omit a variable
+to reuse the saved value; explicit empty values also override it.
+
+For low-level kpasswd construction with legacy keys, set
+`RequestOptions.crypto_policy = Some(policy)` with explicit family permission
+and membership (FU-TRN-R04). High-level password changes supply their configured
+policy automatically. The key's enctype alone never grants legacy permission.
+
+Complete password request builders require whole-second timestamps and
+microseconds in `0..=999999`, including directly mutated option fields
+(FU-TRN-R02). Invalid values return a local `Kadmin::Encode` error; split clock
+samples before construction rather than passing fractional timestamps.
+
+Checked kpasswd transport now enforces crypto policy before delivery and on
+authenticated replies (FU-TRN-R01). `RequestOptions.crypto_policy` is optional
+(secure defaults when absent); `BuiltKpasswdRequest.crypto_policy` binds the
+non-configured checked exchange. Configured exchanges use their configuration
+snapshot. A disallowed server subkey after delivery means
+`KpasswdOutcomeUnknown`, not a definite password rejection or safe retry.
+
+Treat `with_ap_rep(false)` as an optional-reply preference (FU-SPN-R09). A valid
+initiator mechListMIC still receives a completion carrying a reciprocal MIC and
+the AP-REP that binds its sequence number. First-choice exchanges without a MIC
+retain the no-reply behavior.
+
+SPNEGO reqFlags contents must include an unused-bit count from 0 to 7, with zero
+padding bits and a payload when the count is nonzero (FU-SPN-R08). Malformed
+values now return `Spnego::InvalidReqFlags` on encode and decode; `[0]` remains valid.
+
+Consuming GSS constructors erase adopted plaintext even when key selection fails
+(FU-SPN-R07). No call-site change is required; passing a zeroizing owner remains
+the preferred way to retain erasure responsibility across the call boundary.
+
+Use `Validator::from_keytab(keytab)` for an owning service, as the Axum example
+now does (FU-HTTP-R06). Do not leak a keytab merely to obtain a static validator.
+
+The Axum example now distinguishes replay infrastructure failures from invalid
+credentials (FU-HTTP-R05): expect HTTP 500 and inspect `Arc<error::Http>` in local
+response extensions, rather than retrying credentials after an apparent 401.
+
+Tickets must supply at most one PAC across their authorization-data tree
+(FU-SVC-R05). Duplicate PACs now return `UnsupportedAuthorizationData { kind: 128 }`
+before replay admission; issuers must remove duplicates, not rely on first-PAC selection.
+
+AuthorizationData wrapper contents must contain exactly one DER value
+(FU-PAC-R01). Trailing values or garbage now return the existing service Decode
+or PAC DerDecode error; remove the suffix rather than relying on prefix decoding.
+
+HTTP clone configuration now checks cache compatibility against the shared
+validator under its lock (FU-HTTP-R04). Handle the existing typed skew error
+from `with_shared_replay_cache` even when that clone's original settings used
+a smaller window. Lowering a layer's window preserves the shared cache ceiling.
 
 These came with the 0.3 line before the review fixes below; `CHANGELOG.md`
 describes each one.
@@ -852,8 +927,10 @@ drop(validator);
 
 ### Removed configuration twins (FU-CFG-02, FU-CFG-08)
 
-Every remaining configuration constructor is environment-free, so the
-`*_without_env` twins are gone:
+`Config::new`, `Config::parse` and `LibDefaults::new` are environment-free, so
+their `*_without_env` twins are gone. Named ambient discovery remains explicit:
+`Config::load_from_env` and `Config::load_default` read `KRB5_CONFIG`, and
+`LibDefaults::from_env` reads `HOME`.
 
 | Removed | Use |
 | --- | --- |
@@ -865,6 +942,14 @@ Every remaining configuration constructor is environment-free, so the
 `Config::parse` and the derived-ID methods.
 
 ### Configuration composition (FU-CFG-01, FU-CFG-03, FU-CFG-06, FU-CFG-07, FU-CFG-09)
+
+`k5login_authoritative` now defaults to true rather than false; its deferred
+local-login consumer still grants no authorization. Ticket and renewable
+lifetimes use checked MIT intervals: negative totals, overflow, malformed unit
+order and trailing garbage are rejected. Zero renewable lifetime disables renewal.
+Auto transport uses 1465 for a negative `udp_preference_limit`, caps values above
+32700, and selects UDP first when request size equals the limit. Explicit TCP or
+UDP bypasses this preference (FU-DOC-R10).
 
 Configuration now follows MIT profile semantics; the details are in
 [`config-profile.md`](config-profile.md) and the generated
@@ -881,8 +966,11 @@ Configuration now follows MIT profile semantics; the details are in
   of the file; re-reading a completed source is not a cycle; the limits are
   256 files and 4 MiB in total, root files included.
 - **Unknown input.** Unknown sections and relations are diagnostics in
-  compatible mode and errors in strict mode; recognized settings that have no
-  runtime effect yet are `error::Config::NotYetEffective` in both modes.
+  compatible mode and errors in strict mode. Recognized settings without a
+  runtime effect produce `ConfigDiagnostic::NotYetEffective` in compatible mode
+  when they do not request tighter security. Unsupported tightening values fail
+  with `error::Config::NotYetEffective` in both modes. Strict mode rejects every
+  diagnostic; the [relation catalogue](config-relations.md) identifies each case.
 - **`module`.** `module` directives and relations fail with
   `error::Config::UnsupportedDynamicModule`; no code is loaded.
 - `forwardable` and `proxiable` set the request bits, `default_realm` is the

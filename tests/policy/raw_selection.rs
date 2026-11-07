@@ -81,10 +81,10 @@ fn peer_checksum_selection_is_typed() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// MIC construction must reject before converting a potentially expensive payload.
+/// MIC construction adopts consumed plaintext even when rejecting a forbidden cipher.
 #[cfg(feature = "spnego")]
 #[test]
-fn mic_rejection_precedes_payload_conversion() -> Result<(), Box<dyn Error>> {
+fn mic_rejection_follows_plaintext_adoption() -> Result<(), Box<dyn Error>> {
     use alloc::rc::Rc;
     use core::cell::Cell;
 
@@ -105,8 +105,8 @@ fn mic_rejection_precedes_payload_conversion() -> Result<(), Box<dyn Error>> {
     let failure = MicToken::new_initiator(Observed(Rc::clone(&converted)), &key)
         .err()
         .ok_or("D2 MIC accepted")?;
-    // Then no payload allocation was requested and the error remains typed.
-    assert!(!converted.get(), "payload conversion ran before rejection");
+    // Then the payload has an erasing owner and the error remains typed.
+    assert!(converted.get(), "payload must be adopted before rejection");
     assert!(matches!(
         policy_cause(&failure),
         Some(Policy::RejectedFeature {

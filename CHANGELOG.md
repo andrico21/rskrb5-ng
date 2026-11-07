@@ -23,6 +23,11 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Retained SPNEGO token bytes, initiator DER/header fields and pending Tower
+  AP-REP headers now use zeroizing owners; token and future Debug expose only
+  metadata and lengths (FU-SPN-R05). Plain returned wire buffers remain the
+  caller's erasure responsibility.
+
 - Add opt-in `service::TransitPolicy::{direct, domain_x500_paths}` presets for
   AD cross-domain tickets without TRANSITED-POLICY-CHECKED. Both pin endpoint
   realms; the latter allow-lists exact complete encoded paths. Default rejection
@@ -81,6 +86,64 @@ These are breaking; the migration guide maps each one.
   dev-dependency. No runtime dependency was added.
 
 ### Behaviour changes
+
+- AD preflight rejects truncated or unusable keytab overrides rather than
+  treating a valid two-byte header as readiness evidence (FU-TST-R09).
+
+- Configuration defaults `k5login_authoritative` to true instead of false;
+  local-login authorization remains deferred, so this grants no login.
+  Ticket and renewable lifetimes use the checked MIT interval parser, rejecting
+  negative totals, overflow, malformed unit order and trailing garbage.
+  Auto transport normalizes negative `udp_preference_limit` to 1465, caps values
+  above 32700, and sends UDP first at equality (FU-DOC-R10).
+
+- Workflow wiring validation now requires executed gate commands, rejecting
+  printed, commented, conditional or failure-swallowing substitutes (FU-GATE-R01).
+
+- Release tag discovery fails on invalid commit IDs or Git failures instead of
+  reporting a successful non-release invocation (FU-CI-R01).
+
+- The gated integration runner preserves explicit test-time environment overrides
+  instead of replacing them with saved fixture defaults, including strict AD and
+  password-change flags (FU-TST-R07).
+
+- Kpasswd request construction preserves explicit RC4/DES3 permission through
+  AP construction; high-level password changes propagate their configuration
+  snapshot instead of silently restoring AES-only defaults (FU-TRN-R04).
+
+- Both password request builders reject fractional KRB-PRIV timestamps and
+  out-of-range microseconds before producing a mutation frame (FU-TRN-R02).
+
+- Checked kpasswd replies enforce runtime encryption permission on AP-REP and
+  KRB-PRIV keys, including server-selected subkeys. Policy refusal after delivery
+  is an unknown outcome; prohibited outgoing keys fail before delivery. Kpasswd
+  request options and built requests now retain policy (FU-TRN-R01).
+
+- `with_ap_rep(false)` no longer suppresses mandatory SPNEGO completion: a
+  supplied valid mechListMIC receives its reciprocal MIC and AP-REP (FU-SPN-R09).
+
+- SPNEGO reqFlags encode/decode rejects malformed DER BIT STRING contents with
+  the new `Spnego::InvalidReqFlags` error (FU-SPN-R08).
+
+- Consuming MIC and Wrap constructors adopt plaintext into zeroizing storage
+  before rejecting an unsupported key, so early errors also erase it (FU-SPN-R07).
+
+- The Axum example owns its keytab and releases it on shutdown instead of
+  leaking the allocation for process lifetime (FU-HTTP-R06).
+
+- The Axum example reports replay infrastructure faults as hardened 500 responses
+  and retains typed causes in local response extensions (FU-HTTP-R05).
+
+- Service validation rejects duplicate ticket PACs, including nested siblings,
+  with `UnsupportedAuthorizationData { kind: 128 }` before replay admission
+  instead of interpreting only the first PAC (FU-SVC-R05).
+
+- AuthorizationData wrappers reject trailing DER or arbitrary suffix bytes in
+  both service validation and PAC discovery (FU-PAC-R01).
+
+- Cloned HTTP services reject replay-cache attachment incompatible with the
+  actual shared validator; lowering a cloned layer's skew no longer shortens
+  its siblings' replay retention (FU-HTTP-R04).
 
 - Ccache parsing bounds every record count (principal components, addresses,
   authorization data) against the remaining input before reserving memory, so

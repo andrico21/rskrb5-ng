@@ -152,12 +152,23 @@ fn acceptor_checks_inner_keys_before_replay() -> Result<(), Box<dyn Error>> {
         (17_i32, Some(18_i32), Use::AcceptorSubkey),
     ] {
         let (keys, bytes, now) = fixture(17, session_id, subkey)?;
+        let mut request = ap_req::decode(&bytes)?;
+        request.authenticator.etype = 17_i32;
+        let encoded = ap_req::encode(&request)?;
+        if session_id == 18_i32 {
+            let broad_error = Validator::new(&keys)
+                .with_now(now)
+                .validate_ap_req(&encoded)
+                .err()
+                .ok_or("mismatched envelope accepted")?;
+            assert!(policy_cause(&broad_error).is_none());
+        }
         let mut validator = Validator::new(&keys)
             .with_now(now)
             .with_crypto_policy(CryptoPolicy::from_libdefaults(&config.libdefaults)?);
         // When authenticated plaintext exposes the excluded key.
         let error = validator
-            .validate_ap_req(&bytes)
+            .validate_ap_req(&encoded)
             .err()
             .ok_or("excluded inner key accepted")?;
         // Then rejection precedes replay admission.

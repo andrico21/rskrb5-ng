@@ -2025,6 +2025,9 @@ pub enum Spnego {
     /// Known SPNEGO fields were repeated or appeared out of sequence.
     #[error("duplicate or reordered SPNEGO field")]
     InvalidFieldOrder,
+    /// SPNEGO reqFlags has invalid DER BIT STRING contents.
+    #[error("invalid SPNEGO reqFlags BIT STRING")]
+    InvalidReqFlags,
     /// DER length exceeds the remaining input.
     #[error("DER length exceeds remaining input")]
     LengthExceedsInput,

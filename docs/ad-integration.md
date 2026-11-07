@@ -60,8 +60,10 @@ The concrete provisioning checklist lives in
 and the test behavior here in sync when the AD gate changes.
 
 The domains must have a bidirectional trust. The test config sets
-`forwardable = yes`, `noaddresses = false`, AES256-SHA1 enctypes by default,
+`forwardable = yes`, `noaddresses = true`, AES256-SHA1 enctypes by default,
 and RC4-HMAC plus canonicalization for the trust tests.
+Address-bound requests remain deferred: `noaddresses = false` returns the typed
+`Config::NotYetEffective` error instead of silently issuing addressless tickets.
 
 The required principals and SPNs are:
 

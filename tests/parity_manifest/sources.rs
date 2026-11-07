@@ -112,25 +112,193 @@ pub(crate) fn check_test_name(name: &str) -> Result<(), TestError> {
     Ok(())
 }
 
-/// Whether the final path segment of `symbol` is declared publicly in `sources`.
+/// Same-named methods must not prove a different module or owning type.
+#[test]
+fn symbol_evidence_requires_full_owner_path() {
+    let sources = vec![(
+        "src/keytab.rs".to_owned(),
+        "pub struct Principal;\nimpl Principal {\n pub fn from_name() {}\n}\npub struct Keytab;"
+            .to_owned(),
+    )];
+    assert!(declares(&sources, "keytab::Principal::from_name"));
+    assert!(!declares(&sources, "keytab::Keytab::from_name"));
+    assert!(!declares(&sources, "ccache::Principal::from_name"));
+    let child = vec![(
+        "src/keytab/child.rs".to_owned(),
+        "pub struct Keytab;\nimpl Keytab {\n pub fn from_name() {}\n}".to_owned(),
+    )];
+    assert!(!declares(&child, "keytab::Keytab::from_name"));
+}
+
+/// Resolve the module and enclosing impl or enum, not an unrelated same-named item.
+fn resolve_alias(sources: &[(String, String)], symbol: &str) -> String {
+    let mut resolved = symbol.to_owned();
+    for _ in 0_u8..8 {
+        let mut replacement = None;
+        for (file, source) in sources {
+            let module = file
+                .trim_start_matches("src/")
+                .trim_end_matches(".rs")
+                .replace('/', "::");
+            for line in source.lines().map(str::trim) {
+                if let Some((alias, target)) = line
+                    .strip_prefix("pub type ")
+                    .and_then(|rest| rest.split_once(" = "))
+                {
+                    let prefix = format!("{module}::{alias}");
+                    if let Some(suffix) = resolved
+                        .strip_prefix(&prefix)
+                        .filter(|suffix| suffix.is_empty() || suffix.starts_with("::"))
+                    {
+                        let destination = target.trim_end_matches(';');
+                        let path = destination
+                            .strip_prefix("crate::")
+                            .map_or_else(|| format!("{module}::{destination}"), str::to_owned);
+                        replacement = Some(format!("{path}{suffix}"));
+                    }
+                }
+            }
+        }
+        if let Some(path) = replacement {
+            if path == resolved {
+                break;
+            }
+            resolved = path;
+        } else {
+            break;
+        }
+    }
+    resolved
+}
+
+/// Match a qualified public symbol against its module and owning type.
 pub(crate) fn declares(sources: &[(String, String)], symbol: &str) -> bool {
-    let item = symbol.rsplit("::").next().unwrap_or(symbol);
-    let follows = |rest: &str| {
-        rest.chars()
-            .next()
-            .is_none_or(|next| !next.is_alphanumeric() && next != '_')
+    let resolved = resolve_alias(sources, symbol);
+    let segments: Vec<&str> = resolved.split("::").collect();
+    let Some((item, parents)) = segments.split_last() else {
+        return false;
     };
-    sources.iter().any(|(_, source)| {
-        source.lines().map(str::trim).any(|line| {
-            DECLARATIONS.iter().any(|keyword| {
-                line.strip_prefix(keyword)
-                    .and_then(|rest| rest.strip_prefix(item))
-                    .is_some_and(follows)
-            }) || line
-                .strip_prefix(item)
-                .is_some_and(|rest| [",", " {", "("].iter().any(|end| rest.starts_with(end)))
-        })
+    sources.iter().any(|(file, source)| {
+        let module = file
+            .strip_prefix("src/")
+            .unwrap_or(file)
+            .trim_end_matches(".rs")
+            .replace('/', "::");
+        let included = sources.iter().find(|(_, parent)| {
+            parent.contains(&format!(
+                "include!(\"{}\")",
+                file.trim_start_matches("src/")
+            ))
+        });
+        let effective_module = included.map_or(module, |(parent, _)| {
+            parent
+                .trim_start_matches("src/")
+                .trim_end_matches(".rs")
+                .replace('/', "::")
+        });
+        let module_name = path_module(sources, file).unwrap_or(effective_module);
+        let mut depth = 0_usize;
+        let mut owner: Option<(String, usize)> = None;
+        for line in source.lines().map(str::trim) {
+            if line.starts_with("//") {
+                continue;
+            }
+            if let Some(header) = line.strip_prefix("impl") {
+                let plain = header.trim_start();
+                let after_generics = if plain.starts_with('<') {
+                    plain.split_once('>').map_or(plain, |(_, rest)| rest.trim())
+                } else {
+                    plain
+                };
+                let target = after_generics
+                    .split_once(" for ")
+                    .map_or(after_generics, |(_, target)| target);
+                let name: String = target
+                    .chars()
+                    .take_while(|character| character.is_alphanumeric() || *character == '_')
+                    .collect();
+                owner = Some((name, depth));
+            } else if let Some(header) = line.strip_prefix("pub enum ") {
+                owner = Some((identifier(header), depth));
+            } else {
+                // Other lines retain their enclosing owner until its closing brace.
+            }
+            for keyword in DECLARATIONS {
+                if let Some(rest) = line.strip_prefix(keyword) {
+                    let name = identifier(rest);
+                    if name == *item {
+                        let method = keyword.contains("fn ");
+                        let expected = parents.join("::");
+                        if method {
+                            if let Some((ty, _)) = &owner {
+                                if let Some((expected_module, expected_type)) =
+                                    expected.rsplit_once("::")
+                                    && expected_type == ty
+                                    && declares(sources, &expected)
+                                    && (module_name == expected_module
+                                        || module_name.starts_with(&format!("{expected_module}::")))
+                                {
+                                    return true;
+                                }
+                            } else if module_name == expected {
+                                return true;
+                            } else {
+                                // The same item name in a different module is not evidence.
+                            }
+                        } else if module_name == expected {
+                            return true;
+                        } else {
+                            // Type declarations must belong to the requested module.
+                        }
+                    }
+                }
+            }
+            if let Some((ty, _)) = &owner
+                && identifier(line) == *item
+                && !line.starts_with("pub ")
+                && let Some((expected_module, expected_type)) = parents.join("::").rsplit_once("::")
+                && expected_type == ty
+                && (module_name == expected_module
+                    || module_name.starts_with(&format!("{expected_module}::")))
+            {
+                return true;
+            }
+            depth = depth
+                .saturating_add(line.matches('{').count())
+                .saturating_sub(line.matches('}').count());
+            if owner.as_ref().is_some_and(|(_, start)| depth <= *start) {
+                owner = None;
+            }
+        }
+        false
     })
+}
+
+/// First Rust identifier at a declaration boundary.
+fn path_module(sources: &[(String, String)], file: &str) -> Option<String> {
+    let marker = format!("#[path = \"{}\"]", file.trim_start_matches("src/"));
+    sources.iter().find_map(|(parent_file, parent)| {
+        if parent_file == "src/lib.rs" {
+            return None;
+        }
+        let (_, rest) = parent.split_once(&marker)?;
+        let declaration = rest
+            .lines()
+            .map(str::trim)
+            .find_map(|line| line.strip_prefix("pub mod "))?;
+        let parent_module = parent_file
+            .trim_start_matches("src/")
+            .trim_end_matches(".rs")
+            .replace('/', "::");
+        Some(format!("{parent_module}::{}", identifier(declaration)))
+    })
+}
+
+/// First Rust identifier at a declaration boundary.
+fn identifier(text: &str) -> String {
+    text.chars()
+        .take_while(|character| character.is_alphanumeric() || *character == '_')
+        .collect()
 }
 
 /// Variants of `RejectedFeature`, read from `src/error.rs` and the files it includes.

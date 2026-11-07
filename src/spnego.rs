@@ -4,6 +4,9 @@
 //! [`crate::client`] and [`crate::service`]: GSS-API KRB5 mech tokens, SPNEGO
 //! NegTokenInit/NegTokenResp negotiation tokens, and HTTP `Negotiate` header
 //! encoding/decoding.
+//!
+//! Returned plain wire vectors and header strings belong to the caller, who must
+//! erase them after use. Retained token fields use zeroizing owners.
 
 use core::{fmt, iter, time::Duration};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -39,6 +42,8 @@ mod negotiation;
 pub mod oid;
 /// Plaintext staging owners.
 mod scratch;
+/// Redacted formatting for retained wire credentials.
+mod token_debug;
 
 /// HTTP Negotiate header size boundary regressions.
 #[cfg(test)]
@@ -280,9 +285,13 @@ impl MicToken {
     /// [`Error::GssChecksumMismatch`] when the checksum does not match.
     #[inline]
     pub fn verify(&self, key: &EncryptionKey, key_usage: u32) -> Result<(), Error> {
-        let expected = self.compute_checksum(key, key_usage)?;
+        selection::reject_enctype(key.etype)?;
+        let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
+        let mut data = scratch::Scratch::new(payload.to_vec(), "mic-checksum");
+        data.extend_from_slice(&self.checksum_header());
+        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let actual = self.checksum.as_ref().ok_or(Error::MissingGssChecksum)?;
-        if !constant_time_eq(&expected, actual) {
+        if !etype.verify_checksum(&key.value, &data, actual, key_usage) {
             return Err(Error::GssChecksumMismatch);
         }
         Ok(())
@@ -299,11 +308,12 @@ impl MicToken {
     where
         P: Into<Zeroizing<Vec<u8>>>,
     {
+        let owned_payload = payload.into();
         selection::reject_enctype(key.etype)?;
         let mut token = Self {
             flags: 0,
             snd_seq_num: 0,
-            payload: Some(payload.into()),
+            payload: Some(owned_payload),
             checksum: None,
         };
         token.set_checksum(key, GSSAPI_INITIATOR_SIGN_USAGE)?;
@@ -642,9 +652,13 @@ impl WrapToken {
             return Ok(());
         }
 
-        let expected = self.compute_checksum(key, key_usage)?;
+        selection::reject_enctype(key.etype)?;
+        let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
+        let mut data = scratch::Scratch::new(payload.to_vec(), "wrap-checksum");
+        data.extend_from_slice(&wrap_checksum_header(self.flags, self.snd_seq_num));
+        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let actual = self.checksum.as_ref().ok_or(Error::MissingGssChecksum)?;
-        if !constant_time_eq(&expected, actual) {
+        if !etype.verify_checksum(&key.value, &data, actual, key_usage) {
             return Err(Error::GssChecksumMismatch);
         }
         Ok(())
@@ -662,8 +676,8 @@ impl WrapToken {
     where
         P: Into<Zeroizing<Vec<u8>>>,
     {
-        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let owned_payload = payload.into();
+        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let mut token = Self {
             flags: 0,
             ec: u16::try_from(etype.hmac_len()).map_err(|_overflow| {
@@ -693,8 +707,8 @@ impl WrapToken {
     where
         P: Into<Zeroizing<Vec<u8>>>,
     {
-        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let owned_payload = payload.into();
+        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let mut confounder = vec![0; etype.confounder_len()];
         getrandom::fill(&mut confounder)?;
         Self::new_initiator_sealed_with_confounder(owned_payload, key, &confounder)
@@ -947,7 +961,7 @@ impl Krb5TokenId {
 }
 
 /// GSS-API KRB5 mech token containing one Kerberos message.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct Krb5MechToken {
     /// Token mechanism OID. RFC 4121 KRB5 tokens use [`ObjectIdentifier::krb5`].
@@ -955,7 +969,7 @@ pub struct Krb5MechToken {
     /// Two-byte KRB5 token ID.
     pub token_id: Krb5TokenId,
     /// DER-encoded Kerberos message carried by this token.
-    pub message: Vec<u8>,
+    pub message: Zeroizing<Vec<u8>>,
 }
 
 impl Krb5MechToken {
@@ -980,7 +994,7 @@ impl Krb5MechToken {
         Self {
             oid: ObjectIdentifier::krb5(),
             token_id,
-            message,
+            message: Zeroizing::new(message),
         }
     }
 
@@ -1014,7 +1028,7 @@ impl Krb5MechToken {
         }
 
         let token_id = Krb5TokenId::from_bytes(*content.read_array::<2>()?)?;
-        let message = content.remaining().to_vec();
+        let message = Zeroizing::new(content.remaining().to_vec());
         if message.is_empty() {
             return Err(Error::MissingKerberosMessage);
         }
@@ -1100,7 +1114,7 @@ impl NegState {
 }
 
 /// SPNEGO `NegTokenInit`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct NegTokenInit {
     /// Offered mechanism OIDs.
@@ -1108,9 +1122,9 @@ pub struct NegTokenInit {
     /// Optional DER BIT STRING contents, including the unused-bit count byte.
     pub req_flags: Option<Vec<u8>>,
     /// Optional mechanism token bytes.
-    pub mech_token: Option<Vec<u8>>,
+    pub mech_token: Option<Zeroizing<Vec<u8>>>,
     /// Optional mechanism list MIC bytes.
-    pub mech_list_mic: Option<Vec<u8>>,
+    pub mech_list_mic: Option<Zeroizing<Vec<u8>>>,
 }
 
 impl NegTokenInit {
@@ -1122,7 +1136,7 @@ impl NegTokenInit {
         Self {
             mech_types: vec![ObjectIdentifier::krb5()],
             req_flags: None,
-            mech_token: Some(mech_token),
+            mech_token: Some(Zeroizing::new(mech_token)),
             mech_list_mic: None,
         }
     }
@@ -1150,6 +1164,7 @@ impl NegTokenInit {
         ));
 
         if let Some(req_flags) = &self.req_flags {
+            validate_req_flags(req_flags)?;
             fields.extend_from_slice(&encode_explicit(
                 TAG_CONTEXT_1,
                 &encode_tlv(TAG_BIT_STRING, req_flags),
@@ -1211,12 +1226,12 @@ impl NegTokenInit {
         if self.mech_list_mic.is_some() {
             return Err(Error::MechListMicRequiresState);
         }
-        Ok(krb5.message)
+        Ok(krb5.message.to_vec())
     }
 }
 
 /// SPNEGO `NegTokenResp` / `NegTokenTarg`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct NegTokenResp {
     /// Optional negotiation state.
@@ -1224,9 +1239,9 @@ pub struct NegTokenResp {
     /// Optional selected mechanism OID.
     pub supported_mech: Option<ObjectIdentifier>,
     /// Optional response token bytes.
-    pub response_token: Option<Vec<u8>>,
+    pub response_token: Option<Zeroizing<Vec<u8>>>,
     /// Optional mechanism list MIC bytes.
-    pub mech_list_mic: Option<Vec<u8>>,
+    pub mech_list_mic: Option<Zeroizing<Vec<u8>>>,
 }
 
 impl NegTokenResp {
@@ -1270,7 +1285,7 @@ impl NegTokenResp {
     /// Attach a mechanism response token.
     #[inline]
     pub fn with_response_token(mut self, response_token: Vec<u8>) -> Self {
-        self.response_token = Some(response_token);
+        self.response_token = Some(Zeroizing::new(response_token));
         self
     }
 
@@ -1561,13 +1576,13 @@ pub struct InitiatorContext {
     /// ASN.1 AP-REQ message.
     pub ap_req: rasn_kerberos::ApReq,
     /// DER-encoded AP-REQ bytes.
-    pub ap_req_der: Vec<u8>,
+    pub ap_req_der: Zeroizing<Vec<u8>>,
     /// KRB5 mech token carrying the AP-REQ.
     pub krb5_token: Krb5MechToken,
     /// SPNEGO `NegTokenInit` context token.
     pub spnego_token: Token,
     /// HTTP `Authorization` header value.
-    pub header: String,
+    pub header: Zeroizing<String>,
     /// Client principal placed in the authenticator.
     pub client: Principal,
     /// Service principal from the ticket.
@@ -1650,7 +1665,7 @@ impl InitiatorContext {
             let token = Krb5MechToken::decode(
                 response
                     .response_token
-                    .as_deref()
+                    .as_ref()
                     .ok_or(Error::MissingApRep)?,
             )?;
             if token.token_id != Krb5TokenId::ApRep {
@@ -1813,11 +1828,11 @@ impl AcceptedContext {
             NegTokenResp::accept_completed().with_response_token(krb5_token.encode()?);
         response.supported_mech = Some(self.selected_mechanism.clone());
         if let Some(list) = &self.mech_types_der {
-            response.mech_list_mic = Some(negotiation::response_mic(
+            response.mech_list_mic = Some(Zeroizing::new(negotiation::response_mic(
                 list,
                 &self.ap_req,
                 reply_options,
-            )?);
+            )?));
         }
         response_token_header(&response)
     }
@@ -1956,11 +1971,11 @@ pub fn init_sec_context_with_confounder(
     let built_ap_req =
         build_ap_req_with_confounder(service_ticket, ap_req_options, timestamp, cusec, confounder)
             .map_err(client_error_to_spnego)?;
-    let ap_req_der = built_ap_req.der.clone();
-    let krb5_token = Krb5MechToken::ap_req(ap_req_der.clone());
+    let ap_req_der = Zeroizing::new(built_ap_req.der.clone());
+    let krb5_token = Krb5MechToken::ap_req(ap_req_der.to_vec());
     let krb5_token_der = krb5_token.encode()?;
     let spnego_token = Token::Init(NegTokenInit::krb5(krb5_token_der));
-    let header = negotiate_header(&spnego_token)?;
+    let header = Zeroizing::new(negotiate_header(&spnego_token)?);
 
     Ok(InitiatorContext {
         crypto_policy,
@@ -1991,7 +2006,9 @@ pub fn authorization_header(
     service_ticket: &TgsRepSession,
     options: InitiatorContextOptions,
 ) -> Result<String, Error> {
-    Ok(init_sec_context(service_ticket, options)?.header)
+    Ok(init_sec_context(service_ticket, options)?
+        .header
+        .to_string())
 }
 
 /// Decode an HTTP `Negotiate` header into a SPNEGO token.
@@ -2203,20 +2220,23 @@ fn rotate_left(bytes: &[u8], count: usize) -> Vec<u8> {
     out
 }
 
-/// Compare two byte strings without stopping at the first differing byte.
-fn constant_time_eq(expected: &[u8], actual: &[u8]) -> bool {
-    if expected.len() != actual.len() {
-        return false;
-    }
-
-    let mut diff = 0;
-    for (left, right) in expected.iter().zip(actual) {
-        diff |= left ^ right;
-    }
-    diff == 0
-}
-
 use crate::error::Spnego as Error;
+
+/// Enforce DER BIT STRING content rules at both reqFlags boundaries.
+///
+/// # Errors
+/// Returns `InvalidReqFlags` for missing count bytes or invalid padding.
+fn validate_req_flags(bytes: &[u8]) -> Result<(), Error> {
+    let Some((&unused, bits)) = bytes.split_first() else {
+        return Err(Error::InvalidReqFlags);
+    };
+    (unused <= 7
+        && (unused == 0
+            || bits
+                .last()
+                .is_some_and(|last| last & (1_u8 << unused).wrapping_sub(1) == 0)))
+    .ok_or(Error::InvalidReqFlags)
+}
 
 /// Map an AP-REP processing error onto the SPNEGO error type.
 fn ap_rep_error(error: error::ApRep) -> Error {
@@ -2413,18 +2433,18 @@ fn decode_neg_token_init(bytes: &[u8]) -> Result<NegTokenInit, Error> {
                 );
             }
             TAG_CONTEXT_2 => {
-                mech_token = Some(
+                mech_token = Some(Zeroizing::new(
                     read_single_tlv(field.value(), TAG_OCTET_STRING)?
                         .value()
                         .to_vec(),
-                );
+                ));
             }
             TAG_CONTEXT_3 => {
-                mech_list_mic = Some(
+                mech_list_mic = Some(Zeroizing::new(
                     read_single_tlv(field.value(), TAG_OCTET_STRING)?
                         .value()
                         .to_vec(),
-                );
+                ));
             }
             0xa4..=0xbe => {}
             actual => {
@@ -2436,6 +2456,9 @@ fn decode_neg_token_init(bytes: &[u8]) -> Result<NegTokenInit, Error> {
         }
     }
 
+    if let Some(flags) = &req_flags {
+        validate_req_flags(flags)?;
+    }
     let mech_types = offered_mechs
         .filter(|oids| !oids.is_empty())
         .ok_or(Error::MissingMechTypes)?;
@@ -2483,18 +2506,18 @@ fn decode_neg_token_resp(bytes: &[u8]) -> Result<NegTokenResp, Error> {
                 )?)?);
             }
             TAG_CONTEXT_2 => {
-                response_token = Some(
+                response_token = Some(Zeroizing::new(
                     read_single_tlv(field.value(), TAG_OCTET_STRING)?
                         .value()
                         .to_vec(),
-                );
+                ));
             }
             TAG_CONTEXT_3 => {
-                mech_list_mic = Some(
+                mech_list_mic = Some(Zeroizing::new(
                     read_single_tlv(field.value(), TAG_OCTET_STRING)?
                         .value()
                         .to_vec(),
-                );
+                ));
             }
             0xa4..=0xbe => {}
             actual => {

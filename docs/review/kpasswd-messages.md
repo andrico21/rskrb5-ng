@@ -1,5 +1,18 @@
 # Kpasswd and message review dispositions
 
+## Current follow-up
+
+The todo 34 receipts below describe that historical checkpoint. FU-TRN-14
+supersedes its password-storage residual: `ChangePasswdData::new_passwd` is now
+the owning zeroizing `kadmin::password::Bytes`, and dedicated first-party DER
+writers avoid a password copy into rasn `OctetString`. The proofs are
+`password_storage_is_zeroizing`, `password_der_matches_rasn` and
+`private_der_matches_rasn`. General decoded `EncKrbPrivPart::user_data` and other
+dependency-owned ASN.1/cipher copies remain outside the erasure guarantee; see
+[the current security policy](../security-policy.md#residual-copies).
+
+## Historical todo 34 receipts
+
 All todo 34 IDs have a disposition. Commit subjects identify
 their atomic item without self-referential hashes. Full commands, red output
 and exit codes are in `task-34-rskrb5-ng-own-way.log` in the execution evidence.
