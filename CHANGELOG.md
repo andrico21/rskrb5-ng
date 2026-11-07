@@ -87,6 +87,10 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- The gated integration runner preserves explicit test-time environment overrides
+  instead of replacing them with saved fixture defaults, including strict AD and
+  password-change flags (FU-TST-R07).
+
 - Kpasswd request construction preserves explicit RC4/DES3 permission through
   AP construction; high-level password changes propagate their configuration
   snapshot instead of silently restoring AES-only defaults (FU-TRN-R04).

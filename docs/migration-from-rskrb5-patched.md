@@ -56,6 +56,10 @@ policy" below have the details.
 
 ## Behaviour changes before the review backlog
 
+The gated integration runner now gives explicitly supplied test-time fixture
+variables precedence over its saved environment (FU-TST-R07). Omit a variable
+to reuse the saved value; explicit empty values also override it.
+
 For low-level kpasswd construction with legacy keys, set
 `RequestOptions.crypto_policy = Some(policy)` with explicit family permission
 and membership (FU-TRN-R04). High-level password changes supply their configured

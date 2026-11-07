@@ -220,6 +220,13 @@ limits are recorded under FU-OPS-03.
 
 ## Source notes
 
+### Critic u6 resolutions
+
+| ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
+| --- | --- | --- | --- | --- | --- | --- |
+| FU-TST-R07 | minor | Saved fixture environment silently disables an explicitly requested strict AD test | fixed | Runner self-test red/green; commit containing this row | Explicit test-time fixture variables override saved values, including strict AD flags, kpasswd flags and endpoints; absent variables retain saved defaults. | Task 22 u6 evidence; real run_tests with stubbed cargo. |
+
+
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 
 - RVX-u1-01 → FU-TST-01 (also: the test never exercises the router wiring cited by the review doc; covered by FU-TST-01's Proof)

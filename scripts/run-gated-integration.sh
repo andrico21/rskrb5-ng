@@ -443,8 +443,17 @@ run_tests() {
     return 1
   fi
 
+  local name
+  local -A overrides=()
+  for name in "${ENV_NAMES[@]}"; do
+    if [[ -v "$name" ]]; then overrides["$name"]="${!name}"; fi
+  done
   # shellcheck disable=SC1090
   source "$ENV_FILE"
+  for name in "${!overrides[@]}"; do
+    printf -v "$name" '%s' "${overrides[$name]}"
+    export "$name"
+  done
   local configure_resolver_enabled
   configure_resolver_enabled="$(default_configure_resolver_enabled)"
   configure_resolver "$DNS_IP" "$configure_resolver_enabled"
@@ -565,6 +574,13 @@ self_test() {
   printf '%s' "$wrapped_b64" | cmp -s - "$seen" ||
     st_fail "the test command did not receive the complete multiline keytab value"
   [[ ! -e "$marker" ]] || st_fail "an operator value ran as a shell command"
+  cargo() {
+    [[ "$TESTAD" == 1 && "$TESTAD_REQUIRED" == 1 && "$TEST_KPASSWD" == 1 &&
+      "$TEST_AD_USER_KDC_ADDR" == "override.example:88" ]] || return 1
+  }
+  TESTAD=1 TESTAD_REQUIRED=1 TEST_KPASSWD=1 TEST_AD_USER_KDC_ADDR=override.example:88 \
+    RSKRB5_CONFIGURE_RESOLVER=0 run_tests >/dev/null || st_fail "saved environment replaced caller overrides"
+  unset -f cargo
   # A requested run fails instead of skipping unless the operator opts out.
   INTEGRATION_REQUIRED=0 write_env 127.0.0.1:88 127.0.0.1:78 127.0.0.1:98 127.0.0.1:188 127.0.0.1:58 \
     127.0.0.1:464 127.0.0.1 127.0.88.53 127.0.88.53:53 http://127.0.0.1 127.0.0.1 0
