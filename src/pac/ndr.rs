@@ -665,19 +665,9 @@ fn read_deferred_claim_string(
     }
 
     let unit_count = ndr_len(actual_count)?;
-    let mut units = Vec::with_capacity(unit_count);
-    for _ in 0..actual_count {
-        units.push(reader.read_u16()?);
-    }
+    let bytes = reader.read_bytes(unit_count.checked_mul(2).ok_or(Error::LengthOverflow)?)?;
     reader.align(4)?;
-
-    if units.last().copied() == Some(0) {
-        let _: Option<u16> = units.pop();
-    }
-    String::from_utf16(&units).map_err(|error| Error::InvalidUtf16 {
-        target,
-        message: error.to_string(),
-    })
+    super::utf16le_bytes_to_string(bytes.strip_suffix(&[0, 0]).unwrap_or(bytes), target)
 }
 
 /// Checks that only zero padding follows the decoded structure.
@@ -749,26 +739,20 @@ pub(super) fn read_deferred_unicode_string(
     }
 
     let unit_count = ndr_len(actual_count)?;
-    let mut units = Vec::with_capacity(unit_count);
-    for _ in 0..actual_count {
-        units.push(reader.read_u16()?);
-    }
+    let bytes = reader.read_bytes(unit_count.checked_mul(2).ok_or(Error::LengthOverflow)?)?;
     reader.align(4)?;
 
     // `length` is even (checked above), so halving counts UTF-16 units exactly.
     let logical_len = usize::from(descriptor.length.div_euclid(2));
-    let Some(logical_units) = units.get(..logical_len) else {
+    let Some(logical_bytes) = bytes.get(..usize::from(descriptor.length)) else {
         return Err(Error::InvalidRpcUnicodeStringData {
             target,
             expected_units: logical_len,
-            actual_units: units.len(),
+            actual_units: unit_count,
         });
     };
 
-    let value = String::from_utf16(logical_units).map_err(|error| Error::InvalidUtf16 {
-        target,
-        message: error.to_string(),
-    })?;
+    let value = super::utf16le_bytes_to_string(logical_bytes, target)?;
     Ok(RpcUnicodeString {
         length: descriptor.length,
         maximum_length: descriptor.maximum_length,
