@@ -87,6 +87,10 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Direct AS reply processing enforces the offered reply encryption type before
+  decryption, independently of the session-key type (`EnctypeNotRequested`,
+  FU-CLI-R07); TGS reply wrapping is unchanged.
+
 - Cached/imported sessions and AP construction reject service metadata that
   disagrees with the encoded ticket's realm or ordered components
   (`ServicePrincipalMismatch`, FU-CLI-R06).

@@ -502,7 +502,7 @@ mod tests {
             Principal::user("TEST.GOKRB5", "testuser1"),
             AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![17_i32]),
         )?;
-        let reply_key = reply_key()?;
+        let reply_key = EncryptionKey::new(17, vec![0x42; 16]);
         let response =
             synthetic_as_rep_with_reply_key(&request, request.nonce, &request.service, &reply_key)?;
 
@@ -510,6 +510,37 @@ mod tests {
             return Err("a session key outside the requested list must be rejected".into());
         };
         assert!(matches!(error, Error::EnctypeNotRequested(18_i32)));
+        Ok(())
+    }
+
+    /// Reply wrapping and session enctypes are independently bound to the AS offer.
+    #[test]
+    fn direct_as_reply_rejects_unoffered_wrapping_enctype() -> Result<(), TestError> {
+        use rskrb5_ng::kdc_rep;
+        let key = reply_key()?;
+        for (offered, accepted) in [(vec![17_i32], false), (vec![17_i32, 18_i32], true)] {
+            let request = build_tgt_as_req(
+                Principal::user("TEST.GOKRB5", "testuser1"),
+                AsReq::new(timestamp(1_893_553_447)?, 42).with_etypes(offered),
+            )?;
+            let mut reply = kdc_rep::decode_as_rep(&synthetic_as_rep(&request, request.nonce)?)?;
+            let mut part = kdc_rep::decrypt_as_rep_enc_part(&reply, &key)?;
+            part.key = rasn_encryption_key(&EncryptionKey::new(17, vec![0x42; 16]));
+            reply.0.enc_part.cipher = encrypt_message(
+                &key,
+                &der::encode(&rasn_kerberos::EncAsRepPart(part))?,
+                AS_REP_ENCPART_USAGE,
+                AS_REP_CONFOUNDER,
+            )?
+            .into();
+            let bytes = der::encode(&reply)?;
+            let result = process_as_rep(&request, &bytes, &key);
+            if accepted {
+                assert_eq!(result?.session_key.etype, 17_i32);
+            } else {
+                assert!(matches!(result, Err(Error::EnctypeNotRequested(18_i32))));
+            }
+        }
         Ok(())
     }
 

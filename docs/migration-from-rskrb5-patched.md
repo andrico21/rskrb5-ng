@@ -38,6 +38,11 @@ values to or from this crate needs the same versions.
 
 ## New configuration keys
 
+Direct AS processing (FU-CLI-R07): include the reply-key enctype in the AS
+request's offered list. `process_as_rep` and its exchange callers now return
+`EnctypeNotRequested` for an unoffered reply wrapping type even when the
+session-key type was offered. This restriction does not apply to TGS wrapping.
+
 Session service identity (FU-CLI-R06): keep `AsRepSession::service` consistent
 with the encoded ticket realm and ordered server components. Relabeling a
 ticket now fails cache admission or AP construction with

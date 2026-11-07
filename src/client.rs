@@ -3692,6 +3692,7 @@ pub fn process_as_rep(
 
     let as_rep = kdc_rep::decode_as_rep(bytes).map_err(kdc_rep_error)?;
     let kdc_rep = &as_rep.0;
+    enforce_requested_enctypes(&request.message.0.req_body.etype, kdc_rep.enc_part.etype)?;
     request
         .crypto_policy
         .check_use(kdc_rep.enc_part.etype, Use::ReplyKey)?;

@@ -41,6 +41,8 @@ Critic round `critics-fb19af4`, unit u2:
 
 | FU-CLI-R06 | minor | Cache admission does not bind session service metadata to the encoded ticket | fixed | `cache_rejects_mislabeled_ticket_service`; client224; commit containing this row | Shared admission/use validator rejects ticket realm/components differing from session.service with ServicePrincipalMismatch before insertion/AP construction; advisory name type remains accepted. | task-22b: pre-fix admission succeeded; post-fix rejection preserves cache. Synthetic marker/referral fixtures now encode matching service names, preserving original assertions. |
 
+| FU-CLI-R07 | minor | Direct AS reply processing does not enforce the advertised reply-enctype contract | fixed | `direct_as_reply_rejects_unoffered_wrapping_enctype`, independent session-key rejection control; commit containing this row | Direct AS processing now rejects unoffered reply wrapping enctype with EnctypeNotRequested before decryption; TGS wrapping unchanged. | task-22b: AES256 reply with requested AES128 session accepted before guard, rejected after; offering both accepts. Existing session guard fixture now wraps with offered AES128 to remain independent. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
