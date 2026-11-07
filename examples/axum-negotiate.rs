@@ -232,7 +232,9 @@ async fn security_response(response: Response) -> Response {
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    use std::{fs, panic::catch_unwind, process};
+    #[cfg(feature = "tower")]
+    use std::panic::catch_unwind;
+    use std::{fs, process};
 
     use super::*;
 

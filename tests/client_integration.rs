@@ -247,10 +247,9 @@ mod tests {
     use std::io::Read as _;
     use std::{env, io, net::TcpListener, process};
 
-    use rskrb5_ng::krb_priv::ipv4_host_address;
+    use rskrb5_ng::{crypto::CryptoPolicy, krb_priv::ipv4_host_address};
     #[cfg(feature = "spnego")]
     use rskrb5_ng::{
-        crypto::CryptoPolicy,
         error::{Service as ServiceError, Spnego as SpnegoError},
         service::{ApRepOptions, Principal as ServicePrincipal, Validator},
         spnego,
