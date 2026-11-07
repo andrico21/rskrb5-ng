@@ -534,11 +534,21 @@ mod tests {
             )?
             .into();
             let bytes = der::encode(&reply)?;
-            let result = process_as_rep(&request, &bytes, &key);
-            if accepted {
-                assert_eq!(result?.session_key.etype, 17_i32);
-            } else {
-                assert!(matches!(result, Err(Error::EnctypeNotRequested(18_i32))));
+            let mut transport = MockTransport {
+                expected_realm: request.client.realm.clone(),
+                expected_request: request.der.to_vec(),
+                response: bytes.clone(),
+                called: false,
+            };
+            for result in [
+                process_as_rep(&request, &bytes, &key),
+                exchange_as_req(&mut transport, &request, &key),
+            ] {
+                if accepted {
+                    assert_eq!(result?.session_key.etype, 17_i32);
+                } else {
+                    assert!(matches!(result, Err(Error::EnctypeNotRequested(18_i32))));
+                }
             }
         }
         Ok(())
