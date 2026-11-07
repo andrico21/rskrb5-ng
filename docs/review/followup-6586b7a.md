@@ -231,6 +231,7 @@ Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
  
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
 | --- | --- | --- | --- | --- | --- | --- |
+| FU-TRN-R04 | minor | Kpasswd request construction loses explicit legacy permission | fixed | `legacy_request_preserves_explicit_policy`; commit containing this row | Password request AP construction inherits explicit RequestOptions policy; high-level changes install the configured snapshot. RC4/DES3 opt-ins work; default requests remain AES-only. | Task 22 mixed AES ticket/legacy session fixture red then green for RC4 and DES3 with paired default rejection. |
 | FU-TRN-R03 | minor | Borrowed password transport APIs omit caller erasure duties | fixed | Attached rustdoc inspection and rustdoc build; commit containing this row | none; documentation explicitly assigns original/caller-copy erasure to callers of four borrowed login APIs and Bytes::from(slice). | Task 22 before: no attached Security section; after: each boundary documents zeroizing input ownership. No prose-pinning test. |
 | FU-TRN-R02 | minor | Password-specific DER replacement bypasses KRB-PRIV scalar validation | fixed | `password_request_builders_validate_scalars`; commit containing this row | Both complete password request builders reject fractional timestamps and microseconds outside 0..999999 as local Kadmin::Encode errors before encrypted request construction. | Task 22 invalid/valid boundary matrix red then green; raw part-builder contract unchanged. |
 

@@ -87,6 +87,10 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Kpasswd request construction preserves explicit RC4/DES3 permission through
+  AP construction; high-level password changes propagate their configuration
+  snapshot instead of silently restoring AES-only defaults (FU-TRN-R04).
+
 - Both password request builders reject fractional KRB-PRIV timestamps and
   out-of-range microseconds before producing a mutation frame (FU-TRN-R02).
 

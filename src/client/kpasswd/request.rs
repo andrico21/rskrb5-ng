@@ -43,11 +43,13 @@ pub(super) fn build_kpasswd_ap_req_with_confounder(
             message: "timestamp must contain whole seconds".to_owned(),
         });
     }
+    let mut ap_options = ApReq::new()
+        .with_subkey(Some(reply_key.clone()))
+        .with_sequence_number(Some(options.sequence_number));
+    ap_options.crypto_policy.clone_from(&options.crypto_policy);
     build_ap_req_with_confounder(
         service_ticket,
-        ApReq::new()
-            .with_subkey(Some(reply_key.clone()))
-            .with_sequence_number(Some(options.sequence_number)),
+        ap_options,
         options.timestamp,
         options.cusec,
         ap_req_confounder,
@@ -147,6 +149,58 @@ mod tests {
                     message: _
                 })
             ));
+        }
+        Ok(())
+    }
+
+    /// Fractional caller timestamps are rejected before request construction.
+    #[test]
+    fn legacy_request_preserves_explicit_policy() -> Result<(), Box<dyn StdError>> {
+        use crate::{
+            config::Config,
+            crypto::{CryptoPolicy, KerberosEtype},
+        };
+        let fixture = Request::parse(&hex::decode(
+            include_str!("../../../tests/fixtures/kpasswd-request.hex").trim(),
+        )?)?;
+        for id in [16_i32, 23_i32] {
+            let etype = KerberosEtype::from_etype_id(id).ok_or("enctype")?;
+            let time = UNIX_EPOCH
+                .checked_add(Duration::from_secs(1_893_553_452))
+                .ok_or("time")?;
+            let session = TgsRepSession::new(
+                Principal::user("TEST.GOKRB5", "testuser1"),
+                Principal::new("TEST.GOKRB5", 2, ["kadmin", "changepw"]),
+                EncryptionKey::new(id, vec![0x11; etype.key_len()]),
+                ticket::encode(&fixture.ap_req.ticket)?,
+                [0; 4],
+                time,
+                time,
+            );
+            let data = ChangePasswdData::new(Password::copy_from_str("legacy-fixture"));
+            for permitted in [false, true] {
+                let mut options =
+                    RequestOptions::new(time, 0, 42, ipv4_host_address([127, 0, 0, 1]));
+                if permitted {
+                    let config = Config::parse(
+                        "[libdefaults]\nallow_rc4 = true\nallow_des3 = true\npermitted_enctypes = DEFAULT rc4 des3",
+                    )?;
+                    options.crypto_policy =
+                        Some(CryptoPolicy::from_libdefaults(&config.libdefaults)?);
+                }
+                let result = build_kpasswd_request_with_confounders(
+                    &session,
+                    &data,
+                    EncryptionKey::new(id, vec![0x22; etype.key_len()]),
+                    &options,
+                    &vec![0x33; etype.confounder_len()],
+                    &vec![0x44; etype.confounder_len()],
+                );
+                assert_eq!(result.is_ok(), permitted);
+                if permitted {
+                    assert_eq!(result?.request.krb_priv.enc_part.etype, id);
+                }
+            }
         }
         Ok(())
     }

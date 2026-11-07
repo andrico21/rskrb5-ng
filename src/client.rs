@@ -2380,7 +2380,7 @@ impl Tokio {
         &mut self,
         target: Principal,
         new_password: Password,
-        options: RequestOptions,
+        mut options: RequestOptions,
     ) -> Result<kadmin::ChangePasswordResult, Error> {
         let client = self.client.clone();
         let service = Principal::new(
@@ -2422,6 +2422,7 @@ impl Tokio {
             target.components.iter().map(String::as_str),
             &target.realm,
         )?;
+        options.crypto_policy = Some(crypto_policy::configured(&self.config.libdefaults)?);
         let request = build_kpasswd_request(&ticket, &change_data, &options)?;
         let reply = self
             .transport

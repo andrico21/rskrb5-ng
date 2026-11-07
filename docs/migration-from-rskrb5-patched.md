@@ -56,6 +56,11 @@ policy" below have the details.
 
 ## Behaviour changes before the review backlog
 
+For low-level kpasswd construction with legacy keys, set
+`RequestOptions.crypto_policy = Some(policy)` with explicit family permission
+and membership (FU-TRN-R04). High-level password changes supply their configured
+policy automatically. The key's enctype alone never grants legacy permission.
+
 Complete password request builders require whole-second timestamps and
 microseconds in `0..=999999`, including directly mutated option fields
 (FU-TRN-R02). Invalid values return a local `Kadmin::Encode` error; split clock
