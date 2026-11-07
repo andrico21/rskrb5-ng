@@ -58,6 +58,8 @@ Critic round `critics-fb19af4`, unit u5:
 
 | FU-CFG-R03 | minor | Endpoint decoding interprets quoted literal stars as finals a second time | fixed | `quoted_endpoint_stars_remain_literal`, config231 including final-marker controls; commit containing this row | Endpoint consumers preserve literal trailing stars and later admitted endpoints; profile alone determines finality. | MIT quote parser retains stars. Red first*:88/second collapsed to first:88; green all four endpoint lists. |
 
+| FU-CFG-R04 | minor | MIT's next-line opening-brace grammar is rejected | fixed | `next_line_braces_preserve_scopes`, config232; commit containing this row | Subsections in realms/appdefaults/plugins/capaths accept next-line braces, including final tags. Existing empty scalar extensions in libdefaults/domain_realm remain. | MIT prof_parse.c STATE_GET_OBRACE; red rejects opening brace, green scoped/final controls and missing-brace rejection. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |

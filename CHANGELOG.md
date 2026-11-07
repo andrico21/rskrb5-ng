@@ -96,6 +96,9 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Profile subsections accept MIT's next-line opening brace syntax. Empty
+  libdefaults/domain_realm scalar extensions remain supported (FU-CFG-R04).
+
 - Quoted endpoint stars remain literal and no longer suppress subsequent
   endpoints; final markers are handled only by the profile parser (FU-CFG-R03).
 

@@ -61,6 +61,11 @@ values to or from this crate needs the same versions.
 
 ## New configuration keys
 
+Subsections (FU-CFG-R04): in realms, appdefaults, plugins and capaths, an empty
+assignment now expects an opening brace on the next structural line. Use `""`
+for an explicitly empty scalar there. Empty libdefaults/domain_realm values
+retain the crate's existing scalar extension.
+
 Endpoint stars (FU-CFG-R03): `kdc = "host*"` denotes literal `host*`, not a
 final relation. Use `kdc* = host` to finalize. The existing unquoted value-final
 extension remains supported.

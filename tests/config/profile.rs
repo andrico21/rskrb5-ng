@@ -23,6 +23,21 @@ mod tests {
     /// Process-local sequence avoids clock-resolution assumptions.
     static NEXT: AtomicU64 = AtomicU64::new(0);
 
+    /// MIT permits an opening brace on the line after an empty assignment.
+    #[test]
+    fn next_line_braces_preserve_scopes() -> Result<(), Box<dyn Error>> {
+        let config = Config::parse(
+            "[realms]\nR* =\n{\nkdc = first\n}\nR = {\nkdc = second\n}\n[appdefaults]\napp =\n{\noption = value\n}\n[plugins]\npreauth =\n{\nenable_only = custom\n}\n",
+        )?;
+        assert_eq!(config.configured_kdcs("R")?, ["first:88"]);
+        assert_eq!(config.appdefault("app", "R", "option"), Some("value"));
+        assert!(
+            Config::parse("[realms]\nR =\nkdc = first\n").is_err(),
+            "missing brace rejected"
+        );
+        Ok(())
+    }
+
     /// Quoted endpoint stars are literal; only profile syntax determines finality.
     #[test]
     fn quoted_endpoint_stars_remain_literal() -> Result<(), Box<dyn Error>> {
