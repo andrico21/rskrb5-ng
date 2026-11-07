@@ -224,6 +224,7 @@ limits are recorded under FU-OPS-03.
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
 | --- | --- | --- | --- | --- | --- | --- |
+| FU-DOC-R06 | minor | AD runbook still prescribes a configuration now rejected before login | fixed | Before/after runbook comparison with AD fixture and config-profile; commit containing this row | none; runbook now states addressless true and typed rejection of false. | Task 22 before line63 falsely specified false; corrected to actual fixture contract. |
 | FU-FUZ-R01 | minor | Fuzz inventory promises coverage of a test-only function absent from fuzz dependency builds | fixed | fuzz_coverage self-test red/green and --enforce; commit containing this row | Inventory enforcement rejects target assignments to directly cfg(test)-only functions; capability mapping helper is excluded with a test-only rationale. | Task 22 before: assigned test-only fixture accepted; after: rejected; 182 functions and 339 rows pass. |
 | FU-TST-R07 | minor | Saved fixture environment silently disables an explicitly requested strict AD test | fixed | Runner self-test red/green; commit containing this row | Explicit test-time fixture variables override saved values, including strict AD flags, kpasswd flags and endpoints; absent variables retain saved defaults. | Task 22 u6 evidence; real run_tests with stubbed cargo. |
 
