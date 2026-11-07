@@ -109,7 +109,7 @@ fn raw_keytab_selection_is_typed() -> Result<(), Box<dyn Error>> {
         let failure = keys
             .add_entry_from_password(
                 Principal::new("EXAMPLE.COM", 1, ["alice"]),
-                "password",
+                b"password".to_vec().into(),
                 SystemTime::UNIX_EPOCH,
                 1,
                 id,

@@ -23,6 +23,10 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Keytab password-generation methods now consume `Zeroizing<Vec<u8>>`, erasing
+  moved input on every exit. `add_entry_from_password_ref` provides explicitly
+  borrowed input with caller erasure duties (FU-FIL-R01).
+
 - `KerbValidationInfo::user_session_key` is now an owning, redacted
   `pac::session_key::SessionKey`; raw PAC buffers use `Zeroizing<Vec<u8>>`.
   Debug no longer exposes key-bearing PAC bytes, and parsing erases key staging

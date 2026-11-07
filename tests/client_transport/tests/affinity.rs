@@ -70,7 +70,7 @@ fn configured_auto_logins_reuse_connection() -> Result<(), TestError> {
                         let mut keys = Keytab::new();
                         keys.add_entry_from_password(
                             KeytabPrincipal::new("TEST.GOKRB5", 1, ["testuser1"]),
-                            b"password", SystemTime::now(), 1, 18,
+                            b"password".to_vec().into(), SystemTime::now(), 1, 18,
                         )?;
                         drop(transport.login_tgt_with_keytab_config(&config, KdcProtocol::Auto, principal, &keys, options).await);
                     } else {

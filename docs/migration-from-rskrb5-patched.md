@@ -1641,8 +1641,8 @@ kpasswd result helpers, `MicToken::verify`/`WrapToken::verify` and others).
 - `keytab::Keytab::save_name`: `pub fn save_name<P>(&self, name: P) -> Result<(), Error> where P: AsRef<str>,`.
 - `keytab::Keytab::version`: `pub const fn version(&self) -> u8`.
 - `keytab::Keytab::entries_mut`: `pub const fn entries_mut(&mut self) -> &mut Vec<Entry>`.
-- `keytab::Keytab::add_entry_from_password`: `pub fn add_entry_from_password<P>( &mut self, principal: Principal, password: P, timestamp: SystemTime, kvno: u8, etype: i32, ) -> Result<(), Error> where P: AsRef<[u8]>,`.
-- `keytab::Keytab::add_entry_from_password_name`: `pub fn add_entry_from_password_name<P, Q, R>( &mut self, principal_name: P, realm: Q, password: R, timestamp: SystemTime, kvno: u8, etype: i32, ) -> Result<(), Error> where P: AsRef<str>, Q: Into<String>, R: AsRef<[u8]>,`.
+- `keytab::Keytab::add_entry_from_password`: password is now `Zeroizing<Vec<u8>>`; the password generic is removed (FU-FIL-R01). Move existing bytes with `.into()`; use `add_entry_from_password_ref` for `&[u8]` while retaining caller erasure responsibility.
+- `keytab::Keytab::add_entry_from_password_name<P, Q>`: password is now `Zeroizing<Vec<u8>>`; name/realm bounds and remaining parameters are unchanged. Invalid names also erase the moved password (FU-FIL-R01).
 - `keytab::Principal::new`: `pub fn new<I, S, P>(realm: P, name_type: i32, components: I) -> Self where I: IntoIterator<Item = S>, S: Into<String>, P: Into<String>,`.
 - `keytab::Principal::from_name`: `pub fn from_name<P, Q>(realm: P, name_type: i32, principal_name: Q) -> Result<Self, Error> where P: Into<String>, Q: AsRef<str>,`.
 - `krb_priv::EncKrbPrivPartOptions::new`: `pub const fn new(sender_address: rasn_kerberos::HostAddress) -> Self`.

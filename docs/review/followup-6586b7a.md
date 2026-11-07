@@ -66,6 +66,8 @@ Critic round `critics-fb19af4`, unit u5:
 
 | FU-TST-R06 | nit | Several regression names still assert the behavior their names deny | fixed | Existing config assertions unchanged; commit containing this row | none; names now describe rejection, immutable first values and completed-root reinclusion; include-state comment corrected. | task-22b source inspection compared old names with actual assertions; no prose-pin test added. Historical review names are retained as historical evidence. |
 
+| FU-FIL-R01 | major | Keytab password-generation APIs consume ordinary passwords without erasing them | fixed | `moved_password_owner_erasure_probe`, `keytab_password_erases_on_every_exit`; commit containing this row | Password generation methods require Zeroizing<Vec<u8>> instead of generic AsRef owners; borrowed _ref method documents caller erasure. Success/enctype/time/name failures erase moved owner. | task-22b original owner red; replacement allocation identity control, live wipe matrix and removed-wipe mutation red/green. |
+
 Original review rows:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
