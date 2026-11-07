@@ -23,6 +23,14 @@ limits are recorded under FU-OPS-03.
 
 ## Register
 
+Critic round `critics-fb19af4`, unit u2:
+
+| ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
+| --- | --- | --- | --- | --- | --- | --- |
+| FU-CLI-R01 | minor | Impossible renewal branches remain in ordinary login and service-cache reuse | fixed | Structural before/after inspection; `session_cache` (59 tests), `session_validity_boundaries`; commit containing this row | none; removes unreachable renewal paths and redundant usable predicate; explicit and refresh-band renewal remain | task-22b evidence: renewal implies validity at the same captured time; ordinary reuse already returned. No honest behavioral red exists. |
+
+Original review rows:
+
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
 | --- | --- | --- | --- | --- | --- | --- |
 | FU-SPN-01 | major | MIC/Wrap plaintext owners and Debug expose payloads | fixed | `payload_debug_is_redacted`, `every_staging_owner_erases_its_live_bytes`, `payload_storage_requires_zeroizing_owners`, `constructors_accept_zeroizing_payloads`, `failed_operations_erase_staging`; commits `6caed16`, `91ca9fc`, `b72a9dc`, `cc13c75` | Payload fields now Option<Zeroizing<Vec<u8>>>; owning constructors accept Into<Zeroizing<Vec<u8>>> before fallible work. Staging/discarded plaintext erase; Debug redacts. Returned Vec plaintext and borrowed originals remain caller-erased. | Task 3 evidence: red-to-green Debug and owner checks; seven independent purpose-specific erasure mutations fail with zeroed=false; restored tests pass. Replacement/decryption storage types require zeroizing owners. |

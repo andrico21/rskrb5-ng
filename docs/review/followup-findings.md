@@ -8,4 +8,5 @@ is a parity feature, not a defect>`.
 
 | Source finding | Register ID | Parity |
 | --- | --- | --- |
+| critic:critics-fb19af4/u2.md#U2-01 | FU-CLI-R01 | no |
 | executor:todo-16#transit-validator-rustdoc | FU-DOC-R02 | no |

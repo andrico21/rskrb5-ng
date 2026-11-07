@@ -1545,21 +1545,21 @@ impl Tokio {
     pub fn prune_unusable_sessions(&mut self) -> PrunedSessions {
         self.prune_unusable_sessions_at(SystemTime::now())
     }
-    /// Drop sessions that are neither valid nor renewable at `now`.
+    /// Drop sessions that are not valid at `now`.
     fn prune_unusable_sessions_at(&mut self, now: SystemTime) -> PrunedSessions {
         let primary_tgt = self
             .tgt
             .as_ref()
-            .is_some_and(|tgt| !session_usable_at(tgt, now));
+            .is_some_and(|tgt| !session_valid_at(tgt, now));
         if primary_tgt {
             self.tgt = None;
         }
         let tgt_session_count = self.tgt_sessions.len();
         self.tgt_sessions
-            .retain(|_, session| session_usable_at(session, now));
+            .retain(|_, session| session_valid_at(session, now));
         let service_ticket_count = self.service_tickets.len();
         self.service_tickets
-            .retain(|_, session| session_usable_at(session, now));
+            .retain(|_, session| session_valid_at(session, now));
         PrunedSessions {
             primary_tgt,
             // `retain` never grows a map, so these differences cannot underflow.
@@ -1655,8 +1655,7 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns [`Error::NoClientCredentials`] when a new login is needed but no
-    /// password or keytab is configured, a renewal error when no credential can
-    /// take over, and any AS exchange error of [`Self::login`].
+    /// password or keytab is configured, and any AS exchange error of [`Self::login`].
     #[inline]
     pub async fn affirm_login(&mut self) -> Result<&AsRepSession, Error> {
         crypto_policy::ready(self)?;
@@ -1665,20 +1664,6 @@ impl Tokio {
             if session_valid_at(&tgt, now) {
                 return self.tgt.as_ref().ok_or(Error::NoTgtSession);
             }
-            let has_credentials = self.credentials.is_some();
-            let expired = now >= tgt.end_time;
-            // A conforming KDC refuses renewal once the ticket expired, so an
-            // expired renewable TGT takes the AS exchange when a credential is
-            // configured; any other renewal failure falls through the same way.
-            if session_renewable_at(&tgt, now) && !(expired && has_credentials) {
-                match self.renew_tgt().await.map(|_| ()) {
-                    Ok(()) => {
-                        return self.tgt.as_ref().ok_or(Error::NoTgtSession);
-                    }
-                    Err(error) if !has_credentials => return Err(error),
-                    Err(_) => {}
-                }
-            }
         }
         self.login().await
     }
@@ -1686,7 +1671,7 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns [`Error::NoClientCredentials`] when no credential is configured and
-    /// the cached TGT is neither valid nor renewable, and any AS exchange,
+    /// the cached TGT is not valid, and any AS exchange,
     /// transport or validation error.
     /// # Cancel safety
     ///
@@ -1703,9 +1688,6 @@ impl Tokio {
             let now = SystemTime::now();
             if session_valid_at(&tgt, now) {
                 return self.tgt.as_ref().ok_or(Error::NoTgtSession);
-            }
-            if session_renewable_at(&tgt, now) {
-                return self.renew_tgt().await;
             }
             return Err(Error::NoClientCredentials);
         };
@@ -1862,21 +1844,6 @@ impl Tokio {
             if session_valid_at(&ticket, now) {
                 ticket.service = service;
                 return Ok(ticket);
-            }
-            if session_renewable_at(&ticket, now)
-                && let Ok(mut renewed) = self
-                    .transport
-                    .renew_ticket_with_config(
-                        &self.config,
-                        self.protocol,
-                        &ticket,
-                        self.tgs_req_options()?,
-                    )
-                    .await
-            {
-                renewed.service = service;
-                self.cache_service_ticket(renewed.clone())?;
-                return Ok(renewed);
             }
         }
         let tgt = match self.cached_tgt_session_for_realm(&service.realm, clock()) {
@@ -2105,13 +2072,10 @@ impl Tokio {
             }
             if session_renewable_at(&tgt, now) {
                 let has_credentials = self.credentials.is_some();
-                let expired = now >= tgt.end_time;
-                if !(expired && has_credentials) {
-                    match self.renew_tgt().await.cloned() {
-                        Ok(session) => return Ok(session),
-                        Err(error) if !has_credentials => return Err(error),
-                        Err(_) => {}
-                    }
+                match self.renew_tgt().await.cloned() {
+                    Ok(session) => return Ok(session),
+                    Err(error) if !has_credentials => return Err(error),
+                    Err(_) => {}
                 }
             }
             if session_valid_at(&tgt, now) && self.credentials.is_none() {
@@ -4995,12 +4959,6 @@ fn session_valid_at(session: &AsRepSession, now: SystemTime) -> bool {
         && now < session.end_time
 }
 
-/// Whether a session is valid or renewable at `now`.
-#[cfg(feature = "tokio")]
-fn session_usable_at(session: &AsRepSession, now: SystemTime) -> bool {
-    session_valid_at(session, now) || session_renewable_at(session, now)
-}
-
 /// Convert a Kerberos time to a `SystemTime`.
 ///
 /// # Errors
@@ -5161,7 +5119,6 @@ mod tests {
             session.end_time = UNIX_EPOCH + Duration::from_secs(end);
             session.ticket_flags = flags.to_be_bytes();
             assert_eq!(super::session_valid_at(&session, now), expected);
-            assert_eq!(super::session_usable_at(&session, now), expected);
         }
         Ok(())
     }
