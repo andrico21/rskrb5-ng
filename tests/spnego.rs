@@ -17,6 +17,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use chrono::DateTime;
     use hex::FromHexError;
     use pretty_assertions::{assert_eq, assert_ne};
     use rasn::der;
@@ -37,6 +38,121 @@ mod tests {
     };
 
     use super::context::{Context as _, TestError};
+
+    /// Repeated context masks do not cancel flags in the GSS authenticator checksum.
+    #[test]
+    fn checksum_flags_are_idempotent() {
+        assert_eq!(
+            spnego::authenticator_checksum(&[CONTEXT_FLAG_INTEG, CONTEXT_FLAG_INTEG]),
+            spnego::authenticator_checksum(&[CONTEXT_FLAG_INTEG])
+        );
+    }
+
+    /// Response-token extraction reports unsupported mechanisms rather than state errors.
+    #[test]
+    fn response_ap_req_checks_selected_mechanism() -> Result<(), TestError> {
+        let mut response = NegTokenResp::accept_completed();
+        response.supported_mech = Some(ObjectIdentifier::from_arcs(vec![1, 3, 6, 1, 5, 5, 2])?);
+        assert!(matches!(
+            Token::Resp(response).krb5_ap_req(),
+            Err(Spnego::UnsupportedMechanism(_))
+        ));
+        Ok(())
+    }
+
+    /// Secret-free initiator diagnostics retain their context kind.
+    #[test]
+    fn initiator_debug_keeps_diagnostic_kind() -> Result<(), TestError> {
+        let session = service_ticket_session_from_valid_ap_req()?;
+        let context = spnego::init_sec_context_with_confounder(
+            &session,
+            InitiatorContextOptions::new().with_sequence_number(Some(42)),
+            timestamp(1_893_553_447)?,
+            123_456,
+            &decode_hex(AP_REP_CONFOUNDER)?,
+        )?;
+        assert!(format!("{context:?}").starts_with("InitiatorContext"));
+        Ok(())
+    }
+
+    /// Either mismatched timestamp component invalidates an authenticated AP-REP.
+    #[test]
+    fn initiator_rejects_each_timestamp_mismatch() -> Result<(), TestError> {
+        use rskrb5_ng::ap_rep;
+        let session = service_ticket_session_from_valid_ap_req()?;
+        let context = spnego::init_sec_context_with_confounder(
+            &session,
+            InitiatorContextOptions::new().with_sequence_number(Some(42)),
+            timestamp(1_893_553_447)?,
+            123_456,
+            &decode_hex(AP_REP_CONFOUNDER)?,
+        )?;
+        for (seconds, micros) in [
+            (1_893_553_448_u64, 123_456_i32),
+            (1_893_553_447_u64, 123_457_i32),
+        ] {
+            let part = rasn_kerberos::EncApRepPart {
+                ctime: rasn_kerberos::KerberosTime(
+                    DateTime::from_timestamp(i64::try_from(seconds)?, 0)
+                        .context("time")?
+                        .fixed_offset(),
+                ),
+                cusec: micros.into(),
+                subkey: None,
+                seq_number: Some(42),
+            };
+            let reply = ap_rep::build_ap_rep_with_confounder(
+                &part,
+                &session.session_key,
+                None,
+                &decode_hex(AP_REP_CONFOUNDER)?,
+            )?;
+            assert!(matches!(
+                context.verify_ap_rep(&ap_rep::encode(&reply)?),
+                Err(Spnego::ApRepTimestampMismatch {
+                    expected: _,
+                    actual: _
+                })
+            ));
+        }
+        Ok(())
+    }
+
+    /// A valid MIC checksum cannot excuse a completion token's wrong sequence number.
+    #[test]
+    fn completion_mic_rejects_wrong_sequence() -> Result<(), TestError> {
+        use rskrb5_ng::spnego::{
+            GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR, GSSAPI_ACCEPTOR_SIGN_USAGE, MicToken,
+        };
+        let session = service_ticket_session_from_valid_ap_req()?;
+        let context = spnego::init_sec_context_with_confounder(
+            &session,
+            InitiatorContextOptions::new().with_sequence_number(Some(42)),
+            timestamp(1_893_553_447)?,
+            123_456,
+            &decode_hex(AP_REP_CONFOUNDER)?,
+        )?;
+        let keytab = Keytab::parse(&decode_hex(HTTP_KEYTAB)?)?;
+        let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+        let accepted = spnego::accept_sec_context_header(&mut validator, &context.header)?;
+        let header = accepted.ap_rep_response_header_with_confounder(
+            &decode_hex(AP_REP_CONFOUNDER)?,
+            &ApRepOptions::default(),
+        )?;
+        let Token::Resp(mut response) = spnego::parse_negotiate_header(&header)? else {
+            return Err("response".into());
+        };
+        let mut mic =
+            MicToken::new(GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR, 1).with_payload(decode_hex(KRB5_ONLY)?);
+        mic.set_checksum(&session.session_key, GSSAPI_ACCEPTOR_SIGN_USAGE)?;
+        response.mech_list_mic = Some(mic.encode()?);
+        assert!(matches!(
+            context
+                .verify_ap_rep_response_header(&spnego::negotiate_header(&Token::Resp(response))?),
+            Err(Spnego::InvalidMechListMic)
+        ));
+        Ok(())
+    }
 
     /// Kerberos token accessors expose only their matching message kind and original bytes.
     #[test]

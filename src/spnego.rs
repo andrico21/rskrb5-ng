@@ -1908,7 +1908,7 @@ pub fn init_sec_context(
     }
     let (timestamp, cusec) = current_time()?;
     if options.sequence_number.is_none() {
-        options.sequence_number = Some(random_sequence_number()?);
+        options.sequence_number = Some(random_sequence_number(getrandom::fill)?);
     }
     let etype = KerberosEtype::from_etype_id(service_ticket.session_key.etype)
         .ok_or(Error::UnsupportedEtype(service_ticket.session_key.etype))?;
@@ -2320,11 +2320,24 @@ fn current_time() -> Result<(SystemTime, u32), Error> {
 /// # Errors
 ///
 /// Returns [`Error::Random`] when the system random source fails.
-fn random_sequence_number() -> Result<u32, Error> {
+fn random_sequence_number<F>(fill: F) -> Result<u32, Error>
+where
+    F: FnOnce(&mut [u8]) -> Result<(), getrandom::Error>,
+{
     let mut bytes = [0; 4];
-    getrandom::fill(&mut bytes)?;
+    fill(&mut bytes)?;
     Ok(u32::from_be_bytes(bytes) & 0x3fff_ffff)
 }
+
+/// Deterministic entropy fixtures for initial sequence range enforcement.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod sequence_tests;
 
 /// Convert a Kerberos time to `SystemTime`.
 ///
