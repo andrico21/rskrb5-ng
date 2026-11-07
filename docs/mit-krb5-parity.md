@@ -113,7 +113,7 @@ the C plugin interfaces.
 | ID | Capability | Status | Evidence | Disposition | Closing | Missing | Policy and divergence | Symbols | Features | Tests |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | MIT-keytab-1 | FILE keytab read, enumerate, resolve and mutate APIs | implemented | fixture | ALREADY | - | - | Saved keytabs are private to the owner and symlinked destinations are rejected. | `keytab::Keytab`, `keytab::Keytab::find_key`, `keytab::Entry` | - | `tests/keytab.rs::parses_gokrb5_keytab_fixture`, `tests/keytab.rs::saves_and_loads_keytab_file`, `tests/keytab.rs::finds_matching_key_by_principal_kvno_and_etype`, `tests/keytab.rs::generates_gokrb5_user_keytab_entries_from_password` |
-| MIT-keytab-2 | WRFILE keytab | implemented | unit | ALREADY | - | - | - | `keytab::Name`, `keytab::Keytab::from_name` | - | `tests/keytab.rs::parses_typed_file_keytab_names` |
+| MIT-keytab-2 | WRFILE keytab | implemented | unit | ALREADY | - | - | - | `keytab::Name`, `keytab::Keytab::load_name` | - | `tests/keytab.rs::parses_typed_file_keytab_names` |
 | MIT-keytab-3 | MEMORY keytab | partial | unproven | WP-09 | P2-11 | Owned in-memory Keytab/entry mutation exists, no named MEMORY registry. | - | - | - | - |
 | MIT-keytab-4 | Client keytab, automatic initial creds and refresh | partial | unproven | WP-12 | P2-18 +P2-4 +P2-11 | Explicit client-keytab and renewal/relogin exist, no full GSS implicit acquisition/refresh integration. | - | - | - | - |
 
