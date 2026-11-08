@@ -360,6 +360,12 @@ Original review rows:
 | FU-TST-R15 | minor | Parity symbol evidence conflates inline child declarations with parent API | fixed | `symbol_evidence_requires_full_owner_path` red/green; commit `test: exclude unsupported inline parity scopes (FU-TST-R15)` | Inline module bodies are removed before declaration and alias resolution; public parent declarations after the scope still resolve. | task-22g-rskrb5-ng-zero-open-items.log: private/public/restricted children cannot prove parent types, methods or aliases; Go18 pass and both owner regressions pass. |
 | FU-TST-R16 | minor | Packaged test targets include a fuzz fixture the package excludes | fixed | Unpacked `.crate` test build (`cargo test --all-features --locked --no-run`) red/green; commit `fix: ship the AP-REQ fixture that packaged tests include (merge fallout)` | none in library/API; seven test `include_bytes!` sites read `tests/fixtures/valid_ap_req.der`, a packaged byte copy of the fuzz fixture. | task-22i-converge-rskrb5-ng-zero-open-items.log: the unpacked package failed to compile `src/spnego/erasure_tests.rs` because `fuzz/` is excluded; six sites predate critic round 3 (oldest `1e5e41e`), FU-SPN-R14 added one; all 48 packaged test executables build after the fix. |
 
+## Critic round 4
+
+| ID | Sev | Title | Status | Proof | Behaviour change | Evidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| FU-GATE-R10 | major | Additional run steps can restore the forbidden interpreter environment | fixed | workflow_gate hostile self-test red/green and actual workflow enforcement; commit `gates: allowlist complete lint execution shape (FU-GATE-R10)` | Complete lint execution is parsed through an allow-listed shape; extra run blocks, unknown/non-plain keys, execution overrides and unapproved setup inputs are rejected. | task-22j-rskrb5-ng-zero-open-items.log: BASH_ENV write admitted before fix; first/later GITHUB_ENV and GITHUB_PATH steps rejected after fix. |
+
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 
 - RVX-u1-01 → FU-TST-01 (also: the test never exercises the router wiring cited by the review doc; covered by FU-TST-01's Proof)

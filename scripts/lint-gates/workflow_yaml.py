@@ -27,6 +27,7 @@ class Line:
     item: bool
     key: str | None
     value: str
+    plain_key: bool = True
 
 
 _KEY = re.compile(
@@ -91,11 +92,13 @@ def structure(text: str) -> list[Line]:
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", key):
             raise RuntimeError(f"ci.yml:{number}: unsupported mapping key")
         value = (match["value"] or "").strip()
-        if value.startswith(("&", "*", "<<")) or key == "<<":
-            raise RuntimeError(f"ci.yml:{number}: anchors and merges are not supported")
+        if value.startswith(("&", "*", "<<", "!")) or key == "<<":
+            raise RuntimeError(
+                f"ci.yml:{number}: anchors, tags and merges are not supported"
+            )
         if re.match(r"[|>][-+0-9]*\s*(?:#.*)?$", value):
             block = indent
-        lines.append(Line(number, indent, item, key, value))
+        lines.append(Line(number, indent, item, key, value, match["key"] == key))
     return lines
 
 

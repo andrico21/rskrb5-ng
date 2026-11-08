@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Lint workflow admission checks the complete execution shape, rejecting extra
+  run steps, unknown/non-plain keys and unapproved setup inputs (FU-GATE-R10).
+
 - Mutation aggregation rejects nonpositive shard counts, overlapping shard
   identities, duplicate outcomes and invalid mutant summaries (FU-GATE-R09).
 

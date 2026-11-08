@@ -93,6 +93,12 @@ in the `lint-gates` job of [`ci.yml`](https://github.com/andrico21/rskrb5-ng/blo
 | `package_links.py --enforce` and `--self-test` | every relative Markdown link (inline, image, reference definition, autolink, HTML `href`/`src`; CRLF-safe, code skipped) in a file of `cargo package --list --allow-dirty` resolves to a packaged file or a directory holding one, and its fragment to a heading or anchor of a packaged Markdown target; files the package excludes are linked as `https://github.com/andrico21/rskrb5-ng/blob/main/...` (or `tree/main/...`), which must exist in the checkout; other schemes, root-absolute paths and paths leaving the package fail |
 | `gate_hygiene.py --enforce` | the gate scripts carry no dead work: every `argparse` option is read, and every module-level helper is used outside a `self_test` |
 
+Workflow execution admission is a strict, dependency-free YAML subset. The
+mandatory jobs use only known plain keys, literal run commands and SHA-pinned
+setup actions with version comments. Extra lint run steps are rejected, including
+preparation steps that write interpreter settings through `GITHUB_ENV` or
+`GITHUB_PATH`. Only the documented bytecode/color environment settings are allowed.
+
 `docsrs_check.py` holds `[package.metadata.docs.rs]` to the advertised
 optional APIs (`http`, `tower`); the `docs` job builds rustdoc with exactly
 that feature set and `--cfg docsrs`, as docs.rs does, and checks the
