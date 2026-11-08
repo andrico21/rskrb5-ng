@@ -89,20 +89,25 @@ std::thread_local! {
 #[cfg(test)]
 #[expect(
     clippy::missing_panics_doc,
+    clippy::missing_errors_doc,
     reason = "test code is not rendered API documentation"
 )]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
+    use core::error::Error;
+
     use super::EVENTS;
     use crate::{ccache, keytab};
 
     /// Replacing a key field erases its old bytes before the enclosing key is dropped.
     #[test]
-    fn replacement_erases_old_key_allocation() {
-        let mut cache = ccache::EncryptionKey::new(18, vec![0x51; 31]);
-        let mut keytab = keytab::EncryptionKey::new(18, vec![0x62; 32]);
+    fn replacement_erases_old_key_allocation() -> Result<(), Box<dyn Error>> {
+        let mut cache = ccache::EncryptionKey::new(18, hex::decode("51".repeat(31))?);
+        let mut keytab = keytab::EncryptionKey::new(18, hex::decode("62".repeat(32))?);
         EVENTS.with_borrow_mut(Vec::clear);
         cache.value = vec![0x73; 33].into();
         keytab.value = vec![0x84; 34].into();
         EVENTS.with_borrow(|events| assert_eq!(events.as_slice(), [(31, true), (32, true)]));
+        Ok(())
     }
 }

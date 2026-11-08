@@ -9,6 +9,7 @@
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use core::error::Error;
+
     use rskrb5_ng::{
         Config,
         config::{Toggle, section_values::Value},

@@ -9,8 +9,9 @@ use super::*;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    use super::*;
     use rasn::der;
+
+    use super::*;
 
     /// Both inner hint encodings reject trailing values and garbage inside valid errors.
     #[test]

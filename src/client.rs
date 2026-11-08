@@ -22,7 +22,6 @@ use std::io;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::der::decode_complete;
 use rasn::{der, types::Integer};
 #[cfg(feature = "tokio")]
 use tokio::{sync::Mutex, time::sleep};
@@ -35,6 +34,7 @@ use crate::spnego;
 use crate::{
     ap_req, ccache,
     crypto::{CryptoPolicy, KerberosEtype, Rc4HmacEtype, Use, kerb_checksum_hmac_md5, selection},
+    der::decode_complete,
     error, kdc_rep, kdc_req,
     keytab::{EncryptionKey, Keytab},
     krb_error, messages, ticket,

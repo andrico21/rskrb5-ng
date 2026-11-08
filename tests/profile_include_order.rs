@@ -9,9 +9,9 @@
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use core::error::Error;
+    use std::{env, fs, process};
+
     use rskrb5_ng::Config;
-    use std::fs;
-    use std::{env, process};
 
     /// Empty scalars precede included values at EOF and before another relation.
     #[test]

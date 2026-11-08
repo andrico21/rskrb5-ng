@@ -1,7 +1,13 @@
 //! Public key storage must erase independently of its enclosing record.
 
 #[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
 mod tests {
+    use core::error::Error;
+
     use rskrb5_ng::{ccache, keytab};
     use zeroize::ZeroizeOnDrop;
 
@@ -14,10 +20,11 @@ mod tests {
 
     /// Replacing either public byte field must retain value-attached erasure.
     #[test]
-    fn replaceable_key_bytes_own_erasure() {
-        let cache = ccache::EncryptionKey::new(18, vec![0x51; 32]);
-        let keytab = keytab::EncryptionKey::new(18, vec![0x62; 32]);
+    fn replaceable_key_bytes_own_erasure() -> Result<(), Box<dyn Error>> {
+        let cache = ccache::EncryptionKey::new(18, hex::decode("51".repeat(32))?);
+        let keytab = keytab::EncryptionKey::new(18, hex::decode("62".repeat(32))?);
         owns_erasure(&cache.value);
         owns_erasure(&keytab.value);
+        Ok(())
     }
 }

@@ -1,13 +1,14 @@
 //! Independently encrypted RFC 4120 subkey replies.
 
-use super::{
-    TestError, sample_service_principal, sample_tgt_session, synthetic_tgs_rep, timestamp,
-};
 use rskrb5_ng::{
     client::{self, TgsRequestParts, options::TgsReq},
     crypto::KerberosEtype,
     kdc_rep,
     keytab::EncryptionKey,
+};
+
+use super::{
+    TestError, sample_service_principal, sample_tgt_session, synthetic_tgs_rep, timestamp,
 };
 
 /// Both subkey builders accept usage 9 replies; session-key requests retain usage 8.
