@@ -258,6 +258,9 @@ def self_test() -> int:
         + ', language = "system", pass_filenames = false, stages = ["pre-push", "manual"], files = "\\\\.(rs|toml|py|yml|md)$" }]\n'
     )
     assert wiring_errors(ci, prek) == [], wiring_errors(ci, prek)
+    assert wiring_errors(
+        ci.replace("    steps:\n", "    needs: mutants\n    steps:\n", 1), prek
+    ), "skippable prerequisite admitted"
     for variable in ("BASH_ENV", "PYTHONOPTIMIZE", "PYTHONPATH", "PATH", "LD_PRELOAD"):
         for position in ("    steps:\n", "      - run: " + REQUIRED[2] + "\n"):
             extra = f'      - run: echo "{variable}=hostile" >> "$GITHUB_ENV"\n'

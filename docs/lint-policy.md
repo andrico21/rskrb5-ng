@@ -98,6 +98,12 @@ mandatory jobs use only known plain keys, literal run commands and SHA-pinned
 setup actions with version comments. Extra lint run steps are rejected, including
 preparation steps that write interpreter settings through `GITHUB_ENV` or
 `GITHUB_PATH`. Only the documented bytecode/color environment settings are allowed.
+Both `lint-gates` and `closures` must be independent: `needs` and `if` are outside
+the supported shape, including `always()` with an explicit success check. Their
+effective job condition therefore has no prerequisite state to evaluate; skipped,
+cancelled and failed jobs elsewhere cannot skip either mandatory job. Supporting
+dependencies would require a separately reviewed condition model, not an exception
+for one expression spelling.
 
 `docsrs_check.py` holds `[package.metadata.docs.rs]` to the advertised
 optional APIs (`http`, `tower`); the `docs` job builds rustdoc with exactly

@@ -20,6 +20,7 @@ from pathlib import Path
 
 import common
 from workflow_yaml import Line, children, only, scalar, structure, subtree
+from workflow_shape import mandatory_runs
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,6 +159,7 @@ def ci_matrix(text: str) -> list[str]:
     the job, no lint-relevant workflow `env` or `defaults`, and only the
     checkout, toolchain and cache actions.
     """
+    certified_runs = mandatory_runs(text, "closures")
     lines = structure(text)
     top = [i for i, line in enumerate(lines) if line.indent == 0]
     if any(lines[i].item or lines[i].key is None for i in top):
@@ -209,11 +211,7 @@ def ci_matrix(text: str) -> list[str]:
             raise RuntimeError(
                 f"ci.yml:{line.number}: the closures job may use only {ACTIONS}"
             )
-    runs = [
-        scalar(line.value, f"ci.yml:{line.number}")
-        for line in body
-        if line.key == "run"
-    ]
+    runs = certified_runs
     if runs != [CLIPPY_RUN, TEST_RUN]:
         raise RuntimeError(
             f"the closures job must run exactly {[CLIPPY_RUN, TEST_RUN]}, runs {runs}"
@@ -275,7 +273,9 @@ def self_test() -> int:
             "    strategy:\n      fail-fast: false\n      matrix:\n"
             f"        # every closure\n        {key}\n"
             + "".join(f"          - {entry}\n" for entry in entries)
-            + "    steps:\n      - uses: actions/checkout@v7 # pinned\n"
+            + "    steps:\n      - uses: actions/checkout@"
+            + "a" * 40
+            + " # v7\n"
             + "".join(f"      - name: step\n        run: {run}\n" for run in runs)
         )
 
@@ -296,11 +296,13 @@ def self_test() -> int:
             ]
             + [quoted[-1][1:-1] or '""']
         ).replace("      matrix:\n", "      matrix: # comment\n"),
-        "quoted keys": head.replace("jobs:", '"jobs":')
-        + job(quoted, key="'closures':").replace("  closures:\n", '  "closures":\n', 1),
         "a block scalar mentioning closures": head + script + job(quoted),
     }
     rejected = {
+        "quoted keys": head.replace("jobs:", '"jobs":')
+        + job(quoted, key="'closures':").replace("  closures:\n", '  "closures":\n', 1),
+        "skippable prerequisite": head
+        + job(quoted).replace("    steps:", "    needs: mutants\n    steps:"),
         "missing entry": head + job(quoted[1:]),
         "duplicate entry": head + job(quoted + quoted[:1]),
         "decoy job before, real matrix short": head
@@ -386,7 +388,7 @@ def self_test() -> int:
         ),
         "unknown action": head
         + job(quoted).replace(
-            steps + "      - uses: actions/checkout@v7 # pinned\n",
+            steps + "      - uses: actions/checkout@" + "a" * 40 + " # v7\n",
             steps + "      - uses: someone/set-rustflags@v1\n",
         ),
     }

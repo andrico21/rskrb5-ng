@@ -366,6 +366,8 @@ Original review rows:
 | --- | --- | --- | --- | --- | --- | --- |
 | FU-GATE-R10 | major | Additional run steps can restore the forbidden interpreter environment | fixed | workflow_gate hostile self-test red/green and actual workflow enforcement; commit `gates: allowlist complete lint execution shape (FU-GATE-R10)` | Complete lint execution is parsed through an allow-listed shape; extra run blocks, unknown/non-plain keys, execution overrides and unapproved setup inputs are rejected. | task-22j-rskrb5-ng-zero-open-items.log: BASH_ENV write admitted before fix; first/later GITHUB_ENV and GITHUB_PATH steps rejected after fix. |
 
+| FU-GATE-R11 | major | A skipped prerequisite can suppress both mandatory jobs | fixed | workflow_gate and feature_closures prerequisite fixtures red/green; commit `gates: require independent mandatory jobs (FU-GATE-R11)` | Both mandatory jobs share the strict execution model and reject all needs and if settings, so no prerequisite state can suppress them. | task-22j-rskrb5-ng-zero-open-items.log: needs mutants bypassed both guards before; scalar/list needs and success/always/cancelled/failure conditions rejected after; real 36-entry matrix accepted. |
+
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 
 - RVX-u1-01 → FU-TST-01 (also: the test never exercises the router wiring cited by the review doc; covered by FU-TST-01's Proof)

@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Both mandatory CI jobs reject prerequisites and conditional execution, so
+  skipped, failed or cancelled dependencies cannot suppress them (FU-GATE-R11).
+
 - Lint workflow admission checks the complete execution shape, rejecting extra
   run steps, unknown/non-plain keys and unapproved setup inputs (FU-GATE-R10).
 

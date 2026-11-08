@@ -22,7 +22,7 @@ from workflow_yaml import Line, children, scalar, structure
 
 PIN: Final = re.compile(r"([\w.-]+/[\w./-]+)@([0-9a-f]{40})\s+#\s+(\S+)")
 ROOT_KEYS: Final = frozenset({"name", "on", "permissions", "env", "jobs"})
-JOB_KEYS: Final = frozenset({"name", "runs-on", "env", "steps", "strategy", "needs"})
+JOB_KEYS: Final = frozenset({"name", "runs-on", "env", "steps", "strategy"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +191,28 @@ def mandatory_runs(text: str, job: str) -> list[str]:
 def self_test() -> int:
     text = "jobs:\n  lint-gates:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n"
     assert mandatory_runs(text, "lint-gates") == ["true"]
+    for job in ("lint-gates", "closures"):
+        for condition in (
+            "needs: mutants",
+            "needs: [mutants]",
+            "needs:\n      - mutants",
+            "needs: mutants\n    if: success()",
+            "needs: mutants\n    if: always() && needs.mutants.result == 'success'",
+            "if: always()",
+            "if: cancelled()",
+            "if: failure()",
+        ):
+            hostile = text.replace("lint-gates", job).replace(
+                "    steps:", f"    {condition}\n    steps:"
+            )
+            try:
+                mandatory_runs(hostile, job)
+            except RuntimeError:
+                pass
+            else:
+                raise AssertionError(
+                    f"conditional mandatory job admitted: {job}: {condition}"
+                )
     for extra in (
         "unknown: x",
         "shell: bash",
