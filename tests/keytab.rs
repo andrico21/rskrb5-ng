@@ -143,6 +143,16 @@ mod tests {
         }
 
         assert_eq!(keytab.to_bytes().context("keytab serializes")?, expected);
+        let mut borrowed = Keytab::new();
+        for etype in [18_i32, 17_i32, 23_i32] {
+            borrowed
+                .add_entry_from_password_ref(principal.clone(), b"hello123", timestamp, 31, etype)
+                .context("borrowed-password entry is added")?;
+        }
+        assert_eq!(
+            borrowed.to_bytes().context("borrowed keytab serializes")?,
+            expected
+        );
         Ok(())
     }
 
