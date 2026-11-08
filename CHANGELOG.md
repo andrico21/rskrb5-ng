@@ -23,6 +23,10 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Programmatic and typed-serde realm protocol selectors now receive the same
+  permanent feature rejection as profile text; malformed selector variants
+  fail instead of bypassing admission (FU-CFG-R10).
+
 - Keytab and ccache key bytes now use a read-only, zeroizing owner. Replacing
   a public key field erases the previous allocation; direct vector mutation
   is replaced by assignment of a new owner (FU-FIL-R06).

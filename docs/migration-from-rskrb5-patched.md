@@ -7,6 +7,14 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Realm selectors (FU-CFG-R10): `Realm::relations` and programmatic
+`protocol_relations` are checked before configured discovery. Enabling removed
+protocols now returns the same `Policy::RejectedFeature` as text parsing;
+typed serde uses its native error envelope. Lists and locations are invalid
+selector variants. Disabled controls remain accepted; certificate paths are
+not protocol selectors. Remove prohibited selections rather than moving them
+to a typed or programmatic map.
+
 Key replacement (FU-FIL-R06): `keytab::EncryptionKey::value` and
 `ccache::EncryptionKey::value` now hold `keytab::key_bytes::Bytes`, which
 erases its allocation on replacement/drop and exposes only read-only bytes.
