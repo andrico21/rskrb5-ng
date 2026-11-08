@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Mutation aggregation rejects nonpositive shard counts, overlapping shard
+  identities, duplicate outcomes and invalid mutant summaries (FU-GATE-R09).
+
 - Workflow wiring validates the lint hook's pre-push stages and file
   applicability, rejecting suppressing filters and metadata (FU-GATE-R08).
 

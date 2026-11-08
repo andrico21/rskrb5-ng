@@ -104,13 +104,25 @@ def shard_report(directory: Path, shard: int) -> tuple[list[str], dict[str, str]
         return [f"shard {shard}: did not finish (no outcomes.json)"], {}
     outcomes = json.loads(outcomes_path.read_text(encoding="utf-8"))
     mutants: dict[str, str] = {}
+    problems = []
     for entry in outcomes["outcomes"]:
         scenario = entry["scenario"]
         if isinstance(scenario, dict) and "Mutant" in scenario:
+            name = scenario["Mutant"]["name"]
+            if name in mutants:
+                problems.append(f"shard {shard}: duplicate mutant outcome: {name}")
+            if entry["summary"] not in {
+                "CaughtMutant",
+                "MissedMutant",
+                "Timeout",
+                "Unviable",
+            }:
+                problems.append(
+                    f"shard {shard}: invalid mutant summary: {entry['summary']}"
+                )
             mutants[scenario["Mutant"]["name"]] = OUTCOMES.get(
                 entry["summary"], entry["summary"]
             )
-    problems = []
     baselines = [
         entry["summary"]
         for entry in outcomes["outcomes"]
@@ -175,6 +187,8 @@ def register_problems(
 
 
 def report(args: argparse.Namespace) -> tuple[list[str], Counter[str]]:
+    if args.expect_shards <= 0:
+        return ["expected shard count must be positive"], Counter()
     problems: list[str] = []
     mutants: dict[str, str] = {}
     for shard in range(args.expect_shards):
@@ -182,6 +196,11 @@ def report(args: argparse.Namespace) -> tuple[list[str], Counter[str]]:
             args.artifacts / f"mutants-out-shard-{shard}", shard
         )
         problems += shard_problems
+        overlap = mutants.keys() & shard_mutants.keys()
+        if overlap:
+            problems.append(
+                f"shard {shard}: overlapping mutant identities: {sorted(overlap)}"
+            )
         mutants.update(shard_mutants)
     if args.register:
         if not args.campaign:
@@ -220,6 +239,46 @@ def self_test() -> int:
     head = "| " + " | ".join(HEADER) + " |\n| --- " * 1 + "|" + " --- |" * 7 + "\n"
     with TemporaryDirectory() as directory:
         root = Path(directory)
+        for expected in (0, -1):
+            with redirect_stdout(StringIO()):
+                assert (
+                    main(
+                        [
+                            "--artifacts",
+                            str(root),
+                            "--expect-shards",
+                            str(expected),
+                            "--enforce",
+                        ]
+                    )
+                    == 1
+                ), "empty campaign certified"
+        for summary in ("Success", "UnknownSummary", "CaughtMutant"):
+            campaign = root / summary
+            shard(campaign, 0, [("same", summary)], 1)
+            shard(campaign, 1, [("same", "CaughtMutant")], 1)
+            with redirect_stdout(StringIO()):
+                assert (
+                    main(
+                        [
+                            "--artifacts",
+                            str(campaign),
+                            "--expect-shards",
+                            "2",
+                            "--enforce",
+                        ]
+                    )
+                    == 1
+                ), "overlapping campaign certified"
+            if summary != "CaughtMutant":
+                assert shard_report(campaign / "mutants-out-shard-0", 0)[0], (
+                    "invalid mutant summary accepted"
+                )
+        duplicate = root / "duplicate-outcomes"
+        shard(duplicate, 0, [("same", "CaughtMutant"), ("same", "CaughtMutant")], 2)
+        assert shard_report(duplicate / "mutants-out-shard-0", 0)[0], (
+            "duplicate outcomes accepted"
+        )
         artifacts = root / "artifacts"
         shard(
             artifacts,

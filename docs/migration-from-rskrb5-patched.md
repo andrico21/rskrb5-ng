@@ -7,6 +7,10 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Mutation campaigns (FU-GATE-R09): provide a positive shard count and disjoint
+inventories. Mutant outcomes must be caught, missed, timed out or unviable;
+baseline-only Success and unknown summaries do not certify tested mutations.
+
 Local lint hook (FU-GATE-R08): retain system language, `pass_filenames = false`,
 the pre-push/manual stages and the documented source-file pattern. Global file
 filters and unsupported hook applicability settings now fail wiring admission.
