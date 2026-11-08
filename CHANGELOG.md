@@ -23,6 +23,18 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Parity symbol evidence excludes cfg-disabled and test-only item scopes and
+  requires supported non-test configurations for conditional declarations (FU-TST-R18).
+
+- Action pin checks inspect normalized YAML keys across every workflow, including
+  quoted `uses`; opaque syntax and missing version comments fail closed (FU-GATE-R12).
+
+- Both mandatory CI jobs reject prerequisites and conditional execution, so
+  skipped, failed or cancelled dependencies cannot suppress them (FU-GATE-R11).
+
+- Lint workflow admission checks the complete execution shape, rejecting extra
+  run steps, unknown/non-plain keys and unapproved setup inputs (FU-GATE-R10).
+
 - Mutation aggregation rejects nonpositive shard counts, overlapping shard
   identities, duplicate outcomes and invalid mutant summaries (FU-GATE-R09).
 

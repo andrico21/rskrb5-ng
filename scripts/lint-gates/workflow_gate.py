@@ -26,7 +26,8 @@ import shlex
 import json
 import sys
 import tomllib
-import workflow_yaml
+from workflow_shape import mandatory_runs
+from workflow_yaml import structure
 from pathlib import Path
 from contextlib import redirect_stdout
 from io import StringIO
@@ -58,9 +59,7 @@ REQUIRED: Final = (
     "lint-migration src tests examples fuzz",
 )
 RELEASE_WORKFLOWS: Final = ("release.yml", "publish.yml")
-USES: Final = re.compile(
-    r"^\s*(?:-\s+)?uses:\s*([\w.-]+/[\w./-]+)@(\S+)(?:\s+#\s*(\S+))?"
-)
+USES: Final = re.compile(r"([\w.-]+/[\w./-]+)@([^\s]+)(?:\s+#\s*(\S+))?")
 
 SELF_TEST_LOOP: Final = REQUIRED[0] + " || exit 1; done"
 CI_NEGATIVE: Final = (
@@ -69,26 +68,6 @@ CI_NEGATIVE: Final = (
 HOOK_NEGATIVE: Final = (
     "{ rg -n lint-migration src tests examples fuzz; test $? -eq 1; }"
 )
-
-
-def run_blocks(job: str) -> list[str]:
-    """Read only run scalars at step indentation; reject unsupported scalar forms."""
-    lines = job.splitlines()
-    blocks = []
-    for index, line in enumerate(lines):
-        match = re.fullmatch(r"(?:      - |        )run: (.*)", line)
-        if not match:
-            continue
-        value = match[1]
-        if value == "|":
-            body = []
-            for following in lines[index + 1 :]:
-                if following.strip() and not following.startswith("          "):
-                    break
-                body.append(following[10:])
-            value = "\n".join(body).strip()
-        blocks.append(value)
-    return blocks
 
 
 def effective_commands(blocks: list[str], hook: bool = False) -> set[str]:
@@ -156,85 +135,14 @@ def job_text(workflow: str, job: str) -> str:
 
 def wiring_errors(workflow: str, prek: str) -> list[str]:
     errors = []
+    blocks: list[str] = []
     try:
-        structure = workflow_yaml.structure(workflow)
-        roots = [index for index, line in enumerate(structure) if line.indent == 0]
-        jobs = workflow_yaml.only(structure, roots, "jobs", "workflow")
-        gates = workflow_yaml.only(
-            structure, workflow_yaml.children(structure, jobs), "lint-gates", "jobs"
-        )
-        steps = workflow_yaml.only(
-            structure, workflow_yaml.children(structure, gates), "steps", "lint-gates"
-        )
-        relevant = roots + list(
-            range(gates + 1, gates + 1 + len(workflow_yaml.subtree(structure, gates)))
-        )
-        for index in relevant:
-            line = structure[index]
-            if line.key == "env":
-                allowed = {"PYTHONDONTWRITEBYTECODE": "1"}
-                if index in roots:
-                    allowed["CARGO_TERM_COLOR"] = "always"
-                if line.value:
-                    errors.append("gate environment must be a block mapping")
-                names: set[str] = set()
-                for child in workflow_yaml.children(structure, index):
-                    setting = structure[child]
-                    if (
-                        setting.key in names
-                        or setting.key not in allowed
-                        or workflow_yaml.scalar(setting.value, "gate env")
-                        != allowed.get(setting.key)
-                    ):
-                        errors.append(
-                            f"gate environment may not override {setting.key}"
-                        )
-                    if setting.key:
-                        names.add(setting.key)
-            if index in roots and line.key in {"shell", "working-directory"}:
-                errors.append("workflow execution overrides are forbidden")
-            if line.key == "uses":
-                action = line.value.split("@", 1)[0]
-                if action not in {"actions/checkout", "dtolnay/rust-toolchain"}:
-                    errors.append("gate setup action may alter interpreter execution")
-            if line.key == "with":
-                for child in workflow_yaml.children(structure, index):
-                    setting = structure[child]
-                    if (setting.key, setting.value) not in {
-                        ("toolchain", "nightly-2026-10-03"),
-                        ("components", "clippy"),
-                    }:
-                        errors.append("gate setup action input may alter execution")
-        for index in roots:
-            if structure[index].key == "defaults":
-                errors.append("workflow defaults may not alter gate execution")
-        body = workflow_yaml.subtree(structure, gates)
-        seen: set[str] = set()
-        for line in body:
-            if line.item:
-                seen.clear()
-            if line.key in {
-                "if",
-                "continue-on-error",
-                "shell",
-                "defaults",
-                "working-directory",
-                "container",
-                "services",
-                "options",
-            }:
-                errors.append(f"the lint-gates job may not use `{line.key}:`")
-            if line.indent == structure[steps].indent + 4 and line.key:
-                if line.key in seen:
-                    errors.append(f"duplicate {line.key} key in gate step")
-                seen.add(line.key)
+        blocks = mandatory_runs(workflow, "lint-gates")
+        for block in blocks:
+            if not effective_commands([block]):
+                errors.append("lint-gates contains an unapproved run block")
     except RuntimeError as error:
         errors.append(str(error))
-    job = job_text(workflow, "lint-gates")
-    if not job:
-        errors.append("ci.yml has no lint-gates job")
-    if re.search(r"(?m)^        (?!run:)[\w-]+: [|>]", job):
-        errors.append("non-run multiline step values are unsupported in lint-gates")
     hook_config = tomllib.loads(prek)
     if any(key in hook_config for key in ("files", "exclude")):
         errors.append("global hook file filters may not suppress lint gates")
@@ -259,7 +167,7 @@ def wiring_errors(workflow: str, prek: str) -> list[str]:
             errors.append("lint-gates hook must retain its pre-push applicability")
         if set(hook) - {"id", "name", "entry", *expected}:
             errors.append("unsupported lint-gates hook applicability setting")
-    ci_commands = effective_commands(run_blocks(job))
+    ci_commands = effective_commands(blocks)
     hook_commands = effective_commands([entry], hook=True)
     for command in REQUIRED:
         if command not in ci_commands:
@@ -273,15 +181,26 @@ def pin_errors(workflows: dict[str, str]) -> list[str]:
     errors = []
     channels: dict[str, set[str]] = {}
     for name, text in sorted(workflows.items()):
-        for number, line in enumerate(text.splitlines(), 1):
-            match = USES.match(line)
+        try:
+            lines = structure(text)
+        except RuntimeError as error:
+            errors.append(f"{name}: {error}")
+            continue
+        for line in lines:
+            if line.key != "uses":
+                continue
+            number = line.number
+            match = USES.fullmatch(line.value)
             if match is None:
+                errors.append(f"{name}:{number}: unsupported action reference")
                 continue
             action, ref, comment = match.groups()
             if not re.fullmatch(r"[0-9a-f]{40}", ref):
                 errors.append(
                     f"{name}:{number}: {action} is not pinned to a commit SHA"
                 )
+            elif comment is None:
+                errors.append(f"{name}:{number}: action pin needs a version comment")
             if action == "dtolnay/rust-toolchain":
                 channels.setdefault(comment or "(no channel comment)", set()).add(ref)
                 if name in RELEASE_WORKFLOWS and comment != "stable":
@@ -349,6 +268,24 @@ def self_test() -> int:
         + ', language = "system", pass_filenames = false, stages = ["pre-push", "manual"], files = "\\\\.(rs|toml|py|yml|md)$" }]\n'
     )
     assert wiring_errors(ci, prek) == [], wiring_errors(ci, prek)
+    assert wiring_errors(
+        ci.replace("    steps:\n", "    needs: mutants\n    steps:\n", 1), prek
+    ), "skippable prerequisite admitted"
+    for variable in ("BASH_ENV", "PYTHONOPTIMIZE", "PYTHONPATH", "PATH", "LD_PRELOAD"):
+        for position in ("    steps:\n", "      - run: " + REQUIRED[2] + "\n"):
+            extra = f'      - run: echo "{variable}=hostile" >> "$GITHUB_ENV"\n'
+            hostile = ci.replace(position, position + extra, 1)
+            assert wiring_errors(hostile, prek), (
+                f"extra environment step accepted: {variable}"
+            )
+    assert wiring_errors(
+        ci.replace(
+            "    steps:\n",
+            '    steps:\n      - run: echo /tmp/bin >> "$GITHUB_PATH"\n',
+            1,
+        ),
+        prek,
+    ), "extra PATH step accepted"
     actual_prek = (ROOT / "prek.toml").read_text()
     for before, after in (
         ('stages = ["pre-push", "manual"]', 'stages = ["manual"]'),
@@ -473,10 +410,16 @@ def self_test() -> int:
     advisory = ci.replace(
         "    steps:\n", "    continue-on-error: true\n    steps:\n", 1
     )
-    assert wiring_errors(advisory, prek) == [
-        "the lint-gates job may not use `continue-on-error:`"
-    ]
+    assert any("continue-on-error" in error for error in wiring_errors(advisory, prek))
     sha = "a" * 40
+    for key in ('"uses"', "'uses'"):
+        assert pin_errors({"release.yml": f"      - {key}: actions/checkout@v7\n"}), (
+            "quoted unpinned action admitted"
+        )
+        assert (
+            pin_errors({"release.yml": f"      - {key}: actions/checkout@{sha} # v7\n"})
+            == []
+        )
     other = "b" * 40
     stable = f"      - uses: dtolnay/rust-toolchain@{sha} # stable\n"
     assert pin_errors({"ci.yml": stable, "publish.yml": stable}) == []
