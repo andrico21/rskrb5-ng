@@ -7,6 +7,10 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Reference links (FU-CI-R04): multiline Markdown reference definitions now receive
+the same package-membership checks as inline links. Fix missing or excluded
+destinations even when the destination follows the definition label on a new line.
+
 Lint job environment (FU-GATE-R06): run the gates directly on the configured
 runner. Container, service and options settings are rejected, including Docker
 environment options; retaining the command text is not proof of its execution.

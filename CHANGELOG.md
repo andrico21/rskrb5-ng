@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Package-link validation scans reference destinations on the following line,
+  including angle-wrapped targets and escaped labels (FU-CI-R04).
+
 - Lint workflow admission rejects container, services and options settings that
   can override the interpreter environment (FU-GATE-R06).
 
