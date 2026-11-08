@@ -344,6 +344,8 @@ Original review rows:
 
 | FU-SPN-R14 | minor | Completion MIC verification retains an unerased first-party credential encoding | fixed | `completion_offer_encoding_is_erased` red/green; commit `spnego: erase completion credential staging (FU-SPN-R14)` | Encoded completion offers use the existing zeroizing Scratch owner; example AP-REP header uses Zeroizing before HTTP conversion. | task-22g-rskrb5-ng-zero-open-items.log: exact live-byte owner observation on valid and invalid MIC completion; raw returned buffers remain caller-owned. |
 
+| FU-TRN-R07 | major | Configured checked AS exchange still bypasses realm and plugin restrictions | fixed | `restrictive_scopes_fail_before_login` red/green; commit `transport: admit configuration before checked AS exchange (FU-TRN-R07)` | Configured checked AS exchange rejects whole-config restrictions before policy preparation or transport with the named Config::NotYetEffective error. | task-22g-rskrb5-ng-zero-open-items.log: valid AES PA-ENC-TIMESTAMP request, three restrictive scopes through public checked API and existing password/keytab delegates. |
+
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 
 - RVX-u1-01 → FU-TST-01 (also: the test never exercises the router wiring cited by the review doc; covered by FU-TST-01's Proof)

@@ -1026,6 +1026,7 @@ impl Tokio {
         request: &BuiltAsReq,
         reply_key: &EncryptionKey,
     ) -> Result<AsRepSession, Error> {
+        restrictions::config(config)?;
         let policy = super::crypto_policy::configured(&config.libdefaults)?;
         super::crypto_policy::padata(request.message.0.padata.as_deref().unwrap_or_default())?;
         super::crypto_policy::before_exchange(

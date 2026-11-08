@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Configured checked AS exchange rejects realm and clpreauth restrictions
+  before sending preauthentication, matching configured login (FU-TRN-R07).
+
 - Completion MIC verification erases its temporary encoded AP-REQ offer, and
   the Axum example erases its temporary AP-REP header string (FU-SPN-R14).
 

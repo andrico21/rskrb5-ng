@@ -7,6 +7,11 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Checked AS exchange (FU-TRN-R07): `exchange_as_req_with_config` now returns
+the named `Config::NotYetEffective` error for unsupported realm and clpreauth
+restrictions before discovery or sending a previously built request. Programmatic
+configuration has the same admission as configured password/keytab login.
+
 Credential staging (FU-SPN-R14): completion MIC verification now owns its encoded
 offer through erasure on both success and failure. The Axum example similarly
 adopts the returned header into `Zeroizing<String>` before HTTP conversion.

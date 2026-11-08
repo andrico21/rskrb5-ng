@@ -17,6 +17,7 @@ mod tests {
         client::{
             Tokio, build_tgt_as_req,
             options::AsReq,
+            pa_enc_timestamp_with_confounder,
             transport::{KdcProtocol, Tokio as Transport},
         },
         config::{
@@ -24,7 +25,7 @@ mod tests {
             section_values::{Plugins, Value},
         },
         error::{Client, Config as ConfigError},
-        keytab::Keytab,
+        keytab::{EncryptionKey, Keytab},
     };
     use tokio::runtime::Builder;
 
@@ -121,12 +122,30 @@ mod tests {
             let transport = Transport::new();
             let principal = Principal::user("R", "alice");
             let options = AsReq::new(UNIX_EPOCH, 42);
+            let reply_key = EncryptionKey::new(18, vec![0x42; 32]);
+            let mut checked_options = options.clone();
+            checked_options
+                .padata
+                .push(pa_enc_timestamp_with_confounder(
+                    &reply_key,
+                    UNIX_EPOCH,
+                    0,
+                    &[0x22; 16],
+                    None,
+                )?);
+            let checked = build_tgt_as_req(principal.clone(), checked_options)?;
             let expected = if scope == "realm" {
                 "disable_encrypted_timestamp"
             } else {
                 scope
             };
             for result in [
+                runtime.block_on(transport.exchange_as_req_with_config(
+                    &config,
+                    KdcProtocol::Tcp,
+                    &checked,
+                    &reply_key,
+                )),
                 runtime.block_on(transport.login_tgt_with_password_config(
                     &config,
                     KdcProtocol::Tcp,
