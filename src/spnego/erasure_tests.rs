@@ -149,8 +149,36 @@ fn rejected_constructors_adopt_plaintext() -> Result<(), Error> {
 }
 
 thread_local! {
+    /// Allocation admission records, before any subsequent plaintext append.
+    static CAPACITIES: RefCell<Vec<(&'static str, usize, usize)>> = const { RefCell::new(Vec::new()) };
     /// Drop events scoped to this test thread, never mixed with another operation.
     static EVENTS: RefCell<Vec<(&'static str, usize, bool)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Observe capacity before an owner can append authenticated headers to plaintext.
+pub(super) fn observe_capacity(purpose: &'static str, length: usize, capacity: usize) {
+    CAPACITIES.with_borrow_mut(|events| events.push((purpose, length, capacity)));
+}
+
+/// MIC and unsealed Wrap verification never grow an allocation containing plaintext.
+#[test]
+fn checksum_staging_has_capacity_before_plaintext() -> Result<(), Error> {
+    let key = EncryptionKey::new(17, vec![0x42; 16]);
+    let mic = MicToken::new_initiator(vec![0x77; 5], &key)?;
+    let wrap = WrapToken::new_initiator(vec![0x77; 5], &key)?;
+    CAPACITIES.with_borrow_mut(Vec::clear);
+    mic.verify(&key, GSSAPI_INITIATOR_SIGN_USAGE)?;
+    wrap.verify(&key, GSSAPI_INITIATOR_SEAL_USAGE)?;
+    CAPACITIES.with_borrow(|events| {
+        assert_eq!(events.len(), 2);
+        for &(purpose, length, capacity) in events {
+            assert!(
+                capacity >= 21,
+                "{purpose}: length={length}, capacity={capacity}"
+            );
+        }
+    });
+    Ok(())
 }
 
 /// Observe initialized bytes after erasure, before deallocation, without unsafe access.

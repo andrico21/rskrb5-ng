@@ -65,7 +65,7 @@ impl Drop for SecretBytes {
     reason = "test code is not rendered API documentation"
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod tests {
+pub(crate) mod tests {
     use core::{
         cell::{Cell, RefCell},
         error::Error as StdError,
@@ -87,6 +87,14 @@ mod tests {
     std::thread_local! {
         pub(super) static ERASED_BYTES: Cell<usize> = const { Cell::new(0) };
         pub(super) static ERASED_LENGTHS: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
+    }
+
+    /// Secret serialization must fit the allocation acquired before copying bytes.
+    pub(crate) fn assert_capacity(capacity: usize, length: usize) {
+        assert!(
+            capacity >= length,
+            "secret serialization grew: {capacity} < {length}"
+        );
     }
 
     /// File reads and save serialization erase internal credential allocations.

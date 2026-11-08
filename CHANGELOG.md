@@ -23,6 +23,10 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Secret staging preallocates MIC/Wrap checksum inputs, AES/DES3 padding and
+  keytab/ccache serialization before copying secrets. Unknown-length ccache
+  serde sequences erase each replaced allocation (FU-SPN-R15).
+
 - Mutation aggregation rejects nonpositive shard counts, overlapping shard
   identities, duplicate outcomes and invalid mutant summaries (FU-GATE-R09).
 

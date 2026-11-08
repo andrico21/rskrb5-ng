@@ -65,6 +65,12 @@ impl<'de> Visitor<'de> for Bytes {
     {
         let mut bytes = Zeroizing::new(Vec::new());
         while let Some(byte) = seq.next_element()? {
+            if bytes.len() == bytes.capacity() {
+                let mut replacement =
+                    Zeroizing::new(Vec::with_capacity(bytes.len().saturating_mul(2).max(8)));
+                replacement.extend_from_slice(&bytes);
+                bytes = replacement;
+            }
             bytes.push(byte);
         }
         Ok(bytes)

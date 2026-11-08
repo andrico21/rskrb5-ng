@@ -1088,7 +1088,14 @@ impl Des3CbcSha1KdEtype {
             });
         }
 
-        let mut plain = SecretScratch::new([confounder, message].concat());
+        let mut plain = SecretScratch::new(Vec::with_capacity(
+            confounder
+                .len()
+                .saturating_add(message.len())
+                .saturating_add(DES3_BLOCK_SIZE - 1),
+        ));
+        plain.extend_from_slice(confounder);
+        plain.extend_from_slice(message);
         zero_pad(&mut plain, DES3_BLOCK_SIZE);
 
         let encryption_key = SecretScratch::new(Self::derive_key(
@@ -1846,7 +1853,10 @@ fn aes_cts_encrypt(key: &[u8], plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>), E
         return Err(Error::EmptyPlaintext);
     }
 
-    let mut padded = SecretScratch::new(plaintext.to_vec());
+    let mut padded = SecretScratch::new(Vec::with_capacity(
+        plaintext.len().saturating_add(AES_BLOCK_SIZE - 1),
+    ));
+    padded.extend_from_slice(plaintext);
     zero_pad(&mut padded, AES_BLOCK_SIZE);
 
     // CTS is CBC over the zero-padded input with the last two output blocks
@@ -2008,7 +2018,10 @@ fn des3_cbc_encrypt(key: &[u8], plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>), 
     }
 
     let cipher = keyed_cipher::<TdesEde3>(key)?;
-    let mut padded = SecretScratch::new(plaintext.to_vec());
+    let mut padded = SecretScratch::new(Vec::with_capacity(
+        plaintext.len().saturating_add(DES3_BLOCK_SIZE - 1),
+    ));
+    padded.extend_from_slice(plaintext);
     zero_pad(&mut padded, DES3_BLOCK_SIZE);
 
     let mut previous = Zeroizing::new([0; DES3_BLOCK_SIZE]);
@@ -2148,7 +2161,12 @@ fn des3_is_weak_key(block: [u8; DES3_BLOCK_SIZE]) -> bool {
 
 /// Append zero bytes until `bytes` is a whole number of `block_size` blocks.
 fn zero_pad(bytes: &mut Vec<u8>, block_size: usize) {
+    #[cfg(test)]
+    use crate::file_name::tests::assert_capacity;
+
     if let Some(padded_len) = bytes.len().checked_next_multiple_of(block_size) {
+        #[cfg(test)]
+        assert_capacity(bytes.capacity(), padded_len);
         bytes.resize(padded_len, 0);
     }
 }

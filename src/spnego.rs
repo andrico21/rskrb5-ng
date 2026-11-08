@@ -288,7 +288,11 @@ impl MicToken {
     pub fn verify(&self, key: &EncryptionKey, key_usage: u32) -> Result<(), Error> {
         selection::reject_enctype(key.etype)?;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
-        let mut data = Scratch::new(payload.to_vec(), "mic-checksum");
+        let mut data = Scratch::new(
+            Vec::with_capacity(payload.len().saturating_add(GSS_MIC_HEADER_LEN)),
+            "mic-checksum",
+        );
+        data.extend_from_slice(payload);
         data.extend_from_slice(&self.checksum_header());
         let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let actual = self.checksum.as_ref().ok_or(Error::MissingGssChecksum)?;
@@ -655,7 +659,11 @@ impl WrapToken {
 
         selection::reject_enctype(key.etype)?;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
-        let mut data = Scratch::new(payload.to_vec(), "wrap-checksum");
+        let mut data = Scratch::new(
+            Vec::with_capacity(payload.len().saturating_add(GSS_WRAP_HEADER_LEN)),
+            "wrap-checksum",
+        );
+        data.extend_from_slice(payload);
         data.extend_from_slice(&wrap_checksum_header(self.flags, self.snd_seq_num));
         let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let actual = self.checksum.as_ref().ok_or(Error::MissingGssChecksum)?;

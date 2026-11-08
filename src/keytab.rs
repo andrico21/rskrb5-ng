@@ -326,12 +326,33 @@ impl Keytab {
     #[inline]
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         let endian = Endian::for_version(self.version);
-        let mut out = file_name::SecretBytes::new(vec![KEYTAB_FIRST_BYTE, self.version]);
-        for entry in &self.entries {
+        let body_lengths = self.entries.iter().map(|entry| {
+            entry
+                .principal
+                .components
+                .iter()
+                .fold(
+                    entry
+                        .principal
+                        .realm
+                        .len()
+                        .saturating_add(if self.version == 1 { 17 } else { 21 }),
+                    |length, component| length.saturating_add(2).saturating_add(component.len()),
+                )
+                .saturating_add(entry.key.value.len())
+        });
+        let capacity = body_lengths.clone().fold(2_usize, |length, body| {
+            length.saturating_add(4).saturating_add(body)
+        });
+        let mut out = file_name::SecretBytes::new(Vec::with_capacity(capacity));
+        out.extend_from_slice(&[KEYTAB_FIRST_BYTE, self.version]);
+        #[cfg(test)]
+        let initial_capacity = out.capacity();
+        for (entry, body_length) in self.entries.iter().zip(body_lengths) {
             if entry.kvno == 0 && entry.kvno8 != 0 {
                 return Err(Error::LengthOverflow);
             }
-            let mut body = file_name::SecretBytes::new(Vec::new());
+            let mut body = file_name::SecretBytes::new(Vec::with_capacity(body_length));
             entry.principal.write_to(&mut body, self.version, endian)?;
             write_u32(&mut body, entry.timestamp, endian);
             body.push(entry.kvno8);
@@ -351,6 +372,8 @@ impl Keytab {
             write_i32(&mut out, body_len, endian);
             out.extend_from_slice(&body);
         }
+        #[cfg(test)]
+        file_name::tests::assert_capacity(initial_capacity, out.len());
         Ok(out.into_vec())
     }
 

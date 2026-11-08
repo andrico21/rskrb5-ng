@@ -15,6 +15,8 @@ pub(super) struct Scratch {
 impl Scratch {
     /// Adopt staging without making another plaintext copy.
     pub(super) fn new(bytes: Vec<u8>, purpose: &'static str) -> Self {
+        #[cfg(test)]
+        super::erasure_tests::observe_capacity(purpose, bytes.len(), bytes.capacity());
         Self {
             bytes: Zeroizing::new(bytes),
             purpose,
