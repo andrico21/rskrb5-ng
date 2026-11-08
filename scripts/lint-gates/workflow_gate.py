@@ -331,6 +331,18 @@ def self_test() -> int:
         + " }]\n"
     )
     assert wiring_errors(ci, prek) == [], wiring_errors(ci, prek)
+    for key in (
+        r'"\u0069f"',
+        r'"\x69f"',
+        r'"\u0065nv"',
+        r'"\u0073hell"',
+        r'"\U00000069f"',
+    ):
+        hostile = ci.replace(
+            "      - run: " + REQUIRED[1],
+            "      - " + key + ": false\n        run: " + REQUIRED[1],
+        )
+        assert wiring_errors(hostile, prek), f"escaped execution key accepted: {key}"
     for key in ("shell", "defaults", '"shell"', '"defaults"'):
         for hostile in (
             f"{key}: hostile\n" + ci,

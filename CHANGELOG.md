@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Workflow readers reject escaped keys and unsupported mapping syntax rather
+  than certifying commands under a different YAML interpretation (FU-GATE-R05).
+
 - Configured checked AS exchange rejects realm and clpreauth restrictions
   before sending preauthentication, matching configured login (FU-TRN-R07).
 

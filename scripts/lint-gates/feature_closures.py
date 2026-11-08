@@ -89,23 +89,37 @@ TEST_RUN = "cargo test ${{ matrix.closures }}"
 # Keys that can cap lints, swap the compiler or swallow a failing command:
 # none may appear anywhere in the closures job.
 JOB_FORBIDDEN = frozenset(
-    {"continue-on-error", "if", "env", "defaults", "shell", "container", "working-directory"}
+    {
+        "continue-on-error",
+        "if",
+        "env",
+        "defaults",
+        "shell",
+        "container",
+        "working-directory",
+    }
 )
 ACTIONS = ("actions/checkout@", "dtolnay/rust-toolchain@", "Swatinem/rust-cache@")
 # Workflow-level variables Cargo or rustc read; only these harmless ones may be set.
-CARGO_ENV_ALLOWED = frozenset({"CARGO_TERM_COLOR", "CARGO_INCREMENTAL", "CARGO_NET_RETRY", "RUST_BACKTRACE"})
+CARGO_ENV_ALLOWED = frozenset(
+    {"CARGO_TERM_COLOR", "CARGO_INCREMENTAL", "CARGO_NET_RETRY", "RUST_BACKTRACE"}
+)
 
 
 def check_workflow_scope(lines: list[Line], top: list[int]) -> None:
     """No workflow-level default or variable reaches the closures job's cargo."""
     for index in top:
         if lines[index].key == "defaults":
-            raise RuntimeError(f"ci.yml:{lines[index].number}: a workflow `defaults:` reaches the closures job")
+            raise RuntimeError(
+                f"ci.yml:{lines[index].number}: a workflow `defaults:` reaches the closures job"
+            )
         if lines[index].key == "env":
             for child in children(lines, index):
                 name = lines[child].key or ""
                 if name.startswith(("CARGO", "RUST")) and name not in CARGO_ENV_ALLOWED:
-                    raise RuntimeError(f"ci.yml:{lines[child].number}: workflow env {name} reaches the closures job")
+                    raise RuntimeError(
+                        f"ci.yml:{lines[child].number}: workflow env {name} reaches the closures job"
+                    )
 
 
 def check_cargo_config(path: Path) -> None:
@@ -116,13 +130,19 @@ def check_cargo_config(path: Path) -> None:
         raise RuntimeError(f"{path}: {error}") from error
     build = config.get("build", {})
     if build.get("warnings") != "deny":
-        raise RuntimeError(f'{path}: build.warnings must be "deny", is {build.get("warnings")!r}')
+        raise RuntimeError(
+            f'{path}: build.warnings must be "deny", is {build.get("warnings")!r}'
+        )
     for key in ("rustflags", "rustc-wrapper", "rustc-workspace-wrapper", "rustc"):
         if key in build:
-            raise RuntimeError(f"{path}: build.{key} would change how the closures compile")
+            raise RuntimeError(
+                f"{path}: build.{key} would change how the closures compile"
+            )
     for name, table in config.get("target", {}).items():
         if isinstance(table, dict) and "rustflags" in table:
-            raise RuntimeError(f"{path}: target.{name}.rustflags would change how the closures compile")
+            raise RuntimeError(
+                f"{path}: target.{name}.rustflags would change how the closures compile"
+            )
     if any(name.startswith(("CARGO", "RUST")) for name in config.get("env", {})):
         raise RuntimeError(f"{path}: [env] sets a Cargo or rustc variable")
 
@@ -145,9 +165,7 @@ def ci_matrix(text: str) -> list[str]:
     jobs = only(lines, top, "jobs", "ci.yml")
     job = only(lines, children(lines, jobs), "closures", "jobs")
     strategy = only(lines, children(lines, job), "strategy", "jobs.closures")
-    matrix = only(
-        lines, children(lines, strategy), "matrix", "jobs.closures.strategy"
-    )
+    matrix = only(lines, children(lines, strategy), "matrix", "jobs.closures.strategy")
     keys = [lines[i].key for i in children(lines, matrix)]
     if keys != ["closures"]:
         raise RuntimeError(
@@ -188,7 +206,9 @@ def ci_matrix(text: str) -> list[str]:
                 f"ci.yml:{line.number}: the closures job may not use `{line.key}:`"
             )
         if line.key == "uses" and not scalar(line.value, "uses").startswith(ACTIONS):
-            raise RuntimeError(f"ci.yml:{line.number}: the closures job may use only {ACTIONS}")
+            raise RuntimeError(
+                f"ci.yml:{line.number}: the closures job may use only {ACTIONS}"
+            )
     runs = [
         scalar(line.value, f"ci.yml:{line.number}")
         for line in body
@@ -311,6 +331,16 @@ def self_test() -> int:
         "tab indentation": head + job(quoted).replace("          - ", "\t- ", 1),
     }
     steps = "    steps:\n"
+    for key in (
+        r'"\u0069f"',
+        r'"\x69f"',
+        r'"\u0065nv"',
+        r'"\u0073hell"',
+        r'"\U00000069f"',
+    ):
+        rejected[f"escaped key {key}"] = head + job(quoted).replace(
+            "        run: cargo test", f"        {key}: false\n        run: cargo test"
+        )
     capped = '      RUSTFLAGS: "--cap-lints=allow"\n'
     rejected |= {
         "job env capping lints": head

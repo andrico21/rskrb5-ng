@@ -7,6 +7,11 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Workflow syntax (FU-GATE-R05): use plain identifier keys or unescaped quoted
+identifiers. Escaped keys, explicit complex keys, mapping aliases, anchors and
+merge forms are refused by the shared execution reader. Keep gate mappings in
+the supported block form rather than relying on alternate YAML spellings.
+
 Checked AS exchange (FU-TRN-R07): `exchange_as_req_with_config` now returns
 the named `Config::NotYetEffective` error for unsupported realm and clpreauth
 restrictions before discovery or sending a previously built request. Programmatic
