@@ -23,6 +23,10 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Include parsing skips suffix lookahead unless an empty scalar is pending,
+  removing repeated scans of comment tails without changing precedence or limits
+  (FU-CFG-R12).
+
 - Kadmin reply-key generation and random message confounders own erasure before
   entropy filling, including partial randomness failures (FU-TRN-R08).
 

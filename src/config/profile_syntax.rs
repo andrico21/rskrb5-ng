@@ -27,6 +27,11 @@ pub(super) struct State {
 }
 
 impl State {
+    /// Whether include ordering needs a suffix lookahead to resolve an empty scalar.
+    pub(super) const fn needs_include_lookahead(&self) -> bool {
+        self.pending_scalar.is_some()
+    }
+
     /// Resolve deferred parent contributions before an include contributes later values.
     /// # Errors
     /// Returns the pending assignment's syntax or permanent-policy error.

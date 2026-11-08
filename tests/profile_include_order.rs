@@ -69,6 +69,12 @@ mod tests {
         let config = Config::parse(&input)?;
         assert_eq!(config.libdefaults.default_realm, "CHILD");
         assert_eq!(config.applications.get("app", "R", "value"), Some("parent"));
+        let generic = Config::parse(&format!(
+            "[custom]\nparent =\ninclude {}\ninclude {}\n{{\nvalue = retained\n}}\n",
+            child.display(),
+            child.display()
+        ))?;
+        assert_eq!(generic.libdefaults.default_realm, "CHILD");
         fs::remove_dir_all(directory)?;
         Ok(())
     }

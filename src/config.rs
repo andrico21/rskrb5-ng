@@ -2073,11 +2073,17 @@ impl IncludeExpansion {
                 return Err(Error::UnsupportedDynamicModule);
             }
             if let Some(directive) = IncludeDirective::parse(cleaned) {
-                let opens_subsection = lines
-                    .clone()
-                    .map(|(_, text)| profile_syntax::comments(text).trim())
-                    .find(|text| !text.is_empty() && IncludeDirective::parse(text).is_none())
-                    == Some("{");
+                let opens_subsection = state.needs_include_lookahead()
+                    && lines
+                        .clone()
+                        .map(|(_, text)| {
+                            #[cfg(test)]
+                            fork_tests::LOOKAHEAD_SCANS
+                                .with(|count| count.set(count.get().saturating_add(1)));
+                            profile_syntax::comments(text).trim()
+                        })
+                        .find(|text| !text.is_empty() && IncludeDirective::parse(text).is_none())
+                        == Some("{");
                 state.before_include(opens_subsection, &mut self.profile)?;
                 self.splice(directive, depth)?;
                 continue;
@@ -2391,6 +2397,7 @@ mod tests {
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod fork_tests {
+    use core::cell::Cell;
     use core::error;
     use std::{
         env, fs,
@@ -2403,6 +2410,38 @@ mod fork_tests {
     use super::{
         Config, Error, LibDefaults, MAX_INCLUDE_BYTES, MAX_INCLUDE_DEPTH, MAX_INCLUDE_FILES,
     };
+
+    thread_local! {
+        /// Suffix lines visited by include lookahead, isolated per test thread.
+        pub(super) static LOOKAHEAD_SCANS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    /// Include runs scan their suffix at most once while resolving a pending scalar.
+    #[test]
+    fn include_lookahead_work_is_linear() -> Result<(), Box<dyn error::Error>> {
+        let directory = fixture_dir("linear-lookahead")?;
+        let child = directory.join("empty.conf");
+        fs::write(&child, "")?;
+        let directive = format!("include {}\n", child.display());
+        for prefix in ["[libdefaults]\n", "[libdefaults]\ndefault_realm =\n"] {
+            let mut input = prefix.to_owned();
+            input.push_str(&directive.repeat(MAX_INCLUDE_FILES));
+            input.push_str(&"# comment\n".repeat(4096));
+            assert!(input.len() < MAX_INCLUDE_BYTES);
+            LOOKAHEAD_SCANS.with(|count| count.set(0));
+            drop(Config::parse(&input)?);
+            LOOKAHEAD_SCANS.with(|count| {
+                assert!(
+                    count.get() <= input.lines().count(),
+                    "suffix scans {} exceed source lines {}",
+                    count.get(),
+                    input.lines().count()
+                )
+            });
+        }
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
 
     /// The marker the parent sets when it re-executes this binary as a probe, so
     /// a normal run leaves the probe test inert.
