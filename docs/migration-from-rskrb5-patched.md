@@ -7,6 +7,11 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Service reply verification (FU-SPN-R13): `ValidatedApReq::verify_ap_rep` rejects
+excluded wrapping keys and acceptor subkeys with a typed policy error. Retain
+an explicitly permitted policy when interoperating with legacy keys; raw AP-REP
+codecs still leave policy admission to their caller.
+
 Reciprocal MIC policy (FU-SPN-R12): changing a validated context's initiator
 subkey no longer bypasses its retained policy. Supply permitted keys, or explicitly
 configure legacy permission and membership before use. An explicit acceptor

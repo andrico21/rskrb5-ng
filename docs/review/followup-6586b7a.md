@@ -340,6 +340,8 @@ Original review rows:
 | --- | --- | --- | --- | --- | --- | --- |
 | FU-SPN-R12 | minor | Reciprocal MIC key selection omits retained policy admission | fixed | `reciprocal_mic_admits_selected_key` red/green; commit `spnego: admit selected reciprocal MIC keys (FU-SPN-R12)` | Reciprocal signing checks the selected subkey with AcceptorSubkey or fallback with SessionKey; completion verification rechecks its selected key. | task-22g-rskrb5-ng-zero-open-items.log: denied legacy and excluded AES fallback, explicit legacy opt-in/membership, acceptor precedence and session fallback controls. |
 
+| FU-SPN-R13 | minor | Policy-bearing service AP-REP verifier still admits permanently rejected subkeys | fixed | `service_reply_verifier_admits_all_keys` red/green; commit `service: admit all verified AP reply keys (FU-SPN-R13)` | Service verifier checks local session and wire encryption IDs with SessionKey and authenticated reply subkey with AcceptorSubkey before returning it. | task-22g-rskrb5-ng-zero-open-items.log: independently encrypted DES/legacy/excluded AES replies refused; permitted AES and opted-in legacy controls accepted. |
+
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 
 - RVX-u1-01 → FU-TST-01 (also: the test never exercises the router wiring cited by the review doc; covered by FU-TST-01's Proof)

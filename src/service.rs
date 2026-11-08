@@ -165,9 +165,17 @@ impl ValidatedApReq {
     /// when its timestamp differs from the AP-REQ authenticator's.
     #[inline]
     pub fn verify_ap_rep(&self, bytes: &[u8]) -> Result<VerifiedApRep, Error> {
+        self.crypto_policy
+            .check_use(self.session_key.etype, Use::SessionKey)?;
         let ap_rep = ap_rep::decode(bytes).map_err(ap_rep_error)?;
+        self.crypto_policy
+            .check_use(ap_rep.enc_part.etype, Use::SessionKey)?;
         let enc_part =
             ap_rep::decrypt_ap_rep_enc_part(&ap_rep, &self.session_key).map_err(ap_rep_error)?;
+        if let Some(subkey) = &enc_part.subkey {
+            self.crypto_policy
+                .check_use(subkey.r#type, Use::AcceptorSubkey)?;
+        }
         let ctime = system_time_from_kerberos_time(&enc_part.ctime)?;
         let cusec = microseconds_to_u32("ap-rep.cusec", &enc_part.cusec)?;
         let authenticator_time = ctime

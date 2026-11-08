@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- The service AP-REP verifier enforces retained policy on both wrapping key IDs
+  and the authenticated acceptor subkey (FU-SPN-R13).
+
 - Reciprocal MIC signing and completion verification recheck the selected key
   against the retained context policy, including initiator-subkey fallbacks
   (FU-SPN-R12).
