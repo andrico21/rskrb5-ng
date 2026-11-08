@@ -49,14 +49,14 @@ use crate::{
 
 /// Preserve permanent policy causes while classifying other invalid configuration.
 #[cfg(feature = "tower")]
-fn configuration_policy(error: ConfigError) -> Policy {
+const fn configuration_policy(error: &ConfigError) -> Policy {
     if let ConfigError::Policy(policy)
     | ConfigError::RejectedEnctype {
         source: policy,
         token: _,
     } = error
     {
-        policy
+        *policy
     } else {
         Policy::InvalidConfiguration
     }
@@ -1202,9 +1202,9 @@ impl NegotiateLayer<'static> {
     /// or the file cannot be read or parsed.
     #[inline]
     pub fn from_default_keytab_name(config: &Config) -> Result<Self> {
-        restrictions::config(config).map_err(configuration_policy)?;
-        let policy =
-            CryptoPolicy::from_libdefaults(&config.libdefaults).map_err(configuration_policy)?;
+        restrictions::config(config).map_err(|error| configuration_policy(&error))?;
+        let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)
+            .map_err(|error| configuration_policy(&error))?;
         Self::from_keytab(keytab::configured_keytab(
             &config.libdefaults,
             DefaultName::Keytab,
@@ -1232,9 +1232,9 @@ impl NegotiateLayer<'static> {
     /// or the file cannot be read or parsed.
     #[inline]
     pub fn from_default_keytab(config: &Config) -> Result<Self> {
-        restrictions::config(config).map_err(configuration_policy)?;
-        let policy =
-            CryptoPolicy::from_libdefaults(&config.libdefaults).map_err(configuration_policy)?;
+        restrictions::config(config).map_err(|error| configuration_policy(&error))?;
+        let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)
+            .map_err(|error| configuration_policy(&error))?;
         Self::from_keytab(keytab::default_keytab_name(&config.libdefaults)?)
             .with_crypto_policy(policy)
             .with_max_clock_skew(config.libdefaults.clockskew)

@@ -242,6 +242,14 @@ where
     Ok(value)
 }
 
+/// `value` as the `rasn` Kerberos `EncryptionKey`.
+pub(super) fn encryption_key_to_rasn(value: &EncryptionKey) -> rasn_kerberos::EncryptionKey {
+    rasn_kerberos::EncryptionKey {
+        r#type: value.etype,
+        value: value.value.to_vec().into(),
+    }
+}
+
 #[cfg(test)]
 #[expect(
     clippy::missing_errors_doc,
@@ -270,13 +278,5 @@ mod tests {
         })?;
         assert_eq!(success.as_slice(), &[0x57; 32]);
         Ok(())
-    }
-}
-
-/// `value` as the `rasn` Kerberos `EncryptionKey`.
-pub(super) fn encryption_key_to_rasn(value: &EncryptionKey) -> rasn_kerberos::EncryptionKey {
-    rasn_kerberos::EncryptionKey {
-        r#type: value.etype,
-        value: value.value.to_vec().into(),
     }
 }

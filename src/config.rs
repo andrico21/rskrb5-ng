@@ -2397,8 +2397,7 @@ mod tests {
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod fork_tests {
-    use core::cell::Cell;
-    use core::error;
+    use core::{cell::Cell, error};
     use std::{
         env, fs,
         io::{self, Write as _},
@@ -2436,7 +2435,7 @@ mod fork_tests {
                     "suffix scans {} exceed source lines {}",
                     count.get(),
                     input.lines().count()
-                )
+                );
             });
         }
         fs::remove_dir_all(directory)?;

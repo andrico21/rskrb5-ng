@@ -1912,11 +1912,15 @@ where
         return cbc_decrypt(cipher, &ZERO_AES_IV, &swapped);
     };
 
-    let mut plaintext = SecretScratch::new(cbc_decrypt(
+    let regular_plain = SecretScratch::new(cbc_decrypt(
         cipher,
         &ZERO_AES_IV,
         regular_blocks.as_flattened(),
     ));
+    let mut plaintext = SecretScratch::new(Vec::with_capacity(
+        ciphertext.len().saturating_add(AES_BLOCK_SIZE - 1),
+    ));
+    plaintext.extend_from_slice(&regular_plain);
     let chain_iv = regular_blocks.last().copied().unwrap_or(ZERO_AES_IV);
 
     // The penultimate block decrypts to the last plaintext block XOR the last
@@ -1926,6 +1930,14 @@ where
     copy_prefix(&mut *completed_last_cipher, last_partial);
 
     let last_plain = SecretScratch::new(cbc_decrypt(cipher, &chain_iv, &*completed_last_cipher));
+    #[cfg(test)]
+    {
+        use crate::file_name::tests::assert_capacity;
+        assert_capacity(
+            plaintext.capacity(),
+            plaintext.len().saturating_add(2 * AES_BLOCK_SIZE),
+        );
+    }
     plaintext.extend_from_slice(&last_plain);
     let tail_plain = SecretScratch::for_purpose(
         cbc_decrypt(cipher, &completed_last_cipher, penultimate_cipher),

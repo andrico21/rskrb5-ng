@@ -35,7 +35,7 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
   configuration errors (FU-SPN-R16).
 
 - Secret staging preallocates MIC/Wrap checksum inputs, AES/DES3 padding and
-  keytab/ccache serialization before copying secrets. Unknown-length ccache
+  partial AES-CTS decryption and keytab/ccache serialization before copying secrets. Unknown-length ccache
   serde sequences erase each replaced allocation (FU-SPN-R15).
 
 - Mutation aggregation rejects nonpositive shard counts, overlapping shard
