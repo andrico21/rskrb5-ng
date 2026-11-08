@@ -40,7 +40,7 @@ REPO_URL: Final = re.compile(
 SCHEME: Final = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:")
 FENCE: Final = re.compile(r" {0,3}(`{3,}|~{3,})")
 REFERENCE: Final = re.compile(
-    r"^ {0,3}\[(?!\^)(?:\\[^\n]|[^\]\\\n])+\]:[ \t]*(?:\n[ \t]*)?",
+    r"^ {0,3}\[(?!\^)(?:\\[^\n]|[^\]\\])+\]:[ \t]*(?:\n[ \t]*)?",
     re.MULTILINE,
 )
 AUTOLINK: Final = re.compile(r"<([A-Za-z][A-Za-z0-9+.-]*:[^\s<>]*)>")
@@ -283,6 +283,7 @@ def self_test() -> int:
         assert problems(clean.replace(b"\n", b"\r\n")) == [], "CRLF clean"
         for link in (
             "[bad]:\n  missing.md\n[x][bad]",
+            "[long\n label]:\n  missing.md\n[x][long label]",
             "[bad]:\n  <missing.md>\n[x][bad]",
             '[bad]:\r\n\tmissing.md "title"\r\n[x][bad]',
             "[escaped\\]label]:\n missing.md\n[x][escaped\\]label]",
