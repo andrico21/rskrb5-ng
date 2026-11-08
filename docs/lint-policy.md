@@ -112,6 +112,12 @@ flow sequences are limited to scalar lists (such as event and runner lists).
 `workflow_regressions.py --self-test` exercises the four critic rounds against
 mutations of the actual workflows, alongside each owner's more detailed fixtures.
 
+Parity evidence uses a separate cfg-aware lexer adapter: `cfg(any())`, test-only
+and contradictory predicates cannot establish public symbols. Supported feature,
+Unix/Windows, pointer-width and debug predicates must admit a non-test build;
+unsupported predicates are excluded, not presumed enabled. The adapter preserves
+item boundaries and does not change lint gates, which still inspect disabled code.
+
 `docsrs_check.py` holds `[package.metadata.docs.rs]` to the advertised
 optional APIs (`http`, `tower`); the `docs` job builds rustdoc with exactly
 that feature set and `--cfg docsrs`, as docs.rs does, and checks the

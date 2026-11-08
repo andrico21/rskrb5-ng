@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Parity symbol evidence excludes cfg-disabled and test-only item scopes and
+  requires supported non-test configurations for conditional declarations (FU-TST-R18).
+
 - Action pin checks inspect normalized YAML keys across every workflow, including
   quoted `uses`; opaque syntax and missing version comments fail closed (FU-GATE-R12).
 

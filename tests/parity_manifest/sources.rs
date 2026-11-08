@@ -15,6 +15,9 @@ use toml::{Table, Value};
 
 use crate::{TestError, model::read};
 
+#[path = "cfg_evidence.rs"]
+mod cfg_evidence;
+
 /// Test attributes this repository uses.
 const TEST_ATTRIBUTES: [&str; 2] = ["#[test]", "#[tokio::test"];
 /// Declaration keywords a public Rust symbol may follow.
@@ -242,11 +245,12 @@ fn sanitized_sources(sources: &[(String, String)]) -> Result<Vec<(String, String
         input.push('\0');
     }
     let mut child = Command::new("python3")
-        .arg("-c")
-        .arg("import sys; sys.path.insert(0,'scripts/lint-gates'); from rust_lex import strip_comments_and_strings as strip; f=sys.stdin.buffer.read().decode('utf-8').split('\\0')[:-1]; sys.stdout.buffer.write(''.join((x if i%2==0 else strip(x))+'\\0' for i,x in enumerate(f)).encode('utf-8'))")
+        .arg("scripts/lint-gates/parity_cfg.py")
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .env("PYTHONDONTWRITEBYTECODE", "1")
-        .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn()?;
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()?;
     child
         .stdin
         .take()

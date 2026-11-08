@@ -370,6 +370,8 @@ Original review rows:
 
 | FU-GATE-R12 | minor | Quoted action keys bypass the global SHA-pin check | fixed | quoted action fixture red/green; workflow_regressions four-round fixtures and real workflows; commit `gates: inspect structural action keys across workflows (FU-GATE-R12)` | Every normalized uses key requires a full SHA and version comment; escaped/opaque/flow action syntax, tags, anchors, aliases and duplicate keys fail closed. | task-22j-rskrb5-ng-zero-open-items.log: quoted moving tags accepted before; both quote forms rejected with moving tags and accepted with full SHA outside mandatory jobs; release and publish mutations rejected. |
 
+| FU-TST-R18 | minor | Parity symbol evidence admits a declaration disabled in every build | fixed | disabled declaration Cargo regression red/green; parity_cfg fixtures; scoped clippy and nightly fmt; commit `test: exclude cfg-disabled parity evidence (FU-TST-R18)` | Parity evidence removes disabled/test-only item scopes; unknown predicates require supported-build evidence rather than admission. Item and parent predicates are evaluated together; following declarations remain visible. | task-22j-rskrb5-ng-zero-open-items.log: cfg(any()) Ghost admitted before fix; false/test/contradictory/nested cfg_attr declarations and methods rejected; actual MIT and Go manifests pass. |
+
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 
 - RVX-u1-01 → FU-TST-01 (also: the test never exercises the router wiring cited by the review doc; covered by FU-TST-01's Proof)
