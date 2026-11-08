@@ -1180,13 +1180,18 @@ mod tests {
     /// Binds a UDP socket and a TCP listener on the same loopback port.
     ///
     /// The kernel picks a free UDP port, but that number may already be taken
-    /// for TCP by another socket, so a TCP `AddrInUse` retries on a fresh port.
+    /// for TCP by another socket or excluded for TCP (Windows reports that as
+    /// `PermissionDenied`), so either error retries on a fresh port.
     async fn bind_udp_and_tcp_pair() -> io::Result<(UdpSocket, TcpListener)> {
         for _ in 0_u8..16 {
             let udp = UdpSocket::bind("127.0.0.1:0").await?;
             match TcpListener::bind(udp.local_addr()?).await {
                 Ok(listener) => return Ok((udp, listener)),
-                Err(error) if error.kind() == io::ErrorKind::AddrInUse => {}
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::AddrInUse | io::ErrorKind::PermissionDenied
+                    ) => {}
                 Err(error) => return Err(error),
             }
         }
