@@ -950,7 +950,7 @@ mod tests {
             let mut part = original_part.clone();
             part.key = rasn_kerberos::EncryptionKey {
                 r#type: id,
-                value: session_key.value.clone().into(),
+                value: session_key.value.to_vec().into(),
             };
             let encrypted = ticket::build_ticket_with_confounder(
                 original.ticket.realm.clone(),

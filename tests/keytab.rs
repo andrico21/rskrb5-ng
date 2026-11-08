@@ -593,7 +593,7 @@ mod tests {
                 0 => entry.principal.realm = "r".repeat(0x8000),
                 1 => entry.principal.components = vec!["c".repeat(0x8000)],
                 2 => entry.principal.components = vec![String::new(); 0x8000],
-                3 => entry.key.value = vec![0; 0x8000],
+                3 => entry.key.value = vec![0; 0x8000].into(),
                 _ => entry.key.etype = 0x8000_i32,
             }
             let mut keytab = Keytab::new();
@@ -623,7 +623,7 @@ mod tests {
             .components
             .first_mut()
             .context("first component")? = "c".repeat(0x7fff);
-        entry.key.value = vec![7; 0x7fff];
+        entry.key.value = vec![7; 0x7fff].into();
         let mut keytab = Keytab::new();
         keytab.entries_mut().push(entry);
 

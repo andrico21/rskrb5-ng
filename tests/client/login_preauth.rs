@@ -78,7 +78,7 @@ mod tests {
             .context("RC4 reply key derives")?;
         assert_eq!(reply_key.etype, 23_i32);
         assert_eq!(
-            reply_key.value,
+            reply_key.value.as_slice(),
             decode_hex("ac8e657f83df82beea5d43bdaf7800cc")?
         );
         Ok(())

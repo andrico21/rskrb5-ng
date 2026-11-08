@@ -7,6 +7,21 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Key replacement (FU-FIL-R06): `keytab::EncryptionKey::value` and
+`ccache::EncryptionKey::value` now hold `keytab::key_bytes::Bytes`, which
+erases its allocation on replacement/drop and exposes only read-only bytes.
+Constructors accept an owned `Vec<u8>` or `Zeroizing<Vec<u8>>` without copying;
+they are no longer `const`. Replace vector mutation with a new owner. Any
+explicit `to_vec()` copy remains the caller's erasure responsibility.
+
+```rust
+use rskrb5_ng::keytab::EncryptionKey;
+use zeroize::Zeroizing;
+let mut key = EncryptionKey::new(18, Zeroizing::new(vec![0x11; 32]));
+key.value = Zeroizing::new(vec![0x22; 32]).into();
+assert_eq!(key.value.as_slice(), &[0x22; 32]);
+```
+
 Mutation evidence (FU-GATE-R04): each whole-crate campaign shard must retain
 one successful baseline and a nonempty `mutants.json` with the exact tested
 mutant names. Rerun filtered, baseline-free or incomplete shards; an end time

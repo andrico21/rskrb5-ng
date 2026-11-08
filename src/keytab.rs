@@ -218,7 +218,9 @@ impl Keytab {
             };
             let key = EncryptionKey {
                 etype,
-                value: read_bytes(entry_bytes, &mut entry_offset, key_len)?.to_vec(),
+                value: read_bytes(entry_bytes, &mut entry_offset, key_len)?
+                    .to_vec()
+                    .into(),
             };
 
             let mut kvno = if entry_bytes.len().saturating_sub(entry_offset) >= 4 {
@@ -771,6 +773,9 @@ impl Principal {
     }
 }
 
+/// Value-attached key-byte erasure and read-only access.
+pub mod key_bytes;
+
 /// Kerberos encryption key as stored in a keytab.
 #[derive(Clone, Eq, PartialEq, zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
 #[non_exhaustive]
@@ -778,15 +783,21 @@ pub struct EncryptionKey {
     /// Kerberos encryption type id.
     pub etype: i32,
     /// Raw key bytes.
-    pub value: Vec<u8>,
+    pub value: key_bytes::Bytes,
 }
 
 impl EncryptionKey {
     /// Creates a `EncryptionKey` from its required fields.
     #[must_use]
     #[inline]
-    pub const fn new(etype: i32, value: Vec<u8>) -> Self {
-        Self { etype, value }
+    pub fn new<V>(etype: i32, value: V) -> Self
+    where
+        V: Into<key_bytes::Bytes>,
+    {
+        Self {
+            etype,
+            value: value.into(),
+        }
     }
 }
 

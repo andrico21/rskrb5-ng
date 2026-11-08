@@ -3,6 +3,8 @@
 use core::time::Duration;
 use std::time::SystemTime;
 
+use zeroize::Zeroizing;
+
 use super::{
     BuiltApReq, Error, TgsRepSession, ap_rep_error, encryption_key_from_rasn, integer_to_u32,
     system_time_from_kerberos_time,
@@ -181,11 +183,12 @@ pub fn build_kpasswd_request(
 ) -> Result<BuiltKpasswdRequest, Error> {
     let etype = selection::enctype(service_ticket.session_key.etype)?
         .ok_or(Error::UnsupportedEtype(service_ticket.session_key.etype))?;
-    let mut reply_key = EncryptionKey {
+    let mut reply_bytes = Zeroizing::new(vec![0; etype.key_len()]);
+    getrandom::fill(&mut reply_bytes)?;
+    let reply_key = EncryptionKey {
         etype: service_ticket.session_key.etype,
-        value: vec![0; etype.key_len()],
+        value: reply_bytes.into(),
     };
-    getrandom::fill(&mut reply_key.value)?;
     let mut ap_req_confounder = vec![0; etype.confounder_len()];
     getrandom::fill(&mut ap_req_confounder)?;
 

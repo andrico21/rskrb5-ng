@@ -23,6 +23,10 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Keytab and ccache key bytes now use a read-only, zeroizing owner. Replacing
+  a public key field erases the previous allocation; direct vector mutation
+  is replaced by assignment of a new owner (FU-FIL-R06).
+
 - Mutation completeness rejects empty shards, absent or failed baselines, and
   generated/tested identity mismatches rather than accepting equal counts alone
   (FU-GATE-R04).

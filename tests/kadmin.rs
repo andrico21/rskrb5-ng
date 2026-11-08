@@ -1182,7 +1182,7 @@ mod tests {
     fn rasn_encryption_key(key: &EncryptionKey) -> rasn_kerberos::EncryptionKey {
         rasn_kerberos::EncryptionKey {
             r#type: key.etype,
-            value: key.value.clone().into(),
+            value: key.value.to_vec().into(),
         }
     }
 

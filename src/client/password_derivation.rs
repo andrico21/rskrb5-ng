@@ -26,6 +26,8 @@ pub(super) fn derive(
         .unwrap_or_else(|| default_password_salt(client));
     Ok(EncryptionKey {
         etype: key_info.etype,
-        value: etype.string_to_key(password, salt.as_bytes(), &params)?,
+        value: etype
+            .string_to_key(password, salt.as_bytes(), &params)?
+            .into(),
     })
 }

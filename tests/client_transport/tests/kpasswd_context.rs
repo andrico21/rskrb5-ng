@@ -133,7 +133,7 @@ pub(super) fn reply(request: &BuiltKpasswdRequest, case: ReplyCase) -> Result<Ve
             response_key = EncryptionKey::new(id, vec![0x66; etype.key_len()]);
             subkey = Some(rasn_kerberos::EncryptionKey {
                 r#type: id,
-                value: response_key.value.clone().into(),
+                value: response_key.value.to_vec().into(),
             });
         }
         ReplyCase::Rejected => data = b"\x00\x04policy refused",

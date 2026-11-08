@@ -236,6 +236,6 @@ pub(super) fn random_key_material(size: usize) -> Result<Vec<u8>, Error> {
 pub(super) fn encryption_key_to_rasn(value: &EncryptionKey) -> rasn_kerberos::EncryptionKey {
     rasn_kerberos::EncryptionKey {
         r#type: value.etype,
-        value: value.value.clone().into(),
+        value: value.value.to_vec().into(),
     }
 }

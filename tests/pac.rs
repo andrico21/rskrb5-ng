@@ -590,7 +590,7 @@ mod tests {
     fn decrypts_credentials_info_and_parses_ntlm_supplemental_credential() -> Result<(), TestError>
     {
         let etype = KerberosEtype::Sha1(AesSha1Etype::Aes256);
-        let key = EncryptionKey::new(etype.etype_id(), (0_u8..32).collect());
+        let key = EncryptionKey::new(etype.etype_id(), (0_u8..32).collect::<Vec<_>>());
         let plaintext = credential_data_bytes()?;
         let encrypted = etype
             .encrypt_message_with_confounder(&key.value, &plaintext, 16, &[0xa5; 16])

@@ -521,7 +521,10 @@ mod tests {
             credential.server.components,
             vec!["HTTP", "host.test.gokrb5"]
         );
-        assert_eq!(credential.key.value, decode_hex(SERVICE_SESSION_KEY)?);
+        assert_eq!(
+            credential.key.value.as_slice(),
+            decode_hex(SERVICE_SESSION_KEY)?
+        );
         assert_eq!(credential.times.auth_time, 1_893_553_445);
         assert_eq!(credential.times.start_time, 1_893_553_446);
         assert_eq!(credential.times.end_time, 1_893_560_646);

@@ -21,7 +21,7 @@ fn configured_legacy_context_propagates_policy() -> Result<(), Box<dyn Error>> {
         ))?;
         let mut ticket = session(id, id)?;
         let etype = KerberosEtype::from_etype_id(id).ok_or("implemented legacy")?;
-        ticket.session_key.value = vec![0x45; etype.key_len()];
+        ticket.session_key.value = vec![0x45; etype.key_len()].into();
         let service = ticket.service.clone();
         let mut client = Tokio::with_keytab(
             config,
@@ -48,7 +48,7 @@ fn explicit_spnego_policy_reaches_ap_builder() -> Result<(), Box<dyn Error>> {
     let config =
         Config::parse("[libdefaults]\nallow_rc4 = true\npermitted_enctypes = DEFAULT rc4")?;
     let mut ticket = session(23, 23)?;
-    ticket.session_key.value = vec![0x45; 16];
+    ticket.session_key.value = vec![0x45; 16].into();
     let options = InitiatorContextOptions::new()
         .with_crypto_policy(CryptoPolicy::from_libdefaults(&config.libdefaults)?);
     // When constructing through the direct initiator API.

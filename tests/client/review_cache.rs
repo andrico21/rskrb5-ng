@@ -36,7 +36,7 @@ mod tests {
         });
         let mut old = sample_tgt_session()?;
         old.end_time = timestamp(2_000_000_000)?;
-        old.session_key.value = vec![0x11; 32];
+        old.session_key.value = vec![0x11; 32].into();
         let mut client = Tokio::from_tgt_session(
             config_with_kdc_server(&address.to_string())?,
             KdcProtocol::Tcp,
@@ -44,7 +44,10 @@ mod tests {
         )
         .with_keytab_credential(keytab_with_reply_key(3)?);
         let session = client.login().await?;
-        assert_eq!(session.session_key.value, decode_hex(SESSION_KEY)?);
+        assert_eq!(
+            session.session_key.value.as_slice(),
+            decode_hex(SESSION_KEY)?
+        );
         task.await??;
         Ok(())
     }

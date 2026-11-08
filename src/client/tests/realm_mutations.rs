@@ -176,7 +176,7 @@ async fn realm_selection_across_start_boundary() -> Result<(), TestError> {
             }
         }
         let cached = client.tgt_sessions.get(destination).ok_or("realm cache")?;
-        assert_eq!(cached.session_key.value == vec![0x66; 32], foreign);
+        assert_eq!(cached.session_key.value.as_slice() == [0x66; 32], foreign);
         assert!(
             client.tgt.is_none(),
             "foreign renewal must not replace the primary TGT"

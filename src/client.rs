@@ -3177,11 +3177,11 @@ impl<'request> TgsRequestParts<'request> {
 ///
 /// Returns [`Error::Random`] when the OS random source fails.
 pub(crate) fn random_subkey_for(key: &EncryptionKey) -> Result<EncryptionKey, Error> {
-    let mut value = vec![0; key.value.len()];
+    let mut value = Zeroizing::new(vec![0; key.value.len()]);
     getrandom::fill(&mut value)?;
     Ok(EncryptionKey {
         etype: key.etype,
-        value,
+        value: value.into(),
     })
 }
 
@@ -4775,7 +4775,7 @@ fn kerberos_string_to_string(value: &rasn_kerberos::KerberosString) -> Result<St
 fn encryption_key_from_rasn(value: &rasn_kerberos::EncryptionKey) -> EncryptionKey {
     EncryptionKey {
         etype: value.r#type,
-        value: value.value.as_ref().to_vec(),
+        value: value.value.as_ref().to_vec().into(),
     }
 }
 
@@ -4783,7 +4783,7 @@ fn encryption_key_from_rasn(value: &rasn_kerberos::EncryptionKey) -> EncryptionK
 fn encryption_key_to_rasn(value: &EncryptionKey) -> rasn_kerberos::EncryptionKey {
     rasn_kerberos::EncryptionKey {
         r#type: value.etype,
-        value: value.value.clone().into(),
+        value: value.value.to_vec().into(),
     }
 }
 
@@ -5428,11 +5428,11 @@ mod tests {
     fn explicit_subkey_of_another_enctype_is_refused() -> Result<(), Error> {
         let tgt = session_with_key(EncryptionKey {
             etype: 18,
-            value: vec![0x11; 32],
+            value: vec![0x11; 32].into(),
         })?;
         let subkey = EncryptionKey {
             etype: 17,
-            value: vec![0x22; 16],
+            value: vec![0x22; 16].into(),
         };
         let now = SystemTime::now();
         let result = build_tgs_req_for_realm_with_confounder_and_subkey(
@@ -5461,11 +5461,11 @@ mod tests {
     fn explicit_subkey_of_another_length_is_refused() -> Result<(), Error> {
         let tgt = session_with_key(EncryptionKey {
             etype: 18,
-            value: vec![0x11; 32],
+            value: vec![0x11; 32].into(),
         })?;
         let subkey = EncryptionKey {
             etype: 18,
-            value: vec![0x22; 16],
+            value: vec![0x22; 16].into(),
         };
         let now = SystemTime::now();
         let result = build_tgs_req_for_realm_with_confounder_and_subkey(
@@ -5495,7 +5495,7 @@ mod tests {
         use crate::error::{Policy, RejectedFeature};
         let tgt = session_with_key(EncryptionKey {
             etype: 1,
-            value: vec![0x11; 8],
+            value: vec![0x11; 8].into(),
         })?;
         let result = build_tgs_req_for_realm_with_subkey(
             &tgt,
