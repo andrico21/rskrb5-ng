@@ -934,7 +934,7 @@ mod tests {
             keytab::{EncryptionKey, Entry, Principal as KeyPrincipal},
             ticket,
         };
-        let original = ap_req::decode(include_bytes!("../fuzz/fixtures/valid_ap_req.der"))?;
+        let original = ap_req::decode(include_bytes!("fixtures/valid_ap_req.der"))?;
         let original_key = EncryptionKey::new(
             18,
             hex::decode("9cad00bbc72d703258e911dc18e6d5487cf737bf67fd111f0c2463ad6033bf51")?,

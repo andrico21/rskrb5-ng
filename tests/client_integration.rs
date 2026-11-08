@@ -1771,7 +1771,7 @@ mod tests {
         use core::str;
 
         use rskrb5_ng::{ap_req, ticket};
-        let request = ap_req::decode(include_bytes!("../fuzz/fixtures/valid_ap_req.der"))?;
+        let request = ap_req::decode(include_bytes!("fixtures/valid_ap_req.der"))?;
         let key = EncryptionKey::new(
             18,
             hex::decode("9cad00bbc72d703258e911dc18e6d5487cf737bf67fd111f0c2463ad6033bf51")?,
@@ -2089,8 +2089,7 @@ mod tests {
             let decoded: rasn_kerberos::AsReq = der::decode(&built.der)?;
             assert_eq!(decoded.0.req_body.etype, vec![id]);
             let service = Principal::tgt_service(REALM);
-            let mut ticket =
-                ap_req::decode(include_bytes!("../fuzz/fixtures/valid_ap_req.der"))?.ticket;
+            let mut ticket = ap_req::decode(include_bytes!("fixtures/valid_ap_req.der"))?.ticket;
             // The session's service must match the encoded ticket (FU-CLI-R06).
             ticket.realm = rasn_kerberos::KerberosString::from_bytes(REALM.as_bytes())?;
             ticket.sname = rasn_kerberos::PrincipalName {

@@ -23,7 +23,7 @@ fn completion_offer_encoding_is_erased() -> Result<(), Box<dyn StdError>> {
         ticket,
     };
 
-    let request = ap_req::decode(include_bytes!("../../fuzz/fixtures/valid_ap_req.der"))?;
+    let request = ap_req::decode(include_bytes!("../../tests/fixtures/valid_ap_req.der"))?;
     let ticket_key = EncryptionKey::new(
         18,
         hex::decode("9cad00bbc72d703258e911dc18e6d5487cf737bf67fd111f0c2463ad6033bf51")?,
@@ -282,7 +282,7 @@ fn assert_events(expected: &[(&str, usize, bool)]) {
 /// Genuine credential encoding and both successful and failing parsing erase their staging.
 #[test]
 fn credential_staging_is_erased() -> Result<(), Error> {
-    let credential = include_bytes!("../../fuzz/fixtures/valid_ap_req.der");
+    let credential = include_bytes!("../../tests/fixtures/valid_ap_req.der");
     EVENTS.with_borrow_mut(Vec::clear);
     let mechanism = super::Krb5MechToken::ap_req(credential.to_vec()).encode()?;
     EVENTS.with_borrow_mut(|events| {

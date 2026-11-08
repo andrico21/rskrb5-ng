@@ -272,7 +272,7 @@ mod tests {
             ),
             1,
         ));
-        let original = ap_req::decode(include_bytes!("../fuzz/fixtures/valid_ap_req.der"))?;
+        let original = ap_req::decode(include_bytes!("../tests/fixtures/valid_ap_req.der"))?;
         let session = EncryptionKey::new(
             18,
             hex::decode("8845cbaccbf11cb9f467fd577ba51c70d73de6554980a05395bf319e18bdda07")?,

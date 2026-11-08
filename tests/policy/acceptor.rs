@@ -20,7 +20,7 @@ pub(super) fn fixture(
     session_id: i32,
     subkey: Option<i32>,
 ) -> Result<(Keytab, Vec<u8>, SystemTime), Box<dyn Error>> {
-    let mut request = ap_req::decode(include_bytes!("../../fuzz/fixtures/valid_ap_req.der"))?;
+    let mut request = ap_req::decode(include_bytes!("../fixtures/valid_ap_req.der"))?;
     let original = EncryptionKey::new(
         18,
         hex::decode("9cad00bbc72d703258e911dc18e6d5487cf737bf67fd111f0c2463ad6033bf51")?,
