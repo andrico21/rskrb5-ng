@@ -39,7 +39,10 @@ REPO_URL: Final = re.compile(
 )
 SCHEME: Final = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:")
 FENCE: Final = re.compile(r" {0,3}(`{3,}|~{3,})")
-REFERENCE: Final = re.compile(r" {0,3}\[(?!\^)[^\]]+\]:\s*(<[^>]*>|\S+)")
+REFERENCE: Final = re.compile(
+    r"^ {0,3}\[(?!\^)(?:\\[^\n]|[^\]\\])+\]:[ \t]*(?:\n[ \t]*)?",
+    re.MULTILINE,
+)
 AUTOLINK: Final = re.compile(r"<([A-Za-z][A-Za-z0-9+.-]*:[^\s<>]*)>")
 ANCHOR: Final = re.compile(r"""<a\s[^>]*\b(?:id|name)\s*=\s*["']([^"']+)["']""")
 HEADING: Final = re.compile(r" {0,3}#{1,6}\s+(.*?)\s*#*\s*$")
@@ -143,10 +146,14 @@ def link_targets(text: str) -> list[tuple[int, str]]:
                 (visible.count("\n", 0, index) + 1, destination(visible, start))
             )
         index += 1
+    for reference in REFERENCE.finditer(visible):
+        found.append(
+            (
+                visible.count("\n", 0, reference.start()) + 1,
+                destination(visible, reference.end()),
+            )
+        )
     for number, line in enumerate(visible.splitlines(), 1):
-        reference = REFERENCE.match(line)
-        if reference:
-            found.append((number, reference.group(1).strip("<>")))
         found.extend((number, m.group(1)) for m in AUTOLINK.finditer(line))
     parser = LinkAttributes()
     parser.feed(visible)
@@ -238,6 +245,14 @@ def check(root: Path, files: frozenset[str]) -> list[str]:
 
 
 def self_test() -> int:
+    payload = package_files(ROOT)
+    for checkout_audit in (
+        "tests/mit_parity_manifest.rs",
+        "tests/gokrb5_parity_manifest.rs",
+    ):
+        assert checkout_audit not in payload, (
+            f"checkout-only audit packaged: {checkout_audit}"
+        )
     with TemporaryDirectory() as directory:
         root = Path(directory)
         for name in (
@@ -267,6 +282,11 @@ def self_test() -> int:
         assert problems(clean) == [], problems(clean)
         assert problems(clean.replace(b"\n", b"\r\n")) == [], "CRLF clean"
         for link in (
+            "[bad]:\n  missing.md\n[x][bad]",
+            "[long\n label]:\n  missing.md\n[x][long label]",
+            "[bad]:\n  <missing.md>\n[x][bad]",
+            '[bad]:\r\n\tmissing.md "title"\r\n[x][bad]',
+            "[escaped\\]label]:\n missing.md\n[x][escaped\\]label]",
             "[bad](\nmissing.md)",
             "<a href=missing.md>x</a>",
             "<img src=missing.png>",
@@ -279,6 +299,12 @@ def self_test() -> int:
             "# Title\n\n## Two words `code`\n\n## Two words code\n[good](\n../README.md)"
         )
         assert problems(clean) == [], "valid multiline destination"
+        (root / "docs/a.md").write_text(
+            "# Title\n\n## Two words `code`\n\n## Two words code\n"
+            '[good]:\n  <../README.md>\n  "title"\n[x][good]\n'
+            "```md\n[bad]:\n missing.md\n```\n"
+        )
+        assert problems(clean) == [], "valid multiline reference or fenced exclusion"
         (root / "docs/a.md").write_text(
             "# Title\n\n## Two words `code`\n\n## Two words code\n"
         )

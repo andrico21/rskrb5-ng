@@ -7,6 +7,55 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Mutation campaigns (FU-GATE-R09): provide a positive shard count and disjoint
+inventories. Mutant outcomes must be caught, missed, timed out or unviable;
+baseline-only Success and unknown summaries do not certify tested mutations.
+
+Local lint hook (FU-GATE-R08): retain system language, `pass_filenames = false`,
+the pre-push/manual stages and the documented source-file pattern. Global file
+filters and unsupported hook applicability settings now fail wiring admission.
+
+Package audits (FU-GATE-R07): run both parity manifest audit targets from a
+repository checkout. Neither is shipped as a package integration-test entry
+point, because they require development scripts and other excluded evidence.
+
+Parity scopes (FU-TST-R15): declarations inside inline modules cannot serve as
+symbol evidence. Cite a supported out-of-line public API; private, restricted
+and public inline children are all conservatively excluded from this scanner.
+
+Reference links (FU-CI-R04): multiline Markdown reference definitions now receive
+the same package-membership checks as inline links. Fix missing or excluded
+destinations even when the destination follows the definition label on a new line.
+
+Lint job environment (FU-GATE-R06): run the gates directly on the configured
+runner. Container, service and options settings are rejected, including Docker
+environment options; retaining the command text is not proof of its execution.
+
+Workflow syntax (FU-GATE-R05): use plain identifier keys or unescaped quoted
+identifiers. Escaped keys, explicit complex keys, mapping aliases, anchors and
+merge forms are refused by the shared execution reader. Keep gate mappings in
+the supported block form rather than relying on alternate YAML spellings.
+
+Checked AS exchange (FU-TRN-R07): `exchange_as_req_with_config` now returns
+the named `Config::NotYetEffective` error for unsupported realm and clpreauth
+restrictions before discovery or sending a previously built request. Programmatic
+configuration has the same admission as configured password/keytab login.
+
+Credential staging (FU-SPN-R14): completion MIC verification now owns its encoded
+offer through erasure on both success and failure. The Axum example similarly
+adopts the returned header into `Zeroizing<String>` before HTTP conversion.
+Callers of raw encoders still own erasure of their returned buffers.
+
+Service reply verification (FU-SPN-R13): `ValidatedApReq::verify_ap_rep` rejects
+excluded wrapping keys and acceptor subkeys with a typed policy error. Retain
+an explicitly permitted policy when interoperating with legacy keys; raw AP-REP
+codecs still leave policy admission to their caller.
+
+Reciprocal MIC policy (FU-SPN-R12): changing a validated context's initiator
+subkey no longer bypasses its retained policy. Supply permitted keys, or explicitly
+configure legacy permission and membership before use. An explicit acceptor
+subkey still takes precedence; completion verification also admits its selected key.
+
 Mutation evidence (FU-GATE-R04): each whole-crate campaign shard must retain
 one successful baseline and a nonempty `mutants.json` with the exact tested
 mutant names. Rerun filtered, baseline-free or incomplete shards; an end time

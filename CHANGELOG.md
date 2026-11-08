@@ -23,6 +23,40 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Mutation aggregation rejects nonpositive shard counts, overlapping shard
+  identities, duplicate outcomes and invalid mutant summaries (FU-GATE-R09).
+
+- Workflow wiring validates the lint hook's pre-push stages and file
+  applicability, rejecting suppressing filters and metadata (FU-GATE-R08).
+
+- The package excludes the checkout-only MIT parity audit, matching the Go
+  audit and avoiding its dependency on excluded development scripts (FU-GATE-R07).
+
+- Parity symbol evidence rejects declarations and aliases inside unsupported
+  inline module scopes instead of attributing them to the parent (FU-TST-R15).
+
+- Package-link validation scans reference destinations on the following line,
+  including angle-wrapped targets and escaped labels (FU-CI-R04).
+
+- Lint workflow admission rejects container, services and options settings that
+  can override the interpreter environment (FU-GATE-R06).
+
+- Workflow readers reject escaped keys and unsupported mapping syntax rather
+  than certifying commands under a different YAML interpretation (FU-GATE-R05).
+
+- Configured checked AS exchange rejects realm and clpreauth restrictions
+  before sending preauthentication, matching configured login (FU-TRN-R07).
+
+- Completion MIC verification erases its temporary encoded AP-REQ offer, and
+  the Axum example erases its temporary AP-REP header string (FU-SPN-R14).
+
+- The service AP-REP verifier enforces retained policy on both wrapping key IDs
+  and the authenticated acceptor subkey (FU-SPN-R13).
+
+- Reciprocal MIC signing and completion verification recheck the selected key
+  against the retained context policy, including initiator-subkey fallbacks
+  (FU-SPN-R12).
+
 - Mutation completeness rejects empty shards, absent or failed baselines, and
   generated/tested identity mismatches rather than accepting equal counts alone
   (FU-GATE-R04).

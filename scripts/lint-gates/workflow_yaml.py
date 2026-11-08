@@ -82,13 +82,14 @@ def structure(text: str) -> list[Line]:
             body = rest
         match = _KEY.match(body.rstrip())
         if match is None:
+            if not item:
+                raise RuntimeError(f"ci.yml:{number}: unsupported mapping form")
+            scalar(body, f"ci.yml:{number}")
             lines.append(Line(number, indent, item, None, body.rstrip()))
             continue
-        key = match["key"]
-        if key[0] == '"':
-            key = key[1:-1]
-        elif key[0] == "'":
-            key = key[1:-1].replace("''", "'")
+        key = scalar(match["key"], f"ci.yml:{number} key")
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", key):
+            raise RuntimeError(f"ci.yml:{number}: unsupported mapping key")
         value = (match["value"] or "").strip()
         if value.startswith(("&", "*", "<<")) or key == "<<":
             raise RuntimeError(f"ci.yml:{number}: anchors and merges are not supported")
@@ -131,20 +132,40 @@ def self_test() -> int:
         "      - name: x # c\n        run: 'it''s'\n"
     )
     lines = structure(text)
-    jobs = only(lines, [i for i, line in enumerate(lines) if line.indent == 0], "jobs", "t")
+    jobs = only(
+        lines, [i for i, line in enumerate(lines) if line.indent == 0], "jobs", "t"
+    )
     job = children(lines, jobs)[0]
     assert lines[job].key == "a" and [line.key for line in subtree(lines, job)] == [
-        "steps", "run", "name", "run"
+        "steps",
+        "run",
+        "name",
+        "run",
     ]
     assert scalar(lines[-1].value, "t") == "it's"
-    for bad in ("a: &x 1\n", "a:\n\tb: 1\n"):
+    for bad in (
+        "a: &x 1\n",
+        "a:\n\tb: 1\n",
+        "a: *x\n",
+        "<<: *x\n",
+        '? "if"\n: false\n',
+        '{"if": false}\n',
+        '&alias "if": false\n',
+        "*alias: false\n",
+        '!!str "if": false\n',
+        '"i\\u0066": false\n',
+        '"if\\n": false\n',
+        "'i''f': false\n",
+    ):
         try:
             structure(bad)
         except RuntimeError:
             pass
         else:
             raise AssertionError(f"accepted {bad!r}")
-    print("workflow_yaml self-test: ok (block scalars skipped, quoting, anchors and tabs rejected)")
+    print(
+        "workflow_yaml self-test: ok (block scalars skipped, quoting, anchors and tabs rejected)"
+    )
     return 0
 
 

@@ -26,6 +26,7 @@ use rskrb5_ng::{
     spnego::AcceptedContext,
 };
 use tokio::net::TcpListener;
+use zeroize::Zeroizing;
 
 /// Shared state of the example server.
 #[derive(Clone)]
@@ -148,6 +149,7 @@ async fn complete_response(
     next: Next,
 ) -> Response {
     let header_result = reply
+        .map(Zeroizing::new)
         .map_err(HttpError::Spnego)
         .and_then(|header| HeaderValue::from_str(&header).map_err(HttpError::InvalidHeaderValue));
     let mut credential = match header_result {
