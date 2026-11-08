@@ -61,6 +61,23 @@ mod tests {
                 ),
                 "request accepted {field}"
             );
+            let (relation, package) = match field {
+                "no_addresses" => ("noaddresses", "plan 2 WP-04"),
+                "request_timeout" => ("request_timeout", "plan 2 WP-10"),
+                "verify_ap_req_nofail" => ("verify_ap_req_nofail", "plan 2 WP-11"),
+                "client_aware_channel_bindings" => {
+                    ("client_aware_channel_bindings", "plan 2 WP-12")
+                }
+                _ => ("default_rcache_name", "plan 2 WP-20"),
+            };
+            assert!(
+                matches!(
+                    config.configured_kdcs("R"),
+                    Err(ConfigError::NotYetEffective { relation: named, package: owner })
+                        if named == relation && owner == package
+                ),
+                "admission ignored {field}"
+            );
         }
         Ok(())
     }
@@ -139,6 +156,11 @@ mod tests {
             } else {
                 scope
             };
+            let package = if scope == "realm" {
+                "plan 2 WP-07"
+            } else {
+                "plan 2 WP-16"
+            };
             for result in [
                 runtime.block_on(transport.exchange_as_req_with_config(
                     &config,
@@ -162,7 +184,7 @@ mod tests {
                 )),
             ] {
                 assert!(
-                    matches!(result, Err(Client::Config(ConfigError::NotYetEffective { relation, package: _ })) if relation == expected),
+                    matches!(result, Err(Client::Config(ConfigError::NotYetEffective { relation, package: owner })) if relation == expected && owner == package),
                     "transport ignored {scope}"
                 );
             }
