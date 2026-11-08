@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- The package excludes the checkout-only MIT parity audit, matching the Go
+  audit and avoiding its dependency on excluded development scripts (FU-GATE-R07).
+
 - Parity symbol evidence rejects declarations and aliases inside unsupported
   inline module scopes instead of attributing them to the parent (FU-TST-R15).
 

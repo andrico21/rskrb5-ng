@@ -245,6 +245,14 @@ def check(root: Path, files: frozenset[str]) -> list[str]:
 
 
 def self_test() -> int:
+    payload = package_files(ROOT)
+    for checkout_audit in (
+        "tests/mit_parity_manifest.rs",
+        "tests/gokrb5_parity_manifest.rs",
+    ):
+        assert checkout_audit not in payload, (
+            f"checkout-only audit packaged: {checkout_audit}"
+        )
     with TemporaryDirectory() as directory:
         root = Path(directory)
         for name in (

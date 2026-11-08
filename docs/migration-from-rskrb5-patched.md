@@ -7,6 +7,10 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Package audits (FU-GATE-R07): run both parity manifest audit targets from a
+repository checkout. Neither is shipped as a package integration-test entry
+point, because they require development scripts and other excluded evidence.
+
 Parity scopes (FU-TST-R15): declarations inside inline modules cannot serve as
 symbol evidence. Cite a supported out-of-line public API; private, restricted
 and public inline children are all conservatively excluded from this scanner.
