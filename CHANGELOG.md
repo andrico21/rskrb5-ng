@@ -35,6 +35,21 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 - Lint workflow admission checks the complete execution shape, rejecting extra
   run steps, unknown/non-plain keys and unapproved setup inputs (FU-GATE-R10).
 
+- Include parsing skips suffix lookahead unless an empty scalar is pending,
+  removing repeated scans of comment tails without changing precedence or limits
+  (FU-CFG-R12).
+
+- Kadmin reply-key generation and random message confounders own erasure before
+  entropy filling, including partial randomness failures (FU-TRN-R08).
+
+- Random AP-REP headers and configured HTTP keytab constructors retain typed
+  permanent policy refusals instead of unsupported-enctype or generic invalid
+  configuration errors (FU-SPN-R16).
+
+- Secret staging preallocates MIC/Wrap checksum inputs, AES/DES3 padding and
+  partial AES-CTS decryption and keytab/ccache serialization before copying secrets. Unknown-length ccache
+  serde sequences erase each replaced allocation (FU-SPN-R15).
+
 - Mutation aggregation rejects nonpositive shard counts, overlapping shard
   identities, duplicate outcomes and invalid mutant summaries (FU-GATE-R09).
 

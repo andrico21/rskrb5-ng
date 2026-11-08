@@ -288,7 +288,11 @@ impl MicToken {
     pub fn verify(&self, key: &EncryptionKey, key_usage: u32) -> Result<(), Error> {
         selection::reject_enctype(key.etype)?;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
-        let mut data = Scratch::new(payload.to_vec(), "mic-checksum");
+        let mut data = Scratch::new(
+            Vec::with_capacity(payload.len().saturating_add(GSS_MIC_HEADER_LEN)),
+            "mic-checksum",
+        );
+        data.extend_from_slice(payload);
         data.extend_from_slice(&self.checksum_header());
         let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let actual = self.checksum.as_ref().ok_or(Error::MissingGssChecksum)?;
@@ -655,7 +659,11 @@ impl WrapToken {
 
         selection::reject_enctype(key.etype)?;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
-        let mut data = Scratch::new(payload.to_vec(), "wrap-checksum");
+        let mut data = Scratch::new(
+            Vec::with_capacity(payload.len().saturating_add(GSS_WRAP_HEADER_LEN)),
+            "wrap-checksum",
+        );
+        data.extend_from_slice(payload);
         data.extend_from_slice(&wrap_checksum_header(self.flags, self.snd_seq_num));
         let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
         let actual = self.checksum.as_ref().ok_or(Error::MissingGssChecksum)?;
@@ -710,7 +718,7 @@ impl WrapToken {
     {
         let owned_payload = payload.into();
         let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
-        let mut confounder = vec![0; etype.confounder_len()];
+        let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
         getrandom::fill(&mut confounder)?;
         Self::new_initiator_sealed_with_confounder(owned_payload, key, &confounder)
     }
@@ -1832,9 +1840,12 @@ impl AcceptedContext {
     /// [`Self::ap_rep_response_header_with_confounder`].
     #[inline]
     pub fn ap_rep_response_header(&self, options: &ApRepOptions) -> Result<String, Error> {
+        self.ap_req
+            .crypto_policy
+            .check_use(self.ap_req.session_key.etype, Use::SessionKey)?;
         let etype = KerberosEtype::from_etype_id(self.ap_req.session_key.etype)
             .ok_or(Error::UnsupportedEtype(self.ap_req.session_key.etype))?;
-        let mut confounder = vec![0; etype.confounder_len()];
+        let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
         getrandom::fill(&mut confounder)?;
         self.ap_rep_response_header_with_confounder(&confounder, options)
     }
@@ -1969,7 +1980,7 @@ pub fn init_sec_context(
     }
     let etype = KerberosEtype::from_etype_id(service_ticket.session_key.etype)
         .ok_or(Error::UnsupportedEtype(service_ticket.session_key.etype))?;
-    let mut confounder = vec![0; etype.confounder_len()];
+    let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     init_sec_context_with_confounder(service_ticket, options, timestamp, cusec, &confounder)
 }

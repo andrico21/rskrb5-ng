@@ -1,6 +1,7 @@
 //! AS-REP/TGS-REP decoding and encrypted-part helpers.
 
 use rasn::{der, types::Integer};
+use zeroize::Zeroizing;
 
 use crate::messages::secret_der::SecretDer;
 
@@ -194,7 +195,7 @@ pub fn encrypt_as_rep_enc_part(
     kvno: Option<u32>,
 ) -> Result<rasn_kerberos::EncryptedData, Error> {
     let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
-    let mut confounder = vec![0; etype.confounder_len()];
+    let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     encrypt_as_rep_enc_part_with_confounder(enc_part, key, kvno, &confounder)
 }
@@ -237,7 +238,7 @@ pub fn encrypt_tgs_rep_enc_part(
     kvno: Option<u32>,
 ) -> Result<rasn_kerberos::EncryptedData, Error> {
     let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
-    let mut confounder = vec![0; etype.confounder_len()];
+    let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     encrypt_tgs_rep_enc_part_with_confounder(enc_part, key, kvno, &confounder)
 }

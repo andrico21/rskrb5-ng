@@ -3,7 +3,7 @@
 use rasn::{Decode, Encode, der};
 
 use super::{Error, Frame, HEADER_LEN};
-use crate::{der::decode_complete, error, keytab::EncryptionKey};
+use crate::{der::decode_complete, error, file_name::SecretBytes, keytab::EncryptionKey};
 
 /// Decode one DER value, naming `target` in the error.
 ///
@@ -226,9 +226,19 @@ pub(super) fn parse_header(bytes: &[u8]) -> Result<Frame<'_>, Error> {
 /// # Errors
 ///
 /// Returns [`Error::Random`] when the random source fails.
-pub(super) fn random_key_material(size: usize) -> Result<Vec<u8>, Error> {
-    let mut value = vec![0_u8; size];
-    getrandom::fill(&mut value)?;
+pub(super) fn random_key_material(size: usize) -> Result<SecretBytes, Error> {
+    random_key_material_with(size, getrandom::fill)
+}
+
+/// Fill key storage with the supplied entropy source.
+/// # Errors
+/// Returns the source's randomness error, including partial fills.
+fn random_key_material_with<F>(size: usize, fill: F) -> Result<SecretBytes, Error>
+where
+    F: FnOnce(&mut [u8]) -> Result<(), getrandom::Error>,
+{
+    let mut value = SecretBytes::new(vec![0_u8; size]);
+    fill(&mut value)?;
     Ok(value)
 }
 
@@ -237,5 +247,36 @@ pub(super) fn encryption_key_to_rasn(value: &EncryptionKey) -> rasn_kerberos::En
     rasn_kerberos::EncryptionKey {
         r#type: value.etype,
         value: value.value.to_vec().into(),
+    }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests {
+    use super::{Error, random_key_material_with};
+    use crate::file_name::tests::ERASED_BYTES;
+
+    /// A partial entropy failure erases the live allocation before returning its cause.
+    #[test]
+    fn partial_entropy_failure_erases_key_material() -> Result<(), Error> {
+        ERASED_BYTES.with(|count| count.set(0));
+        let failed = random_key_material_with(32, |bytes| {
+            bytes.fill(0x57);
+            Err(getrandom::Error::UNSUPPORTED)
+        });
+        assert!(matches!(failed, Err(Error::Random(_))));
+        ERASED_BYTES
+            .with(|count| assert_eq!(count.get(), 32, "partial entropy allocation was not erased"));
+        let success = random_key_material_with(32, |bytes| {
+            bytes.fill(0x57);
+            Ok(())
+        })?;
+        assert_eq!(success.as_slice(), &[0x57; 32]);
+        Ok(())
     }
 }

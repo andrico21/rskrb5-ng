@@ -56,7 +56,7 @@ mod tests {
     mod password_results;
     /// Unsigned outcomes through both public checked helpers.
     mod unsigned;
-    use core::{fmt, net::SocketAddr};
+    use core::{fmt, future::poll_fn, net::SocketAddr, pin::pin, task::Poll};
     use std::{
         env,
         io::{self, Write as _},
@@ -102,27 +102,24 @@ mod tests {
                 drop(socket);
                 Ok::<_, io::Error>(request)
             });
-            let duplicate = tokio::spawn(async move {
-                match timeout(Duration::from_millis(250), read_tcp_request(&second)).await {
-                    Ok(Ok((_, mut socket))) => {
-                        write_tcp_response(&mut socket, b"duplicate").await?;
-                        Ok::<_, io::Error>(true)
-                    }
-                    Ok(Err(error)) => Err(error),
-                    Err(_elapsed) => Ok(false),
-                }
-            });
-            let result = Tokio::new()
-                .with_timeout(Duration::from_secs(1))
-                .send_to_kpasswd_realm(&config, KdcProtocol::Tcp, "TEST.GOKRB5", b"mutation")
-                .await;
+            let transport = Tokio::new().with_timeout(Duration::from_secs(1));
+            let result = bounded(
+                Duration::from_secs(10),
+                "password exchange and duplicate observation",
+                without_connection(
+                    &second,
+                    transport.send_to_kpasswd_realm(
+                        &config,
+                        KdcProtocol::Tcp,
+                        "TEST.GOKRB5",
+                        b"mutation",
+                    ),
+                ),
+            )
+            .await??;
             assert_eq!(
                 bounded(Duration::from_secs(10), "committed request task", committed).await???,
                 b"mutation"
-            );
-            assert!(
-                !bounded(Duration::from_secs(10), "duplicate request task", duplicate).await???,
-                "a possibly committed mutation was delivered twice"
             );
             assert!(
                 matches!(result, Err(ClientError::KpasswdOutcomeUnknown(_))),
@@ -146,25 +143,59 @@ mod tests {
                     udp.recv_from(&mut bytes),
                 )
                 .await??;
-                let duplicate = timeout(Duration::from_millis(250), tcp.accept())
-                    .await
-                    .is_ok();
-                Ok::<_, io::Error>((length, duplicate))
+                Ok::<_, io::Error>(length)
             });
-            let result = Tokio::new()
-                .with_timeout(Duration::from_millis(50))
-                .send_to_kpasswd_realm(&config, KdcProtocol::Auto, "TEST.GOKRB5", b"mutation")
-                .await;
-            let (length, duplicate) =
+            let transport = Tokio::new().with_timeout(Duration::from_millis(50));
+            let result = bounded(
+                Duration::from_secs(10),
+                "UDP password exchange",
+                without_connection(
+                    &tcp,
+                    transport.send_to_kpasswd_realm(
+                        &config,
+                        KdcProtocol::Auto,
+                        "TEST.GOKRB5",
+                        b"mutation",
+                    ),
+                ),
+            )
+            .await??;
+            let length =
                 bounded(Duration::from_secs(10), "password delivery task", received).await???;
             assert_eq!(length, 8);
-            assert!(
-                !duplicate,
-                "delivered UDP mutation must not be retried over TCP"
-            );
             assert!(matches!(result, Err(ClientError::KpasswdOutcomeUnknown(_))));
             Ok::<_, TestError>(())
         })
+    }
+
+    /// Observe acceptance before polling the client and until its completion.
+    async fn without_connection<F>(
+        listener: &TcpListener,
+        future: F,
+    ) -> Result<F::Output, io::Error>
+    where
+        F: Future,
+    {
+        let mut exchange = pin!(future);
+        poll_fn(|cx| {
+            if let Poll::Ready(connection) = listener.poll_accept(cx) {
+                drop(connection?);
+                return Poll::Ready(Err(io::Error::other(
+                    "duplicate connection during password exchange",
+                )));
+            }
+            let result = exchange.as_mut().poll(cx);
+            if result.is_ready()
+                && let Poll::Ready(connection) = listener.poll_accept(cx)
+            {
+                drop(connection?);
+                return Poll::Ready(Err(io::Error::other(
+                    "duplicate connection at client completion",
+                )));
+            }
+            result.map(Ok)
+        })
+        .await
     }
 
     /// KDC reserved high bits are rejected independently of the allocation cap.

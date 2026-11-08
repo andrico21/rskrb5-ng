@@ -338,7 +338,7 @@ pub fn build_change_password_message(
         selection::enctype(session_key.etype)?.ok_or(Error::UnsupportedEtype(session_key.etype))?;
     let reply_key = EncryptionKey {
         etype: session_key.etype,
-        value: random_key_material(etype.key_len())?.into(),
+        value: random_key_material(etype.key_len())?.into_vec().into(),
     };
     let ap_req_confounder = random_key_material(etype.confounder_len())?;
     let krb_priv_confounder = random_key_material(etype.confounder_len())?;

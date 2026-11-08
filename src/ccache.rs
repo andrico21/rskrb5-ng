@@ -368,7 +368,23 @@ impl CCache {
             return Err(Error::InvalidHeaderLength);
         }
         let endian = Endian::for_version(self.version);
-        let mut out = file_name::SecretBytes::new(vec![CCACHE_FIRST_BYTE, self.version]);
+        let header_length = if self.version == 4 {
+            self.header.fields.iter().fold(2_usize, |length, field| {
+                length.saturating_add(4).saturating_add(field.value.len())
+            })
+        } else {
+            0
+        };
+        let capacity = self.credentials.iter().fold(
+            2_usize
+                .saturating_add(header_length)
+                .saturating_add(self.default_principal.encoded_len(self.version)),
+            |length, credential| length.saturating_add(credential.encoded_len(self.version)),
+        );
+        let mut out = file_name::SecretBytes::new(Vec::with_capacity(capacity));
+        out.extend_from_slice(&[CCACHE_FIRST_BYTE, self.version]);
+        #[cfg(test)]
+        let initial_capacity = out.capacity();
         if self.version == 4 {
             self.header.write_to(&mut out, endian)?;
         }
@@ -377,6 +393,8 @@ impl CCache {
         for credential in &self.credentials {
             credential.write_to(&mut out, self.version, endian)?;
         }
+        #[cfg(test)]
+        file_name::tests::assert_capacity(initial_capacity, out.len());
         Ok(out.into_vec())
     }
 
@@ -857,6 +875,15 @@ pub struct Principal {
 }
 
 impl Principal {
+    /// Serialized principal size, used before any credential bytes enter the output.
+    fn encoded_len(&self, version: u8) -> usize {
+        self.components.iter().fold(
+            self.realm
+                .len()
+                .saturating_add(if version == 1 { 8 } else { 12 }),
+            |length, component| length.saturating_add(4).saturating_add(component.len()),
+        )
+    }
     /// Create a principal.
     #[inline]
     pub fn new<P>(realm: P, name_type: i32, components: Vec<String>) -> Self
@@ -995,6 +1022,23 @@ pub struct Credential {
 }
 
 impl Credential {
+    /// Serialized credential size, including every variable-length secret field.
+    fn encoded_len(&self, version: u8) -> usize {
+        let length = self
+            .client
+            .encoded_len(version)
+            .saturating_add(self.server.encoded_len(version))
+            .saturating_add(if version == 3 { 45 } else { 43 })
+            .saturating_add(self.key.value.len())
+            .saturating_add(self.ticket.len())
+            .saturating_add(self.second_ticket.len());
+        let with_addresses = self.addresses.iter().fold(length, |size, address| {
+            size.saturating_add(6).saturating_add(address.address.len())
+        });
+        self.auth_data.iter().fold(with_addresses, |size, entry| {
+            size.saturating_add(6).saturating_add(entry.data.len())
+        })
+    }
     /// Creates a `Credential` from its required fields.
     #[must_use]
     #[inline]

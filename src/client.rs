@@ -2728,7 +2728,7 @@ pub fn pa_enc_timestamp(
     kvno: Option<u32>,
 ) -> Result<rasn_kerberos::PaData, Error> {
     let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
-    let mut confounder = vec![0; etype.confounder_len()];
+    let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     pa_enc_timestamp_with_confounder(key, timestamp, cusec, &confounder, kvno)
 }
@@ -2809,7 +2809,7 @@ where
     let (timestamp, cusec) = current_preauth_time()?;
     let etype = KerberosEtype::from_etype_id(tgt.session_key.etype)
         .ok_or(Error::UnsupportedEtype(tgt.session_key.etype))?;
-    let mut confounder = vec![0; etype.confounder_len()];
+    let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     build_tgs_req_for_realm_with_confounder(
         tgt,
@@ -2867,7 +2867,7 @@ pub fn build_s4u2self_req(
     let (timestamp, cusec) = current_preauth_time()?;
     let etype = KerberosEtype::from_etype_id(service_tgt.session_key.etype)
         .ok_or(Error::UnsupportedEtype(service_tgt.session_key.etype))?;
-    let mut confounder = vec![0; etype.confounder_len()];
+    let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     build_s4u2self_req_with_confounder(service_tgt, user, options, timestamp, cusec, &confounder)
 }
@@ -2927,7 +2927,7 @@ pub fn build_s4u2proxy_req(
     let (timestamp, cusec) = current_preauth_time()?;
     let etype = KerberosEtype::from_etype_id(service_tgt.session_key.etype)
         .ok_or(Error::UnsupportedEtype(service_tgt.session_key.etype))?;
-    let mut confounder = vec![0; etype.confounder_len()];
+    let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     build_s4u2proxy_req_with_confounder(
         service_tgt,
@@ -3056,7 +3056,7 @@ where
     let (timestamp, cusec) = current_preauth_time()?;
     let etype = KerberosEtype::from_etype_id(tgt.session_key.etype)
         .ok_or(Error::UnsupportedEtype(tgt.session_key.etype))?;
-    let mut confounder = vec![0; etype.confounder_len()];
+    let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     let subkey = random_subkey_for(&tgt.session_key)?;
     let (request, ap_req_der) = build_tgs_req_for_realm_inner(

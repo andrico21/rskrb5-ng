@@ -7,6 +7,21 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Round 4 secret handling (FU-SPN-R15, FU-TRN-R08): internal plaintext staging
+and credential serialization allocate before copying secrets; unknown-length
+serde payloads erase old storage during growth. Partially generated reply keys
+and random confounders now retain erasing ownership on errors. Raw returned
+buffers remain the caller's erasure responsibility; signatures are unchanged.
+
+Reply policy errors (FU-SPN-R16): random AP-REP header construction and the
+configured HTTP keytab constructors preserve `Policy::RejectedFeature` causes.
+Inspect the error source chain rather than expecting `UnsupportedEtype` or
+`InvalidConfiguration` for permanently forbidden selections.
+
+Include parsing (FU-CFG-R12): repeated includes no longer rescan a comment tail
+unless resolving a pending scalar. Precedence, accepted syntax and include
+limits are unchanged; no configuration migration is needed.
+
 Mutation campaigns (FU-GATE-R09): provide a positive shard count and disjoint
 inventories. Mutant outcomes must be caught, missed, timed out or unviable;
 baseline-only Success and unknown summaries do not certify tested mutations.

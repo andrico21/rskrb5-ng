@@ -1,6 +1,7 @@
 //! AP-REP decoding and encrypted-part helpers.
 
 use rasn::{der, types::Integer};
+use zeroize::Zeroizing;
 
 use crate::{
     crypto::selection,
@@ -108,7 +109,7 @@ pub fn build(
     kvno: Option<u32>,
 ) -> Result<rasn_kerberos::ApRep, Error> {
     let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
-    let mut confounder = vec![0; etype.confounder_len()];
+    let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     build_ap_rep_with_confounder(enc_part, key, kvno, &confounder)
 }

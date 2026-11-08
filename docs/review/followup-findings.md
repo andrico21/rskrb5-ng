@@ -8,6 +8,11 @@ is a parity feature, not a defect>`.
 
 | Source finding | Register ID | Parity |
 | --- | --- | --- |
+| critic:critics-87d6d5f/u1.md#U1-01 | FU-SPN-R15 | no |
+| critic:critics-87d6d5f/u1.md#U1-02 | FU-SPN-R16 | no |
+| critic:critics-87d6d5f/u3.md#U3-01 | FU-TRN-R08 | no |
+| critic:critics-87d6d5f/u3.md#U3-02 | FU-TST-R17 | no |
+| critic:critics-87d6d5f/u5.md#U5-01 | FU-CFG-R12 | no |
 | critic:critics-87d6d5f/u6.md#U6-01 | FU-GATE-R10 | no |
 | critic:critics-87d6d5f/u6.md#U6-02 | FU-GATE-R11 | no |
 | critic:critics-87d6d5f/u6.md#U6-03 | FU-GATE-R12 | no |
