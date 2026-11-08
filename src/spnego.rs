@@ -1840,6 +1840,9 @@ impl AcceptedContext {
     /// [`Self::ap_rep_response_header_with_confounder`].
     #[inline]
     pub fn ap_rep_response_header(&self, options: &ApRepOptions) -> Result<String, Error> {
+        self.ap_req
+            .crypto_policy
+            .check_use(self.ap_req.session_key.etype, Use::SessionKey)?;
         let etype = KerberosEtype::from_etype_id(self.ap_req.session_key.etype)
             .ok_or(Error::UnsupportedEtype(self.ap_req.session_key.etype))?;
         let mut confounder = vec![0; etype.confounder_len()];

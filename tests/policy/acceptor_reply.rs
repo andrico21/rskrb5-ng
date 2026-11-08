@@ -22,6 +22,64 @@ use tower_service::Service;
 
 use super::{acceptor::fixture, client::policy_cause};
 
+/// Configured HTTP constructors preserve permanent rejections before keytab I/O.
+#[cfg(feature = "tower")]
+#[test]
+fn http_configuration_retains_permanent_refusal() -> Result<(), Box<dyn Error>> {
+    use rskrb5_ng::http::NegotiateLayer;
+
+    let mut config = Config::parse("")?;
+    config.libdefaults.permitted_enctypes = vec!["des-cbc-crc".to_owned()];
+    for result in [
+        NegotiateLayer::from_default_keytab_name(&config),
+        NegotiateLayer::from_default_keytab(&config),
+    ] {
+        let error = result.err().ok_or("permanent configuration admitted")?;
+        assert!(
+            matches!(
+                policy_cause(&error),
+                Some(Policy::RejectedFeature {
+                    feature: _,
+                    reason: _
+                })
+            ),
+            "HTTP helper lost permanent refusal: {error:?}"
+        );
+    }
+    Ok(())
+}
+
+/// Random and deterministic reply helpers retain permanent policy refusals.
+#[test]
+fn random_reply_retains_permanent_refusal() -> Result<(), Box<dyn Error>> {
+    let (keys, bytes, now) = fixture(18, 18, None)?;
+    let header = spnego::negotiate_header(&Token::Init(NegTokenInit::krb5(
+        Krb5MechToken::ap_req(bytes).encode()?,
+    )))?;
+    let mut validator = Validator::new(&keys).with_now(now);
+    let mut accepted = spnego::accept_sec_context_header(&mut validator, &header)?;
+    for id in [1_i32, 24_i32] {
+        accepted.ap_req.session_key = EncryptionKey::new(id, vec![0x42; 16]);
+        for reply in [
+            accepted.ap_rep_response_header_with_confounder(&[0x22; 16], &ApRepOptions::default()),
+            accepted.ap_rep_response_header(&ApRepOptions::default()),
+        ] {
+            let error = reply.err().ok_or("permanently forbidden reply emitted")?;
+            assert!(
+                matches!(
+                    policy_cause(&error),
+                    Some(Policy::RejectedFeature {
+                        feature: _,
+                        reason: _
+                    })
+                ),
+                "reply helper lost permanent policy refusal: {error:?}"
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Service reply verification admits wrapping and embedded keys independently.
 #[test]
 fn service_reply_verifier_admits_all_keys() -> Result<(), Box<dyn Error>> {
