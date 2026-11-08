@@ -104,26 +104,35 @@ mod tests {
         Ok(())
     }
 
-    /// Two tightened deferred relations: the earlier catalogue row is the one refused.
+    /// Classification refuses a tightened deferred libdefaults relation before any later
+    /// section decoding, which would otherwise name a different restriction first.
     #[test]
-    fn first_tightened_libdefaults_relation_is_named() -> Result<(), Box<dyn Error>> {
-        // Given default_rcache_name, which precedes request_timeout in the catalogue, both tightened.
-        let input = "[libdefaults]\n default_rcache_name = dfl:\n request_timeout = 5\n";
-        // When the profile is parsed in Compatible mode.
-        let failure = Config::parse_with_mode(input, ParseMode::Compatible)
-            .err()
-            .ok_or("tightening ignored")?;
-        // Then classification refuses default_rcache_name with its owning package.
-        assert!(
-            matches!(
-                failure,
-                super::super::Error::NotYetEffective {
-                    relation: "default_rcache_name",
-                    package: "plan 2 WP-20"
-                }
-            ),
-            "{failure:?}"
-        );
+    fn tightened_libdefaults_relation_refused_before_sections() -> Result<(), Box<dyn Error>> {
+        for (relation, assignment, package) in [
+            ("client_aware_channel_bindings", "true", "plan 2 WP-12"),
+            ("default_rcache_name", "dfl:", "plan 2 WP-20"),
+            ("noaddresses", "false", "plan 2 WP-04"),
+            ("request_timeout", "1s", "plan 2 WP-10"),
+            ("verify_ap_req_nofail", "true", "plan 2 WP-11"),
+        ] {
+            // Given the tightened relation and a refused preauthentication plugin restriction.
+            let input = format!(
+                "[libdefaults]\n {relation} = {assignment}\n[plugins]\n clpreauth = {{\n disable = encrypted_timestamp\n }}\n"
+            );
+            // When the profile is parsed in Compatible mode.
+            let failure = Config::parse_with_mode(&input, ParseMode::Compatible)
+                .err()
+                .ok_or("tightening ignored")?;
+            // Then the libdefaults relation is refused with its owning package.
+            assert!(
+                matches!(
+                    failure,
+                    super::super::Error::NotYetEffective { relation: named, package: owner }
+                        if named == relation && owner == package
+                ),
+                "{relation}: {failure:?}"
+            );
+        }
         Ok(())
     }
 
