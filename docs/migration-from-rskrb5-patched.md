@@ -7,6 +7,11 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Credential staging (FU-SPN-R14): completion MIC verification now owns its encoded
+offer through erasure on both success and failure. The Axum example similarly
+adopts the returned header into `Zeroizing<String>` before HTTP conversion.
+Callers of raw encoders still own erasure of their returned buffers.
+
 Service reply verification (FU-SPN-R13): `ValidatedApReq::verify_ap_rep` rejects
 excluded wrapping keys and acceptor subkeys with a typed policy error. Retain
 an explicitly permitted policy when interoperating with legacy keys; raw AP-REP

@@ -1725,7 +1725,7 @@ impl InitiatorContext {
                 self.initiator_subkey.as_ref().unwrap_or(&self.session_key)
             };
             self.crypto_policy.check_use(key.etype, Use::SessionKey)?;
-            let encoded = self.spnego_token.encode()?;
+            let encoded = Scratch::new(self.spnego_token.encode()?, "completion-offer");
             let list = negotiation::received_mech_types(&encoded)?;
             mic.with_payload(list)
                 .verify(key, GSSAPI_ACCEPTOR_SIGN_USAGE)

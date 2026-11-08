@@ -1,11 +1,102 @@
 //! Independent owner observations for GSS plaintext staging.
 
-use core::cell::{Cell, RefCell};
+use core::{
+    cell::{Cell, RefCell},
+    error::Error as StdError,
+};
 
+use rasn::der;
 use zeroize::Zeroizing;
 
 use super::{Error, GSSAPI_INITIATOR_SEAL_USAGE, GSSAPI_INITIATOR_SIGN_USAGE, MicToken, WrapToken};
 use crate::keytab::EncryptionKey;
+
+/// Completion verification erases its encoded offer on success and MIC failure.
+#[test]
+fn completion_offer_encoding_is_erased() -> Result<(), Box<dyn StdError>> {
+    use core::time::Duration;
+    use std::time::SystemTime;
+
+    use crate::{
+        ap_rep, ap_req,
+        client::{AsRepSession, principal::Principal},
+        ticket,
+    };
+
+    let request = ap_req::decode(include_bytes!("../../fuzz/fixtures/valid_ap_req.der"))?;
+    let ticket_key = EncryptionKey::new(
+        18,
+        hex::decode("9cad00bbc72d703258e911dc18e6d5487cf737bf67fd111f0c2463ad6033bf51")?,
+    );
+    let part = ticket::decrypt_ticket_enc_part(&request.ticket, &ticket_key)?;
+    let key = EncryptionKey::new(part.key.r#type, part.key.value.as_ref().to_vec());
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let session = AsRepSession::new(
+        Principal::user("TEST.GOKRB5", "testuser1"),
+        Principal::new("TEST.GOKRB5", 1, ["HTTP", "host.test.gokrb5"]),
+        key,
+        der::encode(&request.ticket)?.into(),
+        [0; 4],
+        now,
+        now + Duration::from_secs(3600),
+    );
+    let context = super::init_sec_context_with_confounder(
+        &session,
+        super::InitiatorContextOptions::new().with_sequence_number(Some(42)),
+        now,
+        0,
+        &[0x22; 16],
+    )?;
+    let auth = ap_req::decrypt_ap_req_authenticator(&context.ap_req, &session.session_key, 11)?;
+    let reply_part = rasn_kerberos::EncApRepPart {
+        ctime: auth.ctime,
+        cusec: auth.cusec,
+        subkey: None,
+        seq_number: Some(42),
+    };
+    let reply =
+        ap_rep::build_ap_rep_with_confounder(&reply_part, &session.session_key, None, &[0x23; 16])?;
+    let encoded = Zeroizing::new(context.spnego_token.encode()?);
+    let list = super::negotiation::received_mech_types(&encoded)?;
+    let mut mic = MicToken::new(super::GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR, 42).with_payload(list);
+    mic.set_checksum(&session.session_key, super::GSSAPI_ACCEPTOR_SIGN_USAGE)?;
+    let mut response = super::NegTokenResp::accept_completed()
+        .with_response_token(super::Krb5MechToken::ap_rep(ap_rep::encode(&reply)?).encode()?);
+    response.supported_mech = Some(super::ObjectIdentifier::krb5());
+    response.mech_list_mic = Some(Zeroizing::new(mic.encode()?));
+    for valid in [true, false] {
+        if !valid {
+            mic = MicToken::new(super::GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR, 42)
+                .with_payload(super::negotiation::received_mech_types(&encoded)?);
+            mic.set_checksum(
+                &EncryptionKey::new(18, vec![0x99; 32]),
+                super::GSSAPI_ACCEPTOR_SIGN_USAGE,
+            )?;
+            response.mech_list_mic = Some(Zeroizing::new(mic.encode()?));
+        }
+        EVENTS.with_borrow_mut(Vec::clear);
+        let result = context.validate_completion(&response);
+        if valid {
+            result?;
+        } else {
+            assert!(matches!(result, Err(Error::InvalidMechListMic)));
+        }
+        EVENTS.with_borrow(|events| {
+            let offer = events
+                .iter()
+                .filter(|event| event.0 == "completion-offer")
+                .collect::<Vec<_>>();
+            assert_eq!(offer.len(), 1, "completion offer owner never erased");
+            assert!(
+                offer
+                    .iter()
+                    .all(|event| event.1 == encoded.len() && event.2),
+                "completion offer retained credential bytes"
+            );
+        });
+    }
+    Ok(())
+}
 
 /// A moved plaintext owner records whether the constructor adopts it before failing.
 struct Adoption<'observer>(&'observer Cell<bool>);

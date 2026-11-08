@@ -10,6 +10,7 @@ is a parity feature, not a defect>`.
 | --- | --- | --- |
 | critic:critics-b8d23a5/u1.md#U1-01 | FU-SPN-R12 | no |
 | critic:critics-b8d23a5/u1.md#U1-02 | FU-SPN-R13 | no |
+| critic:critics-b8d23a5/u1.md#U1-03 | FU-SPN-R14 | no |
 | critic:critics-f22ea5b/u1.md#U1-01 | FU-HTTP-R07 | no |
 | critic:critics-f22ea5b/u1.md#U1-02 | FU-SPN-R10 | no |
 | critic:critics-f22ea5b/u1.md#U1-03 | FU-SPN-R11 | no |

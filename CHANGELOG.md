@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Completion MIC verification erases its temporary encoded AP-REQ offer, and
+  the Axum example erases its temporary AP-REP header string (FU-SPN-R14).
+
 - The service AP-REP verifier enforces retained policy on both wrapping key IDs
   and the authenticated acceptor subkey (FU-SPN-R13).
 
