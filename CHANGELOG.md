@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- ETYPE-INFO and ETYPE-INFO2 preauthentication hints reject any trailing DER
+  value or garbage inside an otherwise valid KDC error (FU-CLI-R12).
+
 - TGS requests built with authenticator subkeys retain reply usage 9, so the
   normal and referral reply processors accept conforming subkey-encrypted
   replies when passed the returned subkey (FU-CLI-R11).

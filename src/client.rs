@@ -22,6 +22,7 @@ use std::io;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::der::decode_complete;
 use rasn::{der, types::Integer};
 #[cfg(feature = "tokio")]
 use tokio::{sync::Mutex, time::sleep};
@@ -4177,10 +4178,7 @@ fn decode<T>(target: &'static str, bytes: &[u8]) -> Result<T, Error>
 where
     T: rasn::Decode,
 {
-    der::decode(bytes).map_err(|source| Error::Decode {
-        target,
-        message: source.to_string(),
-    })
+    decode_complete(bytes).map_err(|message| Error::Decode { target, message })
 }
 
 /// DER-encode `value`, naming `target` in the error.

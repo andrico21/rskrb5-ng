@@ -10,6 +10,62 @@ use super::*;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use super::*;
+    use rasn::der;
+
+    /// Both inner hint encodings reject trailing values and garbage inside valid errors.
+    #[test]
+    fn preauth_hints_require_complete_der() -> Result<(), TestError> {
+        for kind in [11_i32, 19_i32] {
+            let hint = if kind == 19_i32 {
+                der::encode(&rasn_kerberos::EtypeInfo2::from([
+                    rasn_kerberos::EtypeInfo2Entry {
+                        etype: 18,
+                        salt: None,
+                        s2kparams: None,
+                    },
+                ]))?
+            } else {
+                der::encode(&rasn_kerberos::EtypeInfo::from([
+                    rasn_kerberos::EtypeInfoEntry {
+                        etype: 18,
+                        salt: None,
+                    },
+                ]))?
+            };
+            for suffix in [&[][..], &[0x05, 0x00][..], &[0xff][..], &[0x00][..]] {
+                let mut bytes = hint.clone();
+                bytes.extend_from_slice(suffix);
+                let mut error: rasn_kerberos::KrbError =
+                    der::decode(&synthetic_preauth_required_error()?)?;
+                error.e_data = Some(
+                    der::encode(&rasn_kerberos::MethodData::from([rasn_kerberos::PaData {
+                        r#type: kind,
+                        value: bytes.into(),
+                    }]))?
+                    .into(),
+                );
+                let result = process_kdc_error(&der::encode(&error)?);
+                if suffix.is_empty() {
+                    assert_eq!(
+                        result?.preauth_key_info.first().ok_or("hint")?.etype,
+                        18_i32
+                    );
+                } else {
+                    assert!(
+                        matches!(
+                            result,
+                            Err(Error::Decode {
+                                target: "ETYPE-INFO" | "ETYPE-INFO2",
+                                message: _
+                            })
+                        ),
+                        "trailing hint DER accepted"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
 
     /// Pins that a `PREAUTH_REQUIRED` error is parsed and its ETYPE-INFO2 entry selected.
     #[test]

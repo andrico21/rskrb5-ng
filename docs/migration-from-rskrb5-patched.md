@@ -7,6 +7,12 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Preauthentication hint framing (FU-CLI-R12): each ETYPE-INFO/ETYPE-INFO2 octet
+string must contain exactly one complete DER value. Trailing values, garbage,
+and zero padding now return `Client::Decode` naming the hint. Correct malformed
+producers rather than relying on prefix decoding; unrelated opaque e-data
+keeps its existing handling.
+
 TGS subkey replies (FU-CLI-R11): retain the returned `TgsFastRequestParts`
 and pass `authenticator_subkey`, not the TGT session key, to the existing
 reply processor. The built request records RFC 4120 usage 9; requests without
