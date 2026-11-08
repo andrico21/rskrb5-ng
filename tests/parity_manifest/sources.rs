@@ -120,13 +120,18 @@ pub(crate) fn check_test_name(name: &str) -> Result<(), TestError> {
 
 /// Same-named methods must not prove a different module or owning type.
 #[test]
-fn symbol_evidence_requires_full_owner_path() {
+fn symbol_evidence_requires_full_owner_path() -> Result<(), TestError> {
     let sources = vec![(
         "src/keytab.rs".to_owned(),
         "pub struct Principal;\nimpl Principal {\n pub fn from_name() {}\n}\npub struct Keytab;"
             .to_owned(),
     )];
-    assert!(declares(&sources, "keytab::Principal::from_name"));
+    let cleaned = sanitized_sources(&sources)?;
+    assert!(declares_clean(
+        &cleaned,
+        &sources,
+        "keytab::Principal::from_name"
+    ));
     assert!(!declares(&sources, "keytab::Keytab::from_name"));
     assert!(!declares(&sources, "ccache::Principal::from_name"));
     let child = vec![(
@@ -143,7 +148,7 @@ fn symbol_evidence_requires_full_owner_path() {
         "/*\npub struct Ghost;\n*/".to_owned(),
     )];
     assert!(!declares(&ghost, "keytab::Ghost"));
-    for visibility in ["mod", "pub mod", "pub(crate) mod"] {
+    for visibility in ["mod", "pub mod", "pub(crate) mod", "mod\n", "mod\t"] {
         let nested = vec![(
             "src/keytab.rs".to_owned(),
             format!(
@@ -171,6 +176,7 @@ fn symbol_evidence_requires_full_owner_path() {
         ),
     ];
     assert!(declares(&real, "keytab::Keytab::from_name"));
+    Ok(())
 }
 
 /// Resolve the module and enclosing impl or enum, not an unrelated same-named item.
@@ -268,13 +274,14 @@ fn sanitized_sources(sources: &[(String, String)]) -> Result<Vec<(String, String
 fn without_inline_modules(source: &str) -> String {
     let mut result = String::new();
     let mut rest = source;
-    while let Some(index) = rest.find("mod ") {
+    while let Some(index) = rest.find("mod") {
         let (prefix, candidate) = rest.split_at(index);
         result.push_str(prefix);
-        let boundary = prefix
-            .chars()
-            .next_back()
-            .is_none_or(|ch| !ch.is_alphanumeric() && ch != '_');
+        let boundary = candidate.chars().nth(3).is_some_and(char::is_whitespace)
+            && prefix
+                .chars()
+                .next_back()
+                .is_none_or(|ch| !ch.is_alphanumeric() && ch != '_');
         let delimiter = candidate.find(['{', ';']);
         if boundary
             && let Some(open) = delimiter
@@ -307,7 +314,7 @@ fn without_inline_modules(source: &str) -> String {
             );
             rest = remaining;
         } else {
-            let (keyword, remaining) = candidate.split_at(4);
+            let (keyword, remaining) = candidate.split_at(3);
             result.push_str(keyword);
             rest = remaining;
         }
