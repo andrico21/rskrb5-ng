@@ -238,7 +238,7 @@ mod tests {
         assert_eq!(credential.client.realm, "TEST.GOKRB5");
         assert_eq!(credential.client.components, vec!["testuser1"]);
         assert_eq!(credential.server.components, vec!["krbtgt", "TEST.GOKRB5"]);
-        assert_eq!(credential.key.value, decode_hex(SESSION_KEY)?);
+        assert_eq!(credential.key.value.as_slice(), decode_hex(SESSION_KEY)?);
         assert_eq!(credential.times.auth_time, 1_893_553_445);
         assert_eq!(credential.times.end_time, 1_893_639_845);
         assert_eq!(credential.times.renew_till, 1_894_071_845);

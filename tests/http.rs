@@ -889,7 +889,7 @@ mod tests {
                 context.header.as_str()
             );
 
-            service_ticket.session_key.value = vec![0x55; 32];
+            service_ticket.session_key.value = vec![0x55; 32].into();
             assert_ne!(context.session_key, service_ticket.session_key);
             Ok(())
         })

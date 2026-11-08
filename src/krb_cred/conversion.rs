@@ -17,7 +17,7 @@ pub(super) fn ccache_credential_to_krb_cred_info(
     Ok(rasn_kerberos::KrbCredInfo {
         key: rasn_kerberos::EncryptionKey {
             r#type: credential.key.etype,
-            value: credential.key.value.clone().into(),
+            value: credential.key.value.to_vec().into(),
         },
         prealm: Some(kerberos_string(&credential.client.realm)?),
         pname: Some(principal_name_from_ccache(&credential.client)?),
@@ -70,7 +70,7 @@ pub(super) fn krb_cred_info_to_ccache_credential(
         server,
         key: ccache::EncryptionKey {
             etype: info.key.r#type,
-            value: info.key.value.as_ref().to_vec(),
+            value: info.key.value.as_ref().to_vec().into(),
         },
         times: ccache::CredentialTimes {
             auth_time: optional_kerberos_time_to_u32(info.auth_time.as_ref())?,

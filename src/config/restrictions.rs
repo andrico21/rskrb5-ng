@@ -1,5 +1,7 @@
 //! Effective restrictive policy validation independent of configuration origin.
 
+use alloc::collections::BTreeMap;
+
 use super::{
     Config, Error, LibDefaults, Realm, Toggle,
     section_values::{Plugins, Value},
@@ -48,7 +50,32 @@ pub(crate) fn config(value: &Config) -> Result<(), Error> {
 /// # Errors
 /// Returns the named unsupported restriction.
 pub(super) fn realm(value: &Realm) -> Result<(), Error> {
-    timestamp(value.relations.get("disable_encrypted_timestamp"))
+    #[cfg(feature = "serde")]
+    for (name, selection) in &value.protocol_relations {
+        super::protocol::relation(name, selection)?;
+    }
+    realm_relations(&value.relations)
+}
+
+/// Admit typed realm selectors using the same permanent policy as profile text.
+/// # Errors
+/// Returns permanent protocol rejection or malformed/unsupported restriction errors.
+pub(super) fn realm_relations(values: &BTreeMap<String, Value>) -> Result<(), Error> {
+    timestamp(values.get("disable_encrypted_timestamp"))?;
+    for (name, value) in values {
+        if super::protocol::recognized(&name.trim_end_matches('*').to_ascii_lowercase()) {
+            let scalar = match value {
+                Value::Boolean(Toggle::Enabled) => "true",
+                Value::Boolean(Toggle::Disabled) => "false",
+                Value::Text(text) | Value::Choice(text) => text,
+                Value::List(_) | Value::Locations(_) => {
+                    return Err(Error::InvalidBoolean(name.clone()));
+                }
+            };
+            super::protocol::relation(name, scalar)?;
+        }
+    }
+    Ok(())
 }
 
 /// Admit only the typed Boolean timestamp policy at every construction boundary.

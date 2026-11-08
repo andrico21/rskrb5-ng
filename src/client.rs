@@ -34,6 +34,7 @@ use crate::spnego;
 use crate::{
     ap_req, ccache,
     crypto::{CryptoPolicy, KerberosEtype, Rc4HmacEtype, Use, kerb_checksum_hmac_md5, selection},
+    der::decode_complete,
     error, kdc_rep, kdc_req,
     keytab::{EncryptionKey, Keytab},
     krb_error, messages, ticket,
@@ -237,10 +238,22 @@ impl BuiltAsReq {
         }
     }
 }
+/// Key source determining the RFC 4120 TGS reply encryption usage.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum TgsReplyKey {
+    /// TGT session key, RFC 4120 key usage 8.
+    Session,
+    /// Authenticator subkey, RFC 4120 key usage 9.
+    Subkey,
+}
+
 /// Encoded TGS-REQ plus validation metadata needed when processing the TGS-REP.
 #[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct BuiltTgsReq {
+    /// RFC 4120 reply key usage selected by the authenticator construction path.
+    pub reply_key_usage: TgsReplyKey,
     /// Policy used for the request and all subsequent reply validation.
     pub crypto_policy: CryptoPolicy,
     /// Request clock snapshot and acceptable reply start-time skew.
@@ -276,6 +289,7 @@ impl BuiltTgsReq {
         nonce: u32,
     ) -> Self {
         Self {
+            reply_key_usage: TgsReplyKey::Session,
             crypto_policy: CryptoPolicy::default(),
             reply_clock: (SystemTime::now(), Duration::from_secs(300)),
             message,
@@ -3177,11 +3191,11 @@ impl<'request> TgsRequestParts<'request> {
 ///
 /// Returns [`Error::Random`] when the OS random source fails.
 pub(crate) fn random_subkey_for(key: &EncryptionKey) -> Result<EncryptionKey, Error> {
-    let mut value = vec![0; key.value.len()];
+    let mut value = Zeroizing::new(vec![0; key.value.len()]);
     getrandom::fill(&mut value)?;
     Ok(EncryptionKey {
         etype: key.etype,
-        value,
+        value: value.into(),
     })
 }
 
@@ -3302,6 +3316,7 @@ fn build_tgs_req_for_realm_inner(
 
     Ok((
         BuiltTgsReq {
+            reply_key_usage: subkey.map_or(TgsReplyKey::Session, |_| TgsReplyKey::Subkey),
             crypto_policy,
             reply_clock: (options.now, options.clock_skew),
             message,
@@ -3851,6 +3866,11 @@ fn ticket_flags_contain_bits(flags: &rasn_kerberos::TicketFlags, bits: u32) -> b
 }
 
 /// Decrypt and validate a TGS-REP against the original TGS-REQ.
+///
+/// For a subkey-bearing builder, pass the returned
+/// [`TgsFastRequestParts::authenticator_subkey`] as the reply key. The request
+/// retains usage 9 for that key; ordinary requests use the TGT key and usage 8
+/// (RFC 4120 sections 3.3 and 5.4.2).
 /// # Errors
 ///
 /// Returns [`Error::Kdc`] for a KRB-ERROR reply, decode and decryption errors,
@@ -3916,8 +3936,15 @@ fn process_tgs_rep_inner(
         });
     }
 
-    let enc_part =
-        kdc_rep::decrypt_tgs_rep_enc_part(&tgs_rep, tgs_session_key).map_err(kdc_rep_error)?;
+    let enc_part = kdc_rep::decrypt_kdc_rep_enc_part(
+        &tgs_rep.0.enc_part,
+        tgs_session_key,
+        match request.reply_key_usage {
+            TgsReplyKey::Session => 8,
+            TgsReplyKey::Subkey => 9,
+        },
+    )
+    .map_err(kdc_rep_error)?;
     request
         .crypto_policy
         .check_use(enc_part.key.r#type, Use::SessionKey)?;
@@ -4151,10 +4178,7 @@ fn decode<T>(target: &'static str, bytes: &[u8]) -> Result<T, Error>
 where
     T: rasn::Decode,
 {
-    der::decode(bytes).map_err(|source| Error::Decode {
-        target,
-        message: source.to_string(),
-    })
+    decode_complete(bytes).map_err(|message| Error::Decode { target, message })
 }
 
 /// DER-encode `value`, naming `target` in the error.
@@ -4775,7 +4799,7 @@ fn kerberos_string_to_string(value: &rasn_kerberos::KerberosString) -> Result<St
 fn encryption_key_from_rasn(value: &rasn_kerberos::EncryptionKey) -> EncryptionKey {
     EncryptionKey {
         etype: value.r#type,
-        value: value.value.as_ref().to_vec(),
+        value: value.value.as_ref().to_vec().into(),
     }
 }
 
@@ -4783,7 +4807,7 @@ fn encryption_key_from_rasn(value: &rasn_kerberos::EncryptionKey) -> EncryptionK
 fn encryption_key_to_rasn(value: &EncryptionKey) -> rasn_kerberos::EncryptionKey {
     rasn_kerberos::EncryptionKey {
         r#type: value.etype,
-        value: value.value.clone().into(),
+        value: value.value.to_vec().into(),
     }
 }
 
@@ -5428,11 +5452,11 @@ mod tests {
     fn explicit_subkey_of_another_enctype_is_refused() -> Result<(), Error> {
         let tgt = session_with_key(EncryptionKey {
             etype: 18,
-            value: vec![0x11; 32],
+            value: vec![0x11; 32].into(),
         })?;
         let subkey = EncryptionKey {
             etype: 17,
-            value: vec![0x22; 16],
+            value: vec![0x22; 16].into(),
         };
         let now = SystemTime::now();
         let result = build_tgs_req_for_realm_with_confounder_and_subkey(
@@ -5461,11 +5485,11 @@ mod tests {
     fn explicit_subkey_of_another_length_is_refused() -> Result<(), Error> {
         let tgt = session_with_key(EncryptionKey {
             etype: 18,
-            value: vec![0x11; 32],
+            value: vec![0x11; 32].into(),
         })?;
         let subkey = EncryptionKey {
             etype: 18,
-            value: vec![0x22; 16],
+            value: vec![0x22; 16].into(),
         };
         let now = SystemTime::now();
         let result = build_tgs_req_for_realm_with_confounder_and_subkey(
@@ -5495,7 +5519,7 @@ mod tests {
         use crate::error::{Policy, RejectedFeature};
         let tgt = session_with_key(EncryptionKey {
             etype: 1,
-            value: vec![0x11; 8],
+            value: vec![0x11; 8].into(),
         })?;
         let result = build_tgs_req_for_realm_with_subkey(
             &tgt,

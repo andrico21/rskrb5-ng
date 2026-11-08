@@ -11,6 +11,8 @@ use serde::{
 use zeroize::{Zeroize as _, Zeroizing};
 
 use super::{AuthorizationDataEntry, Credential};
+#[cfg(feature = "serde")]
+use crate::keytab::key_bytes::Bytes as KeyBytes;
 
 /// Serialize payload bytes without creating an intermediate copy.
 /// # Errors
@@ -32,6 +34,17 @@ where
     D: Deserializer<'de>,
 {
     deserializer.deserialize_seq(Bytes)
+}
+
+/// Deserialize key storage without releasing an unprotected intermediate allocation.
+/// # Errors
+/// Returns the deserializer's malformed-byte error.
+#[cfg(feature = "serde")]
+pub(super) fn deserialize_key<'de, D>(deserializer: D) -> Result<KeyBytes, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize(deserializer).map(Into::into)
 }
 
 /// Sequence visitor retaining payload bytes only in zeroizing storage.

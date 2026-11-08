@@ -159,6 +159,15 @@ mod review_validity;
 #[path = "client/session_cache.rs"]
 #[cfg(feature = "tokio")]
 mod session_cache;
+#[path = "client/subkey_reply.rs"]
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod subkey_reply;
 #[path = "client/tgs_exchange.rs"]
 mod tgs_exchange;
 
@@ -583,7 +592,7 @@ mod harness {
     pub(crate) fn sample_referral_tgt_session(realm: &str) -> Result<AsRepSession, TestError> {
         let mut tgt = sample_tgt_session()?;
         tgt.service = Principal::new("TEST.GOKRB5", 2, ["krbtgt".to_owned(), realm.to_owned()]);
-        tgt.session_key.value = vec![0x9a; 32];
+        tgt.session_key.value = vec![0x9a; 32].into();
         tgt.ticket = marked_ticket(format!("referral-ticket-{realm}").as_bytes())?.into();
         align_ticket_service(&mut tgt)?;
         Ok(tgt)
@@ -1264,7 +1273,7 @@ mod harness {
     pub(crate) fn rasn_encryption_key(key: &EncryptionKey) -> rasn_kerberos::EncryptionKey {
         rasn_kerberos::EncryptionKey {
             r#type: key.etype,
-            value: key.value.clone().into(),
+            value: key.value.to_vec().into(),
         }
     }
 

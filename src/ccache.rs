@@ -18,7 +18,7 @@ use std::{
 use serde::de::Error as _;
 use zeroize::Zeroizing;
 
-use crate::file_name;
+use crate::{file_name, keytab::key_bytes::Bytes as KeyBytes};
 
 /// First byte of every MIT credential cache file.
 const CCACHE_FIRST_BYTE: u8 = 5;
@@ -1071,7 +1071,7 @@ impl Credential {
             server: Principal::new(X_CACHECONF_REALM, 0, components),
             key: EncryptionKey {
                 etype: 0,
-                value: Vec::new(),
+                value: Vec::new().into(),
             },
             times: CredentialTimes::default(),
             is_skey: false,
@@ -1104,7 +1104,7 @@ impl Credential {
         };
         let key = EncryptionKey {
             etype: i32::from(etype),
-            value: read_data(bytes, offset, endian)?,
+            value: read_data(bytes, offset, endian)?.into(),
         };
 
         let times = CredentialTimes {
@@ -1260,15 +1260,28 @@ pub struct EncryptionKey {
     /// Kerberos encryption type id.
     pub etype: i32,
     /// Raw key bytes.
-    pub value: Vec<u8>,
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            serialize_with = "payload::serialize",
+            deserialize_with = "payload::deserialize_key"
+        )
+    )]
+    pub value: KeyBytes,
 }
 
 impl EncryptionKey {
     /// Creates a `EncryptionKey` from its required fields.
     #[must_use]
     #[inline]
-    pub const fn new(etype: i32, value: Vec<u8>) -> Self {
-        Self { etype, value }
+    pub fn new<V>(etype: i32, value: V) -> Self
+    where
+        V: Into<KeyBytes>,
+    {
+        Self {
+            etype,
+            value: value.into(),
+        }
     }
 }
 

@@ -119,7 +119,7 @@ mod tests {
             TgsReq::new(timestamp(1_893_553_452)?, 42),
         )?;
         fast.ap_req_der = b"fast-token-audit-canary".to_vec().into();
-        fast.authenticator_subkey.value = b"fast-key-audit-canary".to_vec();
+        fast.authenticator_subkey.value = b"fast-key-audit-canary".to_vec().into();
         session.ticket = marked_ticket(b"ticket-audit-canary")?.into();
         client.cache_tgt_session(session)?;
         let credentials =

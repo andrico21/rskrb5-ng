@@ -286,7 +286,7 @@ fn validate_kdc_rep(kdc_rep: &rasn_kerberos::KdcRep, msg_type: i32) -> Result<()
 /// encrypted part's, [`Error::UnsupportedEtype`] for an enctype that is not
 /// implemented, [`Error::Crypto`] when decryption fails, and [`Error::Decode`]
 /// when the plaintext is not a DER encrypted KDC reply part.
-fn decrypt_kdc_rep_enc_part(
+pub(crate) fn decrypt_kdc_rep_enc_part(
     encrypted_data: &rasn_kerberos::EncryptedData,
     key: &EncryptionKey,
     usage: u32,

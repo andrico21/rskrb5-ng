@@ -27,6 +27,24 @@ pub(super) struct State {
 }
 
 impl State {
+    /// Resolve deferred parent contributions before an include contributes later values.
+    /// # Errors
+    /// Returns the pending assignment's syntax or permanent-policy error.
+    pub(super) fn before_include(
+        &mut self,
+        opens_subsection: bool,
+        profile: &mut Profile,
+    ) -> Result<(), Error> {
+        if let Some(mut pending) = self.pending_scalar.take() {
+            pending
+                .text
+                .push_str(if opens_subsection { " {" } else { " \"\"" });
+            self.content(&pending, profile)?;
+            self.pending_brace = opens_subsection;
+        }
+        Ok(())
+    }
+
     /// Process one non-directive line into the shared profile.
     ///
     /// # Errors

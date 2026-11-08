@@ -56,6 +56,61 @@ subkey no longer bypasses its retained policy. Supply permitted keys, or explici
 configure legacy permission and membership before use. An explicit acceptor
 subkey still takes precedence; completion verification also admits its selected key.
 
+Preauthentication hint framing (FU-CLI-R12): each ETYPE-INFO/ETYPE-INFO2 octet
+string must contain exactly one complete DER value. Trailing values, garbage,
+and zero padding now return `Client::Decode` naming the hint. Correct malformed
+producers rather than relying on prefix decoding; unrelated opaque e-data
+keeps its existing handling.
+
+TGS subkey replies (FU-CLI-R11): retain the returned `TgsFastRequestParts`
+and pass `authenticator_subkey`, not the TGT session key, to the existing
+reply processor. The built request records RFC 4120 usage 9; requests without
+a subkey continue to use usage 8. `BuiltTgsReq::new` constructs metadata for
+requests without a subkey; use the subkey builders for subkey-bearing requests.
+The public `reply_key_usage: TgsReplyKey` metadata distinguishes `Session`
+from `Subkey`; manually constructed metadata must match the authenticator.
+This completes the existing TGS path, not FAST armor negotiation.
+
+```rust,no_run
+# #[cfg(feature = "messages")]
+# fn complete(parts: &rskrb5_ng::client::TgsFastRequestParts, reply: &[u8]) -> Result<(), rskrb5_ng::error::Client> {
+let session = rskrb5_ng::client::process_tgs_rep(
+    &parts.request, reply, &parts.authenticator_subkey,
+)?;
+drop(session);
+# Ok(())
+# }
+```
+
+Include ordering (FU-CFG-R11): an unquoted empty scalar before an `include`
+or `includedir` now wins over later values just like `""`. If the included
+value should win, remove the earlier empty assignment. The next parent
+structural line can still open a subsection after intervening includes;
+included files retain independent grammar state.
+
+Realm selectors (FU-CFG-R10): `Realm::relations` and programmatic
+`protocol_relations` are checked before configured discovery. Enabling removed
+protocols now returns the same `Policy::RejectedFeature` as text parsing;
+typed serde uses its native error envelope. Lists and locations are invalid
+selector variants. Disabled controls remain accepted; certificate paths are
+not protocol selectors. Remove prohibited selections rather than moving them
+to a typed or programmatic map.
+
+Key replacement (FU-FIL-R06): `keytab::EncryptionKey::value` and
+`ccache::EncryptionKey::value` now hold `keytab::key_bytes::Bytes`, which
+erases its allocation on replacement/drop and exposes only read-only bytes.
+Constructors accept an owned `Vec<u8>` or `Zeroizing<Vec<u8>>` without copying;
+they are no longer `const`. Replace vector mutation with a new owner. Any
+explicit `to_vec()` copy remains the caller's erasure responsibility.
+
+```rust
+use rskrb5_ng::keytab::EncryptionKey;
+use zeroize::Zeroizing;
+let mut key = EncryptionKey::new(18, Zeroizing::new(vec![0x11; 32]));
+key.value = Zeroizing::new(vec![0x22; 32]).into();
+assert_eq!(key.value.as_slice(), &[0x22; 32]);
+```
+
 Mutation evidence (FU-GATE-R04): each whole-crate campaign shard must retain
 one successful baseline and a nonempty `mutants.json` with the exact tested
 mutant names. Rerun filtered, baseline-free or incomplete shards; an end time

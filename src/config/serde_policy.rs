@@ -79,8 +79,7 @@ where
     D: Deserializer<'de>,
 {
     let values = BTreeMap::<String, super::section_values::Value>::deserialize(deserializer)?;
-    super::restrictions::timestamp(values.get("disable_encrypted_timestamp"))
-        .map_err(D::Error::custom)?;
+    super::restrictions::realm_relations(&values).map_err(D::Error::custom)?;
     Ok(values)
 }
 

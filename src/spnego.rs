@@ -2330,7 +2330,7 @@ fn integer_to_u32(field: &'static str, value: &Integer) -> Result<u32, Error> {
 fn encryption_key_from_rasn(value: &rasn_kerberos::EncryptionKey) -> EncryptionKey {
     EncryptionKey {
         etype: value.r#type,
-        value: value.value.as_ref().to_vec(),
+        value: value.value.as_ref().to_vec().into(),
     }
 }
 

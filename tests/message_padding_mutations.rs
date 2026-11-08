@@ -138,7 +138,7 @@ mod tests {
             return Err("one imported credential".into());
         };
         assert_eq!(only.client.components, ["alice"]);
-        assert_eq!(only.key.value, vec![0x22_u8; 32]);
+        assert_eq!(only.key.value.as_slice(), [0x22_u8; 32]);
         Ok(())
     }
 

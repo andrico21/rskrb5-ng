@@ -1228,7 +1228,7 @@ fn kerberos_string_to_string(value: &rasn_kerberos::KerberosString) -> Result<St
 fn encryption_key_from_rasn(value: &rasn_kerberos::EncryptionKey) -> EncryptionKey {
     EncryptionKey {
         etype: value.r#type,
-        value: value.value.as_ref().to_vec(),
+        value: value.value.as_ref().to_vec().into(),
     }
 }
 
@@ -1236,7 +1236,7 @@ fn encryption_key_from_rasn(value: &rasn_kerberos::EncryptionKey) -> EncryptionK
 fn encryption_key_to_rasn(value: &EncryptionKey) -> rasn_kerberos::EncryptionKey {
     rasn_kerberos::EncryptionKey {
         r#type: value.etype,
-        value: value.value.clone().into(),
+        value: value.value.to_vec().into(),
     }
 }
 

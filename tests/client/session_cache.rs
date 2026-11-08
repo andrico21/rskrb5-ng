@@ -390,7 +390,7 @@ mod tests {
             2,
             vec!["krbtgt".to_owned(), "OTHER.REALM".to_owned()],
         );
-        other_tgt.key.value = vec![0xee];
+        other_tgt.key.value = vec![0xee].into();
         other_tgt.times.end_time = now + 2 * 60 * 60;
         other_tgt.times.renew_till = now + 3 * 60 * 60;
 
@@ -401,7 +401,7 @@ mod tests {
             2,
             vec!["HTTP".to_owned(), "other.test.gokrb5".to_owned()],
         );
-        other_service.key.value = vec![0xdd];
+        other_service.key.value = vec![0xdd].into();
 
         cache.credentials_mut().push(other_tgt);
         cache
@@ -433,10 +433,10 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let mut fresh_service_ticket = sample_service_ticket_session(&tgt)?;
         let mut older_service_ticket = fresh_service_ticket.clone();
-        fresh_service_ticket.session_key.value = vec![0xf1];
+        fresh_service_ticket.session_key.value = vec![0xf1].into();
         fresh_service_ticket.ticket = marked_ticket(b"fresh-service-ticket")?.into();
         align_ticket_service(&mut fresh_service_ticket)?;
-        older_service_ticket.session_key.value = vec![0x0d];
+        older_service_ticket.session_key.value = vec![0x0d].into();
         older_service_ticket.ticket = marked_ticket(b"older-service-ticket")?.into();
         align_ticket_service(&mut older_service_ticket)?;
         let now = u32::try_from(
@@ -486,8 +486,8 @@ mod tests {
     {
         let mut current_tgt = sample_tgt_session()?;
         let mut future_tgt = current_tgt.clone();
-        current_tgt.session_key.value = vec![0xc1];
-        future_tgt.session_key.value = vec![0xf1];
+        current_tgt.session_key.value = vec![0xc1].into();
+        future_tgt.session_key.value = vec![0xf1].into();
         let now = u32::try_from(
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -615,7 +615,10 @@ mod tests {
             .context("valid TGT is reused without KDC endpoints")?;
 
         assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
-        assert_eq!(session.session_key.value, decode_hex(SESSION_KEY)?);
+        assert_eq!(
+            session.session_key.value.as_slice(),
+            decode_hex(SESSION_KEY)?
+        );
         Ok(())
     }
 
@@ -800,10 +803,10 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let mut current_service_ticket = sample_service_ticket_session(&tgt)?;
         let mut future_service_ticket = current_service_ticket.clone();
-        current_service_ticket.session_key.value = vec![0xc2];
+        current_service_ticket.session_key.value = vec![0xc2].into();
         current_service_ticket.ticket = marked_ticket(b"current-service-ticket")?.into();
         align_ticket_service(&mut current_service_ticket)?;
-        future_service_ticket.session_key.value = vec![0xf2];
+        future_service_ticket.session_key.value = vec![0xf2].into();
         future_service_ticket.ticket = marked_ticket(b"future-service-ticket")?.into();
         align_ticket_service(&mut future_service_ticket)?;
         let now = u32::try_from(
@@ -930,7 +933,7 @@ mod tests {
         runtime()?.block_on(async {
             let tgt = current_tgt_session(10, 50)?;
             let mut service_ticket = sample_service_ticket_session(&tgt)?;
-            service_ticket.session_key.value = vec![0x44; 32];
+            service_ticket.session_key.value = vec![0x44; 32].into();
             let cached_session_key = service_ticket.session_key.clone();
             let renewal_reply_key = tgt.session_key.clone();
             let now = SystemTime::now();
@@ -1004,7 +1007,7 @@ mod tests {
         runtime()?.block_on(async {
             let tgt = sample_tgt_session()?;
             let mut service_ticket = sample_service_ticket_session(&tgt)?;
-            service_ticket.session_key.value = vec![0x46; 32];
+            service_ticket.session_key.value = vec![0x46; 32].into();
             let cached_session_key = service_ticket.session_key.clone();
             let renewal_reply_key = tgt.session_key.clone();
             let now = u32::try_from(
@@ -1088,7 +1091,7 @@ mod tests {
         runtime()?.block_on(async {
             let primary_tgt = current_tgt_session(10, 50)?;
             let mut referral_tgt = valid_referral_tgt_session(&primary_tgt, "RESDOM.GOKRB5")?;
-            referral_tgt.session_key.value = vec![0x45; 32];
+            referral_tgt.session_key.value = vec![0x45; 32].into();
             let cached_referral_key = referral_tgt.session_key.clone();
             let referral_renewal_reply_key = primary_tgt.session_key.clone();
             let now = SystemTime::now();
@@ -1197,7 +1200,7 @@ mod tests {
         runtime()?.block_on(async {
             let primary_tgt = current_tgt_session(10, 50)?;
             let mut referral_tgt = valid_referral_tgt_session(&primary_tgt, "RESDOM.GOKRB5")?;
-            referral_tgt.session_key.value = vec![0x47; 32];
+            referral_tgt.session_key.value = vec![0x47; 32].into();
             referral_tgt.auth_time = primary_tgt.auth_time;
             referral_tgt.start_time = primary_tgt.start_time;
             referral_tgt.end_time = primary_tgt.end_time;
@@ -2012,12 +2015,12 @@ mod tests {
 
         let mut old_tgt = tgt.to_ccache_credential().context("TGT converts")?;
         old_tgt.client.name_type = 0_i32;
-        old_tgt.key.value = vec![0xaa];
+        old_tgt.key.value = vec![0xaa].into();
         let mut old_service = service_ticket
             .to_ccache_credential()
             .context("service ticket converts")?;
         old_service.client.name_type = 0_i32;
-        old_service.key.value = vec![0xbb];
+        old_service.key.value = vec![0xbb].into();
         let config_entry = x_cacheconf_credential(&old_service.client);
         let mut other_client = old_service.clone();
         other_client.client = ccache::Principal::new("OTHER.REALM", 1, vec!["other".to_owned()]);

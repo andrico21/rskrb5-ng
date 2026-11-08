@@ -175,7 +175,7 @@ mod tests {
         assert_eq!(credential.server.realm, "ATHENA.MIT.EDU");
         assert_eq!(credential.server.components, ["hftsai", "extra"]);
         assert_eq!(credential.key.etype, 1_i32);
-        assert_eq!(credential.key.value, b"12345678");
+        assert_eq!(credential.key.value.as_slice(), b"12345678");
         assert_eq!(credential.times.auth_time, TEST_TIME_SECONDS);
         assert_eq!(credential.times.start_time, TEST_TIME_SECONDS);
         assert_eq!(credential.times.end_time, TEST_TIME_SECONDS);

@@ -826,7 +826,7 @@ mod tests {
             .get_entry(&["HTTP", "host.test.gokrb5"])
             .context("HTTP service entry exists")?
             .clone();
-        replacement.key.value = vec![1, 2, 3, 4];
+        replacement.key.value = vec![1, 2, 3, 4].into();
 
         let replaced = cache.upsert_credential(replacement.clone());
         assert!(replaced.is_some(), "the upsert replaces the HTTP entry");

@@ -31,6 +31,7 @@ impl fmt::Debug for BuiltTgsReq {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self {
+            reply_key_usage,
             crypto_policy,
             reply_clock,
             delegation_keytab: _,
@@ -42,6 +43,7 @@ impl fmt::Debug for BuiltTgsReq {
             nonce,
         } = self;
         f.debug_struct("BuiltTgsReq")
+            .field("reply_key_usage", reply_key_usage)
             .field("crypto_policy", crypto_policy)
             .field("reply_clock", reply_clock)
             .field("der_len", &der.len())
