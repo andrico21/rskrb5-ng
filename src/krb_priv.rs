@@ -193,7 +193,7 @@ where
     P: AsRef<[u8]>,
 {
     let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
-    let mut confounder = vec![0; etype.confounder_len()];
+    let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     build_krb_priv_with_confounder(user_data, options, key, kvno, &confounder)
 }

@@ -85,7 +85,7 @@ pub(crate) mod tests {
     };
 
     std::thread_local! {
-        pub(super) static ERASED_BYTES: Cell<usize> = const { Cell::new(0) };
+        pub(crate) static ERASED_BYTES: Cell<usize> = const { Cell::new(0) };
         pub(super) static ERASED_LENGTHS: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
     }
 

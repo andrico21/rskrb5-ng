@@ -189,7 +189,7 @@ pub fn build_kpasswd_request(
         etype: service_ticket.session_key.etype,
         value: reply_bytes.into(),
     };
-    let mut ap_req_confounder = vec![0; etype.confounder_len()];
+    let mut ap_req_confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut ap_req_confounder)?;
 
     let ap_req = build_kpasswd_ap_req_with_confounder(

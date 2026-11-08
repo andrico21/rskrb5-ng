@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Kadmin reply-key generation and random message confounders own erasure before
+  entropy filling, including partial randomness failures (FU-TRN-R08).
+
 - Random AP-REP headers and configured HTTP keytab constructors retain typed
   permanent policy refusals instead of unsupported-enctype or generic invalid
   configuration errors (FU-SPN-R16).

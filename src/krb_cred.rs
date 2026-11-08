@@ -17,6 +17,7 @@ mod conversion;
 
 use conversion::{ccache_credential_to_krb_cred_info, krb_cred_info_to_ccache_credential};
 use rasn::{der, types::Integer};
+use zeroize::Zeroizing;
 
 use crate::{
     ccache,
@@ -189,7 +190,7 @@ pub fn encrypt_ccache_credentials(
     key: &EncryptionKey,
 ) -> Result<rasn_kerberos::KrbCred, Error> {
     let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
-    let mut confounder = vec![0; etype.confounder_len()];
+    let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     encrypt_ccache_credentials_to_krb_cred_with_confounder(credentials, key, &confounder)
 }

@@ -718,7 +718,7 @@ impl WrapToken {
     {
         let owned_payload = payload.into();
         let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
-        let mut confounder = vec![0; etype.confounder_len()];
+        let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
         getrandom::fill(&mut confounder)?;
         Self::new_initiator_sealed_with_confounder(owned_payload, key, &confounder)
     }
@@ -1845,7 +1845,7 @@ impl AcceptedContext {
             .check_use(self.ap_req.session_key.etype, Use::SessionKey)?;
         let etype = KerberosEtype::from_etype_id(self.ap_req.session_key.etype)
             .ok_or(Error::UnsupportedEtype(self.ap_req.session_key.etype))?;
-        let mut confounder = vec![0; etype.confounder_len()];
+        let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
         getrandom::fill(&mut confounder)?;
         self.ap_rep_response_header_with_confounder(&confounder, options)
     }
@@ -1980,7 +1980,7 @@ pub fn init_sec_context(
     }
     let etype = KerberosEtype::from_etype_id(service_ticket.session_key.etype)
         .ok_or(Error::UnsupportedEtype(service_ticket.session_key.etype))?;
-    let mut confounder = vec![0; etype.confounder_len()];
+    let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     init_sec_context_with_confounder(service_ticket, options, timestamp, cusec, &confounder)
 }
