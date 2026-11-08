@@ -27,6 +27,7 @@ import json
 import sys
 import tomllib
 from workflow_shape import mandatory_runs
+from workflow_yaml import structure
 from pathlib import Path
 from contextlib import redirect_stdout
 from io import StringIO
@@ -58,9 +59,7 @@ REQUIRED: Final = (
     "lint-migration src tests examples fuzz",
 )
 RELEASE_WORKFLOWS: Final = ("release.yml", "publish.yml")
-USES: Final = re.compile(
-    r"^\s*(?:-\s+)?uses:\s*([\w.-]+/[\w./-]+)@(\S+)(?:\s+#\s*(\S+))?"
-)
+USES: Final = re.compile(r"([\w.-]+/[\w./-]+)@([^\s]+)(?:\s+#\s*(\S+))?")
 
 SELF_TEST_LOOP: Final = REQUIRED[0] + " || exit 1; done"
 CI_NEGATIVE: Final = (
@@ -182,15 +181,26 @@ def pin_errors(workflows: dict[str, str]) -> list[str]:
     errors = []
     channels: dict[str, set[str]] = {}
     for name, text in sorted(workflows.items()):
-        for number, line in enumerate(text.splitlines(), 1):
-            match = USES.match(line)
+        try:
+            lines = structure(text)
+        except RuntimeError as error:
+            errors.append(f"{name}: {error}")
+            continue
+        for line in lines:
+            if line.key != "uses":
+                continue
+            number = line.number
+            match = USES.fullmatch(line.value)
             if match is None:
+                errors.append(f"{name}:{number}: unsupported action reference")
                 continue
             action, ref, comment = match.groups()
             if not re.fullmatch(r"[0-9a-f]{40}", ref):
                 errors.append(
                     f"{name}:{number}: {action} is not pinned to a commit SHA"
                 )
+            elif comment is None:
+                errors.append(f"{name}:{number}: action pin needs a version comment")
             if action == "dtolnay/rust-toolchain":
                 channels.setdefault(comment or "(no channel comment)", set()).add(ref)
                 if name in RELEASE_WORKFLOWS and comment != "stable":
@@ -402,6 +412,14 @@ def self_test() -> int:
     )
     assert any("continue-on-error" in error for error in wiring_errors(advisory, prek))
     sha = "a" * 40
+    for key in ('"uses"', "'uses'"):
+        assert pin_errors({"release.yml": f"      - {key}: actions/checkout@v7\n"}), (
+            "quoted unpinned action admitted"
+        )
+        assert (
+            pin_errors({"release.yml": f"      - {key}: actions/checkout@{sha} # v7\n"})
+            == []
+        )
     other = "b" * 40
     stable = f"      - uses: dtolnay/rust-toolchain@{sha} # stable\n"
     assert pin_errors({"ci.yml": stable, "publish.yml": stable}) == []

@@ -105,6 +105,13 @@ cancelled and failed jobs elsewhere cannot skip either mandatory job. Supporting
 dependencies would require a separately reviewed condition model, not an exception
 for one expression spelling.
 
+The global action-pin check reads structural keys, including plain single/double
+quoted `uses` outside the mandatory jobs. Escaped keys, tags, anchors, aliases,
+merge keys, duplicate mappings and flow mappings are unsupported and rejected;
+flow sequences are limited to scalar lists (such as event and runner lists).
+`workflow_regressions.py --self-test` exercises the four critic rounds against
+mutations of the actual workflows, alongside each owner's more detailed fixtures.
+
 `docsrs_check.py` holds `[package.metadata.docs.rs]` to the advertised
 optional APIs (`http`, `tower`); the `docs` job builds rustdoc with exactly
 that feature set and `--cfg docsrs`, as docs.rs does, and checks the

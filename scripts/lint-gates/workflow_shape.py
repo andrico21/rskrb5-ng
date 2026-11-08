@@ -34,6 +34,8 @@ class Mapping:
 
 def mapping(lines: list[Line], indexes: list[int], allowed: frozenset[str]) -> Mapping:
     entries: dict[str, int] = {}
+    if indexes and len({lines[i].indent for i in indexes}) != 1:
+        raise RuntimeError("inconsistent mapping indentation")
     for index in indexes:
         line = lines[index]
         if not line.plain_key or line.key not in allowed or line.key in entries:
@@ -139,6 +141,9 @@ def mandatory_runs(text: str, job: str) -> list[str]:
     fields = mapping(lines, block(lines, jobs[job]), JOB_KEYS).entries
     if "steps" not in fields or "runs-on" not in fields:
         raise RuntimeError(f"{job} needs steps and runs-on")
+    for key in ("name", "runs-on"):
+        if key in fields and children(lines, fields[key]):
+            raise RuntimeError(f"{job}: unexpected nested {key}")
     if scalar(lines[fields["runs-on"]].value, "runs-on") != "ubuntu-latest":
         raise RuntimeError(f"{job} must run on ubuntu-latest")
     if "env" in fields:
@@ -160,6 +165,7 @@ def mandatory_runs(text: str, job: str) -> list[str]:
         ).entries
         if set(matrix) != {"closures"}:
             raise RuntimeError("closures needs exactly its closure matrix")
+        block(lines, matrix["closures"])
     step_indexes = block(lines, fields["steps"])
     groups: list[list[int]] = []
     for index in step_indexes:

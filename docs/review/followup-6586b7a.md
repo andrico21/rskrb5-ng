@@ -368,6 +368,8 @@ Original review rows:
 
 | FU-GATE-R11 | major | A skipped prerequisite can suppress both mandatory jobs | fixed | workflow_gate and feature_closures prerequisite fixtures red/green; commit `gates: require independent mandatory jobs (FU-GATE-R11)` | Both mandatory jobs share the strict execution model and reject all needs and if settings, so no prerequisite state can suppress them. | task-22j-rskrb5-ng-zero-open-items.log: needs mutants bypassed both guards before; scalar/list needs and success/always/cancelled/failure conditions rejected after; real 36-entry matrix accepted. |
 
+| FU-GATE-R12 | minor | Quoted action keys bypass the global SHA-pin check | fixed | quoted action fixture red/green; workflow_regressions four-round fixtures and real workflows; commit `gates: inspect structural action keys across workflows (FU-GATE-R12)` | Every normalized uses key requires a full SHA and version comment; escaped/opaque/flow action syntax, tags, anchors, aliases and duplicate keys fail closed. | task-22j-rskrb5-ng-zero-open-items.log: quoted moving tags accepted before; both quote forms rejected with moving tags and accepted with full SHA outside mandatory jobs; release and publish mutations rejected. |
+
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 
 - RVX-u1-01 → FU-TST-01 (also: the test never exercises the router wiring cited by the review doc; covered by FU-TST-01's Proof)

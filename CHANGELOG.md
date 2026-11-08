@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Action pin checks inspect normalized YAML keys across every workflow, including
+  quoted `uses`; opaque syntax and missing version comments fail closed (FU-GATE-R12).
+
 - Both mandatory CI jobs reject prerequisites and conditional execution, so
   skipped, failed or cancelled dependencies cannot suppress them (FU-GATE-R11).
 

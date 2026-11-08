@@ -64,6 +64,7 @@ def structure(text: str) -> list[Line]:
     """
     lines: list[Line] = []
     block: int | None = None
+    scopes: list[tuple[int, set[str]]] = []
     for number, raw in enumerate(text.splitlines(), 1):
         body = raw.lstrip(" ")
         indent = len(raw) - len(body)
@@ -91,11 +92,27 @@ def structure(text: str) -> list[Line]:
         key = scalar(match["key"], f"ci.yml:{number} key")
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", key):
             raise RuntimeError(f"ci.yml:{number}: unsupported mapping key")
+        while scopes and scopes[-1][0] > indent:
+            scopes.pop()
+        if not scopes or scopes[-1][0] < indent:
+            scopes.append((indent, set()))
+        if item:
+            scopes[-1][1].clear()
+        if key in scopes[-1][1]:
+            raise RuntimeError(f"ci.yml:{number}: duplicate mapping key {key}")
+        scopes[-1][1].add(key)
         value = (match["value"] or "").strip()
         if value.startswith(("&", "*", "<<", "!")) or key == "<<":
             raise RuntimeError(
                 f"ci.yml:{number}: anchors, tags and merges are not supported"
             )
+        if value.startswith("{"):
+            raise RuntimeError(f"ci.yml:{number}: flow mappings are unsupported")
+        if value.startswith("[") and not re.fullmatch(
+            r"""\[\s*(?:(?:"[^"\\]*"|'[^']*'|[A-Za-z0-9_.-]+)\s*(?:,\s*(?:"[^"\\]*"|'[^']*'|[A-Za-z0-9_.-]+)\s*)*)?\]\s*(?:#.*)?""",
+            value,
+        ):
+            raise RuntimeError(f"ci.yml:{number}: unsupported flow sequence")
         if re.match(r"[|>][-+0-9]*\s*(?:#.*)?$", value):
             block = indent
         lines.append(Line(number, indent, item, key, value, match["key"] == key))
@@ -150,6 +167,9 @@ def self_test() -> int:
         "a: &x 1\n",
         "a:\n\tb: 1\n",
         "a: *x\n",
+        "a: !!str value\n",
+        "a: 1\na: 2\n",
+        "steps:\n  - run: first\n    run: second\n",
         "<<: *x\n",
         '? "if"\n: false\n',
         '{"if": false}\n',
