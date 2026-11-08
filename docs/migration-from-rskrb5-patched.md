@@ -7,6 +7,10 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Local lint hook (FU-GATE-R08): retain system language, `pass_filenames = false`,
+the pre-push/manual stages and the documented source-file pattern. Global file
+filters and unsupported hook applicability settings now fail wiring admission.
+
 Package audits (FU-GATE-R07): run both parity manifest audit targets from a
 repository checkout. Neither is shipped as a package integration-test entry
 point, because they require development scripts and other excluded evidence.

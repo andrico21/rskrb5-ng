@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Workflow wiring validates the lint hook's pre-push stages and file
+  applicability, rejecting suppressing filters and metadata (FU-GATE-R08).
+
 - The package excludes the checkout-only MIT parity audit, matching the Go
   audit and avoiding its dependency on excluded development scripts (FU-GATE-R07).
 

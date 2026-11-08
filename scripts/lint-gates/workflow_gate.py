@@ -235,15 +235,30 @@ def wiring_errors(workflow: str, prek: str) -> list[str]:
         errors.append("ci.yml has no lint-gates job")
     if re.search(r"(?m)^        (?!run:)[\w-]+: [|>]", job):
         errors.append("non-run multiline step values are unsupported in lint-gates")
+    hook_config = tomllib.loads(prek)
+    if any(key in hook_config for key in ("files", "exclude")):
+        errors.append("global hook file filters may not suppress lint gates")
     hooks = [
         hook
-        for repo in tomllib.loads(prek).get("repos", [])
+        for repo in hook_config.get("repos", [])
         for hook in repo.get("hooks", [])
         if hook.get("id") == "lint-gates"
     ]
     entry = hooks[0].get("entry", "") if len(hooks) == 1 else ""
     if len(hooks) != 1:
         errors.append(f"prek.toml needs exactly one lint-gates hook, has {len(hooks)}")
+    else:
+        hook = hooks[0]
+        expected = {
+            "language": "system",
+            "pass_filenames": False,
+            "stages": ["pre-push", "manual"],
+            "files": r"\.(rs|toml|py|yml|md)$",
+        }
+        if any(hook.get(key) != value for key, value in expected.items()):
+            errors.append("lint-gates hook must retain its pre-push applicability")
+        if set(hook) - {"id", "name", "entry", *expected}:
+            errors.append("unsupported lint-gates hook applicability setting")
     ci_commands = effective_commands(run_blocks(job))
     hook_commands = effective_commands([entry], hook=True)
     for command in REQUIRED:
@@ -331,9 +346,25 @@ def self_test() -> int:
             + " && ".join([*commands, HOOK_NEGATIVE])
             + "'"
         )
-        + " }]\n"
+        + ', language = "system", pass_filenames = false, stages = ["pre-push", "manual"], files = "\\\\.(rs|toml|py|yml|md)$" }]\n'
     )
     assert wiring_errors(ci, prek) == [], wiring_errors(ci, prek)
+    actual_prek = (ROOT / "prek.toml").read_text()
+    for before, after in (
+        ('stages = ["pre-push", "manual"]', 'stages = ["manual"]'),
+        ('id = "lint-gates"', 'id = "lint-gates"\nexclude = ".*"'),
+        ('id = "lint-gates"', 'id = "lint-gates"\ntypes = ["python"]'),
+        ('id = "lint-gates"', 'id = "lint-gates"\ntypes_or = ["python"]'),
+        ('id = "lint-gates"', 'id = "lint-gates"\nexclude_types = ["rust"]'),
+        ('id = "lint-gates"', 'id = "lint-gates"\nalways_run = false'),
+        ('files = "\\\\.(rs|toml|py|yml|md)$"', 'files = "never-match"'),
+        ('language = "system"', 'language = "fail"'),
+        ("pass_filenames = false", "pass_filenames = true"),
+    ):
+        hostile = actual_prek.replace(before, after)
+        assert wiring_errors(actual_ci, hostile), f"suppressed hook accepted: {after}"
+    for setting in ('exclude = ".*"', 'files = "never-match"'):
+        assert wiring_errors(actual_ci, setting + "\n" + actual_prek), setting
     for setting in (
         "container: ubuntu:24.04",
         "container:\n      image: ubuntu:24.04\n      options: --env PYTHONOPTIMIZE=1",
