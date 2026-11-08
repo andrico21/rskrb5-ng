@@ -349,6 +349,8 @@ Original review rows:
 
 | FU-TRN-R07 | major | Configured checked AS exchange still bypasses realm and plugin restrictions | fixed | `restrictive_scopes_fail_before_login` red/green; commit `transport: admit configuration before checked AS exchange (FU-TRN-R07)` | Configured checked AS exchange rejects whole-config restrictions before policy preparation or transport with the named Config::NotYetEffective error. | task-22g-rskrb5-ng-zero-open-items.log: valid AES PA-ENC-TIMESTAMP request, three restrictive scopes through public checked API and existing password/keytab delegates. |
 
+| FU-TST-R15 | minor | Parity symbol evidence conflates inline child declarations with parent API | fixed | `symbol_evidence_requires_full_owner_path` red/green; commit `test: exclude unsupported inline parity scopes (FU-TST-R15)` | Inline module bodies are removed before declaration and alias resolution; public parent declarations after the scope still resolve. | task-22g-rskrb5-ng-zero-open-items.log: private/public/restricted children cannot prove parent types, methods or aliases; Go18 pass and both owner regressions pass. |
+
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 
 - RVX-u1-01 → FU-TST-01 (also: the test never exercises the router wiring cited by the review doc; covered by FU-TST-01's Proof)

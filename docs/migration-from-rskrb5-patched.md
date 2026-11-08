@@ -7,6 +7,10 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Parity scopes (FU-TST-R15): declarations inside inline modules cannot serve as
+symbol evidence. Cite a supported out-of-line public API; private, restricted
+and public inline children are all conservatively excluded from this scanner.
+
 Reference links (FU-CI-R04): multiline Markdown reference definitions now receive
 the same package-membership checks as inline links. Fix missing or excluded
 destinations even when the destination follows the definition label on a new line.

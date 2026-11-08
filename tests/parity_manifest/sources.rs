@@ -143,6 +143,26 @@ fn symbol_evidence_requires_full_owner_path() {
         "/*\npub struct Ghost;\n*/".to_owned(),
     )];
     assert!(!declares(&ghost, "keytab::Ghost"));
+    for visibility in ["mod", "pub mod", "pub(crate) mod"] {
+        let nested = vec![(
+            "src/keytab.rs".to_owned(),
+            format!(
+                "{visibility} hidden {{\npub struct Ghost;\nimpl Ghost {{\npub fn new() {{}}\n}}\npub type Alias = Ghost;\n}}\npub struct Real;"
+            ),
+        )];
+        for symbol in [
+            "keytab::Ghost",
+            "keytab::Ghost::new",
+            "keytab::Alias",
+            "keytab::hidden::Ghost",
+        ] {
+            assert!(
+                !declares(&nested, symbol),
+                "unsupported inline scope admitted {symbol}"
+            );
+        }
+        assert!(declares(&nested, "keytab::Real"));
+    }
     let real = vec![
         ("src/keytab.rs".to_owned(), "pub struct Keytab;".to_owned()),
         (
@@ -240,8 +260,60 @@ fn sanitized_sources(sources: &[(String, String)]) -> Result<Vec<(String, String
     let texts = fields.iter().skip(1).step_by(2);
     Ok(paths
         .zip(texts)
-        .map(|(path, text)| ((*path).to_owned(), (*text).to_owned()))
+        .map(|(path, text)| ((*path).to_owned(), without_inline_modules(text)))
         .collect())
+}
+
+/// Inline modules are unsupported evidence scopes; erase their bodies before alias resolution.
+fn without_inline_modules(source: &str) -> String {
+    let mut result = String::new();
+    let mut rest = source;
+    while let Some(index) = rest.find("mod ") {
+        let (prefix, candidate) = rest.split_at(index);
+        result.push_str(prefix);
+        let boundary = prefix
+            .chars()
+            .next_back()
+            .is_none_or(|ch| !ch.is_alphanumeric() && ch != '_');
+        let delimiter = candidate.find(['{', ';']);
+        if boundary
+            && let Some(open) = delimiter
+            && candidate
+                .get(open..)
+                .is_some_and(|tail| tail.starts_with('{'))
+        {
+            let mut depth = 0_usize;
+            let mut end = candidate.len();
+            for (position, character) in candidate
+                .char_indices()
+                .skip_while(|(position, _)| *position < open)
+            {
+                if character == '{' {
+                    depth = depth.saturating_add(1);
+                }
+                if character == '}' {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        end = position.saturating_add(1);
+                        break;
+                    }
+                }
+            }
+            let (removed, remaining) = candidate.split_at(end);
+            result.extend(
+                removed
+                    .chars()
+                    .map(|ch| if ch == '\n' { '\n' } else { ' ' }),
+            );
+            rest = remaining;
+        } else {
+            let (keyword, remaining) = candidate.split_at(4);
+            result.push_str(keyword);
+            rest = remaining;
+        }
+    }
+    result.push_str(rest);
+    result
 }
 
 /// Resolve declarations after lexical removal of comments and literals.

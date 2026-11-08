@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Parity symbol evidence rejects declarations and aliases inside unsupported
+  inline module scopes instead of attributing them to the parent (FU-TST-R15).
+
 - Package-link validation scans reference destinations on the following line,
   including angle-wrapped targets and escaped labels (FU-CI-R04).
 
