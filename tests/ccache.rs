@@ -76,6 +76,12 @@ mod tests {
             assert!(!rendered.contains(marker), "credential payload disclosed");
         }
         assert!(rendered.contains("alice") && rendered.contains("len"));
+        assert!(format!("{credential:?}").contains("ticket_len: 4, second_ticket_len: 4"));
+        assert!(format!("{:?}", cache.config_entries()).contains("value_len: 4"));
+        assert_eq!(
+            format!("{:?}", credential.auth_data),
+            "[AuthorizationDataEntry { ad_type: 1, data_len: 4 }]"
+        );
         Ok(())
     }
 
@@ -952,6 +958,39 @@ mod tests {
             // Then the original admitted cache survives unchanged.
             assert_eq!(reparsed, decoded);
         }
+        Ok(())
+    }
+
+    /// Credential payloads survive serde unchanged and grow geometrically while decoding.
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serde_credential_payloads_roundtrip() -> Result<(), TestError> {
+        // Given a credential whose ticket, second ticket and authorization data are nonempty.
+        let principal = Principal::new("R", 1, vec!["alice".to_owned()]);
+        let mut credential =
+            Credential::config_entry(principal.clone(), "opaque", None, vec![0x5a; 100].into());
+        credential.second_ticket = vec![0x6b; 9].into();
+        credential
+            .auth_data
+            .push(AuthorizationDataEntry::new(1, vec![0x7c; 3].into()));
+        let mut cache = CCache::new(principal);
+        cache.credentials_mut().push(credential);
+        // When the cache goes through JSON.
+        let decoded: CCache = serde_json::from_value(serde_json::to_value(&cache)?)?;
+        // Then every payload is identical, and the 100-byte ticket was grown by doubling,
+        // so decoding costs a logarithmic number of erased copies, not one per byte.
+        assert_eq!(decoded, cache);
+        let ticket = &decoded.credentials().first().context("credential")?.ticket;
+        assert!(ticket.capacity() <= 128, "capacity {}", ticket.capacity());
+        // And a payload that is not a byte sequence is refused with the visitor's expectation.
+        let mut value = serde_json::to_value(&cache)?;
+        *value
+            .pointer_mut("/credentials/0/ticket")
+            .context("ticket")? = "not bytes".into();
+        let error = serde_json::from_value::<CCache>(value)
+            .err()
+            .context("string ticket accepted")?;
+        assert!(error.to_string().contains("a sequence of bytes"), "{error}");
         Ok(())
     }
 

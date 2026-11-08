@@ -186,6 +186,37 @@ mod tests {
         Ok(())
     }
 
+    /// The timestamp-plugin refusal is decided at its own entry, before later plugin entries.
+    #[test]
+    fn restrictive_preauth_plugin_named_before_later_entries() -> Result<(), Box<dyn Error>> {
+        use rskrb5_ng::error::Config as Failure;
+        for (assignment, relation) in [
+            ("disable = encrypted_timestamp", "disable"),
+            ("enable_only = pkinit", "enable_only"),
+        ] {
+            // Given a clpreauth restriction and a later-sorted malformed plugin entry.
+            let input = format!(
+                "[plugins]\n clpreauth = {{\n {assignment}\n }}\n interface = {{\n disable = \"two modules\"\n }}\n"
+            );
+            // When the profile is parsed.
+            let failure = Config::parse(&input)
+                .err()
+                .ok_or("preauth policy ignored")?;
+            // Then the restriction is refused, not the later malformed entry.
+            assert!(
+                matches!(
+                    failure,
+                    Failure::NotYetEffective {
+                        relation: named,
+                        package: "plan 2 WP-16"
+                    } if named == relation
+                ),
+                "{failure:?}"
+            );
+        }
+        Ok(())
+    }
+
     /// Nonempty typed subtrees round-trip through serde without losing path keys.
     #[cfg(feature = "serde")]
     #[test]

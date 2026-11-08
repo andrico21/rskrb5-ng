@@ -460,6 +460,7 @@ mod tests {
         debug.write_fmt(format_args!("{key:?}"))?;
 
         assert_eq!(debug, "EncryptionKey { etype: 18, value_len: 4 }");
+        assert_eq!(format!("{:?}", key.value), "KeyBytes { len: 4 }");
         assert!(
             !debug.contains("1, 2, 3, 4"),
             "the key bytes are not rendered"

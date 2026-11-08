@@ -66,4 +66,21 @@ mod tests {
         }
         Ok(())
     }
+
+    /// A version 3 cache with a credential serializes within its preallocated capacity.
+    #[test]
+    fn version_three_serialization_fits_preallocation() -> Result<(), Box<dyn Error>> {
+        // Given a version 3 cache holding one credential (v3 stores the key etype twice).
+        let principal = Principal::new("R", 1, vec!["alice".to_owned()]);
+        let credential =
+            Credential::config_entry(principal.clone(), "opaque", None, vec![7; 7].into());
+        let mut cache = CCache::new(principal);
+        cache.version = 3;
+        cache.credentials_mut().push(credential);
+        // When it is serialized (the test build asserts the output never outgrows its capacity).
+        let encoded = cache.to_bytes()?;
+        // Then the bytes parse back to the same version 3 cache.
+        assert_eq!(CCache::parse(&encoded)?, cache);
+        Ok(())
+    }
 }

@@ -104,6 +104,29 @@ mod tests {
         Ok(())
     }
 
+    /// Two tightened deferred relations: the earlier catalogue row is the one refused.
+    #[test]
+    fn first_tightened_libdefaults_relation_is_named() -> Result<(), Box<dyn Error>> {
+        // Given default_rcache_name, which precedes request_timeout in the catalogue, both tightened.
+        let input = "[libdefaults]\n default_rcache_name = dfl:\n request_timeout = 5\n";
+        // When the profile is parsed in Compatible mode.
+        let failure = Config::parse_with_mode(input, ParseMode::Compatible)
+            .err()
+            .ok_or("tightening ignored")?;
+        // Then classification refuses default_rcache_name with its owning package.
+        assert!(
+            matches!(
+                failure,
+                super::super::Error::NotYetEffective {
+                    relation: "default_rcache_name",
+                    package: "plan 2 WP-20"
+                }
+            ),
+            "{failure:?}"
+        );
+        Ok(())
+    }
+
     /// Every deferred libdefaults row has an explicit safe/tightening decision.
     #[test]
     fn every_libdefaults_boundary_is_reviewed() -> Result<(), Box<dyn Error>> {
