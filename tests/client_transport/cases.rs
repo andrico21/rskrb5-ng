@@ -56,7 +56,7 @@ mod tests {
     mod password_results;
     /// Unsigned outcomes through both public checked helpers.
     mod unsigned;
-    use core::{fmt, net::SocketAddr};
+    use core::{fmt, future::poll_fn, net::SocketAddr, task::Poll};
     use std::{
         env,
         io::{self, Write as _},
@@ -102,30 +102,27 @@ mod tests {
                 drop(socket);
                 Ok::<_, io::Error>(request)
             });
-            let duplicate = tokio::spawn(async move {
-                match timeout(Duration::from_millis(250), read_tcp_request(&second)).await {
-                    Ok(Ok((_, mut socket))) => {
-                        write_tcp_response(&mut socket, b"duplicate").await?;
-                        Ok::<_, io::Error>(true)
+            let transport = Tokio::new().with_timeout(Duration::from_secs(1));
+            let result = bounded(Duration::from_secs(10), "password exchange and duplicate observation", async {
+                tokio::select! {
+                    biased;
+                    duplicate = second.accept() => {
+                        drop(duplicate?);
+                        Err::<Vec<u8>, TestError>("a possibly committed mutation was delivered twice".into())
                     }
-                    Ok(Err(error)) => Err(error),
-                    Err(_elapsed) => Ok(false),
+                    result = transport.send_to_kpasswd_realm(&config, KdcProtocol::Tcp, "TEST.GOKRB5", b"mutation") => {
+                        let pending = poll_fn(|cx| Poll::Ready(second.poll_accept(cx).is_pending())).await;
+                        assert!(pending, "duplicate connection queued at client completion");
+                        result.map_err(Into::into)
+                    }
                 }
-            });
-            let result = Tokio::new()
-                .with_timeout(Duration::from_secs(1))
-                .send_to_kpasswd_realm(&config, KdcProtocol::Tcp, "TEST.GOKRB5", b"mutation")
-                .await;
+            }).await?;
             assert_eq!(
                 bounded(Duration::from_secs(10), "committed request task", committed).await???,
                 b"mutation"
             );
             assert!(
-                !bounded(Duration::from_secs(10), "duplicate request task", duplicate).await???,
-                "a possibly committed mutation was delivered twice"
-            );
-            assert!(
-                matches!(result, Err(ClientError::KpasswdOutcomeUnknown(_))),
+                matches!(result.as_ref().err().and_then(|error| error.downcast_ref::<ClientError>()), Some(ClientError::KpasswdOutcomeUnknown(_))),
                 "lost reply must be outcome unknown"
             );
             Ok::<_, TestError>(())
@@ -146,23 +143,27 @@ mod tests {
                     udp.recv_from(&mut bytes),
                 )
                 .await??;
-                let duplicate = timeout(Duration::from_millis(250), tcp.accept())
-                    .await
-                    .is_ok();
-                Ok::<_, io::Error>((length, duplicate))
+                Ok::<_, io::Error>(length)
             });
-            let result = Tokio::new()
-                .with_timeout(Duration::from_millis(50))
-                .send_to_kpasswd_realm(&config, KdcProtocol::Auto, "TEST.GOKRB5", b"mutation")
-                .await;
-            let (length, duplicate) =
+            let transport = Tokio::new().with_timeout(Duration::from_millis(50));
+            let result = bounded(Duration::from_secs(10), "UDP password exchange", async {
+                tokio::select! {
+                    biased;
+                    duplicate = tcp.accept() => {
+                        drop(duplicate?);
+                        Err::<Vec<u8>, TestError>("delivered UDP mutation retried over TCP".into())
+                    }
+                    result = transport.send_to_kpasswd_realm(&config, KdcProtocol::Auto, "TEST.GOKRB5", b"mutation") => {
+                        let pending = poll_fn(|cx| Poll::Ready(tcp.poll_accept(cx).is_pending())).await;
+                        assert!(pending, "duplicate TCP connection queued at completion");
+                        result.map_err(Into::into)
+                    }
+                }
+            }).await?;
+            let length =
                 bounded(Duration::from_secs(10), "password delivery task", received).await???;
             assert_eq!(length, 8);
-            assert!(
-                !duplicate,
-                "delivered UDP mutation must not be retried over TCP"
-            );
-            assert!(matches!(result, Err(ClientError::KpasswdOutcomeUnknown(_))));
+            assert!(matches!(result.as_ref().err().and_then(|error| error.downcast_ref::<ClientError>()), Some(ClientError::KpasswdOutcomeUnknown(_))));
             Ok::<_, TestError>(())
         })
     }
