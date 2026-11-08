@@ -23,6 +23,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Lint workflow admission rejects container, services and options settings that
+  can override the interpreter environment (FU-GATE-R06).
+
 - Workflow readers reject escaped keys and unsupported mapping syntax rather
   than certifying commands under a different YAML interpretation (FU-GATE-R05).
 

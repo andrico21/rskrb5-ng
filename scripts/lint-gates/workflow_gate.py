@@ -219,6 +219,9 @@ def wiring_errors(workflow: str, prek: str) -> list[str]:
                 "shell",
                 "defaults",
                 "working-directory",
+                "container",
+                "services",
+                "options",
             }:
                 errors.append(f"the lint-gates job may not use `{line.key}:`")
             if line.indent == structure[steps].indent + 4 and line.key:
@@ -331,6 +334,18 @@ def self_test() -> int:
         + " }]\n"
     )
     assert wiring_errors(ci, prek) == [], wiring_errors(ci, prek)
+    for setting in (
+        "container: ubuntu:24.04",
+        "container:\n      image: ubuntu:24.04\n      options: --env PYTHONOPTIMIZE=1",
+        "container:\n      image: ubuntu:24.04\n      options: --env BASH_ENV=/tmp/skip-gates",
+        "services:\n      helper:\n        image: ubuntu:24.04\n        options: --privileged",
+        "options: --env PYTHONOPTIMIZE=1",
+        "'container': {image: ubuntu:24.04, options: '--env PYTHONOPTIMIZE=1'}",
+    ):
+        hostile = ci.replace("    steps:\n", f"    {setting}\n    steps:\n", 1)
+        assert wiring_errors(hostile, prek), (
+            f"container execution override accepted: {setting}"
+        )
     for key in (
         r'"\u0069f"',
         r'"\x69f"',
