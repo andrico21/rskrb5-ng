@@ -7,6 +7,11 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Reciprocal MIC policy (FU-SPN-R12): changing a validated context's initiator
+subkey no longer bypasses its retained policy. Supply permitted keys, or explicitly
+configure legacy permission and membership before use. An explicit acceptor
+subkey still takes precedence; completion verification also admits its selected key.
+
 Mutation evidence (FU-GATE-R04): each whole-crate campaign shard must retain
 one successful baseline and a nonempty `mutants.json` with the exact tested
 mutant names. Rerun filtered, baseline-free or incomplete shards; an end time

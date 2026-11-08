@@ -7,6 +7,7 @@ use super::{
     der::{DerReader, TAG_APPLICATION_0, TAG_CONTEXT_0, TAG_SEQUENCE, read_single_tlv},
     encryption_key_from_rasn, ensure_kerberos_mechanism,
 };
+use crate::crypto::Use;
 
 /// Select only an offered Kerberos OID and require integrity for non-first selection.
 ///
@@ -113,6 +114,12 @@ pub(super) fn response_mic(
         .as_ref()
         .or(ap_req.subkey.as_ref())
         .unwrap_or(&ap_req.session_key);
+    let usage = if options.subkey.is_some() || ap_req.subkey.is_some() {
+        Use::AcceptorSubkey
+    } else {
+        Use::SessionKey
+    };
+    ap_req.crypto_policy.check_use(key.etype, usage)?;
     let flags = GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR
         | if options.subkey.is_some() {
             GSS_TOKEN_FLAG_ACCEPTOR_SUBKEY

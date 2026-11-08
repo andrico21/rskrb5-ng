@@ -334,6 +334,12 @@ Original review rows:
 
 | FU-OPS-R02 | nit | Two critic coverage subsections carry finding-shaped heading ids | dismissed | - | none | Not findings: `critics-f22ea5b/u2.md` line 71 `### Round-1 rows and scratch-revert sample` and `u5.md` line 89 `### Round-1 reversion sample (nine rows)` are coverage sections that review round-1 rows; neither states a defect, and the round's id map `critics-f22ea5b/id-map.tsv` lists only the U2-01..04 and U5-01..06 findings. `register_check.py` indexes every `### <word>-<word>` heading, so both are indexed here against this dismissal (task-22f convergence; reports and checker are read-only). |
 
+## Critic round 3
+
+| ID | Sev | Title | Status | Proof (tests, commit) | Behaviour change | Evidence or plan-2 todo |
+| --- | --- | --- | --- | --- | --- | --- |
+| FU-SPN-R12 | minor | Reciprocal MIC key selection omits retained policy admission | fixed | `reciprocal_mic_admits_selected_key` red/green; commit `spnego: admit selected reciprocal MIC keys (FU-SPN-R12)` | Reciprocal signing checks the selected subkey with AcceptorSubkey or fallback with SessionKey; completion verification rechecks its selected key. | task-22g-rskrb5-ng-zero-open-items.log: denied legacy and excluded AES fallback, explicit legacy opt-in/membership, acceptor precedence and session fallback controls. |
+
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 
 - RVX-u1-01 → FU-TST-01 (also: the test never exercises the router wiring cited by the review doc; covered by FU-TST-01's Proof)

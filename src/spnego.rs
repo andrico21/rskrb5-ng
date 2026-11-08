@@ -1724,6 +1724,7 @@ impl InitiatorContext {
             } else {
                 self.initiator_subkey.as_ref().unwrap_or(&self.session_key)
             };
+            self.crypto_policy.check_use(key.etype, Use::SessionKey)?;
             let encoded = self.spnego_token.encode()?;
             let list = negotiation::received_mech_types(&encoded)?;
             mic.with_payload(list)

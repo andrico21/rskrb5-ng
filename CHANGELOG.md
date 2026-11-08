@@ -23,6 +23,10 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- Reciprocal MIC signing and completion verification recheck the selected key
+  against the retained context policy, including initiator-subkey fallbacks
+  (FU-SPN-R12).
+
 - Mutation completeness rejects empty shards, absent or failed baselines, and
   generated/tested identity mismatches rather than accepting equal counts alone
   (FU-GATE-R04).
