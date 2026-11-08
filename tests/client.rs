@@ -159,6 +159,15 @@ mod review_validity;
 #[path = "client/session_cache.rs"]
 #[cfg(feature = "tokio")]
 mod session_cache;
+#[path = "client/subkey_reply.rs"]
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod subkey_reply;
 #[path = "client/tgs_exchange.rs"]
 mod tgs_exchange;
 

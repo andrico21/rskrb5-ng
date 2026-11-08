@@ -7,6 +7,26 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+TGS subkey replies (FU-CLI-R11): retain the returned `TgsFastRequestParts`
+and pass `authenticator_subkey`, not the TGT session key, to the existing
+reply processor. The built request records RFC 4120 usage 9; requests without
+a subkey continue to use usage 8. `BuiltTgsReq::new` constructs metadata for
+requests without a subkey; use the subkey builders for subkey-bearing requests.
+The public `reply_key_usage: TgsReplyKey` metadata distinguishes `Session`
+from `Subkey`; manually constructed metadata must match the authenticator.
+This completes the existing TGS path, not FAST armor negotiation.
+
+```rust,no_run
+# #[cfg(feature = "messages")]
+# fn complete(parts: &rskrb5_ng::client::TgsFastRequestParts, reply: &[u8]) -> Result<(), rskrb5_ng::error::Client> {
+let session = rskrb5_ng::client::process_tgs_rep(
+    &parts.request, reply, &parts.authenticator_subkey,
+)?;
+drop(session);
+# Ok(())
+# }
+```
+
 Include ordering (FU-CFG-R11): an unquoted empty scalar before an `include`
 or `includedir` now wins over later values just like `""`. If the included
 value should win, remove the earlier empty assignment. The next parent

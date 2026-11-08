@@ -237,10 +237,22 @@ impl BuiltAsReq {
         }
     }
 }
+/// Key source determining the RFC 4120 TGS reply encryption usage.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum TgsReplyKey {
+    /// TGT session key, RFC 4120 key usage 8.
+    Session,
+    /// Authenticator subkey, RFC 4120 key usage 9.
+    Subkey,
+}
+
 /// Encoded TGS-REQ plus validation metadata needed when processing the TGS-REP.
 #[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct BuiltTgsReq {
+    /// RFC 4120 reply key usage selected by the authenticator construction path.
+    pub reply_key_usage: TgsReplyKey,
     /// Policy used for the request and all subsequent reply validation.
     pub crypto_policy: CryptoPolicy,
     /// Request clock snapshot and acceptable reply start-time skew.
@@ -276,6 +288,7 @@ impl BuiltTgsReq {
         nonce: u32,
     ) -> Self {
         Self {
+            reply_key_usage: TgsReplyKey::Session,
             crypto_policy: CryptoPolicy::default(),
             reply_clock: (SystemTime::now(), Duration::from_secs(300)),
             message,
@@ -3302,6 +3315,7 @@ fn build_tgs_req_for_realm_inner(
 
     Ok((
         BuiltTgsReq {
+            reply_key_usage: subkey.map_or(TgsReplyKey::Session, |_| TgsReplyKey::Subkey),
             crypto_policy,
             reply_clock: (options.now, options.clock_skew),
             message,
@@ -3851,6 +3865,11 @@ fn ticket_flags_contain_bits(flags: &rasn_kerberos::TicketFlags, bits: u32) -> b
 }
 
 /// Decrypt and validate a TGS-REP against the original TGS-REQ.
+///
+/// For a subkey-bearing builder, pass the returned
+/// [`TgsFastRequestParts::authenticator_subkey`] as the reply key. The request
+/// retains usage 9 for that key; ordinary requests use the TGT key and usage 8
+/// (RFC 4120 sections 3.3 and 5.4.2).
 /// # Errors
 ///
 /// Returns [`Error::Kdc`] for a KRB-ERROR reply, decode and decryption errors,
@@ -3916,8 +3935,15 @@ fn process_tgs_rep_inner(
         });
     }
 
-    let enc_part =
-        kdc_rep::decrypt_tgs_rep_enc_part(&tgs_rep, tgs_session_key).map_err(kdc_rep_error)?;
+    let enc_part = kdc_rep::decrypt_kdc_rep_enc_part(
+        &tgs_rep.0.enc_part,
+        tgs_session_key,
+        match request.reply_key_usage {
+            TgsReplyKey::Session => 8,
+            TgsReplyKey::Subkey => 9,
+        },
+    )
+    .map_err(kdc_rep_error)?;
     request
         .crypto_policy
         .check_use(enc_part.key.r#type, Use::SessionKey)?;

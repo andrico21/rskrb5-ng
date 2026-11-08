@@ -23,6 +23,10 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- TGS requests built with authenticator subkeys retain reply usage 9, so the
+  normal and referral reply processors accept conforming subkey-encrypted
+  replies when passed the returned subkey (FU-CLI-R11).
+
 - Empty profile scalars retain first-value precedence across include and
   includedir directives; next-line subsections still allow intervening
   includes (FU-CFG-R11).
