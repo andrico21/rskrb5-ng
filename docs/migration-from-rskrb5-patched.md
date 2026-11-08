@@ -7,6 +7,12 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Include ordering (FU-CFG-R11): an unquoted empty scalar before an `include`
+or `includedir` now wins over later values just like `""`. If the included
+value should win, remove the earlier empty assignment. The next parent
+structural line can still open a subsection after intervening includes;
+included files retain independent grammar state.
+
 Realm selectors (FU-CFG-R10): `Realm::relations` and programmatic
 `protocol_relations` are checked before configured discovery. Enabling removed
 protocols now returns the same `Policy::RejectedFeature` as text parsing;

@@ -2059,7 +2059,8 @@ impl IncludeExpansion {
     /// first directive whose target cannot be read or breaks a limit.
     fn expand(&mut self, input: &str, depth: usize) -> Result<(), Error> {
         let mut state = profile_syntax::State::default();
-        for (index, line) in input.lines().enumerate() {
+        let mut lines = input.lines().enumerate();
+        while let Some((index, line)) = lines.next() {
             let cleaned = profile_syntax::comments(line).trim();
             if cleaned.is_empty() {
                 continue;
@@ -2072,6 +2073,12 @@ impl IncludeExpansion {
                 return Err(Error::UnsupportedDynamicModule);
             }
             if let Some(directive) = IncludeDirective::parse(cleaned) {
+                let opens_subsection = lines
+                    .clone()
+                    .map(|(_, text)| profile_syntax::comments(text).trim())
+                    .find(|text| !text.is_empty() && IncludeDirective::parse(text).is_none())
+                    == Some("{");
+                state.before_include(opens_subsection, &mut self.profile)?;
                 self.splice(directive, depth)?;
                 continue;
             }
