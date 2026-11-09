@@ -9,7 +9,7 @@ mod tests {
     use core::error::Error;
 
     use rskrb5_ng::{ccache, keytab};
-    use zeroize::ZeroizeOnDrop;
+    use zeroize::{Zeroize as _, ZeroizeOnDrop};
 
     /// Require independently erased storage at the public replacement boundary.
     fn owns_erasure<T>(_: &T)
@@ -25,6 +25,12 @@ mod tests {
         let keytab = keytab::EncryptionKey::new(18, hex::decode("62".repeat(32))?);
         owns_erasure(&cache.value);
         owns_erasure(&keytab.value);
-        Ok(())
+        let mut erased = keytab.value.clone();
+        erased.zeroize();
+        if erased.is_empty() {
+            Ok(())
+        } else {
+            Err("zeroize left key bytes".into())
+        }
     }
 }

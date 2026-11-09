@@ -143,6 +143,16 @@ mod tests {
         }
 
         assert_eq!(keytab.to_bytes().context("keytab serializes")?, expected);
+        let mut borrowed = Keytab::new();
+        for etype in [18_i32, 17_i32, 23_i32] {
+            borrowed
+                .add_entry_from_password_ref(principal.clone(), b"hello123", timestamp, 31, etype)
+                .context("borrowed-password entry is added")?;
+        }
+        assert_eq!(
+            borrowed.to_bytes().context("borrowed keytab serializes")?,
+            expected
+        );
         Ok(())
     }
 
@@ -460,6 +470,7 @@ mod tests {
         debug.write_fmt(format_args!("{key:?}"))?;
 
         assert_eq!(debug, "EncryptionKey { etype: 18, value_len: 4 }");
+        assert_eq!(format!("{:?}", key.value), "KeyBytes { len: 4 }");
         assert!(
             !debug.contains("1, 2, 3, 4"),
             "the key bytes are not rendered"

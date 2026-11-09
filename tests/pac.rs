@@ -155,6 +155,12 @@ mod tests {
             !format!("{pac:?}").contains(marker.trim_matches(['[', ']'])),
             "raw PAC key exposed"
         );
+        assert_eq!(info.user_session_key.as_bytes(), &[0x42; 16]);
+        assert_eq!(
+            format!("{:?}", info.user_session_key),
+            "SessionKey { len: 16, .. }"
+        );
+        assert!(format!("{pac:?}").starts_with("Pac { c_buffers: 1,"));
         Ok(())
     }
 

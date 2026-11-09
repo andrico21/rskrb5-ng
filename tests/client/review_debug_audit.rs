@@ -34,10 +34,14 @@ mod tests {
             Principal::user("TEST.GOKRB5", "service"),
             TgsReq::new(timestamp(1_893_553_452)?, 42),
         )?;
+        let as_req = sample_request()?;
+        let tgs_req = sample_tgs_request(&session)?;
         for (rendered, credential) in [
             (format!("{session:?}"), session.ticket.as_slice()),
             (format!("{ap:?}"), ap.der.as_slice()),
             (format!("{fast:?}"), fast.ap_req_der.as_slice()),
+            (format!("{as_req:?}"), as_req.der.as_slice()),
+            (format!("{tgs_req:?}"), tgs_req.der.as_slice()),
         ] {
             assert!(
                 !rendered.contains(&format!("{credential:?}")),

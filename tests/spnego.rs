@@ -74,18 +74,29 @@ mod tests {
         assert!(format!("{context:?}").starts_with("InitiatorContext"));
         let credential = format!("{:?}", context.krb5_token.message);
         assert!(!format!("{:?}", context.krb5_token).contains(&credential));
+        assert!(format!("{:?}", context.krb5_token).starts_with("Krb5MechToken {"));
+        assert!(format!("{:?}", context.krb5_token).contains(&format!(
+            "message_len: {}",
+            context.krb5_token.message.len()
+        )));
         let Token::Init(init) = &context.spnego_token else {
             return Err(TestError::from("expected initial token"));
         };
         let wire = format!("{:?}", init.mech_token.as_ref().context("mechanism token")?);
+        assert!(format!("{init:?}").starts_with("NegTokenInit {"));
+        assert!(format!("{init:?}").contains("mech_token_len: Some("));
+        let response =
+            NegTokenResp::accept_completed().with_response_token(context.ap_req_der.to_vec());
+        assert!(format!("{response:?}").starts_with("NegTokenResp {"));
+        assert!(format!("{response:?}").contains(&format!(
+            "response_token_len: Some({})",
+            context.ap_req_der.len()
+        )));
         for diagnostic in [
             format!("{init:?}"),
             format!("{:?}", context.spnego_token),
             format!("{:?}", NegotiationToken::Init(init.clone())),
-            format!(
-                "{:?}",
-                NegTokenResp::accept_completed().with_response_token(context.ap_req_der.to_vec())
-            ),
+            format!("{response:?}"),
         ] {
             assert!(!diagnostic.contains(&credential));
             assert!(!diagnostic.contains(&wire));

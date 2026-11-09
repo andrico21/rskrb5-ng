@@ -9,8 +9,8 @@ use crate::{
     model::read,
     render::STATUSES,
     sources::{
-        anchor_exists, cargo_features, check_test_name, declares, rejected_feature_variants,
-        rust_sources,
+        anchor_exists, cargo_features, check_test_name, declares_in, rejected_feature_variants,
+        rust_sources, sanitized_sources, scopes,
     },
 };
 
@@ -81,6 +81,8 @@ pub(crate) fn check_shape(spec: &Spec, areas: &[&str], rows: &[Feature]) {
 /// Every named test, symbol, Cargo feature, rejection variant and anchor exists.
 pub(crate) fn check_evidence(rows: &[Feature]) -> Result<(), TestError> {
     let sources = rust_sources("src")?;
+    let cleaned = sanitized_sources(&sources)?;
+    let modules = scopes(&cleaned, &sources);
     let flags = cargo_features()?;
     let variants = rejected_feature_variants()?;
     for feature in rows {
@@ -90,7 +92,7 @@ pub(crate) fn check_evidence(rows: &[Feature]) -> Result<(), TestError> {
         }
         for symbol in &feature.rust_symbols {
             assert!(
-                declares(&sources, symbol),
+                declares_in(&cleaned, &modules, symbol),
                 "{id}: undeclared symbol {symbol}"
             );
         }
