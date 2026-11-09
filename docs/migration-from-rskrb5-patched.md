@@ -1016,6 +1016,11 @@ usize)` validates a KDC TCP record mark.
 Rows added by the critic rounds of the follow-up review, by area. Each note
 names its register row.
 
+Uncompressed claims (FU-PAC-R10): `ClaimsSetMetadata::decoded_claims_set_bytes`
+now returns `ClaimsDecompressedSizeMismatch` when NONE-compression metadata
+declares a different decoded size. Producers must supply the actual byte count;
+matching empty and nonempty streams remain accepted.
+
 #### Configuration
 
 Address aliases (FU-CFG-R01): the first occurrence of either `no_addresses`

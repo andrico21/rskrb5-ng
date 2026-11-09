@@ -23,6 +23,12 @@ limits are recorded under FU-OPS-03.
 
 ## Register
 
+Critic round `critics-5b34622`, lane A:
+
+| ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
+| --- | --- | --- | --- | --- | --- | --- |
+| FU-PAC-R10 | minor | Uncompressed claims ignore declared decoded size | fixed | `uncompressed_claims_require_exact_declared_size`; commit `pac: validate uncompressed claims size (FU-PAC-R10)` | NONE compression rejects both size mismatch directions with ClaimsDecompressedSizeMismatch; matching empty and nonempty output remains accepted. | task-22o: wire-only regression failed before equality admission; red receipt fixA6-claims-red.log. |
+
 Critic rounds `critics-f22ea5b` and `critics-b8d23a5`, lane B:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |

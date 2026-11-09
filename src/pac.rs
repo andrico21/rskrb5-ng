@@ -1149,7 +1149,17 @@ impl ClaimsSetMetadata {
             && self.claims_set_bytes.len() <= 0x0010_0000)
             .ok_or(Error::ClaimsOutputLimit)?;
         match self.compression_format {
-            CLAIMS_COMPRESSION_FORMAT_NONE => Ok(self.claims_set_bytes.clone()),
+            CLAIMS_COMPRESSION_FORMAT_NONE => {
+                let expected = usize::try_from(self.uncompressed_claims_set_size)
+                    .map_err(|_out_of_range| Error::LengthOverflow)?;
+                let actual = self.claims_set_bytes.len();
+                (actual == expected).ok_or(Error::ClaimsDecompressedSizeMismatch {
+                    compression_format: self.compression_format,
+                    expected,
+                    actual,
+                })?;
+                Ok(self.claims_set_bytes.clone())
+            }
             CLAIMS_COMPRESSION_FORMAT_LZNT1 => decompress_claims_set_bytes::<Lznt1>(
                 self.compression_format,
                 &self.claims_set_bytes,

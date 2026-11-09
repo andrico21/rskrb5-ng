@@ -394,6 +394,8 @@ bullet of this section, this one describes 0.3.0.
 
 Security fail-closed parsing and verification:
 
+- Uncompressed PAC claims now require the declared decoded size to equal the
+  actual byte count, just as compressed claims do (FU-PAC-R10).
 - SPNEGO sequences with duplicate or reordered known fields fail with the new
   `Spnego::InvalidFieldOrder`; legal omissions are still accepted (FU-SPN-03).
 - Unknown constructed SPNEGO context fields `[4]` to `[30]` are skipped after
