@@ -181,7 +181,9 @@ pub(super) fn kerberos_string(value: &str) -> Result<rasn_kerberos::KerberosStri
 ///
 /// Returns [`Error::FrameTooShort`] when `bytes` is shorter than the header,
 /// [`Error::InvalidMessageLength`] when the declared length is shorter than the
-/// header, and [`Error::TruncatedFrame`] when it is longer than `bytes`.
+/// header or differs from `bytes.len()` because the supplied frame has trailing
+/// bytes, and [`Error::TruncatedFrame`] when the declared length exceeds
+/// `bytes.len()`.
 pub(super) fn parse_header(bytes: &[u8]) -> Result<Frame<'_>, Error> {
     let [
         length_high,
