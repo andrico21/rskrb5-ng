@@ -912,7 +912,8 @@ pub enum Kadmin {
         /// Actual byte length.
         actual: usize,
     },
-    /// The frame prefix length is smaller than the fixed kpasswd header.
+    /// The declared kpasswd frame length is shorter than the fixed header or
+    /// differs from the supplied frame length because it has trailing bytes.
     #[error("invalid kadmin reply message length: {0}")]
     InvalidMessageLength(u16),
     /// Kerberos message field did not contain the expected value.

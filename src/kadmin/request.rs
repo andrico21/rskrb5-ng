@@ -46,8 +46,11 @@ impl Request {
     ///
     /// # Errors
     ///
-    /// Returns the frame header errors ([`Error::FrameTooShort`],
-    /// [`Error::InvalidMessageLength`], [`Error::TruncatedFrame`]),
+    /// Returns [`Error::FrameTooShort`] when the input is shorter than the
+    /// header, [`Error::InvalidMessageLength`] when the declared frame length
+    /// is shorter than the header or differs from the supplied length because
+    /// of trailing bytes, and [`Error::TruncatedFrame`] when the declared length
+    /// exceeds the supplied length;
     /// [`Error::InvalidRequestVersion`] for a version other than
     /// [`CHANGE_PASSWORD_REQUEST_VERSION`], [`Error::InvalidApReqLength`] when
     /// the AP-REQ length leaves no room for the AP-REQ or the KRB-PRIV, and the

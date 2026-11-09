@@ -19,8 +19,11 @@ impl Reply {
     ///
     /// # Errors
     ///
-    /// Returns the frame header errors ([`Error::FrameTooShort`],
-    /// [`Error::InvalidMessageLength`], [`Error::TruncatedFrame`]),
+    /// Returns [`Error::FrameTooShort`] when the input is shorter than the
+    /// header, [`Error::InvalidMessageLength`] when the declared frame length
+    /// is shorter than the header or differs from the supplied length because
+    /// of trailing bytes, and [`Error::TruncatedFrame`] when the declared length
+    /// exceeds the supplied length;
     /// [`Error::InvalidReplyVersion`] for a framed version other than
     /// [`CHANGE_PASSWORD_REPLY_VERSION`], [`Error::InvalidApRepLength`] when the
     /// AP-REP length leaves no room for the KRB-PRIV, the decode errors of the
