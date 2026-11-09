@@ -236,6 +236,13 @@ mod tests {
         let acceptor = MicToken::decode(&decode_hex(MIC_FROM_ACCEPTOR)?, true)
             .context("acceptor MIC decodes")?
             .with_payload(decode_hex(MIC_PAYLOAD)?);
+        assert_eq!(acceptor.flags(), GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR);
+        assert_eq!(acceptor.snd_seq_num(), 0x575e_85d6);
+        assert_eq!(acceptor.payload(), Some(decode_hex(MIC_PAYLOAD)?.as_slice()));
+        assert_eq!(
+            acceptor.checksum(),
+            decode_hex(MIC_FROM_ACCEPTOR)?.get(16..)
+        );
         acceptor
             .verify(&key, GSSAPI_ACCEPTOR_SIGN_USAGE)
             .context("acceptor MIC verifies")?;
@@ -252,6 +259,7 @@ mod tests {
 
         let mut initiator = MicToken::new_initiator(decode_hex(MIC_PAYLOAD)?, &key)
             .context("initiator MIC builds")?;
+        assert_eq!(initiator.flags(), 0);
         initiator.clear_payload();
         assert_eq!(
             initiator,
@@ -340,6 +348,7 @@ mod tests {
     fn wrap_token_decodes_and_roundtrips_gokrb5_vectors() -> Result<(), TestError> {
         let acceptor_bytes = decode_hex(WRAP_FROM_ACCEPTOR)?;
         let token = WrapToken::decode(&acceptor_bytes, true).context("acceptor wrap decodes")?;
+        assert_eq!(token.snd_seq_num(), 0x575e_85d6);
         assert_eq!(
             token,
             WrapToken::default()
