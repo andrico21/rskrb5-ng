@@ -7,6 +7,11 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+When maintaining parity manifests, cite symbols enabled by at least one resolved
+Cargo feature closure (FU-TST-R20). The evidence lexer uses the same closure
+universe as `feature_closures.py list`, including feature implications; independent
+Boolean assignments such as `tower` without `http` no longer count as evidence.
+
 Configured acceptors (`Validator`, `NegotiateLayer` and `NegotiateService`)
 retain permanent `Policy::RejectedFeature` causes from both whole-configuration
 admission and enctype policy construction (FU-SPN-R17). Inspect `Error::source`

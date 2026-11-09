@@ -117,6 +117,8 @@ and contradictory predicates cannot establish public symbols. Supported feature,
 Unix/Windows, pointer-width and debug predicates must admit a non-test build;
 unsupported predicates are excluded, not presumed enabled. The adapter preserves
 item boundaries and does not change lint gates, which still inspect disabled code.
+Feature predicates use the resolved closures from `feature_closures.py list`,
+not independent feature assignments, so Cargo implications also constrain evidence.
 
 `docsrs_check.py` holds `[package.metadata.docs.rs]` to the advertised
 optional APIs (`http`, `tower`); the `docs` job builds rustdoc with exactly

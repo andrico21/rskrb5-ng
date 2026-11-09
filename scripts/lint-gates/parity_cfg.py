@@ -16,10 +16,11 @@ from __future__ import annotations
 import itertools
 import re
 import sys
-import tomllib
+from functools import cache
 from pathlib import Path
 
 from common import blank_ranges, scan_items
+from feature_closures import Closure, load
 from rust_lex import (
     iter_attributes,
     match_bracket,
@@ -89,6 +90,11 @@ def admitted(attribute: str, enabled: frozenset[str]) -> bool:
     return not active or all(nested)
 
 
+@cache
+def feature_universe() -> tuple[Closure, ...]:
+    return tuple(load(Path(__file__).resolve().parents[2]))
+
+
 def public_source(source: str) -> str:
     clean = strip_comments_and_strings(source)
     literals = strip_comments_and_strings(source, keep_literals=True)
@@ -125,8 +131,8 @@ def public_source(source: str) -> str:
             ranges.append((start, close + 1))
             continue
         grouped.setdefault(scope, []).append(original)
-    with (Path(__file__).resolve().parents[2] / "Cargo.toml").open("rb") as stream:
-        features = frozenset(tomllib.load(stream)["features"])
+    closures = feature_universe()
+    features = frozenset().union(*(closure.features for closure in closures))
     for scope, conditions in grouped.items():
         conditions = [
             condition
@@ -137,14 +143,12 @@ def public_source(source: str) -> str:
         names = sorted(
             set(re.findall(r'feature\s*=\s*"([\w-]+)"', " ".join(conditions)))
         )
-        supported = set(names) <= features and len(names) <= 10
+        supported = set(names) <= features
         possible = False
         if supported:
             try:
-                for flags in itertools.product((False, True), repeat=len(names)):
-                    selected = frozenset(
-                        f"feature={name}" for name, flag in zip(names, flags) if flag
-                    )
+                for closure in closures:
+                    selected = frozenset(f"feature={name}" for name in closure.features)
                     for platform, width, debug in itertools.product(
                         ("unix", "windows"), ("32", "64"), (False, True)
                     ):
@@ -172,6 +176,11 @@ def self_test() -> int:
         "not(all())",
         "all(test, unix)",
         'all(feature = "serde", not(feature = "serde"))',
+        'all(feature = "tower", not(feature = "http"))',
+        'all(feature = "spnego", not(feature = "messages"))',
+        'all(feature = "tokio", not(feature = "messages"))',
+        'all(feature = "default", not(feature = "serde"))',
+        'all(feature = "tower", not(any(feature = "http", feature = "messages")))',
     ):
         source = f"#[cfg({condition})]\npub struct Ghost;\npub struct Real;"
         clean = public_source(source)
@@ -183,6 +192,8 @@ def self_test() -> int:
         "unix",
         'feature = "serde"',
         "any(test, windows)",
+        'all(feature = "tower", feature = "http")',
+        'all(not(feature = "default"), feature = "serde")',
     ):
         assert "pub struct Real;" in public_source(
             f"#[cfg({condition})]\npub struct Real;"
@@ -192,6 +203,8 @@ def self_test() -> int:
         "#[cfg_attr(all(), cfg(any()))]\npub struct Ghost;\npub struct Real;",
         "#[cfg(unix)]\n#[cfg(windows)]\npub struct Ghost;\npub struct Real;",
         "#[cfg(any())]\n#[derive(Debug)]\npub struct Ghost;\npub struct Real;",
+        '#[cfg(feature = "tower")]\n#[cfg(not(feature = "http"))]\npub struct Ghost;\npub struct Real;',
+        '#[cfg_attr(feature = "http", cfg(any()))]\n#[cfg(feature = "tower")]\npub struct Ghost;\npub struct Real;',
     ):
         clean = public_source(source)
         assert "Ghost" not in clean and "ghost" not in clean, source

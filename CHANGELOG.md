@@ -386,6 +386,10 @@ Release workflow, CI docs and fixture scripts:
 
 #### Changes from the follow-up review
 
+- Parity symbol evidence must be satisfiable by an actual Cargo feature closure;
+  impossible combinations such as Tower without HTTP no longer certify an API
+  (FU-TST-R20).
+
 - Explicit empty `auth_to_local_names` maps now produce the WP-17 deferred
   diagnostic and fail Strict parsing. Populated maps report once per admitted
   map rather than once per mapping entry (FU-CFG-R14).
