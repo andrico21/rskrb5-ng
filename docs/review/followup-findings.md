@@ -141,5 +141,6 @@ is a parity feature, not a defect>`.
 | executor:todo-16#transit-validator-rustdoc | FU-DOC-R02 | no |
 | executor:todo-21#replay-quota-partial-expiry | FU-TST-R10 | no |
 | executor:todo-22#packaged-tests-include-excluded-fixture | FU-TST-R16 | no |
+| executor:todo-22#secret-debug-audit-feature-closures | FU-TST-R21 | no |
 | executor:todo-22#windows-loopback-port-pair-permission-denied | FU-TST-R19 | no |
 | executor:todo-24#kadmin-invalid-message-length | FU-DOC-R14 | no |

@@ -131,7 +131,8 @@ mod tests {
         if identity.starts_with("src/http.rs") {
             return cfg!(feature = "http")
                 && (!identity.contains("TowerError") && !identity.contains("NegotiateFuture")
-                    || cfg!(feature = "tower"));
+                    || cfg!(feature = "tower"))
+                && (!identity.contains("NegotiateHttp") || cfg!(feature = "tokio"));
         }
         if identity.starts_with("src/spnego") || identity.ends_with("::Spnego") {
             return cfg!(feature = "spnego");

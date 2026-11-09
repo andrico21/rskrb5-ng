@@ -7,24 +7,23 @@
 )]
 pub(super) mod tests {
     use core::error::Error;
-    #[cfg(feature = "http")]
+    #[cfg(any(feature = "tower", all(feature = "http", feature = "tokio")))]
+    use core::{convert::Infallible, future::ready};
+    #[cfg(feature = "tower")]
     use core::{
-        convert::Infallible,
-        future::{Ready, ready},
+        future::Ready,
         task::{Context, Poll},
     };
-    #[cfg(feature = "http")]
-    use std::time::UNIX_EPOCH;
 
+    #[cfg(feature = "http")]
+    use rskrb5_ng::error::Http as HttpError;
     #[cfg(feature = "tower")]
     use rskrb5_ng::http::TowerError;
-    use rskrb5_ng::spnego::{
-        Krb5MechToken, MicToken, NegTokenInit, NegTokenResp, NegotiationToken, Token, WrapToken,
-    };
-    #[cfg(feature = "http")]
     use rskrb5_ng::{
-        client::{KdcError, principal::Principal},
-        error::{Client as ClientError, Http as HttpError, Spnego as SpnegoError},
+        error::{Client as ClientError, Spnego as SpnegoError},
+        spnego::{
+            Krb5MechToken, MicToken, NegTokenInit, NegTokenResp, NegotiationToken, Token, WrapToken,
+        },
     };
 
     use crate::tests::{pattern, redacted};
@@ -55,6 +54,7 @@ pub(super) mod tests {
 
     pub(crate) fn run_audit() -> Result<(), Box<dyn Error>> {
         negotiation_tokens_redact_credentials()?;
+        error_wrappers_redact_credential_payloads();
         #[cfg(feature = "tokio")]
         client_wrappers_redact_passwords()?;
         #[cfg(all(feature = "http", feature = "tokio"))]
@@ -94,31 +94,54 @@ pub(super) mod tests {
         Ok(())
     }
 
-    /// Password-backed clients redact their retained credential in every wrapper.
+    /// Client error whose nested KDC e-data holds a credential payload.
+    fn kdc_client_error(secret: &[u8]) -> ClientError {
+        use std::time::UNIX_EPOCH;
+
+        use rskrb5_ng::client::{KdcError, principal::Principal};
+        ClientError::Kdc(Box::new(
+            KdcError::new(UNIX_EPOCH, 0, 25, Principal::tgt_service("EXAMPLE.COM"))
+                .with_e_data(Some(secret.to_vec().into())),
+        ))
+    }
+
+    /// SPNEGO, HTTP and Tower error wrappers redact nested credential payloads.
+    #[test]
+    fn error_wrappers_redact_credential_payloads() {
+        let secret = pattern(65);
+        redacted(
+            &SpnegoError::Client(Box::new(kdc_client_error(&secret))),
+            &[&secret],
+        );
+        #[cfg(feature = "http")]
+        redacted(
+            &HttpError::Spnego(SpnegoError::Client(Box::new(kdc_client_error(&secret)))),
+            &[&secret],
+        );
+        #[cfg(feature = "tower")]
+        redacted(&TowerError::<Vec<u8>>::Inner(secret.clone()), &[&secret]);
+    }
+
+    /// Negotiate client wrappers redact their retained password.
     #[cfg(feature = "tokio")]
     #[test]
     fn client_wrappers_redact_passwords() -> Result<(), Box<dyn Error>> {
         use rskrb5_ng::{
             Config,
             client::{
-                Tokio, TokioClientCredentials,
+                Tokio,
                 negotiate::{BlockingClient, Client},
                 principal::Principal,
                 transport::KdcProtocol,
             },
         };
         let secret = pattern(65);
-        redacted(
-            &TokioClientCredentials::Password(secret.clone().into()),
-            &[&secret],
-        );
         let client = Tokio::with_password(
             Config::new(),
             KdcProtocol::Tcp,
             Principal::user("EXAMPLE.COM", "alice"),
             secret.clone(),
         );
-        redacted(&client, &[&secret]);
         redacted(&Client::from_tokio_client(client), &[&secret]);
         let blocking = BlockingClient::with_password(
             Config::new(),
@@ -142,22 +165,11 @@ pub(super) mod tests {
             response: Box::new(http_types::Response::new(secret.clone())),
         };
         redacted(&error, &[&secret]);
-        let nested = ClientError::Kdc(Box::new(
-            KdcError::new(UNIX_EPOCH, 0, 25, Principal::tgt_service("EXAMPLE.COM"))
-                .with_e_data(Some(secret.clone().into())),
-        ));
-        redacted(&SpnegoError::Client(Box::new(nested)), &[&secret]);
-        let http_nested = ClientError::Kdc(Box::new(
-            KdcError::new(UNIX_EPOCH, 0, 25, Principal::tgt_service("EXAMPLE.COM"))
-                .with_e_data(Some(secret.clone().into())),
-        ));
-        redacted(&HttpError::Client(http_nested), &[&secret]);
+        redacted(&HttpError::Client(kdc_client_error(&secret)), &[&secret]);
         redacted(
             &NegotiateHttpError::<Vec<u8>, Vec<u8>>::Sender(secret.clone()),
             &[&secret],
         );
-        #[cfg(feature = "tower")]
-        redacted(&TowerError::Inner(secret.clone()), &[&secret]);
         Ok(())
     }
 

@@ -16,7 +16,9 @@ pub(super) mod tests {
 
     use rasn::der;
     #[cfg(feature = "http")]
-    use rskrb5_ng::http::{ClientNegotiateResponse, set_authorization_header};
+    use rskrb5_ng::http::ClientNegotiateResponse;
+    #[cfg(feature = "tower")]
+    use rskrb5_ng::http::set_authorization_header;
     #[cfg(feature = "tower")]
     use rskrb5_ng::keytab::Keytab;
     #[cfg(feature = "spnego")]
@@ -57,7 +59,31 @@ pub(super) mod tests {
         kdc_diagnostics_redact_credential_payloads()?;
         sessions_and_validators_redact_credentials()?;
         message_wrappers_redact_credentials()?;
+        #[cfg(feature = "tokio")]
+        tokio_clients_redact_passwords();
         authenticated_service_owners_redact_credentials()
+    }
+
+    /// Tokio clients and their credential enum redact a retained password.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_clients_redact_passwords() {
+        use rskrb5_ng::{
+            Config,
+            client::{Tokio, TokioClientCredentials, transport::KdcProtocol},
+        };
+        let secret = pattern(65);
+        redacted(
+            &TokioClientCredentials::Password(secret.clone().into()),
+            &[&secret],
+        );
+        let client = Tokio::with_password(
+            Config::new(),
+            KdcProtocol::Tcp,
+            Principal::user("EXAMPLE.COM", "alice"),
+            secret.clone(),
+        );
+        redacted(&client, &[&secret]);
     }
 
     /// Hash access is borrowed and diagnostics redact both independently owned hashes.
