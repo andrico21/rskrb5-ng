@@ -1,7 +1,7 @@
 //! Configured password endpoint selection.
 
 use super::{Config, Error, KdcEndpoint, KdcProtocol, Tokio};
-use crate::error::Config as ConfigError;
+use crate::{config::restrictions, error::Config as ConfigError};
 
 /// Prefer configured password servers, using DNS only when enabled.
 ///
@@ -16,6 +16,7 @@ pub(super) async fn discover(
     realm: &str,
     protocol: KdcProtocol,
 ) -> Result<Vec<KdcEndpoint>, Error> {
+    restrictions::config(config)?;
     if let Some(realm_entry) = config.realm(realm)
         && !realm_entry.kpasswd_server.is_empty()
     {

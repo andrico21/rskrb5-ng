@@ -2,6 +2,77 @@
 
 use super::*;
 
+/// Configured password entry points reject permanent selectors before discovery or delivery.
+#[test]
+fn configured_password_paths_reject_permanent_selectors() -> Result<(), TestError> {
+    use rskrb5_ng::{
+        config::{Toggle, section_values::Value},
+        error::{Config as ConfigError, Policy, RejectedFeature},
+    };
+    runtime()?.block_on(async {
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let mut config = config_with_kpasswd_servers([listener.local_addr()?.to_string()], 1)?;
+        drop(config.realms.first_mut().ok_or("realm")?.relations.insert(
+            "kpasswd_cleartext".to_owned(),
+            Value::Boolean(Toggle::Enabled),
+        ));
+        let (built, options) = kpasswd_context::request()?;
+        let transport = Tokio::new();
+        for path in 0_u8..4 {
+            let operation = async {
+                match path {
+                    0 => transport
+                        .discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Tcp)
+                        .await
+                        .map(|_| ()),
+                    1 => transport
+                        .send_to_kpasswd_realm(&config, KdcProtocol::Tcp, "TEST.GOKRB5", &built.der)
+                        .await
+                        .map(|_| ()),
+                    2 => transport
+                        .exchange_kpasswd_request_with_config(
+                            &config,
+                            KdcProtocol::Tcp,
+                            "TEST.GOKRB5",
+                            &built.request,
+                        )
+                        .await
+                        .map(|_| ()),
+                    _ => transport
+                        .exchange_kpasswd_result_with_config(
+                            &config,
+                            KdcProtocol::Tcp,
+                            "TEST.GOKRB5",
+                            &built,
+                            &options,
+                        )
+                        .await
+                        .map(|_| ()),
+                }
+            };
+            let result = bounded(
+                Duration::from_secs(10),
+                "configuration admission",
+                without_connection(&listener, operation),
+            )
+            .await??;
+            assert!(
+                matches!(
+                    result,
+                    Err(ClientError::Config(ConfigError::Policy(
+                        Policy::RejectedFeature {
+                            feature: RejectedFeature::UnprotectedPasswordChange,
+                            reason: _
+                        }
+                    )))
+                ),
+                "configured path {path} bypassed admission"
+            );
+        }
+        Ok(())
+    })
+}
+
 /// Authenticated legacy subkeys require explicit permission at the checked reply boundary.
 #[test]
 fn checked_replies_enforce_legacy_policy() -> Result<(), TestError> {

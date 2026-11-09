@@ -394,6 +394,8 @@ bullet of this section, this one describes 0.3.0.
 
 Security fail-closed parsing and verification:
 
+- Configured password discovery, raw forwarding and checked exchanges reject
+  permanently prohibited configuration selectors before delivery (FU-TRN-R10).
 - S4U2Proxy places its explicit evidence ticket before option-provided tickets,
   so the KDC request and authenticated reply validation use that evidence (FU-CLI-R14).
 - Uncompressed PAC claims now require the declared decoded size to equal the

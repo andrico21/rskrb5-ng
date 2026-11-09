@@ -1016,6 +1016,11 @@ usize)` validates a KDC TCP record mark.
 Rows added by the critic rounds of the follow-up review, by area. Each note
 names its register row.
 
+Configured password operations (FU-TRN-R10): public discovery, raw forwarding
+and checked result helpers apply whole-config admission. Remove prohibited
+selectors such as `kpasswd_cleartext`; refusal occurs before delivery and is a
+local `Client::Config` error, not `KpasswdOutcomeUnknown`.
+
 Proxy evidence (FU-CLI-R14): the explicit evidence argument is now the first
 additional ticket even when `TgsReq::with_additional_tickets` supplies others.
 Those other tickets keep their relative order after the evidence. No call-site

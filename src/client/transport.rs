@@ -891,6 +891,7 @@ impl Tokio {
         realm: &str,
         request: &kadmin::Request,
     ) -> Result<kadmin::Reply, Error> {
+        restrictions::config(config)?;
         let frame = request.encode()?;
         let response = self
             .send_to_kpasswd_realm(config, protocol, realm, &frame)
@@ -959,6 +960,7 @@ impl Tokio {
         request: &BuiltKpasswdRequest,
         options: &RequestOptions,
     ) -> Result<kadmin::ChangePasswordResult, Error> {
+        restrictions::config(config)?;
         let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)?;
         password_result::outgoing(request, &policy)?;
         let reply = self
