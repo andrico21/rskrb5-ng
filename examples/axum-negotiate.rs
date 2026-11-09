@@ -72,8 +72,8 @@ fn app_state(keytab: Keytab) -> AppState {
 async fn index(Extension(context): Extension<AcceptedContext>) -> String {
     format!(
         "authenticated as {}@{}\n",
-        context.ap_req.client.name(),
-        context.ap_req.client.realm
+        context.ap_req.client().name(),
+        context.ap_req.client().realm
     )
 }
 

@@ -23,9 +23,9 @@ mod tests {
     fn replaceable_key_bytes_own_erasure() -> Result<(), Box<dyn Error>> {
         let cache = ccache::EncryptionKey::new(18, hex::decode("51".repeat(32))?);
         let keytab = keytab::EncryptionKey::new(18, hex::decode("62".repeat(32))?);
-        owns_erasure(&cache.value);
-        owns_erasure(&keytab.value);
-        let mut erased = keytab.value.clone();
+        owns_erasure(cache.value());
+        owns_erasure(keytab.value());
+        let mut erased = keytab.value().clone();
         erased.zeroize();
         if erased.is_empty() {
             Ok(())

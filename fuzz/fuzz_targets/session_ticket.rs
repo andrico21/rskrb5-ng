@@ -14,8 +14,8 @@ pub(super) fn encoded(service: &Principal, session_key: &EncryptionKey) -> Optio
         ],
     );
     let mut body = ticket::decrypt_ticket_enc_part(&template.ticket, &ticket_key).ok()?;
-    body.key.r#type = session_key.etype;
-    body.key.value = session_key.value.to_vec().into();
+    body.key.r#type = session_key.etype();
+    body.key.value = session_key.value().to_vec().into();
     let mut name = template.ticket.sname;
     name.r#type = service.name_type;
     name.string = service

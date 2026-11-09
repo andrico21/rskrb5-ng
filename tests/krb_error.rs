@@ -60,26 +60,23 @@ mod tests {
 
         assert_eq!(krb_error.pvno, Integer::from(KRB5_PVNO));
         assert_eq!(krb_error.msg_type, Integer::from(KRB_ERROR_MSG_TYPE));
-        assert_eq!(info.ctime, Some(timestamp(TEST_TIME_SECONDS)?));
-        assert_eq!(info.cusec, Some(123_456));
-        assert_eq!(info.stime, timestamp(TEST_TIME_SECONDS)?);
-        assert_eq!(info.susec, 123_456);
-        assert_eq!(info.error_code, 60_i32);
+        assert_eq!(info.ctime(), Some(timestamp(TEST_TIME_SECONDS)?));
+        assert_eq!(info.cusec(), Some(123_456));
+        assert_eq!(info.stime(), timestamp(TEST_TIME_SECONDS)?);
+        assert_eq!(info.susec(), 123_456);
+        assert_eq!(info.error_code(), 60_i32);
         assert_eq!(
-            info.client.as_ref().ok_or("client principal exists")?.realm,
+            info.client().ok_or("client principal exists")?.realm,
             "ATHENA.MIT.EDU"
         );
         assert_eq!(
-            info.client
-                .as_ref()
-                .ok_or("client principal exists")?
-                .name(),
+            info.client().ok_or("client principal exists")?.name(),
             "hftsai/extra"
         );
-        assert_eq!(info.service.realm, "ATHENA.MIT.EDU");
-        assert_eq!(info.service.name(), "hftsai/extra");
-        assert_eq!(info.e_text.as_deref(), Some("krb5data"));
-        assert_eq!(info.e_data.as_deref(), Some(b"krb5data".as_slice()));
+        assert_eq!(info.service().realm, "ATHENA.MIT.EDU");
+        assert_eq!(info.service().name(), "hftsai/extra");
+        assert_eq!(info.e_text(), Some("krb5data"));
+        assert_eq!(info.e_data(), Some(b"krb5data".as_slice()));
         assert_eq!(encode_krb_error(&krb_error)?, bytes);
         Ok(())
     }
@@ -92,16 +89,16 @@ mod tests {
         let krb_error = decode_krb_error(&bytes)?;
         let info = decode_krb_error_info(&bytes)?;
 
-        assert_eq!(info.ctime, None);
-        assert_eq!(info.cusec, Some(123_456));
-        assert_eq!(info.stime, timestamp(TEST_TIME_SECONDS)?);
-        assert_eq!(info.susec, 123_456);
-        assert_eq!(info.error_code, 60_i32);
-        assert_eq!(info.client, None);
-        assert_eq!(info.service.realm, "ATHENA.MIT.EDU");
-        assert_eq!(info.service.name(), "hftsai/extra");
-        assert_eq!(info.e_text, None);
-        assert_eq!(info.e_data, None);
+        assert_eq!(info.ctime(), None);
+        assert_eq!(info.cusec(), Some(123_456));
+        assert_eq!(info.stime(), timestamp(TEST_TIME_SECONDS)?);
+        assert_eq!(info.susec(), 123_456);
+        assert_eq!(info.error_code(), 60_i32);
+        assert_eq!(info.client(), None);
+        assert_eq!(info.service().realm, "ATHENA.MIT.EDU");
+        assert_eq!(info.service().name(), "hftsai/extra");
+        assert_eq!(info.e_text(), None);
+        assert_eq!(info.e_data(), None);
         assert_eq!(encode_krb_error(&krb_error)?, bytes);
         Ok(())
     }

@@ -394,6 +394,34 @@ bullet of this section, this one describes 0.3.0.
 
 Security fail-closed parsing and verification:
 
+- Credential-bearing public owners now use private fields and borrowed getters:
+  client built AS/TGS/AP/FAST requests, sessions and KDC errors; password frames,
+  password-encryption inputs and verified replies; keytab entries and ccache
+  credentials; message payload wrappers; PAC containers and validation records;
+  GSS tokens, initiator options/contexts; service validation/reply results; HTTP
+  response wrappers. Existing `with_*` methods and new `set_*` methods replace
+  owned secrets with erasure, while ASN.1 dependency copies retain the documented
+  residual-copy limitation. Metadata fields move to getters too because the
+  strict profile prohibits partially public records (FU-CLI-R13, FU-TRN-R09,
+  FU-PAC-R09).
+- Credential-bearing error wrappers and generic HTTP response/error/future
+  diagnostics redact nested causes and bodies. The class audit binds source
+  inventories to populated compact/pretty formatting cases and named live-wipe
+  tests; new secret owners, derived Debug and unreviewed mutation paths fail it
+  (FU-CLI-R13, FU-TRN-R09, FU-PAC-R09).
+
+- PAC NTLM hashes and credential payloads have private storage and borrowed
+  accessors; replacement setters erase old bytes and maintain size/validity
+  metadata (FU-PAC-R09). Password built-request DER uses zeroizing owners and
+  password frames redact ciphertext in Debug (FU-TRN-R09).
+- AS/TGS/AP request options and explicit TGS request inputs redact credential
+  payloads and confounders in compact and pretty Debug output (FU-CLI-R13).
+- Configured password discovery, raw forwarding and checked exchanges reject
+  permanently prohibited configuration selectors before delivery (FU-TRN-R10).
+- S4U2Proxy places its explicit evidence ticket before option-provided tickets,
+  so the KDC request and authenticated reply validation use that evidence (FU-CLI-R14).
+- Uncompressed PAC claims now require the declared decoded size to equal the
+  actual byte count, just as compressed claims do (FU-PAC-R10).
 - SPNEGO sequences with duplicate or reordered known fields fail with the new
   `Spnego::InvalidFieldOrder`; legal omissions are still accepted (FU-SPN-03).
 - Unknown constructed SPNEGO context fields `[4]` to `[30]` are skipped after

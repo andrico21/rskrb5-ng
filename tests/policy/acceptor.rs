@@ -39,7 +39,7 @@ pub(super) fn fixture(
     let session_key = EncryptionKey::new(session_id, vec![0x46; session_type.key_len()]);
     part.key = rasn_kerberos::EncryptionKey {
         r#type: session_id,
-        value: session_key.value.to_vec().into(),
+        value: session_key.value().to_vec().into(),
     };
     auth.subkey = subkey.map(|id| rasn_kerberos::EncryptionKey {
         r#type: id,
@@ -58,7 +58,7 @@ pub(super) fn fixture(
         kvno: None,
         cipher: session_type
             .encrypt_message_with_confounder(
-                &session_key.value,
+                session_key.value(),
                 &der::encode(&auth)?,
                 11,
                 &vec![0x23; session_type.confounder_len()],
@@ -123,7 +123,7 @@ fn acceptor_applies_explicit_policy() -> Result<(), Box<dyn Error>> {
         .with_crypto_policy(CryptoPolicy::from_libdefaults(&config.libdefaults)?)
         .validate_ap_req(&bytes)?;
     // Then RC4 remains usable only under that permission.
-    assert_eq!(accepted.session_key.etype, 23_i32);
+    assert_eq!(accepted.session_key().etype(), 23_i32);
     let (aes_keys, aes_bytes, aes_now) = fixture(18, 18, None)?;
     let narrow = Config::parse("[libdefaults]\npermitted_enctypes = aes128-cts")?;
     let error = Validator::new(&aes_keys)
@@ -186,13 +186,17 @@ fn initiator_rejects_excluded_ap_rep_subkey() -> Result<(), Box<dyn Error>> {
     // Given an AES128 context and valid reply encrypted by its accepted session key.
     let config = Config::parse("[libdefaults]\npermitted_enctypes = aes128-cts")?;
     let mut session = super::client::session(17, 17)?;
-    session.session_key.value = vec![0x11; 16].into();
+    session.set_session_key(EncryptionKey::new(
+        session.session_key().etype(),
+        vec![0x11; 16],
+    ));
     let context = spnego::init_sec_context(
         &session,
         InitiatorContextOptions::new()
             .with_crypto_policy(CryptoPolicy::from_libdefaults(&config.libdefaults)?),
     )?;
-    let auth = ap_req::decrypt_ap_req_authenticator(&context.ap_req, &session.session_key, 11)?;
+    let auth =
+        ap_req::decrypt_ap_req_authenticator(context.ap_req_ref(), session.session_key(), 11)?;
     let part = rasn_kerberos::EncApRepPart {
         ctime: auth.ctime,
         cusec: auth.cusec,
@@ -203,7 +207,7 @@ fn initiator_rejects_excluded_ap_rep_subkey() -> Result<(), Box<dyn Error>> {
         seq_number: Some(42),
     };
     let reply =
-        ap_rep::build_ap_rep_with_confounder(&part, &session.session_key, None, &[0x22_u8; 16])?;
+        ap_rep::build_ap_rep_with_confounder(&part, session.session_key(), None, &[0x22_u8; 16])?;
     // When accepting an otherwise correctly bound encrypted reply.
     let error = context
         .verify_ap_rep(&ap_rep::encode(&reply)?)
@@ -224,13 +228,17 @@ fn initiator_rejects_excluded_ap_rep_subkey() -> Result<(), Box<dyn Error>> {
     });
     let permitted_reply = ap_rep::build_ap_rep_with_confounder(
         &permitted_part,
-        &session.session_key,
+        session.session_key(),
         None,
         &[0x22_u8; 16],
     )?;
     let accepted = context.verify_ap_rep(&ap_rep::encode(&permitted_reply)?)?;
     assert_eq!(
-        accepted.subkey.ok_or("accepted subkey missing")?.etype,
+        accepted
+            .subkey()
+            .as_ref()
+            .ok_or("accepted subkey missing")?
+            .etype(),
         17_i32
     );
     Ok(())

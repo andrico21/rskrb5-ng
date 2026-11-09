@@ -74,7 +74,7 @@ fn raw_conversion_preserves_records_without_granting_permission() -> Result<(), 
         .err()
         .ok_or("insecure import admitted")?;
     // Then preservation grants no permission; checked import retains the D2 cause.
-    assert_eq!(raw.first().ok_or("raw record")?.key.etype, 1_i32);
+    assert_eq!(raw.first().ok_or("raw record")?.key().etype(), 1_i32);
     let crypto = failure.source().ok_or("crypto cause")?;
     assert!(matches!(
         crypto

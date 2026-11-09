@@ -33,24 +33,24 @@ fn subkey_builders_complete_conforming_reply() -> Result<(), TestError> {
                 TgsRequestParts::new(options, &[0; 16], &subkey),
             )?
         };
-        let encoded = synthetic_tgs_rep(&parts.request, 42, &tgt.session_key)?;
+        let encoded = synthetic_tgs_rep(parts.request(), 42, tgt.session_key())?;
         let mut reply = kdc_rep::decode_tgs_rep(&encoded)?;
-        let plaintext = kdc_rep::decrypt_tgs_rep_enc_part(&reply, &tgt.session_key)?;
+        let plaintext = kdc_rep::decrypt_tgs_rep_enc_part(&reply, tgt.session_key())?;
         let cipher = KerberosEtype::from_etype_id(18)
             .ok_or("AES")?
             .encrypt_message_with_confounder(
-                &parts.authenticator_subkey.value,
+                parts.authenticator_subkey().value(),
                 &kdc_rep::encode_enc_tgs_rep_part(&plaintext)?,
                 9,
                 &[0; 16],
             )?;
         reply.0.enc_part.cipher = cipher.into();
         let session = client::process_tgs_rep(
-            &parts.request,
+            parts.request(),
             &kdc_rep::encode_tgs_rep(&reply)?,
-            &parts.authenticator_subkey,
+            parts.authenticator_subkey(),
         )?;
-        assert_eq!(session.service, parts.request.service);
+        assert_eq!(session.service(), parts.request().service());
     }
     Ok(())
 }

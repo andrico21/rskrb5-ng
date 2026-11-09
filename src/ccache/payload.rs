@@ -78,7 +78,7 @@ impl<'de> Visitor<'de> for Bytes {
 }
 
 /// Wipe the live allocation before its zeroizing owner erases spare capacity.
-fn erase(bytes: &mut Zeroizing<Vec<u8>>) {
+pub(super) fn erase(bytes: &mut Zeroizing<Vec<u8>>) {
     bytes.as_mut_slice().zeroize();
     #[cfg(test)]
     super::payload_tests::EVENTS.with_borrow_mut(|events| {

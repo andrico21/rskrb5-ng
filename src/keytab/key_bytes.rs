@@ -62,6 +62,15 @@ impl fmt::Debug for Bytes {
 impl Zeroize for Bytes {
     #[inline]
     fn zeroize(&mut self) {
+        #[cfg(test)]
+        let length = self.0.len();
+        self.0.as_mut_slice().zeroize();
+        #[cfg(test)]
+        if length != 0 {
+            EVENTS.with_borrow_mut(|events| {
+                events.push((length, self.0.iter().all(|byte| *byte == 0)));
+            });
+        }
         self.0.zeroize();
     }
 }
@@ -74,16 +83,18 @@ impl Drop for Bytes {
     fn drop(&mut self) {
         self.0.as_mut_slice().zeroize();
         #[cfg(test)]
-        EVENTS.with_borrow_mut(|events| {
-            events.push((self.0.len(), self.0.iter().all(|byte| *byte == 0)));
-        });
+        if !self.0.is_empty() {
+            EVENTS.with_borrow_mut(|events| {
+                events.push((self.0.len(), self.0.iter().all(|byte| *byte == 0)));
+            });
+        }
     }
 }
 
 #[cfg(test)]
 std::thread_local! {
     /// Live old-allocation erasure observations, never a read after free.
-    static EVENTS: RefCell<Vec<(usize, bool)>> = const { RefCell::new(Vec::new()) };
+    pub(crate) static EVENTS: RefCell<Vec<(usize, bool)>> = const { RefCell::new(Vec::new()) };
 }
 
 #[cfg(test)]
@@ -105,8 +116,8 @@ mod tests {
         let mut cache = ccache::EncryptionKey::new(18, hex::decode("51".repeat(31))?);
         let mut keytab = keytab::EncryptionKey::new(18, hex::decode("62".repeat(32))?);
         EVENTS.with_borrow_mut(Vec::clear);
-        cache.value = vec![0x73; 33].into();
-        keytab.value = vec![0x84; 34].into();
+        cache.set_value(vec![0x73; 33]);
+        keytab.set_value(vec![0x84; 34]);
         EVENTS.with_borrow(|events| assert_eq!(events.as_slice(), [(31, true), (32, true)]));
         Ok(())
     }

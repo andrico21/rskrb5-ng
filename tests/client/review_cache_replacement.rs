@@ -17,30 +17,31 @@ mod tests {
         // Given a currently valid cached ticket and a shorter valid candidate.
         let mut longer = sample_tgt_session()?;
         let now = SystemTime::now();
-        longer.start_time = now.checked_sub(Duration::from_secs(60)).context("start")?;
-        longer.end_time = now.checked_add(Duration::from_hours(2)).context("end")?;
+        longer.set_start_time(now.checked_sub(Duration::from_secs(60)).context("start")?);
+        longer.set_end_time(now.checked_add(Duration::from_hours(2)).context("end")?);
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, longer.clone());
-        longer.service = Principal::user("TEST.GOKRB5", "service");
+        longer.set_service(Principal::user("TEST.GOKRB5", "service"));
         align_ticket_service(&mut longer)?;
         let mut shorter = longer.clone();
-        shorter.end_time = now
-            .checked_add(Duration::from_hours(1))
-            .context("short end")?;
+        shorter.set_end_time(
+            now.checked_add(Duration::from_hours(1))
+                .context("short end")?,
+        );
         client.cache_service_ticket(longer.clone())?;
         // When inserting a worse candidate, then the existing ticket is retained.
         client.cache_service_ticket(shorter.clone())?;
         assert_eq!(
-            client.cached_service_ticket(longer.service.clone()),
+            client.cached_service_ticket(longer.service().clone()),
             Some(longer.clone())
         );
         // When explicitly removing before insertion, then replacement is unconditional.
         assert_eq!(
-            client.remove_cached_service_ticket(longer.service.clone()),
+            client.remove_cached_service_ticket(longer.service().clone()),
             Some(longer)
         );
         client.cache_service_ticket(shorter.clone())?;
         assert_eq!(
-            client.cached_service_ticket(shorter.service.clone()),
+            client.cached_service_ticket(shorter.service().clone()),
             Some(shorter)
         );
         Ok(())
@@ -52,12 +53,13 @@ mod tests {
         // Given a longer valid primary TGT and a shorter valid candidate for the same realm.
         let mut longer = sample_tgt_session()?;
         let now = SystemTime::now();
-        longer.start_time = now.checked_sub(Duration::from_secs(60)).context("start")?;
-        longer.end_time = now.checked_add(Duration::from_hours(2)).context("end")?;
+        longer.set_start_time(now.checked_sub(Duration::from_secs(60)).context("start")?);
+        longer.set_end_time(now.checked_add(Duration::from_hours(2)).context("end")?);
         let mut shorter = longer.clone();
-        shorter.end_time = now
-            .checked_add(Duration::from_hours(1))
-            .context("short end")?;
+        shorter.set_end_time(
+            now.checked_add(Duration::from_hours(1))
+                .context("short end")?,
+        );
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, longer.clone());
         // When inserting a shorter TGT, then both indexes retain the better cached TGT.
         client.cache_tgt_session(shorter.clone())?;

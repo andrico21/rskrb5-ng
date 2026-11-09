@@ -140,16 +140,16 @@ mod tests {
             let principal = Principal::user("R", "alice");
             let options = AsReq::new(UNIX_EPOCH, 42);
             let reply_key = EncryptionKey::new(18, vec![0x42; 32]);
-            let mut checked_options = options.clone();
-            checked_options
-                .padata
-                .push(pa_enc_timestamp_with_confounder(
-                    &reply_key,
-                    UNIX_EPOCH,
-                    0,
-                    &[0x22; 16],
-                    None,
-                )?);
+            let checked_options =
+                options
+                    .clone()
+                    .with_padata(vec![pa_enc_timestamp_with_confounder(
+                        &reply_key,
+                        UNIX_EPOCH,
+                        0,
+                        &[0x22; 16],
+                        None,
+                    )?]);
             let checked = build_tgt_as_req(principal.clone(), checked_options)?;
             let expected = if scope == "realm" {
                 "disable_encrypted_timestamp"

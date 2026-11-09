@@ -11,6 +11,93 @@ use zeroize::Zeroizing;
 use super::{Error, GSSAPI_INITIATOR_SEAL_USAGE, GSSAPI_INITIATOR_SIGN_USAGE, MicToken, WrapToken};
 use crate::keytab::EncryptionKey;
 
+/// Negotiation setters erase every old live token and MIC allocation before assignment.
+#[test]
+fn negotiation_replacements_erase_live_credentials() -> Result<(), hex::FromHexError> {
+    let mut mechanism = super::Krb5MechToken::ap_req(hex::decode("41".repeat(16))?);
+    let mut initial = super::NegTokenInit::krb5(vec![0x52; 17]);
+    initial.set_mech_list_mic(Some(vec![0x63; 18].into()));
+    let mut response = super::NegTokenResp::accept_completed().with_response_token(vec![0x74; 19]);
+    response.set_mech_list_mic(Some(vec![0x85; 20].into()));
+    EVENTS.with_borrow_mut(Vec::clear);
+    mechanism.set_message(vec![0x96; 21].into());
+    initial.set_mech_token(None);
+    initial.set_mech_list_mic(None);
+    response = response.with_response_token(vec![0xa7; 22]);
+    response.set_mech_list_mic(None);
+    EVENTS.with_borrow(|events| {
+        assert_eq!(
+            events.as_slice(),
+            [
+                ("mechanism-replace", 16, true),
+                ("init-token-replace", 17, true),
+                ("init-mic-replace", 18, true),
+                ("response-token-replace", 19, true),
+                ("response-mic-replace", 20, true),
+            ]
+        );
+    });
+    Ok(())
+}
+
+/// MIC and Wrap builders erase live prior plaintext and checksum allocations.
+#[test]
+fn gss_replacements_erase_live_credentials() -> Result<(), hex::FromHexError> {
+    let mic = MicToken::new(0, 1)
+        .with_payload(hex::decode("41".repeat(16))?)
+        .with_checksum(Some(vec![0x52; 17]));
+    let wrap = WrapToken::new(0, 2)
+        .with_payload(vec![0x63; 18])
+        .with_checksum(Some(vec![0x74; 19]));
+    EVENTS.with_borrow_mut(Vec::clear);
+    let mut replaced_mic = mic.with_payload(vec![0x85; 20]).with_checksum(None);
+    let mut replaced_wrap = wrap.with_payload(vec![0x96; 21]).with_checksum(None);
+    replaced_mic.clear_payload();
+    replaced_wrap.clear_payload();
+    EVENTS.with_borrow(|events| {
+        assert_eq!(
+            events.as_slice(),
+            [
+                ("mic-payload-replace", 16, true),
+                ("mic-checksum-replace", 17, true),
+                ("wrap-payload-replace", 18, true),
+                ("wrap-checksum-replace", 19, true),
+                ("mic-payload-replace", 20, true),
+                ("wrap-payload-replace", 21, true),
+            ]
+        );
+    });
+    Ok(())
+}
+
+/// Sealing and decrypting into an existing token erase replaced checksum and plaintext.
+#[test]
+fn sealed_wrap_replacements_erase_live_credentials() -> Result<(), Box<dyn StdError>> {
+    let key = EncryptionKey::new(17, hex::decode("4142434445464748494a4b4c4d4e4f50")?);
+    let mut token = WrapToken::new(0, 42)
+        .with_payload(vec![0x52; 16])
+        .with_checksum(Some(vec![0x63; 17]));
+    EVENTS.with_borrow_mut(Vec::clear);
+    token.encrypt_payload_with_confounder(&key, GSSAPI_INITIATOR_SEAL_USAGE, &[0; 16])?;
+    let retained = token.decrypt_and_set_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE)?;
+    assert_eq!(retained, [0x52; 16]);
+    EVENTS.with_borrow(|events| {
+        let replacements = events
+            .iter()
+            .filter(|event| event.0.contains("replace"))
+            .copied()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            replacements,
+            [
+                ("wrap-seal-checksum-replace", 17, true),
+                ("wrap-payload-replace", 16, true)
+            ]
+        );
+    });
+    Ok(())
+}
+
 /// Completion verification erases its encoded offer on success and MIC failure.
 #[test]
 fn completion_offer_encoding_is_erased() -> Result<(), Box<dyn StdError>> {
@@ -47,19 +134,23 @@ fn completion_offer_encoding_is_erased() -> Result<(), Box<dyn StdError>> {
         0,
         &[0x22; 16],
     )?;
-    let auth = ap_req::decrypt_ap_req_authenticator(&context.ap_req, &session.session_key, 11)?;
+    let auth = ap_req::decrypt_ap_req_authenticator(&context.ap_req, session.session_key(), 11)?;
     let reply_part = rasn_kerberos::EncApRepPart {
         ctime: auth.ctime,
         cusec: auth.cusec,
         subkey: None,
         seq_number: Some(42),
     };
-    let reply =
-        ap_rep::build_ap_rep_with_confounder(&reply_part, &session.session_key, None, &[0x23; 16])?;
+    let reply = ap_rep::build_ap_rep_with_confounder(
+        &reply_part,
+        session.session_key(),
+        None,
+        &[0x23; 16],
+    )?;
     let encoded = Zeroizing::new(context.spnego_token.encode()?);
     let list = super::negotiation::received_mech_types(&encoded)?;
     let mut mic = MicToken::new(super::GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR, 42).with_payload(list);
-    mic.set_checksum(&session.session_key, super::GSSAPI_ACCEPTOR_SIGN_USAGE)?;
+    mic.set_checksum(session.session_key(), super::GSSAPI_ACCEPTOR_SIGN_USAGE)?;
     let mut response = super::NegTokenResp::accept_completed()
         .with_response_token(super::Krb5MechToken::ap_rep(ap_rep::encode(&reply)?).encode()?);
     response.supported_mech = Some(super::ObjectIdentifier::krb5());
@@ -206,7 +297,10 @@ fn every_staging_owner_erases_its_live_bytes() -> Result<(), Error> {
     drop(WrapToken::decode(&wire, false)?);
     assert_events(&[("wrap-decode", 17, true)]);
     wrap.encrypt_payload_with_confounder(&key, GSSAPI_INITIATOR_SEAL_USAGE, &[0x11; 16])?;
-    assert_events(&[("wrap-seal", 33, true)]);
+    assert_events(&[
+        ("wrap-seal-checksum-replace", 12, true),
+        ("wrap-seal", 33, true),
+    ]);
     wrap.verify(&key, GSSAPI_INITIATOR_SEAL_USAGE)?;
     assert_events(&[("wrap-decrypt", 5, true), ("wrap-verify", 5, true)]);
     wrap.snd_seq_num = 1;

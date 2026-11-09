@@ -62,9 +62,9 @@ mod tests {
                 &[0; 16],
             )?;
             let decoded = ap_req::decrypt_ap_req_authenticator(
-                &built.message,
-                &session.session_key,
-                ap_req::authenticator_usage_for_ticket(&built.message.ticket),
+                built.message(),
+                session.session_key(),
+                ap_req::authenticator_usage_for_ticket(&built.message().ticket),
             )?;
             assert_eq!(decoded.cksum, Some(checksum));
         }

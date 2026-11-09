@@ -1,6 +1,7 @@
 //! RFC 3244 password-change protocol helpers.
 
 use rasn::{AsnType, Decode, Decoder as _, Encode, Encoder as _, types::Integer};
+use zeroize::{Zeroize as _, Zeroizing};
 
 use crate::{
     ap_req, crypto::selection, keytab::EncryptionKey, krb_priv, krb_priv::EncKrbPrivPartOptions,
@@ -9,6 +10,7 @@ use crate::{
 
 /// Wire codecs and protocol error conversion.
 mod codec;
+mod credential_debug;
 pub mod password;
 /// Password payload ownership and encoding.
 mod payload;
@@ -55,13 +57,13 @@ const HEADER_LEN: usize = 6;
 pub struct ChangePasswdData {
     /// New password bytes.
     #[rasn(tag(explicit(0)))]
-    pub new_passwd: password::Bytes,
+    new_passwd: password::Bytes,
     /// Optional target principal name.
     #[rasn(tag(explicit(1)))]
-    pub targ_name: Option<rasn_kerberos::PrincipalName>,
+    targ_name: Option<rasn_kerberos::PrincipalName>,
     /// Optional target realm.
     #[rasn(tag(explicit(2)))]
-    pub targ_realm: Option<rasn_kerberos::Realm>,
+    targ_realm: Option<rasn_kerberos::Realm>,
 }
 
 /// Build an unencrypted KRB-PRIV part around application data.
@@ -165,15 +167,59 @@ pub fn decrypt_krb_priv_enc_part(
 }
 
 /// Complete password-change request assembled for transport.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct BuiltChangePasswordRequest {
     /// Framed request message.
-    pub request: Request,
+    request: Request,
     /// DER-encoded kpasswd request frame.
-    pub der: Vec<u8>,
+    der: Zeroizing<Vec<u8>>,
     /// Reply key used for the request subkey and KRB-PRIV encryption.
-    pub reply_key: EncryptionKey,
+    reply_key: EncryptionKey,
+}
+
+impl BuiltChangePasswordRequest {
+    /// Borrow the parsed password frame.
+    #[inline]
+    #[must_use]
+    pub const fn request(&self) -> &Request {
+        &self.request
+    }
+
+    /// Borrow encoded credential bytes; callers must erase copies.
+    #[inline]
+    #[must_use]
+    pub fn der(&self) -> &[u8] {
+        &self.der
+    }
+
+    /// Borrow the reply encryption key.
+    #[inline]
+    #[must_use]
+    pub const fn reply_key(&self) -> &EncryptionKey {
+        &self.reply_key
+    }
+
+    /// Transfer the frame and erasing owners into another request container.
+    #[inline]
+    #[must_use]
+    pub fn into_parts(self) -> (Request, Zeroizing<Vec<u8>>, EncryptionKey) {
+        let Self {
+            request,
+            der,
+            reply_key,
+        } = self;
+        (request, der, reply_key)
+    }
+
+    /// Erase retained frame bytes before adopting a replacement.
+    #[inline]
+    pub fn set_der(&mut self, value: Zeroizing<Vec<u8>>) {
+        self.der.as_mut_slice().zeroize();
+        #[cfg(test)]
+        credential_debug::observe_frame(&self.der);
+        self.der = value;
+    }
 }
 
 /// Options for constructing a full kpasswd request message.
@@ -193,13 +239,13 @@ pub struct ChangePasswdMessageOptions {
 }
 
 /// Password-change request frame containing AP-REQ and KRB-PRIV messages.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct Request {
     /// AP-REQ authenticating the password-change request.
-    pub ap_req: rasn_kerberos::ApReq,
+    ap_req: rasn_kerberos::ApReq,
     /// KRB-PRIV carrying encrypted `ChangePasswdData`.
-    pub krb_priv: rasn_kerberos::KrbPriv,
+    krb_priv: rasn_kerberos::KrbPriv,
 }
 
 /// Build a complete kpasswd request frame using a caller-supplied AP-REQ,
@@ -306,15 +352,15 @@ pub fn build_change_password_message_with_confounders(
 }
 
 /// Reply key and independent encryption confounders for a password-change message.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[non_exhaustive]
 pub struct PasswordEncryption<'request> {
     /// The key used to protect the password-change reply.
-    pub reply_key: EncryptionKey,
+    reply_key: EncryptionKey,
     /// The AP-REQ authenticator confounder.
-    pub ap_req_confounder: &'request [u8],
+    ap_req_confounder: &'request [u8],
     /// The KRB-PRIV payload confounder.
-    pub krb_priv_confounder: &'request [u8],
+    krb_priv_confounder: &'request [u8],
 }
 
 /// Build a full kpasswd request message using generated subkey and confounders.
@@ -334,12 +380,12 @@ pub fn build_change_password_message(
     session_key: &EncryptionKey,
     options: ChangePasswdMessageOptions,
 ) -> Result<BuiltChangePasswordRequest, Error> {
-    let etype =
-        selection::enctype(session_key.etype)?.ok_or(Error::UnsupportedEtype(session_key.etype))?;
-    let reply_key = EncryptionKey {
-        etype: session_key.etype,
-        value: random_key_material(etype.key_len())?.into_vec().into(),
-    };
+    let etype = selection::enctype(session_key.etype())?
+        .ok_or_else(|| Error::UnsupportedEtype(session_key.etype()))?;
+    let reply_key = EncryptionKey::new(
+        session_key.etype(),
+        random_key_material(etype.key_len())?.into_vec(),
+    );
     let ap_req_confounder = random_key_material(etype.confounder_len())?;
     let krb_priv_confounder = random_key_material(etype.confounder_len())?;
 
@@ -365,7 +411,7 @@ fn build_change_password_request_from_parts(
     reply_key: EncryptionKey,
 ) -> Result<BuiltChangePasswordRequest, Error> {
     let request = Request { ap_req, krb_priv };
-    let der = request.encode()?;
+    let der = Zeroizing::new(request.encode()?);
 
     Ok(BuiltChangePasswordRequest {
         request,
@@ -388,8 +434,8 @@ pub fn build_change_password_request(
     reply_key: EncryptionKey,
     options: EncKrbPrivPartOptions,
 ) -> Result<BuiltChangePasswordRequest, Error> {
-    let etype =
-        selection::enctype(reply_key.etype)?.ok_or(Error::UnsupportedEtype(reply_key.etype))?;
+    let etype = selection::enctype(reply_key.etype())?
+        .ok_or_else(|| Error::UnsupportedEtype(reply_key.etype()))?;
     let confounder = random_key_material(etype.confounder_len())?;
     build_change_password_request_with_confounder(
         ap_req,
@@ -401,23 +447,23 @@ pub fn build_change_password_request(
 }
 
 /// Parsed RFC 3244-style password-change reply frame.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct Reply {
     /// Total wire length; bare RFC 3244 errors have no length prefix.
-    pub message_length: u16,
+    message_length: u16,
     /// Framed version, or [`CHANGE_PASSWORD_REQUEST_VERSION`] for a bare RFC 3244 error.
-    pub version: u16,
+    version: u16,
     /// DER byte length of the AP-REP section, or zero for a KRB-ERROR reply.
-    pub ap_rep_length: u16,
+    ap_rep_length: u16,
     /// Parsed AP-REP section for successful protocol replies.
-    pub ap_rep: Option<rasn_kerberos::ApRep>,
+    ap_rep: Option<rasn_kerberos::ApRep>,
     /// Parsed KRB-PRIV section for successful protocol replies.
-    pub krb_priv: Option<rasn_kerberos::KrbPriv>,
+    krb_priv: Option<rasn_kerberos::KrbPriv>,
     /// Parsed KRB-ERROR section for error replies.
-    pub krb_error: Option<rasn_kerberos::KrbError>,
+    krb_error: Option<rasn_kerberos::KrbError>,
     /// Parsed password-change result from KRB-ERROR `e-data`.
-    pub result: Option<ChangePasswordResult>,
+    result: Option<ChangePasswordResult>,
 }
 
 /// Cleartext password-change response code and text.

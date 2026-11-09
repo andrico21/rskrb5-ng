@@ -94,14 +94,14 @@ mod tests {
     fn builds_and_decrypts_ap_rep_with_explicit_confounder() -> Result<(), TestError> {
         let enc_part = decode_enc_ap_rep_part(&hex::decode(MARSHALLED_ENC_AP_REP_PART)?)?;
         let key = reply_key()?;
-        let etype = KerberosEtype::from_etype_id(key.etype).ok_or("AES256 etype")?;
+        let etype = KerberosEtype::from_etype_id(key.etype()).ok_or("AES256 etype")?;
         let confounder = vec![0x55; etype.confounder_len()];
 
         let ap_rep = build_ap_rep_with_confounder(&enc_part, &key, Some(7), &confounder)?;
 
         assert_eq!(ap_rep.pvno, Integer::from(5_i32));
         assert_eq!(ap_rep.msg_type, Integer::from(KRB_AP_REP_MSG_TYPE));
-        assert_eq!(ap_rep.enc_part.etype, key.etype);
+        assert_eq!(ap_rep.enc_part.etype, key.etype());
         assert_eq!(ap_rep.enc_part.kvno, Some(7));
         let decrypted = decrypt_ap_rep_enc_part(&ap_rep, &key)?;
         assert_eq!(decrypted, enc_part);
@@ -114,13 +114,13 @@ mod tests {
         let enc_part =
             decode_enc_ap_rep_part(&hex::decode(MARSHALLED_ENC_AP_REP_PART_OPTIONALS_NULL)?)?;
         let key = reply_key()?;
-        let etype = KerberosEtype::from_etype_id(key.etype).ok_or("AES256 etype")?;
+        let etype = KerberosEtype::from_etype_id(key.etype()).ok_or("AES256 etype")?;
         let confounder = vec![0x33; etype.confounder_len()];
 
         let encoded = encode_build_ap_rep_with_confounder(&enc_part, &key, None, &confounder)?;
         let decoded = decode_ap_rep(&encoded)?;
 
-        assert_eq!(decoded.enc_part.etype, key.etype);
+        assert_eq!(decoded.enc_part.etype, key.etype());
         assert!(decoded.enc_part.kvno.is_none(), "kvno is absent");
         let decrypted = decrypt_ap_rep_enc_part(&decoded, &key)?;
         assert_eq!(decrypted, enc_part);
@@ -135,7 +135,7 @@ mod tests {
 
         let ap_rep = build_ap_rep(&enc_part, &key, None)?;
 
-        assert_eq!(ap_rep.enc_part.etype, key.etype);
+        assert_eq!(ap_rep.enc_part.etype, key.etype());
         let decrypted = decrypt_ap_rep_enc_part(&ap_rep, &key)?;
         assert_eq!(decrypted, enc_part);
         Ok(())
@@ -146,7 +146,7 @@ mod tests {
     fn rejects_ap_rep_key_etype_mismatch() -> Result<(), TestError> {
         let enc_part = decode_enc_ap_rep_part(&hex::decode(MARSHALLED_ENC_AP_REP_PART)?)?;
         let key = reply_key()?;
-        let etype = KerberosEtype::from_etype_id(key.etype).ok_or("AES256 etype")?;
+        let etype = KerberosEtype::from_etype_id(key.etype()).ok_or("AES256 etype")?;
         let confounder = vec![0x55; etype.confounder_len()];
         let ap_rep = build_ap_rep_with_confounder(&enc_part, &key, None, &confounder)?;
         let wrong_key = EncryptionKey::new(17, vec![0; 16]);

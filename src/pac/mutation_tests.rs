@@ -228,7 +228,7 @@ fn processing_preserves_first_decoded_buffers() -> Result<(), Error> {
     pac.credentials_info = Some(CredentialsInfo {
         version: 0,
         encryption_type: 17,
-        encrypted_credential_data: vec![],
+        encrypted_credential_data: vec![].into(),
     });
     pac.client_info = Some(ClientInfo {
         client_id: FileTime::from_ticks(0),

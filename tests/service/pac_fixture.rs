@@ -73,13 +73,13 @@ pub(super) fn ap_req_with_pac_bytes(pac_bytes: Vec<u8>) -> Result<Vec<u8>, TestE
             realm: realm("TEST.GOKRB5")?,
             sname: service,
             enc_part: rasn_kerberos::EncryptedData {
-                etype: service_key.etype,
+                etype: service_key.etype(),
                 kvno: Some(2),
                 cipher: ticket_cipher.into(),
             },
         },
         authenticator: rasn_kerberos::EncryptedData {
-            etype: session_key.etype,
+            etype: session_key.etype(),
             kvno: None,
             cipher: authenticator_cipher.into(),
         },

@@ -140,7 +140,7 @@ mod tests {
         };
         let key = reply_key()?;
         let input = der::encode(&peer)?;
-        let expected = AesSha1Etype::Aes256.checksum(&key.value, &input, 15)?;
+        let expected = AesSha1Etype::Aes256.checksum(key.value(), &input, 15)?;
 
         // When the public generator computes a checksum for that body.
         let actual = krb_safe_checksum(&peer.body, &key)?;
@@ -164,7 +164,7 @@ mod tests {
         peer.cksum = rasn_kerberos::Checksum {
             r#type: 16,
             checksum: AesSha1Etype::Aes256
-                .checksum(&key.value, &input, 15)?
+                .checksum(key.value(), &input, 15)?
                 .into(),
         };
 

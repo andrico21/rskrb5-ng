@@ -77,37 +77,143 @@ pub struct HostAddress {
 mod host_address;
 
 /// Successful AP-REQ validation result.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ValidatedApReq {
     /// Effective policy retained for outgoing context keys.
-    pub crypto_policy: CryptoPolicy,
+    crypto_policy: CryptoPolicy,
     /// Client identity from the KDC-authenticated ticket.
-    pub client: Principal,
+    client: Principal,
     /// Realm and components matched by the keytab lookup that decrypted the ticket.
     /// The name type remains advisory ticket metadata, not an authenticated identity.
-    pub service: Principal,
+    service: Principal,
     /// Ticket session key used to decrypt the authenticator.
-    pub session_key: EncryptionKey,
+    session_key: EncryptionKey,
     /// Optional subkey supplied by the client authenticator.
-    pub subkey: Option<EncryptionKey>,
+    subkey: Option<EncryptionKey>,
     /// Optional sequence number supplied by the client authenticator.
-    pub sequence_number: Option<u32>,
+    sequence_number: Option<u32>,
     /// Ticket start time, or auth time when start time is absent.
-    pub ticket_start: SystemTime,
+    ticket_start: SystemTime,
     /// Ticket end time.
-    pub ticket_end: SystemTime,
+    ticket_end: SystemTime,
     /// Authenticator `ctime` without `cusec`.
-    pub authenticator_ctime: SystemTime,
+    authenticator_ctime: SystemTime,
     /// Authenticator microsecond field.
-    pub authenticator_cusec: u32,
+    authenticator_cusec: u32,
     /// Authenticator timestamp including `cusec`.
-    pub authenticator_time: SystemTime,
+    authenticator_time: SystemTime,
     /// Verified PAC from the ticket authorization data, when present.
-    pub pac: Option<Pac>,
+    pac: Option<Pac>,
 }
 
 impl ValidatedApReq {
+    /// Replace whole-second authenticator time metadata.
+    #[inline]
+    pub const fn set_authenticator_ctime(&mut self, value: SystemTime) {
+        self.authenticator_ctime = value;
+    }
+    /// Replace authenticator microsecond metadata.
+    #[inline]
+    pub const fn set_authenticator_cusec(&mut self, value: u32) {
+        self.authenticator_cusec = value;
+    }
+    /// Replace combined authenticator time metadata.
+    #[inline]
+    pub const fn set_authenticator_time(&mut self, value: SystemTime) {
+        self.authenticator_time = value;
+    }
+    /// Borrow the effective cryptographic policy.
+    #[inline]
+    #[must_use]
+    pub const fn crypto_policy(&self) -> &CryptoPolicy {
+        &self.crypto_policy
+    }
+    /// Replace the reply-admission policy.
+    #[inline]
+    pub fn set_crypto_policy(&mut self, value: CryptoPolicy) {
+        self.crypto_policy = value;
+    }
+    /// Borrow the authenticated client identity.
+    #[inline]
+    #[must_use]
+    pub const fn client(&self) -> &Principal {
+        &self.client
+    }
+    /// Borrow the authenticated service identity.
+    #[inline]
+    #[must_use]
+    pub const fn service(&self) -> &Principal {
+        &self.service
+    }
+    /// Return the client sequence number.
+    #[inline]
+    #[must_use]
+    pub const fn sequence_number(&self) -> Option<u32> {
+        self.sequence_number
+    }
+    /// Return ticket validity start.
+    #[inline]
+    #[must_use]
+    pub const fn ticket_start(&self) -> SystemTime {
+        self.ticket_start
+    }
+    /// Return ticket validity end.
+    #[inline]
+    #[must_use]
+    pub const fn ticket_end(&self) -> SystemTime {
+        self.ticket_end
+    }
+    /// Return authenticator whole-second time.
+    #[inline]
+    #[must_use]
+    pub const fn authenticator_ctime(&self) -> SystemTime {
+        self.authenticator_ctime
+    }
+    /// Return authenticator microseconds.
+    #[inline]
+    #[must_use]
+    pub const fn authenticator_cusec(&self) -> u32 {
+        self.authenticator_cusec
+    }
+    /// Return the complete authenticator time.
+    #[inline]
+    #[must_use]
+    pub const fn authenticator_time(&self) -> SystemTime {
+        self.authenticator_time
+    }
+    /// Borrow verified PAC credentials and authorization metadata.
+    #[inline]
+    #[must_use]
+    pub const fn pac(&self) -> Option<&Pac> {
+        self.pac.as_ref()
+    }
+    /// Borrow the ticket session key.
+    #[must_use]
+    #[inline]
+    pub const fn session_key(&self) -> &EncryptionKey {
+        &self.session_key
+    }
+
+    /// Replace the ticket session key, zeroing the old key.
+    #[inline]
+    pub fn set_session_key(&mut self, value: EncryptionKey) {
+        self.session_key = value;
+    }
+
+    /// Borrow the optional subkey supplied by the client authenticator.
+    #[must_use]
+    #[inline]
+    pub const fn subkey(&self) -> Option<&EncryptionKey> {
+        self.subkey.as_ref()
+    }
+
+    /// Replace the subkey, zeroing the old key if present.
+    #[inline]
+    pub fn set_subkey(&mut self, value: Option<EncryptionKey>) {
+        self.subkey = value;
+    }
+
     /// Build an AP-REP mutual-auth reply with an explicit confounder.
     ///
     /// The explicit confounder keeps tests deterministic and lets callers
@@ -126,10 +232,10 @@ impl ValidatedApReq {
         options: &ApRepOptions,
     ) -> Result<Vec<u8>, Error> {
         self.crypto_policy
-            .check_use(self.session_key.etype, Use::SessionKey)?;
-        if let Some(subkey) = &options.subkey {
+            .check_use(self.session_key.etype(), Use::SessionKey)?;
+        if let Some(subkey) = options.subkey() {
             self.crypto_policy
-                .check_use(subkey.etype, Use::AcceptorSubkey)?;
+                .check_use(subkey.etype(), Use::AcceptorSubkey)?;
         }
         let cusec = microseconds_to_u32(
             "authenticator.cusec",
@@ -138,7 +244,7 @@ impl ValidatedApReq {
         let enc_part = rasn_kerberos::EncApRepPart {
             ctime: kerberos_time_from_system_time(self.authenticator_ctime)?,
             cusec: Integer::from(cusec),
-            subkey: options.subkey.as_ref().map(encryption_key_to_rasn),
+            subkey: options.subkey().map(encryption_key_to_rasn),
             seq_number: options.sequence_number,
         };
         let ap_rep = ap_rep::build_ap_rep_with_confounder(
@@ -166,7 +272,7 @@ impl ValidatedApReq {
     #[inline]
     pub fn verify_ap_rep(&self, bytes: &[u8]) -> Result<VerifiedApRep, Error> {
         self.crypto_policy
-            .check_use(self.session_key.etype, Use::SessionKey)?;
+            .check_use(self.session_key.etype(), Use::SessionKey)?;
         let ap_rep = ap_rep::decode(bytes).map_err(ap_rep_error)?;
         self.crypto_policy
             .check_use(ap_rep.enc_part.etype, Use::SessionKey)?;
@@ -200,23 +306,48 @@ impl ValidatedApReq {
 }
 
 /// Options for constructing an AP-REP mutual-auth reply.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ApRepOptions {
     /// Optional server-selected subkey.
-    pub subkey: Option<EncryptionKey>,
+    subkey: Option<EncryptionKey>,
     /// Optional server sequence number.
-    pub sequence_number: Option<u32>,
+    sequence_number: Option<u32>,
     /// Optional encrypted-data key version number.
-    pub kvno: Option<u32>,
+    kvno: Option<u32>,
 }
 
 impl ApRepOptions {
+    /// Return the server sequence number.
+    #[inline]
+    #[must_use]
+    pub const fn sequence_number(&self) -> Option<u32> {
+        self.sequence_number
+    }
+    /// Return the key version metadata.
+    #[inline]
+    #[must_use]
+    pub const fn kvno(&self) -> Option<u32> {
+        self.kvno
+    }
+    /// Borrow the optional server-selected subkey.
+    #[must_use]
+    #[inline]
+    pub const fn subkey(&self) -> Option<&EncryptionKey> {
+        self.subkey.as_ref()
+    }
+
+    /// Replace the subkey, zeroing the old key if present.
+    #[inline]
+    pub fn set_subkey(&mut self, value: Option<EncryptionKey>) {
+        self.subkey = value;
+    }
+
     /// Sets `subkey`, preserving the other fields.
     #[must_use]
     #[inline]
     pub fn with_subkey(mut self, value: Option<EncryptionKey>) -> Self {
-        self.subkey = value;
+        self.set_subkey(value);
         self
     }
     /// Sets `sequence_number`, preserving the other fields.
@@ -236,19 +367,75 @@ impl ApRepOptions {
 }
 
 /// Verified AP-REP mutual-auth reply.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct VerifiedApRep {
     /// Reply `ctime` without `cusec`.
-    pub ctime: SystemTime,
+    ctime: SystemTime,
     /// Reply microsecond field.
-    pub cusec: u32,
+    cusec: u32,
     /// Reply timestamp including `cusec`.
-    pub authenticator_time: SystemTime,
+    authenticator_time: SystemTime,
     /// Optional server-selected subkey.
-    pub subkey: Option<EncryptionKey>,
+    subkey: Option<EncryptionKey>,
     /// Optional server sequence number.
-    pub sequence_number: Option<u32>,
+    sequence_number: Option<u32>,
+}
+
+impl VerifiedApRep {
+    /// Construct verified reply metadata inside the authentication boundary.
+    #[cfg(feature = "spnego")]
+    pub(crate) const fn new(
+        ctime: SystemTime,
+        cusec: u32,
+        authenticator_time: SystemTime,
+        subkey: Option<EncryptionKey>,
+        sequence_number: Option<u32>,
+    ) -> Self {
+        Self {
+            ctime,
+            cusec,
+            authenticator_time,
+            subkey,
+            sequence_number,
+        }
+    }
+    /// Return whole-second server time.
+    #[inline]
+    #[must_use]
+    pub const fn ctime(&self) -> SystemTime {
+        self.ctime
+    }
+    /// Return server microseconds.
+    #[inline]
+    #[must_use]
+    pub const fn cusec(&self) -> u32 {
+        self.cusec
+    }
+    /// Return the combined authenticator time.
+    #[inline]
+    #[must_use]
+    pub const fn authenticator_time(&self) -> SystemTime {
+        self.authenticator_time
+    }
+    /// Return the server sequence number.
+    #[inline]
+    #[must_use]
+    pub const fn sequence_number(&self) -> Option<u32> {
+        self.sequence_number
+    }
+    /// Borrow the optional server-selected subkey.
+    #[must_use]
+    #[inline]
+    pub const fn subkey(&self) -> Option<&EncryptionKey> {
+        self.subkey.as_ref()
+    }
+
+    /// Replace the subkey, zeroing the old key if present.
+    #[inline]
+    pub fn set_subkey(&mut self, value: Option<EncryptionKey>) {
+        self.subkey = value;
+    }
 }
 
 /// In-memory AP-REQ replay cache.
@@ -291,6 +478,16 @@ struct DigestRecord {
     key: Arc<ReplayKey>,
 }
 
+mod credential_debug;
+#[cfg(test)]
+#[expect(
+    clippy::missing_panics_doc,
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "service/credential_replacement_tests.rs"]
+mod credential_replacement_tests;
 mod replay;
 mod replay_quota;
 mod ticket_pac;
@@ -579,7 +776,6 @@ impl TransitValidator for TransitPolicy {
 }
 
 /// AP-REQ validator backed by a service keytab.
-#[derive(Debug)]
 pub struct Validator<'keytab> {
     /// Runtime permission shared by ticket and authenticator validation.
     crypto_policy: CryptoPolicy,
@@ -1226,17 +1422,14 @@ fn kerberos_string_to_string(value: &rasn_kerberos::KerberosString) -> Result<St
 
 /// Convert a wire encryption key to the keytab key type.
 fn encryption_key_from_rasn(value: &rasn_kerberos::EncryptionKey) -> EncryptionKey {
-    EncryptionKey {
-        etype: value.r#type,
-        value: value.value.as_ref().to_vec().into(),
-    }
+    EncryptionKey::new(value.r#type, value.value.as_ref().to_vec())
 }
 
 /// Convert a keytab key to the wire encryption key type.
 fn encryption_key_to_rasn(value: &EncryptionKey) -> rasn_kerberos::EncryptionKey {
     rasn_kerberos::EncryptionKey {
-        r#type: value.etype,
-        value: value.value.to_vec().into(),
+        r#type: value.etype(),
+        value: value.value().to_vec().into(),
     }
 }
 

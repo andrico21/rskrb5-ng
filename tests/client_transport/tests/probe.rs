@@ -33,9 +33,9 @@ async fn exchange(
     let client = Principal::user(realm, user);
     let request = build_tgt_as_req(client, AsReq::new(SystemTime::now(), nonce))?;
 
-    let mut framed = Vec::with_capacity(request.der.len().saturating_add(4));
-    framed.extend_from_slice(&u32::try_from(request.der.len())?.to_be_bytes());
-    framed.extend_from_slice(&request.der);
+    let mut framed = Vec::with_capacity(request.der().len().saturating_add(4));
+    framed.extend_from_slice(&u32::try_from(request.der().len())?.to_be_bytes());
+    framed.extend_from_slice(request.der());
     if let Err(error) = stream.write_all(&framed).await {
         return Ok(ProbeOutcome::Closed(format!("write failed: {error}")));
     }

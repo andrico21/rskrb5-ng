@@ -185,9 +185,9 @@ mod tests {
             let mut client = ad_client(TESTUSER1, testuser1_keytab()?, false)?;
             let tgt = client.login().await?;
 
-            assert_eq!(tgt.client, Principal::user(USER_REALM, TESTUSER1));
-            assert_eq!(tgt.service, Principal::tgt_service(USER_REALM));
-            assert_eq!(tgt.session_key.etype, AES256_ETYPE);
+            assert_eq!(tgt.client(), &Principal::user(USER_REALM, TESTUSER1));
+            assert_eq!(tgt.service(), &Principal::tgt_service(USER_REALM));
+            assert_eq!(tgt.session_key().etype(), AES256_ETYPE);
 
             Ok::<_, Box<dyn Error>>(())
         })
@@ -207,9 +207,9 @@ mod tests {
             let mut client = ad_client(TESTUSER3, testuser3_keytab()?, false)?;
             let tgt = client.login().await?;
 
-            assert_eq!(tgt.client, Principal::user(USER_REALM, TESTUSER3));
-            assert_eq!(tgt.service, Principal::tgt_service(USER_REALM));
-            assert_eq!(tgt.session_key.etype, AES256_ETYPE);
+            assert_eq!(tgt.client(), &Principal::user(USER_REALM, TESTUSER3));
+            assert_eq!(tgt.service(), &Principal::tgt_service(USER_REALM));
+            assert_eq!(tgt.session_key().etype(), AES256_ETYPE);
 
             Ok::<_, Box<dyn Error>>(())
         })
@@ -232,15 +232,12 @@ mod tests {
             let ticket = client
                 .get_service_ticket(http_service(USER_REALM, USER_SERVICE_HOST))
                 .await?;
-            assert_eq!(ticket.service.name(), format!("HTTP/{USER_SERVICE_HOST}"));
-            assert_eq!(ticket.session_key.etype, AES256_ETYPE);
+            assert_eq!(ticket.service().name(), format!("HTTP/{USER_SERVICE_HOST}"));
+            assert_eq!(ticket.session_key().etype(), AES256_ETYPE);
 
             let service_keytab = testuser2_keytab()?;
             let validated = validate_service_ticket(&ticket, &service_keytab, [TESTUSER2], false)?;
-            let pac = validated
-                .pac
-                .as_ref()
-                .ok_or("AD service ticket has a PAC")?;
+            let pac = validated.pac().ok_or("AD service ticket has a PAC")?;
             let credentials = pac.ad_credentials().ok_or("PAC has validation info")?;
             assert_eq!(credentials.logon_domain_name, "USER");
 
@@ -267,17 +264,14 @@ mod tests {
                 .get_service_ticket(http_service(RESOURCE_REALM, RESOURCE_SERVICE_HOST))
                 .await?;
             assert_eq!(
-                ticket.service.name(),
+                ticket.service().name(),
                 format!("HTTP/{RESOURCE_SERVICE_HOST}")
             );
-            assert_eq!(ticket.session_key.etype, RC4_HMAC_ETYPE);
+            assert_eq!(ticket.session_key().etype(), RC4_HMAC_ETYPE);
 
             let service_keytab = syshttp_keytab()?;
             let validated = validate_service_ticket(&ticket, &service_keytab, [SYSHTTP], true)?;
-            let pac = validated
-                .pac
-                .as_ref()
-                .ok_or("AD service ticket has a PAC")?;
+            let pac = validated.pac().ok_or("AD service ticket has a PAC")?;
             let credentials = pac.ad_credentials().ok_or("PAC has validation info")?;
             assert_eq!(credentials.effective_name, TESTUSER1);
 
@@ -303,14 +297,11 @@ mod tests {
             let ticket = client
                 .get_service_ticket(http_service(USER_REALM, USER_SERVICE_HOST))
                 .await?;
-            assert_eq!(ticket.service.name(), format!("HTTP/{USER_SERVICE_HOST}"));
+            assert_eq!(ticket.service().name(), format!("HTTP/{USER_SERVICE_HOST}"));
 
             let service_keytab = testuser2_keytab()?;
             let validated = validate_service_ticket(&ticket, &service_keytab, [TESTUSER2], false)?;
-            let pac = validated
-                .pac
-                .as_ref()
-                .ok_or("AD service ticket has a PAC")?;
+            let pac = validated.pac().ok_or("AD service ticket has a PAC")?;
             let credentials = pac.ad_credentials().ok_or("PAC has validation info")?;
             assert_eq!(credentials.effective_name, TESTUSER1);
 
@@ -675,7 +666,7 @@ mod tests {
                     ))
                 })?;
             assert_eq!(
-                key.value.len(),
+                key.value().len(),
                 expected_key_len(etype)?,
                 "{} has the expected etype {etype} key length",
                 fixture.label
@@ -900,19 +891,19 @@ mod tests {
         rc4: bool,
         timestamp: SystemTime,
     ) -> Result<ValidatedApReq, Box<dyn Error>> {
-        let etype = KerberosEtype::from_etype_id(ticket.session_key.etype)
+        let etype = KerberosEtype::from_etype_id(ticket.session_key().etype())
             .ok_or("ticket etype is supported")?;
         let confounder = vec![0x42_u8; etype.confounder_len()];
         let (seconds, cusec) = service_authenticator_time(timestamp)?;
         let policy = CryptoPolicy::from_libdefaults(&ad_config(rc4)?.libdefaults)?;
         let mut options = ApReq::new();
-        options.crypto_policy = Some(policy.clone());
+        options.set_crypto_policy(Some(policy.clone()));
         let ap_req = build_ap_req_with_confounder(ticket, options, seconds, cusec, &confounder)?;
         let mut validator = Validator::new(keytab)
             .with_crypto_policy(policy)
             .with_now(timestamp)
             .with_keytab_principal(keytab_principal);
-        Ok(validator.validate_ap_req(&ap_req.der)?)
+        Ok(validator.validate_ap_req(ap_req.der())?)
     }
 
     /// Split a clock sample into the AP builder's whole seconds and microseconds.
@@ -950,7 +941,7 @@ mod tests {
             let mut part = original_part.clone();
             part.key = rasn_kerberos::EncryptionKey {
                 r#type: id,
-                value: session_key.value.to_vec().into(),
+                value: session_key.value().to_vec().into(),
             };
             let encrypted = ticket::build_ticket_with_confounder(
                 original.ticket.realm.clone(),
@@ -988,7 +979,7 @@ mod tests {
                 id == 23_i32,
                 now,
             )?;
-            assert_eq!(accepted.session_key.etype, id);
+            assert_eq!(accepted.session_key().etype(), id);
             if id == 23_i32 {
                 let failure = validate_service_ticket_at(
                     &session,

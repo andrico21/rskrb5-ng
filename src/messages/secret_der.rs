@@ -229,7 +229,12 @@ mod tests {
                 etype: 17,
                 kvno: None,
                 cipher: etype
-                    .encrypt_message_with_confounder(&key.value, &[0xff, 0x55], usage, &[0x24; 16])?
+                    .encrypt_message_with_confounder(
+                        key.value(),
+                        &[0xff, 0x55],
+                        usage,
+                        &[0x24; 16],
+                    )?
                     .into(),
             };
             let ticket = rasn_kerberos::Ticket {

@@ -77,22 +77,23 @@ pub fn decrypt_ap_rep_enc_part(
     ap_rep: &rasn_kerberos::ApRep,
     key: &EncryptionKey,
 ) -> Result<rasn_kerberos::EncApRepPart, Error> {
-    if key.etype != ap_rep.enc_part.etype {
+    if key.etype() != ap_rep.enc_part.etype {
         return Err(Error::KeyEtypeMismatch {
-            key_etype: key.etype,
+            key_etype: key.etype(),
             encrypted_data_etype: ap_rep.enc_part.etype,
         });
     }
-    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype =
+        selection::enctype(key.etype())?.ok_or_else(|| Error::UnsupportedEtype(key.etype()))?;
     let plaintext = SecretDer::new(
         etype.decrypt_message(
-            &key.value,
+            key.value(),
             ap_rep.enc_part.cipher.as_ref(),
             AP_REP_ENCPART_USAGE,
         )?,
         "ap-rep decrypt",
     );
-    decode_enc_ap_rep_part(encrypted_der(&plaintext, key.etype))
+    decode_enc_ap_rep_part(encrypted_der(&plaintext, key.etype()))
 }
 
 /// Build an AP-REP message using a random confounder.
@@ -108,7 +109,8 @@ pub fn build(
     key: &EncryptionKey,
     kvno: Option<u32>,
 ) -> Result<rasn_kerberos::ApRep, Error> {
-    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype =
+        selection::enctype(key.etype())?.ok_or_else(|| Error::UnsupportedEtype(key.etype()))?;
     let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     build_ap_rep_with_confounder(enc_part, key, kvno, &confounder)
@@ -128,10 +130,11 @@ pub fn build_ap_rep_with_confounder(
     kvno: Option<u32>,
     confounder: &[u8],
 ) -> Result<rasn_kerberos::ApRep, Error> {
-    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype =
+        selection::enctype(key.etype())?.ok_or_else(|| Error::UnsupportedEtype(key.etype()))?;
     let plaintext = SecretDer::new(encode_der("EncApRepPart", enc_part)?, "ap-rep encode");
     let cipher = etype.encrypt_message_with_confounder(
-        &key.value,
+        key.value(),
         &plaintext,
         AP_REP_ENCPART_USAGE,
         confounder,
@@ -140,7 +143,7 @@ pub fn build_ap_rep_with_confounder(
         pvno: Integer::from(KRB5_PVNO),
         msg_type: Integer::from(KRB_AP_REP_MSG_TYPE),
         enc_part: rasn_kerberos::EncryptedData {
-            etype: key.etype,
+            etype: key.etype(),
             kvno,
             cipher: cipher.into(),
         },

@@ -110,11 +110,10 @@ pub fn preauth_method_data(
     preauth_required_error_code: i32,
 ) -> Result<rasn_kerberos::MethodData, Error> {
     let info = info(krb_error)?;
-    if info.error_code != preauth_required_error_code && info.error_code != 24_i32 {
+    if info.error_code() != preauth_required_error_code && info.error_code() != 24_i32 {
         return Ok(Vec::new());
     }
-    info.e_data
-        .as_deref()
+    info.e_data()
         .map(decode_method_data)
         .transpose()
         .map(Option::unwrap_or_default)

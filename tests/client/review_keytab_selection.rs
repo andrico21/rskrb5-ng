@@ -65,13 +65,13 @@ mod tests {
             let plain = KerberosEtype::from_etype_id(18)
                 .context("AES")?
                 .decrypt_message(
-                    &key.value,
+                    key.value(),
                     encrypted.cipher.as_ref(),
                     AS_REQ_PA_ENC_TIMESTAMP_USAGE,
                 )?;
             let _timestamp: rasn_kerberos::PaEncTsEnc = der::decode(&plain)?;
             let built = built_request_from_der(request, bytes)?;
-            synthetic_as_rep_with_reply_key(&built, built.nonce, &built.service, &key)
+            synthetic_as_rep_with_reply_key(&built, built.nonce(), built.service(), &key)
         }
     }
 
@@ -91,7 +91,7 @@ mod tests {
             &keytab_with_reply_key(3)?,
             AsReq::new(timestamp(1_893_553_447)?, 42).with_etypes(vec![20_i32, 18_i32]),
         )?;
-        assert_eq!(session.client, principal);
+        assert_eq!(session.client(), &principal);
         assert_eq!(peer.calls, 2);
         Ok(())
     }
@@ -165,7 +165,10 @@ mod tests {
             &keytab,
             AsReq::new(timestamp(1_893_553_447)?, 42).with_etypes(vec![18_i32, 20_i32]),
         )?;
-        assert_eq!(session.client, Principal::user("TEST.GOKRB5", "testuser1"));
+        assert_eq!(
+            session.client(),
+            &Principal::user("TEST.GOKRB5", "testuser1")
+        );
         assert_eq!(peer.calls, 2);
         Ok(())
     }

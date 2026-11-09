@@ -19,7 +19,7 @@ mod tests {
             AsReq::new(timestamp(1_893_553_447)?, 42).with_kdc_option_bits(KDC_OPTION_CANONICALIZE),
         )?;
         assert_eq!(
-            request.message.0.req_body.kdc_options.0.as_raw_slice(),
+            request.message().0.req_body.kdc_options.0.as_raw_slice(),
             &[0, 0, 0, 0]
         );
         Ok(())

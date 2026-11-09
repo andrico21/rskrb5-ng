@@ -53,8 +53,8 @@ mod tests {
         let credential =
             NtlmSupplementalCredential::parse(&bytes).context("NT-only record parses")?;
         // Then: the invalid LM slot is consumed but never exposed as NT.
-        assert_eq!(credential.nt_password, Some([0x22; 16]));
-        assert_eq!(credential.lm_password, None);
+        assert_eq!(credential.nt_password(), Some(&[0x22; 16]));
+        assert_eq!(credential.lm_password(), None);
         Ok(())
     }
 

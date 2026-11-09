@@ -78,7 +78,10 @@ mod tests {
         // When: the public parser handles it.
         let data = CredentialData::parse(&bytes).context("empty credentials parse")?;
         // Then: no supplemental packages are returned.
-        assert!(data.credentials.is_empty(), "zero count has no credentials");
+        assert!(
+            data.credentials().is_empty(),
+            "zero count has no credentials"
+        );
         Ok(())
     }
 
@@ -97,7 +100,7 @@ mod tests {
         // When: the conforming empty-package object is parsed.
         let data = CredentialData::parse(&bytes).context("conformant package parses")?;
         // Then: its single package is retained.
-        assert_eq!(data.credentials.len(), 1);
+        assert_eq!(data.credentials().len(), 1);
         Ok(())
     }
 

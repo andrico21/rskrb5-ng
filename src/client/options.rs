@@ -1,5 +1,7 @@
-use core::time::Duration;
+use core::{fmt, mem, time::Duration};
 use std::time::SystemTime;
+
+use zeroize::Zeroize as _;
 
 use super::{
     DEFAULT_TGS_ENCTYPES, DEFAULT_TICKET_LIFETIME, DEFAULT_TKT_ENCTYPES, KDC_OPTION_CANONICALIZE,
@@ -8,40 +10,165 @@ use super::{
 use crate::{
     config::LibDefaults,
     crypto::CryptoPolicy,
-    error::Policy,
+    error::{Client as ClientError, Policy},
     keytab::{EncryptionKey, Keytab},
 };
 
 /// Options for constructing an AS-REQ.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct AsReq {
     /// Runtime policy captured at option construction; errors fail before use.
-    pub crypto_policy: Result<CryptoPolicy, Policy>,
+    crypto_policy: Result<CryptoPolicy, Policy>,
     /// Acceptable KDC reply start-time skew from the request clock.
-    pub clock_skew: Duration,
+    clock_skew: Duration,
     /// Client clock used for request time fields.
-    pub now: SystemTime,
+    now: SystemTime,
     /// Requested ticket lifetime.
-    pub ticket_lifetime: Duration,
+    ticket_lifetime: Duration,
     /// Optional renewable lifetime.
-    pub renew_lifetime: Option<Duration>,
+    renew_lifetime: Option<Duration>,
     /// Client nonce. Callers are responsible for supplying fresh randomness.
-    pub nonce: u32,
+    nonce: u32,
     /// Requested response encryption types in preference order.
-    pub etypes: Vec<i32>,
+    etypes: Vec<i32>,
     /// KDC option bits. Unarmored AS builders suppress `canonicalize`: changed
     /// reply identities require authenticated exchange protection not provided here.
-    pub kdc_option_bits: u32,
+    kdc_option_bits: u32,
     /// Optional preauthentication data.
-    pub padata: Vec<rasn_kerberos::PaData>,
+    padata: Vec<rasn_kerberos::PaData>,
     /// Send PA-ENC-TIMESTAMP in the first AS-REQ using requested etype defaults.
-    pub assume_preauthentication: bool,
+    assume_preauthentication: bool,
     /// Advertise support for AS-REP encrypted padata negotiation.
-    pub fast_negotiation: bool,
+    fast_negotiation: bool,
+}
+
+impl fmt::Debug for AsReq {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            crypto_policy,
+            clock_skew,
+            now,
+            ticket_lifetime,
+            renew_lifetime,
+            nonce,
+            etypes,
+            kdc_option_bits,
+            padata,
+            assume_preauthentication,
+            fast_negotiation,
+        } = self;
+        f.debug_struct("AsReq")
+            .field("crypto_policy", crypto_policy)
+            .field("clock_skew", clock_skew)
+            .field("now", now)
+            .field("ticket_lifetime", ticket_lifetime)
+            .field("renew_lifetime", renew_lifetime)
+            .field("nonce", nonce)
+            .field("etypes", etypes)
+            .field("kdc_option_bits", kdc_option_bits)
+            .field("padata_count", &padata.len())
+            .field("assume_preauthentication", assume_preauthentication)
+            .field("fast_negotiation", fast_negotiation)
+            .finish()
+    }
 }
 
 impl AsReq {
+    /// Borrow the captured policy result.
+    #[inline]
+    #[must_use]
+    pub const fn crypto_policy(&self) -> &Result<CryptoPolicy, Policy> {
+        &self.crypto_policy
+    }
+    /// Return the clock skew.
+    #[inline]
+    #[must_use]
+    pub const fn clock_skew(&self) -> Duration {
+        self.clock_skew
+    }
+    /// Return the request clock.
+    #[inline]
+    #[must_use]
+    pub const fn now(&self) -> SystemTime {
+        self.now
+    }
+    /// Return the ticket lifetime.
+    #[inline]
+    #[must_use]
+    pub const fn ticket_lifetime(&self) -> Duration {
+        self.ticket_lifetime
+    }
+    /// Return the renewable lifetime.
+    #[inline]
+    #[must_use]
+    pub const fn renew_lifetime(&self) -> Option<Duration> {
+        self.renew_lifetime
+    }
+    /// Return the nonce.
+    #[inline]
+    #[must_use]
+    pub const fn nonce(&self) -> u32 {
+        self.nonce
+    }
+    /// Borrow requested encryption types.
+    #[inline]
+    #[must_use]
+    pub fn etypes(&self) -> &[i32] {
+        &self.etypes
+    }
+    /// Return KDC flags.
+    #[inline]
+    #[must_use]
+    pub const fn kdc_option_bits(&self) -> u32 {
+        self.kdc_option_bits
+    }
+    /// Borrow dependency-owned preauthentication data; ASN.1 residual copies remain.
+    #[inline]
+    #[must_use]
+    pub fn padata(&self) -> &[rasn_kerberos::PaData] {
+        &self.padata
+    }
+    /// Transfer preauthentication data without copying it.
+    pub(super) fn take_padata(&mut self) -> Vec<rasn_kerberos::PaData> {
+        mem::take(&mut self.padata)
+    }
+    /// Mutate dependency-owned padata only inside the request builder module.
+    pub(super) const fn padata_mut(&mut self) -> &mut Vec<rasn_kerberos::PaData> {
+        &mut self.padata
+    }
+    /// Transfer the non-secret enctype list into the wire request.
+    pub(super) fn take_etypes(&mut self) -> Vec<i32> {
+        mem::take(&mut self.etypes)
+    }
+    /// Return the optimistic preauthentication setting.
+    #[inline]
+    #[must_use]
+    pub const fn assume_preauthentication(&self) -> bool {
+        self.assume_preauthentication
+    }
+    /// Return the FAST negotiation setting.
+    #[inline]
+    #[must_use]
+    pub const fn fast_negotiation(&self) -> bool {
+        self.fast_negotiation
+    }
+    /// Replace the captured policy result.
+    #[inline]
+    pub fn set_crypto_policy(&mut self, value: Result<CryptoPolicy, Policy>) {
+        self.crypto_policy = value;
+    }
+    /// Replace the request clock.
+    #[inline]
+    pub const fn set_now(&mut self, value: SystemTime) {
+        self.now = value;
+    }
+    /// Replace the nonce.
+    #[inline]
+    pub const fn set_nonce(&mut self, value: u32) {
+        self.nonce = value;
+    }
     #[must_use]
     /// Construct options with gokrb5-compatible AES defaults.
     #[inline]
@@ -164,34 +291,184 @@ impl AsReq {
 }
 
 /// Options for constructing a TGS-REQ.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct TgsReq {
     /// Runtime policy captured at option construction; errors fail before use.
-    pub crypto_policy: Result<CryptoPolicy, Policy>,
+    crypto_policy: Result<CryptoPolicy, Policy>,
     /// Acceptable KDC reply start-time skew from the request clock.
-    pub clock_skew: Duration,
+    clock_skew: Duration,
     /// Frontend service keys used to authenticate delegated ticket identities.
-    pub delegation_keytab: Option<Keytab>,
+    delegation_keytab: Option<Keytab>,
     /// Client clock used for request time fields.
-    pub now: SystemTime,
+    now: SystemTime,
     /// Requested service-ticket lifetime.
-    pub ticket_lifetime: Duration,
+    ticket_lifetime: Duration,
     /// Optional renewable lifetime.
-    pub renew_lifetime: Option<Duration>,
+    renew_lifetime: Option<Duration>,
     /// Client nonce. Callers are responsible for supplying fresh randomness.
-    pub nonce: u32,
+    nonce: u32,
     /// Requested response encryption types in preference order.
-    pub etypes: Vec<i32>,
+    etypes: Vec<i32>,
     /// KDC option bit string as stored in krb5.conf.
-    pub kdc_option_bits: u32,
+    kdc_option_bits: u32,
     /// Additional TGS padata appended after PA-TGS-REQ.
-    pub padata: Vec<rasn_kerberos::PaData>,
+    padata: Vec<rasn_kerberos::PaData>,
     /// Additional tickets included in the TGS request body.
-    pub additional_tickets: Vec<rasn_kerberos::Ticket>,
+    additional_tickets: Vec<rasn_kerberos::Ticket>,
+}
+
+impl fmt::Debug for TgsReq {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            crypto_policy,
+            clock_skew,
+            delegation_keytab,
+            now,
+            ticket_lifetime,
+            renew_lifetime,
+            nonce,
+            etypes,
+            kdc_option_bits,
+            padata,
+            additional_tickets,
+        } = self;
+        f.debug_struct("TgsReq")
+            .field("crypto_policy", crypto_policy)
+            .field("clock_skew", clock_skew)
+            .field("delegation_keytab", delegation_keytab)
+            .field("now", now)
+            .field("ticket_lifetime", ticket_lifetime)
+            .field("renew_lifetime", renew_lifetime)
+            .field("nonce", nonce)
+            .field("etypes", etypes)
+            .field("kdc_option_bits", kdc_option_bits)
+            .field("padata_count", &padata.len())
+            .field("additional_tickets_count", &additional_tickets.len())
+            .finish()
+    }
 }
 
 impl TgsReq {
+    /// Resolve requested end times against the captured request clock.
+    /// # Errors
+    /// Returns [`ClientError::TimeOverflow`] when a lifetime exceeds the clock range.
+    pub(super) fn end_times(&self) -> Result<(SystemTime, Option<SystemTime>), ClientError> {
+        let till = self
+            .now
+            .checked_add(self.ticket_lifetime)
+            .ok_or(ClientError::TimeOverflow)?;
+        let renew = self
+            .renew_lifetime
+            .map(|duration| {
+                self.now
+                    .checked_add(duration)
+                    .ok_or(ClientError::TimeOverflow)
+            })
+            .transpose()?;
+        Ok((till, renew))
+    }
+    /// Borrow the captured policy result.
+    #[inline]
+    #[must_use]
+    pub const fn crypto_policy(&self) -> &Result<CryptoPolicy, Policy> {
+        &self.crypto_policy
+    }
+    /// Return clock skew.
+    #[inline]
+    #[must_use]
+    pub const fn clock_skew(&self) -> Duration {
+        self.clock_skew
+    }
+    /// Return the request clock.
+    #[inline]
+    #[must_use]
+    pub const fn now(&self) -> SystemTime {
+        self.now
+    }
+    /// Return requested ticket lifetime.
+    #[inline]
+    #[must_use]
+    pub const fn ticket_lifetime(&self) -> Duration {
+        self.ticket_lifetime
+    }
+    /// Return requested renewable lifetime.
+    #[inline]
+    #[must_use]
+    pub const fn renew_lifetime(&self) -> Option<Duration> {
+        self.renew_lifetime
+    }
+    /// Return the nonce.
+    #[inline]
+    #[must_use]
+    pub const fn nonce(&self) -> u32 {
+        self.nonce
+    }
+    /// Borrow requested encryption types.
+    #[inline]
+    #[must_use]
+    pub fn etypes(&self) -> &[i32] {
+        &self.etypes
+    }
+    /// Return KDC flags.
+    #[inline]
+    #[must_use]
+    pub const fn kdc_option_bits(&self) -> u32 {
+        self.kdc_option_bits
+    }
+    /// Borrow dependency-owned preauthentication data.
+    #[inline]
+    #[must_use]
+    pub fn padata(&self) -> &[rasn_kerberos::PaData] {
+        &self.padata
+    }
+    /// Borrow dependency-owned additional tickets.
+    #[inline]
+    #[must_use]
+    pub fn additional_tickets(&self) -> &[rasn_kerberos::Ticket] {
+        &self.additional_tickets
+    }
+    /// Borrow the delegation keytab.
+    #[inline]
+    #[must_use]
+    pub const fn delegation_keytab(&self) -> Option<&Keytab> {
+        self.delegation_keytab.as_ref()
+    }
+    /// Replace the captured policy.
+    #[inline]
+    pub fn set_crypto_policy(&mut self, value: Result<CryptoPolicy, Policy>) {
+        self.crypto_policy = value;
+    }
+    /// Replace KDC flags.
+    #[inline]
+    pub const fn set_kdc_option_bits(&mut self, value: u32) {
+        self.kdc_option_bits = value;
+    }
+    /// Mutate padata only inside the request builder module.
+    pub(super) const fn padata_mut(&mut self) -> &mut Vec<rasn_kerberos::PaData> {
+        &mut self.padata
+    }
+    /// Mutate additional tickets only inside the request builder module.
+    pub(super) const fn additional_tickets_mut(&mut self) -> &mut Vec<rasn_kerberos::Ticket> {
+        &mut self.additional_tickets
+    }
+    /// Transfer padata without cloning residual dependency storage.
+    pub(super) fn take_padata(&mut self) -> Vec<rasn_kerberos::PaData> {
+        mem::take(&mut self.padata)
+    }
+    /// Transfer additional tickets without cloning residual dependency storage.
+    pub(super) fn take_additional_tickets(&mut self) -> Vec<rasn_kerberos::Ticket> {
+        mem::take(&mut self.additional_tickets)
+    }
+    /// Transfer the enctype list.
+    pub(super) fn take_etypes(&mut self) -> Vec<i32> {
+        mem::take(&mut self.etypes)
+    }
+    /// Transfer the delegation keytab owner.
+    pub(super) const fn take_delegation_keytab(&mut self) -> Option<Keytab> {
+        self.delegation_keytab.take()
+    }
     /// Supply frontend keys for S4U ticket/evidence validation.
     #[must_use]
     #[inline]
@@ -324,22 +601,105 @@ impl TgsReq {
 }
 
 /// Options for constructing a client AP-REQ.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ApReq {
     /// Explicit runtime policy, or secure defaults when absent.
-    pub crypto_policy: Option<CryptoPolicy>,
+    crypto_policy: Option<CryptoPolicy>,
     /// Raw AP option bit string.
-    pub ap_option_bits: u32,
+    ap_option_bits: u32,
     /// Optional authenticator checksum.
-    pub checksum: Option<rasn_kerberos::Checksum>,
+    checksum: Option<rasn_kerberos::Checksum>,
     /// Optional client-selected subkey.
-    pub subkey: Option<EncryptionKey>,
+    subkey: Option<EncryptionKey>,
     /// Optional client sequence number.
-    pub sequence_number: Option<u32>,
+    sequence_number: Option<u32>,
+}
+
+impl fmt::Debug for ApReq {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            crypto_policy,
+            ap_option_bits,
+            checksum,
+            subkey,
+            sequence_number,
+        } = self;
+        f.debug_struct("ApReq")
+            .field("crypto_policy", crypto_policy)
+            .field("ap_option_bits", ap_option_bits)
+            .field(
+                "checksum_type",
+                &checksum.as_ref().map(|value| value.r#type),
+            )
+            .field("subkey", subkey)
+            .field("sequence_number", sequence_number)
+            .finish()
+    }
 }
 
 impl ApReq {
+    /// Borrow the selected crypto policy.
+    #[inline]
+    #[must_use]
+    pub const fn crypto_policy(&self) -> Option<&CryptoPolicy> {
+        self.crypto_policy.as_ref()
+    }
+    /// Set explicit cryptographic permission.
+    #[inline]
+    pub fn set_crypto_policy(&mut self, value: Option<CryptoPolicy>) {
+        self.crypto_policy = value;
+    }
+    /// Return AP option bits.
+    #[inline]
+    #[must_use]
+    pub const fn ap_option_bits(&self) -> u32 {
+        self.ap_option_bits
+    }
+    /// Borrow the dependency-owned checksum; its ASN.1 copies are residuals.
+    #[inline]
+    #[must_use]
+    pub const fn checksum(&self) -> Option<&rasn_kerberos::Checksum> {
+        self.checksum.as_ref()
+    }
+    /// Borrow the subkey.
+    #[inline]
+    #[must_use]
+    pub const fn subkey(&self) -> Option<&EncryptionKey> {
+        self.subkey.as_ref()
+    }
+    /// Return the selected sequence number.
+    #[inline]
+    #[must_use]
+    pub const fn sequence_number(&self) -> Option<u32> {
+        self.sequence_number
+    }
+    /// Transfer option components without copying credential material.
+    pub(super) fn into_parts(
+        self,
+    ) -> (
+        Option<CryptoPolicy>,
+        u32,
+        Option<rasn_kerberos::Checksum>,
+        Option<EncryptionKey>,
+        Option<u32>,
+    ) {
+        let Self {
+            crypto_policy,
+            ap_option_bits,
+            checksum,
+            subkey,
+            sequence_number,
+        } = self;
+        (
+            crypto_policy,
+            ap_option_bits,
+            checksum,
+            subkey,
+            sequence_number,
+        )
+    }
     #[must_use]
     /// Construct AP-REQ options with no flags or optional authenticator fields.
     #[inline]
@@ -373,6 +733,9 @@ impl ApReq {
     /// Set or clear the client-selected subkey.
     #[inline]
     pub fn with_subkey(mut self, subkey: Option<EncryptionKey>) -> Self {
+        if let Some(previous) = &mut self.subkey {
+            previous.zeroize();
+        }
         self.subkey = subkey;
         self
     }

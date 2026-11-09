@@ -48,9 +48,9 @@ fn mandatory_wrapper_returns_verified_pac() -> Result<(), TestError> {
     // Then discovery and policy agree on its presence.
     assert_eq!(
         accepted
-            .pac
+            .pac()
             .ok_or("verified mandatory PAC missing")?
-            .c_buffers,
+            .c_buffers(),
         5
     );
     Ok(())

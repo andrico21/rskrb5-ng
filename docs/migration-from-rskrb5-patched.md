@@ -1016,6 +1016,67 @@ usize)` validates a KDC TCP record mark.
 Rows added by the critic rounds of the follow-up review, by area. Each note
 names its register row.
 
+Request option diagnostics (FU-CLI-R13): `AsReq`, `TgsReq`, `ApReq`, and
+`TgsRequestParts` print metadata and payload counts/lengths instead of padata,
+additional-ticket ciphertext, checksum bytes or confounders. Do not depend on
+Debug as a credential serialization format.
+
+Credential field privacy (FU-CLI-R13, FU-TRN-R09, FU-PAC-R09): replace direct
+field reads with same-name borrowed getters on client built AS/TGS/AP/FAST
+requests, `AsRepSession`, `KdcError`, password frames/build results and
+`VerifiedKpasswdApRep`, keytab entries/keys and ccache credentials/authorization
+data, `EncryptedData`, `PaForUser`, `PaReqEncPaRep`, `KrbErrorInfo`, PAC containers,
+credential and validation records, GSS tokens, initiator options/contexts, service
+validation/reply types, and `NegotiateHttpResponse`. Metadata reads likewise use
+getters; constructors and existing `with_*` methods replace struct mutation.
+`InitiatorContext` uses `ap_req_ref`, `ap_req_der_ref`, `header_ref`,
+`session_key_ref` and `initiator_subkey_ref` for its secret borrows. Other
+context metadata uses same-name getters.
+
+For replacement use the type's `set_*` method, or retain the result of its
+consuming builder. Session tickets and KDC error payloads take `Zeroizing<Vec<u8>>`;
+keys take their existing owning `EncryptionKey`. `KdcError::with_e_data` now
+takes `Option<Zeroizing<Vec<u8>>>`. `ReferralTgsResult::new` adopts its final
+session and referral vector. Borrowed getters never transfer erasure duties for
+the retained owner; callers must erase any copies they make. Dependency-owned
+rasn `OctetString` fields remain the residual copies documented in the security
+policy, including when a complete ASN.1 message is replaced.
+
+```rust
+# #[cfg(feature = "messages")]
+# fn migrate() {
+use std::time::UNIX_EPOCH;
+use rskrb5_ng::{client::{AsRepSession, KdcError, principal::Principal}, keytab::EncryptionKey};
+use zeroize::Zeroizing;
+let mut session = AsRepSession::new(
+    Principal::user("EXAMPLE.COM", "alice"), Principal::tgt_service("EXAMPLE.COM"),
+    EncryptionKey::new(17, vec![0x11; 16]), Zeroizing::new(vec![0x22; 16]),
+    [0; 4], UNIX_EPOCH, UNIX_EPOCH,
+);
+session.set_ticket(Zeroizing::new(vec![0x33; 16]));
+session.set_session_key(EncryptionKey::new(17, vec![0x44; 16]));
+let _borrowed_ticket = session.ticket();
+let error = KdcError::new(UNIX_EPOCH, 0, 25, Principal::tgt_service("EXAMPLE.COM"))
+    .with_e_data(Some(Zeroizing::new(vec![0x55; 16])));
+let _borrowed_error_data = error.e_data();
+# }
+```
+
+Configured password operations (FU-TRN-R10): public discovery, raw forwarding
+and checked result helpers apply whole-config admission. Remove prohibited
+selectors such as `kpasswd_cleartext`; refusal occurs before delivery and is a
+local `Client::Config` error, not `KpasswdOutcomeUnknown`.
+
+Proxy evidence (FU-CLI-R14): the explicit evidence argument is now the first
+additional ticket even when `TgsReq::with_additional_tickets` supplies others.
+Those other tickets keep their relative order after the evidence. No call-site
+change is required.
+
+Uncompressed claims (FU-PAC-R10): `ClaimsSetMetadata::decoded_claims_set_bytes`
+now returns `ClaimsDecompressedSizeMismatch` when NONE-compression metadata
+declares a different decoded size. Producers must supply the actual byte count;
+matching empty and nonempty streams remain accepted.
+
 #### Configuration
 
 Address aliases (FU-CFG-R01): the first occurrence of either `no_addresses`
@@ -1149,7 +1210,7 @@ This completes the existing TGS path, not FAST armor negotiation.
 # #[cfg(feature = "messages")]
 # fn complete(parts: &rskrb5_ng::client::TgsFastRequestParts, reply: &[u8]) -> Result<(), rskrb5_ng::error::Client> {
 let session = rskrb5_ng::client::process_tgs_rep(
-    &parts.request, reply, &parts.authenticator_subkey,
+    parts.request(), reply, parts.authenticator_subkey(),
 )?;
 drop(session);
 # Ok(())
@@ -1327,8 +1388,8 @@ explicit `to_vec()` copy remains the caller's erasure responsibility.
 use rskrb5_ng::keytab::EncryptionKey;
 use zeroize::Zeroizing;
 let mut key = EncryptionKey::new(18, Zeroizing::new(vec![0x11; 32]));
-key.value = Zeroizing::new(vec![0x22; 32]).into();
-assert_eq!(key.value.as_slice(), &[0x22; 32]);
+key.set_value(Zeroizing::new(vec![0x22; 32]));
+assert_eq!(key.value().as_slice(), &[0x22; 32]);
 ```
 
 AuthorizationData wrapper contents must contain exactly one DER value
@@ -1353,6 +1414,36 @@ implicitly copied. `Pac::data` and `zero_signature_data` are zeroizing vectors;
 slice borrowing is unchanged. Caller-created copies and borrowed parser input
 remain the caller's erasure responsibility. Debug emits metadata/lengths,
 never the key or raw PAC buffers.
+
+PAC credential replacement (FU-PAC-R09): `NtlmSupplementalCredential` now
+exposes `version()`, `flags()`, `lm_password()` and `nt_password()` instead of
+public fields. Hash access borrows arrays. Use `set_lm_password` or
+`set_nt_password` with `Option<Zeroizing<[u8; 16]>>`; setters erase the old hash
+before assignment and update the validity bit. `CredentialsInfo` exposes
+`version()`, `encryption_type()` and `encrypted_credential_data()`; replace its
+private zeroizing payload with `set_encrypted_credential_data`. Supplemental
+packages expose `package_name()`, `credential_size()` and `credentials()`;
+`set_credentials(Zeroizing<Vec<u8>>)` checks the new wire size, erases the old
+payload and updates the size. Their Debug output omits credential bytes.
+
+```rust
+use rskrb5_ng::pac::NtlmSupplementalCredential;
+use zeroize::Zeroizing;
+let mut wire = vec![0; 4];
+wire.extend_from_slice(&3_u32.to_le_bytes());
+wire.extend_from_slice(&[0x11; 32]);
+let mut credential = NtlmSupplementalCredential::parse(&wire)?;
+credential.set_nt_password(Some(Zeroizing::new([0x22; 16])));
+credential.set_lm_password(None);
+assert_eq!(credential.nt_password(), Some(&[0x22; 16]));
+assert!(!credential.has_lm_password());
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Password frame ownership (FU-TRN-R09): `BuiltChangePasswordRequest::der` and
+`BuiltKpasswdRequest::der` are `Zeroizing<Vec<u8>>`; borrow them as slices for
+transport and use `.into()` when supplying an owned replacement. Debug for
+password request/reply frames and built results now prints metadata only.
 
 #### Gates, tests and tooling
 

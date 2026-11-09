@@ -100,7 +100,7 @@ mod tests {
         for value in [0_u32, 999_999] {
             let mut error: KrbError = der::decode(&hex::decode(KRB_ERROR)?)?;
             error.susec = value.into();
-            assert_eq!(KrbErrorInfo::from_rasn(&error)?.susec, value);
+            assert_eq!(KrbErrorInfo::from_rasn(&error)?.susec(), value);
         }
         Ok(())
     }
@@ -160,9 +160,9 @@ mod tests {
             let bytes = hex::decode(fixture)?;
             let decoded: EncryptedData = der::decode(&bytes)?;
 
-            assert_eq!(decoded.etype, 0_i32);
+            assert_eq!(decoded.etype(), 0_i32);
             assert_eq!(decoded.kvno_i32()?, Some(expected_kvno));
-            assert_eq!(decoded.cipher.as_ref(), TEST_CIPHER);
+            assert_eq!(decoded.cipher(), TEST_CIPHER);
             assert_eq!(der::encode(&decoded)?, bytes);
         }
         Ok(())
@@ -215,21 +215,21 @@ mod tests {
         let decoded: KrbError = decode_der("KRB-ERROR", &bytes)?;
         let info = KrbErrorInfo::from_rasn(&decoded)?;
 
-        assert_eq!(info.ctime, Some(timestamp(TEST_TIME_SECONDS)?));
-        assert_eq!(info.cusec, Some(123_456));
-        assert_eq!(info.stime, timestamp(TEST_TIME_SECONDS)?);
-        assert_eq!(info.susec, 123_456);
-        assert_eq!(info.error_code, 60_i32);
-        let client = info.client.ok_or("client principal exists")?;
+        assert_eq!(info.ctime(), Some(timestamp(TEST_TIME_SECONDS)?));
+        assert_eq!(info.cusec(), Some(123_456));
+        assert_eq!(info.stime(), timestamp(TEST_TIME_SECONDS)?);
+        assert_eq!(info.susec(), 123_456);
+        assert_eq!(info.error_code(), 60_i32);
+        let client = info.client().ok_or("client principal exists")?;
         assert_eq!(client.realm, "ATHENA.MIT.EDU");
         assert_eq!(client.name_type, 1_i32);
         assert_eq!(client.components, ["hftsai", "extra"]);
         assert_eq!(client.name(), "hftsai/extra");
-        assert_eq!(info.service.realm, "ATHENA.MIT.EDU");
-        assert_eq!(info.service.name_type, 1_i32);
-        assert_eq!(info.service.components, ["hftsai", "extra"]);
-        assert_eq!(info.e_text.as_deref(), Some("krb5data"));
-        assert_eq!(info.e_data.as_deref(), Some(b"krb5data".as_slice()));
+        assert_eq!(info.service().realm, "ATHENA.MIT.EDU");
+        assert_eq!(info.service().name_type, 1_i32);
+        assert_eq!(info.service().components, ["hftsai", "extra"]);
+        assert_eq!(info.e_text(), Some("krb5data"));
+        assert_eq!(info.e_data(), Some(b"krb5data".as_slice()));
         assert_eq!(encode_der("KRB-ERROR", &decoded)?, bytes);
         Ok(())
     }
@@ -241,16 +241,16 @@ mod tests {
         let decoded: KrbError = decode_der("KRB-ERROR", &bytes)?;
         let info = KrbErrorInfo::decode_der(&bytes)?;
 
-        assert_eq!(info.ctime, None);
-        assert_eq!(info.cusec, Some(123_456));
-        assert_eq!(info.stime, timestamp(TEST_TIME_SECONDS)?);
-        assert_eq!(info.susec, 123_456);
-        assert_eq!(info.error_code, 60_i32);
-        assert_eq!(info.client, None);
-        assert_eq!(info.service.realm, "ATHENA.MIT.EDU");
-        assert_eq!(info.service.name(), "hftsai/extra");
-        assert_eq!(info.e_text, None);
-        assert_eq!(info.e_data, None);
+        assert_eq!(info.ctime(), None);
+        assert_eq!(info.cusec(), Some(123_456));
+        assert_eq!(info.stime(), timestamp(TEST_TIME_SECONDS)?);
+        assert_eq!(info.susec(), 123_456);
+        assert_eq!(info.error_code(), 60_i32);
+        assert_eq!(info.client(), None);
+        assert_eq!(info.service().realm, "ATHENA.MIT.EDU");
+        assert_eq!(info.service().name(), "hftsai/extra");
+        assert_eq!(info.e_text(), None);
+        assert_eq!(info.e_data(), None);
         assert_eq!(encode_der("KRB-ERROR", &decoded)?, bytes);
         Ok(())
     }
@@ -261,11 +261,11 @@ mod tests {
         let bytes = hex::decode(PA_FOR_USER)?;
         let decoded = PaForUser::decode_der(&bytes)?;
 
-        assert_eq!(decoded.user_name.r#type, 1_i32);
-        assert_eq!(decoded.user_name.string.len(), 2);
+        assert_eq!(decoded.user_name().r#type, 1_i32);
+        assert_eq!(decoded.user_name().string.len(), 2);
         assert_eq!(
             decoded
-                .user_name
+                .user_name()
                 .string
                 .first()
                 .ok_or("first name component")?
@@ -274,17 +274,17 @@ mod tests {
         );
         assert_eq!(
             decoded
-                .user_name
+                .user_name()
                 .string
                 .get(1)
                 .ok_or("second name component")?
                 .as_bytes(),
             b"extra"
         );
-        assert_eq!(decoded.user_realm.as_bytes(), b"ATHENA.MIT.EDU");
-        assert_eq!(decoded.cksum.r#type, 1_i32);
-        assert_eq!(decoded.cksum.checksum.as_ref(), b"1234");
-        assert_eq!(decoded.auth_package.as_bytes(), b"krb5data");
+        assert_eq!(decoded.user_realm().as_bytes(), b"ATHENA.MIT.EDU");
+        assert_eq!(decoded.cksum().r#type, 1_i32);
+        assert_eq!(decoded.cksum().checksum.as_ref(), b"1234");
+        assert_eq!(decoded.auth_package().as_bytes(), b"krb5data");
         assert_eq!(decoded.encode_der()?, bytes);
         Ok(())
     }
@@ -307,8 +307,8 @@ mod tests {
         let bytes = hex::decode(PA_REQ_ENC_PA_REP)?;
         let decoded = PaReqEncPaRep::decode_der(&bytes)?;
 
-        assert_eq!(decoded.checksum_type, 15_i32);
-        assert_eq!(decoded.checksum.as_ref(), b"1234");
+        assert_eq!(decoded.checksum_type(), 15_i32);
+        assert_eq!(decoded.checksum(), b"1234");
         assert_eq!(
             decoded.to_checksum(),
             Checksum {

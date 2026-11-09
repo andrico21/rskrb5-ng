@@ -21,18 +21,19 @@ mod tests {
     /// An INVALID TGT with hours remaining still needs immediate acquisition.
     fn invalid_tgt() -> Result<AsRepSession, TestError> {
         let mut tgt = current_tgt_session(1, 180)?;
-        tgt.ticket_flags = (u32::from_be_bytes(tgt.ticket_flags) | 0x0100_0000).to_be_bytes();
+        tgt.set_ticket_flags((u32::from_be_bytes(tgt.ticket_flags()) | 0x0100_0000).to_be_bytes());
         Ok(tgt)
     }
 
     /// A future TGT cannot be used even though expiry is hours away.
     fn future_tgt() -> Result<AsRepSession, TestError> {
         let mut tgt = current_tgt_session(1, 180)?;
-        tgt.start_time = tgt
-            .end_time
-            .checked_sub(Duration::from_hours(1))
-            .context("future start")?;
-        tgt.renew_till = None;
+        tgt.set_start_time(
+            tgt.end_time()
+                .checked_sub(Duration::from_hours(1))
+                .context("future start")?,
+        );
+        tgt.set_renew_till(None);
         Ok(tgt)
     }
 
@@ -47,8 +48,8 @@ mod tests {
             client
                 .tgt_session()
                 .context("primary retained")?
-                .ticket_flags,
-            tgt.ticket_flags
+                .ticket_flags(),
+            tgt.ticket_flags()
         );
         Ok(())
     }
@@ -106,8 +107,8 @@ mod tests {
                 let retained = guard
                     .tgt_session()
                     .context("old primary retained until success")?;
-                assert_eq!(retained.ticket_flags, tgt.ticket_flags);
-                assert_eq!(retained.start_time, tgt.start_time);
+                assert_eq!(retained.ticket_flags(), tgt.ticket_flags());
+                assert_eq!(retained.start_time(), tgt.start_time());
                 drop(guard);
                 Ok(())
             })

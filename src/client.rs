@@ -25,7 +25,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rasn::{der, types::Integer};
 #[cfg(feature = "tokio")]
 use tokio::{sync::Mutex, time::sleep};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize as _, Zeroizing};
 
 #[cfg(feature = "tokio")]
 use crate::config::Config;
@@ -55,6 +55,14 @@ mod cache_update;
 mod credential_debug;
 /// Shared runtime policy validation before client effects.
 mod crypto_policy;
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod replacement_tests;
 
 /// Owning password input and erasure.
 pub mod password;
@@ -202,21 +210,78 @@ pub const KDC_OPTION_RENEW: u32 = 0x0000_0002;
 #[non_exhaustive]
 pub struct BuiltAsReq {
     /// Policy used for the request and all subsequent reply validation.
-    pub crypto_policy: CryptoPolicy,
+    crypto_policy: CryptoPolicy,
     /// Request clock snapshot and acceptable reply start-time skew.
-    pub reply_clock: (SystemTime, Duration),
+    reply_clock: (SystemTime, Duration),
     /// ASN.1 AS-REQ message.
-    pub message: rasn_kerberos::AsReq,
+    message: rasn_kerberos::AsReq,
     /// DER-encoded AS-REQ bytes suitable for KDC transport.
-    pub der: Zeroizing<Vec<u8>>,
+    der: Zeroizing<Vec<u8>>,
     /// Request client principal.
-    pub client: Principal,
+    client: Principal,
     /// Request service principal.
-    pub service: Principal,
+    service: Principal,
     /// Request nonce.
-    pub nonce: u32,
+    nonce: u32,
 }
 impl BuiltAsReq {
+    /// Replace the reply clock bounds.
+    #[inline]
+    pub const fn set_reply_clock(&mut self, value: (SystemTime, Duration)) {
+        self.reply_clock = value;
+    }
+    /// Replace the captured policy used for reply admission.
+    #[inline]
+    pub fn set_crypto_policy(&mut self, value: CryptoPolicy) {
+        self.crypto_policy = value;
+    }
+    /// Replace the dependency-owned wire message; ASN.1 residual copies are not erased.
+    #[inline]
+    pub fn set_message(&mut self, value: rasn_kerberos::AsReq) {
+        self.message = value;
+    }
+    /// Borrow the request policy.
+    #[inline]
+    #[must_use]
+    pub const fn crypto_policy(&self) -> &CryptoPolicy {
+        &self.crypto_policy
+    }
+    /// Return the reply clock bounds.
+    #[inline]
+    #[must_use]
+    pub const fn reply_clock(&self) -> (SystemTime, Duration) {
+        self.reply_clock
+    }
+    /// Borrow the dependency-owned wire message.
+    #[inline]
+    #[must_use]
+    pub const fn message(&self) -> &rasn_kerberos::AsReq {
+        &self.message
+    }
+    /// Borrow encoded credential bytes.
+    #[inline]
+    #[must_use]
+    pub const fn der(&self) -> &Zeroizing<Vec<u8>> {
+        &self.der
+    }
+    /// Borrow the client identity.
+    #[inline]
+    #[must_use]
+    pub const fn client(&self) -> &Principal {
+        &self.client
+    }
+    /// Borrow the service identity.
+    #[inline]
+    #[must_use]
+    pub const fn service(&self) -> &Principal {
+        &self.service
+    }
+    /// Return the nonce.
+    #[inline]
+    #[must_use]
+    pub const fn nonce(&self) -> u32 {
+        self.nonce
+    }
     /// Creates a `BuiltAsReq` from its required fields.
     #[must_use]
     #[inline]
@@ -253,30 +318,110 @@ pub enum TgsReplyKey {
 #[non_exhaustive]
 pub struct BuiltTgsReq {
     /// RFC 4120 reply key usage selected by the authenticator construction path.
-    pub reply_key_usage: TgsReplyKey,
+    reply_key_usage: TgsReplyKey,
     /// Policy used for the request and all subsequent reply validation.
-    pub crypto_policy: CryptoPolicy,
+    crypto_policy: CryptoPolicy,
     /// Request clock snapshot and acceptable reply start-time skew.
-    pub reply_clock: (SystemTime, Duration),
+    reply_clock: (SystemTime, Duration),
     /// Frontend keys for validating S4U tickets; never encoded on the wire.
-    pub delegation_keytab: Option<Keytab>,
+    delegation_keytab: Option<Keytab>,
     /// ASN.1 TGS-REQ message.
-    pub message: rasn_kerberos::TgsReq,
+    message: rasn_kerberos::TgsReq,
     /// DER-encoded TGS-REQ bytes suitable for KDC transport.
-    pub der: Zeroizing<Vec<u8>>,
+    der: Zeroizing<Vec<u8>>,
     /// Expected client principal in the KDC reply.
     ///
     /// This is normally the same principal that authenticated the TGS-REQ, but
     /// `S4U2Self` replies carry the impersonated user as the client.
-    pub client: Principal,
+    client: Principal,
     /// Requested service principal.
-    pub service: Principal,
+    service: Principal,
     /// Realm contacted for the TGS exchange.
-    pub kdc_realm: String,
+    kdc_realm: String,
     /// Request nonce.
-    pub nonce: u32,
+    nonce: u32,
 }
 impl BuiltTgsReq {
+    /// Return the selected reply-key usage.
+    #[inline]
+    #[must_use]
+    pub const fn reply_key_usage(&self) -> TgsReplyKey {
+        self.reply_key_usage
+    }
+    /// Borrow the request policy.
+    #[inline]
+    #[must_use]
+    pub const fn crypto_policy(&self) -> &CryptoPolicy {
+        &self.crypto_policy
+    }
+    /// Replace the reply-admission policy.
+    #[inline]
+    pub fn set_crypto_policy(&mut self, value: CryptoPolicy) {
+        self.crypto_policy = value;
+    }
+    /// Return reply clock bounds.
+    #[inline]
+    #[must_use]
+    pub const fn reply_clock(&self) -> (SystemTime, Duration) {
+        self.reply_clock
+    }
+    /// Replace reply clock bounds.
+    #[inline]
+    pub const fn set_reply_clock(&mut self, value: (SystemTime, Duration)) {
+        self.reply_clock = value;
+    }
+    /// Borrow the delegation keytab.
+    #[inline]
+    #[must_use]
+    pub const fn delegation_keytab(&self) -> Option<&Keytab> {
+        self.delegation_keytab.as_ref()
+    }
+    /// Borrow the dependency-owned wire message.
+    #[inline]
+    #[must_use]
+    pub const fn message(&self) -> &rasn_kerberos::TgsReq {
+        &self.message
+    }
+    /// Replace a dependency-owned wire message; ASN.1 residual copies remain.
+    #[inline]
+    pub fn set_message(&mut self, value: rasn_kerberos::TgsReq) {
+        self.message = value;
+    }
+    /// Borrow encoded credential bytes.
+    #[inline]
+    #[must_use]
+    pub const fn der(&self) -> &Zeroizing<Vec<u8>> {
+        &self.der
+    }
+    /// Borrow the expected client identity.
+    #[inline]
+    #[must_use]
+    pub const fn client(&self) -> &Principal {
+        &self.client
+    }
+    /// Replace expected client metadata.
+    #[inline]
+    pub fn set_client(&mut self, value: Principal) {
+        self.client = value;
+    }
+    /// Borrow the service identity.
+    #[inline]
+    #[must_use]
+    pub const fn service(&self) -> &Principal {
+        &self.service
+    }
+    /// Borrow the contacted realm.
+    #[inline]
+    #[must_use]
+    pub fn kdc_realm(&self) -> &str {
+        &self.kdc_realm
+    }
+    /// Return the request nonce.
+    #[inline]
+    #[must_use]
+    pub const fn nonce(&self) -> u32 {
+        self.nonce
+    }
     /// Creates a `BuiltTgsReq` from its required fields.
     #[must_use]
     #[inline]
@@ -314,12 +459,45 @@ impl BuiltTgsReq {
 #[non_exhaustive]
 pub struct TgsFastRequestParts {
     /// The request as built, with its validation metadata.
-    pub request: BuiltTgsReq,
+    request: BuiltTgsReq,
     /// DER of the AP-REQ placed in the outer `PA-TGS-REQ` padata.
-    pub ap_req_der: Zeroizing<Vec<u8>>,
+    ap_req_der: Zeroizing<Vec<u8>>,
     /// The authenticator's subkey. Secret, and zeroized on drop: the implicit
     /// armor key is derived from it, so it must not reach a log.
-    pub authenticator_subkey: EncryptionKey,
+    authenticator_subkey: EncryptionKey,
+}
+impl TgsFastRequestParts {
+    /// Borrow the built request.
+    #[inline]
+    #[must_use]
+    pub const fn request(&self) -> &BuiltTgsReq {
+        &self.request
+    }
+    /// Borrow the encoded AP-REQ.
+    #[inline]
+    #[must_use]
+    pub const fn ap_req_der(&self) -> &Zeroizing<Vec<u8>> {
+        &self.ap_req_der
+    }
+    /// Borrow the authenticator subkey.
+    #[inline]
+    #[must_use]
+    pub const fn authenticator_subkey(&self) -> &EncryptionKey {
+        &self.authenticator_subkey
+    }
+    /// Replace the encoded AP-REQ, erasing the previous owner.
+    #[inline]
+    pub fn set_ap_req_der(&mut self, value: Zeroizing<Vec<u8>>) {
+        self.ap_req_der.as_mut_slice().zeroize();
+        #[cfg(test)]
+        replacement_tests::observe(&self.ap_req_der);
+        self.ap_req_der = value;
+    }
+    /// Replace the authenticator subkey, erasing the previous owner.
+    #[inline]
+    pub fn set_authenticator_subkey(&mut self, value: EncryptionKey) {
+        self.authenticator_subkey = value;
+    }
 }
 impl fmt::Debug for TgsFastRequestParts {
     #[inline]
@@ -332,7 +510,7 @@ impl fmt::Debug for TgsFastRequestParts {
         f.debug_struct("TgsFastRequestParts")
             .field("request", request)
             .field("ap_req_der_len", &ap_req_der.len())
-            .field("authenticator_subkey_etype", &authenticator_subkey.etype)
+            .field("authenticator_subkey_etype", &authenticator_subkey.etype())
             .finish_non_exhaustive()
     }
 }
@@ -341,52 +519,225 @@ impl fmt::Debug for TgsFastRequestParts {
 #[non_exhaustive]
 pub struct BuiltApReq {
     /// ASN.1 AP-REQ message.
-    pub message: rasn_kerberos::ApReq,
+    message: rasn_kerberos::ApReq,
     /// DER-encoded AP-REQ bytes.
-    pub der: Zeroizing<Vec<u8>>,
+    der: Zeroizing<Vec<u8>>,
     /// Client principal placed in the authenticator.
-    pub client: Principal,
+    client: Principal,
     /// Service principal from the ticket.
-    pub service: Principal,
+    service: Principal,
     /// Service-ticket session key used to encrypt the authenticator.
-    pub session_key: EncryptionKey,
+    session_key: EncryptionKey,
     /// Authenticator `ctime` without `cusec`.
-    pub authenticator_ctime: SystemTime,
+    authenticator_ctime: SystemTime,
     /// Authenticator microsecond field.
-    pub authenticator_cusec: u32,
+    authenticator_cusec: u32,
     /// Authenticator timestamp including `cusec`.
-    pub authenticator_time: SystemTime,
+    authenticator_time: SystemTime,
     /// Optional client sequence number supplied in the authenticator.
-    pub sequence_number: Option<u32>,
+    sequence_number: Option<u32>,
     /// Optional client-selected subkey supplied in the authenticator.
-    pub subkey: Option<EncryptionKey>,
+    subkey: Option<EncryptionKey>,
+}
+impl BuiltApReq {
+    /// Borrow the authenticated client identity.
+    #[inline]
+    #[must_use]
+    pub const fn client(&self) -> &Principal {
+        &self.client
+    }
+    /// Borrow the requested service identity.
+    #[inline]
+    #[must_use]
+    pub const fn service(&self) -> &Principal {
+        &self.service
+    }
+    /// Return authenticator whole-second time.
+    #[inline]
+    #[must_use]
+    pub const fn authenticator_ctime(&self) -> SystemTime {
+        self.authenticator_ctime
+    }
+    /// Return authenticator microseconds.
+    #[inline]
+    #[must_use]
+    pub const fn authenticator_cusec(&self) -> u32 {
+        self.authenticator_cusec
+    }
+    /// Return the complete authenticator time.
+    #[inline]
+    #[must_use]
+    pub const fn authenticator_time(&self) -> SystemTime {
+        self.authenticator_time
+    }
+    /// Return the optional sequence number.
+    #[inline]
+    #[must_use]
+    pub const fn sequence_number(&self) -> Option<u32> {
+        self.sequence_number
+    }
+    /// Borrow the ASN.1 AP-REQ message.
+    #[inline]
+    #[must_use]
+    pub const fn message(&self) -> &rasn_kerberos::ApReq {
+        &self.message
+    }
+    /// Replace the ASN.1 AP-REQ message; ASN.1 residual copies are not erased.
+    #[inline]
+    pub fn set_message(&mut self, value: rasn_kerberos::ApReq) {
+        self.message = value;
+    }
+    /// Borrow the DER-encoded AP-REQ bytes.
+    #[inline]
+    #[must_use]
+    pub const fn der(&self) -> &Zeroizing<Vec<u8>> {
+        &self.der
+    }
+    /// Replace the DER-encoded AP-REQ bytes, erasing the previous owner.
+    #[inline]
+    pub fn set_der(&mut self, value: Zeroizing<Vec<u8>>) {
+        self.der.as_mut_slice().zeroize();
+        #[cfg(test)]
+        replacement_tests::observe(&self.der);
+        self.der = value;
+    }
+    /// Borrow the service-ticket session key.
+    #[inline]
+    #[must_use]
+    pub const fn session_key(&self) -> &EncryptionKey {
+        &self.session_key
+    }
+    /// Replace the service-ticket session key, erasing the previous owner.
+    #[inline]
+    pub fn set_session_key(&mut self, value: EncryptionKey) {
+        self.session_key = value;
+    }
+    /// Borrow the optional client-selected subkey.
+    #[inline]
+    #[must_use]
+    pub const fn subkey(&self) -> Option<&EncryptionKey> {
+        self.subkey.as_ref()
+    }
+    /// Replace the optional client-selected subkey, erasing the previous owner.
+    #[inline]
+    pub fn set_subkey(&mut self, value: Option<EncryptionKey>) {
+        self.subkey = value;
+    }
 }
 /// Successful AS-REP processing result.
 #[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct AsRepSession {
     /// Client identity returned by the KDC.
-    pub client: Principal,
+    client: Principal,
     /// Service identity returned by the KDC.
-    pub service: Principal,
+    service: Principal,
     /// Session key issued by the KDC.
-    pub session_key: EncryptionKey,
+    session_key: EncryptionKey,
     /// DER-encoded ticket from the AS-REP.
-    pub ticket: Zeroizing<Vec<u8>>,
+    ticket: Zeroizing<Vec<u8>>,
     /// Ticket flags as raw ccache bytes.
-    pub ticket_flags: [u8; 4],
+    ticket_flags: [u8; 4],
     /// Initial authentication time.
-    pub auth_time: SystemTime,
+    auth_time: SystemTime,
     /// Ticket start time, or auth time when start time is absent.
-    pub start_time: SystemTime,
+    start_time: SystemTime,
     /// Ticket end time.
-    pub end_time: SystemTime,
+    end_time: SystemTime,
     /// Renewable-until time, when supplied.
-    pub renew_till: Option<SystemTime>,
+    renew_till: Option<SystemTime>,
     /// Session key expiration time, when supplied.
-    pub key_expiration: Option<SystemTime>,
+    key_expiration: Option<SystemTime>,
 }
 impl AsRepSession {
+    /// Borrow the client identity.
+    #[inline]
+    #[must_use]
+    pub const fn client(&self) -> &Principal {
+        &self.client
+    }
+    /// Set client identity metadata.
+    #[inline]
+    pub fn set_client(&mut self, value: Principal) {
+        self.client = value;
+    }
+    /// Borrow the service identity.
+    #[inline]
+    #[must_use]
+    pub const fn service(&self) -> &Principal {
+        &self.service
+    }
+    /// Set service identity metadata.
+    #[inline]
+    pub fn set_service(&mut self, value: Principal) {
+        self.service = value;
+    }
+    /// Return ticket flags.
+    #[inline]
+    #[must_use]
+    pub const fn ticket_flags(&self) -> [u8; 4] {
+        self.ticket_flags
+    }
+    /// Set ticket flags metadata.
+    #[inline]
+    pub const fn set_ticket_flags(&mut self, value: [u8; 4]) {
+        self.ticket_flags = value;
+    }
+    /// Return authentication time.
+    #[inline]
+    #[must_use]
+    pub const fn auth_time(&self) -> SystemTime {
+        self.auth_time
+    }
+    /// Set authentication time metadata.
+    #[inline]
+    pub const fn set_auth_time(&mut self, value: SystemTime) {
+        self.auth_time = value;
+    }
+    /// Return validity start time.
+    #[inline]
+    #[must_use]
+    pub const fn start_time(&self) -> SystemTime {
+        self.start_time
+    }
+    /// Set validity start time metadata.
+    #[inline]
+    pub const fn set_start_time(&mut self, value: SystemTime) {
+        self.start_time = value;
+    }
+    /// Return validity end time.
+    #[inline]
+    #[must_use]
+    pub const fn end_time(&self) -> SystemTime {
+        self.end_time
+    }
+    /// Set validity end time metadata.
+    #[inline]
+    pub const fn set_end_time(&mut self, value: SystemTime) {
+        self.end_time = value;
+    }
+    /// Return renewable-until time.
+    #[inline]
+    #[must_use]
+    pub const fn renew_till(&self) -> Option<SystemTime> {
+        self.renew_till
+    }
+    /// Set renewable-until metadata.
+    #[inline]
+    pub const fn set_renew_till(&mut self, value: Option<SystemTime>) {
+        self.renew_till = value;
+    }
+    /// Return key expiration time.
+    #[inline]
+    #[must_use]
+    pub const fn key_expiration(&self) -> Option<SystemTime> {
+        self.key_expiration
+    }
+    /// Set key expiration metadata.
+    #[inline]
+    pub const fn set_key_expiration(&mut self, value: Option<SystemTime>) {
+        self.key_expiration = value;
+    }
     /// Creates a `AsRepSession` from its required fields.
     #[must_use]
     #[inline]
@@ -433,6 +784,31 @@ impl AsRepSession {
         self.key_expiration = value;
         self
     }
+    /// Borrow the session key.
+    #[inline]
+    #[must_use]
+    pub const fn session_key(&self) -> &EncryptionKey {
+        &self.session_key
+    }
+    /// Replace the session key, erasing the previous owner.
+    #[inline]
+    pub fn set_session_key(&mut self, value: EncryptionKey) {
+        self.session_key = value;
+    }
+    /// Borrow the DER-encoded ticket.
+    #[inline]
+    #[must_use]
+    pub const fn ticket(&self) -> &Zeroizing<Vec<u8>> {
+        &self.ticket
+    }
+    /// Replace the DER-encoded ticket, erasing the previous owner.
+    #[inline]
+    pub fn set_ticket(&mut self, value: Zeroizing<Vec<u8>>) {
+        self.ticket.as_mut_slice().zeroize();
+        #[cfg(test)]
+        replacement_tests::observe(&self.ticket);
+        self.ticket = value;
+    }
     /// Convert this AS-REP result into the existing MIT ccache credential shape.
     /// # Errors
     ///
@@ -440,14 +816,14 @@ impl AsRepSession {
     /// has a fractional second, or is after 2106.
     #[inline]
     pub fn to_ccache_credential(&self) -> Result<ccache::Credential, Error> {
-        Ok(ccache::Credential {
-            client: ccache_principal(&self.client),
-            server: ccache_principal(&self.service),
-            key: ccache::EncryptionKey {
-                etype: self.session_key.etype,
-                value: self.session_key.value.clone(),
-            },
-            times: ccache::CredentialTimes {
+        Ok(ccache::Credential::new(
+            ccache_principal(&self.client),
+            ccache_principal(&self.service),
+            ccache::EncryptionKey::new(
+                self.session_key().etype(),
+                self.session_key().value().clone(),
+            ),
+            ccache::CredentialTimes {
                 auth_time: system_time_to_u32_seconds(self.auth_time)?,
                 start_time: system_time_to_u32_seconds(self.start_time)?,
                 end_time: system_time_to_u32_seconds(self.end_time)?,
@@ -457,13 +833,9 @@ impl AsRepSession {
                     .transpose()?
                     .unwrap_or_default(),
             },
-            is_skey: false,
-            ticket_flags: self.ticket_flags,
-            addresses: Vec::new(),
-            auth_data: Vec::new(),
-            ticket: self.ticket.clone(),
-            second_ticket: Zeroizing::default(),
-        })
+            self.ticket_flags,
+            self.ticket().clone(),
+        ))
     }
 }
 /// Successful TGS-REP processing result.
@@ -472,13 +844,24 @@ impl AsRepSession {
 /// be written to the existing ccache credential representation.
 pub type TgsRepSession = AsRepSession;
 /// Result of a referral-following TGS exchange.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ReferralTgsResult {
     /// Final service ticket.
     pub ticket: TgsRepSession,
     /// Intermediate referral TGTs acquired while reaching the service realm.
     pub referral_tgts: Vec<AsRepSession>,
+}
+impl ReferralTgsResult {
+    /// Adopt the final ticket and referral owners without copying credential bytes.
+    #[inline]
+    #[must_use]
+    pub const fn new(ticket: TgsRepSession, referral_tgts: Vec<AsRepSession>) -> Self {
+        Self {
+            ticket,
+            referral_tgts,
+        }
+    }
 }
 /// Runtime-neutral boundary for KDC request/response transport.
 pub trait KdcTransport {
@@ -490,33 +873,102 @@ pub trait KdcTransport {
     fn send(&mut self, realm: &str, request: &[u8]) -> Result<Vec<u8>, Error>;
 }
 /// Parsed KRB-ERROR returned by a KDC.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct KdcError {
     /// Client time, when present.
-    pub ctime: Option<SystemTime>,
+    ctime: Option<SystemTime>,
     /// Client microseconds, when present.
-    pub cusec: Option<u32>,
+    cusec: Option<u32>,
     /// KDC/server time.
-    pub stime: SystemTime,
+    stime: SystemTime,
     /// KDC/server microseconds.
-    pub susec: u32,
+    susec: u32,
     /// Kerberos error code.
-    pub error_code: i32,
+    error_code: i32,
     /// Optional human-readable error text.
-    pub text: Option<String>,
+    text: Option<String>,
     /// Client principal carried by the error, when present.
-    pub client: Option<Principal>,
+    client: Option<Principal>,
     /// Service principal that issued the error.
-    pub service: Principal,
+    service: Principal,
     /// Raw e-data bytes, when present.
-    pub e_data: Option<Vec<u8>>,
+    e_data: Option<Zeroizing<Vec<u8>>>,
     /// Parsed METHOD-DATA PA-DATA values for preauthentication errors.
-    pub method_data: Vec<rasn_kerberos::PaData>,
+    method_data: Vec<rasn_kerberos::PaData>,
     /// Parsed PA-ETYPE-INFO2/PA-ETYPE-INFO key derivation hints.
-    pub preauth_key_info: Vec<PreauthKeyInfo>,
+    preauth_key_info: Vec<PreauthKeyInfo>,
 }
 impl KdcError {
+    /// Return the client time.
+    #[inline]
+    #[must_use]
+    pub const fn ctime(&self) -> Option<SystemTime> {
+        self.ctime
+    }
+    /// Return client microseconds.
+    #[inline]
+    #[must_use]
+    pub const fn cusec(&self) -> Option<u32> {
+        self.cusec
+    }
+    /// Return server time.
+    #[inline]
+    #[must_use]
+    pub const fn stime(&self) -> SystemTime {
+        self.stime
+    }
+    /// Return server microseconds.
+    #[inline]
+    #[must_use]
+    pub const fn susec(&self) -> u32 {
+        self.susec
+    }
+    /// Return the protocol error code.
+    #[inline]
+    #[must_use]
+    pub const fn error_code(&self) -> i32 {
+        self.error_code
+    }
+    /// Borrow optional server diagnostic text.
+    #[inline]
+    #[must_use]
+    pub fn text(&self) -> Option<&str> {
+        self.text.as_deref()
+    }
+    /// Borrow the optional client identity.
+    #[inline]
+    #[must_use]
+    pub const fn client(&self) -> Option<&Principal> {
+        self.client.as_ref()
+    }
+    /// Borrow the server identity.
+    #[inline]
+    #[must_use]
+    pub const fn service(&self) -> &Principal {
+        &self.service
+    }
+    /// Set opaque error data in a zeroizing owner.
+    #[inline]
+    #[must_use]
+    pub fn with_e_data(mut self, value: Option<Zeroizing<Vec<u8>>>) -> Self {
+        self.set_e_data(value);
+        self
+    }
+    /// Replace preauthentication payloads; dependency-owned residual copies remain.
+    #[inline]
+    #[must_use]
+    pub fn with_method_data(mut self, value: Vec<rasn_kerberos::PaData>) -> Self {
+        self.set_method_data(value);
+        self
+    }
+    /// Set preauthentication derivation hints.
+    #[inline]
+    #[must_use]
+    pub fn with_preauth_key_info(mut self, value: Vec<PreauthKeyInfo>) -> Self {
+        self.preauth_key_info = value;
+        self
+    }
     /// Creates a `KdcError` from its required fields.
     #[must_use]
     #[inline]
@@ -563,26 +1015,43 @@ impl KdcError {
         self.client = value;
         self
     }
-    /// Sets `e_data`, preserving the other fields.
-    #[must_use]
+    /// Borrow the raw e-data bytes, when present.
     #[inline]
-    pub fn with_e_data(mut self, value: Option<Vec<u8>>) -> Self {
+    #[must_use]
+    pub const fn e_data(&self) -> Option<&Zeroizing<Vec<u8>>> {
+        self.e_data.as_ref()
+    }
+    /// Replace the raw e-data bytes, erasing the previous owner.
+    #[inline]
+    pub fn set_e_data(&mut self, value: Option<Zeroizing<Vec<u8>>>) {
+        if let Some(bytes) = &mut self.e_data {
+            bytes.as_mut_slice().zeroize();
+            #[cfg(test)]
+            replacement_tests::observe(bytes);
+        }
         self.e_data = value;
-        self
     }
-    /// Sets `method_data`, preserving the other fields.
-    #[must_use]
+    /// Borrow the METHOD-DATA values.
     #[inline]
-    pub fn with_method_data(mut self, value: Vec<rasn_kerberos::PaData>) -> Self {
+    #[must_use]
+    pub fn method_data(&self) -> &[rasn_kerberos::PaData] {
+        &self.method_data
+    }
+    /// Replace the METHOD-DATA values, erasing the previous owner.
+    #[inline]
+    pub fn set_method_data(&mut self, value: Vec<rasn_kerberos::PaData>) {
         self.method_data = value;
-        self
     }
-    /// Sets `preauth_key_info`, preserving the other fields.
-    #[must_use]
+    /// Borrow the preauth key info hints.
     #[inline]
-    pub fn with_preauth_key_info(mut self, value: Vec<PreauthKeyInfo>) -> Self {
+    #[must_use]
+    pub fn preauth_key_info(&self) -> &[PreauthKeyInfo] {
+        &self.preauth_key_info
+    }
+    /// Replace the preauth key info hints, erasing the previous owner.
+    #[inline]
+    pub fn set_preauth_key_info(&mut self, value: Vec<PreauthKeyInfo>) {
         self.preauth_key_info = value;
-        self
     }
 }
 /// KDC hint for deriving or selecting a preauthentication key.
@@ -983,7 +1452,7 @@ impl Tokio {
         let mut kerberos = Self::new(config, protocol, client, None);
         let now = SystemTime::now();
         for credential in cache.entries() {
-            if !same_ccache_client_identity(&credential.client, cache.default_principal()) {
+            if !same_ccache_client_identity(credential.client(), cache.default_principal()) {
                 continue;
             }
             let session = ccache_credential_session(credential);
@@ -1013,7 +1482,7 @@ impl Tokio {
     ) -> Result<Self, Error> {
         let policy = crypto_policy::configured(&config.libdefaults)?;
         for credential in cache.entries() {
-            if same_ccache_client_identity(&credential.client, cache.default_principal()) {
+            if same_ccache_client_identity(credential.client(), cache.default_principal()) {
                 crypto_policy::session(
                     &policy,
                     &ccache_credential_session(credential),
@@ -1744,7 +2213,7 @@ impl Tokio {
         self.tgt_sessions.clear();
         self.tgt = None;
         self.cache_tgt_session(session)?;
-        self.service_tickets.clear();
+        self.clear_service_ticket_cache();
         self.tgt.as_ref().ok_or(Error::NoTgtSession)
     }
     /// Renew the current TGT explicitly.
@@ -1800,7 +2269,7 @@ impl Tokio {
         })?;
         if renewed_realm == self.client.realm {
             self.tgt = Some(renewed.clone());
-            self.service_tickets.clear();
+            self.clear_service_ticket_cache();
         }
         drop(self.tgt_sessions.insert(renewed_realm, renewed.clone()));
         Ok(renewed)
@@ -1930,10 +2399,10 @@ impl Tokio {
         user: Principal,
         mut options: TgsReq,
     ) -> Result<TgsRepSession, Error> {
-        if options.delegation_keytab.is_none()
+        if options.delegation_keytab().is_none()
             && let Some(TokioClientCredentials::Keytab(keytab)) = &self.credentials
         {
-            options.delegation_keytab = Some(keytab.clone());
+            options = options.with_delegation_keytab(keytab.clone());
         }
         let service_tgt = self.ensure_tgt().await?;
         self.transport
@@ -1977,10 +2446,10 @@ impl Tokio {
         target_service: Principal,
         mut options: TgsReq,
     ) -> Result<TgsRepSession, Error> {
-        if options.delegation_keytab.is_none()
+        if options.delegation_keytab().is_none()
             && let Some(TokioClientCredentials::Keytab(keytab)) = &self.credentials
         {
-            options.delegation_keytab = Some(keytab.clone());
+            options = options.with_delegation_keytab(keytab.clone());
         }
         let service_tgt = self.ensure_tgt().await?;
         self.transport
@@ -2006,7 +2475,7 @@ impl Tokio {
     #[cfg(feature = "spnego")]
     #[inline]
     pub async fn spnego_header(&mut self, service: Principal) -> Result<String, Error> {
-        Ok(self.spnego_context(service).await?.header.to_string())
+        Ok(self.spnego_context(service).await?.header_ref().to_owned())
     }
     /// Build a SPNEGO HTTP `Authorization` header with explicit initiator options.
     ///
@@ -2028,8 +2497,8 @@ impl Tokio {
         Ok(self
             .spnego_context_with_options(service, options)
             .await?
-            .header
-            .to_string())
+            .header_ref()
+            .to_owned())
     }
     /// Build a SPNEGO initiator context for a service.
     ///
@@ -2071,7 +2540,7 @@ impl Tokio {
         service: Principal,
         mut options: spnego::InitiatorContextOptions,
     ) -> Result<spnego::InitiatorContext, Error> {
-        options.crypto_policy = Some(crypto_policy::configured(&self.config.libdefaults)?);
+        options = options.with_crypto_policy(crypto_policy::configured(&self.config.libdefaults)?);
         let ticket = self.get_service_ticket(service).await?;
         Ok(spnego::init_sec_context(&ticket, options)?)
     }
@@ -2419,12 +2888,12 @@ impl Tokio {
                 &self.config,
                 self.protocol,
                 &target.realm,
-                &request.request,
+                request.request(),
             )
             .await?;
         // Delivery has occurred: unsigned refusals are unauthenticated diagnostics,
         // not proof of rollback. Wrap validator failures once, before ensure_success.
-        let result = validated_result(&reply, &request, &options, &request.crypto_policy)
+        let result = validated_result(&reply, &request, &options, request.crypto_policy())
             .map_err(|source| Error::KpasswdOutcomeUnknown(Box::new(source)))?;
         result.ensure_success()?;
 
@@ -2492,9 +2961,10 @@ fn keytab_client_enctypes(keytab: &Keytab, client: &Principal) -> Vec<i32> {
         .entries()
         .iter()
         .filter(|entry| {
-            entry.principal.realm == client.realm && entry.principal.components == client.components
+            entry.principal().realm == client.realm
+                && entry.principal().components == client.components
         })
-        .map(|entry| entry.key.etype)
+        .map(|entry| entry.key().etype())
         .collect::<Vec<_>>();
     enctypes.sort_unstable();
     enctypes.dedup();
@@ -2549,26 +3019,31 @@ pub fn build_tgt_as_req(client: Principal, options: AsReq) -> Result<BuiltAsReq,
 pub fn build_as_req(
     client: Principal,
     service: Principal,
-    options: AsReq,
+    mut options: AsReq,
 ) -> Result<BuiltAsReq, Error> {
-    crypto_policy::padata(&options.padata)?;
-    let crypto_policy = crypto_policy::request(&options.crypto_policy, &options.etypes)?;
-    if options.etypes.is_empty() {
+    crypto_policy::padata(options.padata())?;
+    let crypto_policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
+    if options.etypes().is_empty() {
         return Err(Error::EmptyEtypes);
     }
 
     let till = options
-        .now
-        .checked_add(options.ticket_lifetime)
+        .now()
+        .checked_add(options.ticket_lifetime())
         .ok_or(Error::TimeOverflow)?;
     let renew_till = options
-        .renew_lifetime
-        .map(|duration| options.now.checked_add(duration).ok_or(Error::TimeOverflow))
+        .renew_lifetime()
+        .map(|duration| {
+            options
+                .now()
+                .checked_add(duration)
+                .ok_or(Error::TimeOverflow)
+        })
         .transpose()?;
-    let padata = (!options.padata.is_empty()).then_some(options.padata);
+    let padata = (!options.padata().is_empty()).then(|| options.take_padata());
     let kdc_option_bits = request_kdc_option_bits(
-        options.kdc_option_bits & !KDC_OPTION_CANONICALIZE,
-        options.renew_lifetime,
+        options.kdc_option_bits() & !KDC_OPTION_CANONICALIZE,
+        options.renew_lifetime(),
     );
     let req_body = rasn_kerberos::KdcReqBody {
         kdc_options: kdc_options_from_bits(kdc_option_bits),
@@ -2578,8 +3053,8 @@ pub fn build_as_req(
         from: None,
         till: kerberos_time_from_system_time(till)?,
         rtime: renew_till.map(kerberos_time_from_system_time).transpose()?,
-        nonce: options.nonce,
-        etype: options.etypes,
+        nonce: options.nonce(),
+        etype: options.take_etypes(),
         addresses: None,
         enc_authorization_data: None,
         additional_tickets: None,
@@ -2589,12 +3064,12 @@ pub fn build_as_req(
 
     Ok(BuiltAsReq {
         crypto_policy,
-        reply_clock: (options.now, options.clock_skew),
+        reply_clock: (options.now(), options.clock_skew()),
         message,
         der,
         client,
         service,
-        nonce: options.nonce,
+        nonce: options.nonce(),
     })
 }
 
@@ -2616,16 +3091,16 @@ pub fn pa_enc_timestamp_with_confounder(
         patimestamp: time::authenticator(timestamp, cusec, "PA-ENC-TIMESTAMP")?,
         pausec: Some(Integer::from(cusec)),
     };
-    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype = selection::enctype(key.etype())?.ok_or(Error::UnsupportedEtype(key.etype()))?;
     let plaintext = encode("PA-ENC-TS-ENC", &enc_ts)?;
     let cipher = etype.encrypt_message_with_confounder(
-        &key.value,
+        key.value(),
         &plaintext,
         AS_REQ_PA_ENC_TIMESTAMP_USAGE,
         confounder,
     )?;
     let encrypted = rasn_kerberos::EncryptedData {
-        etype: key.etype,
+        etype: key.etype(),
         kvno,
         cipher: cipher.into(),
     };
@@ -2681,19 +3156,19 @@ pub fn pa_for_user_padata_with_auth_package(
 ) -> Result<rasn_kerberos::PaData, Error> {
     let s4u_bytes = s4u_byte_array(user, auth_package);
     let checksum = kerb_checksum_hmac_md5(
-        &tgt_session_key.value,
+        tgt_session_key.value(),
         &s4u_bytes,
         PA_FOR_USER_CHECKSUM_USAGE,
     );
-    let value = messages::PaForUser {
-        user_name: principal_to_rasn(user)?,
-        user_realm: kerberos_string(&user.realm)?,
-        cksum: rasn_kerberos::Checksum {
+    let value = messages::PaForUser::new(
+        principal_to_rasn(user)?,
+        kerberos_string(&user.realm)?,
+        rasn_kerberos::Checksum {
             r#type: Rc4HmacEtype::checksum_type_id(),
             checksum: checksum.into(),
         },
-        auth_package: kerberos_string(auth_package)?,
-    };
+        kerberos_string(auth_package)?,
+    );
 
     Ok(rasn_kerberos::PaData {
         r#type: PA_FOR_USER,
@@ -2727,7 +3202,7 @@ pub fn pa_enc_timestamp(
     cusec: u32,
     kvno: Option<u32>,
 ) -> Result<rasn_kerberos::PaData, Error> {
-    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype = selection::enctype(key.etype())?.ok_or(Error::UnsupportedEtype(key.etype()))?;
     let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     pa_enc_timestamp_with_confounder(key, timestamp, cusec, &confounder, kvno)
@@ -2746,15 +3221,15 @@ pub fn build_preauthenticated_as_req(
     key: &EncryptionKey,
     kvno: Option<u32>,
 ) -> Result<BuiltAsReq, Error> {
-    crypto_policy::padata(&options.padata)?;
-    let policy = crypto_policy::request(&options.crypto_policy, &options.etypes)?;
-    policy.check_use(key.etype, Use::ReplyKey)?;
+    crypto_policy::padata(options.padata())?;
+    let policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
+    policy.check_use(key.etype(), Use::ReplyKey)?;
     let (timestamp, cusec) = current_preauth_time()?;
     options
-        .padata
+        .padata_mut()
         .retain(|padata| padata.r#type != PA_ENC_TIMESTAMP);
     options
-        .padata
+        .padata_mut()
         .push(pa_enc_timestamp(key, timestamp, cusec, kvno)?);
     build_as_req(client, service, options)
 }
@@ -2803,12 +3278,12 @@ pub fn build_tgs_req_for_realm<P>(
 where
     P: Into<String>,
 {
-    crypto_policy::padata(&options.padata)?;
-    let policy = crypto_policy::request(&options.crypto_policy, &options.etypes)?;
+    crypto_policy::padata(options.padata())?;
+    let policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
     crypto_policy::session(&policy, tgt, Use::SessionKey)?;
     let (timestamp, cusec) = current_preauth_time()?;
-    let etype = KerberosEtype::from_etype_id(tgt.session_key.etype)
-        .ok_or(Error::UnsupportedEtype(tgt.session_key.etype))?;
+    let etype = KerberosEtype::from_etype_id(tgt.session_key.etype())
+        .ok_or(Error::UnsupportedEtype(tgt.session_key.etype()))?;
     let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     build_tgs_req_for_realm_with_confounder(
@@ -2861,12 +3336,12 @@ pub fn build_s4u2self_req(
     user: Principal,
     options: TgsReq,
 ) -> Result<BuiltTgsReq, Error> {
-    crypto_policy::padata(&options.padata)?;
-    let policy = crypto_policy::request(&options.crypto_policy, &options.etypes)?;
+    crypto_policy::padata(options.padata())?;
+    let policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
     crypto_policy::session(&policy, service_tgt, Use::SessionKey)?;
     let (timestamp, cusec) = current_preauth_time()?;
-    let etype = KerberosEtype::from_etype_id(service_tgt.session_key.etype)
-        .ok_or(Error::UnsupportedEtype(service_tgt.session_key.etype))?;
+    let etype = KerberosEtype::from_etype_id(service_tgt.session_key.etype())
+        .ok_or(Error::UnsupportedEtype(service_tgt.session_key.etype()))?;
     let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     build_s4u2self_req_with_confounder(service_tgt, user, options, timestamp, cusec, &confounder)
@@ -2886,12 +3361,14 @@ pub fn build_s4u2self_req_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<BuiltTgsReq, Error> {
-    crypto_policy::padata(&options.padata)?;
-    let policy = crypto_policy::request(&options.crypto_policy, &options.etypes)?;
+    crypto_policy::padata(options.padata())?;
+    let policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
     crypto_policy::session(&policy, service_tgt, Use::SessionKey)?;
-    options.padata.retain(|padata| padata.r#type != PA_FOR_USER);
     options
-        .padata
+        .padata_mut()
+        .retain(|padata| padata.r#type != PA_FOR_USER);
+    options
+        .padata_mut()
         .push(pa_for_user_padata(&user, &service_tgt.session_key)?);
     let service = service_tgt.client.clone();
     let mut request = build_tgs_req_for_realm_with_confounder(
@@ -2920,13 +3397,13 @@ pub fn build_s4u2proxy_req(
     target_service: Principal,
     options: TgsReq,
 ) -> Result<BuiltTgsReq, Error> {
-    crypto_policy::padata(&options.padata)?;
-    let policy = crypto_policy::request(&options.crypto_policy, &options.etypes)?;
+    crypto_policy::padata(options.padata())?;
+    let policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
     crypto_policy::session(&policy, service_tgt, Use::SessionKey)?;
     crypto_policy::session(&policy, evidence_ticket, Use::TicketKey)?;
     let (timestamp, cusec) = current_preauth_time()?;
-    let etype = KerberosEtype::from_etype_id(service_tgt.session_key.etype)
-        .ok_or(Error::UnsupportedEtype(service_tgt.session_key.etype))?;
+    let etype = KerberosEtype::from_etype_id(service_tgt.session_key.etype())
+        .ok_or(Error::UnsupportedEtype(service_tgt.session_key.etype()))?;
     let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     build_s4u2proxy_req_with_confounder(
@@ -2957,8 +3434,8 @@ pub fn build_s4u2proxy_req_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<BuiltTgsReq, Error> {
-    crypto_policy::padata(&options.padata)?;
-    let policy = crypto_policy::request(&options.crypto_policy, &options.etypes)?;
+    crypto_policy::padata(options.padata())?;
+    let policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
     crypto_policy::session(&policy, service_tgt, Use::SessionKey)?;
     crypto_policy::session(&policy, evidence_ticket, Use::TicketKey)?;
     if !principal_matches(&evidence_ticket.service, &service_tgt.client) {
@@ -2967,10 +3444,11 @@ pub fn build_s4u2proxy_req_with_confounder(
             actual: evidence_ticket.service.name(),
         });
     }
-    options.kdc_option_bits |= KDC_OPTION_CNAME_IN_ADDL_TKT;
-    options
-        .additional_tickets
-        .push(ticket::decode(&evidence_ticket.ticket).map_err(ticket_error)?);
+    options.set_kdc_option_bits(options.kdc_option_bits() | KDC_OPTION_CNAME_IN_ADDL_TKT);
+    options.additional_tickets_mut().insert(
+        0,
+        ticket::decode(&evidence_ticket.ticket).map_err(ticket_error)?,
+    );
     let mut request = build_tgs_req_for_realm_with_confounder(
         service_tgt,
         target_service.realm.clone(),
@@ -3050,12 +3528,12 @@ pub fn build_tgs_req_for_realm_with_subkey<R>(
 where
     R: Into<String>,
 {
-    crypto_policy::padata(&options.padata)?;
-    let policy = crypto_policy::request(&options.crypto_policy, &options.etypes)?;
+    crypto_policy::padata(options.padata())?;
+    let policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
     crypto_policy::session(&policy, tgt, Use::SessionKey)?;
     let (timestamp, cusec) = current_preauth_time()?;
-    let etype = KerberosEtype::from_etype_id(tgt.session_key.etype)
-        .ok_or(Error::UnsupportedEtype(tgt.session_key.etype))?;
+    let etype = KerberosEtype::from_etype_id(tgt.session_key.etype())
+        .ok_or(Error::UnsupportedEtype(tgt.session_key.etype()))?;
     let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     let subkey = random_subkey_for(&tgt.session_key)?;
@@ -3109,16 +3587,16 @@ where
         confounder,
         subkey,
     } = parts;
-    if subkey.etype != tgt.session_key.etype {
+    if subkey.etype() != tgt.session_key.etype() {
         return Err(Error::ApReqKeyEtypeMismatch {
-            key_etype: subkey.etype,
-            encrypted_data_etype: tgt.session_key.etype,
+            key_etype: subkey.etype(),
+            encrypted_data_etype: tgt.session_key.etype(),
         });
     }
-    if subkey.value.len() != tgt.session_key.value.len() {
+    if subkey.value().len() != tgt.session_key.value().len() {
         return Err(error::Crypto::InvalidKeyLength {
-            expected: tgt.session_key.value.len(),
-            actual: subkey.value.len(),
+            expected: tgt.session_key.value().len(),
+            actual: subkey.value().len(),
         }
         .into());
     }
@@ -3142,7 +3620,7 @@ where
 }
 
 /// Explicit request options and authenticator inputs for a subkey-bearing TGS request.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[non_exhaustive]
 pub struct TgsRequestParts<'request> {
     /// The ticket request options.
@@ -3157,6 +3635,25 @@ pub struct TgsRequestParts<'request> {
     pub subkey: &'request EncryptionKey,
 }
 
+impl fmt::Debug for TgsRequestParts<'_> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            options,
+            timestamp,
+            cusec,
+            confounder,
+            subkey,
+        } = self;
+        f.debug_struct("TgsRequestParts")
+            .field("options", options)
+            .field("timestamp", timestamp)
+            .field("cusec", cusec)
+            .field("confounder_len", &confounder.len())
+            .field("subkey", subkey)
+            .finish()
+    }
+}
 impl<'request> TgsRequestParts<'request> {
     /// Creates explicit authenticator inputs with the request options' timestamp.
     #[must_use]
@@ -3167,7 +3664,7 @@ impl<'request> TgsRequestParts<'request> {
         subkey: &'request EncryptionKey,
     ) -> Self {
         Self {
-            timestamp: options.now,
+            timestamp: options.now(),
             options,
             cusec: 0,
             confounder,
@@ -3191,12 +3688,9 @@ impl<'request> TgsRequestParts<'request> {
 ///
 /// Returns [`Error::Random`] when the OS random source fails.
 pub(crate) fn random_subkey_for(key: &EncryptionKey) -> Result<EncryptionKey, Error> {
-    let mut value = Zeroizing::new(vec![0; key.value.len()]);
+    let mut value = Zeroizing::new(vec![0; key.value().len()]);
     getrandom::fill(&mut value)?;
-    Ok(EncryptionKey {
-        etype: key.etype,
-        value: value.into(),
-    })
+    Ok(EncryptionKey::new(key.etype(), value))
 }
 
 /// The per-request authenticator inputs of [`build_tgs_req_for_realm_inner`].
@@ -3224,11 +3718,11 @@ fn build_tgs_req_for_realm_inner(
     tgt: &AsRepSession,
     kdc_realm: impl Into<String>,
     service: Principal,
-    options: TgsReq,
+    mut options: TgsReq,
     authenticator_context: TgsAuthenticatorContext<'_>,
 ) -> Result<(BuiltTgsReq, Zeroizing<Vec<u8>>), Error> {
-    crypto_policy::padata(&options.padata)?;
-    let crypto_policy = crypto_policy::request(&options.crypto_policy, &options.etypes)?;
+    crypto_policy::padata(options.padata())?;
+    let crypto_policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
     crypto_policy::session(&crypto_policy, tgt, Use::SessionKey)?;
     let TgsAuthenticatorContext {
         timestamp,
@@ -3237,24 +3731,18 @@ fn build_tgs_req_for_realm_inner(
         subkey,
     } = authenticator_context;
     let ctime = time::authenticator(timestamp, cusec, "TGS authenticator")?;
-    if options.etypes.is_empty() {
+    if options.etypes().is_empty() {
         return Err(Error::EmptyEtypes);
     }
 
     let kdc_realm_name: String = kdc_realm.into();
     let ticket = ticket::decode(&tgt.ticket).map_err(ticket_error)?;
-    let till = options
-        .now
-        .checked_add(options.ticket_lifetime)
-        .ok_or(Error::TimeOverflow)?;
-    let renew_till = options
-        .renew_lifetime
-        .map(|duration| options.now.checked_add(duration).ok_or(Error::TimeOverflow))
-        .transpose()?;
+    let (till, renew_till) = options.end_times()?;
     let additional_tickets =
-        (!options.additional_tickets.is_empty()).then_some(options.additional_tickets);
+        (!options.additional_tickets().is_empty()).then(|| options.take_additional_tickets());
     let cname = principal_to_rasn(&tgt.client)?;
-    let kdc_option_bits = request_kdc_option_bits(options.kdc_option_bits, options.renew_lifetime);
+    let kdc_option_bits =
+        request_kdc_option_bits(options.kdc_option_bits(), options.renew_lifetime());
     let req_body = rasn_kerberos::KdcReqBody {
         kdc_options: kdc_options_from_bits(kdc_option_bits),
         cname: Some(cname.clone()),
@@ -3263,17 +3751,17 @@ fn build_tgs_req_for_realm_inner(
         from: None,
         till: kerberos_time_from_system_time(till)?,
         rtime: renew_till.map(kerberos_time_from_system_time).transpose()?,
-        nonce: options.nonce,
-        etype: options.etypes,
+        nonce: options.nonce(),
+        etype: options.take_etypes(),
         addresses: None,
         enc_authorization_data: None,
         additional_tickets,
     };
     let req_body_der = kdc_req::encode_kdc_req_body(&req_body).map_err(kdc_req_error)?;
-    let etype = KerberosEtype::from_etype_id(tgt.session_key.etype)
-        .ok_or(Error::UnsupportedEtype(tgt.session_key.etype))?;
+    let etype = KerberosEtype::from_etype_id(tgt.session_key.etype())
+        .ok_or(Error::UnsupportedEtype(tgt.session_key.etype()))?;
     let checksum = etype.checksum(
-        &tgt.session_key.value,
+        tgt.session_key.value(),
         &req_body_der,
         TGS_REQ_AUTHENTICATOR_CHECKSUM_USAGE,
     )?;
@@ -3308,9 +3796,9 @@ fn build_tgs_req_for_realm_inner(
         value: ap_req_der.to_vec().into(),
     };
     // A capacity hint only: saturating at `usize::MAX` is harmless.
-    let mut padata = Vec::with_capacity(options.padata.len().saturating_add(1));
+    let mut padata = Vec::with_capacity(options.padata().len().saturating_add(1));
     padata.push(pa_tgs_req);
-    padata.extend(options.padata);
+    padata.extend(options.take_padata());
     let message = kdc_req::build_tgs_req(req_body, Some(padata));
     let der = kdc_req::encode_tgs_req(&message).map_err(kdc_req_error)?;
 
@@ -3318,14 +3806,14 @@ fn build_tgs_req_for_realm_inner(
         BuiltTgsReq {
             reply_key_usage: subkey.map_or(TgsReplyKey::Session, |_| TgsReplyKey::Subkey),
             crypto_policy,
-            reply_clock: (options.now, options.clock_skew),
+            reply_clock: (options.now(), options.clock_skew()),
             message,
             der: Zeroizing::new(der),
             client: tgt.client.clone(),
             kdc_realm: kdc_realm_name,
             service,
-            nonce: options.nonce,
-            delegation_keytab: options.delegation_keytab,
+            nonce: options.nonce(),
+            delegation_keytab: options.take_delegation_keytab(),
         },
         ap_req_der,
     ))
@@ -3347,13 +3835,14 @@ pub fn build_ap_req_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<BuiltApReq, Error> {
-    if let Some(checksum) = &options.checksum {
-        selection::reject_checksum(checksum.r#type)?;
+    let (crypto_policy, ap_option_bits, checksum, subkey, sequence_number) = options.into_parts();
+    if let Some(value) = &checksum {
+        selection::reject_checksum(value.r#type)?;
     }
-    let policy = options.crypto_policy.clone().unwrap_or_default();
+    let policy = crypto_policy.unwrap_or_default();
     crypto_policy::session(&policy, service_ticket, Use::SessionKey)?;
-    if let Some(subkey) = &options.subkey {
-        policy.check_use(subkey.etype, Use::SessionKey)?;
+    if let Some(value) = &subkey {
+        policy.check_use(value.etype(), Use::SessionKey)?;
     }
     let ctime = time::authenticator(timestamp, cusec, "AP-REQ timestamp")?;
     let ticket = ticket::decode(&service_ticket.ticket).map_err(ticket_error)?;
@@ -3361,18 +3850,18 @@ pub fn build_ap_req_with_confounder(
         authenticator_vno: Integer::from(KRB5_PVNO),
         crealm: kerberos_string(&service_ticket.client.realm)?,
         cname: principal_to_rasn(&service_ticket.client)?,
-        cksum: options.checksum,
+        cksum: checksum,
         cusec: Integer::from(cusec),
         ctime,
-        subkey: options.subkey.as_ref().map(encryption_key_to_rasn),
-        seq_number: options.sequence_number,
+        subkey: subkey.as_ref().map(encryption_key_to_rasn),
+        seq_number: sequence_number,
         authorization_data: None,
     };
     let authenticator_usage = ap_req::authenticator_usage_for_ticket(&ticket);
     let authenticator_kvno = ticket.enc_part.kvno;
     let message = ap_req::build_ap_req_with_confounder(
         ticket,
-        ap_req::ap_options_from_bits(options.ap_option_bits),
+        ap_req::ap_options_from_bits(ap_option_bits),
         &authenticator,
         &service_ticket.session_key,
         authenticator_usage,
@@ -3394,8 +3883,8 @@ pub fn build_ap_req_with_confounder(
         authenticator_ctime: timestamp,
         authenticator_cusec: cusec,
         authenticator_time,
-        sequence_number: options.sequence_number,
-        subkey: options.subkey,
+        sequence_number,
+        subkey,
     })
 }
 
@@ -3725,7 +4214,7 @@ pub fn process_as_rep(
 ) -> Result<AsRepSession, Error> {
     request
         .crypto_policy
-        .check_use(reply_key.etype, Use::ReplyKey)?;
+        .check_use(reply_key.etype(), Use::ReplyKey)?;
     if let Ok(error) = process_kdc_error(bytes) {
         return Err(Error::Kdc(Box::new(error)));
     }
@@ -3842,12 +4331,12 @@ fn validate_reply_encrypted_padata(
         .find(|padata| padata.r#type == PA_REQ_ENC_PA_REP)
         .ok_or(Error::InvalidFastNegotiationResponse)?;
     let checksum = messages::PaReqEncPaRep::decode_der(pa_req_enc_pa_rep.value.as_ref())?;
-    let etype = selection::checksum(checksum.checksum_type)?
-        .ok_or(Error::UnsupportedChecksumType(checksum.checksum_type))?;
+    let etype = selection::checksum(checksum.checksum_type())?
+        .ok_or_else(|| Error::UnsupportedChecksumType(checksum.checksum_type()))?;
     if !etype.verify_checksum(
-        &reply_key.value,
+        reply_key.value(),
         request.0,
-        checksum.checksum.as_ref(),
+        checksum.checksum(),
         AS_REQ_CHECKSUM_USAGE,
     ) {
         return Err(Error::FastNegotiationChecksumMismatch);
@@ -3912,7 +4401,7 @@ fn process_tgs_rep_inner(
 ) -> Result<TgsRepSession, Error> {
     request
         .crypto_policy
-        .check_use(tgs_session_key.etype, Use::ReplyKey)?;
+        .check_use(tgs_session_key.etype(), Use::ReplyKey)?;
     if let Ok(error) = process_kdc_error(bytes) {
         return Err(Error::Kdc(Box::new(error)));
     }
@@ -4046,21 +4535,21 @@ fn validate_delegated_ticket(
 #[inline]
 pub fn process_kdc_error(bytes: &[u8]) -> Result<KdcError, Error> {
     let krb_error = krb_error::decode(bytes).map_err(krb_error_error)?;
-    let info = krb_error::info(&krb_error).map_err(krb_error_error)?;
-    let e_data = info.e_data;
+    let mut info = krb_error::info(&krb_error).map_err(krb_error_error)?;
+    let e_data = info.take_e_data();
     let method_data = krb_error::preauth_method_data(&krb_error, KDC_ERR_PREAUTH_REQUIRED)
         .map_err(krb_error_error)?;
     let preauth_key_info = preauth_key_info_from_method_data(&method_data)?;
 
     Ok(KdcError {
-        ctime: info.ctime,
-        cusec: info.cusec,
-        stime: info.stime,
-        susec: info.susec,
-        error_code: info.error_code,
-        text: info.e_text,
-        client: info.client.map(principal_from_message_info),
-        service: principal_from_message_info(info.service),
+        ctime: info.ctime(),
+        cusec: info.cusec(),
+        stime: info.stime(),
+        susec: info.susec(),
+        error_code: info.error_code(),
+        text: info.e_text().map(str::to_owned),
+        client: info.client().cloned().map(principal_from_message_info),
+        service: principal_from_message_info(info.service().clone()),
         e_data,
         method_data,
         preauth_key_info,
@@ -4353,11 +4842,11 @@ fn password_initial_as_req(
     password: &[u8],
     requested: AsReq,
 ) -> Result<BuiltAsReq, Error> {
-    crypto_policy::padata(&requested.padata)?;
-    let policy = crypto_policy::request(&requested.crypto_policy, &requested.etypes)?;
+    crypto_policy::padata(requested.padata())?;
+    let policy = crypto_policy::request(requested.crypto_policy(), requested.etypes())?;
     let options = initial_preauth_probe_options(requested);
-    if options.assume_preauthentication {
-        let key_info = assumed_preauth_key_info(&options.etypes)?;
+    if options.assume_preauthentication() {
+        let key_info = assumed_preauth_key_info(options.etypes())?;
         policy.check_use(key_info.etype, Use::ReplyKey)?;
         let reply_key = password_derivation::derive(&policy, &client, password, &key_info)?;
         build_preauthenticated_as_req(client, service, options, &reply_key, None)
@@ -4420,11 +4909,11 @@ fn keytab_initial_as_req(
     requested: AsReq,
 ) -> Result<BuiltAsReq, Error> {
     drop(crypto_policy::request(
-        &requested.crypto_policy,
-        &requested.etypes,
+        requested.crypto_policy(),
+        requested.etypes(),
     )?);
     let options = initial_preauth_probe_options(requested);
-    if options.assume_preauthentication {
+    if options.assume_preauthentication() {
         let (reply_key, kvno) = select_assumed_keytab_reply_key(keytab, &client, &options)?;
         build_preauthenticated_as_req(client, service, options, &reply_key, Some(kvno))
     } else {
@@ -4472,7 +4961,7 @@ fn select_assumed_keytab_reply_key(
         .map(String::as_str)
         .collect::<Vec<_>>();
     for etype in options
-        .etypes
+        .etypes()
         .iter()
         .copied()
         .filter(|etype| KerberosEtype::from_etype_id(*etype).is_some())
@@ -4489,7 +4978,7 @@ fn select_assumed_keytab_reply_key(
         }
     }
     Err(Error::NoSupportedPreauthEtype {
-        requested: options.etypes.clone(),
+        requested: options.etypes().to_vec(),
     })
 }
 
@@ -4539,13 +5028,13 @@ fn select_keytab_reply_key_for_etype(
 
 /// Add PA-REQ-ENC-PA-REP to the request padata when FAST negotiation is on.
 fn initial_preauth_probe_options(mut options: AsReq) -> AsReq {
-    if options.fast_negotiation
+    if options.fast_negotiation()
         && !options
-            .padata
+            .padata()
             .iter()
             .any(|padata| padata.r#type == PA_REQ_ENC_PA_REP)
     {
-        options.padata.push(rasn_kerberos::PaData {
+        options.padata_mut().push(rasn_kerberos::PaData {
             r#type: PA_REQ_ENC_PA_REP,
             value: Vec::new().into(),
         });
@@ -4555,8 +5044,10 @@ fn initial_preauth_probe_options(mut options: AsReq) -> AsReq {
 
 /// Replace conversation state with the KDC's exact cookies, never other hints.
 fn preauth_retry_options(mut options: AsReq, method_data: &[rasn_kerberos::PaData]) -> AsReq {
-    options.padata.retain(|entry| entry.r#type != PA_FX_COOKIE);
-    options.padata.extend(
+    options
+        .padata_mut()
+        .retain(|entry| entry.r#type != PA_FX_COOKIE);
+    options.padata_mut().extend(
         method_data
             .iter()
             .filter(|entry| entry.r#type == PA_FX_COOKIE)
@@ -4797,17 +5288,14 @@ fn kerberos_string_to_string(value: &rasn_kerberos::KerberosString) -> Result<St
 
 /// Convert an ASN.1 encryption key to the keytab key type.
 fn encryption_key_from_rasn(value: &rasn_kerberos::EncryptionKey) -> EncryptionKey {
-    EncryptionKey {
-        etype: value.r#type,
-        value: value.value.as_ref().to_vec().into(),
-    }
+    EncryptionKey::new(value.r#type, value.value.as_ref().to_vec())
 }
 
 /// Convert a keytab key to the ASN.1 encryption key type.
 fn encryption_key_to_rasn(value: &EncryptionKey) -> rasn_kerberos::EncryptionKey {
     rasn_kerberos::EncryptionKey {
-        r#type: value.etype,
-        value: value.value.to_vec().into(),
+        r#type: value.etype(),
+        value: value.value().to_vec().into(),
     }
 }
 
@@ -4931,26 +5419,23 @@ fn client_principal_from_ccache(value: &ccache::Principal) -> Principal {
 /// authentication time.
 #[cfg(feature = "tokio")]
 fn ccache_credential_session(credential: &ccache::Credential) -> AsRepSession {
-    let auth_time = system_time_from_u32_seconds(credential.times.auth_time);
-    let start_time = if credential.times.start_time == 0 {
+    let auth_time = system_time_from_u32_seconds(credential.times().auth_time);
+    let start_time = if credential.times().start_time == 0 {
         auth_time
     } else {
-        system_time_from_u32_seconds(credential.times.start_time)
+        system_time_from_u32_seconds(credential.times().start_time)
     };
     AsRepSession {
-        client: client_principal_from_ccache(&credential.client),
-        service: client_principal_from_ccache(&credential.server),
-        session_key: EncryptionKey {
-            etype: credential.key.etype,
-            value: credential.key.value.clone(),
-        },
-        ticket: credential.ticket.clone(),
-        ticket_flags: credential.ticket_flags,
+        client: client_principal_from_ccache(credential.client()),
+        service: client_principal_from_ccache(credential.server()),
+        session_key: EncryptionKey::new(credential.key().etype(), credential.key().value().clone()),
+        ticket: credential.ticket().to_vec().into(),
+        ticket_flags: credential.ticket_flags(),
         auth_time,
         start_time,
-        end_time: system_time_from_u32_seconds(credential.times.end_time),
-        renew_till: (credential.times.renew_till != 0)
-            .then(|| system_time_from_u32_seconds(credential.times.renew_till)),
+        end_time: system_time_from_u32_seconds(credential.times().end_time),
+        renew_till: (credential.times().renew_till != 0)
+            .then(|| system_time_from_u32_seconds(credential.times().renew_till)),
         key_expiration: None,
     }
 }
@@ -5303,7 +5788,7 @@ mod tests {
                 &hex::decode(include_str!("../tests/fixtures/kpasswd-request.hex").trim())
                     .map_err(|error| Error::Transport(error.to_string()))?,
             )?
-            .ap_req
+            .ap_req()
             .ticket,
         )
         .map_err(|error| Error::Transport(error.to_string()))?
@@ -5450,14 +5935,8 @@ mod tests {
     /// any request is built.
     #[test]
     fn explicit_subkey_of_another_enctype_is_refused() -> Result<(), Error> {
-        let tgt = session_with_key(EncryptionKey {
-            etype: 18,
-            value: vec![0x11; 32].into(),
-        })?;
-        let subkey = EncryptionKey {
-            etype: 17,
-            value: vec![0x22; 16].into(),
-        };
+        let tgt = session_with_key(EncryptionKey::new(18, vec![0x11; 32]))?;
+        let subkey = EncryptionKey::new(17, vec![0x22; 16]);
         let now = SystemTime::now();
         let result = build_tgs_req_for_realm_with_confounder_and_subkey(
             &tgt,
@@ -5483,14 +5962,8 @@ mod tests {
     /// request is built.
     #[test]
     fn explicit_subkey_of_another_length_is_refused() -> Result<(), Error> {
-        let tgt = session_with_key(EncryptionKey {
-            etype: 18,
-            value: vec![0x11; 32].into(),
-        })?;
-        let subkey = EncryptionKey {
-            etype: 18,
-            value: vec![0x22; 16].into(),
-        };
+        let tgt = session_with_key(EncryptionKey::new(18, vec![0x11; 32]))?;
+        let subkey = EncryptionKey::new(18, vec![0x22; 16]);
         let now = SystemTime::now();
         let result = build_tgs_req_for_realm_with_confounder_and_subkey(
             &tgt,
@@ -5517,10 +5990,7 @@ mod tests {
     #[test]
     fn generated_subkey_needs_a_supported_session_key_enctype() -> Result<(), Error> {
         use crate::error::{Policy, RejectedFeature};
-        let tgt = session_with_key(EncryptionKey {
-            etype: 1,
-            value: vec![0x11; 8].into(),
-        })?;
+        let tgt = session_with_key(EncryptionKey::new(1, vec![0x11; 8]))?;
         let result = build_tgs_req_for_realm_with_subkey(
             &tgt,
             "EXAMPLE.TEST",

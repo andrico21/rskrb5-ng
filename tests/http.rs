@@ -217,11 +217,12 @@ mod tests {
             crypto::AesSha1Etype,
             spnego::{MicToken, oid::ObjectIdentifier},
         };
-        let Token::Init(mut init) = spnego::parse_negotiate_header(&initiator_context()?.header)?
+        let Token::Init(mut init) =
+            spnego::parse_negotiate_header(initiator_context()?.header_ref())?
         else {
             return Err("initial token".into());
         };
-        init.mech_types.insert(
+        init.mech_types_mut().insert(
             0,
             ObjectIdentifier::from_arcs(vec![1, 3, 6, 1, 4, 1, 311, 2, 2, 10])?,
         );
@@ -232,7 +233,7 @@ mod tests {
         let mut signed = list.clone();
         signed.extend_from_slice(&mic);
         mic.extend_from_slice(&AesSha1Etype::Aes256.checksum(&key, &signed, 25)?);
-        init.mech_list_mic = Some(mic.into());
+        init.set_mech_list_mic(Some(mic.into()));
         let keytab = keytab()?;
         let mut service = krb_http::NegotiateLayer::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
@@ -252,7 +253,7 @@ mod tests {
         let Token::Resp(completion) = spnego::parse_negotiate_header(header)? else {
             return Err("completion token".into());
         };
-        MicToken::decode(&completion.mech_list_mic.context("reciprocal MIC")?, true)?
+        MicToken::decode(completion.mech_list_mic().context("reciprocal MIC")?, true)?
             .with_payload(list)
             .verify(&EncryptionKey::new(18, key), 23)?;
         Ok(())
@@ -507,17 +508,19 @@ mod tests {
             return Err("expected response".into());
         };
         let mut incomplete = response.clone();
-        incomplete.neg_state = Some(spnego::NegState::AcceptIncomplete);
+        incomplete.set_neg_state(Some(spnego::NegState::AcceptIncomplete));
         let mut request_mic = response.clone();
-        request_mic.neg_state = Some(spnego::NegState::RequestMic);
+        request_mic.set_neg_state(Some(spnego::NegState::RequestMic));
         let mut absent_state = response.clone();
-        absent_state.neg_state = None;
+        absent_state.set_neg_state(None);
         let mut absent_mechanism = response.clone();
-        absent_mechanism.supported_mech = None;
+        absent_mechanism.set_supported_mech(None);
         let mut wrong_mech = response.clone();
-        wrong_mech.supported_mech = Some(spnego::oid::ObjectIdentifier::from_arcs(vec![1, 2, 3])?);
+        wrong_mech.set_supported_mech(Some(spnego::oid::ObjectIdentifier::from_arcs(vec![
+            1, 2, 3,
+        ])?));
         let mut mic = response;
-        mic.mech_list_mic = Some(vec![0; 28].into());
+        mic.set_mech_list_mic(Some(vec![0; 28].into()));
         for altered in [
             incomplete,
             request_mic,
@@ -563,7 +566,7 @@ mod tests {
                 let keytab = keytab()?;
                 let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
                 let mut accepted =
-                    spnego::accept_sec_context_header(&mut validator, &context.header)?;
+                    spnego::accept_sec_context_header(&mut validator, context.header_ref())?;
                 accepted.mech_types_der = Some(hex::decode("300b06092a864886f712010202")?);
                 let header = accepted.ap_rep_response_header_with_confounder(
                     &decode_hex(AP_REP_CONFOUNDER)?,
@@ -572,7 +575,7 @@ mod tests {
                         .with_subkey(acceptor_subkey),
                 )?;
                 let verified = context.verify_ap_rep_response_header(&header)?;
-                assert_eq!(verified.sequence_number, Some(77));
+                assert_eq!(verified.sequence_number(), Some(77));
                 assert!(matches!(
                     krb_http::classify_negotiate_response(
                         &context,
@@ -583,12 +586,9 @@ mod tests {
                 let Token::Resp(mut altered) = spnego::parse_negotiate_header(&header)? else {
                     return Err("response expected".into());
                 };
-                *altered
-                    .mech_list_mic
-                    .as_mut()
-                    .context("MIC")?
-                    .last_mut()
-                    .context("MIC checksum")? ^= 1;
+                let mut damaged = altered.mech_list_mic().context("MIC")?.to_vec();
+                *damaged.last_mut().context("MIC checksum")? ^= 1;
+                altered.set_mech_list_mic(Some(damaged.into()));
                 assert!(matches!(
                     context.verify_ap_rep_response_header(&spnego::negotiate_header(
                         &Token::Resp(altered)
@@ -648,16 +648,16 @@ mod tests {
         let context = initiator_context()?;
         // When formatted for diagnostics, then both credential representations are absent.
         let rendered = format!("{context:?}");
-        assert!(!rendered.contains(context.header.as_str()));
-        assert!(!rendered.contains(&format!("{:?}", context.ap_req_der)));
+        assert!(!rendered.contains(context.header_ref()));
+        assert!(!rendered.contains(&format!("{:?}", context.ap_req_der_ref())));
         #[cfg(feature = "tokio")]
         {
-            let header = context.header.clone();
+            let header = context.header_ref().to_owned();
             let mut client = negotiate_client_with_cached_service_ticket()?;
             let calls = Cell::new(0_u32);
             let result = runtime()?.block_on(krb_http::send_with_negotiate(
                 &mut client,
-                context.service,
+                context.service().clone(),
                 || Request::new(()),
                 |_| {
                     calls.set(calls.get().saturating_add(1));
@@ -670,14 +670,8 @@ mod tests {
             ))?;
             assert!(!format!("{result:?}").contains(header.as_str()));
             assert!(
-                !format!("{result:?}").contains(
-                    result
-                        .context
-                        .as_ref()
-                        .context("retry context")?
-                        .header
-                        .as_str()
-                )
+                !format!("{result:?}")
+                    .contains(result.context().context("retry context")?.header_ref())
             );
         }
         Ok(())
@@ -725,8 +719,8 @@ mod tests {
         let accepted =
             krb_http::accept_request(&mut validator, &mut request).context("request validates")?;
 
-        assert_eq!(accepted.ap_req.client.name(), "testuser1");
-        assert_eq!(accepted.ap_req.service.name(), "HTTP/host.test.gokrb5");
+        assert_eq!(accepted.ap_req.client().name(), "testuser1");
+        assert_eq!(accepted.ap_req.service().name(), "HTTP/host.test.gokrb5");
         assert!(
             request.extensions().get::<AcceptedContext>().is_some(),
             "accepted context is attached to request extensions"
@@ -746,8 +740,8 @@ mod tests {
         let accepted =
             krb_http::accept_request(&mut validator, &mut request).context("request validates")?;
 
-        assert_eq!(accepted.ap_req.client.name(), "testuser1");
-        assert_eq!(accepted.ap_req.service.name(), "HTTP/host.test.gokrb5");
+        assert_eq!(accepted.ap_req.client().name(), "testuser1");
+        assert_eq!(accepted.ap_req.service().name(), "HTTP/host.test.gokrb5");
         Ok(())
     }
 
@@ -799,7 +793,7 @@ mod tests {
     fn authorize_request_context_sets_header_and_returns_context() -> Result<(), TestError> {
         runtime()?.block_on(async {
             let service_ticket = current_service_ticket_session()?;
-            let service = service_ticket.service.clone();
+            let service = service_ticket.service().clone();
             let mut client = Tokio::with_password(
                 Config::new(),
                 KdcProtocol::Auto,
@@ -820,10 +814,10 @@ mod tests {
             .await
             .context("request is authorized")?;
 
-            assert_eq!(context.sequence_number, Some(42));
+            assert_eq!(context.sequence_number(), Some(42));
             assert_eq!(
                 krb_http::authorization_header(&request).context("Authorization header exists")?,
-                context.header.as_str()
+                context.header_ref()
             );
             Ok(())
         })
@@ -835,11 +829,11 @@ mod tests {
     fn authorize_request_installs_header() -> Result<(), TestError> {
         runtime()?.block_on(async {
             let ticket = current_service_ticket_session()?;
-            let service = ticket.service.clone();
+            let service = ticket.service().clone();
             let mut client = Tokio::with_password(
                 Config::new(),
                 KdcProtocol::Auto,
-                ticket.client.clone(),
+                ticket.client().clone(),
                 b"unused".to_vec(),
             );
             client.cache_service_ticket(ticket)?;
@@ -861,7 +855,7 @@ mod tests {
     fn authorize_request_context_supports_negotiate_client_wrapper() -> Result<(), TestError> {
         runtime()?.block_on(async {
             let mut service_ticket = current_service_ticket_session()?;
-            let service = service_ticket.service.clone();
+            let service = service_ticket.service().clone();
             let mut tokio_client = Tokio::with_password(
                 Config::new(),
                 KdcProtocol::Auto,
@@ -883,14 +877,14 @@ mod tests {
             .await
             .context("request is authorized")?;
 
-            assert_eq!(context.sequence_number, Some(7));
+            assert_eq!(context.sequence_number(), Some(7));
             assert_eq!(
                 krb_http::authorization_header(&request).context("Authorization header exists")?,
-                context.header.as_str()
+                context.header_ref()
             );
 
-            service_ticket.session_key.value = vec![0x55; 32].into();
-            assert_ne!(context.session_key, service_ticket.session_key);
+            service_ticket.set_session_key(EncryptionKey::new(18, vec![0x55; 32]));
+            assert_ne!(context.session_key_ref(), service_ticket.session_key());
             Ok(())
         })
     }
@@ -901,7 +895,7 @@ mod tests {
     fn negotiate_http_client_retries_challenge_with_replayable_request() -> Result<(), TestError> {
         runtime()?.block_on(async {
             let service_ticket = current_service_ticket_session()?;
-            let service = service_ticket.service.clone();
+            let service = service_ticket.service().clone();
             let mut tokio_client = Tokio::with_password(
                 Config::new(),
                 KdcProtocol::Auto,
@@ -968,18 +962,17 @@ mod tests {
             assert!(result.did_negotiate());
             assert_eq!(
                 result
-                    .context
-                    .as_ref()
+                    .context()
                     .context("context is retained")?
-                    .sequence_number,
+                    .sequence_number(),
                 Some(99)
             );
             assert!(matches!(
-                result.negotiation,
+                result.negotiation(),
                 Some(krb_http::ClientNegotiateResponse::Accepted { ap_rep: None })
             ));
-            assert_eq!(result.response.status(), StatusCode::OK);
-            assert_eq!(result.response.body().as_slice(), b"ok");
+            assert_eq!(result.response().status(), StatusCode::OK);
+            assert_eq!(result.response().body().as_slice(), b"ok");
             assert_eq!(make_calls.get(), 2);
 
             let sent_requests = sent.borrow();
@@ -1033,9 +1026,9 @@ mod tests {
             .context("send succeeds")?;
 
             assert!(!result.did_negotiate());
-            assert!(result.context.is_none());
-            assert!(result.negotiation.is_none());
-            assert_eq!(*result.response.body(), "public");
+            assert!(result.context().is_none());
+            assert!(result.negotiation().is_none());
+            assert_eq!(*result.response().body(), "public");
             assert_eq!(make_calls.get(), 1);
             assert_eq!(send_calls.get(), 1);
             Ok(())
@@ -1075,9 +1068,9 @@ mod tests {
         .context("send succeeds")?;
 
         assert!(!result.did_negotiate());
-        assert!(result.context.is_none());
-        assert!(result.negotiation.is_none());
-        assert_eq!(*result.response.body(), "public");
+        assert!(result.context().is_none());
+        assert!(result.negotiation().is_none());
+        assert_eq!(*result.response().body(), "public");
         assert_eq!(make_calls.get(), 1);
         assert_eq!(send_calls.get(), 1);
         Ok(())
@@ -1101,9 +1094,9 @@ mod tests {
         let verified =
             krb_http::verify_ap_rep_response(&context, &response).context("AP-REP verifies")?;
 
-        assert_eq!(verified.ctime, context.authenticator_ctime);
-        assert_eq!(verified.cusec, context.authenticator_cusec);
-        assert_eq!(verified.authenticator_time, context.authenticator_time);
+        assert_eq!(verified.ctime(), context.authenticator_ctime());
+        assert_eq!(verified.cusec(), context.authenticator_cusec());
+        assert_eq!(verified.authenticator_time(), context.authenticator_time());
         Ok(())
     }
 
@@ -1167,8 +1160,8 @@ mod tests {
         else {
             return Err(format!("expected verified AP-REP, got {classified:?}").into());
         };
-        assert_eq!(verified.ctime, context.authenticator_ctime);
-        assert_eq!(verified.cusec, context.authenticator_cusec);
+        assert_eq!(verified.ctime(), context.authenticator_ctime());
+        assert_eq!(verified.cusec(), context.authenticator_cusec());
 
         let malformed = response_with_www_authenticate("Negotiate not-base64")?;
         assert!(matches!(
@@ -1673,7 +1666,9 @@ mod tests {
 
     fn gss_ap_req_fixture() -> Result<Vec<u8>, TestError> {
         let original = ap_req::decode(&decode_hex(VALID_AP_REQ)?)?;
-        let key = service_ticket_session_from_valid_ap_req()?.session_key;
+        let key = service_ticket_session_from_valid_ap_req()?
+            .session_key()
+            .clone();
         let mut authenticator = ap_req::decrypt_ap_req_authenticator(&original, &key, 11)?;
         authenticator.cksum = Some(rasn_kerberos::Checksum {
             r#type: 0x8003,
@@ -1715,7 +1710,7 @@ mod tests {
     fn ap_rep_response_header(context: &spnego::InitiatorContext) -> Result<String, TestError> {
         let keytab = keytab()?;
         let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
-        let accepted = spnego::accept_sec_context_header(&mut validator, &context.header)
+        let accepted = spnego::accept_sec_context_header(&mut validator, context.header_ref())
             .context("client SPNEGO header validates")?;
         accepted
             .ap_rep_response_header_with_confounder(
@@ -1771,11 +1766,12 @@ mod tests {
         let earlier = now
             .checked_sub(Duration::from_secs(1))
             .context("one second ago is representable")?;
-        service_ticket.auth_time = earlier;
-        service_ticket.start_time = earlier;
-        service_ticket.end_time = now
-            .checked_add(Duration::from_mins(1))
-            .context("one minute ahead is representable")?;
+        service_ticket.set_auth_time(earlier);
+        service_ticket.set_start_time(earlier);
+        service_ticket.set_end_time(
+            now.checked_add(Duration::from_mins(1))
+                .context("one minute ahead is representable")?,
+        );
         Ok(service_ticket)
     }
 
@@ -1861,8 +1857,8 @@ mod tests {
             let Some(accepted) = req.extensions().get::<AcceptedContext>() else {
                 return ready(Err("accepted context exists".into()));
             };
-            assert_eq!(accepted.ap_req.client.name(), "testuser1");
-            assert_eq!(accepted.ap_req.service.name(), "HTTP/host.test.gokrb5");
+            assert_eq!(accepted.ap_req.client().name(), "testuser1");
+            assert_eq!(accepted.ap_req.service().name(), "HTTP/host.test.gokrb5");
             ready(Ok(Response::new(())))
         }
     }
@@ -1886,8 +1882,8 @@ mod tests {
             let Some(accepted) = req.extensions().get::<AcceptedContext>() else {
                 return ready(Err("accepted context exists".into()));
             };
-            assert_eq!(accepted.ap_req.client.name(), "testuser1");
-            assert_eq!(accepted.ap_req.service.name(), "HTTP/host.test.gokrb5");
+            assert_eq!(accepted.ap_req.client().name(), "testuser1");
+            assert_eq!(accepted.ap_req.service().name(), "HTTP/host.test.gokrb5");
             assert_eq!(req.method().as_str(), "POST");
             assert_eq!(req.uri().path(), "/upload");
             assert_eq!(req.body(), &self.expected);
@@ -2060,18 +2056,20 @@ mod tests {
 
         let negotiated = result
             .map_err(|cause| format!("verified AP-REP proves mutual authentication: {cause}"))?;
-        let context = negotiated.context.as_ref().ok_or("context is retained")?;
+        let context = negotiated.context().ok_or("context is retained")?;
         let Some(krb_http::ClientNegotiateResponse::Accepted {
             ap_rep: Some(verified),
-        }) = &negotiated.negotiation
+        }) = negotiated.negotiation()
         else {
-            return Err(
-                format!("expected verified AP-REP, got {:?}", negotiated.negotiation).into(),
-            );
+            return Err(format!(
+                "expected verified AP-REP, got {:?}",
+                negotiated.negotiation()
+            )
+            .into());
         };
-        assert_eq!(verified.ctime, context.authenticator_ctime);
-        assert_eq!(verified.cusec, context.authenticator_cusec);
-        assert_eq!(negotiated.response.body().as_slice(), b"ok");
+        assert_eq!(verified.ctime(), context.authenticator_ctime());
+        assert_eq!(verified.cusec(), context.authenticator_cusec());
+        assert_eq!(negotiated.response().body().as_slice(), b"ok");
         assert_eq!(calls, 2);
         Ok(())
     }
@@ -2113,8 +2111,8 @@ mod tests {
                 format!("default async wrapper accepts a completion without an AP-REP: {cause}")
             })?;
         assert_eq!(
-            async_result.negotiation,
-            Some(krb_http::ClientNegotiateResponse::Accepted { ap_rep: None })
+            async_result.negotiation(),
+            Some(&krb_http::ClientNegotiateResponse::Accepted { ap_rep: None })
         );
         assert_eq!(async_calls.get(), 2);
 
@@ -2135,8 +2133,8 @@ mod tests {
             format!("default blocking wrapper accepts a completion without an AP-REP: {cause}")
         })?;
         assert_eq!(
-            blocking_result.negotiation,
-            Some(krb_http::ClientNegotiateResponse::Accepted { ap_rep: None })
+            blocking_result.negotiation(),
+            Some(&krb_http::ClientNegotiateResponse::Accepted { ap_rep: None })
         );
         assert_eq!(blocking_calls.get(), 2);
         Ok(())

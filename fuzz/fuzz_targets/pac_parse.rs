@@ -76,10 +76,10 @@ fn whole_pac(input: &[u8]) {
     let key = EncryptionKey::new(AES256, KEY.to_vec());
     drop(pac.verify(&key));
     drop(pac.ad_credentials());
-    if let Some(credentials) = &pac.credentials_info {
+    if let Some(credentials) = pac.credentials_info() {
         drop(credentials.decrypt_credential_data(&key));
     }
-    for claims in [&pac.client_claims_info, &pac.device_claims_info]
+    for claims in [pac.client_claims_info(), pac.device_claims_info()]
         .into_iter()
         .flatten()
     {
@@ -90,7 +90,7 @@ fn whole_pac(input: &[u8]) {
 /// Parse the header and buffer table, then slice every buffer.
 fn header_only(input: &[u8]) {
     if let Ok(pac) = Pac::parse(input) {
-        for buffer in &pac.buffers {
+        for buffer in pac.buffers() {
             drop(pac.buffer_bytes(buffer));
         }
     }

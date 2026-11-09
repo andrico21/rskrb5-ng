@@ -32,9 +32,9 @@ mod tests {
             .with_etypes(vec![18_i32, 17_i32]);
 
         let request = build_tgt_as_req(client.clone(), options).context("AS-REQ builds")?;
-        let decoded: rasn_kerberos::AsReq = der::decode(&request.der).context("AS-REQ decodes")?;
+        let decoded: rasn_kerberos::AsReq = der::decode(request.der()).context("AS-REQ decodes")?;
 
-        assert_eq!(request.message, decoded);
+        assert_eq!(request.message(), &decoded);
         assert_eq!(decoded.0.pvno, Integer::from(5_i32));
         assert_eq!(decoded.0.msg_type, Integer::from(10_i32));
         assert!(decoded.0.padata.is_none());
@@ -70,7 +70,7 @@ mod tests {
             .with_renew_lifetime(Some(Duration::from_hours(10)));
 
         let request = build_tgt_as_req(client, options).context("AS-REQ builds")?;
-        let decoded: rasn_kerberos::AsReq = der::decode(&request.der).context("AS-REQ decodes")?;
+        let decoded: rasn_kerberos::AsReq = der::decode(request.der()).context("AS-REQ decodes")?;
         let body = &decoded.0.req_body;
 
         assert_eq!(
@@ -94,7 +94,7 @@ mod tests {
         let options = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
 
         let request = build_tgt_as_req(client, options).context("AS-REQ builds")?;
-        let decoded: rasn_kerberos::AsReq = der::decode(&request.der).context("AS-REQ decodes")?;
+        let decoded: rasn_kerberos::AsReq = der::decode(request.der()).context("AS-REQ decodes")?;
         let body = &decoded.0.req_body;
 
         assert_eq!(
@@ -117,10 +117,10 @@ mod tests {
             Some(7),
         )
         .context("AS-REQ builds")?;
-        let decoded: rasn_kerberos::AsReq = der::decode(&request.der).context("AS-REQ decodes")?;
+        let decoded: rasn_kerberos::AsReq = der::decode(request.der()).context("AS-REQ decodes")?;
 
-        assert_eq!(request.client, client);
-        assert_eq!(request.service, service);
+        assert_eq!(request.client(), &client);
+        assert_eq!(request.service(), &service);
         let body = &decoded.0.req_body;
         assert_eq!(
             principal_from_parts(&body.realm, body.sname.as_ref().context("sname")?)?,
@@ -152,7 +152,7 @@ mod tests {
 
         let plaintext = AesSha1Etype::Aes256
             .decrypt_message(
-                &key.value,
+                key.value(),
                 encrypted.cipher.as_ref(),
                 AS_REQ_PA_ENC_TIMESTAMP_USAGE,
             )
@@ -187,20 +187,20 @@ mod tests {
         assert_eq!(padata.r#type, PA_FOR_USER);
         let decoded = PaForUser::decode_der(padata.value.as_ref()).context("value decodes")?;
         assert_eq!(
-            principal_from_parts(&decoded.user_realm, &decoded.user_name)?,
+            principal_from_parts(decoded.user_realm(), decoded.user_name())?,
             user
         );
-        assert_eq!(decoded.auth_package.as_bytes(), b"Kerberos");
-        assert_eq!(decoded.cksum.r#type, -138_i32);
+        assert_eq!(decoded.auth_package().as_bytes(), b"Kerberos");
+        assert_eq!(decoded.cksum().r#type, -138_i32);
         let s4u_bytes = s4u_byte_array(&user, "Kerberos");
         assert_eq!(
             hex_encode(&s4u_bytes)?,
             "010000006866747361696578747261415448454e412e4d49542e4544554b65726265726f73"
         );
         assert_eq!(
-            decoded.cksum.checksum.as_ref(),
+            decoded.cksum().checksum.as_ref(),
             kerb_checksum_hmac_md5(
-                &tgt_session_key.value,
+                tgt_session_key.value(),
                 &s4u_bytes,
                 PA_FOR_USER_CHECKSUM_USAGE
             )
@@ -213,38 +213,47 @@ mod tests {
     fn processes_as_rep_and_exports_ccache_credential() -> Result<(), TestError> {
         let request = sample_request()?;
         let reply_key = reply_key()?;
-        let response = synthetic_as_rep(&request, request.nonce)?;
+        let response = synthetic_as_rep(&request, request.nonce())?;
 
         let session =
             process_as_rep(&request, &response, &reply_key).context("AS-REP validates")?;
 
-        assert_eq!(session.client, Principal::user("TEST.GOKRB5", "testuser1"));
-        assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
-        assert_eq!(session.session_key.etype, 18_i32);
-        assert_eq!(hex_encode(&session.session_key.value)?, SESSION_KEY);
-        assert_eq!(session.ticket_flags, *TICKET_FLAGS);
-        assert_eq!(session.auth_time, timestamp(1_893_553_445)?);
-        assert_eq!(session.start_time, timestamp(1_893_553_445)?);
-        assert_eq!(session.end_time, timestamp(1_893_639_845)?);
-        assert_eq!(session.renew_till, Some(timestamp(1_894_071_845)?));
+        assert_eq!(
+            session.client(),
+            &Principal::user("TEST.GOKRB5", "testuser1")
+        );
+        assert_eq!(session.service(), &Principal::tgt_service("TEST.GOKRB5"));
+        assert_eq!(session.session_key().etype(), 18_i32);
+        assert_eq!(hex_encode(session.session_key().value())?, SESSION_KEY);
+        assert_eq!(session.ticket_flags(), *TICKET_FLAGS);
+        assert_eq!(session.auth_time(), timestamp(1_893_553_445)?);
+        assert_eq!(session.start_time(), timestamp(1_893_553_445)?);
+        assert_eq!(session.end_time(), timestamp(1_893_639_845)?);
+        assert_eq!(session.renew_till(), Some(timestamp(1_894_071_845)?));
 
         let ticket: rasn_kerberos::Ticket =
-            der::decode(&session.ticket).context("ticket decodes")?;
+            der::decode(session.ticket()).context("ticket decodes")?;
         assert_eq!(ticket.tkt_vno, Integer::from(5_i32));
 
         let credential = session
             .to_ccache_credential()
             .context("ccache credential converts")?;
-        assert_eq!(credential.client.realm, "TEST.GOKRB5");
-        assert_eq!(credential.client.components, vec!["testuser1"]);
-        assert_eq!(credential.server.components, vec!["krbtgt", "TEST.GOKRB5"]);
-        assert_eq!(credential.key.value.as_slice(), decode_hex(SESSION_KEY)?);
-        assert_eq!(credential.times.auth_time, 1_893_553_445);
-        assert_eq!(credential.times.end_time, 1_893_639_845);
-        assert_eq!(credential.times.renew_till, 1_894_071_845);
-        assert_eq!(credential.ticket, session.ticket);
+        assert_eq!(credential.client().realm, "TEST.GOKRB5");
+        assert_eq!(credential.client().components, vec!["testuser1"]);
+        assert_eq!(
+            credential.server().components,
+            vec!["krbtgt", "TEST.GOKRB5"]
+        );
+        assert_eq!(
+            credential.key().value().as_slice(),
+            decode_hex(SESSION_KEY)?
+        );
+        assert_eq!(credential.times().auth_time, 1_893_553_445);
+        assert_eq!(credential.times().end_time, 1_893_639_845);
+        assert_eq!(credential.times().renew_till, 1_894_071_845);
+        assert_eq!(credential.ticket().as_slice(), session.ticket().as_slice());
         assert!(
-            credential.second_ticket.is_empty(),
+            credential.second_ticket().is_empty(),
             "the credential has no second ticket"
         );
         Ok(())
@@ -259,14 +268,21 @@ mod tests {
             u32::from_be_bytes(*TICKET_FLAGS) & TICKET_FLAG_ENC_PA_REP,
             TICKET_FLAG_ENC_PA_REP
         );
-        let response =
-            synthetic_as_rep_with_reply_key(&request, request.nonce, &request.service, &reply_key)?;
+        let response = synthetic_as_rep_with_reply_key(
+            &request,
+            request.nonce(),
+            request.service(),
+            &reply_key,
+        )?;
 
         let session = process_as_rep(&request, &response, &reply_key)
             .context("AS-REP encrypted padata checksum validates")?;
 
-        assert_eq!(session.client, Principal::user("TEST.GOKRB5", "testuser1"));
-        assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
+        assert_eq!(
+            session.client(),
+            &Principal::user("TEST.GOKRB5", "testuser1")
+        );
+        assert_eq!(session.service(), &Principal::tgt_service("TEST.GOKRB5"));
         Ok(())
     }
 
@@ -277,8 +293,8 @@ mod tests {
         let reply_key = reply_key()?;
         let response = synthetic_as_rep_with_reply_key_and_encrypted_padata(
             &request,
-            request.nonce,
-            &request.service,
+            request.nonce(),
+            request.service(),
             &reply_key,
             Some(fast_negotiation_encrypted_padata(
                 &request, &reply_key, true,
@@ -300,14 +316,14 @@ mod tests {
         let reply_key = reply_key()?;
         let response = synthetic_as_rep_with_reply_key_and_encrypted_padata(
             &request,
-            request.nonce,
-            &request.service,
+            request.nonce(),
+            request.service(),
             &reply_key,
             Some(vec![pa_req_enc_pa_rep_padata(&request, &reply_key, false)?]),
         )?;
 
         let session = process_as_rep(&request, &response, &reply_key)?;
-        assert_eq!(session.client, request.client);
+        assert_eq!(session.client(), request.client());
         Ok(())
     }
 
@@ -325,7 +341,7 @@ mod tests {
 
         assert!(matches!(
             error,
-            Error::Kdc(kdc_error) if kdc_error.error_code == KDC_ERR_PREAUTH_REQUIRED
+            Error::Kdc(kdc_error) if kdc_error.error_code() == KDC_ERR_PREAUTH_REQUIRED
         ));
         Ok(())
     }
@@ -334,7 +350,7 @@ mod tests {
     #[test]
     fn rejects_as_rep_nonce_mismatch() -> Result<(), TestError> {
         let request = sample_request()?;
-        let response = synthetic_as_rep(&request, request.nonce + 1)?;
+        let response = synthetic_as_rep(&request, request.nonce() + 1)?;
 
         let error = process_as_rep(&request, &response, &reply_key()?)
             .err()
@@ -356,7 +372,7 @@ mod tests {
         let request = sample_request()?;
         let response = synthetic_as_rep_with_ticket_service(
             &request,
-            request.nonce,
+            request.nonce(),
             &Principal::tgt_service("BAD.REALM"),
         )?;
 
@@ -378,10 +394,10 @@ mod tests {
     #[test]
     fn exchange_as_req_uses_transport_boundary() -> Result<(), TestError> {
         let request = sample_request()?;
-        let response = synthetic_as_rep(&request, request.nonce)?;
+        let response = synthetic_as_rep(&request, request.nonce())?;
         let mut transport = MockTransport {
             expected_realm: "TEST.GOKRB5".to_owned(),
-            expected_request: request.der.to_vec(),
+            expected_request: request.der().to_vec(),
             response,
             called: false,
         };
@@ -390,7 +406,7 @@ mod tests {
             .context("transport exchange works")?;
 
         assert!(transport.called);
-        assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
+        assert_eq!(session.service(), &Principal::tgt_service("TEST.GOKRB5"));
         Ok(())
     }
 
@@ -422,9 +438,9 @@ mod tests {
             .with_permitted_enctypes_explicit(true.into());
         let options = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
         assert!(
-            options.etypes.is_empty(),
+            options.etypes().is_empty(),
             "no requested etype is permitted: {:?}",
-            options.etypes
+            options.etypes()
         );
 
         let Err(error) = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)
@@ -447,7 +463,7 @@ mod tests {
             ]);
         let options = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
 
-        assert_eq!(options.etypes, vec![19_i32, 20_i32]);
+        assert_eq!(options.etypes(), [19_i32, 20_i32]);
         Ok(())
     }
 
@@ -465,7 +481,7 @@ mod tests {
 
         let options =
             AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &config.libdefaults);
-        assert_eq!(options.etypes, vec![19_i32]);
+        assert_eq!(options.etypes(), [19_i32]);
         Ok(())
     }
 
@@ -503,8 +519,12 @@ mod tests {
             AsReq::new(timestamp(1_893_553_447)?, 0x1122_3344).with_etypes(vec![17_i32]),
         )?;
         let reply_key = EncryptionKey::new(17, vec![0x42; 16]);
-        let response =
-            synthetic_as_rep_with_reply_key(&request, request.nonce, &request.service, &reply_key)?;
+        let response = synthetic_as_rep_with_reply_key(
+            &request,
+            request.nonce(),
+            request.service(),
+            &reply_key,
+        )?;
 
         let Err(error) = process_as_rep(&request, &response, &reply_key) else {
             return Err("a session key outside the requested list must be rejected".into());
@@ -523,7 +543,7 @@ mod tests {
                 Principal::user("TEST.GOKRB5", "testuser1"),
                 AsReq::new(timestamp(1_893_553_447)?, 42).with_etypes(offered),
             )?;
-            let mut reply = kdc_rep::decode_as_rep(&synthetic_as_rep(&request, request.nonce)?)?;
+            let mut reply = kdc_rep::decode_as_rep(&synthetic_as_rep(&request, request.nonce())?)?;
             let mut part = kdc_rep::decrypt_as_rep_enc_part(&reply, &key)?;
             part.key = rasn_encryption_key(&EncryptionKey::new(17, vec![0x42; 16]));
             reply.0.enc_part.cipher = encrypt_message(
@@ -535,8 +555,8 @@ mod tests {
             .into();
             let bytes = der::encode(&reply)?;
             let mut transport = MockTransport {
-                expected_realm: request.client.realm.clone(),
-                expected_request: request.der.to_vec(),
+                expected_realm: request.client().realm.clone(),
+                expected_request: request.der().to_vec(),
                 response: bytes.clone(),
                 called: false,
             };
@@ -545,7 +565,7 @@ mod tests {
                 exchange_as_req(&mut transport, &request, &key),
             ] {
                 if accepted {
-                    assert_eq!(result?.session_key.etype, 17_i32);
+                    assert_eq!(result?.session_key().etype(), 17_i32);
                 } else {
                     assert!(matches!(result, Err(Error::EnctypeNotRequested(18_i32))));
                 }
@@ -591,7 +611,7 @@ mod tests {
         let options =
             AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &config.libdefaults);
         let request = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)?;
-        let decoded: rasn_kerberos::AsReq = der::decode(&request.der)?;
+        let decoded: rasn_kerberos::AsReq = der::decode(request.der())?;
         assert_eq!(decoded.0.req_body.etype, vec![18_i32, 16_i32]);
         Ok(())
     }

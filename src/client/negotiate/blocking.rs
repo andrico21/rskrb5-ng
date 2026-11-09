@@ -134,7 +134,7 @@ impl BlockingClient {
     /// Returns [`Error::BlockingRuntimeUnavailable`] inside an entered Tokio runtime.
     #[inline]
     pub fn authorization_header(&mut self, service: Principal) -> Result<String, Error> {
-        Ok(self.authorization_context(service)?.header.to_string())
+        Ok(self.authorization_context(service)?.header_ref().to_owned())
     }
 
     /// Build an HTTP `Authorization` header for a host-based service.
@@ -157,8 +157,8 @@ impl BlockingClient {
     {
         Ok(self
             .authorization_context_for_host(service, host)?
-            .header
-            .to_string())
+            .header_ref()
+            .to_owned())
     }
 
     /// Build a SPNEGO initiator context for a Kerberos service principal.

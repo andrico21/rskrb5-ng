@@ -76,19 +76,19 @@ mod tests {
         let bytes = decode_hex(pac_ad_win2k::PAC_AD_WIN2K)?;
         let pac = Pac::parse_and_process(&bytes).context("PAC parses")?;
 
-        assert_eq!(pac.c_buffers, 5);
-        assert_eq!(pac.version, 0);
-        assert_eq!(pac.buffers.len(), 5);
-        assert!(pac.kerb_validation_info.is_some());
-        assert!(pac.client_info.is_some());
-        assert!(pac.upn_dns_info.is_some());
-        assert!(pac.server_checksum.is_some());
-        assert!(pac.kdc_checksum.is_some());
+        assert_eq!(pac.c_buffers(), 5);
+        assert_eq!(pac.version(), 0);
+        assert_eq!(pac.buffers().len(), 5);
+        assert!(pac.kerb_validation_info().is_some());
+        assert!(pac.client_info().is_some());
+        assert!(pac.upn_dns_info().is_some());
+        assert!(pac.server_checksum().is_some());
+        assert!(pac.kdc_checksum().is_some());
 
-        let kvi = pac.kerb_validation_info.as_ref().context("KVI parsed")?;
+        let kvi = pac.kerb_validation_info().context("KVI parsed")?;
         assert_gokrb5_validation_info(kvi)?;
-        assert_client_info(pac.client_info.as_ref().context("client info parsed")?)?;
-        assert_upn_dns_info(pac.upn_dns_info.as_ref().context("UPN/DNS info parsed")?);
+        assert_client_info(pac.client_info().context("client info parsed")?)?;
+        assert_upn_dns_info(pac.upn_dns_info().context("UPN/DNS info parsed")?);
         Ok(())
     }
 
@@ -96,7 +96,7 @@ mod tests {
     #[test]
     fn pac_rejects_unknown_versions() -> Result<(), TestError> {
         for mut bytes in [vec![0; 8], decode_hex(pac_ad_win2k::PAC_AD_WIN2K)?] {
-            assert_eq!(Pac::parse(&bytes)?.version, 0);
+            assert_eq!(Pac::parse(&bytes)?.version(), 0);
             bytes
                 .get_mut(4..8)
                 .context("version")?
@@ -155,9 +155,9 @@ mod tests {
             !format!("{pac:?}").contains(marker.trim_matches(['[', ']'])),
             "raw PAC key exposed"
         );
-        assert_eq!(info.user_session_key.as_bytes(), &[0x42; 16]);
+        assert_eq!(info.user_session_key().as_bytes(), &[0x42; 16]);
         assert_eq!(
-            format!("{:?}", info.user_session_key),
+            format!("{:?}", info.user_session_key()),
             "SessionKey { len: 16, .. }"
         );
         assert!(format!("{pac:?}").starts_with("Pac { c_buffers: 1,"));
@@ -177,10 +177,7 @@ mod tests {
         );
 
         let pac = Pac::parse_and_process(&bytes).context("PAC parses")?;
-        let kvi = pac
-            .kerb_validation_info
-            .as_ref()
-            .context("KVI is processed")?;
+        let kvi = pac.kerb_validation_info().context("KVI is processed")?;
         let credentials = pac
             .ad_credentials()
             .context("AD credentials derive from KVI")?;
@@ -193,7 +190,7 @@ mod tests {
             credentials.logon_time,
             unix_time(1_494_085_991, 825_766_900)?
         );
-        assert_eq!(credentials.logoff_time, kvi.logoff_time.system_time());
+        assert_eq!(credentials.logoff_time, kvi.logoff_time().system_time());
         assert_eq!(
             credentials.password_last_set,
             unix_time(1_494_055_388, 968_750_000)?
@@ -217,11 +214,8 @@ mod tests {
     fn parses_signature_data_and_zeroes_checksum_bytes() -> Result<(), TestError> {
         let pac = Pac::parse_and_process(&decode_hex(pac_ad_win2k::PAC_AD_WIN2K)?)
             .context("PAC parses")?;
-        let server = pac
-            .server_checksum
-            .as_ref()
-            .context("server checksum parsed")?;
-        let kdc = pac.kdc_checksum.as_ref().context("KDC checksum parsed")?;
+        let server = pac.server_checksum().context("server checksum parsed")?;
+        let kdc = pac.kdc_checksum().context("KDC checksum parsed")?;
 
         assert_eq!(server.signature_type, CHECKSUM_HMAC_SHA1_96_AES256);
         assert_eq!(hex_encode(&server.signature), "1e251d98d552be7df384f550");
@@ -245,7 +239,7 @@ mod tests {
             .context("server checksum buffer exists")?;
         let server_offset = usize::try_from(server_buffer.offset).context("offset fits")?;
         assert_eq!(
-            pac.zero_signature_data
+            pac.zero_signature_data()
                 .get(server_offset..)
                 .and_then(|buffer| buffer.get(4..16))
                 .context("server signature bytes")?,
@@ -257,7 +251,7 @@ mod tests {
             .context("KDC checksum buffer exists")?;
         let kdc_offset = usize::try_from(kdc_buffer.offset).context("offset fits")?;
         assert_eq!(
-            pac.zero_signature_data
+            pac.zero_signature_data()
                 .get(kdc_offset..)
                 .and_then(|buffer| buffer.get(4..20))
                 .context("KDC signature bytes")?,
@@ -479,9 +473,7 @@ mod tests {
         )?)
         .context("PAC parses")?;
         let entry = assert_single_claim(
-            pac.client_claims_info
-                .as_ref()
-                .context("client claims parsed")?,
+            pac.client_claims_info().context("client claims parsed")?,
             CLAIM_TYPE_ID_STRING,
             CLAIMS_ENTRY_ID_STR,
         )?;
@@ -497,8 +489,7 @@ mod tests {
         .context("PAC parses")?;
         let device_entry = assert_single_claim(
             device_pac
-                .device_claims_info
-                .as_ref()
+                .device_claims_info()
                 .context("device claims parsed")?,
             CLAIM_TYPE_ID_STRING,
             CLAIMS_ENTRY_ID_STR,
@@ -547,8 +538,7 @@ mod tests {
         )?)
         .context("PAC parses")?;
         assert_eq!(
-            pac.s4u_delegation_info
-                .as_ref()
+            pac.s4u_delegation_info()
                 .context("S4U info parsed")?
                 .s4u2proxy_target
                 .value,
@@ -560,12 +550,7 @@ mod tests {
             &device_info_bytes()?,
         )?)
         .context("PAC parses")?;
-        assert_device_info(
-            device_pac
-                .device_info
-                .as_ref()
-                .context("device info parsed")?,
-        )?;
+        assert_device_info(device_pac.device_info().context("device info parsed")?)?;
         Ok(())
     }
 
@@ -576,16 +561,14 @@ mod tests {
         let bytes = credentials_info_bytes(18, &encrypted);
         let info = CredentialsInfo::parse(&bytes).context("credentials info parses")?;
 
-        assert_eq!(info.version, 0);
-        assert_eq!(info.encryption_type, 18);
-        assert_eq!(info.encrypted_credential_data, encrypted);
+        assert_eq!(info.version(), 0);
+        assert_eq!(info.encryption_type(), 18);
+        assert_eq!(info.encrypted_credential_data(), encrypted);
 
         let pac = Pac::parse_and_process(&single_buffer_pac(INFO_TYPE_CREDENTIALS, &bytes)?)
             .context("PAC")?;
         assert_eq!(
-            pac.credentials_info
-                .as_ref()
-                .context("credentials info parsed")?,
+            pac.credentials_info().context("credentials info parsed")?,
             &info
         );
         Ok(())
@@ -599,7 +582,7 @@ mod tests {
         let key = EncryptionKey::new(etype.etype_id(), (0_u8..32).collect::<Vec<_>>());
         let plaintext = credential_data_bytes()?;
         let encrypted = etype
-            .encrypt_message_with_confounder(&key.value, &plaintext, 16, &[0xa5; 16])
+            .encrypt_message_with_confounder(key.value(), &plaintext, 16, &[0xa5; 16])
             .context("credential data encrypts")?;
         let info = CredentialsInfo::parse(&credentials_info_bytes(18, &encrypted))
             .context("credentials info parses")?;
@@ -644,21 +627,27 @@ mod tests {
     /// Pins that a flipped server signature bit fails verification.
     #[test]
     fn rejects_tampered_pac_server_checksum() -> Result<(), TestError> {
-        let mut pac = Pac::parse_and_process(&decode_hex(pac_ad_win2k::PAC_AD_WIN2K)?)
-            .map_err(|cause| format!("PAC parses: {cause}"))?;
+        let mut wire = decode_hex(pac_ad_win2k::PAC_AD_WIN2K)?;
+        let original =
+            Pac::parse_and_process(&wire).map_err(|cause| format!("PAC parses: {cause}"))?;
         let keytab = Keytab::parse(&decode_hex(pac_ad_win2k::SYSHTTP_KEYTAB)?)
             .map_err(|cause| format!("keytab parses: {cause}"))?;
         let (key, _) = keytab
             .find_key(&["sysHTTP"], "TEST.GOKRB5", 2, 18)
             .map_err(|cause| format!("service key exists: {cause}"))?;
-        let signature_byte = pac
-            .server_checksum
-            .as_mut()
-            .context("server checksum parsed")?
-            .signature
-            .first_mut()
+        let offset = usize::try_from(
+            original
+                .buffer(INFO_TYPE_PAC_SERVER_SIGNATURE_DATA)
+                .context("signature descriptor")?
+                .offset,
+        )?
+        .checked_add(4)
+        .context("signature offset")?;
+        let signature_byte = wire
+            .get_mut(offset)
             .context("server signature is not empty")?;
         *signature_byte ^= 0x01;
+        let pac = Pac::parse_and_process(&wire)?;
 
         assert!(
             !pac.verify_server_checksum(key)
@@ -678,39 +667,37 @@ mod tests {
             KerbValidationInfo::parse(&decode_hex(pac_trust::PAC_KERB_VALIDATION_INFO_TRUST)?)
                 .context("trust KVI parses")?;
 
-        assert_eq!(kvi.effective_name.value, "testuser1");
-        assert_eq!(kvi.full_name.value, "Test1 User1");
-        assert_eq!(kvi.logon_count, 46);
-        assert_eq!(kvi.user_id, 1106);
-        assert_eq!(kvi.primary_group_id, 513);
+        assert_eq!(kvi.effective_name().value, "testuser1");
+        assert_eq!(kvi.full_name().value, "Test1 User1");
+        assert_eq!(kvi.logon_count(), 46);
+        assert_eq!(kvi.user_id(), 1106);
+        assert_eq!(kvi.primary_group_id(), 513);
         assert_eq!(
-            kvi.group_ids,
+            kvi.group_ids(),
             vec![group(1110, 7), group(513, 7), group(1109, 7),]
         );
-        assert_eq!(kvi.user_flags, 544);
-        assert_eq!(kvi.logon_server.value, "UDC");
-        assert_eq!(kvi.logon_domain_name.value, "USER");
+        assert_eq!(kvi.user_flags(), 544);
+        assert_eq!(kvi.logon_server().value, "UDC");
+        assert_eq!(kvi.logon_domain_name().value, "USER");
         assert_eq!(
-            kvi.logon_domain_id
-                .as_ref()
+            kvi.logon_domain_id()
                 .context("logon domain SID")?
                 .to_string(),
             "S-1-5-21-2284869408-3503417140-1141177250"
         );
-        assert_eq!(kvi.sid_count, 1);
-        assert_eq!(kvi.extra_sids.len(), 1);
-        let extra_sid = kvi.extra_sids.first().context("extra SID")?;
+        assert_eq!(kvi.sid_count(), 1);
+        assert_eq!(kvi.extra_sids().len(), 1);
+        let extra_sid = kvi.extra_sids().first().context("extra SID")?;
         assert_eq!(extra_sid.sid.to_string(), "S-1-18-1");
         assert_eq!(extra_sid.attributes, 7);
         assert_eq!(
-            kvi.resource_group_domain_sid
-                .as_ref()
+            kvi.resource_group_domain_sid()
                 .context("resource group domain SID")?
                 .to_string(),
             "S-1-5-21-3062750306-1230139592-1973306805"
         );
         assert_eq!(
-            kvi.resource_group_ids,
+            kvi.resource_group_ids(),
             vec![group(1107, 0x2000_0007), group(1108, 0x2000_0007)]
         );
         assert_eq!(
@@ -752,15 +739,15 @@ mod tests {
     #[test]
     fn sid_summary_deduplicates_initial_user_groups() -> Result<(), TestError> {
         // Given: a valid user PAC with the first domain group repeated.
-        let mut pac = Pac::parse_and_process(&decode_hex(pac_ad_win2k::PAC_AD_WIN2K)?)
+        let pac = Pac::parse_and_process(&decode_hex(pac_ad_win2k::PAC_AD_WIN2K)?)
             .context("PAC parses")?;
-        let info = pac
-            .kerb_validation_info
-            .as_mut()
-            .context("validation info")?;
+        let mut info = pac
+            .kerb_validation_info()
+            .context("validation info")?
+            .clone();
         let expected = info.group_membership_sids();
-        let first = *info.group_ids.first().context("first group")?;
-        info.group_ids.insert(0, first);
+        let first = *info.group_ids().first().context("first group")?;
+        info.group_ids_mut().insert(0, first);
         // When: summary SIDs are derived.
         let actual = info.group_membership_sids();
         // Then: duplicates do not alter the stable first-seen sequence.
@@ -806,12 +793,11 @@ mod tests {
             .context("authorization-data search succeeds")?
             .context("PAC exists")?;
 
-        assert_eq!(pac.c_buffers, 5);
+        assert_eq!(pac.c_buffers(), 5);
         assert_eq!(
-            pac.kerb_validation_info
-                .as_ref()
+            pac.kerb_validation_info()
                 .context("KVI parsed")?
-                .effective_name
+                .effective_name()
                 .value,
             "testuser1"
         );
@@ -821,30 +807,30 @@ mod tests {
     /// Asserts the gokrb5 `KERB_VALIDATION_INFO` fields up to the group IDs.
     fn assert_gokrb5_validation_info(kvi: &KerbValidationInfo) -> Result<(), TestError> {
         assert_eq!(
-            kvi.logon_time.system_time(),
+            kvi.logon_time().system_time(),
             unix_time(1_494_085_991, 825_766_900)?
         );
         assert_eq!(
-            kvi.password_last_set.system_time(),
+            kvi.password_last_set().system_time(),
             unix_time(1_494_055_388, 968_750_000)?
         );
         assert_eq!(
-            kvi.password_can_change.system_time(),
+            kvi.password_can_change().system_time(),
             unix_time(1_494_141_788, 968_750_000)?
         );
-        assert_eq!(kvi.effective_name.value, "testuser1");
-        assert_eq!(kvi.full_name.value, "Test1 User1");
-        assert_eq!(kvi.logon_script.value, "");
-        assert_eq!(kvi.profile_path.value, "");
-        assert_eq!(kvi.home_directory.value, "");
-        assert_eq!(kvi.home_directory_drive.value, "");
-        assert_eq!(kvi.logon_count, 216);
-        assert_eq!(kvi.bad_password_count, 0);
-        assert_eq!(kvi.user_id, 1105);
-        assert_eq!(kvi.primary_group_id, 513);
-        assert_eq!(kvi.group_count, 5);
+        assert_eq!(kvi.effective_name().value, "testuser1");
+        assert_eq!(kvi.full_name().value, "Test1 User1");
+        assert_eq!(kvi.logon_script().value, "");
+        assert_eq!(kvi.profile_path().value, "");
+        assert_eq!(kvi.home_directory().value, "");
+        assert_eq!(kvi.home_directory_drive().value, "");
+        assert_eq!(kvi.logon_count(), 216);
+        assert_eq!(kvi.bad_password_count(), 0);
+        assert_eq!(kvi.user_id(), 1105);
+        assert_eq!(kvi.primary_group_id(), 513);
+        assert_eq!(kvi.group_count(), 5);
         assert_eq!(
-            kvi.group_ids,
+            kvi.group_ids(),
             vec![
                 group(513, 7),
                 group(1108, 7),
@@ -858,35 +844,34 @@ mod tests {
 
     /// Asserts the gokrb5 `KERB_VALIDATION_INFO` fields from `user_flags` on.
     fn assert_gokrb5_validation_domain(kvi: &KerbValidationInfo) -> Result<(), TestError> {
-        assert_eq!(kvi.user_flags, 32);
-        assert_eq!(kvi.user_session_key.as_bytes(), &[0; 16]);
-        assert_eq!(kvi.logon_server.value, "ADDC");
-        assert_eq!(kvi.logon_domain_name.value, "TEST");
+        assert_eq!(kvi.user_flags(), 32);
+        assert_eq!(kvi.user_session_key().as_bytes(), &[0; 16]);
+        assert_eq!(kvi.logon_server().value, "ADDC");
+        assert_eq!(kvi.logon_domain_name().value, "TEST");
         assert_eq!(
-            kvi.logon_domain_id
-                .as_ref()
+            kvi.logon_domain_id()
                 .context("logon domain SID")?
                 .to_string(),
             "S-1-5-21-3167651404-3865080224-2280184895"
         );
-        assert_eq!(kvi.user_account_control, 528);
-        assert_eq!(kvi.sub_auth_status, 0);
-        assert_eq!(kvi.sid_count, 2);
-        assert_eq!(kvi.extra_sids.len(), 2);
-        let first_sid = kvi.extra_sids.first().context("first extra SID")?;
+        assert_eq!(kvi.user_account_control(), 528);
+        assert_eq!(kvi.sub_auth_status(), 0);
+        assert_eq!(kvi.sid_count(), 2);
+        assert_eq!(kvi.extra_sids().len(), 2);
+        let first_sid = kvi.extra_sids().first().context("first extra SID")?;
         assert_eq!(
             first_sid.sid.to_string(),
             "S-1-5-21-3167651404-3865080224-2280184895-1114"
         );
         assert_eq!(first_sid.attributes, 0x2000_0007);
-        let second_sid = kvi.extra_sids.get(1).context("second extra SID")?;
+        let second_sid = kvi.extra_sids().get(1).context("second extra SID")?;
         assert_eq!(
             second_sid.sid.to_string(),
             "S-1-5-21-3167651404-3865080224-2280184895-1111"
         );
         assert_eq!(second_sid.attributes, 0x2000_0007);
-        assert!(kvi.resource_group_domain_sid.is_none());
-        assert_eq!(kvi.resource_group_ids, Vec::<pac::GroupMembership>::new());
+        assert!(kvi.resource_group_domain_sid().is_none());
+        assert_eq!(kvi.resource_group_ids(), Vec::<pac::GroupMembership>::new());
         assert_eq!(
             kvi.group_membership_sids(),
             vec![
@@ -1000,22 +985,22 @@ mod tests {
     }
 
     fn assert_credential_data(data: &CredentialData) -> Result<(), TestError> {
-        assert_eq!(data.credential_count, 1);
-        assert_eq!(data.credentials.len(), 1);
+        assert_eq!(data.credential_count(), 1);
+        assert_eq!(data.credentials().len(), 1);
 
-        let credential = data.credentials.first().context("credential")?;
-        assert_eq!(credential.package_name.value, "NTLM");
-        assert_eq!(credential.credential_size, 40);
-        assert_eq!(credential.credentials.len(), 40);
+        let credential = data.credentials().first().context("credential")?;
+        assert_eq!(credential.package_name().value, "NTLM");
+        assert_eq!(credential.credential_size(), 40);
+        assert_eq!(credential.credentials().len(), 40);
 
-        let ntlm = NtlmSupplementalCredential::parse(&credential.credentials)
+        let ntlm = NtlmSupplementalCredential::parse(credential.credentials())
             .context("NTLM supplemental credential parses")?;
-        assert_eq!(ntlm.version, 0);
-        assert_eq!(ntlm.flags, 3);
+        assert_eq!(ntlm.version(), 0);
+        assert_eq!(ntlm.flags(), 3);
         assert!(ntlm.has_lm_password());
         assert!(ntlm.has_nt_password());
-        assert_eq!(ntlm.lm_password, Some([0x11; 16]));
-        assert_eq!(ntlm.nt_password, Some([0x22; 16]));
+        assert_eq!(ntlm.lm_password(), Some(&[0x11; 16]));
+        assert_eq!(ntlm.nt_password(), Some(&[0x22; 16]));
         Ok(())
     }
 

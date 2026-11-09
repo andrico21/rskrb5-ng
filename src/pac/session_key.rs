@@ -83,7 +83,11 @@ mod tests {
             .ok_or(Error::LengthOverflow)?
             .fill(0x42);
         ERASED.with_borrow_mut(Vec::clear);
-        drop(KerbValidationInfo::parse(&bytes)?);
+        let mut info = KerbValidationInfo::parse(&bytes)?;
+        info.set_user_session_key(super::SessionKey::new(zeroize::Zeroizing::new([0x63; 16])));
+        ERASED.with_borrow(|events| assert_eq!(events.as_slice(), [true]));
+        ERASED.with_borrow_mut(Vec::clear);
+        drop(info);
         ERASED.with_borrow(|events| assert_eq!(events.as_slice(), [true]));
         bytes
             .get_mut(156..158)

@@ -247,8 +247,8 @@ where
 /// `value` as the `rasn` Kerberos `EncryptionKey`.
 pub(super) fn encryption_key_to_rasn(value: &EncryptionKey) -> rasn_kerberos::EncryptionKey {
     rasn_kerberos::EncryptionKey {
-        r#type: value.etype,
-        value: value.value.to_vec().into(),
+        r#type: value.etype(),
+        value: value.value().to_vec().into(),
     }
 }
 

@@ -5,6 +5,24 @@ use rasn::types::{Integer, OctetString};
 use super::{EncryptedData, Error};
 
 impl EncryptedData {
+    /// Return the encryption algorithm identifier.
+    #[inline]
+    #[must_use]
+    pub const fn etype(&self) -> i32 {
+        self.etype
+    }
+    /// Borrow the raw key version.
+    #[inline]
+    #[must_use]
+    pub const fn kvno(&self) -> Option<&Integer> {
+        self.kvno.as_ref()
+    }
+    /// Borrow ciphertext; the dependency-owned ASN.1 allocation is a residual copy.
+    #[inline]
+    #[must_use]
+    pub fn cipher(&self) -> &[u8] {
+        self.cipher.as_ref()
+    }
     /// Creates a `EncryptedData` from its required fields.
     #[must_use]
     #[inline]

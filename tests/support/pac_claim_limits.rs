@@ -79,6 +79,45 @@ mod tests {
         Ok(())
     }
 
+    /// Uncompressed wire metadata must declare the exact decoded extent.
+    #[test]
+    fn uncompressed_claims_require_exact_declared_size() -> Result<(), TestError> {
+        // Given: one actual byte and independent size declarations.
+        for expected in [0_u32, 1, 2] {
+            let mut wire = vec![1, 0x10, 8, 0, 0xcc, 0xcc, 0xcc, 0xcc];
+            wire.extend_from_slice(&48_u32.to_le_bytes());
+            wire.extend_from_slice(&0_u32.to_le_bytes());
+            wire.extend_from_slice(&1_u32.to_le_bytes());
+            wire.extend_from_slice(&1_u32.to_le_bytes());
+            wire.extend_from_slice(&1_u32.to_le_bytes());
+            wire.extend_from_slice(&0_u32.to_le_bytes());
+            wire.extend_from_slice(&expected.to_le_bytes());
+            wire.extend_from_slice(&[0; 12]);
+            wire.extend_from_slice(&1_u32.to_le_bytes());
+            wire.extend_from_slice(&[0x42, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+            let parsed = ClaimsSetMetadata::parse(&wire)?;
+            // When: uncompressed output is requested.
+            let result = parsed.decoded_claims_set_bytes();
+            // Then: both mismatch directions return the exact consistency error.
+            if expected == 1 {
+                assert_eq!(result?, [0x42]);
+            } else {
+                assert!(
+                    matches!(result, Err(PacError::ClaimsDecompressedSizeMismatch {
+                    compression_format: CLAIMS_COMPRESSION_FORMAT_NONE,
+                    expected: declared,
+                    actual: 1,
+                }) if declared == usize::try_from(expected)?)
+                );
+            }
+        }
+        assert!(
+            metadata()?.decoded_claims_set_bytes()?.is_empty(),
+            "matching empty output"
+        );
+        Ok(())
+    }
+
     /// Builds an empty metadata object independently of claims decoding.
     fn metadata() -> Result<ClaimsSetMetadata, TestError> {
         let bytes = hex::decode("01100800cccccccc20000000000000000000020000000000000000000000000000000000000000000000000000000000").context("metadata hex decodes")?;

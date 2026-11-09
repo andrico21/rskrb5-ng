@@ -22,8 +22,7 @@ pub(super) fn verified_ticket_pac(
     if let Some(value) = &pac {
         value.verify(key)?;
         let info = value
-            .client_info
-            .as_ref()
+            .client_info()
             .ok_or(PacError::MissingRequiredBuffer("ClientInfo"))?;
         let client = principal_from_parts(&ticket.crealm, &ticket.cname)?;
         let auth_ticks = ticket

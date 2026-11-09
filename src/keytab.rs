@@ -87,12 +87,23 @@ impl FromStr for Name {
 }
 
 /// Parsed keytab file.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Keytab {
     /// File format version, 1 or 2.
     version: u8,
     /// Entries in file order.
     entries: Vec<Entry>,
+}
+
+impl fmt::Debug for Keytab {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { version, entries } = self;
+        f.debug_struct("Keytab")
+            .field("version", version)
+            .field("entries", entries)
+            .finish()
+    }
 }
 
 impl Keytab {
@@ -339,7 +350,7 @@ impl Keytab {
                         .saturating_add(if self.version == 1 { 17 } else { 21 }),
                     |length, component| length.saturating_add(2).saturating_add(component.len()),
                 )
-                .saturating_add(entry.key.value.len())
+                .saturating_add(entry.key().value.len())
         });
         let capacity = body_lengths.clone().fold(2_usize, |length, body| {
             length.saturating_add(4).saturating_add(body)
@@ -356,13 +367,13 @@ impl Keytab {
             entry.principal.write_to(&mut body, self.version, endian)?;
             write_u32(&mut body, entry.timestamp, endian);
             body.push(entry.kvno8);
-            let etype = i16::try_from(entry.key.etype).map_err(|_range| Error::LengthOverflow)?;
+            let etype = i16::try_from(entry.key().etype).map_err(|_range| Error::LengthOverflow)?;
             body.extend_from_slice(&match endian {
                 Endian::Big => etype.to_be_bytes(),
                 Endian::Little => etype.to_le_bytes(),
             });
-            write_u16_checked(&mut body, entry.key.value.len(), endian)?;
-            body.extend_from_slice(&entry.key.value);
+            write_u16_checked(&mut body, entry.key().value.len(), endian)?;
+            body.extend_from_slice(&entry.key().value);
             write_u32(&mut body, entry.kvno, endian);
 
             let body_len: i32 = body
@@ -532,7 +543,7 @@ impl Keytab {
                     .iter()
                     .zip(principal_components)
                     .all(|(left, right)| left == right)
-                && entry.key.etype == etype
+                && entry.key().etype == etype
                 && (kvno == 0 || entry.kvno == kvno)
             {
                 match selected {
@@ -543,7 +554,7 @@ impl Keytab {
         }
 
         selected
-            .map(|entry| (&entry.key, entry.kvno))
+            .map(|entry| (entry.key(), entry.kvno))
             .ok_or_else(|| Error::NoMatchingKey {
                 principal: principal_components.join("/"),
                 realm: realm.to_owned(),
@@ -606,22 +617,81 @@ impl Default for Keytab {
 }
 
 /// A keytab entry.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct Entry {
     /// Principal for the key.
-    pub principal: Principal,
+    principal: Principal,
     /// POSIX timestamp in seconds.
-    pub timestamp: u32,
+    timestamp: u32,
     /// 8-bit key version number stored in the fixed entry fields.
-    pub kvno8: u8,
+    kvno8: u8,
     /// Long-term key material.
-    pub key: EncryptionKey,
+    key: EncryptionKey,
     /// 32-bit key version number, falling back to `kvno8` when absent or zero.
-    pub kvno: u32,
+    kvno: u32,
+}
+
+impl fmt::Debug for Entry {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            principal,
+            timestamp,
+            kvno8,
+            key,
+            kvno,
+        } = self;
+        f.debug_struct("Entry")
+            .field("principal", principal)
+            .field("timestamp", timestamp)
+            .field("kvno8", kvno8)
+            .field("key", key)
+            .field("kvno", kvno)
+            .finish()
+    }
 }
 
 impl Entry {
+    /// Set the extended key version; serialization still validates ambiguous zero values.
+    #[inline]
+    pub const fn set_kvno(&mut self, value: u32) {
+        self.kvno = value;
+    }
+    /// Mutably borrow principal metadata without exposing key storage.
+    #[inline]
+    pub const fn principal_mut(&mut self) -> &mut Principal {
+        &mut self.principal
+    }
+    /// Replace the principal metadata without exposing key storage.
+    #[inline]
+    pub fn set_principal(&mut self, principal: Principal) {
+        self.principal = principal;
+    }
+    /// Borrow the entry principal.
+    #[inline]
+    #[must_use]
+    pub const fn principal(&self) -> &Principal {
+        &self.principal
+    }
+    /// Return the timestamp.
+    #[inline]
+    #[must_use]
+    pub const fn timestamp(&self) -> u32 {
+        self.timestamp
+    }
+    /// Return the short key version.
+    #[inline]
+    #[must_use]
+    pub const fn kvno8(&self) -> u8 {
+        self.kvno8
+    }
+    /// Return the full key version.
+    #[inline]
+    #[must_use]
+    pub const fn kvno(&self) -> u32 {
+        self.kvno
+    }
     /// Creates a `Entry` from its required fields.
     #[must_use]
     #[inline]
@@ -639,6 +709,22 @@ impl Entry {
             key,
             kvno: if kvno == 0 { u32::from(kvno8) } else { kvno },
         }
+    }
+
+    /// Borrow the long-term key.
+    #[must_use]
+    #[inline]
+    pub const fn key(&self) -> &EncryptionKey {
+        &self.key
+    }
+
+    /// Replace the long-term key, zeroing the old key bytes.
+    #[must_use]
+    #[inline]
+    pub fn set_key(mut self, value: EncryptionKey) -> Self {
+        drop(self.key);
+        self.key = value;
+        self
     }
 
     #[must_use]
@@ -804,12 +890,23 @@ pub mod key_bytes;
 #[non_exhaustive]
 pub struct EncryptionKey {
     /// Kerberos encryption type id.
-    pub etype: i32,
+    etype: i32,
     /// Raw key bytes.
-    pub value: key_bytes::Bytes,
+    value: key_bytes::Bytes,
 }
 
 impl EncryptionKey {
+    /// Return the encryption type.
+    #[inline]
+    #[must_use]
+    pub const fn etype(&self) -> i32 {
+        self.etype
+    }
+    /// Change the algorithm identifier without changing the key bytes.
+    #[inline]
+    pub const fn set_etype(&mut self, etype: i32) {
+        self.etype = etype;
+    }
     /// Creates a `EncryptionKey` from its required fields.
     #[must_use]
     #[inline]
@@ -821,6 +918,22 @@ impl EncryptionKey {
             etype,
             value: value.into(),
         }
+    }
+
+    /// Borrow the raw key bytes.
+    #[must_use]
+    #[inline]
+    pub const fn value(&self) -> &key_bytes::Bytes {
+        &self.value
+    }
+
+    /// Replace the key bytes, zeroing the old bytes.
+    #[inline]
+    pub fn set_value<V>(&mut self, value: V)
+    where
+        V: Into<key_bytes::Bytes>,
+    {
+        self.value = value.into();
     }
 }
 
@@ -876,8 +989,8 @@ impl EntryMetadata {
             timestamp: entry.timestamp,
             kvno8: entry.kvno8,
             kvno: entry.kvno,
-            etype: entry.key.etype,
-            key_length: entry.key.value.len(),
+            etype: entry.key().etype,
+            key_length: entry.key().value.len(),
         }
     }
 }

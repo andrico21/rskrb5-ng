@@ -97,8 +97,8 @@ fn structured(input: &[u8]) -> Option<()> {
         template.ticket.realm,
         template.ticket.sname,
         &enc_part,
-        &entry.key,
-        Some(entry.kvno),
+        entry.key(),
+        Some(entry.kvno()),
         &CONFOUNDER,
     )
     .ok()?;

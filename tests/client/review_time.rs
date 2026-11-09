@@ -24,7 +24,7 @@ mod tests {
     fn maximum_pa_and_tgs_microseconds_roundtrip() -> Result<(), TestError> {
         use rasn::der;
         let session = sample_tgt_session()?;
-        let key = &session.session_key;
+        let key = &session.session_key();
         for seconds in [-1_i64, 0, 1_893_553_452] {
             let time = if seconds < 0 {
                 UNIX_EPOCH.checked_sub(Duration::from_secs(seconds.unsigned_abs()))
@@ -35,7 +35,7 @@ mod tests {
             let pa = pa_enc_timestamp_with_confounder(key, time, 999_999, &[0; 16], None)?;
             let encrypted: rasn_kerberos::EncryptedData = der::decode(&pa.value)?;
             let plaintext = AesSha1Etype::Aes256.decrypt_message(
-                &key.value,
+                key.value(),
                 &encrypted.cipher,
                 AS_REQ_PA_ENC_TIMESTAMP_USAGE,
             )?;
@@ -51,7 +51,7 @@ mod tests {
                 &[0; 16],
             )?;
             let pa_tgs = tgs
-                .message
+                .message()
                 .0
                 .padata
                 .as_ref()
@@ -82,7 +82,7 @@ mod tests {
             ),
         ] {
             assert!(matches!(
-                pa_enc_timestamp_with_confounder(&session.session_key, time, usec, &[0; 16], None),
+                pa_enc_timestamp_with_confounder(session.session_key(), time, usec, &[0; 16], None),
                 Err(Error::Encode {
                     target: _,
                     message: _
@@ -157,14 +157,14 @@ mod tests {
             let built =
                 build_ap_req_with_confounder(&session, ApReq::new(), time, 999_999, &[0; 16])?;
             let decoded = ap_req::decrypt_ap_req_authenticator(
-                &built.message,
-                &session.session_key,
-                ap_req::authenticator_usage_for_ticket(&built.message.ticket),
+                built.message(),
+                session.session_key(),
+                ap_req::authenticator_usage_for_ticket(&built.message().ticket),
             )?;
             // Then wire fields and retained AP-REP verification metadata agree exactly.
             assert_eq!(decoded.ctime.0.timestamp(), seconds);
             assert_eq!(decoded.cusec, Integer::from(999_999_u32));
-            assert_eq!(built.authenticator_ctime, time);
+            assert_eq!(built.authenticator_ctime(), time);
             #[cfg(feature = "spnego")]
             {
                 let context = spnego::init_sec_context_with_confounder(
@@ -181,16 +181,16 @@ mod tests {
                         subkey: None,
                         seq_number: Some(42),
                     },
-                    &session.session_key,
+                    session.session_key(),
                     None,
                     &[0; 16],
                 )?;
                 let verified = context.verify_ap_rep(&ap_rep::encode(&reply)?)?;
-                assert_eq!(verified.ctime, time);
-                assert_eq!(verified.authenticator_time, built.authenticator_time);
+                assert_eq!(verified.ctime(), time);
+                assert_eq!(verified.authenticator_time(), built.authenticator_time());
             }
             assert_eq!(
-                built.authenticator_time,
+                built.authenticator_time(),
                 time.checked_add(Duration::from_micros(999_999))
                     .context("microseconds")?
             );

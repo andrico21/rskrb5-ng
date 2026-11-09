@@ -71,7 +71,7 @@ mod tests {
             principal,
             Principal::new("TEST.GOKRB5", 2, ["kadmin", "changepw"]),
             EncryptionKey::new(18, vec![0x11; 32]),
-            ticket::encode(&fixture.ap_req.ticket)?.into(),
+            ticket::encode(&fixture.ap_req().ticket)?.into(),
             [0; 4],
             time,
             end,
@@ -102,9 +102,9 @@ mod tests {
         let parsed = Request::parse(request)?;
         let key = EncryptionKey::new(18, vec![0x11; 32]);
         let auth = ap_req::decrypt_ap_req_authenticator(
-            &parsed.ap_req,
+            parsed.ap_req(),
             &key,
-            ap_req::authenticator_usage_for_ticket(&parsed.ap_req.ticket),
+            ap_req::authenticator_usage_for_ticket(&parsed.ap_req().ticket),
         )?;
         let subkey = auth.subkey.ok_or("request subkey")?;
         let reply_key = EncryptionKey::new(subkey.r#type, subkey.value.to_vec());
@@ -286,7 +286,7 @@ mod tests {
         let payload = kadmin::ChangePasswdData::new(password);
         // Then the input was erased without destroying the retained payload.
         assert!(erased.load(Ordering::SeqCst));
-        assert_eq!(payload.new_passwd.as_ref(), b"original-allocation-canary");
+        assert_eq!(payload.new_passwd().as_ref(), b"original-allocation-canary");
         let (invalid_password, invalid_erased) = observed();
         let error =
             kadmin::ChangePasswdData::for_target(invalid_password, 1, ["user"], "\u{1f512}")

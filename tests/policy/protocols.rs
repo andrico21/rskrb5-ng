@@ -116,11 +116,11 @@ fn draft9_api_selection_is_rejected() -> Result<(), Box<dyn Error>> {
     use rskrb5_ng::client::{build_tgt_as_req, options::AsReq, principal::Principal};
     // Given application-selected draft-9 PA types, not KDC advertisements.
     for id in [14_i32, 15_i32] {
-        let mut options = AsReq::new(SystemTime::UNIX_EPOCH, 1);
-        options.padata.push(rasn_kerberos::PaData {
-            r#type: id,
-            value: Vec::new().into(),
-        });
+        let options =
+            AsReq::new(SystemTime::UNIX_EPOCH, 1).with_padata(vec![rasn_kerberos::PaData {
+                r#type: id,
+                value: Vec::new().into(),
+            }]);
         // When building an outgoing exchange.
         let failure = build_tgt_as_req(Principal::user("EXAMPLE.COM", "alice"), options)
             .err()
@@ -215,8 +215,9 @@ fn null_password_payload_is_rejected() -> Result<(), Box<dyn Error>> {
     use rskrb5_ng::kadmin::Request;
     // Given a historical request fixture relabelled as unencrypted by a caller.
     let bytes = hex::decode(include_str!("../fixtures/kpasswd-request.hex").trim())?;
-    let mut request = Request::parse(&bytes)?;
-    request.krb_priv.enc_part.etype = 0_i32;
+    let (ap_req, mut krb_priv) = Request::parse(&bytes)?.into_parts();
+    krb_priv.enc_part.etype = 0_i32;
+    let request = Request::new(ap_req, krb_priv);
     // When encoding the caller-selected unprotected payload.
     let failure = request
         .encode()
@@ -253,14 +254,16 @@ fn draft9_advertisements_are_ignored() -> Result<(), Box<dyn Error>> {
         25,
         Principal::tgt_service("EXAMPLE.COM"),
     );
-    reply.method_data = [14_i32, 15_i32]
-        .into_iter()
-        .map(|id| rasn_kerberos::PaData {
-            r#type: id,
-            value: vec![0xff].into(),
-        })
-        .collect();
-    reply.preauth_key_info.push(PreauthKeyInfo::new(17));
+    reply.set_method_data(
+        [14_i32, 15_i32]
+            .into_iter()
+            .map(|id| rasn_kerberos::PaData {
+                r#type: id,
+                value: vec![0xff].into(),
+            })
+            .collect(),
+    );
+    reply.set_preauth_key_info(vec![PreauthKeyInfo::new(17)]);
     // When choosing from the available enctype hints.
     let selected = select_preauth_key_info(&reply, &[17_i32])?;
     // Then opaque removed advertisements do not obstruct current mechanisms.

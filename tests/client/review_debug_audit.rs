@@ -37,11 +37,11 @@ mod tests {
         let as_req = sample_request()?;
         let tgs_req = sample_tgs_request(&session)?;
         for (rendered, credential) in [
-            (format!("{session:?}"), session.ticket.as_slice()),
-            (format!("{ap:?}"), ap.der.as_slice()),
-            (format!("{fast:?}"), fast.ap_req_der.as_slice()),
-            (format!("{as_req:?}"), as_req.der.as_slice()),
-            (format!("{tgs_req:?}"), tgs_req.der.as_slice()),
+            (format!("{session:?}"), session.ticket().as_slice()),
+            (format!("{ap:?}"), ap.der().as_slice()),
+            (format!("{fast:?}"), fast.ap_req_der().as_slice()),
+            (format!("{as_req:?}"), as_req.der().as_slice()),
+            (format!("{tgs_req:?}"), tgs_req.der().as_slice()),
         ] {
             assert!(
                 !rendered.contains(&format!("{credential:?}")),
@@ -122,9 +122,12 @@ mod tests {
             Principal::user("TEST.GOKRB5", "service"),
             TgsReq::new(timestamp(1_893_553_452)?, 42),
         )?;
-        fast.ap_req_der = b"fast-token-audit-canary".to_vec().into();
-        fast.authenticator_subkey.value = b"fast-key-audit-canary".to_vec().into();
-        session.ticket = marked_ticket(b"ticket-audit-canary")?.into();
+        fast.set_ap_req_der(b"fast-token-audit-canary".to_vec().into());
+        fast.set_authenticator_subkey(EncryptionKey::new(
+            fast.authenticator_subkey().etype(),
+            b"fast-key-audit-canary".to_vec(),
+        ));
+        session.set_ticket(marked_ticket(b"ticket-audit-canary")?.into());
         client.cache_tgt_session(session)?;
         let credentials =
             TokioClientCredentials::Password(Zeroizing::new(b"password-audit-canary".to_vec()));

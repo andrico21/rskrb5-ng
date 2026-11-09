@@ -33,9 +33,9 @@ mod tests {
                 for service in [change_password_principal(), Principal::tgt_service("TEST.GOKRB5")] {
                     let (request, mut socket) = read_tcp_kdc_request(&kdc).await?;
                     let built = built_request_from_der(der::decode(&request)?, &request)?;
-                    assert_eq!(built.client, principal);
-                    assert_eq!(built.service, service);
-                    let response = synthetic_as_rep_with_reply_key(&built, built.nonce, &built.service, &old_key)?;
+                    assert_eq!(built.client(), &principal);
+                    assert_eq!(built.service(), &service);
+                    let response = synthetic_as_rep_with_reply_key(&built, built.nonce(), built.service(), &old_key)?;
                     write_tcp_kdc_response(&mut socket, &response).await?;
                 }
                 Ok::<(), TestError>(())
@@ -62,7 +62,7 @@ mod tests {
                 if matches!(&*source, Error::Kadmin(Kadmin::UnauthenticatedRejection { code: 4, text_raw })
                     if text_raw == b"policy\xffrefused")));
             let logged_in = timeout(Duration::from_secs(5), client.login()).await??;
-            assert_eq!(logged_in.client, Principal::user("TEST.GOKRB5", "testuser1"));
+            assert_eq!(logged_in.client(), &Principal::user("TEST.GOKRB5", "testuser1"));
             while let Some(joined) = timeout(Duration::from_secs(5), servers.join_next()).await? {
                 joined??;
             }

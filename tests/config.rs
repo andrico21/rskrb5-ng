@@ -1743,7 +1743,7 @@ mod tests {
         let request = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)
             .map_err(|cause| format!("AS-REQ builds: {cause}"))?;
         let decoded: rasn_kerberos::AsReq =
-            der::decode(&request.der).map_err(|cause| format!("AS-REQ decodes: {cause}"))?;
+            der::decode(request.der()).map_err(|cause| format!("AS-REQ decodes: {cause}"))?;
         Ok(decoded.0.req_body.etype)
     }
 

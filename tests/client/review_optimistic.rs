@@ -72,7 +72,7 @@ mod tests {
             );
             let etype = KerberosEtype::from_etype_id(18).context("AES")?;
             let plaintext = etype.decrypt_message(
-                &self.key.value,
+                self.key.value(),
                 timestamp.cipher.as_ref(),
                 AS_REQ_PA_ENC_TIMESTAMP_USAGE,
             )?;
@@ -81,7 +81,7 @@ mod tests {
                 return Ok(self.challenge.clone());
             }
             let built = built_request_from_der(request, bytes)?;
-            synthetic_as_rep_with_reply_key(&built, built.nonce, &built.service, &self.key)
+            synthetic_as_rep_with_reply_key(&built, built.nonce(), built.service(), &self.key)
         }
     }
 
@@ -154,9 +154,11 @@ mod tests {
                 };
                 // Then one retry succeeds or returns the second error, never a third request.
                 if reject_retry {
-                    assert!(matches!(result, Err(Error::Kdc(error)) if error.error_code == 24_i32));
+                    assert!(
+                        matches!(result, Err(Error::Kdc(error)) if error.error_code() == 24_i32)
+                    );
                 } else {
-                    assert_eq!(result?.client, principal);
+                    assert_eq!(result?.client(), &principal);
                 }
                 assert_eq!(kdc.calls, 2);
             }
@@ -187,7 +189,7 @@ mod tests {
             TESTUSER_PASSWORD,
             options,
         );
-        assert!(matches!(result, Err(Error::Kdc(error)) if error.error_code == 24_i32));
+        assert!(matches!(result, Err(Error::Kdc(error)) if error.error_code() == 24_i32));
         assert_eq!(kdc.calls, 1);
         Ok(())
     }
@@ -225,7 +227,7 @@ mod tests {
                     login_tgt_with_password(&mut kdc, principal, TESTUSER_PASSWORD, options)
                 };
                 assert!(
-                    matches!(result, Err(Error::Kdc(rejection)) if rejection.error_code == 24_i32)
+                    matches!(result, Err(Error::Kdc(rejection)) if rejection.error_code() == 24_i32)
                 );
                 assert_eq!(kdc.calls, 2);
             }
@@ -262,7 +264,7 @@ mod tests {
                 // When the shared challenge helper admits the hinted optimistic failure.
                 let session = if keytab { timeout(Duration::from_secs(5), transport.login_tgt_with_keytab_config(&config, KdcProtocol::Tcp, principal.clone(), &keytab_with_reply_key(3)?, options)).await?? } else { timeout(Duration::from_secs(5), transport.login_tgt_with_password_config(&config, KdcProtocol::Tcp, principal.clone(), TESTUSER_PASSWORD, options)).await?? };
                 // Then successful retry required both affinity and the exact hinted preauth.
-                assert_eq!(session.client, principal);
+                assert_eq!(session.client(), &principal);
                 peers.join_next().await.context("peer")???;
             }
             Ok(())

@@ -6,13 +6,13 @@
 
 #[cfg(feature = "tower")]
 use alloc::{borrow::Cow, sync::Arc};
-use core::result::Result as CoreResult;
 #[cfg(feature = "tower")]
 use core::task::{Context, Poll};
 #[cfg(feature = "tower")]
 use core::time::Duration;
+use core::{fmt, result::Result as CoreResult};
 #[cfg(feature = "tower")]
-use core::{fmt, mem, pin::Pin};
+use core::{mem, pin::Pin};
 #[cfg(feature = "tower")]
 use std::{sync::Mutex, time::SystemTime};
 
@@ -71,7 +71,7 @@ use crate::error::{Keytab as KeytabError, Service as ServiceError, Spnego as Spn
 
 /// Tower Negotiate middleware error.
 #[cfg(feature = "tower")]
-#[derive(Debug, thiserror::Error)]
+#[derive(thiserror::Error)]
 #[non_exhaustive]
 pub enum TowerError<E> {
     /// HTTP Negotiate processing failed.
@@ -82,13 +82,24 @@ pub enum TowerError<E> {
     Inner(E),
 }
 
+#[cfg(feature = "tower")]
+impl<E> fmt::Debug for TowerError<E> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Http(_) => f.write_str("TowerError::Http"),
+            Self::Inner(_) => f.write_str("TowerError::Inner"),
+        }
+    }
+}
+
 /// Client-side HTTP Negotiate wrapper error.
 ///
 /// `E` is the caller-provided sender's error type and `B` is the response body
 /// type, so a response that failed mutual authentication can be returned to the
 /// caller for diagnostics.
 #[cfg(feature = "tokio")]
-#[derive(Debug, thiserror::Error)]
+#[derive(thiserror::Error)]
 #[non_exhaustive]
 pub enum NegotiateHttpError<E, B> {
     /// HTTP Negotiate processing failed.
@@ -113,8 +124,27 @@ pub enum NegotiateHttpError<E, B> {
     },
 }
 
+#[cfg(feature = "tokio")]
+impl<E, B> fmt::Debug for NegotiateHttpError<E, B> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Http(_) => f.write_str("NegotiateHttpError::Http"),
+            Self::Sender(_) => f.write_str("NegotiateHttpError::Sender"),
+            Self::MutualAuthenticationNotProven {
+                negotiation,
+                response,
+            } => f
+                .debug_struct("MutualAuthenticationNotProven")
+                .field("negotiation", negotiation)
+                .field("status", &response.status())
+                .finish(),
+        }
+    }
+}
+
 /// Client-side HTTP Negotiate response classification.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum ClientNegotiateResponse {
     /// The response did not contain any `WWW-Authenticate` header.
@@ -139,29 +169,99 @@ pub enum ClientNegotiateResponse {
     },
 }
 
+impl fmt::Debug for ClientNegotiateResponse {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoAuthenticateHeader => f.write_str("NoAuthenticateHeader"),
+            Self::NoNegotiateChallenge => f.write_str("NoNegotiateChallenge"),
+            Self::Challenge => f.write_str("Challenge"),
+            Self::Accepted { ap_rep } => {
+                f.debug_struct("Accepted").field("ap_rep", ap_rep).finish()
+            }
+            Self::Rejected => f.write_str("Rejected"),
+            Self::InvalidToken { message } => f
+                .debug_struct("InvalidToken")
+                .field("message_len", &message.len())
+                .finish(),
+        }
+    }
+}
+
 /// Result of a client-side HTTP Negotiate send wrapper.
 #[cfg(feature = "tokio")]
-#[derive(Debug)]
 #[non_exhaustive]
 pub struct NegotiateHttpResponse<B> {
     /// The final HTTP response.
     ///
     /// This is the first response when no `401 WWW-Authenticate: Negotiate`
     /// challenge was present, or the retried authenticated response otherwise.
-    pub response: Response<B>,
+    response: Response<B>,
     /// Initiator context used for the retry, when a Negotiate retry happened.
-    pub context: Option<spnego::InitiatorContext>,
+    context: Option<spnego::InitiatorContext>,
     /// Classification of the final response's Negotiate authentication state.
     ///
     /// `None` means no Negotiate retry was attempted. When present, this is
     /// computed with [`classify_negotiate_response`] and may be
     /// [`ClientNegotiateResponse::NoAuthenticateHeader`] for servers that accept
     /// the request without returning a final `WWW-Authenticate` token.
-    pub negotiation: Option<ClientNegotiateResponse>,
+    negotiation: Option<ClientNegotiateResponse>,
+}
+
+#[cfg(feature = "tokio")]
+impl<B> fmt::Debug for NegotiateHttpResponse<B> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            response,
+            context,
+            negotiation,
+        } = self;
+        f.debug_struct("NegotiateHttpResponse")
+            .field("status", &response.status())
+            .field("context", context)
+            .field("negotiation", negotiation)
+            .finish()
+    }
 }
 
 #[cfg(feature = "tokio")]
 impl<B> NegotiateHttpResponse<B> {
+    /// Borrow the application response.
+    #[inline]
+    #[must_use]
+    pub const fn response(&self) -> &Response<B> {
+        &self.response
+    }
+    /// Borrow the retained authentication context.
+    #[inline]
+    #[must_use]
+    pub const fn context(&self) -> Option<&spnego::InitiatorContext> {
+        self.context.as_ref()
+    }
+    /// Borrow the negotiation classification.
+    #[inline]
+    #[must_use]
+    pub const fn negotiation(&self) -> Option<&ClientNegotiateResponse> {
+        self.negotiation.as_ref()
+    }
+    /// Transfer the response and context without copying credentials.
+    #[inline]
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        Response<B>,
+        Option<spnego::InitiatorContext>,
+        Option<ClientNegotiateResponse>,
+    ) {
+        let Self {
+            response,
+            context,
+            negotiation,
+        } = self;
+        (response, context, negotiation)
+    }
     /// The result for a first response that issued no Negotiate challenge.
     const fn not_negotiated(response: Response<B>) -> Self {
         Self {
@@ -271,7 +371,7 @@ pub async fn authorize_request_context<B>(
     service: Principal,
 ) -> Result<spnego::InitiatorContext> {
     let context = client.spnego_context(service).await?;
-    set_authorization_header(request, &context.header)?;
+    set_authorization_header(request, context.header_ref())?;
     Ok(context)
 }
 
@@ -295,7 +395,7 @@ pub async fn authorize_request_context_with_options<B>(
     options: spnego::InitiatorContextOptions,
 ) -> Result<spnego::InitiatorContext> {
     let context = client.spnego_context_with_options(service, options).await?;
-    set_authorization_header(request, &context.header)?;
+    set_authorization_header(request, context.header_ref())?;
     Ok(context)
 }
 
@@ -318,7 +418,7 @@ pub async fn authorize_request_context_with_negotiate_client<B>(
     service: Principal,
 ) -> Result<spnego::InitiatorContext> {
     let context = client.authorization_context(service).await?;
-    set_authorization_header(request, &context.header)?;
+    set_authorization_header(request, context.header_ref())?;
     Ok(context)
 }
 
@@ -344,7 +444,7 @@ pub async fn authorize_request_context_with_negotiate_client_options<B>(
     let context = client
         .authorization_context_with_options(service, options)
         .await?;
-    set_authorization_header(request, &context.header)?;
+    set_authorization_header(request, context.header_ref())?;
     Ok(context)
 }
 
@@ -464,7 +564,7 @@ where
         .authorization_context_with_options(service, options)
         .await
         .map_err(Error::from)?;
-    set_authorization_header(&mut retry, &context.header)?;
+    set_authorization_header(&mut retry, context.header_ref())?;
 
     let response = send_request(retry)
         .await
@@ -545,7 +645,7 @@ where
     let context = client
         .authorization_context_with_options(service, options)
         .map_err(Error::from)?;
-    set_authorization_header(&mut retry, &context.header)?;
+    set_authorization_header(&mut retry, context.header_ref())?;
 
     let response = send_request(retry).map_err(NegotiateHttpError::Sender)?;
     negotiated_result(mutual, response, context)
@@ -670,8 +770,8 @@ fn should_retry_with_negotiate<B>(response: &Response<B>) -> Result<bool> {
 /// Whether the initiator options ask for mutual authentication in any supported form.
 #[cfg(feature = "tokio")]
 fn mutual_requested_by(options: &spnego::InitiatorContextOptions) -> bool {
-    options.ap_option_bits & AP_OPTION_MUTUAL_REQUIRED != 0
-        || mutual_requested(&options.context_flags)
+    options.ap_option_bits() & AP_OPTION_MUTUAL_REQUIRED != 0
+        || mutual_requested(options.context_flags())
 }
 
 /// Test every flag mask, matching the authenticator's bitwise encoding.
@@ -786,8 +886,8 @@ const AP_OPTION_MUTUAL_REQUIRED: u32 = 0x2000_0000;
 
 /// Whether the initiator asked for mutual authentication in any supported form.
 fn mutual_authentication_requested(context: &spnego::InitiatorContext) -> bool {
-    ap_options_to_bits(&context.ap_req.ap_options) & AP_OPTION_MUTUAL_REQUIRED != 0
-        || mutual_requested(&context.context_flags)
+    ap_options_to_bits(&context.ap_req_ref().ap_options) & AP_OPTION_MUTUAL_REQUIRED != 0
+        || mutual_requested(context.context_flags())
 }
 
 /// Classify one Negotiate challenge of a client-side exchange, verifying an
@@ -818,7 +918,7 @@ fn classify_negotiate_challenge(
         }
     };
 
-    if response.neg_state == Some(spnego::NegState::Reject) {
+    if response.neg_state() == Some(spnego::NegState::Reject) {
         return ClientNegotiateResponse::Rejected;
     }
     if let Err(source) = context.validate_completion(&response) {
@@ -827,7 +927,7 @@ fn classify_negotiate_challenge(
         };
     }
 
-    let Some(response_token) = response.response_token else {
+    let Some(response_token) = response.response_token() else {
         if mutual_authentication_requested(context) {
             return ClientNegotiateResponse::InvalidToken {
                 message: "mutual authentication was requested but the peer returned no AP-REP"
@@ -836,7 +936,7 @@ fn classify_negotiate_challenge(
         }
         return ClientNegotiateResponse::Accepted { ap_rep: None };
     };
-    let krb5 = match spnego::Krb5MechToken::decode(&response_token) {
+    let krb5 = match spnego::Krb5MechToken::decode(response_token) {
         Ok(krb5) => krb5,
         Err(source) => {
             return ClientNegotiateResponse::InvalidToken {
@@ -845,8 +945,8 @@ fn classify_negotiate_challenge(
         }
     };
 
-    match krb5.token_id {
-        spnego::Krb5TokenId::ApRep => match context.verify_ap_rep(&krb5.message) {
+    match krb5.token_id() {
+        spnego::Krb5TokenId::ApRep => match context.verify_ap_rep(krb5.message()) {
             Ok(ap_rep) => ClientNegotiateResponse::Accepted {
                 ap_rep: Some(ap_rep),
             },
@@ -996,7 +1096,7 @@ fn harden_response<B>(response: &mut Response<B>) {
 /// A stolen token can win its first presentation; replay detection prevents
 /// subsequent presentations only within the configured cache scope.
 #[cfg(feature = "tower")]
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct NegotiateLayer<'keytab> {
     /// The service keytab, borrowed or owned.
     keytab: Cow<'keytab, Keytab>,
@@ -1004,6 +1104,23 @@ pub struct NegotiateLayer<'keytab> {
     validator: ValidatorOptions,
     /// How services answer accepted and rejected requests.
     response: NegotiateResponseOptions,
+}
+
+#[cfg(feature = "tower")]
+impl fmt::Debug for NegotiateLayer<'_> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            keytab,
+            validator,
+            response,
+        } = self;
+        f.debug_struct("NegotiateLayer")
+            .field("keytab_entries", &keytab.entries().len())
+            .field("validator", validator)
+            .field("response", response)
+            .finish()
+    }
 }
 
 #[cfg(feature = "tower")]
@@ -1277,7 +1394,7 @@ impl<'layer, S> Layer<S> for NegotiateLayer<'layer> {
 /// retained as `Arc<error::Http>` in response extensions for caller diagnostics;
 /// extensions are not serialized onto the wire.
 #[cfg(feature = "tower")]
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct NegotiateService<'keytab, S> {
     /// The wrapped service.
     inner: S,
@@ -1287,6 +1404,23 @@ pub struct NegotiateService<'keytab, S> {
     settings: NegotiateLayer<'keytab>,
     /// How accepted and rejected requests are answered.
     response: NegotiateResponseOptions,
+}
+
+#[cfg(feature = "tower")]
+impl<S> fmt::Debug for NegotiateService<'_, S> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            inner: _,
+            validator: _,
+            settings,
+            response,
+        } = self;
+        f.debug_struct("NegotiateService")
+            .field("settings", settings)
+            .field("response", response)
+            .finish_non_exhaustive()
+    }
 }
 
 #[cfg(feature = "tower")]

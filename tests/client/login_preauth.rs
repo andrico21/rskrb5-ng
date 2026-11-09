@@ -48,7 +48,7 @@ mod tests {
                 let result = process_kdc_error(&der::encode(&error)?);
                 if suffix.is_empty() {
                     assert_eq!(
-                        result?.preauth_key_info.first().ok_or("hint")?.etype,
+                        result?.preauth_key_info().first().ok_or("hint")?.etype,
                         18_i32
                     );
                 } else {
@@ -75,19 +75,19 @@ mod tests {
 
         let error = process_kdc_error(&error_bytes).context("KRB-ERROR decodes")?;
 
-        assert_eq!(error.error_code, KDC_ERR_PREAUTH_REQUIRED);
-        assert_eq!(error.ctime, None);
-        assert_eq!(error.cusec, None);
-        assert_eq!(error.stime, timestamp(1_893_553_440)?);
-        assert_eq!(error.susec, 0);
+        assert_eq!(error.error_code(), KDC_ERR_PREAUTH_REQUIRED);
+        assert_eq!(error.ctime(), None);
+        assert_eq!(error.cusec(), None);
+        assert_eq!(error.stime(), timestamp(1_893_553_440)?);
+        assert_eq!(error.susec(), 0);
         assert_eq!(
-            error.client,
-            Some(Principal::user("TEST.GOKRB5", "testuser1"))
+            error.client(),
+            Some(&Principal::user("TEST.GOKRB5", "testuser1"))
         );
-        assert_eq!(error.service, Principal::tgt_service("TEST.GOKRB5"));
-        assert_eq!(error.method_data.len(), 1);
+        assert_eq!(error.service(), &Principal::tgt_service("TEST.GOKRB5"));
+        assert_eq!(error.method_data().len(), 1);
         assert_eq!(
-            error.preauth_key_info,
+            error.preauth_key_info(),
             vec![
                 PreauthKeyInfo::new(18)
                     .with_salt(Some(TESTUSER_SALT.to_owned()))
@@ -133,9 +133,9 @@ mod tests {
 
         let reply_key = derive_password_reply_key(&client, b"foo", &selected)
             .context("RC4 reply key derives")?;
-        assert_eq!(reply_key.etype, 23_i32);
+        assert_eq!(reply_key.etype(), 23_i32);
         assert_eq!(
-            reply_key.value.as_slice(),
+            reply_key.value().as_slice(),
             decode_hex("ac8e657f83df82beea5d43bdaf7800cc")?
         );
         Ok(())
@@ -156,8 +156,8 @@ mod tests {
                 .context("password login succeeds")?;
 
         assert_eq!(transport.calls, 2);
-        assert_eq!(session.client, client);
-        assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
+        assert_eq!(session.client(), &client);
+        assert_eq!(session.service(), &Principal::tgt_service("TEST.GOKRB5"));
         Ok(())
     }
 
@@ -178,8 +178,8 @@ mod tests {
                 .context("password login succeeds")?;
 
         assert_eq!(transport.calls, 2);
-        assert_eq!(session.client, client);
-        assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
+        assert_eq!(session.client(), &client);
+        assert_eq!(session.service(), &Principal::tgt_service("TEST.GOKRB5"));
         Ok(())
     }
 
@@ -204,8 +204,8 @@ mod tests {
         .context("password login succeeds")?;
 
         assert_eq!(transport.calls, 2);
-        assert_eq!(session.client, client);
-        assert_eq!(session.service, service);
+        assert_eq!(session.client(), &client);
+        assert_eq!(session.service(), &service);
         Ok(())
     }
 
@@ -226,8 +226,8 @@ mod tests {
                 .context("password login succeeds")?;
 
         assert_eq!(transport.calls, 1);
-        assert_eq!(session.client, client);
-        assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
+        assert_eq!(session.client(), &client);
+        assert_eq!(session.service(), &Principal::tgt_service("TEST.GOKRB5"));
         Ok(())
     }
 
@@ -243,8 +243,8 @@ mod tests {
             .context("keytab login succeeds")?;
 
         assert_eq!(transport.calls, 2);
-        assert_eq!(session.client, client);
-        assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
+        assert_eq!(session.client(), &client);
+        assert_eq!(session.service(), &Principal::tgt_service("TEST.GOKRB5"));
         Ok(())
     }
 
@@ -263,8 +263,8 @@ mod tests {
             .context("keytab login succeeds")?;
 
         assert_eq!(transport.calls, 2);
-        assert_eq!(session.client, client);
-        assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
+        assert_eq!(session.client(), &client);
+        assert_eq!(session.service(), &Principal::tgt_service("TEST.GOKRB5"));
         Ok(())
     }
 
@@ -287,8 +287,8 @@ mod tests {
         .context("keytab login succeeds")?;
 
         assert_eq!(transport.calls, 2);
-        assert_eq!(session.client, client);
-        assert_eq!(session.service, service);
+        assert_eq!(session.client(), &client);
+        assert_eq!(session.service(), &service);
         Ok(())
     }
 
@@ -306,8 +306,8 @@ mod tests {
             .context("keytab login succeeds")?;
 
         assert_eq!(transport.calls, 1);
-        assert_eq!(session.client, client);
-        assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
+        assert_eq!(session.client(), &client);
+        assert_eq!(session.service(), &Principal::tgt_service("TEST.GOKRB5"));
         Ok(())
     }
 
@@ -346,8 +346,8 @@ mod tests {
         )?;
         let mut reply: rasn_kerberos::AsRep = der::decode(&synthetic_as_rep_with_reply_key(
             &request,
-            request.nonce,
-            &request.service,
+            request.nonce(),
+            request.service(),
             &key,
         )?)?;
         reply.0.padata = Some(vec![rasn_kerberos::PaData {
@@ -357,7 +357,7 @@ mod tests {
         let response = der::encode(&reply)?;
         let mut transport = MockTransport {
             expected_realm: client.realm.clone(),
-            expected_request: request.der.to_vec(),
+            expected_request: request.der().to_vec(),
             response,
             called: false,
         };
@@ -367,7 +367,7 @@ mod tests {
             TESTUSER_PASSWORD,
             AsReq::new(timestamp(1_893_553_447)?, 42).with_fast_negotiation(false),
         )?;
-        assert_eq!(session.service, request.service);
+        assert_eq!(session.service(), request.service());
         Ok(())
     }
 

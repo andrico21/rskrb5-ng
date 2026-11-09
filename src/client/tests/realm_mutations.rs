@@ -73,7 +73,7 @@ async fn answer_renewal(listener: TcpListener, session: AsRepSession) -> Result<
     let cipher = AesSha1Etype::from_etype_id(18)
         .ok_or("AES")?
         .encrypt_message_with_confounder(
-            &session.session_key.value,
+            session.session_key.value(),
             &der::encode(&part)?,
             8,
             &[0; 16],
@@ -127,8 +127,9 @@ async fn realm_selection_across_start_boundary() -> Result<(), TestError> {
         let mut wire = Request::parse(&hex::decode(
             include_str!("../../../tests/fixtures/kpasswd-request.hex").trim(),
         )?)?
-        .ap_req
-        .ticket;
+        .ap_req()
+        .ticket
+        .clone();
         wire.realm = KerberosString::try_from("EXAMPLE.TEST")?;
         wire.sname = PrincipalName {
             r#type: 2,
@@ -176,7 +177,7 @@ async fn realm_selection_across_start_boundary() -> Result<(), TestError> {
             }
         }
         let cached = client.tgt_sessions.get(destination).ok_or("realm cache")?;
-        assert_eq!(cached.session_key.value.as_slice() == [0x66; 32], foreign);
+        assert_eq!(cached.session_key.value().as_slice() == [0x66; 32], foreign);
         assert!(
             client.tgt.is_none(),
             "foreign renewal must not replace the primary TGT"

@@ -204,14 +204,14 @@ mod tests {
     fn builds_and_decrypts_as_rep_enc_part_with_explicit_confounder() -> Result<(), TestError> {
         let enc_part = decode_enc_kdc_rep_part(&hex::decode(MARSHALLED_ENC_KDC_REP_PART)?)?;
         let key = reply_key()?;
-        let etype = KerberosEtype::from_etype_id(key.etype).ok_or("AES256 etype")?;
+        let etype = KerberosEtype::from_etype_id(key.etype()).ok_or("AES256 etype")?;
         let confounder = vec![0x22; etype.confounder_len()];
         let mut as_rep = decode_as_rep(&hex::decode(MARSHALLED_AS_REP)?)?;
 
         as_rep.0.enc_part =
             encrypt_as_rep_enc_part_with_confounder(&enc_part, &key, Some(6), &confounder)?;
 
-        assert_eq!(as_rep.0.enc_part.etype, key.etype);
+        assert_eq!(as_rep.0.enc_part.etype, key.etype());
         assert_eq!(as_rep.0.enc_part.kvno, Some(6));
         let decrypted = decrypt_as_rep_enc_part(&as_rep, &key)?;
         assert_eq!(decrypted, enc_part);
@@ -223,14 +223,14 @@ mod tests {
     fn builds_and_decrypts_tgs_rep_enc_part_with_explicit_confounder() -> Result<(), TestError> {
         let enc_part = decode_enc_kdc_rep_part(&hex::decode(MARSHALLED_ENC_KDC_REP_PART)?)?;
         let key = reply_key()?;
-        let etype = KerberosEtype::from_etype_id(key.etype).ok_or("AES256 etype")?;
+        let etype = KerberosEtype::from_etype_id(key.etype()).ok_or("AES256 etype")?;
         let confounder = vec![0x44; etype.confounder_len()];
         let mut tgs_rep = decode_tgs_rep(&hex::decode(MARSHALLED_TGS_REP)?)?;
 
         tgs_rep.0.enc_part =
             encrypt_tgs_rep_enc_part_with_confounder(&enc_part, &key, None, &confounder)?;
 
-        assert_eq!(tgs_rep.0.enc_part.etype, key.etype);
+        assert_eq!(tgs_rep.0.enc_part.etype, key.etype());
         assert!(tgs_rep.0.enc_part.kvno.is_none(), "kvno is absent");
         let decrypted = decrypt_tgs_rep_enc_part(&tgs_rep, &key)?;
         assert_eq!(decrypted, enc_part);

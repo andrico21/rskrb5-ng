@@ -1,6 +1,6 @@
 //! Client-side kpasswd request building and AP-REP verification helpers.
 
-use core::time::Duration;
+use core::{fmt, time::Duration};
 use std::time::SystemTime;
 
 use zeroize::Zeroizing;
@@ -93,37 +93,169 @@ impl RequestOptions {
 }
 
 /// Built kpasswd request plus the key needed to decrypt the reply.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct BuiltKpasswdRequest {
     /// Policy bound to this request for checked exchanges without configuration.
-    pub crypto_policy: CryptoPolicy,
+    crypto_policy: CryptoPolicy,
     /// Parsed kpasswd request.
-    pub request: kadmin::Request,
+    request: kadmin::Request,
     /// Encoded kpasswd request frame.
-    pub der: Vec<u8>,
+    der: Zeroizing<Vec<u8>>,
     /// Authenticator subkey used to encrypt request KRB-PRIV payloads and reply KRB-PRIV payloads
     /// when the AP-REP does not select a server subkey.
-    pub reply_key: EncryptionKey,
+    reply_key: EncryptionKey,
     /// Built AP-REQ metadata.
-    pub ap_req: BuiltApReq,
+    ap_req: BuiltApReq,
+}
+
+impl BuiltKpasswdRequest {
+    /// Replace the policy retained for checked transport.
+    #[inline]
+    pub fn set_crypto_policy(&mut self, value: CryptoPolicy) {
+        self.crypto_policy = value;
+    }
+    /// Erase the previous reply key before adopting another owner.
+    #[inline]
+    pub fn set_reply_key(&mut self, value: EncryptionKey) {
+        self.reply_key = value;
+    }
+    /// Borrow the request policy.
+    #[inline]
+    #[must_use]
+    pub const fn crypto_policy(&self) -> &CryptoPolicy {
+        &self.crypto_policy
+    }
+    /// Borrow the framed request.
+    #[inline]
+    #[must_use]
+    pub const fn request(&self) -> &kadmin::Request {
+        &self.request
+    }
+    /// Borrow the authentication request metadata.
+    #[inline]
+    #[must_use]
+    pub const fn ap_req(&self) -> &BuiltApReq {
+        &self.ap_req
+    }
+    /// Borrow encoded frame bytes.
+    #[inline]
+    #[must_use]
+    pub fn der(&self) -> &[u8] {
+        &self.der
+    }
+    /// Borrow the reply key.
+    #[inline]
+    #[must_use]
+    pub const fn reply_key(&self) -> &EncryptionKey {
+        &self.reply_key
+    }
+}
+
+impl fmt::Debug for BuiltKpasswdRequest {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            crypto_policy,
+            request,
+            der,
+            reply_key,
+            ap_req,
+        } = self;
+        f.debug_struct("BuiltKpasswdRequest")
+            .field("crypto_policy", crypto_policy)
+            .field("request", request)
+            .field("der_len", &der.len())
+            .field("reply_key", reply_key)
+            .field("ap_req", ap_req)
+            .finish()
+    }
 }
 
 /// Verified kpasswd AP-REP reply metadata.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct VerifiedKpasswdApRep {
     /// Reply `ctime` without `cusec`.
-    pub ctime: SystemTime,
+    ctime: SystemTime,
     /// Reply microsecond field.
-    pub cusec: u32,
+    cusec: u32,
     /// Reply timestamp including `cusec`.
-    pub authenticator_time: SystemTime,
+    authenticator_time: SystemTime,
     /// Optional server-selected subkey.
-    pub subkey: Option<EncryptionKey>,
+    subkey: Option<EncryptionKey>,
     /// Optional server sequence number.
-    pub sequence_number: Option<u32>,
+    sequence_number: Option<u32>,
 }
+
+impl VerifiedKpasswdApRep {
+    /// Return the server reply time.
+    #[inline]
+    #[must_use]
+    pub const fn ctime(&self) -> SystemTime {
+        self.ctime
+    }
+    /// Return server reply microseconds.
+    #[inline]
+    #[must_use]
+    pub const fn cusec(&self) -> u32 {
+        self.cusec
+    }
+    /// Return the combined authenticator time.
+    #[inline]
+    #[must_use]
+    pub const fn authenticator_time(&self) -> SystemTime {
+        self.authenticator_time
+    }
+    /// Return the server sequence number.
+    #[inline]
+    #[must_use]
+    pub const fn sequence_number(&self) -> Option<u32> {
+        self.sequence_number
+    }
+    /// Borrow the optional server-selected subkey.
+    #[must_use]
+    #[inline]
+    pub const fn subkey(&self) -> Option<&EncryptionKey> {
+        self.subkey.as_ref()
+    }
+
+    /// Replace the subkey, zeroing the old key if present.
+    #[inline]
+    pub fn set_subkey(&mut self, value: Option<EncryptionKey>) {
+        self.subkey = value;
+    }
+}
+
+impl fmt::Debug for VerifiedKpasswdApRep {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            ctime,
+            cusec,
+            authenticator_time,
+            subkey,
+            sequence_number,
+        } = self;
+        f.debug_struct("VerifiedKpasswdApRep")
+            .field("ctime", ctime)
+            .field("cusec", cusec)
+            .field("authenticator_time", authenticator_time)
+            .field("subkey", subkey)
+            .field("sequence_number", sequence_number)
+            .finish()
+    }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "kpasswd/verified_replacement_tests.rs"]
+mod verified_replacement_tests;
 
 /// Build a complete kpasswd request with explicit confounders.
 ///
@@ -151,18 +283,19 @@ pub fn build_kpasswd_request_with_confounders(
     )?;
     let krb_priv_options = kpasswd_krb_priv_options(options)?;
     let built_request = kadmin::build_change_password_request_with_confounder(
-        ap_req.message.clone(),
+        ap_req.message().clone(),
         change_data,
         reply_key,
         krb_priv_options,
         krb_priv_confounder,
     )?;
 
+    let (request, der, retained_reply_key) = built_request.into_parts();
     Ok(BuiltKpasswdRequest {
         crypto_policy: options.crypto_policy.clone().unwrap_or_default(),
-        request: built_request.request,
-        der: built_request.der,
-        reply_key: built_request.reply_key,
+        request,
+        der,
+        reply_key: retained_reply_key,
         ap_req,
     })
 }
@@ -181,14 +314,11 @@ pub fn build_kpasswd_request(
     change_data: &kadmin::ChangePasswdData,
     options: &RequestOptions,
 ) -> Result<BuiltKpasswdRequest, Error> {
-    let etype = selection::enctype(service_ticket.session_key.etype)?
-        .ok_or(Error::UnsupportedEtype(service_ticket.session_key.etype))?;
+    let etype = selection::enctype(service_ticket.session_key.etype())?
+        .ok_or(Error::UnsupportedEtype(service_ticket.session_key.etype()))?;
     let mut reply_bytes = Zeroizing::new(vec![0; etype.key_len()]);
     getrandom::fill(&mut reply_bytes)?;
-    let reply_key = EncryptionKey {
-        etype: service_ticket.session_key.etype,
-        value: reply_bytes.into(),
-    };
+    let reply_key = EncryptionKey::new(service_ticket.session_key.etype(), reply_bytes);
     let mut ap_req_confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut ap_req_confounder)?;
 
@@ -200,17 +330,18 @@ pub fn build_kpasswd_request(
     )?;
     let krb_priv_options = kpasswd_krb_priv_options(options)?;
     let built_request = kadmin::build_change_password_request(
-        ap_req.message.clone(),
+        ap_req.message().clone(),
         change_data,
         reply_key,
         krb_priv_options,
     )?;
 
+    let (request, der, retained_reply_key) = built_request.into_parts();
     Ok(BuiltKpasswdRequest {
         crypto_policy: options.crypto_policy.clone().unwrap_or_default(),
-        request: built_request.request,
-        der: built_request.der,
-        reply_key: built_request.reply_key,
+        request,
+        der,
+        reply_key: retained_reply_key,
         ap_req,
     })
 }
@@ -237,10 +368,10 @@ pub fn verify_kpasswd_ap_rep(
         return Ok(None);
     }
 
-    let ap_rep = reply.ap_rep.as_ref().ok_or(Error::MissingKpasswdApRep)?;
+    let ap_rep = reply.ap_rep().ok_or(Error::MissingKpasswdApRep)?;
     validate_ap_rep(ap_rep).map_err(ap_rep_error)?;
     let enc_part =
-        decrypt_ap_rep_enc_part(ap_rep, &request.ap_req.session_key).map_err(ap_rep_error)?;
+        decrypt_ap_rep_enc_part(ap_rep, request.ap_req().session_key()).map_err(ap_rep_error)?;
     messages::whole_seconds(&enc_part.ctime)
         .and_then(|()| messages::microseconds("ap-rep.cusec", &enc_part.cusec).map(|_value| ()))
         .map_err(|_invalid| Error::KpasswdReplyControl("AP-REP time range"))?;
@@ -280,14 +411,13 @@ pub(super) fn validated_result(
     options: &RequestOptions,
     policy: &CryptoPolicy,
 ) -> Result<kadmin::ChangePasswordResult, Error> {
-    policy.check_use(request.ap_req.session_key.etype, Use::SessionKey)?;
-    if let Some(ap_rep) = &reply.ap_rep {
+    policy.check_use(request.ap_req().session_key().etype(), Use::SessionKey)?;
+    if let Some(ap_rep) = reply.ap_rep() {
         policy.check_use(ap_rep.enc_part.etype, Use::SessionKey)?;
     }
     if reply
-        .krb_priv
-        .as_ref()
-        .is_some_and(|part| part.enc_part.cipher == request.request.krb_priv.enc_part.cipher)
+        .krb_priv()
+        .is_some_and(|part| part.enc_part.cipher == request.request.krb_priv().enc_part.cipher)
     {
         return Err(Error::KpasswdReplyControl("reflected ciphertext"));
     }
@@ -300,14 +430,13 @@ pub(super) fn validated_result(
         .into());
     };
     let key = verified.subkey.as_ref().unwrap_or(&request.reply_key);
-    policy.check_use(key.etype, Use::SessionKey)?;
-    if let Some(private) = &reply.krb_priv {
+    policy.check_use(key.etype(), Use::SessionKey)?;
+    if let Some(private) = reply.krb_priv() {
         policy.check_use(private.enc_part.etype, Use::SessionKey)?;
     }
     let part = kadmin::decrypt_krb_priv_enc_part(
         reply
-            .krb_priv
-            .as_ref()
+            .krb_priv()
             .ok_or(Error::KpasswdReplyControl("missing KRB-PRIV"))?,
         key,
     )?;

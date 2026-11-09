@@ -2,7 +2,68 @@
 
 use core::fmt;
 
-use super::{Krb5MechToken, NegTokenInit, NegTokenResp};
+use super::{
+    AcceptedContext, InitiatorContextOptions, Krb5MechToken, NegTokenInit, NegTokenResp,
+    NegotiationToken, Token,
+};
+
+impl fmt::Debug for NegotiationToken {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Init(value) => f.debug_tuple("Init").field(value).finish(),
+            Self::Resp(value) => f.debug_tuple("Resp").field(value).finish(),
+        }
+    }
+}
+
+impl fmt::Debug for Token {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Init(value) => f.debug_tuple("Init").field(value).finish(),
+            Self::Resp(value) => f.debug_tuple("Resp").field(value).finish(),
+        }
+    }
+}
+
+impl fmt::Debug for InitiatorContextOptions {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            crypto_policy,
+            context_flags,
+            ap_option_bits,
+            subkey,
+            sequence_number,
+        } = self;
+        f.debug_struct("InitiatorContextOptions")
+            .field("crypto_policy", crypto_policy)
+            .field("context_flags", context_flags)
+            .field("ap_option_bits", ap_option_bits)
+            .field("subkey", subkey)
+            .field("sequence_number", sequence_number)
+            .finish()
+    }
+}
+
+impl fmt::Debug for AcceptedContext {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            ap_req,
+            selected_mechanism,
+            token_mechanism,
+            mech_types_der,
+        } = self;
+        f.debug_struct("AcceptedContext")
+            .field("ap_req", ap_req)
+            .field("selected_mechanism", selected_mechanism)
+            .field("token_mechanism", token_mechanism)
+            .field("mech_types_der_len", &mech_types_der.as_ref().map(Vec::len))
+            .finish()
+    }
+}
 
 impl fmt::Debug for Krb5MechToken {
     #[inline]

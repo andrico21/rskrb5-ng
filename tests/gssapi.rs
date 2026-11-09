@@ -47,10 +47,9 @@ mod tests {
                 etype.hmac_len(),
                 etype.hmac_len().saturating_add(1),
             ] {
-                let mut changed_mic = mic.clone();
-                let mut changed_wrap = wrap.clone();
-                for tag in [&mut changed_mic.checksum, &mut changed_wrap.checksum] {
-                    let bytes = tag.as_mut().context("checksum")?;
+                let mut mic_tag = mic.checksum().context("checksum")?.to_vec();
+                let mut wrap_tag = wrap.checksum().context("checksum")?.to_vec();
+                for bytes in [&mut mic_tag, &mut wrap_tag] {
                     match position.cmp(&bytes.len()) {
                         Ordering::Less => {
                             *bytes.get_mut(position).context("tag byte")? ^= 1;
@@ -61,6 +60,8 @@ mod tests {
                         Ordering::Greater => bytes.push(0),
                     }
                 }
+                let changed_mic = mic.clone().with_checksum(Some(mic_tag));
+                let changed_wrap = wrap.clone().with_checksum(Some(wrap_tag));
                 assert!(matches!(
                     changed_mic.verify(&key, GSSAPI_INITIATOR_SIGN_USAGE),
                     Err(Error::GssChecksumMismatch)
@@ -106,7 +107,7 @@ mod tests {
     fn wrap_checksum_preserves_explicit_extra_count() -> Result<(), TestError> {
         let mut token = WrapToken::default().with_ec(7).with_payload(vec![42]);
         token.set_checksum(&session_key()?, GSSAPI_INITIATOR_SIGN_USAGE)?;
-        assert_eq!(token.ec, 7);
+        assert_eq!(token.ec(), 7);
         Ok(())
     }
 
@@ -251,7 +252,7 @@ mod tests {
 
         let mut initiator = MicToken::new_initiator(decode_hex(MIC_PAYLOAD)?, &key)
             .context("initiator MIC builds")?;
-        initiator.payload = None;
+        initiator.clear_payload();
         assert_eq!(
             initiator,
             MicToken::default()
@@ -397,9 +398,9 @@ mod tests {
         let key = rc4_session_key()?;
         let acceptor = WrapToken::decode(&decode_hex(RC4_WRAP_FROM_ACCEPTOR)?, true)
             .context("RC4 wrap decodes")?;
-        assert_eq!(acceptor.ec, 16);
+        assert_eq!(acceptor.ec(), 16);
         assert_eq!(
-            acceptor.payload.as_ref().map(|value| value.as_slice()),
+            acceptor.payload(),
             Some(decode_hex(WRAP_PAYLOAD)?.as_slice())
         );
         acceptor
@@ -408,7 +409,7 @@ mod tests {
 
         let initiator =
             WrapToken::new_initiator(decode_hex(WRAP_PAYLOAD)?, &key).context("RC4 wrap builds")?;
-        assert_eq!(initiator.ec, 16);
+        assert_eq!(initiator.ec(), 16);
         assert_eq!(
             hex_encode(&initiator.encode().context("RC4 wrap encodes")?),
             RC4_WRAP_FROM_INITIATOR
@@ -429,9 +430,9 @@ mod tests {
         let key = des3_session_key()?;
         let acceptor = WrapToken::decode(&decode_hex(DES3_WRAP_FROM_ACCEPTOR)?, true)
             .context("DES3 wrap decodes")?;
-        assert_eq!(acceptor.ec, 20);
+        assert_eq!(acceptor.ec(), 20);
         assert_eq!(
-            acceptor.payload.as_ref().map(|value| value.as_slice()),
+            acceptor.payload(),
             Some(decode_hex(WRAP_PAYLOAD)?.as_slice())
         );
         acceptor
@@ -440,7 +441,7 @@ mod tests {
 
         let initiator = WrapToken::new_initiator(decode_hex(WRAP_PAYLOAD)?, &key)
             .context("DES3 wrap builds")?;
-        assert_eq!(initiator.ec, 20);
+        assert_eq!(initiator.ec(), 20);
         assert_eq!(
             hex_encode(&initiator.encode().context("DES3 wrap encodes")?),
             DES3_WRAP_FROM_INITIATOR
@@ -541,22 +542,19 @@ mod tests {
         )
         .context("sealed initiator wrap builds")?;
 
-        assert_eq!(token.flags, GSS_TOKEN_FLAG_SEALED);
-        assert_eq!(token.ec, 0);
-        assert_eq!(token.rrc, 0);
-        assert_eq!(token.snd_seq_num, 0);
-        assert_eq!(
-            token.payload.as_ref().map(|value| value.as_slice()),
-            Some(decode_hex(WRAP_PAYLOAD)?.as_slice())
-        );
-        assert!(token.checksum.is_none());
-        assert!(token.encrypted_body.is_some());
+        assert_eq!(token.flags(), GSS_TOKEN_FLAG_SEALED);
+        assert_eq!(token.ec(), 0);
+        assert_eq!(token.rrc(), 0);
+        assert_eq!(token.snd_seq_num(), 0);
+        assert_eq!(token.payload(), Some(decode_hex(WRAP_PAYLOAD)?.as_slice()));
+        assert!(token.checksum().is_none());
+        assert!(token.encrypted_body().is_some());
 
         let encoded = token.encode().context("sealed wrap encodes")?;
         assert_eq!(hex_encode(&encoded), WRAP_SEALED_FROM_INITIATOR);
         let mut decoded = WrapToken::decode(&encoded, false).context("sealed wrap decodes")?;
         assert!(decoded.is_sealed());
-        assert!(decoded.payload.is_none());
+        assert!(decoded.payload().is_none());
         assert_eq!(
             decoded
                 .decrypt_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE)
@@ -574,7 +572,7 @@ mod tests {
             decode_hex(WRAP_PAYLOAD)?.as_slice()
         );
         assert_eq!(
-            decoded.payload.as_ref().map(|value| value.as_slice()),
+            decoded.payload(),
             Some(decode_hex(WRAP_PAYLOAD)?.as_slice())
         );
         Ok(())
@@ -586,7 +584,7 @@ mod tests {
         let key = session_key()?;
         let mut token =
             WrapToken::new(GSS_TOKEN_FLAG_SEALED, 7).with_payload(decode_hex(WRAP_PAYLOAD)?);
-        token.rrc = 9;
+        token = token.with_rrc(9);
         token
             .encrypt_payload_with_confounder(
                 &key,
@@ -608,7 +606,7 @@ mod tests {
         );
 
         let decoded = WrapToken::decode(&encoded, false).context("rotated sealed wrap decodes")?;
-        assert_eq!(decoded.rrc, 9);
+        assert_eq!(decoded.rrc(), 9);
         assert_eq!(
             decoded
                 .decrypt_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE)
@@ -636,7 +634,7 @@ mod tests {
             Err(Error::Crypto(_))
         ));
 
-        decoded.snd_seq_num = 1;
+        decoded = decoded.with_snd_seq_num(1);
         assert!(matches!(
             decoded.decrypt_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE),
             Err(Error::InvalidGssEncryptedHeader)
@@ -672,7 +670,7 @@ mod tests {
             let decoded = WrapToken::decode(&wire, false)?;
             decoded.verify(&key, GSSAPI_INITIATOR_SEAL_USAGE)?;
             assert_eq!(
-                decoded.payload.as_ref().map(|value| value.as_slice()),
+                decoded.payload(),
                 Some(decode_hex(WRAP_PAYLOAD)?.as_slice())
             );
             assert_eq!(
@@ -701,7 +699,7 @@ mod tests {
                 decoded.decrypt_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE)?,
                 payload
             );
-            assert_eq!(usize::from(decoded.ec), len.wrapping_neg() & 7);
+            assert_eq!(usize::from(decoded.ec()), len.wrapping_neg() & 7);
         }
         Ok(())
     }
@@ -724,7 +722,7 @@ mod tests {
                 decoded.decrypt_payload(&key, GSSAPI_INITIATOR_SEAL_USAGE)?,
                 vec![0]
             );
-            assert_eq!(decoded.ec, expected);
+            assert_eq!(decoded.ec(), expected);
         }
         Ok(())
     }
@@ -740,7 +738,7 @@ mod tests {
             token.encrypt_payload_with_confounder(&key, GSSAPI_INITIATOR_SEAL_USAGE, &[0x42; 8]),
             Err(Error::InvalidGssFiller)
         ));
-        assert!(token.encrypted_body.is_none());
+        assert!(token.encrypted_body().is_none());
         Ok(())
     }
 

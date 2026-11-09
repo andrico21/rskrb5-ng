@@ -26,7 +26,9 @@ mod tests {
     #[test]
     fn tgs_authenticator_uses_client_realm_when_issuer_differs() -> Result<(), TestError> {
         let mut tgt = sample_tgt_session()?;
-        tgt.client.realm = "CLIENT.EXAMPLE".to_owned();
+        let mut identity = tgt.client().clone();
+        identity.realm = "CLIENT.EXAMPLE".to_owned();
+        tgt.set_client(identity);
         let request = build_tgs_req_for_realm_with_confounder(
             &tgt,
             "DEST.EXAMPLE",
@@ -36,12 +38,15 @@ mod tests {
             0,
             &decode_hex(TGS_REQ_CONFOUNDER)?,
         )?;
-        let padata = request.message.0.padata.context("padata")?;
+        let padata = request.message().0.padata.as_ref().context("padata")?;
         let ap: rasn_kerberos::ApReq =
             der::decode(padata.first().context("AP request")?.value.as_ref())?;
         let auth =
-            decrypt_ap_req_authenticator(&ap, &tgt.session_key, TGS_REQ_AUTHENTICATOR_USAGE)?;
-        assert_eq!(principal_from_parts(&auth.crealm, &auth.cname)?, tgt.client);
+            decrypt_ap_req_authenticator(&ap, tgt.session_key(), TGS_REQ_AUTHENTICATOR_USAGE)?;
+        assert_eq!(
+            &principal_from_parts(&auth.crealm, &auth.cname)?,
+            tgt.client()
+        );
         Ok(())
     }
 }

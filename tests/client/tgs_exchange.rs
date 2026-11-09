@@ -39,16 +39,16 @@ mod tests {
         )
         .context("TGS-REQ builds")?;
         let decoded: rasn_kerberos::TgsReq =
-            der::decode(&request.der).context("TGS-REQ decodes")?;
+            der::decode(request.der()).context("TGS-REQ decodes")?;
 
-        assert_eq!(request.message, decoded);
+        assert_eq!(request.message(), &decoded);
         assert_eq!(decoded.0.pvno, Integer::from(5_i32));
         assert_eq!(decoded.0.msg_type, Integer::from(12_i32));
 
         let body = &decoded.0.req_body;
         assert_eq!(
             principal_from_parts(&body.realm, body.cname.as_ref().context("cname")?)?,
-            tgt.client
+            tgt.client().clone()
         );
         assert_eq!(
             principal_from_parts(&body.realm, body.sname.as_ref().context("sname")?)?,
@@ -74,14 +74,14 @@ mod tests {
         assert_eq!(ap_req.msg_type, Integer::from(14_i32));
         assert_eq!(ap_req.ap_options.0.as_raw_slice(), &[0, 0, 0, 0]);
         let tgt_ticket: rasn_kerberos::Ticket =
-            der::decode(&tgt.ticket).context("TGT ticket decodes")?;
+            der::decode(tgt.ticket()).context("TGT ticket decodes")?;
         assert_eq!(ap_req.ticket, tgt_ticket);
         assert_eq!(ap_req.authenticator.etype, 18_i32);
         assert_eq!(ap_req.authenticator.kvno, Some(2));
 
         let authenticator_bytes = AesSha1Etype::Aes256
             .decrypt_message(
-                &tgt.session_key.value,
+                tgt.session_key().value(),
                 ap_req.authenticator.cipher.as_ref(),
                 TGS_REQ_AUTHENTICATOR_USAGE,
             )
@@ -90,7 +90,7 @@ mod tests {
             der::decode(&authenticator_bytes).context("Authenticator decodes")?;
         assert_eq!(
             principal_from_parts(&authenticator.crealm, &authenticator.cname)?,
-            tgt.client
+            tgt.client().clone()
         );
         assert_eq!(
             authenticator
@@ -108,7 +108,7 @@ mod tests {
         assert_eq!(checksum.r#type, AesSha1Etype::Aes256.checksum_type_id());
         let body_der = der::encode(body).context("TGS-REQ-BODY encodes")?;
         assert!(AesSha1Etype::Aes256.verify_checksum(
-            &tgt.session_key.value,
+            tgt.session_key().value(),
             &body_der,
             checksum.checksum.as_ref(),
             TGS_REQ_AUTHENTICATOR_CHECKSUM_USAGE,
@@ -136,7 +136,7 @@ mod tests {
         )
         .context("TGS-REQ builds")?;
         let decoded: rasn_kerberos::TgsReq =
-            der::decode(&request.der).context("TGS-REQ decodes")?;
+            der::decode(request.der()).context("TGS-REQ decodes")?;
         let body = &decoded.0.req_body;
 
         assert_eq!(
@@ -164,10 +164,10 @@ mod tests {
         )
         .context("TGS-REQ builds")?;
         let decoded: rasn_kerberos::TgsReq =
-            der::decode(&request.der).context("TGS-REQ decodes")?;
+            der::decode(request.der()).context("TGS-REQ decodes")?;
 
-        assert_eq!(request.kdc_realm, "TEST.GOKRB5");
-        assert_eq!(request.service, service);
+        assert_eq!(request.kdc_realm(), "TEST.GOKRB5");
+        assert_eq!(request.service(), &service);
         assert_eq!(
             kerberos_string_to_string(&decoded.0.req_body.realm)?,
             "TEST.GOKRB5"
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn builds_s4u2self_tgs_req_with_pa_for_user() -> Result<(), TestError> {
         let mut service_tgt = sample_tgt_session()?;
-        service_tgt.client = sample_service_principal();
+        service_tgt.set_client(sample_service_principal());
         let user = Principal::user("TEST.GOKRB5", "delegated-user");
 
         let request = build_s4u2self_req_with_confounder(
@@ -199,24 +199,24 @@ mod tests {
         )
         .context("S4U2Self TGS-REQ builds")?;
         let decoded: rasn_kerberos::TgsReq =
-            der::decode(&request.der).context("TGS-REQ decodes")?;
+            der::decode(request.der()).context("TGS-REQ decodes")?;
 
-        assert_eq!(request.client, user);
-        assert_eq!(request.service, service_tgt.client);
-        assert_eq!(request.kdc_realm, "TEST.GOKRB5");
+        assert_eq!(request.client(), &user);
+        assert_eq!(request.service(), service_tgt.client());
+        assert_eq!(request.kdc_realm(), "TEST.GOKRB5");
         assert_eq!(
             principal_from_parts(
                 &decoded.0.req_body.realm,
                 decoded.0.req_body.cname.as_ref().context("cname")?
             )?,
-            service_tgt.client
+            service_tgt.client().clone()
         );
         assert_eq!(
             principal_from_parts(
                 &decoded.0.req_body.realm,
                 decoded.0.req_body.sname.as_ref().context("sname")?
             )?,
-            service_tgt.client
+            service_tgt.client().clone()
         );
 
         let padata = decoded.0.padata.as_ref().context("S4U TGS-REQ padata")?;
@@ -229,18 +229,18 @@ mod tests {
         let pa_for_user = PaForUser::decode_der(pa_for_user_data.value.as_ref())
             .context("PA-FOR-USER decodes")?;
         assert_eq!(
-            principal_from_parts(&pa_for_user.user_realm, &pa_for_user.user_name)?,
+            principal_from_parts(pa_for_user.user_realm(), pa_for_user.user_name())?,
             user
         );
-        assert_eq!(pa_for_user.auth_package.as_bytes(), b"Kerberos");
-        assert_eq!(pa_for_user.cksum.r#type, -138_i32);
+        assert_eq!(pa_for_user.auth_package().as_bytes(), b"Kerberos");
+        assert_eq!(pa_for_user.cksum().r#type, -138_i32);
         let s4u_bytes = s4u_byte_array(&user, "Kerberos");
         let expected_checksum = kerb_checksum_hmac_md5(
-            &service_tgt.session_key.value,
+            service_tgt.session_key().value(),
             &s4u_bytes,
             PA_FOR_USER_CHECKSUM_USAGE,
         );
-        assert_eq!(pa_for_user.cksum.checksum.as_ref(), expected_checksum);
+        assert_eq!(pa_for_user.cksum().checksum.as_ref(), expected_checksum);
         Ok(())
     }
 
@@ -250,7 +250,7 @@ mod tests {
         let user_tgt = sample_tgt_session()?;
         let evidence_ticket = sample_service_ticket_session(&user_tgt)?;
         let mut service_tgt = sample_tgt_session()?;
-        service_tgt.client = sample_service_principal();
+        service_tgt.set_client(sample_service_principal());
         let target_service = Principal::new("TEST.GOKRB5", 2, ["HTTP", "backend.test.gokrb5"]);
 
         let request = build_s4u2proxy_req_with_confounder(
@@ -264,18 +264,18 @@ mod tests {
         )
         .context("S4U2Proxy TGS-REQ builds")?;
         let decoded: rasn_kerberos::TgsReq =
-            der::decode(&request.der).context("TGS-REQ decodes")?;
+            der::decode(request.der()).context("TGS-REQ decodes")?;
         let body = &decoded.0.req_body;
 
-        assert_eq!(request.client, evidence_ticket.client);
-        assert_eq!(request.service, target_service);
+        assert_eq!(request.client(), evidence_ticket.client());
+        assert_eq!(request.service(), &target_service);
         assert_eq!(
             body.kdc_options.0.as_raw_slice(),
             KDC_OPTION_CNAME_IN_ADDL_TKT.to_be_bytes().as_slice()
         );
         assert_eq!(
             principal_from_parts(&body.realm, body.cname.as_ref().context("cname")?)?,
-            service_tgt.client
+            service_tgt.client().clone()
         );
         assert_eq!(
             principal_from_parts(&body.realm, body.sname.as_ref().context("sname")?)?,
@@ -291,7 +291,7 @@ mod tests {
         };
         assert_eq!(
             principal_from_parts(&evidence.realm, &evidence.sname)?,
-            service_tgt.client
+            service_tgt.client().clone()
         );
         let padata = decoded.0.padata.as_ref().context("S4U2Proxy padata")?;
         assert_eq!(padata.len(), 1);
@@ -308,7 +308,7 @@ mod tests {
         let user_tgt = sample_tgt_session()?;
         let evidence_ticket = sample_service_ticket_session(&user_tgt)?;
         let mut service_tgt = sample_tgt_session()?;
-        service_tgt.client = sample_service_principal();
+        service_tgt.set_client(sample_service_principal());
         let target_service = Principal::new("TEST.GOKRB5", 2, ["HTTP", "backend.test.gokrb5"]);
         let pac_options = pa_pac_options_padata(PAC_OPTION_RESOURCE_BASED_CONSTRAINED_DELEGATION)
             .context("PA-PAC-OPTIONS padata builds")?;
@@ -326,7 +326,7 @@ mod tests {
         )
         .context("S4U2Proxy TGS-REQ builds")?;
         let decoded: rasn_kerberos::TgsReq =
-            der::decode(&request.der).context("TGS-REQ decodes")?;
+            der::decode(request.der()).context("TGS-REQ decodes")?;
         let padata = decoded.0.padata.as_ref().context("S4U2Proxy padata")?;
 
         assert_eq!(padata.len(), 2);
@@ -349,9 +349,9 @@ mod tests {
     fn builds_service_ap_req_with_subkey_and_sequence_number() -> Result<(), TestError> {
         let tgt = sample_tgt_session()?;
         let request = sample_tgs_request(&tgt)?;
-        let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key)?;
+        let response = synthetic_tgs_rep(&request, request.nonce(), tgt.session_key())?;
         let service_ticket =
-            process_tgs_rep(&request, &response, &tgt.session_key).context("TGS-REP validates")?;
+            process_tgs_rep(&request, &response, tgt.session_key()).context("TGS-REP validates")?;
         let subkey = EncryptionKey::new(18, vec![0x44; 32]);
         let options = ApReq::new()
             .with_ap_option_bits(0x2000_0000)
@@ -366,13 +366,13 @@ mod tests {
             &decode_hex(TGS_REQ_CONFOUNDER)?,
         )
         .context("AP-REQ builds")?;
-        let decoded: rasn_kerberos::ApReq = der::decode(&built.der).context("AP-REQ decodes")?;
+        let decoded: rasn_kerberos::ApReq = der::decode(built.der()).context("AP-REQ decodes")?;
 
-        assert_eq!(built.message, decoded);
-        assert_eq!(built.client, service_ticket.client);
-        assert_eq!(built.service, service_ticket.service);
-        assert_eq!(built.sequence_number, Some(42));
-        assert_eq!(built.subkey, Some(subkey.clone()));
+        assert_eq!(built.message(), &decoded);
+        assert_eq!(built.client(), service_ticket.client());
+        assert_eq!(built.service(), service_ticket.service());
+        assert_eq!(built.sequence_number(), Some(42));
+        assert_eq!(built.subkey(), Some(&subkey));
         assert_eq!(decoded.pvno, Integer::from(5_i32));
         assert_eq!(decoded.msg_type, Integer::from(14_i32));
         assert_eq!(
@@ -381,12 +381,12 @@ mod tests {
         );
         assert_eq!(
             decoded.authenticator.etype,
-            service_ticket.session_key.etype
+            service_ticket.session_key().etype()
         );
 
         let authenticator_bytes = AesSha1Etype::Aes256
             .decrypt_message(
-                &service_ticket.session_key.value,
+                service_ticket.session_key().value(),
                 decoded.authenticator.cipher.as_ref(),
                 AP_REQ_AUTHENTICATOR_USAGE,
             )
@@ -396,13 +396,13 @@ mod tests {
 
         assert_eq!(
             principal_from_parts(&authenticator.crealm, &authenticator.cname)?,
-            service_ticket.client
+            service_ticket.client().clone()
         );
         assert!(authenticator.cksum.is_none());
         assert_eq!(authenticator.seq_number, Some(42));
         let decoded_subkey = authenticator.subkey.context("authenticator subkey")?;
-        assert_eq!(decoded_subkey.r#type, subkey.etype);
-        assert_eq!(decoded_subkey.value.as_ref(), subkey.value.as_slice());
+        assert_eq!(decoded_subkey.r#type, subkey.etype());
+        assert_eq!(decoded_subkey.value.as_ref(), subkey.value().as_slice());
         assert_eq!(
             authenticator
                 .cusec
@@ -434,11 +434,11 @@ mod tests {
         )
         .context("TGT renewal TGS-REQ builds")?;
         let decoded: rasn_kerberos::TgsReq =
-            der::decode(&request.der).context("TGS-REQ decodes")?;
+            der::decode(request.der()).context("TGS-REQ decodes")?;
         let expected_options = 0x0000_0010 | KDC_OPTION_RENEWABLE | KDC_OPTION_RENEW;
 
-        assert_eq!(request.kdc_realm, "TEST.GOKRB5");
-        assert_eq!(request.service, Principal::tgt_service("TEST.GOKRB5"));
+        assert_eq!(request.kdc_realm(), "TEST.GOKRB5");
+        assert_eq!(request.service(), &Principal::tgt_service("TEST.GOKRB5"));
         let body = &decoded.0.req_body;
         assert_eq!(
             body.kdc_options.0.as_raw_slice(),
@@ -472,11 +472,11 @@ mod tests {
         )
         .context("service-ticket renewal TGS-REQ builds")?;
         let decoded: rasn_kerberos::TgsReq =
-            der::decode(&request.der).context("TGS-REQ decodes")?;
+            der::decode(request.der()).context("TGS-REQ decodes")?;
         let expected_options = 0x0000_0010 | KDC_OPTION_RENEWABLE | KDC_OPTION_RENEW;
 
-        assert_eq!(request.kdc_realm, "TEST.GOKRB5");
-        assert_eq!(request.service, sample_service_principal());
+        assert_eq!(request.kdc_realm(), "TEST.GOKRB5");
+        assert_eq!(request.service(), &sample_service_principal());
         let body = &decoded.0.req_body;
         assert_eq!(
             body.kdc_options.0.as_raw_slice(),
@@ -498,37 +498,43 @@ mod tests {
     fn processes_tgs_rep_and_exports_ccache_credential() -> Result<(), TestError> {
         let tgt = sample_tgt_session()?;
         let request = sample_tgs_request(&tgt)?;
-        let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key)?;
+        let response = synthetic_tgs_rep(&request, request.nonce(), tgt.session_key())?;
 
         let session =
-            process_tgs_rep(&request, &response, &tgt.session_key).context("TGS-REP validates")?;
+            process_tgs_rep(&request, &response, tgt.session_key()).context("TGS-REP validates")?;
 
-        assert_eq!(session.client, Principal::user("TEST.GOKRB5", "testuser1"));
-        assert_eq!(session.service, sample_service_principal());
-        assert_eq!(session.session_key.etype, 18_i32);
-        assert_eq!(hex_encode(&session.session_key.value)?, SERVICE_SESSION_KEY);
-        assert_eq!(session.ticket_flags, *TICKET_FLAGS);
-        assert_eq!(session.auth_time, timestamp(1_893_553_445)?);
-        assert_eq!(session.start_time, timestamp(1_893_553_446)?);
-        assert_eq!(session.end_time, timestamp(1_893_560_646)?);
-        assert_eq!(session.renew_till, Some(timestamp(1_894_071_846)?));
+        assert_eq!(
+            session.client(),
+            &Principal::user("TEST.GOKRB5", "testuser1")
+        );
+        assert_eq!(session.service(), &sample_service_principal());
+        assert_eq!(session.session_key().etype(), 18_i32);
+        assert_eq!(
+            hex_encode(session.session_key().value())?,
+            SERVICE_SESSION_KEY
+        );
+        assert_eq!(session.ticket_flags(), *TICKET_FLAGS);
+        assert_eq!(session.auth_time(), timestamp(1_893_553_445)?);
+        assert_eq!(session.start_time(), timestamp(1_893_553_446)?);
+        assert_eq!(session.end_time(), timestamp(1_893_560_646)?);
+        assert_eq!(session.renew_till(), Some(timestamp(1_894_071_846)?));
 
         let credential = session
             .to_ccache_credential()
             .context("ccache credential converts")?;
-        assert_eq!(credential.client.components, vec!["testuser1"]);
+        assert_eq!(credential.client().components, vec!["testuser1"]);
         assert_eq!(
-            credential.server.components,
+            credential.server().components,
             vec!["HTTP", "host.test.gokrb5"]
         );
         assert_eq!(
-            credential.key.value.as_slice(),
+            credential.key().value().as_slice(),
             decode_hex(SERVICE_SESSION_KEY)?
         );
-        assert_eq!(credential.times.auth_time, 1_893_553_445);
-        assert_eq!(credential.times.start_time, 1_893_553_446);
-        assert_eq!(credential.times.end_time, 1_893_560_646);
-        assert!(!credential.ticket.is_empty(), "the ticket is not empty");
+        assert_eq!(credential.times().auth_time, 1_893_553_445);
+        assert_eq!(credential.times().start_time, 1_893_553_446);
+        assert_eq!(credential.times().end_time, 1_893_560_646);
+        assert!(!credential.ticket().is_empty(), "the ticket is not empty");
         Ok(())
     }
 
@@ -540,14 +546,14 @@ mod tests {
         let error = process_tgs_rep(
             &request,
             &synthetic_preauth_required_error()?,
-            &tgt.session_key,
+            tgt.session_key(),
         )
         .err()
         .context("KRB-ERROR response is surfaced")?;
 
         assert!(matches!(
             error,
-            Error::Kdc(kdc_error) if kdc_error.error_code == KDC_ERR_PREAUTH_REQUIRED
+            Error::Kdc(kdc_error) if kdc_error.error_code() == KDC_ERR_PREAUTH_REQUIRED
         ));
         Ok(())
     }
@@ -558,10 +564,14 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let request = sample_tgs_request(&tgt)?;
         let referral = Principal::new("TEST.GOKRB5", 2, ["krbtgt", "RESDOM.GOKRB5"]);
-        let response =
-            synthetic_tgs_rep_with_service(&request, request.nonce, &tgt.session_key, &referral)?;
+        let response = synthetic_tgs_rep_with_service(
+            &request,
+            request.nonce(),
+            tgt.session_key(),
+            &referral,
+        )?;
 
-        let strict = process_tgs_rep(&request, &response, &tgt.session_key)
+        let strict = process_tgs_rep(&request, &response, tgt.session_key())
             .err()
             .context("strict TGS-REP validation rejects referrals")?;
         assert!(matches!(
@@ -572,12 +582,15 @@ mod tests {
             }
         ));
 
-        let session = process_tgs_rep_with_referral(&request, &response, &tgt.session_key)
+        let session = process_tgs_rep_with_referral(&request, &response, tgt.session_key())
             .context("referral TGS-REP validates")?;
-        assert_eq!(session.client, Principal::user("TEST.GOKRB5", "testuser1"));
-        assert_eq!(session.service, referral);
-        assert_eq!(session.session_key.etype, 18_i32);
-        assert!(!session.ticket.is_empty(), "the ticket is not empty");
+        assert_eq!(
+            session.client(),
+            &Principal::user("TEST.GOKRB5", "testuser1")
+        );
+        assert_eq!(session.service(), &referral);
+        assert_eq!(session.session_key().etype(), 18_i32);
+        assert!(!session.ticket().is_empty(), "the ticket is not empty");
         Ok(())
     }
 
@@ -586,19 +599,19 @@ mod tests {
     fn exchange_tgs_req_uses_transport_boundary() -> Result<(), TestError> {
         let tgt = sample_tgt_session()?;
         let request = sample_tgs_request(&tgt)?;
-        let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key)?;
+        let response = synthetic_tgs_rep(&request, request.nonce(), tgt.session_key())?;
         let mut transport = MockTransport {
             expected_realm: "TEST.GOKRB5".to_owned(),
-            expected_request: request.der.to_vec(),
+            expected_request: request.der().to_vec(),
             response,
             called: false,
         };
 
-        let session = exchange_tgs_req(&mut transport, &request, &tgt.session_key)
+        let session = exchange_tgs_req(&mut transport, &request, tgt.session_key())
             .context("transport exchange works")?;
 
         assert!(transport.called);
-        assert_eq!(session.service, sample_service_principal());
+        assert_eq!(session.service(), &sample_service_principal());
         Ok(())
     }
 
@@ -606,11 +619,11 @@ mod tests {
     #[test]
     fn s4u2self_uses_transport_boundary() -> Result<(), TestError> {
         let mut service_tgt = sample_tgt_session()?;
-        service_tgt.client = sample_service_principal();
+        service_tgt.set_client(sample_service_principal());
         let user = Principal::user("TEST.GOKRB5", "delegated-user");
         let mut transport = S4uTransport {
-            session_key: service_tgt.session_key.clone(),
-            expected_service: service_tgt.client.clone(),
+            session_key: service_tgt.session_key().clone(),
+            expected_service: service_tgt.client().clone(),
             expected_user: user.clone(),
             calls: 0,
         };
@@ -626,8 +639,8 @@ mod tests {
         .context("S4U2Self exchange succeeds")?;
 
         assert_eq!(transport.calls, 1);
-        assert_eq!(session.client, user);
-        assert_eq!(session.service, service_tgt.client);
+        assert_eq!(session.client(), &user);
+        assert_eq!(session.service(), service_tgt.client());
         Ok(())
     }
 
@@ -637,13 +650,13 @@ mod tests {
         let user_tgt = sample_tgt_session()?;
         let evidence_ticket = sample_service_ticket_session(&user_tgt)?;
         let mut service_tgt = sample_tgt_session()?;
-        service_tgt.client = sample_service_principal();
+        service_tgt.set_client(sample_service_principal());
         let target_service = Principal::new("TEST.GOKRB5", 2, ["HTTP", "backend.test.gokrb5"]);
         let mut transport = S4u2ProxyTransport {
-            session_key: service_tgt.session_key.clone(),
-            expected_frontend_service: service_tgt.client.clone(),
+            session_key: service_tgt.session_key().clone(),
+            expected_frontend_service: service_tgt.client().clone(),
             expected_target_service: target_service.clone(),
-            expected_client: evidence_ticket.client.clone(),
+            expected_client: evidence_ticket.client().clone(),
             calls: 0,
         };
 
@@ -659,8 +672,8 @@ mod tests {
         .context("S4U2Proxy exchange succeeds")?;
 
         assert_eq!(transport.calls, 1);
-        assert_eq!(session.client, evidence_ticket.client);
-        assert_eq!(session.service, target_service);
+        assert_eq!(session.client(), evidence_ticket.client());
+        assert_eq!(session.service(), &target_service);
         Ok(())
     }
 
@@ -670,7 +683,7 @@ mod tests {
     fn tokio_transport_s4u2self_uses_tcp_kdc() -> Result<(), TestError> {
         runtime()?.block_on(async {
             let mut service_tgt = current_tgt_session(5, 180)?;
-            service_tgt.client = sample_service_principal();
+            service_tgt.set_client(sample_service_principal());
             let user = Principal::user("TEST.GOKRB5", "delegated-user");
             let listener = TcpListener::bind("127.0.0.1:0")
                 .await
@@ -679,8 +692,8 @@ mod tests {
 
             let task = tokio::spawn(serve_s4u2self_tcp_request(
                 listener,
-                service_tgt.session_key.clone(),
-                service_tgt.client.clone(),
+                service_tgt.session_key().clone(),
+                service_tgt.client().clone(),
                 user.clone(),
             ));
 
@@ -698,8 +711,8 @@ mod tests {
                 .context("Tokio transport S4U2Self succeeds")?;
             task.await.context("KDC task succeeds")??;
 
-            assert_eq!(session.client, user);
-            assert_eq!(session.service, service_tgt.client);
+            assert_eq!(session.client(), &user);
+            assert_eq!(session.service(), service_tgt.client());
             Ok::<(), TestError>(())
         })?;
         Ok(())
@@ -712,7 +725,7 @@ mod tests {
     -> Result<(), TestError> {
         runtime()?.block_on(async {
             let mut service_tgt = current_tgt_session(5, 180)?;
-            service_tgt.client = sample_service_principal();
+            service_tgt.set_client(sample_service_principal());
             let user = Principal::user("TEST.GOKRB5", "delegated-user");
             let listener = TcpListener::bind("127.0.0.1:0")
                 .await
@@ -726,8 +739,8 @@ mod tests {
 
             let task = tokio::spawn(serve_s4u2self_tcp_request(
                 listener,
-                service_tgt.session_key.clone(),
-                service_tgt.client.clone(),
+                service_tgt.session_key().clone(),
+                service_tgt.client().clone(),
                 user.clone(),
             ));
 
@@ -742,8 +755,8 @@ mod tests {
                 .context("Tokio client S4U2Self succeeds")?;
             task.await.context("KDC task succeeds")??;
 
-            assert_eq!(session.client, user);
-            assert_eq!(session.service, service_tgt.client);
+            assert_eq!(session.client(), &user);
+            assert_eq!(session.service(), service_tgt.client());
             assert_eq!(client.cached_service_ticket_count(), 0);
             Ok::<(), TestError>(())
         })?;
@@ -758,7 +771,7 @@ mod tests {
             let user_tgt = sample_tgt_session()?;
             let evidence_ticket = sample_service_ticket_session(&user_tgt)?;
             let mut service_tgt = current_tgt_session(5, 180)?;
-            service_tgt.client = sample_service_principal();
+            service_tgt.set_client(sample_service_principal());
             let target_service = Principal::new("TEST.GOKRB5", 2, ["HTTP", "backend.test.gokrb5"]);
             let listener = TcpListener::bind("127.0.0.1:0")
                 .await
@@ -767,10 +780,10 @@ mod tests {
 
             let task = tokio::spawn(serve_s4u2proxy_tcp_request(
                 listener,
-                service_tgt.session_key.clone(),
-                service_tgt.client.clone(),
+                service_tgt.session_key().clone(),
+                service_tgt.client().clone(),
                 target_service.clone(),
-                evidence_ticket.client.clone(),
+                evidence_ticket.client().clone(),
             ));
 
             let session = TokioKdcTransport::new()
@@ -788,8 +801,8 @@ mod tests {
                 .context("Tokio transport S4U2Proxy succeeds")?;
             task.await.context("KDC task succeeds")??;
 
-            assert_eq!(session.client, evidence_ticket.client);
-            assert_eq!(session.service, target_service);
+            assert_eq!(session.client(), evidence_ticket.client());
+            assert_eq!(session.service(), &target_service);
             Ok::<(), TestError>(())
         })?;
         Ok(())
@@ -804,7 +817,7 @@ mod tests {
             let user_tgt = sample_tgt_session()?;
             let evidence_ticket = sample_service_ticket_session(&user_tgt)?;
             let mut service_tgt = current_tgt_session(5, 180)?;
-            service_tgt.client = sample_service_principal();
+            service_tgt.set_client(sample_service_principal());
             let target_service = Principal::new("TEST.GOKRB5", 2, ["HTTP", "backend.test.gokrb5"]);
             let listener = TcpListener::bind("127.0.0.1:0")
                 .await
@@ -818,10 +831,10 @@ mod tests {
 
             let task = tokio::spawn(serve_s4u2proxy_tcp_request(
                 listener,
-                service_tgt.session_key.clone(),
-                service_tgt.client.clone(),
+                service_tgt.session_key().clone(),
+                service_tgt.client().clone(),
                 target_service.clone(),
-                evidence_ticket.client.clone(),
+                evidence_ticket.client().clone(),
             ));
 
             let session = client
@@ -836,8 +849,8 @@ mod tests {
                 .context("Tokio client S4U2Proxy succeeds")?;
             task.await.context("KDC task succeeds")??;
 
-            assert_eq!(session.client, evidence_ticket.client);
-            assert_eq!(session.service, target_service);
+            assert_eq!(session.client(), evidence_ticket.client());
+            assert_eq!(session.service(), &target_service);
             assert_eq!(client.cached_service_ticket_count(), 0);
             Ok::<(), TestError>(())
         })?;
@@ -849,7 +862,7 @@ mod tests {
     fn renew_tgt_uses_transport_boundary() -> Result<(), TestError> {
         let tgt = sample_tgt_session()?;
         let mut transport = RenewalTransport {
-            session_key: tgt.session_key.clone(),
+            session_key: tgt.session_key().clone(),
             expected_service: Principal::tgt_service("TEST.GOKRB5"),
             calls: 0,
         };
@@ -862,9 +875,12 @@ mod tests {
         .context("TGT renewal succeeds")?;
 
         assert_eq!(transport.calls, 1);
-        assert_eq!(session.client, Principal::user("TEST.GOKRB5", "testuser1"));
-        assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
-        assert!(!session.ticket.is_empty(), "the ticket is not empty");
+        assert_eq!(
+            session.client(),
+            &Principal::user("TEST.GOKRB5", "testuser1")
+        );
+        assert_eq!(session.service(), &Principal::tgt_service("TEST.GOKRB5"));
+        assert!(!session.ticket().is_empty(), "the ticket is not empty");
         Ok(())
     }
 
@@ -874,7 +890,7 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let service_ticket = sample_service_ticket_session(&tgt)?;
         let mut transport = RenewalTransport {
-            session_key: service_ticket.session_key.clone(),
+            session_key: service_ticket.session_key().clone(),
             expected_service: sample_service_principal(),
             calls: 0,
         };
@@ -887,9 +903,12 @@ mod tests {
         .context("service-ticket renewal succeeds")?;
 
         assert_eq!(transport.calls, 1);
-        assert_eq!(session.client, Principal::user("TEST.GOKRB5", "testuser1"));
-        assert_eq!(session.service, sample_service_principal());
-        assert!(!session.ticket.is_empty(), "the ticket is not empty");
+        assert_eq!(
+            session.client(),
+            &Principal::user("TEST.GOKRB5", "testuser1")
+        );
+        assert_eq!(session.service(), &sample_service_principal());
+        assert!(!session.ticket().is_empty(), "the ticket is not empty");
         Ok(())
     }
 
@@ -905,9 +924,9 @@ mod tests {
             654_321,
             &decode_hex(TGS_REQ_CONFOUNDER)?,
         )?;
-        let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key)?;
+        let response = synthetic_tgs_rep(&request, request.nonce(), tgt.session_key())?;
 
-        let Err(error) = process_tgs_rep(&request, &response, &tgt.session_key) else {
+        let Err(error) = process_tgs_rep(&request, &response, tgt.session_key()) else {
             return Err("a session key outside the requested list must be rejected".into());
         };
         assert!(matches!(error, Error::EnctypeNotRequested(18_i32)));
@@ -942,8 +961,8 @@ mod tests {
             let reply_key = reply_key()?;
             let response = synthetic_as_rep_with_reply_key(
                 &request,
-                request.nonce,
-                &request.service,
+                request.nonce(),
+                request.service(),
                 &reply_key,
             )?;
             let task = tokio::spawn(async move {
@@ -1006,7 +1025,7 @@ mod tests {
                 654_321,
                 &decode_hex(TGS_REQ_CONFOUNDER)?,
             )?;
-            let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key)?;
+            let response = synthetic_tgs_rep(&request, request.nonce(), tgt.session_key())?;
             let task = tokio::spawn(async move {
                 let (_request, mut socket) = read_tcp_kdc_request(&listener).await?;
                 write_tcp_kdc_response(&mut socket, &response).await?;
@@ -1014,7 +1033,12 @@ mod tests {
             });
 
             let Err(error) = TokioKdcTransport::new()
-                .exchange_tgs_req_with_config(&config, KdcProtocol::Tcp, &request, &tgt.session_key)
+                .exchange_tgs_req_with_config(
+                    &config,
+                    KdcProtocol::Tcp,
+                    &request,
+                    tgt.session_key(),
+                )
                 .await
             else {
                 return Err("a session key outside the permit list must be rejected".into());
@@ -1094,28 +1118,30 @@ mod tests {
             )
             .with_timestamp(timestamp(1_893_553_451)?, 654_321),
         )?;
-        let decoded: rasn_kerberos::TgsReq = der::decode(&parts.request.der)?;
+        let decoded: rasn_kerberos::TgsReq = der::decode(parts.request().der())?;
         let padata = decoded.0.padata.as_ref().ok_or("TGS-REQ has padata")?;
         let pa_tgs_req = padata.first().ok_or("TGS-REQ has a PA-TGS-REQ")?;
         let ap_req: rasn_kerberos::ApReq = der::decode(pa_tgs_req.value.as_ref())?;
 
         let authenticator =
-            decrypt_ap_req_authenticator(&ap_req, &tgt.session_key, TGS_REQ_AUTHENTICATOR_USAGE)?;
+            decrypt_ap_req_authenticator(&ap_req, tgt.session_key(), TGS_REQ_AUTHENTICATOR_USAGE)?;
         let carried = authenticator
             .subkey
             .as_ref()
             .ok_or("implicit TGS armor needs the authenticator subkey (RFC 6113 section 5.4.2)")?;
         assert_eq!(
-            carried.r#type, subkey.etype,
+            carried.r#type,
+            subkey.etype(),
             "the authenticator carries the supplied subkey's enctype"
         );
         assert_eq!(
             carried.value.as_ref(),
-            subkey.value.as_slice(),
+            subkey.value().as_slice(),
             "the authenticator carries exactly the subkey the caller supplied"
         );
         assert_eq!(
-            parts.authenticator_subkey.value, subkey.value,
+            parts.authenticator_subkey().value(),
+            subkey.value(),
             "and the seam hands the same subkey back for the armor key"
         );
         Ok(())
@@ -1145,16 +1171,16 @@ mod tests {
             )
             .with_timestamp(timestamp(1_893_553_451)?, 654_321),
         )?;
-        let decoded: rasn_kerberos::TgsReq = der::decode(&parts.request.der)?;
+        let decoded: rasn_kerberos::TgsReq = der::decode(parts.request().der())?;
         let padata = decoded.0.padata.as_ref().ok_or("TGS-REQ has padata")?;
         let pa_tgs_req = padata.first().ok_or("TGS-REQ has a PA-TGS-REQ")?;
         assert_eq!(pa_tgs_req.r#type, PA_TGS_REQ);
         assert_eq!(
             pa_tgs_req.value.as_ref(),
-            parts.ap_req_der.as_slice(),
+            parts.ap_req_der().as_slice(),
             "the exposed bytes are the AP-REQ the outer PA-TGS-REQ carries"
         );
-        let ap_req: rasn_kerberos::ApReq = der::decode(&parts.ap_req_der)?;
+        let ap_req: rasn_kerberos::ApReq = der::decode(parts.ap_req_der())?;
         assert_eq!(ap_req.msg_type, Integer::from(14_i32));
         Ok(())
     }
@@ -1176,13 +1202,13 @@ mod tests {
             654_321,
             &decode_hex(TGS_REQ_CONFOUNDER)?,
         )?;
-        let decoded: rasn_kerberos::TgsReq = der::decode(&request.der)?;
+        let decoded: rasn_kerberos::TgsReq = der::decode(request.der())?;
         let padata = decoded.0.padata.as_ref().ok_or("TGS-REQ has padata")?;
         let pa_tgs_req = padata.first().ok_or("TGS-REQ has a PA-TGS-REQ")?;
         let ap_req: rasn_kerberos::ApReq = der::decode(pa_tgs_req.value.as_ref())?;
 
         let authenticator =
-            decrypt_ap_req_authenticator(&ap_req, &tgt.session_key, TGS_REQ_AUTHENTICATOR_USAGE)?;
+            decrypt_ap_req_authenticator(&ap_req, tgt.session_key(), TGS_REQ_AUTHENTICATOR_USAGE)?;
         assert!(
             authenticator.subkey.is_none(),
             "a caller that did not ask for implicit armor gets no subkey"
@@ -1224,7 +1250,7 @@ mod tests {
                 encrypted_data_etype: _,
             }
         ));
-        let short = EncryptionKey::new(tgt.session_key.etype, vec![0x42; 16]);
+        let short = EncryptionKey::new(tgt.session_key().etype(), vec![0x42; 16]);
         assert!(matches!(build(&short), Err(Error::Crypto(_))));
         Ok(())
     }
@@ -1258,8 +1284,8 @@ mod tests {
             let reply_key = reply_key()?;
             let response = synthetic_as_rep_with_reply_key(
                 &request,
-                request.nonce,
-                &request.service,
+                request.nonce(),
+                request.service(),
                 &reply_key,
             )?;
             let task = tokio::spawn(async move {
@@ -1320,7 +1346,7 @@ mod tests {
                 654_321,
                 &decode_hex(TGS_REQ_CONFOUNDER)?,
             )?;
-            let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key)?;
+            let response = synthetic_tgs_rep(&request, request.nonce(), tgt.session_key())?;
             let task = tokio::spawn(async move {
                 let (_request, mut socket) = read_tcp_kdc_request(&listener).await?;
                 write_tcp_kdc_response(&mut socket, &response).await?;
@@ -1328,7 +1354,12 @@ mod tests {
             });
 
             let Err(error) = TokioKdcTransport::new()
-                .exchange_tgs_req_with_config(&config, KdcProtocol::Tcp, &request, &tgt.session_key)
+                .exchange_tgs_req_with_config(
+                    &config,
+                    KdcProtocol::Tcp,
+                    &request,
+                    tgt.session_key(),
+                )
                 .await
             else {
                 return Err("an empty explicit allowlist must permit no session key".into());
@@ -1360,9 +1391,9 @@ mod tests {
 
         let as_options = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
         assert!(
-            as_options.etypes.is_empty(),
+            as_options.etypes().is_empty(),
             "no AS-REQ etype is permitted: {:?}",
-            as_options.etypes
+            as_options.etypes()
         );
         let Err(as_error) =
             build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), as_options)
@@ -1377,9 +1408,9 @@ mod tests {
         let tgs_options =
             TgsReq::from_libdefaults(timestamp(1_893_553_450)?, 0x5566_7788, &defaults);
         assert!(
-            tgs_options.etypes.is_empty(),
+            tgs_options.etypes().is_empty(),
             "no TGS-REQ etype is permitted: {:?}",
-            tgs_options.etypes
+            tgs_options.etypes()
         );
         let Err(tgs_error) = build_tgs_req_with_confounder(
             &sample_tgt_session()?,

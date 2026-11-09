@@ -2,6 +2,82 @@
 
 use super::*;
 
+/// Configured password entry points reject permanent selectors before discovery or delivery.
+#[test]
+fn configured_password_paths_reject_permanent_selectors() -> Result<(), TestError> {
+    use rskrb5_ng::{
+        config::{Toggle, section_values::Value},
+        error::{Config as ConfigError, Policy, RejectedFeature},
+    };
+    runtime()?.block_on(async {
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let mut config = config_with_kpasswd_servers([listener.local_addr()?.to_string()], 1)?;
+        drop(config.realms.first_mut().ok_or("realm")?.relations.insert(
+            "kpasswd_cleartext".to_owned(),
+            Value::Boolean(Toggle::Enabled),
+        ));
+        let (built, options) = kpasswd_context::request()?;
+        let transport = Tokio::new();
+        for path in 0_u8..4 {
+            let operation = async {
+                match path {
+                    0 => transport
+                        .discover_kpasswd_servers(&config, "TEST.GOKRB5", KdcProtocol::Tcp)
+                        .await
+                        .map(|_| ()),
+                    1 => transport
+                        .send_to_kpasswd_realm(
+                            &config,
+                            KdcProtocol::Tcp,
+                            "TEST.GOKRB5",
+                            built.der(),
+                        )
+                        .await
+                        .map(|_| ()),
+                    2 => transport
+                        .exchange_kpasswd_request_with_config(
+                            &config,
+                            KdcProtocol::Tcp,
+                            "TEST.GOKRB5",
+                            built.request(),
+                        )
+                        .await
+                        .map(|_| ()),
+                    _ => transport
+                        .exchange_kpasswd_result_with_config(
+                            &config,
+                            KdcProtocol::Tcp,
+                            "TEST.GOKRB5",
+                            &built,
+                            &options,
+                        )
+                        .await
+                        .map(|_| ()),
+                }
+            };
+            let result = bounded(
+                Duration::from_secs(10),
+                "configuration admission",
+                without_connection(&listener, operation),
+            )
+            .await??;
+            assert!(
+                matches!(
+                    result,
+                    Err(ClientError::Config(ConfigError::Policy(
+                        Policy::RejectedFeature {
+                            feature: RejectedFeature::UnprotectedPasswordChange,
+                            reason: _
+                        }
+                    )))
+                ),
+                "configured path {path} bypassed admission"
+            );
+        }
+        Ok(())
+    })
+}
+
 /// Authenticated legacy subkeys require explicit permission at the checked reply boundary.
 #[test]
 fn checked_replies_enforce_legacy_policy() -> Result<(), TestError> {
@@ -24,7 +100,7 @@ fn checked_replies_enforce_legacy_policy() -> Result<(), TestError> {
                     config.libdefaults.allow_des3 = Toggle::from(true);
                     config.libdefaults.permitted_enctypes = vec!["DEFAULT".to_owned(), "rc4".to_owned(), "des3".to_owned()];
                 }
-                if !configured { built.crypto_policy = CryptoPolicy::from_libdefaults(&config.libdefaults)?; }
+                if !configured { built.set_crypto_policy(CryptoPolicy::from_libdefaults(&config.libdefaults)?); }
                 let transport = Tokio::new().with_timeout(Duration::from_secs(1));
                 let server = async {
                     let (_, mut stream) = read_tcp_request(&listener).await?;
@@ -57,7 +133,9 @@ fn checked_password_policy_rejects_before_endpoint_resolution() -> Result<(), Te
     };
     runtime()?.block_on(async {
         let (mut built, options) = kpasswd_context::request()?;
-        built.reply_key.etype = 23_i32;
+        let mut reply_key = built.reply_key().clone();
+        reply_key.set_etype(23_i32);
+        built.set_reply_key(reply_key);
         let transport = Tokio::new();
         let result = transport
             .exchange_kpasswd_result(KdcProtocol::Tcp, "invalid endpoint", &built, &options)
@@ -226,7 +304,7 @@ fn tokio_transport_rejects_unauthenticated_kpasswd_success_result() -> Result<()
         let addr = listener.local_addr()?;
         let config = config_with_kpasswd_servers([addr.to_string()], 1465)?;
         let (request, options) = kpasswd_context::request()?;
-        let expected_request = request.request.encode()?;
+        let expected_request = request.request().encode()?;
         let response = kpasswd_reply_frame(
             0,
             &kpasswd_result_krb_error(KPASSWD_SUCCESS, "password changed")?,
@@ -268,7 +346,7 @@ fn tokio_transport_exchanges_configured_kpasswd_failure_result() -> Result<(), T
         let addr = listener.local_addr()?;
         let config = config_with_kpasswd_servers([addr.to_string()], 1465)?;
         let (request, options) = kpasswd_context::request()?;
-        let expected_request = request.request.encode()?;
+        let expected_request = request.request().encode()?;
         let response = kpasswd_reply_frame(
             0,
             &kpasswd_result_krb_error(KPASSWD_AUTHERROR, "authentication failed")?,

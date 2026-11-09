@@ -128,11 +128,11 @@ fn sealed(input: &[u8], key: &EncryptionKey, from_acceptor: bool) -> Option<()> 
     let [.., rrc_0, rrc_1, _, _, _, _, _, _, _, _] = *header else {
         return None;
     };
-    let etype = KerberosEtype::from_etype_id(key.etype)?;
+    let etype = KerberosEtype::from_etype_id(key.etype())?;
     let (_, seal) = usages(from_acceptor);
     let confounder = CONFOUNDER.get(..etype.confounder_len())?;
     let cipher = etype
-        .encrypt_message_with_confounder(&key.value, plaintext, seal, confounder)
+        .encrypt_message_with_confounder(key.value(), plaintext, seal, confounder)
         .ok()?;
     let rotation = usize::from(u16::from_be_bytes([rrc_0, rrc_1])).checked_rem(cipher.len())?;
     let (front, back) = cipher.split_at_checked(cipher.len().checked_sub(rotation)?)?;
@@ -163,7 +163,8 @@ fn initiator(key: &EncryptionKey) -> Option<InitiatorContext> {
     let options = InitiatorContextOptions::new()
         .with_sequence_number(Some(1))
         .with_crypto_policy(CryptoPolicy::from_libdefaults(&config.libdefaults).ok()?);
-    let confounder = CONFOUNDER.get(..KerberosEtype::from_etype_id(key.etype)?.confounder_len())?;
+    let confounder =
+        CONFOUNDER.get(..KerberosEtype::from_etype_id(key.etype())?.confounder_len())?;
     spnego::init_sec_context_with_confounder(&session, options, now, 0, confounder).ok()
 }
 
@@ -180,10 +181,15 @@ fn ap_rep_reply(input: &[u8], key: &EncryptionKey) {
 fn structured_ap_rep(input: &[u8], key: &EncryptionKey) -> Option<()> {
     let context = initiator(key)?;
     let enc_part = ap_rep::decode_enc_ap_rep_part(input).ok()?;
-    let confounder = CONFOUNDER.get(..KerberosEtype::from_etype_id(key.etype)?.confounder_len())?;
-    let reply =
-        ap_rep::build_ap_rep_with_confounder(&enc_part, &context.session_key, None, confounder)
-            .ok()?;
+    let confounder =
+        CONFOUNDER.get(..KerberosEtype::from_etype_id(key.etype())?.confounder_len())?;
+    let reply = ap_rep::build_ap_rep_with_confounder(
+        &enc_part,
+        context.session_key_ref(),
+        None,
+        confounder,
+    )
+    .ok()?;
     drop(context.verify_ap_rep(&ap_rep::encode(&reply).ok()?));
     Some(())
 }

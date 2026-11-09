@@ -100,18 +100,19 @@ pub fn decrypt_ap_req_authenticator(
     key: &EncryptionKey,
     usage: u32,
 ) -> Result<rasn_kerberos::Authenticator, Error> {
-    if key.etype != ap_req.authenticator.etype {
+    if key.etype() != ap_req.authenticator.etype {
         return Err(Error::KeyEtypeMismatch {
-            key_etype: key.etype,
+            key_etype: key.etype(),
             encrypted_data_etype: ap_req.authenticator.etype,
         });
     }
-    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype =
+        selection::enctype(key.etype())?.ok_or_else(|| Error::UnsupportedEtype(key.etype()))?;
     let plaintext = SecretDer::new(
-        etype.decrypt_message(&key.value, ap_req.authenticator.cipher.as_ref(), usage)?,
+        etype.decrypt_message(key.value(), ap_req.authenticator.cipher.as_ref(), usage)?,
         "ap-req decrypt",
     );
-    decode_authenticator(encrypted_der(&plaintext, key.etype))
+    decode_authenticator(encrypted_der(&plaintext, key.etype()))
 }
 
 /// Return the AP-REQ authenticator key usage implied by the ticket service.
@@ -167,7 +168,8 @@ pub fn build(
     usage: u32,
     kvno: Option<u32>,
 ) -> Result<rasn_kerberos::ApReq, Error> {
-    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype =
+        selection::enctype(key.etype())?.ok_or_else(|| Error::UnsupportedEtype(key.etype()))?;
     let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     build_ap_req_with_confounder(
@@ -198,17 +200,18 @@ pub fn build_ap_req_with_confounder(
     kvno: Option<u32>,
     confounder: &[u8],
 ) -> Result<rasn_kerberos::ApReq, Error> {
-    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype =
+        selection::enctype(key.etype())?.ok_or_else(|| Error::UnsupportedEtype(key.etype()))?;
     let plaintext = SecretDer::new(encode_authenticator(authenticator)?, "ap-req encode");
     let cipher =
-        etype.encrypt_message_with_confounder(&key.value, &plaintext, usage, confounder)?;
+        etype.encrypt_message_with_confounder(key.value(), &plaintext, usage, confounder)?;
     Ok(rasn_kerberos::ApReq {
         pvno: Integer::from(KRB5_PVNO),
         msg_type: Integer::from(KRB_AP_REQ_MSG_TYPE),
         ap_options,
         ticket,
         authenticator: rasn_kerberos::EncryptedData {
-            etype: key.etype,
+            etype: key.etype(),
             kvno,
             cipher: cipher.into(),
         },

@@ -74,22 +74,23 @@ pub fn decrypt_ticket_enc_part(
     key: &EncryptionKey,
 ) -> Result<rasn_kerberos::EncTicketPart, Error> {
     validate(ticket)?;
-    if key.etype != ticket.enc_part.etype {
+    if key.etype() != ticket.enc_part.etype {
         return Err(Error::KeyEtypeMismatch {
-            key_etype: key.etype,
+            key_etype: key.etype(),
             encrypted_data_etype: ticket.enc_part.etype,
         });
     }
-    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype =
+        selection::enctype(key.etype())?.ok_or_else(|| Error::UnsupportedEtype(key.etype()))?;
     let plaintext = SecretDer::new(
         etype.decrypt_message(
-            &key.value,
+            key.value(),
             ticket.enc_part.cipher.as_ref(),
             KDC_REP_TICKET_USAGE,
         )?,
         "ticket decrypt",
     );
-    decode_enc_ticket_part(encrypted_der(&plaintext, key.etype))
+    decode_enc_ticket_part(encrypted_der(&plaintext, key.etype()))
 }
 
 /// Build a Ticket using a random confounder.
@@ -107,7 +108,8 @@ pub fn build(
     key: &EncryptionKey,
     kvno: Option<u32>,
 ) -> Result<rasn_kerberos::Ticket, Error> {
-    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype =
+        selection::enctype(key.etype())?.ok_or_else(|| Error::UnsupportedEtype(key.etype()))?;
     let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     build_ticket_with_confounder(realm, sname, enc_part, key, kvno, &confounder)
@@ -129,10 +131,11 @@ pub fn build_ticket_with_confounder(
     kvno: Option<u32>,
     confounder: &[u8],
 ) -> Result<rasn_kerberos::Ticket, Error> {
-    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype =
+        selection::enctype(key.etype())?.ok_or_else(|| Error::UnsupportedEtype(key.etype()))?;
     let plaintext = SecretDer::new(encode_der("EncTicketPart", enc_part)?, "ticket encode");
     let cipher = etype.encrypt_message_with_confounder(
-        &key.value,
+        key.value(),
         &plaintext,
         KDC_REP_TICKET_USAGE,
         confounder,
@@ -142,7 +145,7 @@ pub fn build_ticket_with_confounder(
         realm,
         sname,
         enc_part: rasn_kerberos::EncryptedData {
-            etype: key.etype,
+            etype: key.etype(),
             kvno,
             cipher: cipher.into(),
         },
