@@ -1016,6 +1016,11 @@ usize)` validates a KDC TCP record mark.
 Rows added by the critic rounds of the follow-up review, by area. Each note
 names its register row.
 
+Proxy evidence (FU-CLI-R14): the explicit evidence argument is now the first
+additional ticket even when `TgsReq::with_additional_tickets` supplies others.
+Those other tickets keep their relative order after the evidence. No call-site
+change is required.
+
 Uncompressed claims (FU-PAC-R10): `ClaimsSetMetadata::decoded_claims_set_bytes`
 now returns `ClaimsDecompressedSizeMismatch` when NONE-compression metadata
 declares a different decoded size. Producers must supply the actual byte count;

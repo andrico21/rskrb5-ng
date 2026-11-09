@@ -27,6 +27,7 @@ Critic round `critics-5b34622`, lane A:
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence or plan-2 todo |
 | --- | --- | --- | --- | --- | --- | --- |
+| FU-CLI-R14 | minor | S4U2Proxy selects option evidence instead of explicit argument | fixed | `s4u_proxy_prioritizes_explicit_evidence`; commit `client: prioritize explicit proxy evidence (FU-CLI-R14)` | Explicit evidence is the first additional ticket; existing additional tickets retain their relative order; acceptance validates the explicit user's ticket. | task-22o: first encoded ticket differed before fix; authenticated backend reply and ordering pass after insertion at zero. |
 | FU-PAC-R10 | minor | Uncompressed claims ignore declared decoded size | fixed | `uncompressed_claims_require_exact_declared_size`; commit `pac: validate uncompressed claims size (FU-PAC-R10)` | NONE compression rejects both size mismatch directions with ClaimsDecompressedSizeMismatch; matching empty and nonempty output remains accepted. | task-22o: wire-only regression failed before equality admission; red receipt fixA6-claims-red.log. |
 
 Critic rounds `critics-f22ea5b` and `critics-b8d23a5`, lane B:

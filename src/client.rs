@@ -2968,9 +2968,10 @@ pub fn build_s4u2proxy_req_with_confounder(
         });
     }
     options.kdc_option_bits |= KDC_OPTION_CNAME_IN_ADDL_TKT;
-    options
-        .additional_tickets
-        .push(ticket::decode(&evidence_ticket.ticket).map_err(ticket_error)?);
+    options.additional_tickets.insert(
+        0,
+        ticket::decode(&evidence_ticket.ticket).map_err(ticket_error)?,
+    );
     let mut request = build_tgs_req_for_realm_with_confounder(
         service_tgt,
         target_service.realm.clone(),

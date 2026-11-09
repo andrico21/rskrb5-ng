@@ -99,6 +99,49 @@ mod tests {
 
     /// Proxy acceptance checks the frontend-decrypted evidence identity.
     #[test]
+    fn s4u_proxy_prioritizes_explicit_evidence() -> Result<(), TestError> {
+        let user_tgt = sample_tgt_session()?;
+        let evidence = sample_service_ticket_session(&user_tgt)?;
+        let earlier = delegated_ticket(
+            &Principal::user("TEST.GOKRB5", "other-user"),
+            &evidence.service,
+        )?;
+        let mut tgt = sample_tgt_session()?;
+        tgt.client = sample_service_principal();
+        let request = build_s4u2proxy_req_with_confounder(
+            &tgt,
+            &evidence,
+            Principal::new("TEST.GOKRB5", 2, ["HTTP", "backend"]),
+            TgsReq::new(timestamp(1_893_553_450)?, 42)
+                .with_etypes(vec![18_i32])
+                .with_delegation_keytab(delegation_keytab()?)
+                .with_additional_tickets(vec![earlier.clone()]),
+            timestamp(1_893_553_451)?,
+            0,
+            &decode_hex(TGS_REQ_CONFOUNDER)?,
+        )?;
+        let tickets = request
+            .message
+            .0
+            .req_body
+            .additional_tickets
+            .as_ref()
+            .context("tickets")?;
+        assert_eq!(
+            der::encode(tickets.first().context("explicit evidence")?)?,
+            *evidence.ticket
+        );
+        assert_eq!(tickets.get(1), Some(&earlier));
+        let reply = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key)?;
+        assert_eq!(
+            process_tgs_rep(&request, &reply, &tgt.session_key)?.client,
+            evidence.client
+        );
+        Ok(())
+    }
+
+    /// Proxy acceptance checks the frontend-decrypted evidence identity.
+    #[test]
     fn s4u_proxy_rejects_relabelled_evidence() -> Result<(), TestError> {
         let user_tgt = sample_tgt_session()?;
         let mut evidence = sample_service_ticket_session(&user_tgt)?;

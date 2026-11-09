@@ -394,6 +394,8 @@ bullet of this section, this one describes 0.3.0.
 
 Security fail-closed parsing and verification:
 
+- S4U2Proxy places its explicit evidence ticket before option-provided tickets,
+  so the KDC request and authenticated reply validation use that evidence (FU-CLI-R14).
 - Uncompressed PAC claims now require the declared decoded size to equal the
   actual byte count, just as compressed claims do (FU-PAC-R10).
 - SPNEGO sequences with duplicate or reordered known fields fail with the new
