@@ -60,14 +60,14 @@ pub(super) mod tests {
         sessions_and_validators_redact_credentials()?;
         message_wrappers_redact_credentials()?;
         #[cfg(feature = "tokio")]
-        tokio_clients_redact_passwords();
+        tokio_clients_redact_passwords()?;
         authenticated_service_owners_redact_credentials()
     }
 
     /// Tokio clients and their credential enum redact a retained password.
     #[cfg(feature = "tokio")]
     #[test]
-    fn tokio_clients_redact_passwords() {
+    fn tokio_clients_redact_passwords() -> Result<(), Box<dyn Error>> {
         use rskrb5_ng::{
             Config,
             client::{Tokio, TokioClientCredentials, transport::KdcProtocol},
@@ -84,6 +84,11 @@ pub(super) mod tests {
             secret.clone(),
         );
         redacted(&client, &[&secret]);
+        assert!(
+            !render(&client)?.is_empty(),
+            "client diagnostics remain useful"
+        );
+        Ok(())
     }
 
     /// Hash access is borrowed and diagnostics redact both independently owned hashes.

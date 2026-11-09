@@ -3,8 +3,10 @@
 #[cfg(test)]
 #[expect(
     clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
     reason = "test code is not rendered API documentation"
 )]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 pub(super) mod tests {
     use core::error::Error;
     #[cfg(any(feature = "tower", all(feature = "http", feature = "tokio")))]
@@ -26,7 +28,7 @@ pub(super) mod tests {
         },
     };
 
-    use crate::tests::{pattern, redacted};
+    use crate::tests::{pattern, redacted, render};
 
     #[cfg(feature = "tower")]
     #[derive(Debug)]
@@ -54,7 +56,7 @@ pub(super) mod tests {
 
     pub(crate) fn run_audit() -> Result<(), Box<dyn Error>> {
         negotiation_tokens_redact_credentials()?;
-        error_wrappers_redact_credential_payloads();
+        error_wrappers_redact_credential_payloads()?;
         #[cfg(feature = "tokio")]
         client_wrappers_redact_passwords()?;
         #[cfg(all(feature = "http", feature = "tokio"))]
@@ -107,11 +109,13 @@ pub(super) mod tests {
 
     /// SPNEGO, HTTP and Tower error wrappers redact nested credential payloads.
     #[test]
-    fn error_wrappers_redact_credential_payloads() {
+    fn error_wrappers_redact_credential_payloads() -> Result<(), Box<dyn Error>> {
         let secret = pattern(65);
-        redacted(
-            &SpnegoError::Client(Box::new(kdc_client_error(&secret))),
-            &[&secret],
+        let spnego = SpnegoError::Client(Box::new(kdc_client_error(&secret)));
+        redacted(&spnego, &[&secret]);
+        assert!(
+            !render(&spnego)?.is_empty(),
+            "SPNEGO error diagnostics remain useful"
         );
         #[cfg(feature = "http")]
         redacted(
@@ -120,6 +124,7 @@ pub(super) mod tests {
         );
         #[cfg(feature = "tower")]
         redacted(&TowerError::<Vec<u8>>::Inner(secret.clone()), &[&secret]);
+        Ok(())
     }
 
     /// Negotiate client wrappers redact their retained password.
