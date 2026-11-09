@@ -10,8 +10,10 @@
 mod tests {
     use core::error::Error;
 
-    use rskrb5_ng::config::{Config, ConfigDiagnostic, ParseMode, section_values::Value};
-    use rskrb5_ng::error::Config as ConfigError;
+    use rskrb5_ng::{
+        config::{Config, ConfigDiagnostic, ParseMode, section_values::Value},
+        error::Config as ConfigError,
+    };
 
     /// Exercise typed admission and the actual diagnostic/error boundary.
     fn deferred(name: &str, kind: &str, inputs: &[&str]) -> Result<(), Box<dyn Error>> {

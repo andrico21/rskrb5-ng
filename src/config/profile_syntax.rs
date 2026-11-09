@@ -174,10 +174,7 @@ impl State {
             marker(value)
         };
         let decoded = quoted(body, line)?;
-        if section != "domain_realm"
-            && !matches!(path.as_slice(), [section, _, map, _]
-                if section == "realms" && map == "auth_to_local_names")
-        {
+        if section != "domain_realm" && !local_mapping(&path) {
             protocol::relation(&key, &decoded)?;
         }
         if !discarded {
@@ -224,6 +221,11 @@ impl State {
             profile.finalize(path);
         }
     }
+}
+
+/// Distinguish principal mapping data from protocol-selector relations.
+fn local_mapping(path: &[String]) -> bool {
+    matches!(path, [section, _, map, _] if section == "realms" && map == "auth_to_local_names")
 }
 
 /// Split a trailing final marker from a tag or unquoted extension value.
