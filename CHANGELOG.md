@@ -23,181 +23,6 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
-- Parity symbol evidence excludes cfg-disabled and test-only item scopes and
-  requires supported non-test configurations for conditional declarations (FU-TST-R18).
-
-- Action pin checks inspect normalized YAML keys across every workflow, including
-  quoted `uses`; opaque syntax and missing version comments fail closed (FU-GATE-R12).
-
-- Both mandatory CI jobs reject prerequisites and conditional execution, so
-  skipped, failed or cancelled dependencies cannot suppress them (FU-GATE-R11).
-
-- Lint workflow admission checks the complete execution shape, rejecting extra
-  run steps, unknown/non-plain keys and unapproved setup inputs (FU-GATE-R10).
-
-- Include parsing skips suffix lookahead unless an empty scalar is pending,
-  removing repeated scans of comment tails without changing precedence or limits
-  (FU-CFG-R12).
-
-- Kadmin reply-key generation and random message confounders own erasure before
-  entropy filling, including partial randomness failures (FU-TRN-R08).
-
-- Random AP-REP headers and configured HTTP keytab constructors retain typed
-  permanent policy refusals instead of unsupported-enctype or generic invalid
-  configuration errors (FU-SPN-R16).
-
-- Secret staging preallocates MIC/Wrap checksum inputs, AES/DES3 padding and
-  partial AES-CTS decryption and keytab/ccache serialization before copying secrets. Unknown-length ccache
-  serde sequences erase each replaced allocation (FU-SPN-R15).
-
-- Mutation aggregation rejects nonpositive shard counts, overlapping shard
-  identities, duplicate outcomes and invalid mutant summaries (FU-GATE-R09).
-
-- Workflow wiring validates the lint hook's pre-push stages and file
-  applicability, rejecting suppressing filters and metadata (FU-GATE-R08).
-
-- The package excludes the checkout-only MIT parity audit, matching the Go
-  audit and avoiding its dependency on excluded development scripts (FU-GATE-R07).
-
-- Parity symbol evidence rejects declarations and aliases inside unsupported
-  inline module scopes instead of attributing them to the parent (FU-TST-R15).
-
-- Package-link validation scans reference destinations on the following line,
-  including angle-wrapped targets and escaped labels (FU-CI-R04).
-
-- Lint workflow admission rejects container, services and options settings that
-  can override the interpreter environment (FU-GATE-R06).
-
-- Workflow readers reject escaped keys and unsupported mapping syntax rather
-  than certifying commands under a different YAML interpretation (FU-GATE-R05).
-
-- Configured checked AS exchange rejects realm and clpreauth restrictions
-  before sending preauthentication, matching configured login (FU-TRN-R07).
-
-- Completion MIC verification erases its temporary encoded AP-REQ offer, and
-  the Axum example erases its temporary AP-REP header string (FU-SPN-R14).
-
-- The service AP-REP verifier enforces retained policy on both wrapping key IDs
-  and the authenticated acceptor subkey (FU-SPN-R13).
-
-- Reciprocal MIC signing and completion verification recheck the selected key
-  against the retained context policy, including initiator-subkey fallbacks
-  (FU-SPN-R12).
-
-- ETYPE-INFO and ETYPE-INFO2 preauthentication hints reject any trailing DER
-  value or garbage inside an otherwise valid KDC error (FU-CLI-R12).
-
-- TGS requests built with authenticator subkeys retain reply usage 9, so the
-  normal and referral reply processors accept conforming subkey-encrypted
-  replies when passed the returned subkey (FU-CLI-R11).
-
-- Empty profile scalars retain first-value precedence across include and
-  includedir directives; next-line subsections still allow intervening
-  includes (FU-CFG-R11).
-
-- Programmatic and typed-serde realm protocol selectors now receive the same
-  permanent feature rejection as profile text; malformed selector variants
-  fail instead of bypassing admission (FU-CFG-R10).
-
-- Keytab and ccache key bytes now use a read-only, zeroizing owner. Replacing
-  a public key field erases the previous allocation; direct vector mutation
-  is replaced by assignment of a new owner (FU-FIL-R06).
-
-- Mutation completeness rejects empty shards, absent or failed baselines, and
-  generated/tested identity mismatches rather than accepting equal counts alone
-  (FU-GATE-R04).
-
-- Lint workflow admission allowlists environment values and setup inputs and
-  rejects interpreter, PATH, shell and defaults overrides at every scope
-  (FU-GATE-R03).
-
-- Parity symbol evidence ignores Rust comments/literals and distinguishes a
-  child-local type from its parent type when resolving methods (FU-TST-R14).
-
-- AD keytab preflight stops at zero-length terminators like the Rust loader;
-  a usable key after a terminator no longer certifies readiness (FU-TST-R13).
-
-- Package-link validation now scans multiline Markdown destinations and tokenizes
-  HTML attributes, including unquoted `href` and `src` values (FU-CI-R03).
-
-- Workflow wiring rejects quoted execution-control keys and duplicate gate step
-  mappings rather than counting commands that cannot execute (FU-GATE-R02).
-
-- Configured transport password/keytab AS logins now reject unsupported realm
-  and clpreauth restrictions before request construction or network I/O,
-  preserving the named configuration error (FU-TRN-R06).
-
-- Full-message kadmin AP-REQ/AP-REP adapters retain typed crypto and randomness
-  causes instead of classifying them as string-only decode failures (FU-TRN-R05).
-
-- SPNEGO token encoders and header decoders now erase first-party credential
-  staging, including nested DER buffers and parse-failure exits; header encoding
-  writes base64 directly into the returned string (FU-SPN-R11).
-
-- Validated AP contexts retain their effective `crypto_policy`; AP-REP builders
-  reject wrapping keys and outgoing subkeys outside it before producing a reply
-  or calling the protected Tower handler (FU-SPN-R10).
-
-- Config-backed HTTP layer and service constructors now reject unsupported realm
-  and client-preauthentication restrictions before keytab discovery, matching
-  direct validators (FU-HTTP-R07).
-
-- Runtime/serde timestamp-restriction errors now identify preauthentication
-  work package WP-07, matching text parsing (FU-CFG-R07).
-
-- Next-line profile subsection braces now work in every section, including
-  unknown and server-only sections; existing empty scalar extensions remain
-  supported when no opening brace follows (FU-CFG-R08).
-
-- Checked string-to-key retains the policy's per-family iteration minimum and
-  rejects lower counts before PBKDF2. Raw vector APIs remain policy-free
-  (FU-CRY-R02).
-
-- Programmatic and serde realm timestamp restrictions reject every non-Boolean
-  value with a named invalid-policy error instead of treating it as absent
-  (FU-CFG-R09).
-
-- Ccache ticket, second-ticket, configuration and authorization payloads now use
-  `Zeroizing<Vec<u8>>`, including partially parsed records. Owning constructors
-  and setters require zeroizing buffers (FU-FIL-R05).
-
-- TGT classification now requires exactly `krbtgt/<nonempty destination>`,
-  with case-sensitive service components. Extra components and `KRBTGT` no
-  longer enter the TGT cache or renewal path (FU-CLI-R09).
-
-- Complete client AP builders reject explicitly selected unkeyed/weak checksum
-  IDs with `RejectedFeature::UnauthenticatedChecksum` before cryptographic work;
-  keyed and GSS checksum selections remain supported (FU-CLI-R08).
-
-- Retained SPNEGO token bytes, initiator DER/header fields and pending Tower
-  AP-REP headers now use zeroizing owners; token and future Debug expose only
-  metadata and lengths (FU-SPN-R05). Plain returned wire buffers remain the
-  caller's erasure responsibility.
-
-- Kadmin retains typed `Crypto` and `getrandom::Error` sources through separate
-  `Crypto` and `Random` tuple variants (FU-API-R02).
-
-- `KrbErrorCodec::InvalidString` retains `Utf8Error` as its source instead of
-  a stringified cause (FU-API-R01).
-
-- Keytab password-generation methods now consume `Zeroizing<Vec<u8>>`, erasing
-  moved input on every exit. `add_entry_from_password_ref` provides explicitly
-  borrowed input with caller erasure duties (FU-FIL-R01).
-
-- `KerbValidationInfo::user_session_key` is now an owning, redacted
-  `pac::session_key::SessionKey`; raw PAC buffers use `Zeroizing<Vec<u8>>`.
-  Debug no longer exposes key-bearing PAC bytes, and parsing erases key staging
-  on success or later failure (FU-PAC-R06).
-
-- `Rc4HmacEtype::random_to_key` now returns `Result<Vec<u8>, error::Crypto>`:
-  exactly sixteen random bytes are preserved, not MD4-hashed; other lengths
-  return `InvalidKeyLength` (FU-CRY-R01). Password string-to-key is unchanged.
-
-- Client request DER, FAST AP-REQ bytes and session tickets now use
-  `Zeroizing<Vec<u8>>`; owning constructors require that owner. Client request
-  and session `Debug` expose metadata and lengths, never credential bytes
-  (FU-CLI-R02).
-
 - Add opt-in `service::TransitPolicy::{direct, domain_x500_paths}` presets for
   AD cross-domain tickets without TRANSITED-POLICY-CHECKED. Both pin endpoint
   realms; the latter allow-lists exact complete encoded paths. Default rejection
@@ -256,119 +81,6 @@ These are breaking; the migration guide maps each one.
   dev-dependency. No runtime dependency was added.
 
 ### Behaviour changes
-
-- AD preflight rejects truncated or unusable keytab overrides rather than
-  treating a valid two-byte header as readiness evidence (FU-TST-R09).
-
-- Configuration defaults `k5login_authoritative` to true instead of false;
-  local-login authorization remains deferred, so this grants no login.
-  Ticket and renewable lifetimes use the checked MIT interval parser, rejecting
-  negative totals, overflow, malformed unit order and trailing garbage.
-  Auto transport normalizes negative `udp_preference_limit` to 1465, caps values
-  above 32700, and sends UDP first at equality (FU-DOC-R10).
-
-- Workflow wiring validation now requires executed gate commands, rejecting
-  printed, commented, conditional or failure-swallowing substitutes (FU-GATE-R01).
-
-- Release tag discovery fails on invalid commit IDs or Git failures instead of
-  reporting a successful non-release invocation (FU-CI-R01).
-
-- The gated integration runner preserves explicit test-time environment overrides
-  instead of replacing them with saved fixture defaults, including strict AD and
-  password-change flags (FU-TST-R07).
-
-- Kpasswd request construction preserves explicit RC4/DES3 permission through
-  AP construction; high-level password changes propagate their configuration
-  snapshot instead of silently restoring AES-only defaults (FU-TRN-R04).
-
-- Both password request builders reject fractional KRB-PRIV timestamps and
-  out-of-range microseconds before producing a mutation frame (FU-TRN-R02).
-
-- Checked kpasswd replies enforce runtime encryption permission on AP-REP and
-  KRB-PRIV keys, including server-selected subkeys. Policy refusal after delivery
-  is an unknown outcome; prohibited outgoing keys fail before delivery. Kpasswd
-  request options and built requests now retain policy (FU-TRN-R01).
-
-- `with_ap_rep(false)` no longer suppresses mandatory SPNEGO completion: a
-  supplied valid mechListMIC receives its reciprocal MIC and AP-REP (FU-SPN-R09).
-
-- SPNEGO reqFlags encode/decode rejects malformed DER BIT STRING contents with
-  the new `Spnego::InvalidReqFlags` error (FU-SPN-R08).
-
-- Consuming MIC and Wrap constructors adopt plaintext into zeroizing storage
-  before rejecting an unsupported key, so early errors also erase it (FU-SPN-R07).
-
-- The Axum example owns its keytab and releases it on shutdown instead of
-  leaking the allocation for process lifetime (FU-HTTP-R06).
-
-- The Axum example reports replay infrastructure faults as hardened 500 responses
-  and retains typed causes in local response extensions (FU-HTTP-R05).
-
-- Service validation rejects duplicate ticket PACs, including nested siblings,
-  with `UnsupportedAuthorizationData { kind: 128 }` before replay admission
-  instead of interpreting only the first PAC (FU-SVC-R05).
-
-- AuthorizationData wrappers reject trailing DER or arbitrary suffix bytes in
-  both service validation and PAC discovery (FU-PAC-R01).
-
-- Cloned HTTP services reject replay-cache attachment incompatible with the
-  actual shared validator; lowering a cloned layer's skew no longer shortens
-  its siblings' replay retention (FU-HTTP-R04).
-
-- Version-one keytab serialization rejects nonzero principal name types with
-  `UnrepresentableNameType` instead of silently losing them (FU-FIL-R03).
-
-- Ccache credential, configuration-entry and authorization-data Debug now
-  report payload lengths rather than credential bytes (FU-FIL-R02).
-
-- Escaped permanently rejected protocol selectors are rejected before finalized
-  or unknown profile scopes can discard them (FU-CFG-R06).
-
-- Unsupported restrictive settings now fail closed through serde and runtime
-  configuration admission, not only text parsing: address inclusion, total
-  deadlines, mandatory AP verification, channel-binding signaling, persistent
-  replay stores and encrypted-timestamp prohibitions (FU-CFG-R05).
-
-- Profile subsections accept MIT's next-line opening brace syntax. Empty
-  libdefaults/domain_realm scalar extensions remain supported (FU-CFG-R04).
-
-- Quoted endpoint stars remain literal and no longer suppress subsequent
-  endpoints; final markers are handled only by the profile parser (FU-CFG-R03).
-
-- Quoted profile values preserve leading/trailing whitespace after escape
-  decoding, including credential names and appdefaults (FU-CFG-R02).
-
-- `no_addresses` and `noaddresses` now share first-occurrence precedence and
-  final markers instead of overwriting by lexical spelling (FU-CFG-R01).
-
-- PAC NDR arrays validate aligned descriptor/element extent before reserving
-  from peer counts, preventing large allocations for truncated inputs
-  (FU-PAC-R05).
-
-- Nonempty PAC RPC strings with null pointers now return `MissingNdrPointer`
-  instead of silently becoming empty strings (FU-PAC-R04).
-
-- PAC parsing rejects nonzero format versions with `Pac::InvalidPacVersion`
-  before allocating the buffer table (FU-PAC-R02).
-
-- AP authenticators, tickets, KDC replies and KRB-PRIV now reject authenticated
-  trailing zero bytes unless they are DES3 padding shorter than eight bytes
-  (FU-MSG-R01).
-
-- Direct AS reply processing enforces the offered reply encryption type before
-  decryption, independently of the session-key type (`EnctypeNotRequested`,
-  FU-CLI-R07); TGS reply wrapping is unchanged.
-
-- Cached/imported sessions and AP construction reject service metadata that
-  disagrees with the encoded ticket's realm or ordered components
-  (`ServicePrincipalMismatch`, FU-CLI-R06).
-
-- Keytab diagnostics count only keys for the client's realm and ordered name
-  components, ignoring advisory name type; other users' keys no longer hide
-  missing credentials (FU-CLI-R05).
-
-- Complete PA/TGS/AP authenticator builders reject fractional explicit seconds
-  and microseconds above 999999 before encryption (`Client::Encode`, FU-CLI-R03).
 
 - Ccache parsing bounds every record count (principal components, addresses,
   authorization data) against the remaining input before reserving memory, so
@@ -733,13 +445,43 @@ Security fail-closed parsing and verification:
   (FU-FIL-01).
 - A DIR cache publishes a missing primary file only after the cache is saved,
   through a synced private stage that is hard-linked without replacing a
-  concurrent winner (FU-FIL-03; the register row is still open).
+  concurrent winner (FU-FIL-03).
 - A 1-3 byte keytab entry-size fragment is `Truncated`, not end of file
   (FU-FIL-04).
 - Opaque negative keytab enctype IDs serialize unchanged (FU-FIL-05).
 - `keytab::Entry::new` applies the 8-bit kvno fallback immediately and is no
   longer `const`; serialization rejects a zero kvno with a nonzero kvno8
   (FU-FIL-06).
+- ETYPE-INFO and ETYPE-INFO2 preauthentication hints reject any trailing DER
+  value or garbage inside an otherwise valid KDC error (FU-CLI-R12).
+- Version-one keytab serialization rejects nonzero principal name types with
+  `UnrepresentableNameType` instead of silently losing them (FU-FIL-R03).
+- The Axum example reports replay infrastructure faults as hardened 500 responses
+  and retains typed causes in local response extensions (FU-HTTP-R05).
+- The Axum example owns its keytab and releases it on shutdown instead of
+  leaking the allocation for process lifetime (FU-HTTP-R06).
+- AP authenticators, tickets, KDC replies and KRB-PRIV now reject authenticated
+  trailing zero bytes unless they are DES3 padding shorter than eight bytes
+  (FU-MSG-R01).
+- AuthorizationData wrappers reject trailing DER or arbitrary suffix bytes in
+  both service validation and PAC discovery (FU-PAC-R01).
+- PAC parsing rejects nonzero format versions with `Pac::InvalidPacVersion`
+  before allocating the buffer table (FU-PAC-R02).
+- Nonempty PAC RPC strings with null pointers now return `MissingNdrPointer`
+  instead of silently becoming empty strings (FU-PAC-R04).
+- PAC NDR arrays validate aligned descriptor/element extent before reserving
+  from peer counts, preventing large allocations for truncated inputs
+  (FU-PAC-R05).
+- SPNEGO reqFlags encode/decode rejects malformed DER BIT STRING contents with
+  the new `Spnego::InvalidReqFlags` error (FU-SPN-R08).
+- `with_ap_rep(false)` no longer suppresses mandatory SPNEGO completion: a
+  supplied valid mechListMIC receives its reciprocal MIC and AP-REP (FU-SPN-R09).
+- PAC UTF-16 strings decode directly from the byte slice, bounding the
+  character extent first instead of allocating an intermediate `Vec<u16>`;
+  decoded values are unchanged (FU-PAC-R03).
+- MIC and unsealed Wrap verification uses the enctype's audited verifier
+  instead of a hand-written MAC comparison; a malformed tag is still
+  `GssChecksumMismatch` (FU-SPN-R06).
 
 Passwords and secret ownership:
 
@@ -771,6 +513,43 @@ Passwords and secret ownership:
   `Client::Encode`, not a reply-control error, and nothing is sent (FU-TRN-01).
 - Own-password rotation of the stored credential ignores the advisory name
   type (FU-CLI-08).
+- Client request DER, FAST AP-REQ bytes and session tickets now use
+  `Zeroizing<Vec<u8>>`; owning constructors require that owner. Client request
+  and session `Debug` expose metadata and lengths, never credential bytes
+  (FU-CLI-R02).
+- Keytab password-generation methods now consume `Zeroizing<Vec<u8>>`, erasing
+  moved input on every exit. `add_entry_from_password_ref` provides explicitly
+  borrowed input with caller erasure duties (FU-FIL-R01).
+- Ccache credential, configuration-entry and authorization-data Debug now
+  report payload lengths rather than credential bytes (FU-FIL-R02).
+- Ccache ticket, second-ticket, configuration and authorization payloads now use
+  `Zeroizing<Vec<u8>>`, including partially parsed records. Owning constructors
+  and setters require zeroizing buffers (FU-FIL-R05).
+- Keytab and ccache key bytes now use a read-only, zeroizing owner. Replacing
+  a public key field erases the previous allocation; direct vector mutation
+  is replaced by assignment of a new owner (FU-FIL-R06).
+- `KerbValidationInfo::user_session_key` is now an owning, redacted
+  `pac::session_key::SessionKey`; raw PAC buffers use `Zeroizing<Vec<u8>>`.
+  Debug no longer exposes key-bearing PAC bytes, and parsing erases key staging
+  on success or later failure (FU-PAC-R06).
+- Retained SPNEGO token bytes, initiator DER/header fields and pending Tower
+  AP-REP headers now use zeroizing owners; token and future Debug expose only
+  metadata and lengths (FU-SPN-R05). Plain returned wire buffers remain the
+  caller's erasure responsibility.
+- Consuming MIC and Wrap constructors adopt plaintext into zeroizing storage
+  before rejecting an unsupported key, so early errors also erase it (FU-SPN-R07).
+- SPNEGO token encoders and header decoders now erase first-party credential
+  staging, including nested DER buffers and parse-failure exits; header encoding
+  writes base64 directly into the returned string (FU-SPN-R11).
+- Completion MIC verification erases its temporary encoded AP-REQ offer, and
+  the Axum example erases its temporary AP-REP header string (FU-SPN-R14).
+- Secret staging preallocates MIC/Wrap checksum inputs, AES/DES3 padding and
+  partial AES-CTS decryption and keytab/ccache serialization before copying secrets. Unknown-length ccache
+  serde sequences erase each replaced allocation (FU-SPN-R15).
+- Both password request builders reject fractional KRB-PRIV timestamps and
+  out-of-range microseconds before producing a mutation frame (FU-TRN-R02).
+- Kadmin reply-key generation and random message confounders own erasure before
+  entropy filling, including partial randomness failures (FU-TRN-R08).
 
 Crypto policy:
 
@@ -799,6 +578,33 @@ Crypto policy:
   `error::Any` accept `error::Policy`; `RejectedFeature` and `RejectionReason`
   catalogue the permanent refusals. `LibDefaults::diagnostics()` returns
   `Cow<[ConfigDiagnostic]>` (FU-DOC-21).
+- Complete client AP builders reject explicitly selected unkeyed/weak checksum
+  IDs with `RejectedFeature::UnauthenticatedChecksum` before cryptographic work;
+  keyed and GSS checksum selections remain supported (FU-CLI-R08).
+- `Rc4HmacEtype::random_to_key` now returns `Result<Vec<u8>, error::Crypto>`:
+  exactly sixteen random bytes are preserved, not MD4-hashed; other lengths
+  return `InvalidKeyLength` (FU-CRY-R01). Password string-to-key is unchanged.
+- Checked string-to-key retains the policy's per-family iteration minimum and
+  rejects lower counts before PBKDF2. Raw vector APIs remain policy-free
+  (FU-CRY-R02).
+- Validated AP contexts retain their effective `crypto_policy`; AP-REP builders
+  reject wrapping keys and outgoing subkeys outside it before producing a reply
+  or calling the protected Tower handler (FU-SPN-R10).
+- Reciprocal MIC signing and completion verification recheck the selected key
+  against the retained context policy, including initiator-subkey fallbacks
+  (FU-SPN-R12).
+- The service AP-REP verifier enforces retained policy on both wrapping key IDs
+  and the authenticated acceptor subkey (FU-SPN-R13).
+- Random AP-REP headers and configured HTTP keytab constructors retain typed
+  permanent policy refusals instead of unsupported-enctype or generic invalid
+  configuration errors (FU-SPN-R16).
+- Checked kpasswd replies enforce runtime encryption permission on AP-REP and
+  KRB-PRIV keys, including server-selected subkeys. Policy refusal after delivery
+  is an unknown outcome; prohibited outgoing keys fail before delivery. Kpasswd
+  request options and built requests now retain policy (FU-TRN-R01).
+- Kpasswd request construction preserves explicit RC4/DES3 permission through
+  AP construction; high-level password changes propagate their configuration
+  snapshot instead of silently restoring AES-only defaults (FU-TRN-R04).
 
 Configuration:
 
@@ -825,6 +631,43 @@ Configuration:
   `UnsupportedDynamicModule`, and default-name templates are expanded once
   when a name is resolved, failing on unavailable facts. New
   `Config::from_reader`, `from_string` and `from_path` (FU-CFG-09).
+- `no_addresses` and `noaddresses` now share first-occurrence precedence and
+  final markers instead of overwriting by lexical spelling (FU-CFG-R01).
+- Quoted profile values preserve leading/trailing whitespace after escape
+  decoding, including credential names and appdefaults (FU-CFG-R02).
+- Quoted endpoint stars remain literal and no longer suppress subsequent
+  endpoints; final markers are handled only by the profile parser (FU-CFG-R03).
+- Profile subsections accept MIT's next-line opening brace syntax. Empty
+  libdefaults/domain_realm scalar extensions remain supported (FU-CFG-R04).
+- Unsupported restrictive settings now fail closed through serde and runtime
+  configuration admission, not only text parsing: address inclusion, total
+  deadlines, mandatory AP verification, channel-binding signaling, persistent
+  replay stores and encrypted-timestamp prohibitions (FU-CFG-R05).
+- Escaped permanently rejected protocol selectors are rejected before finalized
+  or unknown profile scopes can discard them (FU-CFG-R06).
+- Runtime/serde timestamp-restriction errors now identify preauthentication
+  work package WP-07, matching text parsing (FU-CFG-R07).
+- Next-line profile subsection braces now work in every section, including
+  unknown and server-only sections; existing empty scalar extensions remain
+  supported when no opening brace follows (FU-CFG-R08).
+- Programmatic and serde realm timestamp restrictions reject every non-Boolean
+  value with a named invalid-policy error instead of treating it as absent
+  (FU-CFG-R09).
+- Programmatic and typed-serde realm protocol selectors now receive the same
+  permanent feature rejection as profile text; malformed selector variants
+  fail instead of bypassing admission (FU-CFG-R10).
+- Empty profile scalars retain first-value precedence across include and
+  includedir directives; next-line subsections still allow intervening
+  includes (FU-CFG-R11).
+- Include parsing skips suffix lookahead unless an empty scalar is pending,
+  removing repeated scans of comment tails without changing precedence or limits
+  (FU-CFG-R12).
+- Configuration defaults `k5login_authoritative` to true instead of false;
+  local-login authorization remains deferred, so this grants no login.
+  Ticket and renewable lifetimes use the checked MIT interval parser, rejecting
+  negative totals, overflow, malformed unit order and trailing garbage.
+  Auto transport normalizes negative `udp_preference_limit` to 1465, caps values
+  above 32700, and sends UDP first at equality (FU-DOC-R10).
 
 Service and replay cache:
 
@@ -847,6 +690,15 @@ Service and replay cache:
   the cleartext `sname` (FU-SVC-R02).
 - A signed PAC_CLIENT_INFO must match the ticket client name and auth time,
   else the new `Service::PacClientMismatch` (FU-SVC-R03).
+- Cloned HTTP services reject replay-cache attachment incompatible with the
+  actual shared validator; lowering a cloned layer's skew no longer shortens
+  its siblings' replay retention (FU-HTTP-R04).
+- Config-backed HTTP layer and service constructors now reject unsupported realm
+  and client-preauthentication restrictions before keytab discovery, matching
+  direct validators (FU-HTTP-R07).
+- Service validation rejects duplicate ticket PACs, including nested siblings,
+  with `UnsupportedAuthorizationData { kind: 128 }` before replay admission
+  instead of interpreting only the first PAC (FU-SVC-R05).
 
 Client:
 
@@ -892,6 +744,27 @@ Client:
   `KpasswdOutcomeUnknown` (FU-API-04).
 - `error::Any::Decode` and `error::Config::InvalidIpAddress` are removed
   (FU-API-05).
+- `KrbErrorCodec::InvalidString` retains `Utf8Error` as its source instead of
+  a stringified cause (FU-API-R01).
+- Kadmin retains typed `Crypto` and `getrandom::Error` sources through separate
+  `Crypto` and `Random` tuple variants (FU-API-R02).
+- Complete PA/TGS/AP authenticator builders reject fractional explicit seconds
+  and microseconds above 999999 before encryption (`Client::Encode`, FU-CLI-R03).
+- Keytab diagnostics count only keys for the client's realm and ordered name
+  components, ignoring advisory name type; other users' keys no longer hide
+  missing credentials (FU-CLI-R05).
+- Cached/imported sessions and AP construction reject service metadata that
+  disagrees with the encoded ticket's realm or ordered components
+  (`ServicePrincipalMismatch`, FU-CLI-R06).
+- Direct AS reply processing enforces the offered reply encryption type before
+  decryption, independently of the session-key type (`EnctypeNotRequested`,
+  FU-CLI-R07); TGS reply wrapping is unchanged.
+- TGT classification now requires exactly `krbtgt/<nonempty destination>`,
+  with case-sensitive service components. Extra components and `KRBTGT` no
+  longer enter the TGT cache or renewal path (FU-CLI-R09).
+- TGS requests built with authenticator subkeys retain reply usage 9, so the
+  normal and referral reply processors accept conforming subkey-encrypted
+  replies when passed the returned subkey (FU-CLI-R11).
 
 Transport:
 
@@ -904,6 +777,13 @@ Transport:
 - An SRV target that does not resolve no longer stops failover to the others
   (FU-TRN-13).
 - New `client::transport::kdc_tcp_record_length` (FU-FUZ-02).
+- Full-message kadmin AP-REQ/AP-REP adapters retain typed crypto and randomness
+  causes instead of classifying them as string-only decode failures (FU-TRN-R05).
+- Configured transport password/keytab AS logins now reject unsupported realm
+  and clpreauth restrictions before request construction or network I/O,
+  preserving the named configuration error (FU-TRN-R06).
+- Configured checked AS exchange rejects realm and clpreauth restrictions
+  before sending preauthentication, matching configured login (FU-TRN-R07).
 
 Gates, tests and CI:
 
@@ -940,11 +820,74 @@ Gates, tests and CI:
 - `INTEGRATION_REQUIRED=1` fails when a requested live prerequisite is
   missing (FU-TST-05); the live harness brackets bare IPv6 addresses
   (FU-TST-07) and bounds its TCP probe (FU-TST-10).
+- Release tag discovery fails on invalid commit IDs or Git failures instead of
+  reporting a successful non-release invocation (FU-CI-R01).
+- Package-link validation now scans multiline Markdown destinations and tokenizes
+  HTML attributes, including unquoted `href` and `src` values (FU-CI-R03).
+- Package-link validation scans reference destinations on the following line,
+  including angle-wrapped targets and escaped labels (FU-CI-R04).
+- Workflow wiring validation now requires executed gate commands, rejecting
+  printed, commented, conditional or failure-swallowing substitutes (FU-GATE-R01).
+- Workflow wiring rejects quoted execution-control keys and duplicate gate step
+  mappings rather than counting commands that cannot execute (FU-GATE-R02).
+- Lint workflow admission allowlists environment values and setup inputs and
+  rejects interpreter, PATH, shell and defaults overrides at every scope
+  (FU-GATE-R03).
+- Mutation completeness rejects empty shards, absent or failed baselines, and
+  generated/tested identity mismatches rather than accepting equal counts alone
+  (FU-GATE-R04).
+- Workflow readers reject escaped keys and unsupported mapping syntax rather
+  than certifying commands under a different YAML interpretation (FU-GATE-R05).
+- Lint workflow admission rejects container, services and options settings that
+  can override the interpreter environment (FU-GATE-R06).
+- The package excludes the checkout-only MIT parity audit, matching the Go
+  audit and avoiding its dependency on excluded development scripts (FU-GATE-R07).
+- Workflow wiring validates the lint hook's pre-push stages and file
+  applicability, rejecting suppressing filters and metadata (FU-GATE-R08).
+- Mutation aggregation rejects nonpositive shard counts, overlapping shard
+  identities, duplicate outcomes and invalid mutant summaries (FU-GATE-R09).
+- Lint workflow admission checks the complete execution shape, rejecting extra
+  run steps, unknown/non-plain keys and unapproved setup inputs (FU-GATE-R10).
+- Both mandatory CI jobs reject prerequisites and conditional execution, so
+  skipped, failed or cancelled dependencies cannot suppress them (FU-GATE-R11).
+- Action pin checks inspect normalized YAML keys across every workflow, including
+  quoted `uses`; opaque syntax and missing version comments fail closed (FU-GATE-R12).
+- The gated integration runner preserves explicit test-time environment overrides
+  instead of replacing them with saved fixture defaults, including strict AD and
+  password-change flags (FU-TST-R07).
+- AD preflight rejects truncated or unusable keytab overrides rather than
+  treating a valid two-byte header as readiness evidence (FU-TST-R09).
+- AD keytab preflight stops at zero-length terminators like the Rust loader;
+  a usable key after a terminator no longer certifies readiness (FU-TST-R13).
+- Parity symbol evidence ignores Rust comments/literals and distinguishes a
+  child-local type from its parent type when resolving methods (FU-TST-R14).
+- Parity symbol evidence rejects declarations and aliases inside unsupported
+  inline module scopes instead of attributing them to the parent (FU-TST-R15).
+- Parity symbol evidence excludes cfg-disabled and test-only item scopes and
+  requires supported non-test configurations for conditional declarations (FU-TST-R18).
+- The ambient-environment test guard resolves `extern crate` aliases for
+  `var`, `var_os` and environment enumeration (FU-AMB-R01).
+- Test fixture peers that a mutant never contacts fail after 10 s instead of
+  hanging the suite, and the `mutants` job runs its 32 shards in a 12 GiB
+  memory cgroup (FU-FUZ-01).
+- The offline link check scans every `docs/**/*.md`, including the
+  development documents (FU-CI-R02).
+- `fuzz_coverage.py` rejects a fuzz-target claim for a function that exists
+  only under `cfg(test)` (FU-FUZ-R01).
+- Parity symbol evidence resolves the full module and type owner path and
+  aliases, not only the last path segment (FU-TST-R08).
+- The fuzz harnesses build AES-encrypted tickets that pass session
+  admission, give GSS legacy keys explicit policy permission and fail
+  loudly when a fixed context is rejected (FU-FUZ-R02).
+- The kpasswd no-retry tests observe TCP and UDP until the client
+  completes, with bounded deadlines (FU-TST-R17).
 
 Documentation:
 
 - The cache insertion methods document which entry wins (FU-DOC-16).
 - `error::Ccache::Io` says "read or written" (FU-DOC-22).
+- The compatibility report's recommendation and rustdoc name `rskrb5-ng`,
+  not the predecessor crate (FU-DOC-R05).
 
 ### Lint compliance
 
