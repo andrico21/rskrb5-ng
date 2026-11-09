@@ -11,7 +11,7 @@ mod tests {
     use core::error::Error;
 
     use rskrb5_ng::{
-        config::{Config, ConfigDiagnostic},
+        config::{Config, ConfigDiagnostic, ParseMode},
         error::Config as ConfigError,
     };
 
@@ -119,6 +119,41 @@ mod tests {
                 ],
             };
             assert_eq!(config.diagnostics().contains(&expected), unknown, "{text}");
+        }
+        Ok(())
+    }
+
+    /// Explicit local-name maps select the deferred consumer even without leaves.
+    #[test]
+    fn local_name_map_scopes_select_deferred_consumer() -> Result<(), Box<dyn Error>> {
+        for contents in ["", "Alice = local", "Alice = local\nBob = other"] {
+            let text = format!("[realms]\nR = {{\nauth_to_local_names = {{\n{contents}\n}}\n}}");
+            let config = Config::parse(&text)?;
+            assert_eq!(
+                config.diagnostics(),
+                &[ConfigDiagnostic::NotYetEffective {
+                    relation: "auth_to_local_names",
+                    package: "plan 2 WP-17",
+                }]
+            );
+            assert!(matches!(
+                Config::parse_with_mode(&text, ParseMode::Strict),
+                Err(ConfigError::NotYetEffective {
+                    relation: "auth_to_local_names",
+                    package: "plan 2 WP-17"
+                })
+            ));
+        }
+        for text in [
+            "[realms]\nR = {\n}",
+            "[realms]*\nR = {\n}\n[realms]\nR = {\nauth_to_local_names = {\n}\n}",
+        ] {
+            assert!(
+                Config::parse_with_mode(text, ParseMode::Strict)?
+                    .diagnostics()
+                    .is_empty(),
+                "omitted or discarded map selected a consumer"
+            );
         }
         Ok(())
     }

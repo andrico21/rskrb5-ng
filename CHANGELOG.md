@@ -386,6 +386,10 @@ Release workflow, CI docs and fixture scripts:
 
 #### Changes from the follow-up review
 
+- Explicit empty `auth_to_local_names` maps now produce the WP-17 deferred
+  diagnostic and fail Strict parsing. Populated maps report once per admitted
+  map rather than once per mapping entry (FU-CFG-R14).
+
 - Local principal mapping keys under `[realms]/<realm>/auth_to_local_names`
   may spell prohibited protocol selectors without selecting those protocols;
   actual selectors remain rejected (FU-CFG-R13).

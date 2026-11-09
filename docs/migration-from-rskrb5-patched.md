@@ -33,6 +33,14 @@ values to or from this crate needs the same versions.
 
 ## New configuration keys
 
+An explicit `auth_to_local_names = { ... }` subsection selects deferred local
+authorization even if it is empty (FU-CFG-R14). Compatible parsing reports one
+`NotYetEffective` diagnostic per admitted map; Strict parsing rejects it with
+relation `auth_to_local_names` and package `plan 2 WP-17`. Omit the subsection
+when no local-name mapping is intended. Finalized, discarded later scopes do
+not select it. This diagnostic policy is stricter than MIT's profile getter,
+which simply finds no relation in an empty subsection.
+
 Principal keys such as `krb4_get_tickets` or `pkinit_draft9` inside a realm's
 `auth_to_local_names` map now parse as names rather than protocol selections
 (FU-CFG-R13). Their case and first mapping value are retained. The exemption is

@@ -86,6 +86,18 @@ pub(super) fn empty_scopes(
     scopes: &BTreeSet<Vec<String>>,
 ) -> Result<(), Error> {
     for path in scopes {
+        if matches!(path.as_slice(), [section, _, key]
+            if section == "realms" && key == "auth_to_local_names")
+        {
+            realm_values::report(
+                ConfigDiagnostic::NotYetEffective {
+                    relation: "auth_to_local_names",
+                    package: "plan 2 WP-17",
+                },
+                config.libdefaults.parse_mode(),
+                &mut config.libdefaults.enctype_diagnostics,
+            )?;
+        }
         let valid = match path.as_slice() {
             [section] => SECTIONS.contains(&section.as_str()) || section == "logging",
             [section, _] => matches!(
