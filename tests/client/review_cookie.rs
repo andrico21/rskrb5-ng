@@ -76,7 +76,7 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(cookies, self.cookie.into_iter().collect::<Vec<_>>());
             let built = built_request_from_der(decoded, request)?;
-            synthetic_as_rep_with_reply_key(&built, built.nonce, &built.service, &self.key)
+            synthetic_as_rep_with_reply_key(&built, built.nonce(), built.service(), &self.key)
         }
     }
 
@@ -104,7 +104,7 @@ mod tests {
         let mut kdc = CookieKdc {
             calls: 0,
             key: derive_password_reply_key(
-                &request.client,
+                request.client(),
                 TESTUSER_PASSWORD,
                 &password_key_info(),
             )?,
@@ -113,12 +113,12 @@ mod tests {
         // When login retries the challenge.
         let session = login_tgt_with_password(
             &mut kdc,
-            request.client.clone(),
+            request.client().clone(),
             TESTUSER_PASSWORD,
             cookie_options()?,
         )?;
         // Then the KDC observes exactly the permitted retry data and completes login.
-        assert_eq!(session.client, request.client);
+        assert_eq!(session.client(), request.client());
         assert_eq!(kdc.calls, 2);
         Ok(())
     }
@@ -136,12 +136,12 @@ mod tests {
         // When login retries the challenge.
         let session = login_tgt_with_keytab(
             &mut kdc,
-            request.client.clone(),
+            request.client().clone(),
             &keytab_with_reply_key(3)?,
             cookie_options()?,
         )?;
         // Then only the fresh cookie and intended client data reach the KDC.
-        assert_eq!(session.client, request.client);
+        assert_eq!(session.client(), request.client());
         assert_eq!(kdc.calls, 2);
         Ok(())
     }
@@ -154,7 +154,7 @@ mod tests {
         let mut kdc = CookieKdc {
             calls: 0,
             key: derive_password_reply_key(
-                &request.client,
+                request.client(),
                 TESTUSER_PASSWORD,
                 &password_key_info(),
             )?,
@@ -163,12 +163,12 @@ mod tests {
         // When login retries.
         let session = login_tgt_with_password(
             &mut kdc,
-            request.client.clone(),
+            request.client().clone(),
             TESTUSER_PASSWORD,
             cookie_options()?,
         )?;
         // Then the exact retry-set check observes no cookie.
-        assert_eq!(session.client, request.client);
+        assert_eq!(session.client(), request.client());
         assert_eq!(kdc.calls, 2);
         Ok(())
     }
@@ -186,12 +186,12 @@ mod tests {
         // When login retries.
         let session = login_tgt_with_keytab(
             &mut kdc,
-            request.client.clone(),
+            request.client().clone(),
             &keytab_with_reply_key(3)?,
             cookie_options()?,
         )?;
         // Then the exact retry-set check observes no cookie.
-        assert_eq!(session.client, request.client);
+        assert_eq!(session.client(), request.client());
         assert_eq!(kdc.calls, 2);
         Ok(())
     }

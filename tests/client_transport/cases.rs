@@ -996,9 +996,9 @@ mod tests {
 
             bounded(Duration::from_secs(10), "password exchange peer task", task).await???;
             assert!(reply.is_krb_error());
-            assert_eq!(usize::from(reply.message_length), expected_response_len);
+            assert_eq!(usize::from(reply.message_length()), expected_response_len);
             assert_eq!(
-                reply.krb_error.ok_or("KRB-ERROR parsed")?.error_code,
+                reply.krb_error().ok_or("KRB-ERROR parsed")?.error_code,
                 KRB_ERR_RESPONSE_TOO_BIG
             );
             Ok::<_, TestError>(())

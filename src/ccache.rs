@@ -129,7 +129,7 @@ impl FromStr for CacheName {
 }
 
 /// Parsed MIT credential cache file.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct CCache {
     /// File format version, 1 to 4.
@@ -754,7 +754,7 @@ fn parse_config_entry(credential: &Credential) -> Option<ConfigEntry<'_>> {
     Some(ConfigEntry {
         key: key.as_str(),
         principal: principal.first().map(String::as_str),
-        value: &credential.ticket,
+        value: credential.ticket(),
     })
 }
 
@@ -998,30 +998,101 @@ impl Principal {
 #[non_exhaustive]
 pub struct Credential {
     /// Client principal.
-    pub client: Principal,
+    client: Principal,
     /// Server principal.
-    pub server: Principal,
+    server: Principal,
     /// Session key.
-    pub key: EncryptionKey,
+    key: EncryptionKey,
     /// Credential timestamps as POSIX seconds.
-    pub times: CredentialTimes,
+    times: CredentialTimes,
     /// Whether the ticket is encrypted in the session key.
-    pub is_skey: bool,
+    is_skey: bool,
     /// Kerberos ticket flags as the raw four bytes stored in ccache.
-    pub ticket_flags: [u8; 4],
+    ticket_flags: [u8; 4],
     /// Client addresses.
-    pub addresses: Vec<HostAddress>,
+    addresses: Vec<HostAddress>,
     /// Authorization data entries.
-    pub auth_data: Vec<AuthorizationDataEntry>,
+    auth_data: Vec<AuthorizationDataEntry>,
     /// Primary ticket DER bytes.
     #[cfg_attr(feature = "serde", serde(with = "payload"))]
-    pub ticket: Zeroizing<Vec<u8>>,
+    ticket: Zeroizing<Vec<u8>>,
     /// Second ticket DER bytes.
     #[cfg_attr(feature = "serde", serde(with = "payload"))]
-    pub second_ticket: Zeroizing<Vec<u8>>,
+    second_ticket: Zeroizing<Vec<u8>>,
 }
 
 impl Credential {
+    /// Mutably borrow timestamp metadata, which contains no credential bytes.
+    #[inline]
+    pub const fn times_mut(&mut self) -> &mut CredentialTimes {
+        &mut self.times
+    }
+    /// Mutably borrow client identity metadata without exposing credential storage.
+    #[inline]
+    pub const fn client_mut(&mut self) -> &mut Principal {
+        &mut self.client
+    }
+    /// Mutably borrow server identity metadata without exposing credential storage.
+    #[inline]
+    pub const fn server_mut(&mut self) -> &mut Principal {
+        &mut self.server
+    }
+    /// Borrow the client identity.
+    #[inline]
+    #[must_use]
+    pub const fn client(&self) -> &Principal {
+        &self.client
+    }
+    /// Borrow the server identity.
+    #[inline]
+    #[must_use]
+    pub const fn server(&self) -> &Principal {
+        &self.server
+    }
+    /// Return credential times.
+    #[inline]
+    #[must_use]
+    pub const fn times(&self) -> CredentialTimes {
+        self.times
+    }
+    /// Return the session-key ticket flag.
+    #[inline]
+    #[must_use]
+    pub const fn is_skey(&self) -> bool {
+        self.is_skey
+    }
+    /// Return ticket flag bytes.
+    #[inline]
+    #[must_use]
+    pub const fn ticket_flags(&self) -> [u8; 4] {
+        self.ticket_flags
+    }
+    /// Borrow client addresses.
+    #[inline]
+    #[must_use]
+    pub fn addresses(&self) -> &[HostAddress] {
+        &self.addresses
+    }
+    /// Replace the client identity metadata.
+    #[inline]
+    pub fn set_client(&mut self, value: Principal) {
+        self.client = value;
+    }
+    /// Replace the server identity metadata.
+    #[inline]
+    pub fn set_server(&mut self, value: Principal) {
+        self.server = value;
+    }
+    /// Replace credential times.
+    #[inline]
+    pub const fn set_times(&mut self, value: CredentialTimes) {
+        self.times = value;
+    }
+    /// Replace ticket flags.
+    #[inline]
+    pub const fn set_ticket_flags(&mut self, value: [u8; 4]) {
+        self.ticket_flags = value;
+    }
     /// Serialized credential size, including every variable-length secret field.
     fn encoded_len(&self, version: u8) -> usize {
         let length = self
@@ -1029,14 +1100,14 @@ impl Credential {
             .encoded_len(version)
             .saturating_add(self.server.encoded_len(version))
             .saturating_add(if version == 3 { 45 } else { 43 })
-            .saturating_add(self.key.value.len())
-            .saturating_add(self.ticket.len())
-            .saturating_add(self.second_ticket.len());
+            .saturating_add(self.key().value.len())
+            .saturating_add(self.ticket().len())
+            .saturating_add(self.second_ticket().len());
         let with_addresses = self.addresses.iter().fold(length, |size, address| {
             size.saturating_add(6).saturating_add(address.address.len())
         });
-        self.auth_data.iter().fold(with_addresses, |size, entry| {
-            size.saturating_add(6).saturating_add(entry.data.len())
+        self.auth_data().iter().fold(with_addresses, |size, entry| {
+            size.saturating_add(6).saturating_add(entry.data().len())
         })
     }
     /// Creates a `Credential` from its required fields.
@@ -1088,7 +1159,71 @@ impl Credential {
     #[must_use]
     #[inline]
     pub fn with_second_ticket(mut self, value: Zeroizing<Vec<u8>>) -> Self {
+        payload::erase(&mut self.second_ticket);
         self.second_ticket = value;
+        self
+    }
+
+    /// Borrow the session key.
+    #[must_use]
+    #[inline]
+    pub const fn key(&self) -> &EncryptionKey {
+        &self.key
+    }
+
+    /// Replace the session key, zeroing the old key bytes.
+    #[must_use]
+    #[inline]
+    pub fn set_key(mut self, value: EncryptionKey) -> Self {
+        self.key = value;
+        self
+    }
+
+    /// Borrow the primary ticket bytes.
+    #[must_use]
+    #[inline]
+    pub const fn ticket(&self) -> &Zeroizing<Vec<u8>> {
+        &self.ticket
+    }
+
+    /// Replace the primary ticket, zeroing the old bytes.
+    #[must_use]
+    #[inline]
+    pub fn set_ticket(mut self, value: Zeroizing<Vec<u8>>) -> Self {
+        payload::erase(&mut self.ticket);
+        self.ticket = value;
+        self
+    }
+
+    /// Borrow the secondary ticket bytes.
+    #[must_use]
+    #[inline]
+    pub fn second_ticket(&self) -> &[u8] {
+        &self.second_ticket
+    }
+
+    /// Replace the secondary ticket, zeroing the old bytes.
+    #[must_use]
+    #[inline]
+    pub fn set_second_ticket(mut self, value: Zeroizing<Vec<u8>>) -> Self {
+        payload::erase(&mut self.second_ticket);
+        self.second_ticket = value;
+        self
+    }
+
+    /// Borrow the authorization data entries.
+    #[must_use]
+    #[inline]
+    pub fn auth_data(&self) -> &[AuthorizationDataEntry] {
+        &self.auth_data
+    }
+
+    /// Replace the authorization data, zeroing the old entries' bytes.
+    #[must_use]
+    #[inline]
+    pub fn set_auth_data(mut self, value: Vec<AuthorizationDataEntry>) -> Self {
+        self.auth_data.clear();
+        self.auth_data = value;
         self
     }
 
@@ -1202,11 +1337,11 @@ impl Credential {
     fn write_to(&self, out: &mut Vec<u8>, version: u8, endian: Endian) -> Result<(), Error> {
         self.client.write_to(out, version, endian)?;
         self.server.write_to(out, version, endian)?;
-        write_i16_checked(out, self.key.etype, endian)?;
+        write_i16_checked(out, self.key().etype, endian)?;
         if version == 3 {
-            write_i16_checked(out, self.key.etype, endian)?;
+            write_i16_checked(out, self.key().etype, endian)?;
         }
-        write_data(out, &self.key.value, endian)?;
+        write_data(out, &self.key().value, endian)?;
         write_u32(out, self.times.auth_time, endian);
         write_u32(out, self.times.start_time, endian);
         write_u32(out, self.times.end_time, endian);
@@ -1219,13 +1354,13 @@ impl Credential {
             address.write_to(out, endian)?;
         }
 
-        write_i32_len_checked(out, self.auth_data.len(), endian)?;
-        for entry in &self.auth_data {
+        write_i32_len_checked(out, self.auth_data().len(), endian)?;
+        for entry in self.auth_data() {
             entry.write_to(out, endian)?;
         }
 
-        write_data(out, &self.ticket, endian)?;
-        write_data(out, &self.second_ticket, endian)?;
+        write_data(out, self.ticket(), endian)?;
+        write_data(out, self.second_ticket(), endian)?;
         Ok(())
     }
 }
@@ -1282,15 +1417,15 @@ impl CredentialMetadata {
             server_realm: credential.server.realm.clone(),
             client_components: credential.client.components.clone(),
             server_components: credential.server.components.clone(),
-            etype: credential.key.etype,
-            key_length: credential.key.value.len(),
+            etype: credential.key().etype,
+            key_length: credential.key().value.len(),
             times: credential.times,
             is_skey: credential.is_skey,
             ticket_flags: credential.ticket_flags,
             address_count: credential.addresses.len(),
-            auth_data_count: credential.auth_data.len(),
-            ticket_length: credential.ticket.len(),
-            second_ticket_length: credential.second_ticket.len(),
+            auth_data_count: credential.auth_data().len(),
+            ticket_length: credential.ticket().len(),
+            second_ticket_length: credential.second_ticket().len(),
             is_config_entry: is_config_credential(credential),
         }
     }
@@ -1302,7 +1437,7 @@ impl CredentialMetadata {
 #[non_exhaustive]
 pub struct EncryptionKey {
     /// Kerberos encryption type id.
-    pub etype: i32,
+    etype: i32,
     /// Raw key bytes.
     #[cfg_attr(
         feature = "serde",
@@ -1311,10 +1446,16 @@ pub struct EncryptionKey {
             deserialize_with = "payload::deserialize_key"
         )
     )]
-    pub value: KeyBytes,
+    value: KeyBytes,
 }
 
 impl EncryptionKey {
+    /// Return the encryption type.
+    #[inline]
+    #[must_use]
+    pub const fn etype(&self) -> i32 {
+        self.etype
+    }
     /// Creates a `EncryptionKey` from its required fields.
     #[must_use]
     #[inline]
@@ -1326,6 +1467,22 @@ impl EncryptionKey {
             etype,
             value: value.into(),
         }
+    }
+
+    /// Borrow the raw key bytes.
+    #[must_use]
+    #[inline]
+    pub const fn value(&self) -> &KeyBytes {
+        &self.value
+    }
+
+    /// Replace the key bytes, zeroing the old bytes.
+    #[inline]
+    pub fn set_value<V>(&mut self, value: V)
+    where
+        V: Into<KeyBytes>,
+    {
+        self.value = value.into();
     }
 }
 
@@ -1422,18 +1579,40 @@ impl HostAddress {
 #[non_exhaustive]
 pub struct AuthorizationDataEntry {
     /// Authorization data type id.
-    pub ad_type: i32,
+    ad_type: i32,
     /// Raw authorization data bytes.
     #[cfg_attr(feature = "serde", serde(with = "payload"))]
-    pub data: Zeroizing<Vec<u8>>,
+    data: Zeroizing<Vec<u8>>,
 }
 
 impl AuthorizationDataEntry {
+    /// Return the authorization-data type.
+    #[inline]
+    #[must_use]
+    pub const fn ad_type(&self) -> i32 {
+        self.ad_type
+    }
     /// Creates a `AuthorizationDataEntry` from its required fields.
     #[must_use]
     #[inline]
     pub const fn new(ad_type: i32, data: Zeroizing<Vec<u8>>) -> Self {
         Self { ad_type, data }
+    }
+
+    /// Borrow the authorization data bytes.
+    #[must_use]
+    #[inline]
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+
+    /// Replace the authorization data, zeroing the old bytes.
+    #[must_use]
+    #[inline]
+    pub fn set_data(mut self, value: Zeroizing<Vec<u8>>) -> Self {
+        payload::erase(&mut self.data);
+        self.data = value;
+        self
     }
 
     /// Parse an authorization-data entry at `offset`, advancing it past the

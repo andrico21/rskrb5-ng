@@ -68,7 +68,8 @@ pub fn checksum(
     body: &rasn_kerberos::KrbSafeBody,
     key: &EncryptionKey,
 ) -> Result<rasn_kerberos::Checksum, Error> {
-    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype =
+        selection::enctype(key.etype())?.ok_or_else(|| Error::UnsupportedEtype(key.etype()))?;
     let input = checksum_input(
         body,
         &Integer::from(KRB5_PVNO),
@@ -77,7 +78,7 @@ pub fn checksum(
     Ok(rasn_kerberos::Checksum {
         r#type: etype.checksum_type_id(),
         checksum: etype
-            .checksum(&key.value, &input, KRB_SAFE_CHECKSUM_USAGE)?
+            .checksum(key.value(), &input, KRB_SAFE_CHECKSUM_USAGE)?
             .into(),
     })
 }
@@ -97,15 +98,15 @@ pub fn verify_krb_safe_checksum(
 ) -> Result<(), Error> {
     let etype = selection::checksum(krb_safe.cksum.r#type)?
         .ok_or(Error::UnsupportedChecksumType(krb_safe.cksum.r#type))?;
-    if etype.etype_id() != key.etype {
+    if etype.etype_id() != key.etype() {
         return Err(Error::KeyChecksumTypeMismatch {
-            key_etype: key.etype,
+            key_etype: key.etype(),
             checksum_type: krb_safe.cksum.r#type,
         });
     }
     let input = checksum_input(&krb_safe.body, &krb_safe.pvno, &krb_safe.msg_type)?;
     if !etype.verify_checksum(
-        &key.value,
+        key.value(),
         &input,
         krb_safe.cksum.checksum.as_ref(),
         KRB_SAFE_CHECKSUM_USAGE,

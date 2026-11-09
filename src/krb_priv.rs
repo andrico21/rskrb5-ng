@@ -192,7 +192,8 @@ pub fn build<P>(
 where
     P: AsRef<[u8]>,
 {
-    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype =
+        selection::enctype(key.etype())?.ok_or_else(|| Error::UnsupportedEtype(key.etype()))?;
     let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     build_krb_priv_with_confounder(user_data, options, key, kvno, &confounder)
@@ -216,7 +217,7 @@ pub fn build_krb_priv_with_confounder<P>(
 where
     P: AsRef<[u8]>,
 {
-    selection::reject_enctype(key.etype)?;
+    selection::reject_enctype(key.etype())?;
     if let Some(timestamp) = &options.timestamp
         && timestamp.0.timestamp_subsec_nanos() != 0
     {
@@ -259,15 +260,16 @@ pub fn encrypt_krb_priv_enc_part(
     kvno: Option<u32>,
     confounder: &[u8],
 ) -> Result<rasn_kerberos::EncryptedData, Error> {
-    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype =
+        selection::enctype(key.etype())?.ok_or_else(|| Error::UnsupportedEtype(key.etype()))?;
     let cipher = etype.encrypt_message_with_confounder(
-        &key.value,
+        key.value(),
         plaintext,
         KRB_PRIV_ENCPART_USAGE,
         confounder,
     )?;
     Ok(rasn_kerberos::EncryptedData {
-        etype: key.etype,
+        etype: key.etype(),
         kvno,
         cipher: cipher.into(),
     })
@@ -286,9 +288,9 @@ pub fn decrypt_krb_priv_enc_part(
     krb_priv: &rasn_kerberos::KrbPriv,
     key: &EncryptionKey,
 ) -> Result<rasn_kerberos::EncKrbPrivPart, Error> {
-    if krb_priv.enc_part.etype != key.etype {
+    if krb_priv.enc_part.etype != key.etype() {
         return Err(Error::KeyEtypeMismatch {
-            key_etype: key.etype,
+            key_etype: key.etype(),
             encrypted_data_etype: krb_priv.enc_part.etype,
         });
     }
@@ -296,11 +298,11 @@ pub fn decrypt_krb_priv_enc_part(
     let etype = selection::enctype(krb_priv.enc_part.etype)?
         .ok_or(Error::UnsupportedEtype(krb_priv.enc_part.etype))?;
     let plaintext = Zeroizing::new(etype.decrypt_message(
-        &key.value,
+        key.value(),
         krb_priv.enc_part.cipher.as_ref(),
         KRB_PRIV_ENCPART_USAGE,
     )?);
-    decode_enc_krb_priv_part(encrypted_der(&plaintext, key.etype))
+    decode_enc_krb_priv_part(encrypted_der(&plaintext, key.etype()))
 }
 
 /// Decode a DER value with a typed error.

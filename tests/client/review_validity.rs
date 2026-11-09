@@ -16,13 +16,18 @@ mod tests {
     fn cached_service_rejects_invalid_flag() -> Result<(), TestError> {
         let tgt = current_tgt_session(1, 60)?;
         let mut ticket = tgt.clone();
-        ticket.service = sample_service_principal();
+        ticket.set_service(sample_service_principal());
         align_ticket_service(&mut ticket)?;
-        ticket.ticket_flags =
-            (u32::from_be_bytes(ticket.ticket_flags) | 0x0100_0000_u32).to_be_bytes();
+        ticket.set_ticket_flags(
+            (u32::from_be_bytes(ticket.ticket_flags()) | 0x0100_0000_u32).to_be_bytes(),
+        );
         let mut client = Tokio::from_tgt_session(config_without_kdcs()?, KdcProtocol::Tcp, tgt);
         client.cache_service_ticket(ticket.clone())?;
-        assert!(client.cached_service_ticket(ticket.service).is_none());
+        assert!(
+            client
+                .cached_service_ticket(ticket.service().clone())
+                .is_none()
+        );
         Ok(())
     }
 
@@ -34,16 +39,17 @@ mod tests {
         let mut removed = Vec::new();
         for invalid_flag in [0_u32, 0x0100_0000] {
             let mut tgt = valid.clone();
-            tgt.ticket_flags =
-                (u32::from_be_bytes(tgt.ticket_flags) | KDC_OPTION_RENEWABLE | invalid_flag)
-                    .to_be_bytes();
-            tgt.renew_till = Some(
-                tgt.end_time
+            tgt.set_ticket_flags(
+                (u32::from_be_bytes(tgt.ticket_flags()) | KDC_OPTION_RENEWABLE | invalid_flag)
+                    .to_be_bytes(),
+            );
+            tgt.set_renew_till(Some(
+                tgt.end_time()
                     .checked_add(Duration::from_hours(1))
                     .context("renewal horizon")?,
-            );
+            ));
             let mut ticket = tgt.clone();
-            ticket.service = sample_service_principal();
+            ticket.set_service(sample_service_principal());
             align_ticket_service(&mut ticket)?;
             let mut client = Tokio::from_tgt_session(config_without_kdcs()?, KdcProtocol::Tcp, tgt);
             client.cache_service_ticket(ticket)?;

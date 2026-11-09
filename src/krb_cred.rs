@@ -85,22 +85,23 @@ fn decrypt_part(
     krb_cred: &rasn_kerberos::KrbCred,
     key: &EncryptionKey,
 ) -> Result<rasn_kerberos::EncKrbCredPart, Error> {
-    if key.etype != krb_cred.enc_part.etype {
+    if key.etype() != krb_cred.enc_part.etype {
         return Err(Error::KeyEtypeMismatch {
-            key_etype: key.etype,
+            key_etype: key.etype(),
             encrypted_data_etype: krb_cred.enc_part.etype,
         });
     }
-    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype =
+        selection::enctype(key.etype())?.ok_or_else(|| Error::UnsupportedEtype(key.etype()))?;
     let plaintext = SecretDer::new(
         etype.decrypt_message(
-            &key.value,
+            key.value(),
             krb_cred.enc_part.cipher.as_ref(),
             KRB_CRED_ENCPART_USAGE,
         )?,
         "krb-cred decrypt",
     );
-    decode_enc_krb_cred_part(encrypted_der(&plaintext, key.etype))
+    decode_enc_krb_cred_part(encrypted_der(&plaintext, key.etype()))
 }
 
 /// Decrypt a KRB-CRED encrypted part and convert its tickets to ccache credentials.
@@ -152,14 +153,14 @@ pub fn ccache_credentials_to_krb_cred_parts(
     let mut ticket_info = Vec::with_capacity(credentials.len());
 
     for credential in credentials {
-        if !credential.auth_data.is_empty() {
+        if !credential.auth_data().is_empty() {
             return Err(Error::UnsupportedCredentialAuthData);
         }
-        if !credential.second_ticket.is_empty() {
+        if !credential.second_ticket().is_empty() {
             return Err(Error::UnsupportedSecondTicket);
         }
 
-        let ticket = decode_ticket(&credential.ticket).map_err(ticket_error)?;
+        let ticket = decode_ticket(credential.ticket()).map_err(ticket_error)?;
         tickets.push(ticket);
         ticket_info.push(ccache_credential_to_krb_cred_info(credential)?);
     }
@@ -189,7 +190,8 @@ pub fn encrypt_ccache_credentials(
     credentials: &[ccache::Credential],
     key: &EncryptionKey,
 ) -> Result<rasn_kerberos::KrbCred, Error> {
-    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype =
+        selection::enctype(key.etype())?.ok_or_else(|| Error::UnsupportedEtype(key.etype()))?;
     let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     encrypt_ccache_credentials_to_krb_cred_with_confounder(credentials, key, &confounder)
@@ -209,11 +211,12 @@ pub fn encrypt_ccache_credentials_to_krb_cred_with_confounder(
     key: &EncryptionKey,
     confounder: &[u8],
 ) -> Result<rasn_kerberos::KrbCred, Error> {
-    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype =
+        selection::enctype(key.etype())?.ok_or_else(|| Error::UnsupportedEtype(key.etype()))?;
     let (tickets, enc_part) = ccache_credentials_to_krb_cred_parts(credentials)?;
     let plaintext = SecretDer::new(encode_der("EncKrbCredPart", &enc_part)?, "krb-cred encode");
     let cipher = etype.encrypt_message_with_confounder(
-        &key.value,
+        key.value(),
         &plaintext,
         KRB_CRED_ENCPART_USAGE,
         confounder,
@@ -223,7 +226,7 @@ pub fn encrypt_ccache_credentials_to_krb_cred_with_confounder(
         msg_type: Integer::from(KRB_CRED_MSG_TYPE),
         tickets,
         enc_part: rasn_kerberos::EncryptedData {
-            etype: key.etype,
+            etype: key.etype(),
             kvno: None,
             cipher: cipher.into(),
         },

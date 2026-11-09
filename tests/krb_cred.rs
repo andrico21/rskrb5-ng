@@ -170,29 +170,32 @@ mod tests {
 
         assert_eq!(credentials.len(), 2);
         let credential = credentials.first().context("a first credential")?;
-        assert_eq!(credential.client.realm, "ATHENA.MIT.EDU");
-        assert_eq!(credential.client.components, ["hftsai", "extra"]);
-        assert_eq!(credential.server.realm, "ATHENA.MIT.EDU");
-        assert_eq!(credential.server.components, ["hftsai", "extra"]);
-        assert_eq!(credential.key.etype, 1_i32);
-        assert_eq!(credential.key.value.as_slice(), b"12345678");
-        assert_eq!(credential.times.auth_time, TEST_TIME_SECONDS);
-        assert_eq!(credential.times.start_time, TEST_TIME_SECONDS);
-        assert_eq!(credential.times.end_time, TEST_TIME_SECONDS);
-        assert_eq!(credential.times.renew_till, TEST_TIME_SECONDS);
-        assert_eq!(credential.ticket_flags, [0xfe, 0xdc, 0xba, 0x98]);
-        assert_eq!(credential.addresses.len(), 2);
-        let address = credential.addresses.first().context("a first address")?;
+        assert_eq!(credential.client().realm, "ATHENA.MIT.EDU");
+        assert_eq!(credential.client().components, ["hftsai", "extra"]);
+        assert_eq!(credential.server().realm, "ATHENA.MIT.EDU");
+        assert_eq!(credential.server().components, ["hftsai", "extra"]);
+        assert_eq!(credential.key().etype(), 1_i32);
+        assert_eq!(credential.key().value().as_slice(), b"12345678");
+        assert_eq!(credential.times().auth_time, TEST_TIME_SECONDS);
+        assert_eq!(credential.times().start_time, TEST_TIME_SECONDS);
+        assert_eq!(credential.times().end_time, TEST_TIME_SECONDS);
+        assert_eq!(credential.times().renew_till, TEST_TIME_SECONDS);
+        assert_eq!(credential.ticket_flags(), [0xfe, 0xdc, 0xba, 0x98]);
+        assert_eq!(credential.addresses().len(), 2);
+        let address = credential.addresses().first().context("a first address")?;
         assert_eq!(address.addr_type, 2_i32);
         assert_eq!(address.address, hex::decode("12d00023")?);
         assert_eq!(
-            credential.ticket.as_slice(),
+            credential.ticket().as_slice(),
             der::encode(krb_cred.tickets.first().context("a first ticket")?)
                 .context("ticket encodes")?
         );
-        assert!(credential.auth_data.is_empty(), "no auth-data is converted");
         assert!(
-            credential.second_ticket.is_empty(),
+            credential.auth_data().is_empty(),
+            "no auth-data is converted"
+        );
+        assert!(
+            credential.second_ticket().is_empty(),
             "no second ticket is converted"
         );
         Ok(())
@@ -216,13 +219,13 @@ mod tests {
         let [first_ticket, second_ticket] = krb_cred.tickets.as_slice() else {
             return Err("two tickets".into());
         };
-        assert_eq!(first.client.components, ["hftsai", "extra"]);
+        assert_eq!(first.client().components, ["hftsai", "extra"]);
         assert_eq!(
-            first.ticket.as_slice(),
+            first.ticket().as_slice(),
             der::encode(first_ticket).context("ticket encodes")?
         );
         assert_eq!(
-            second.ticket.as_slice(),
+            second.ticket().as_slice(),
             der::encode(second_ticket).context("ticket encodes")?
         );
         Ok(())
@@ -245,7 +248,7 @@ mod tests {
             credentials
                 .first()
                 .context("a first credential")?
-                .server
+                .server()
                 .realm,
             "ATHENA.MIT.EDU"
         );
@@ -253,7 +256,7 @@ mod tests {
             credentials
                 .get(1)
                 .context("a second credential")?
-                .times
+                .times()
                 .end_time,
             TEST_TIME_SECONDS
         );
@@ -315,8 +318,10 @@ mod tests {
     fn exports_zero_ccache_times_without_start_time_fallback() -> Result<(), TestError> {
         let mut credentials = fixture_ccache_credentials()?;
         let first = credentials.first_mut().context("a first credential")?;
-        first.times.start_time = 0;
-        first.times.renew_till = 0;
+        let mut times = first.times();
+        times.start_time = 0;
+        times.renew_till = 0;
+        first.set_times(times);
         let key = reply_key()?;
 
         let krb_cred = encrypt_ccache_credentials_to_krb_cred_with_confounder(
@@ -332,11 +337,11 @@ mod tests {
             round_tripped
                 .first()
                 .context("a first imported credential")?
-                .times,
+                .times(),
             credentials
                 .first()
                 .context("a first exported credential")?
-                .times
+                .times()
         );
         Ok(())
     }
@@ -379,10 +384,13 @@ mod tests {
     #[test]
     fn rejects_ccache_credentials_with_unrepresentable_fields() -> Result<(), TestError> {
         let mut with_auth_data = fixture_ccache_credentials()?;
-        with_auth_data
-            .first_mut()
-            .context("a first credential")?
-            .auth_data = vec![ccache::AuthorizationDataEntry::new(1, vec![2, 3].into())];
+        let first = with_auth_data.first_mut().context("a first credential")?;
+        *first = first
+            .clone()
+            .set_auth_data(vec![ccache::AuthorizationDataEntry::new(
+                1,
+                vec![2, 3].into(),
+            )]);
 
         let auth_data_error = ccache_credentials_to_krb_cred_parts(&with_auth_data)
             .err()
@@ -394,10 +402,12 @@ mod tests {
         ));
 
         let mut with_second_ticket = fixture_ccache_credentials()?;
-        with_second_ticket
+        let secondary = with_second_ticket
             .first_mut()
-            .context("a first credential")?
-            .second_ticket = vec![0x61, 0x03, 0x02, 0x01, 0x05].into();
+            .context("a first credential")?;
+        *secondary = secondary
+            .clone()
+            .set_second_ticket(vec![0x61, 0x03, 0x02, 0x01, 0x05].into());
 
         let second_ticket_error = ccache_credentials_to_krb_cred_parts(&with_second_ticket)
             .err()
@@ -466,11 +476,11 @@ mod tests {
     /// Builds the fixture KRB-CRED with `enc_part` encrypted under the reply key.
     fn encrypted_krb_cred(enc_part: &EncKrbCredPart) -> Result<KrbCred, TestError> {
         let key = reply_key()?;
-        let etype = KerberosEtype::from_etype_id(key.etype).context("supported etype")?;
+        let etype = KerberosEtype::from_etype_id(key.etype()).context("supported etype")?;
         let plaintext = der::encode(enc_part).context("EncKrbCredPart encodes")?;
         let cipher = etype
             .encrypt_message_with_confounder(
-                &key.value,
+                key.value(),
                 &plaintext,
                 KRB_CRED_ENCPART_USAGE,
                 &hex::decode(CONFOUNDER)?,
@@ -482,7 +492,7 @@ mod tests {
             msg_type: Integer::from(KRB_CRED_MSG_TYPE),
             tickets: fixture.tickets,
             enc_part: EncryptedData {
-                etype: key.etype,
+                etype: key.etype(),
                 kvno: Some(7),
                 cipher: cipher.into(),
             },

@@ -59,7 +59,7 @@ mod tests {
             .to_ccache_credential()
             .context("service ticket converts")?;
         // MIT kvno can store host-based service tickets as NT-PRINCIPAL in ccache.
-        service_credential.server.name_type = 1_i32;
+        service_credential.server_mut().name_type = 1_i32;
         make_credential_current(&mut service_credential, now)?;
         cache.credentials_mut().push(tgt_credential);
         cache.credentials_mut().push(service_credential);
@@ -70,14 +70,14 @@ mod tests {
             .context("cached service ticket is returned")?;
 
         assert_eq!(
-            client.tgt_session().context("TGT loaded")?.service,
-            tgt.service
+            client.tgt_session().context("TGT loaded")?.service(),
+            tgt.service()
         );
         assert_eq!(client.cached_service_ticket_count(), 1);
-        assert_eq!(returned.client, service_ticket.client);
-        assert_eq!(returned.service, service_ticket.service);
-        assert_eq!(returned.session_key, service_ticket.session_key);
-        assert_eq!(returned.ticket, service_ticket.ticket);
+        assert_eq!(returned.client(), service_ticket.client());
+        assert_eq!(returned.service(), service_ticket.service());
+        assert_eq!(returned.session_key(), service_ticket.session_key());
+        assert_eq!(returned.ticket(), service_ticket.ticket());
         Ok(())
     }
 
@@ -93,25 +93,27 @@ mod tests {
                 .context("current time is after unix epoch")?
                 .as_secs(),
         )?;
-        service_ticket.start_time = now
-            .checked_sub(Duration::from_mins(1))
-            .context("start time")?;
-        service_ticket.end_time = now
-            .checked_add(Duration::from_hours(1))
-            .context("end time")?;
+        service_ticket.set_start_time(
+            now.checked_sub(Duration::from_mins(1))
+                .context("start time")?,
+        );
+        service_ticket.set_end_time(
+            now.checked_add(Duration::from_hours(1))
+                .context("end time")?,
+        );
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
         client.cache_service_ticket(service_ticket.clone())?;
 
         let cached = client
             .cached_service_ticket(sample_service_principal())
             .context("valid cached service ticket is returned")?;
-        assert_eq!(cached.service, service_ticket.service);
-        assert_eq!(cached.session_key, service_ticket.session_key);
+        assert_eq!(cached.service(), service_ticket.service());
+        assert_eq!(cached.session_key(), service_ticket.session_key());
 
         let removed = client
             .remove_cached_service_ticket(sample_service_principal())
             .context("cached service ticket is removed")?;
-        assert_eq!(removed.ticket, service_ticket.ticket);
+        assert_eq!(removed.ticket(), service_ticket.ticket());
         assert_eq!(client.cached_service_ticket_count(), 0);
         assert!(
             client
@@ -129,19 +131,21 @@ mod tests {
         let service_session = |remaining_minutes: u64, ticket: &[u8]| -> Result<_, TestError> {
             let now = SystemTime::now();
             let mut service_ticket = sample_service_ticket_session(&tgt)?;
-            service_ticket.ticket = marked_ticket(ticket)?.into();
+            service_ticket.set_ticket(marked_ticket(ticket)?.into());
             align_ticket_service(&mut service_ticket)?;
-            service_ticket.auth_time = now
-                .checked_sub(Duration::from_mins(5))
-                .context("auth time")?;
-            service_ticket.start_time = service_ticket.auth_time;
-            service_ticket.end_time = now
-                .checked_add(Duration::from_mins(remaining_minutes))
-                .context("end time")?;
-            service_ticket.renew_till = Some(
+            service_ticket.set_auth_time(
+                now.checked_sub(Duration::from_mins(5))
+                    .context("auth time")?,
+            );
+            service_ticket.set_start_time(service_ticket.auth_time());
+            service_ticket.set_end_time(
+                now.checked_add(Duration::from_mins(remaining_minutes))
+                    .context("end time")?,
+            );
+            service_ticket.set_renew_till(Some(
                 now.checked_add(Duration::from_hours(24))
                     .context("renew time")?,
-            );
+            ));
             Ok(service_ticket)
         };
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
@@ -152,9 +156,9 @@ mod tests {
             client
                 .cached_service_ticket(sample_service_principal())
                 .context("longer service ticket remains")?
-                .ticket
+                .ticket()
                 .as_slice(),
-            service_session(120, b"service-long")?.ticket.as_slice()
+            service_session(120, b"service-long")?.ticket().as_slice()
         );
 
         client.cache_service_ticket(service_session(180, b"service-longer")?)?;
@@ -162,9 +166,9 @@ mod tests {
             client
                 .cached_service_ticket(sample_service_principal())
                 .context("longer service ticket is selected")?
-                .ticket
+                .ticket()
                 .as_slice(),
-            service_session(180, b"service-longer")?.ticket.as_slice()
+            service_session(180, b"service-longer")?.ticket().as_slice()
         );
         assert_eq!(client.cached_service_ticket_count(), 1);
         Ok(())
@@ -200,12 +204,14 @@ mod tests {
                 .context("current time is after unix epoch")?
                 .as_secs(),
         )?;
-        service_ticket.start_time = now
-            .checked_sub(Duration::from_mins(10))
-            .context("start time")?;
-        service_ticket.end_time = now
-            .checked_sub(Duration::from_mins(1))
-            .context("end time")?;
+        service_ticket.set_start_time(
+            now.checked_sub(Duration::from_mins(10))
+                .context("start time")?,
+        );
+        service_ticket.set_end_time(
+            now.checked_sub(Duration::from_mins(1))
+                .context("end time")?,
+        );
 
         let mut config = Config::new();
         drop(
@@ -249,30 +255,36 @@ mod tests {
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
 
         let mut expired_referral_tgt = sample_referral_tgt_session("EXPIRED.GOKRB5")?;
-        expired_referral_tgt.auth_time = expired_start;
-        expired_referral_tgt.start_time = expired_start;
-        expired_referral_tgt.end_time = expired_end;
-        expired_referral_tgt.renew_till = None;
+        expired_referral_tgt.set_auth_time(expired_start);
+        expired_referral_tgt.set_start_time(expired_start);
+        expired_referral_tgt.set_end_time(expired_end);
+        expired_referral_tgt.set_renew_till(None);
         client
             .cache_tgt_session(expired_referral_tgt)
             .context("expired referral TGT caches")?;
 
         let mut expired_service_ticket = sample_service_ticket_session(&tgt)?;
-        expired_service_ticket.service =
-            Principal::new("TEST.GOKRB5", 2, ["HTTP", "expired.test.gokrb5"]);
+        expired_service_ticket.set_service(Principal::new(
+            "TEST.GOKRB5",
+            2,
+            ["HTTP", "expired.test.gokrb5"],
+        ));
         align_ticket_service(&mut expired_service_ticket)?;
-        expired_service_ticket.start_time = expired_start;
-        expired_service_ticket.end_time = expired_end;
-        expired_service_ticket.renew_till = None;
+        expired_service_ticket.set_start_time(expired_start);
+        expired_service_ticket.set_end_time(expired_end);
+        expired_service_ticket.set_renew_till(None);
         client.cache_service_ticket(expired_service_ticket)?;
 
         let mut renewable_service_ticket = sample_service_ticket_session(&tgt)?;
-        renewable_service_ticket.service =
-            Principal::new("TEST.GOKRB5", 2, ["HTTP", "renewable.test.gokrb5"]);
+        renewable_service_ticket.set_service(Principal::new(
+            "TEST.GOKRB5",
+            2,
+            ["HTTP", "renewable.test.gokrb5"],
+        ));
         align_ticket_service(&mut renewable_service_ticket)?;
-        renewable_service_ticket.start_time = expired_start;
-        renewable_service_ticket.end_time = expired_end;
-        renewable_service_ticket.renew_till = Some(future_renew_till);
+        renewable_service_ticket.set_start_time(expired_start);
+        renewable_service_ticket.set_end_time(expired_end);
+        renewable_service_ticket.set_renew_till(Some(future_renew_till));
         client.cache_service_ticket(renewable_service_ticket.clone())?;
 
         let pruned = client.prune_unusable_sessions();
@@ -291,12 +303,12 @@ mod tests {
         assert_eq!(client.cached_service_ticket_count(), 0);
         assert!(
             client
-                .cached_service_ticket(renewable_service_ticket.service.clone())
+                .cached_service_ticket(renewable_service_ticket.service().clone())
                 .is_none()
         );
         assert!(
             client
-                .remove_cached_service_ticket(renewable_service_ticket.service)
+                .remove_cached_service_ticket(renewable_service_ticket.service().clone())
                 .is_none()
         );
         Ok(())
@@ -307,7 +319,7 @@ mod tests {
     #[test]
     fn tokio_client_prunes_expired_nonrenewable_primary_tgt() -> Result<(), TestError> {
         let mut tgt = current_tgt_session(70, 0)?;
-        tgt.renew_till = None;
+        tgt.set_renew_till(None);
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt);
 
         let pruned = client.prune_unusable_sessions();
@@ -384,24 +396,27 @@ mod tests {
         make_credential_current(&mut service_credential, now)?;
 
         let mut other_tgt = tgt_credential.clone();
-        other_tgt.client = other_client.clone();
-        other_tgt.server = ccache::Principal::new(
+        other_tgt.set_client(other_client.clone());
+        other_tgt.set_server(ccache::Principal::new(
             "OTHER.REALM",
             2,
             vec!["krbtgt".to_owned(), "OTHER.REALM".to_owned()],
-        );
-        other_tgt.key.value = vec![0xee].into();
-        other_tgt.times.end_time = now + 2 * 60 * 60;
-        other_tgt.times.renew_till = now + 3 * 60 * 60;
+        ));
+        let etype = other_tgt.key().etype();
+        other_tgt = other_tgt.set_key(ccache::EncryptionKey::new(etype, vec![0xee]));
+        other_tgt.times_mut().end_time = now + 2 * 60 * 60;
+        other_tgt.times_mut().renew_till = now + 3 * 60 * 60;
 
         let mut other_service = service_credential.clone();
-        other_service.client = other_client;
-        other_service.server = ccache::Principal::new(
+        other_service.set_client(other_client);
+        other_service.set_server(ccache::Principal::new(
             "OTHER.REALM",
             2,
             vec!["HTTP".to_owned(), "other.test.gokrb5".to_owned()],
-        );
-        other_service.key.value = vec![0xdd].into();
+        ));
+        let service_etype = other_service.key().etype();
+        other_service =
+            other_service.set_key(ccache::EncryptionKey::new(service_etype, vec![0xdd]));
 
         cache.credentials_mut().push(other_tgt);
         cache
@@ -417,12 +432,12 @@ mod tests {
             .context("default client's cached service ticket is returned")?;
         let loaded_tgt = client.tgt_session().context("TGT loaded")?;
 
-        assert_eq!(client.client_principal(), &tgt.client);
-        assert_eq!(loaded_tgt.client, tgt.client);
-        assert_eq!(loaded_tgt.service, tgt.service);
-        assert_eq!(loaded_tgt.session_key, tgt.session_key);
+        assert_eq!(client.client_principal(), tgt.client());
+        assert_eq!(loaded_tgt.client(), tgt.client());
+        assert_eq!(loaded_tgt.service(), tgt.service());
+        assert_eq!(loaded_tgt.session_key(), tgt.session_key());
         assert_eq!(client.cached_service_ticket_count(), 1);
-        assert_eq!(returned.session_key, service_ticket.session_key);
+        assert_eq!(returned.session_key(), service_ticket.session_key());
         Ok(())
     }
 
@@ -433,11 +448,17 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let mut fresh_service_ticket = sample_service_ticket_session(&tgt)?;
         let mut older_service_ticket = fresh_service_ticket.clone();
-        fresh_service_ticket.session_key.value = vec![0xf1].into();
-        fresh_service_ticket.ticket = marked_ticket(b"fresh-service-ticket")?.into();
+        fresh_service_ticket.set_session_key(EncryptionKey::new(
+            fresh_service_ticket.session_key().etype(),
+            vec![0xf1],
+        ));
+        fresh_service_ticket.set_ticket(marked_ticket(b"fresh-service-ticket")?.into());
         align_ticket_service(&mut fresh_service_ticket)?;
-        older_service_ticket.session_key.value = vec![0x0d].into();
-        older_service_ticket.ticket = marked_ticket(b"older-service-ticket")?.into();
+        older_service_ticket.set_session_key(EncryptionKey::new(
+            older_service_ticket.session_key().etype(),
+            vec![0x0d],
+        ));
+        older_service_ticket.set_ticket(marked_ticket(b"older-service-ticket")?.into());
         align_ticket_service(&mut older_service_ticket)?;
         let now = u32::try_from(
             SystemTime::now()
@@ -457,12 +478,12 @@ mod tests {
             .to_ccache_credential()
             .context("fresh service ticket converts")?;
         make_credential_current(&mut fresh_credential, now)?;
-        fresh_credential.times.end_time = now + 2 * 60 * 60;
+        fresh_credential.times_mut().end_time = now + 2 * 60 * 60;
         let mut older_credential = older_service_ticket
             .to_ccache_credential()
             .context("older service ticket converts")?;
         make_credential_current(&mut older_credential, now)?;
-        older_credential.times.end_time = now + 60;
+        older_credential.times_mut().end_time = now + 60;
 
         cache.credentials_mut().push(tgt_credential);
         cache.credentials_mut().push(fresh_credential);
@@ -474,8 +495,8 @@ mod tests {
             .context("freshest cached service ticket is returned")?;
 
         assert_eq!(client.cached_service_ticket_count(), 1);
-        assert_eq!(returned.session_key, fresh_service_ticket.session_key);
-        assert_eq!(returned.ticket, fresh_service_ticket.ticket);
+        assert_eq!(returned.session_key(), fresh_service_ticket.session_key());
+        assert_eq!(returned.ticket(), fresh_service_ticket.ticket());
         Ok(())
     }
 
@@ -486,8 +507,14 @@ mod tests {
     {
         let mut current_tgt = sample_tgt_session()?;
         let mut future_tgt = current_tgt.clone();
-        current_tgt.session_key.value = vec![0xc1].into();
-        future_tgt.session_key.value = vec![0xf1].into();
+        current_tgt.set_session_key(EncryptionKey::new(
+            current_tgt.session_key().etype(),
+            vec![0xc1],
+        ));
+        future_tgt.set_session_key(EncryptionKey::new(
+            future_tgt.session_key().etype(),
+            vec![0xf1],
+        ));
         let now = u32::try_from(
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -504,14 +531,14 @@ mod tests {
             .to_ccache_credential()
             .context("current TGT converts")?;
         make_credential_current(&mut current_credential, now)?;
-        current_credential.times.end_time = now + 60 * 60;
+        current_credential.times_mut().end_time = now + 60 * 60;
         let mut future_credential = future_tgt
             .to_ccache_credential()
             .context("future TGT converts")?;
-        future_credential.times.auth_time = now;
-        future_credential.times.start_time = now + 60;
-        future_credential.times.end_time = now + 2 * 60 * 60;
-        future_credential.times.renew_till = now + 3 * 60 * 60;
+        future_credential.times_mut().auth_time = now;
+        future_credential.times_mut().start_time = now + 60;
+        future_credential.times_mut().end_time = now + 2 * 60 * 60;
+        future_credential.times_mut().renew_till = now + 3 * 60 * 60;
 
         cache.credentials_mut().push(current_credential);
         cache.credentials_mut().push(future_credential);
@@ -519,7 +546,7 @@ mod tests {
         let client = Tokio::from_ccache(Config::new(), KdcProtocol::Tcp, &cache);
         let loaded_tgt = client.tgt_session().context("TGT loaded")?;
 
-        assert_eq!(loaded_tgt.session_key, current_tgt.session_key);
+        assert_eq!(loaded_tgt.session_key(), current_tgt.session_key());
         Ok(())
     }
 
@@ -549,9 +576,9 @@ mod tests {
             .block_on(client.login())
             .context("current cache-only TGT is returned")?;
 
-        assert_eq!(session.client, tgt.client);
-        assert_eq!(session.service, tgt.service);
-        assert_eq!(session.session_key, tgt.session_key);
+        assert_eq!(session.client(), tgt.client());
+        assert_eq!(session.service(), tgt.service());
+        assert_eq!(session.session_key(), tgt.session_key());
         Ok(())
     }
 
@@ -581,9 +608,9 @@ mod tests {
             .block_on(client.affirm_login())
             .context("current cache-only TGT is returned")?;
 
-        assert_eq!(session.client, tgt.client);
-        assert_eq!(session.service, tgt.service);
-        assert_eq!(session.session_key, tgt.session_key);
+        assert_eq!(session.client(), tgt.client());
+        assert_eq!(session.service(), tgt.service());
+        assert_eq!(session.session_key(), tgt.session_key());
         Ok(())
     }
 
@@ -594,19 +621,22 @@ mod tests {
     -> Result<(), TestError> {
         let mut tgt = sample_tgt_session()?;
         let now = SystemTime::now();
-        tgt.auth_time = now
-            .checked_sub(Duration::from_mins(2))
-            .context("auth time")?;
-        tgt.start_time = now
-            .checked_sub(Duration::from_mins(1))
-            .context("start time")?;
-        tgt.end_time = now
-            .checked_add(Duration::from_hours(1))
-            .context("end time")?;
-        tgt.renew_till = Some(
+        tgt.set_auth_time(
+            now.checked_sub(Duration::from_mins(2))
+                .context("auth time")?,
+        );
+        tgt.set_start_time(
+            now.checked_sub(Duration::from_mins(1))
+                .context("start time")?,
+        );
+        tgt.set_end_time(
+            now.checked_add(Duration::from_hours(1))
+                .context("end time")?,
+        );
+        tgt.set_renew_till(Some(
             now.checked_add(Duration::from_hours(2))
                 .context("renew time")?,
-        );
+        ));
         let mut client = Tokio::from_tgt_session(config_without_kdcs()?, KdcProtocol::Tcp, tgt)
             .with_password_credential(TESTUSER_PASSWORD);
 
@@ -614,9 +644,9 @@ mod tests {
             .block_on(client.affirm_login())
             .context("valid TGT is reused without KDC endpoints")?;
 
-        assert_eq!(session.service, Principal::tgt_service("TEST.GOKRB5"));
+        assert_eq!(session.service(), &Principal::tgt_service("TEST.GOKRB5"));
         assert_eq!(
-            session.session_key.value.as_slice(),
+            session.session_key().value().as_slice(),
             decode_hex(SESSION_KEY)?
         );
         Ok(())
@@ -695,8 +725,8 @@ mod tests {
             .block_on(client.refresh_tgt_if_needed())
             .context("fresh cache-only TGT is reused")?;
 
-        assert_eq!(refreshed.session_key, tgt.session_key);
-        assert_eq!(refreshed.ticket, tgt.ticket);
+        assert_eq!(refreshed.session_key(), tgt.session_key());
+        assert_eq!(refreshed.ticket(), tgt.ticket());
         Ok(())
     }
 
@@ -803,11 +833,17 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let mut current_service_ticket = sample_service_ticket_session(&tgt)?;
         let mut future_service_ticket = current_service_ticket.clone();
-        current_service_ticket.session_key.value = vec![0xc2].into();
-        current_service_ticket.ticket = marked_ticket(b"current-service-ticket")?.into();
+        current_service_ticket.set_session_key(EncryptionKey::new(
+            current_service_ticket.session_key().etype(),
+            vec![0xc2],
+        ));
+        current_service_ticket.set_ticket(marked_ticket(b"current-service-ticket")?.into());
         align_ticket_service(&mut current_service_ticket)?;
-        future_service_ticket.session_key.value = vec![0xf2].into();
-        future_service_ticket.ticket = marked_ticket(b"future-service-ticket")?.into();
+        future_service_ticket.set_session_key(EncryptionKey::new(
+            future_service_ticket.session_key().etype(),
+            vec![0xf2],
+        ));
+        future_service_ticket.set_ticket(marked_ticket(b"future-service-ticket")?.into());
         align_ticket_service(&mut future_service_ticket)?;
         let now = u32::try_from(
             SystemTime::now()
@@ -827,14 +863,14 @@ mod tests {
             .to_ccache_credential()
             .context("current service ticket converts")?;
         make_credential_current(&mut current_credential, now)?;
-        current_credential.times.end_time = now + 60 * 60;
+        current_credential.times_mut().end_time = now + 60 * 60;
         let mut future_credential = future_service_ticket
             .to_ccache_credential()
             .context("future service ticket converts")?;
-        future_credential.times.auth_time = now;
-        future_credential.times.start_time = now + 60;
-        future_credential.times.end_time = now + 2 * 60 * 60;
-        future_credential.times.renew_till = now + 3 * 60 * 60;
+        future_credential.times_mut().auth_time = now;
+        future_credential.times_mut().start_time = now + 60;
+        future_credential.times_mut().end_time = now + 2 * 60 * 60;
+        future_credential.times_mut().renew_till = now + 3 * 60 * 60;
 
         cache.credentials_mut().push(tgt_credential);
         cache.credentials_mut().push(current_credential);
@@ -846,8 +882,8 @@ mod tests {
             .context("current cached service ticket is returned")?;
 
         assert_eq!(client.cached_service_ticket_count(), 1);
-        assert_eq!(returned.session_key, current_service_ticket.session_key);
-        assert_eq!(returned.ticket, current_service_ticket.ticket);
+        assert_eq!(returned.session_key(), current_service_ticket.session_key());
+        assert_eq!(returned.ticket(), current_service_ticket.ticket());
         Ok(())
     }
 
@@ -933,20 +969,25 @@ mod tests {
         runtime()?.block_on(async {
             let tgt = current_tgt_session(10, 50)?;
             let mut service_ticket = sample_service_ticket_session(&tgt)?;
-            service_ticket.session_key.value = vec![0x44; 32].into();
-            let cached_session_key = service_ticket.session_key.clone();
-            let renewal_reply_key = tgt.session_key.clone();
+            service_ticket.set_session_key(EncryptionKey::new(
+                service_ticket.session_key().etype(),
+                vec![0x44; 32],
+            ));
+            let cached_session_key = service_ticket.session_key().clone();
+            let renewal_reply_key = tgt.session_key().clone();
             let now = SystemTime::now();
-            service_ticket.start_time = now
-                .checked_sub(Duration::from_hours(2))
-                .context("expired start time")?;
-            service_ticket.end_time = now
-                .checked_sub(Duration::from_hours(1))
-                .context("expired end time")?;
-            service_ticket.renew_till = Some(
+            service_ticket.set_start_time(
+                now.checked_sub(Duration::from_hours(2))
+                    .context("expired start time")?,
+            );
+            service_ticket.set_end_time(
+                now.checked_sub(Duration::from_hours(1))
+                    .context("expired end time")?,
+            );
+            service_ticket.set_renew_till(Some(
                 now.checked_add(Duration::from_hours(1))
                     .context("renew-till time")?,
-            );
+            ));
 
             let listener = TcpListener::bind("127.0.0.1:0")
                 .await
@@ -976,7 +1017,7 @@ mod tests {
                 );
 
                 let built = built_tgs_request_from_der(decoded, &request)?;
-                let response = synthetic_tgs_rep(&built, built.nonce, &renewal_reply_key)?;
+                let response = synthetic_tgs_rep(&built, built.nonce(), &renewal_reply_key)?;
                 write_tcp_kdc_response(&mut socket, &response).await?;
                 Ok::<(), TestError>(())
             });
@@ -987,14 +1028,17 @@ mod tests {
                 .context("expired service ticket is reacquired")?;
             task.await.context("KDC task succeeds")??;
 
-            assert_eq!(renewed.service, sample_service_principal());
-            assert_eq!(hex_encode(&renewed.session_key.value)?, SERVICE_SESSION_KEY);
+            assert_eq!(renewed.service(), &sample_service_principal());
+            assert_eq!(
+                hex_encode(renewed.session_key().value())?,
+                SERVICE_SESSION_KEY
+            );
             assert_eq!(client.cached_service_ticket_count(), 1);
             let cached = client
                 .remove_cached_service_ticket(sample_service_principal())
                 .context("renewed service ticket is cached")?;
-            assert_eq!(cached.session_key, renewed.session_key);
-            assert_ne!(cached.session_key, cached_session_key);
+            assert_eq!(cached.session_key(), renewed.session_key());
+            assert_ne!(cached.session_key(), &cached_session_key);
             Ok::<(), TestError>(())
         })?;
         Ok(())
@@ -1007,9 +1051,12 @@ mod tests {
         runtime()?.block_on(async {
             let tgt = sample_tgt_session()?;
             let mut service_ticket = sample_service_ticket_session(&tgt)?;
-            service_ticket.session_key.value = vec![0x46; 32].into();
-            let cached_session_key = service_ticket.session_key.clone();
-            let renewal_reply_key = tgt.session_key.clone();
+            service_ticket.set_session_key(EncryptionKey::new(
+                service_ticket.session_key().etype(),
+                vec![0x46; 32],
+            ));
+            let cached_session_key = service_ticket.session_key().clone();
+            let renewal_reply_key = tgt.session_key().clone();
             let now = u32::try_from(
                 SystemTime::now()
                     .duration_since(UNIX_EPOCH)
@@ -1027,10 +1074,10 @@ mod tests {
             let mut service_credential = service_ticket
                 .to_ccache_credential()
                 .context("service ticket converts")?;
-            service_credential.times.auth_time = now - 2 * 60 * 60;
-            service_credential.times.start_time = now - 2 * 60 * 60;
-            service_credential.times.end_time = now - 60 * 60;
-            service_credential.times.renew_till = now + 60 * 60;
+            service_credential.times_mut().auth_time = now - 2 * 60 * 60;
+            service_credential.times_mut().start_time = now - 2 * 60 * 60;
+            service_credential.times_mut().end_time = now - 60 * 60;
+            service_credential.times_mut().renew_till = now + 60 * 60;
             cache.credentials_mut().push(tgt_credential);
             cache.credentials_mut().push(service_credential);
 
@@ -1061,7 +1108,7 @@ mod tests {
                 );
 
                 let built = built_tgs_request_from_der(decoded, &request)?;
-                let response = synthetic_tgs_rep(&built, built.nonce, &renewal_reply_key)?;
+                let response = synthetic_tgs_rep(&built, built.nonce(), &renewal_reply_key)?;
                 write_tcp_kdc_response(&mut socket, &response).await?;
                 Ok::<(), TestError>(())
             });
@@ -1072,16 +1119,42 @@ mod tests {
                 .context("expired ccache service ticket is reacquired")?;
             task.await.context("KDC task succeeds")??;
 
-            assert_eq!(renewed.service, sample_service_principal());
-            assert_eq!(hex_encode(&renewed.session_key.value)?, SERVICE_SESSION_KEY);
+            assert_eq!(renewed.service(), &sample_service_principal());
+            assert_eq!(
+                hex_encode(renewed.session_key().value())?,
+                SERVICE_SESSION_KEY
+            );
             let cached = client
                 .remove_cached_service_ticket(sample_service_principal())
                 .context("renewed service ticket is cached")?;
-            assert_eq!(cached.session_key, renewed.session_key);
-            assert_ne!(cached.session_key, cached_session_key);
+            assert_eq!(cached.session_key(), renewed.session_key());
+            assert_ne!(cached.session_key(), &cached_session_key);
             Ok::<(), TestError>(())
         })?;
         Ok(())
+    }
+
+    /// Construct expired renewable metadata for referral reacquisition.
+    fn expired_referral(primary: &AsRepSession) -> Result<AsRepSession, TestError> {
+        let now = SystemTime::now();
+        let mut referral = valid_referral_tgt_session(primary, "RESDOM.GOKRB5")?
+            .with_start_time(
+                now.checked_sub(Duration::from_hours(2))
+                    .context("expired start")?,
+            )
+            .with_renew_till(Some(
+                now.checked_add(Duration::from_hours(1))
+                    .context("renewal horizon")?,
+            ));
+        referral.set_session_key(EncryptionKey::new(
+            referral.session_key().etype(),
+            vec![0x45; 32],
+        ));
+        referral.set_end_time(
+            now.checked_sub(Duration::from_hours(1))
+                .context("expired end")?,
+        );
+        Ok(referral)
     }
 
     /// Pins that an expired referral is reacquired with the current primary TGT.
@@ -1090,25 +1163,13 @@ mod tests {
     fn tokio_client_reacquires_expired_cached_referral_tgt() -> Result<(), TestError> {
         runtime()?.block_on(async {
             let primary_tgt = current_tgt_session(10, 50)?;
-            let mut referral_tgt = valid_referral_tgt_session(&primary_tgt, "RESDOM.GOKRB5")?;
-            referral_tgt.session_key.value = vec![0x45; 32].into();
-            let cached_referral_key = referral_tgt.session_key.clone();
-            let referral_renewal_reply_key = primary_tgt.session_key.clone();
-            let now = SystemTime::now();
-            referral_tgt.start_time = now
-                .checked_sub(Duration::from_hours(2))
-                .context("expired start time")?;
-            referral_tgt.end_time = now
-                .checked_sub(Duration::from_hours(1))
-                .context("expired end time")?;
-            referral_tgt.renew_till = Some(
-                now.checked_add(Duration::from_hours(1))
-                    .context("renew-till time")?,
-            );
+            let referral_tgt = expired_referral(&primary_tgt)?;
+            let cached_referral_key = referral_tgt.session_key().clone();
+            let referral_renewal_reply_key = primary_tgt.session_key().clone();
 
             let resource_service =
                 Principal::new("RESDOM.GOKRB5", 2, ["HTTP", "app.resdom.gokrb5"]);
-            let expected_client = primary_tgt.client.clone();
+            let expected_client = primary_tgt.client().clone();
             let listener = TcpListener::bind("127.0.0.1:0")
                 .await
                 .context("bind local KDC listener")?;
@@ -1129,10 +1190,8 @@ mod tests {
                     der::decode(&renewal_request).context("renewal TGS-REQ decodes")?;
                 let renewal_body = &renewal_decoded.0.req_body;
                 let expected_options = 0x0000_0010_u32;
-                assert_eq!(
-                    renewal_body.kdc_options.0.as_raw_slice(),
-                    expected_options.to_be_bytes().as_slice()
-                );
+                let expected_flags = expected_options.to_be_bytes();
+                assert_eq!(renewal_body.kdc_options.0.as_raw_slice(), expected_flags);
                 assert_eq!(
                     principal_from_parts(
                         &renewal_body.realm,
@@ -1142,10 +1201,10 @@ mod tests {
                 );
                 let mut renewal_built =
                     built_tgs_request_from_der(renewal_decoded, &renewal_request)?;
-                renewal_built.client = expected_client.clone();
+                renewal_built.set_client(expected_client.clone());
                 let renewal_response = synthetic_tgs_rep_with_service(
                     &renewal_built,
-                    renewal_built.nonce,
+                    renewal_built.nonce(),
                     &referral_renewal_reply_key,
                     &Principal::new("TEST.GOKRB5", 2, ["krbtgt", "RESDOM.GOKRB5"]),
                 )?;
@@ -1164,10 +1223,13 @@ mod tests {
                 );
                 let mut service_built =
                     built_tgs_request_from_der(service_decoded, &service_request)?;
-                service_built.client = expected_client;
+                service_built.set_client(expected_client);
                 let renewed_referral_key = EncryptionKey::new(18, decode_hex(SERVICE_SESSION_KEY)?);
-                let service_response =
-                    synthetic_tgs_rep(&service_built, service_built.nonce, &renewed_referral_key)?;
+                let service_response = synthetic_tgs_rep(
+                    &service_built,
+                    service_built.nonce(),
+                    &renewed_referral_key,
+                )?;
                 write_tcp_kdc_response(&mut service_socket, &service_response).await?;
                 Ok::<(), TestError>(())
             });
@@ -1178,14 +1240,14 @@ mod tests {
                 .context("service ticket is acquired through renewed referral TGT")?;
             task.await.context("KDC task succeeds")??;
 
-            assert_eq!(ticket.service, resource_service);
+            assert_eq!(ticket.service(), &resource_service);
             assert_eq!(client.cached_service_ticket_count(), 1);
             let renewed_referral = client
                 .tgt_session_for_realm("RESDOM.GOKRB5")
                 .context("renewed referral TGT is cached")?;
-            assert_ne!(renewed_referral.session_key, cached_referral_key);
+            assert_ne!(renewed_referral.session_key(), &cached_referral_key);
             assert_eq!(
-                hex_encode(&renewed_referral.session_key.value)?,
+                hex_encode(renewed_referral.session_key().value())?,
                 SERVICE_SESSION_KEY
             );
             Ok::<(), TestError>(())
@@ -1200,15 +1262,18 @@ mod tests {
         runtime()?.block_on(async {
             let primary_tgt = current_tgt_session(10, 50)?;
             let mut referral_tgt = valid_referral_tgt_session(&primary_tgt, "RESDOM.GOKRB5")?;
-            referral_tgt.session_key.value = vec![0x47; 32].into();
-            referral_tgt.auth_time = primary_tgt.auth_time;
-            referral_tgt.start_time = primary_tgt.start_time;
-            referral_tgt.end_time = primary_tgt.end_time;
-            referral_tgt.renew_till = primary_tgt.renew_till;
-            referral_tgt.ticket_flags = primary_tgt.ticket_flags;
-            let cached_referral_key = referral_tgt.session_key.clone();
-            let referral_renewal_reply_key = referral_tgt.session_key.clone();
-            let expected_client = primary_tgt.client.clone();
+            referral_tgt.set_session_key(EncryptionKey::new(
+                referral_tgt.session_key().etype(),
+                vec![0x47; 32],
+            ));
+            referral_tgt.set_auth_time(primary_tgt.auth_time());
+            referral_tgt.set_start_time(primary_tgt.start_time());
+            referral_tgt.set_end_time(primary_tgt.end_time());
+            referral_tgt.set_renew_till(primary_tgt.renew_till());
+            referral_tgt.set_ticket_flags(primary_tgt.ticket_flags());
+            let cached_referral_key = referral_tgt.session_key().clone();
+            let referral_renewal_reply_key = referral_tgt.session_key().clone();
+            let expected_client = primary_tgt.client().clone();
 
             let listener = TcpListener::bind("127.0.0.1:0")
                 .await
@@ -1239,8 +1304,9 @@ mod tests {
                 );
 
                 let mut built = built_tgs_request_from_der(decoded, &request)?;
-                built.client = expected_client;
-                let response = synthetic_tgs_rep(&built, built.nonce, &referral_renewal_reply_key)?;
+                built.set_client(expected_client);
+                let response =
+                    synthetic_tgs_rep(&built, built.nonce(), &referral_renewal_reply_key)?;
                 write_tcp_kdc_response(&mut socket, &response).await?;
                 Ok::<(), TestError>(())
             });
@@ -1252,17 +1318,20 @@ mod tests {
             task.await.context("KDC task succeeds")??;
 
             assert_eq!(
-                renewed.service,
+                renewed.service().clone(),
                 Principal::new("TEST.GOKRB5", 2, ["krbtgt", "RESDOM.GOKRB5"])
             );
-            assert_ne!(renewed.session_key, cached_referral_key);
-            assert_eq!(hex_encode(&renewed.session_key.value)?, SERVICE_SESSION_KEY);
+            assert_ne!(renewed.session_key(), &cached_referral_key);
+            assert_eq!(
+                hex_encode(renewed.session_key().value())?,
+                SERVICE_SESSION_KEY
+            );
             assert_eq!(
                 client
                     .tgt_session_for_realm("RESDOM.GOKRB5")
                     .context("renewed referral is cached")?
-                    .session_key,
-                renewed.session_key
+                    .session_key(),
+                renewed.session_key()
             );
             assert!(matches!(
                 client
@@ -1813,15 +1882,15 @@ mod tests {
             client
                 .tgt_session_for_realm("TEST.GOKRB5")
                 .context("primary TGT is cached")?
-                .service,
-            primary_tgt.service
+                .service(),
+            primary_tgt.service()
         );
         assert_eq!(
             client
                 .tgt_session_for_realm("RESDOM.GOKRB5")
                 .context("referral TGT is cached")?
-                .service,
-            referral_tgt.service
+                .service(),
+            referral_tgt.service()
         );
 
         let cache = client.to_ccache().context("client exports ccache")?;
@@ -1836,18 +1905,21 @@ mod tests {
         let removed_referral = client
             .remove_tgt_session_for_realm("RESDOM.GOKRB5")
             .context("referral TGT is removed")?;
-        assert_eq!(removed_referral.service, referral_tgt.service);
+        assert_eq!(removed_referral.service(), referral_tgt.service());
         assert_eq!(client.tgt_session_count(), 1);
         assert!(client.tgt_session_for_realm("RESDOM.GOKRB5").is_none());
         assert_eq!(
-            client.tgt_session().context("primary TGT remains")?.service,
-            primary_tgt.service
+            client
+                .tgt_session()
+                .context("primary TGT remains")?
+                .service(),
+            primary_tgt.service()
         );
 
         let removed_primary = client
             .remove_tgt_session_for_realm("TEST.GOKRB5")
             .context("primary TGT is removed")?;
-        assert_eq!(removed_primary.service, primary_tgt.service);
+        assert_eq!(removed_primary.service(), primary_tgt.service());
         assert!(client.tgt_session().is_none());
         assert_eq!(client.tgt_session_count(), 0);
         assert!(
@@ -1884,16 +1956,16 @@ mod tests {
     fn tokio_client_prefers_freshest_cached_tgt_session() -> Result<(), TestError> {
         let primary_session = |remaining_minutes: u64, ticket: &[u8]| -> Result<_, TestError> {
             let mut tgt = current_tgt_session(5, remaining_minutes)?;
-            tgt.ticket = marked_ticket(ticket)?.into();
+            tgt.set_ticket(marked_ticket(ticket)?.into());
             Ok(tgt)
         };
         let referral_session = |remaining_minutes: u64, ticket: &[u8]| -> Result<_, TestError> {
             let mut tgt = primary_session(remaining_minutes, ticket)?;
-            tgt.service = Principal::new(
+            tgt.set_service(Principal::new(
                 "TEST.GOKRB5",
                 2,
                 ["krbtgt".to_owned(), "RESDOM.GOKRB5".to_owned()],
-            );
+            ));
             align_ticket_service(&mut tgt)?;
             Ok(tgt)
         };
@@ -1908,7 +1980,7 @@ mod tests {
             client
                 .tgt_session()
                 .context("primary TGT remains")?
-                .ticket
+                .ticket()
                 .as_slice(),
             marked_ticket(b"primary-long")?.as_slice()
         );
@@ -1916,7 +1988,7 @@ mod tests {
             client
                 .tgt_session_for_realm("TEST.GOKRB5")
                 .context("realm-keyed primary remains")?
-                .ticket
+                .ticket()
                 .as_slice(),
             marked_ticket(b"primary-long")?.as_slice()
         );
@@ -1928,7 +2000,7 @@ mod tests {
             client
                 .tgt_session()
                 .context("primary TGT is replaced")?
-                .ticket
+                .ticket()
                 .as_slice(),
             marked_ticket(b"primary-longer")?.as_slice()
         );
@@ -1944,9 +2016,9 @@ mod tests {
             client
                 .tgt_session_for_realm("RESDOM.GOKRB5")
                 .context("longer referral TGT remains")?
-                .ticket
+                .ticket()
                 .as_slice(),
-            referral_session(90, b"referral-long")?.ticket.as_slice()
+            referral_session(90, b"referral-long")?.ticket().as_slice()
         );
 
         client
@@ -1956,9 +2028,11 @@ mod tests {
             client
                 .tgt_session_for_realm("RESDOM.GOKRB5")
                 .context("longer referral TGT is selected")?
-                .ticket
+                .ticket()
                 .as_slice(),
-            referral_session(180, b"referral-longer")?.ticket.as_slice()
+            referral_session(180, b"referral-longer")?
+                .ticket()
+                .as_slice()
         );
         Ok(())
     }
@@ -2014,23 +2088,29 @@ mod tests {
         client.cache_service_ticket(service_ticket.clone())?;
 
         let mut old_tgt = tgt.to_ccache_credential().context("TGT converts")?;
-        old_tgt.client.name_type = 0_i32;
-        old_tgt.key.value = vec![0xaa].into();
+        old_tgt.client_mut().name_type = 0_i32;
+        let etype = old_tgt.key().etype();
+        old_tgt = old_tgt.set_key(ccache::EncryptionKey::new(etype, vec![0xaa]));
         let mut old_service = service_ticket
             .to_ccache_credential()
             .context("service ticket converts")?;
-        old_service.client.name_type = 0_i32;
-        old_service.key.value = vec![0xbb].into();
-        let config_entry = x_cacheconf_credential(&old_service.client);
+        old_service.client_mut().name_type = 0_i32;
+        let service_etype = old_service.key().etype();
+        old_service = old_service.set_key(ccache::EncryptionKey::new(service_etype, vec![0xbb]));
+        let config_entry = x_cacheconf_credential(old_service.client());
         let mut other_client = old_service.clone();
-        other_client.client = ccache::Principal::new("OTHER.REALM", 1, vec!["other".to_owned()]);
-        other_client.server = ccache::Principal::new(
+        other_client.set_client(ccache::Principal::new(
+            "OTHER.REALM",
+            1,
+            vec!["other".to_owned()],
+        ));
+        other_client.set_server(ccache::Principal::new(
             "OTHER.REALM",
             2,
             vec!["HTTP".to_owned(), "other".to_owned()],
-        );
+        ));
 
-        let mut existing = ccache::CCache::new(old_tgt.client.clone());
+        let mut existing = ccache::CCache::new(old_tgt.client().clone());
         existing.credentials_mut().push(old_tgt);
         existing.credentials_mut().push(config_entry.clone());
         existing.credentials_mut().push(old_service);
@@ -2050,8 +2130,8 @@ mod tests {
             updated
                 .credentials()
                 .iter()
-                .filter(|credential| credential.client == config_entry.client
-                    && credential.server.components == ["krb5_ccache_conf_data", "fast_avail"])
+                .filter(|credential| credential.client() == config_entry.client()
+                    && credential.server().components == ["krb5_ccache_conf_data", "fast_avail"])
                 .count(),
             1
         );
@@ -2084,17 +2164,17 @@ mod tests {
             updated
                 .get_entry(&["krbtgt", "TEST.GOKRB5"])
                 .context("updated TGT exists")?
-                .key
-                .value,
-            tgt.session_key.value
+                .key()
+                .value(),
+            tgt.session_key().value()
         );
         assert_eq!(
             updated
                 .get_entry(&["HTTP", "host.test.gokrb5"])
                 .context("updated service ticket exists")?
-                .key
-                .value,
-            service_ticket.session_key.value
+                .key()
+                .value(),
+            service_ticket.session_key().value()
         );
         Ok(())
     }
@@ -2115,12 +2195,15 @@ mod tests {
         let now = timestamp(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())?;
         let session_for = |host: &str| -> Result<_, TestError> {
             let mut ticket = sample_service_ticket_session(&tgt)?;
-            ticket.service = Principal::host_based_service_in_realm("HTTP", host, "CERN.CH")?;
+            ticket.set_service(Principal::host_based_service_in_realm(
+                "HTTP", host, "CERN.CH",
+            )?);
             align_ticket_service(&mut ticket)?;
-            ticket.start_time = now
-                .checked_sub(Duration::from_mins(1))
-                .ok_or("start time")?;
-            ticket.end_time = now.checked_add(Duration::from_hours(1)).ok_or("end time")?;
+            ticket.set_start_time(
+                now.checked_sub(Duration::from_mins(1))
+                    .ok_or("start time")?,
+            );
+            ticket.set_end_time(now.checked_add(Duration::from_hours(1)).ok_or("end time")?);
             Ok(ticket)
         };
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, tgt.clone());
@@ -2154,7 +2237,7 @@ mod tests {
                 // Due (55 min old, 5 min left) but not renewable, and cache-only:
                 // the refresh is a successful no-op that must be paced.
                 let mut tgt = current_tgt_session(55, 5)?;
-                tgt.renew_till = None;
+                tgt.set_renew_till(None);
                 let client = Arc::new(Mutex::new(Tokio::from_tgt_session(
                     Config::new(),
                     KdcProtocol::Tcp,
@@ -2185,9 +2268,10 @@ mod tests {
     fn tokio_client_refresh_due_uses_current_ticket_life() -> Result<(), TestError> {
         let now = SystemTime::now();
         let mut renewed = current_tgt_session(60 * 60, 10 * 60)?;
-        renewed.start_time = now
-            .checked_sub(Duration::from_mins(1))
-            .ok_or("recent start time")?;
+        renewed.set_start_time(
+            now.checked_sub(Duration::from_mins(1))
+                .ok_or("recent start time")?,
+        );
 
         let renewed_client =
             Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, renewed.clone());
@@ -2197,10 +2281,11 @@ mod tests {
         );
 
         let mut near_end = renewed;
-        near_end.end_time = now
-            .checked_add(Duration::from_secs(10))
-            .ok_or("near end time")?;
-        near_end.key_expiration = Some(near_end.end_time);
+        near_end.set_end_time(
+            now.checked_add(Duration::from_secs(10))
+                .ok_or("near end time")?,
+        );
+        near_end.set_key_expiration(Some(near_end.end_time()));
         let near_end_client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, near_end);
         assert!(
             near_end_client.tgt_refresh_due(),
@@ -2263,8 +2348,8 @@ mod tests {
                         )?;
                         synthetic_as_rep_with_reply_key(
                             &built,
-                            built.nonce,
-                            &built.service,
+                            built.nonce(),
+                            built.service(),
                             &reply_key,
                         )?
                     }
@@ -2314,10 +2399,10 @@ mod tests {
     fn expired_renewable_tgt() -> Result<AsRepSession, TestError> {
         let now = SystemTime::now();
         let mut tgt = current_tgt_session(120, 0)?;
-        tgt.renew_till = Some(
+        tgt.set_renew_till(Some(
             now.checked_add(Duration::from_hours(1))
                 .ok_or("renew till")?,
-        );
+        ));
         Ok(tgt)
     }
 
@@ -2482,7 +2567,7 @@ mod tests {
                 r#type: 0,
                 value: kerberos_time(now)?,
             }],
-            nonce: built.nonce,
+            nonce: built.nonce(),
             key_expiration: None,
             flags: rasn_kerberos::TicketFlags(rasn_kerberos::KerberosFlags::from_slice(
                 TICKET_FLAGS,
@@ -2493,8 +2578,8 @@ mod tests {
             renew_till: Some(kerberos_time(
                 now.checked_add(7 * 24 * 60 * 60).ok_or("renew till")?,
             )?),
-            srealm: realm(&built.service.realm)?,
-            sname: rasn_principal(&built.service)?,
+            srealm: realm(&built.service().realm)?,
+            sname: rasn_principal(built.service())?,
             caddr: None,
             encrypted_pa_data: None,
         });
@@ -2508,12 +2593,12 @@ mod tests {
             pvno: Integer::from(5_i32),
             msg_type: Integer::from(13_i32),
             padata: None,
-            crealm: realm(&built.client.realm)?,
-            cname: rasn_principal(&built.client)?,
+            crealm: realm(&built.client().realm)?,
+            cname: rasn_principal(built.client())?,
             ticket: rasn_kerberos::Ticket {
                 tkt_vno: Integer::from(5_i32),
-                realm: realm(&built.service.realm)?,
-                sname: rasn_principal(&built.service)?,
+                realm: realm(&built.service().realm)?,
+                sname: rasn_principal(built.service())?,
                 enc_part: rasn_kerberos::EncryptedData {
                     etype: 18,
                     kvno: Some(2),
@@ -2521,7 +2606,7 @@ mod tests {
                 },
             },
             enc_part: rasn_kerberos::EncryptedData {
-                etype: session_key.etype,
+                etype: session_key.etype(),
                 kvno: None,
                 cipher: encrypted.into(),
             },
@@ -2562,7 +2647,7 @@ mod tests {
                 let renewed = tgs_requests.load(Ordering::SeqCst) >= 1
                     && client.try_lock().is_ok_and(|guard| {
                         guard.tgt_session().is_some_and(|tgt| {
-                            tgt.end_time
+                            tgt.end_time()
                                 .duration_since(SystemTime::now())
                                 .is_ok_and(|left| left > renewed_life_floor)
                         })
@@ -2669,7 +2754,7 @@ mod tests {
                         return krb_error_bytes(32);
                     }
                     let built = built_tgs_request_from_der(request, der)?;
-                    synthetic_tgs_rep(&built, built.nonce, &tgt_session_key)
+                    synthetic_tgs_rep(&built, built.nonce(), &tgt_session_key)
                 },
             );
 
@@ -2683,7 +2768,7 @@ mod tests {
             let ticket = client
                 .get_service_ticket(sample_service_principal())
                 .await?;
-            assert_eq!(ticket.service, sample_service_principal());
+            assert_eq!(ticket.service(), &sample_service_principal());
             assert_eq!(as_requests.load(Ordering::SeqCst), 1);
             assert_eq!(
                 tgs_requests.load(Ordering::SeqCst),
@@ -2711,11 +2796,16 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let mut service_ticket = sample_service_ticket_session(&tgt)?;
         let now = timestamp(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())?;
-        service_ticket.start_time = now
-            .checked_sub(Duration::from_mins(1))
-            .ok_or("start time")?;
-        service_ticket.end_time = now.checked_add(Duration::from_hours(1)).ok_or("end time")?;
-        service_ticket.service = Principal::new("PARTNER.REALM", 2, ["HTTP", "Host.Example.COM"]);
+        service_ticket.set_start_time(
+            now.checked_sub(Duration::from_mins(1))
+                .ok_or("start time")?,
+        );
+        service_ticket.set_end_time(now.checked_add(Duration::from_hours(1)).ok_or("end time")?);
+        service_ticket.set_service(Principal::new(
+            "PARTNER.REALM",
+            2,
+            ["HTTP", "Host.Example.COM"],
+        ));
         align_ticket_service(&mut service_ticket)?;
 
         let mut client = Tokio::from_tgt_session(config, KdcProtocol::Tcp, tgt);
@@ -2725,8 +2815,8 @@ mod tests {
         let cached = client
             .cached_service_ticket(lookup)
             .ok_or("mixed-case host resolves to the partner realm")?;
-        assert_eq!(cached.service.realm, "PARTNER.REALM");
-        assert_eq!(cached.ticket, service_ticket.ticket);
+        assert_eq!(cached.service().realm, "PARTNER.REALM");
+        assert_eq!(cached.ticket(), service_ticket.ticket());
         Ok(())
     }
 }

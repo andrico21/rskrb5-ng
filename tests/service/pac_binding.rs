@@ -81,9 +81,10 @@ fn pac_binding_accepts_matching_client() -> Result<(), TestError> {
     let accepted = validator.validate_ap_req(&request)?;
     // Then the verified PAC describes the accepted ticket client.
     let info = accepted
-        .pac
+        .pac()
+        .as_ref()
         .ok_or("PAC present")?
-        .client_info
+        .client_info()
         .ok_or("client info present")?;
     assert_eq!(info.name, "testuser1");
     assert_eq!(info.client_id.system_time(), timestamp(1_494_085_991)?);

@@ -19,10 +19,10 @@ mod tests {
     fn cached_client() -> Result<NegotiateClient, TestError> {
         let tgt = current_tgt_session(1, 60)?;
         let mut service = sample_service_ticket_session(&tgt)?;
-        service.auth_time = tgt.auth_time;
-        service.start_time = tgt.start_time;
-        service.end_time = tgt.end_time;
-        service.renew_till = tgt.renew_till;
+        service.set_auth_time(tgt.auth_time());
+        service.set_start_time(tgt.start_time());
+        service.set_end_time(tgt.end_time());
+        service.set_renew_till(tgt.renew_till());
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Auto, tgt);
         client.cache_service_ticket(service)?;
         Ok(NegotiateClient::from_tokio_client(client))

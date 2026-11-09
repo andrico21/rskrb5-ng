@@ -65,7 +65,7 @@ mod tests {
             EncryptionKey::new(18, vec![7; 32]),
             1,
         );
-        entry.kvno = 0;
+        entry.set_kvno(0);
         keytab.entries_mut().push(entry);
         assert!(matches!(
             keytab.to_bytes(),

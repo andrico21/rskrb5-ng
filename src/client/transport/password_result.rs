@@ -30,11 +30,11 @@ pub(super) fn checked(
 /// Returns the typed encryption-policy failure.
 pub(super) fn outgoing(request: &BuiltKpasswdRequest, policy: &CryptoPolicy) -> Result<(), Error> {
     for id in [
-        request.ap_req.session_key.etype,
-        request.reply_key.etype,
-        request.request.ap_req.ticket.enc_part.etype,
-        request.request.ap_req.authenticator.etype,
-        request.request.krb_priv.enc_part.etype,
+        request.ap_req().session_key.etype(),
+        request.reply_key().etype(),
+        request.request().ap_req().ticket.enc_part.etype,
+        request.request().ap_req().authenticator.etype,
+        request.request().krb_priv().enc_part.etype,
     ] {
         policy.check_use(id, Use::SessionKey)?;
     }

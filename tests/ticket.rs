@@ -171,7 +171,7 @@ mod tests {
         let fixture = decode_ticket(&hex::decode(MARSHALLED_TICKET)?)?;
         let enc_ticket = decode_enc_ticket_part(&hex::decode(MARSHALLED_ENC_TICKET_PART)?)?;
         let key = reply_key()?;
-        let etype = KerberosEtype::from_etype_id(key.etype).ok_or("AES256 etype")?;
+        let etype = KerberosEtype::from_etype_id(key.etype()).ok_or("AES256 etype")?;
         let confounder = vec![0x66; etype.confounder_len()];
 
         let ticket = build_ticket_with_confounder(
@@ -184,7 +184,7 @@ mod tests {
         )?;
 
         assert_eq!(ticket.tkt_vno, Integer::from(KRB5_TKT_VNO));
-        assert_eq!(ticket.enc_part.etype, key.etype);
+        assert_eq!(ticket.enc_part.etype, key.etype());
         assert_eq!(ticket.enc_part.kvno, Some(3));
         let decrypted = decrypt_ticket_enc_part(&ticket, &key)?;
         assert_eq!(decrypted, enc_ticket);
@@ -198,7 +198,7 @@ mod tests {
         let enc_ticket =
             decode_enc_ticket_part(&hex::decode(MARSHALLED_ENC_TICKET_PART_OPTIONALS_NULL)?)?;
         let key = reply_key()?;
-        let etype = KerberosEtype::from_etype_id(key.etype).ok_or("AES256 etype")?;
+        let etype = KerberosEtype::from_etype_id(key.etype()).ok_or("AES256 etype")?;
         let confounder = vec![0x77; etype.confounder_len()];
 
         let encoded = encode_build_ticket_with_confounder(
@@ -211,7 +211,7 @@ mod tests {
         )?;
         let decoded = decode_ticket(&encoded)?;
 
-        assert_eq!(decoded.enc_part.etype, key.etype);
+        assert_eq!(decoded.enc_part.etype, key.etype());
         assert!(decoded.enc_part.kvno.is_none(), "kvno is absent");
         let decrypted = decrypt_ticket_enc_part(&decoded, &key)?;
         assert_eq!(decrypted, enc_ticket);
@@ -238,7 +238,7 @@ mod tests {
         let fixture = decode_ticket(&hex::decode(MARSHALLED_TICKET)?)?;
         let enc_ticket = decode_enc_ticket_part(&hex::decode(MARSHALLED_ENC_TICKET_PART)?)?;
         let key = reply_key()?;
-        let etype = KerberosEtype::from_etype_id(key.etype).ok_or("AES256 etype")?;
+        let etype = KerberosEtype::from_etype_id(key.etype()).ok_or("AES256 etype")?;
         let confounder = vec![0x66; etype.confounder_len()];
         let ticket = build_ticket_with_confounder(
             fixture.realm,

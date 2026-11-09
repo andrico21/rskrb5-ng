@@ -135,7 +135,7 @@ mod tests {
         let options = EncKrbPrivPartOptions::new(sender_address.clone())
             .with_sequence_number(7)
             .with_recipient_address(recipient_address.clone());
-        let etype = KerberosEtype::from_etype_id(key.etype).ok_or("AES256 etype")?;
+        let etype = KerberosEtype::from_etype_id(key.etype()).ok_or("AES256 etype")?;
         let confounder = vec![0x22; etype.confounder_len()];
 
         let krb_priv =
@@ -143,7 +143,7 @@ mod tests {
 
         assert_eq!(krb_priv.pvno, Integer::from(KRB_PRIV_PVNO));
         assert_eq!(krb_priv.msg_type, Integer::from(KRB_PRIV_MSG_TYPE));
-        assert_eq!(krb_priv.enc_part.etype, key.etype);
+        assert_eq!(krb_priv.enc_part.etype, key.etype());
         assert_eq!(krb_priv.enc_part.kvno, Some(3));
 
         let enc_part = decrypt_krb_priv_enc_part(&krb_priv, &key)?;

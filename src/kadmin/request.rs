@@ -42,6 +42,34 @@ impl ChangePasswdMessageOptions {
 }
 
 impl Request {
+    /// Construct a frame from dependency-owned messages; their residual copies are not erased.
+    #[inline]
+    #[must_use]
+    pub const fn new(ap_req: rasn_kerberos::ApReq, krb_priv: rasn_kerberos::KrbPriv) -> Self {
+        Self { ap_req, krb_priv }
+    }
+
+    /// Borrow the AP-REQ; explicit dependency-owned clones retain caller erasure duties.
+    #[inline]
+    #[must_use]
+    pub const fn ap_req(&self) -> &rasn_kerberos::ApReq {
+        &self.ap_req
+    }
+
+    /// Borrow the protected password payload.
+    #[inline]
+    #[must_use]
+    pub const fn krb_priv(&self) -> &rasn_kerberos::KrbPriv {
+        &self.krb_priv
+    }
+
+    /// Transfer the dependency-owned messages without making another copy.
+    #[inline]
+    #[must_use]
+    pub fn into_parts(self) -> (rasn_kerberos::ApReq, rasn_kerberos::KrbPriv) {
+        let Self { ap_req, krb_priv } = self;
+        (ap_req, krb_priv)
+    }
     /// Parse a password-change request frame.
     ///
     /// # Errors
@@ -127,6 +155,26 @@ impl Request {
 }
 
 impl<'request> PasswordEncryption<'request> {
+    /// Borrow the reply encryption key.
+    #[inline]
+    #[must_use]
+    pub const fn reply_key(&self) -> &EncryptionKey {
+        &self.reply_key
+    }
+
+    /// Borrow the caller-owned authenticator confounder.
+    #[inline]
+    #[must_use]
+    pub const fn ap_req_confounder(&self) -> &'request [u8] {
+        self.ap_req_confounder
+    }
+
+    /// Borrow the caller-owned password confounder.
+    #[inline]
+    #[must_use]
+    pub const fn krb_priv_confounder(&self) -> &'request [u8] {
+        self.krb_priv_confounder
+    }
     /// Creates explicit password-change encryption inputs.
     #[must_use]
     #[inline]

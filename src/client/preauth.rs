@@ -51,7 +51,8 @@ const PREAUTH_FAILED: i32 = 24;
 /// Whether the KDC supplied an implemented hint from the original enctype list.
 fn usable_hints(error: &KdcError, requested: &AsReq) -> bool {
     error.preauth_key_info.iter().any(|info| {
-        requested.etypes.contains(&info.etype) && KerberosEtype::from_etype_id(info.etype).is_some()
+        requested.etypes().contains(&info.etype)
+            && KerberosEtype::from_etype_id(info.etype).is_some()
     })
 }
 
@@ -64,21 +65,23 @@ pub(super) fn discovery_request(
     requested: &AsReq,
     response: &[u8],
 ) -> Result<Option<BuiltAsReq>, Error> {
-    if !requested.assume_preauthentication {
+    if !requested.assume_preauthentication() {
         return Ok(None);
     }
     let error = process_kdc_error(response)?;
     if error.error_code != PREAUTH_FAILED || usable_hints(&error, requested) {
         return Ok(None);
     }
-    let mut probe = requested.clone();
-    probe.assume_preauthentication = false;
-    probe.fast_negotiation = false;
-    probe.padata = error
+    let data: Vec<_> = error
         .method_data
         .into_iter()
         .filter(|pa| pa.r#type == PA_FX_COOKIE)
         .collect();
+    let probe = requested
+        .clone()
+        .with_assume_preauthentication(false)
+        .with_fast_negotiation(false)
+        .with_padata(data);
     build_as_req(initial.client.clone(), initial.service.clone(), probe).map(Some)
 }
 
@@ -104,7 +107,7 @@ pub(super) fn validate_discovery(response: &[u8], requested: &AsReq) -> Result<(
 fn challenge(bytes: &[u8], requested: &AsReq) -> Result<KdcError, Error> {
     let error = process_kdc_error(bytes)?;
     let guided_failure = error.error_code == PREAUTH_FAILED
-        && requested.assume_preauthentication
+        && requested.assume_preauthentication()
         && usable_hints(&error, requested);
     if error.error_code == KDC_ERR_PREAUTH_REQUIRED || guided_failure {
         Ok(error)
@@ -127,13 +130,13 @@ pub(super) fn password_preauth_request(
     requested: AsReq,
     kdc_error_bytes: &[u8],
 ) -> Result<(BuiltAsReq, EncryptionKey), Error> {
-    super::crypto_policy::padata(&requested.padata)?;
-    let policy = super::crypto_policy::request(&requested.crypto_policy, &requested.etypes)?;
+    super::crypto_policy::padata(requested.padata())?;
+    let policy = super::crypto_policy::request(requested.crypto_policy(), requested.etypes())?;
     let error = challenge(kdc_error_bytes, &requested)?;
-    let key_info = select_preauth_key_info(&error, &requested.etypes)?;
+    let key_info = select_preauth_key_info(&error, requested.etypes())?;
     policy.check_use(key_info.etype, Use::ReplyKey)?;
     let reply_key = super::password_derivation::derive(&policy, &client, password, &key_info)?;
-    let options = preauth_retry_options(requested, &error.method_data);
+    let options = preauth_retry_options(requested, error.method_data());
     let request = build_preauthenticated_as_req(client, service, options, &reply_key, None)?;
     Ok((request, reply_key))
 }
@@ -152,12 +155,12 @@ pub(super) fn keytab_preauth_request(
     requested: AsReq,
     kdc_error_bytes: &[u8],
 ) -> Result<(BuiltAsReq, EncryptionKey), Error> {
-    super::crypto_policy::padata(&requested.padata)?;
-    let policy = super::crypto_policy::request(&requested.crypto_policy, &requested.etypes)?;
+    super::crypto_policy::padata(requested.padata())?;
+    let policy = super::crypto_policy::request(requested.crypto_policy(), requested.etypes())?;
     let error = challenge(kdc_error_bytes, &requested)?;
-    let (reply_key, kvno) = challenge_key(keytab, &client, &error, &requested.etypes)?;
-    policy.check_use(reply_key.etype, Use::ReplyKey)?;
-    let options = preauth_retry_options(requested, &error.method_data);
+    let (reply_key, kvno) = challenge_key(keytab, &client, &error, requested.etypes())?;
+    policy.check_use(reply_key.etype(), Use::ReplyKey)?;
+    let options = preauth_retry_options(requested, error.method_data());
     let request = build_preauthenticated_as_req(client, service, options, &reply_key, Some(kvno))?;
     Ok((request, reply_key))
 }

@@ -30,15 +30,15 @@ mod tests {
     where
         T: rasn::Encode,
     {
-        let etype = KerberosEtype::from_etype_id(key.etype).ok_or("etype")?;
+        let etype = KerberosEtype::from_etype_id(key.etype()).ok_or("etype")?;
         let mut bytes = der::encode(part)?;
         bytes.extend_from_slice(suffix);
         Ok(EncryptedData {
-            etype: key.etype,
+            etype: key.etype(),
             kvno: None,
             cipher: etype
                 .encrypt_message_with_confounder(
-                    &key.value,
+                    key.value(),
                     &bytes,
                     usage,
                     &vec![0x24; etype.confounder_len()],

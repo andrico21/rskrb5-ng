@@ -17,24 +17,28 @@ mod tests {
     fn ineligible_sessions() -> Result<Vec<AsRepSession>, TestError> {
         let current = current_tgt_session(1, 60)?;
         let mut missing_flag = current.clone();
-        missing_flag.ticket_flags =
-            (u32::from_be_bytes(current.ticket_flags) & !KDC_OPTION_RENEWABLE).to_be_bytes();
+        missing_flag.set_ticket_flags(
+            (u32::from_be_bytes(current.ticket_flags()) & !KDC_OPTION_RENEWABLE).to_be_bytes(),
+        );
         let mut future = current.clone();
-        future.start_time = current
-            .end_time
-            .checked_sub(Duration::from_mins(30))
-            .context("future start")?;
+        future.set_start_time(
+            current
+                .end_time()
+                .checked_sub(Duration::from_mins(30))
+                .context("future start")?,
+        );
         let expired = current_tgt_session(120, 0)?;
         let mut horizon_before_end = current.clone();
-        horizon_before_end.renew_till = Some(
+        horizon_before_end.set_renew_till(Some(
             current
-                .end_time
+                .end_time()
                 .checked_sub(Duration::from_mins(30))
                 .context("short horizon")?,
-        );
+        ));
         let mut invalid = current;
-        invalid.ticket_flags =
-            (u32::from_be_bytes(invalid.ticket_flags) | 0x0100_0000).to_be_bytes();
+        invalid.set_ticket_flags(
+            (u32::from_be_bytes(invalid.ticket_flags()) | 0x0100_0000).to_be_bytes(),
+        );
         Ok(vec![
             missing_flag,
             future,
@@ -69,11 +73,13 @@ mod tests {
     fn pruning_drops_expired_and_future_renewable_sessions() -> Result<(), TestError> {
         let mut removed = Vec::new();
         for mut session in [current_tgt_session(120, 0)?, current_tgt_session(1, 60)?] {
-            if session.end_time > SystemTime::now() {
-                session.start_time = session
-                    .end_time
-                    .checked_sub(Duration::from_mins(30))
-                    .context("future start")?;
+            if session.end_time() > SystemTime::now() {
+                session.set_start_time(
+                    session
+                        .end_time()
+                        .checked_sub(Duration::from_mins(30))
+                        .context("future start")?,
+                );
             }
             let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, session);
             let pruned = client.prune_unusable_sessions();
@@ -87,8 +93,9 @@ mod tests {
     #[test]
     fn due_unflagged_primary_does_not_attempt_renewal() -> Result<(), TestError> {
         let mut session = current_tgt_session(55, 5)?;
-        session.ticket_flags =
-            (u32::from_be_bytes(session.ticket_flags) & !KDC_OPTION_RENEWABLE).to_be_bytes();
+        session.set_ticket_flags(
+            (u32::from_be_bytes(session.ticket_flags()) & !KDC_OPTION_RENEWABLE).to_be_bytes(),
+        );
         let mut client =
             Tokio::from_tgt_session(config_without_kdcs()?, KdcProtocol::Tcp, session.clone());
         let refreshed = runtime()?.block_on(client.refresh_tgt_if_needed())?;

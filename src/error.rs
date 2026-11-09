@@ -20,6 +20,7 @@ use crate::config::parameters::Failure as ExpansionFailure;
 use crate::spnego::oid::ObjectIdentifier;
 include!("error/any.rs");
 include!("error/policy.rs");
+mod credential_debug;
 #[cfg(feature = "messages")]
 /// AP-REP helper error.
 #[derive(Debug, thiserror::Error)]
@@ -197,7 +198,7 @@ pub enum Ccache {
 }
 #[cfg(feature = "messages")]
 /// Kerberos client exchange error.
-#[derive(Debug, thiserror::Error)]
+#[derive(thiserror::Error)]
 #[non_exhaustive]
 pub enum Client {
     /// ASN.1 DER decode failed.
@@ -454,7 +455,7 @@ pub enum Client {
     #[error("Kerberos time overflows SystemTime")]
     TimeOverflow,
     /// The KDC returned an application-level error.
-    #[error("KDC returned error code {}", .0.error_code)]
+    #[error("KDC returned error code {}", .0.error_code())]
     Kdc(Box<KdcError>),
     /// No supported preauthentication encryption type was available.
     #[error("no supported preauthentication encryption type for requested list {requested:?}")]
@@ -868,7 +869,7 @@ pub enum Crypto {
 }
 #[cfg(feature = "http")]
 /// HTTP Negotiate adapter error.
-#[derive(Debug, thiserror::Error)]
+#[derive(thiserror::Error)]
 #[non_exhaustive]
 pub enum Http {
     /// The request did not contain an Authorization header.
@@ -2011,7 +2012,7 @@ pub enum Service {
 }
 #[cfg(feature = "spnego")]
 /// SPNEGO/GSS token processing error.
-#[derive(Debug, thiserror::Error)]
+#[derive(thiserror::Error)]
 #[non_exhaustive]
 pub enum Spnego {
     /// Input was absent.

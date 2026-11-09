@@ -313,14 +313,14 @@ mod harness {
             let pa_for_user =
                 PaForUser::decode_der(for_user.value.as_ref()).context("PA-FOR-USER decodes")?;
             assert_eq!(
-                principal_from_parts(&pa_for_user.user_realm, &pa_for_user.user_name)?,
+                principal_from_parts(pa_for_user.user_realm(), pa_for_user.user_name())?,
                 self.expected_user
             );
 
             self.calls = next_call(self.calls)?;
             let mut built = built_tgs_request_from_der(decoded, request)?;
-            built.client = self.expected_user.clone();
-            synthetic_tgs_rep(&built, built.nonce, &self.session_key.clone())
+            built.set_client(self.expected_user.clone());
+            synthetic_tgs_rep(&built, built.nonce(), &self.session_key)
         }
     }
 
@@ -389,8 +389,8 @@ mod harness {
 
             self.calls = next_call(self.calls)?;
             let mut built = built_tgs_request_from_der(decoded, request)?;
-            built.client = self.expected_client.clone();
-            synthetic_tgs_rep(&built, built.nonce, &self.session_key.clone())
+            built.set_client(self.expected_client.clone());
+            synthetic_tgs_rep(&built, built.nonce(), &self.session_key)
         }
     }
 
@@ -430,7 +430,7 @@ mod harness {
 
             self.calls = next_call(self.calls)?;
             let built = built_tgs_request_from_der(decoded, request)?;
-            synthetic_tgs_rep(&built, built.nonce, &self.session_key.clone())
+            synthetic_tgs_rep(&built, built.nonce(), &self.session_key)
         }
     }
 
@@ -487,8 +487,8 @@ mod harness {
                     let built = built_request_from_der(decoded, request)?;
                     synthetic_as_rep_with_reply_key(
                         &built,
-                        built.nonce,
-                        &built.service,
+                        built.nonce(),
+                        built.service(),
                         &self.reply_key,
                     )
                 }
@@ -544,7 +544,7 @@ mod harness {
             assert_pa_enc_timestamp(&decoded, self.expected_pa_kvno)?;
 
             let built = built_request_from_der(decoded, request)?;
-            synthetic_as_rep_with_reply_key(&built, built.nonce, &built.service, &self.reply_key)
+            synthetic_as_rep_with_reply_key(&built, built.nonce(), built.service(), &self.reply_key)
         }
     }
 
@@ -583,7 +583,7 @@ mod harness {
     /// The TGT session of the sample AS exchange.
     pub(crate) fn sample_tgt_session() -> Result<AsRepSession, TestError> {
         let request = sample_request()?;
-        let response = synthetic_as_rep(&request, request.nonce)?;
+        let response = synthetic_as_rep(&request, request.nonce())?;
         process_as_rep(&request, &response, &reply_key()?).context("sample TGT validates")
     }
 
@@ -591,9 +591,16 @@ mod harness {
     #[cfg(feature = "tokio")]
     pub(crate) fn sample_referral_tgt_session(realm: &str) -> Result<AsRepSession, TestError> {
         let mut tgt = sample_tgt_session()?;
-        tgt.service = Principal::new("TEST.GOKRB5", 2, ["krbtgt".to_owned(), realm.to_owned()]);
-        tgt.session_key.value = vec![0x9a; 32].into();
-        tgt.ticket = marked_ticket(format!("referral-ticket-{realm}").as_bytes())?.into();
+        tgt.set_service(Principal::new(
+            "TEST.GOKRB5",
+            2,
+            ["krbtgt".to_owned(), realm.to_owned()],
+        ));
+        tgt.set_session_key(EncryptionKey::new(
+            tgt.session_key().etype(),
+            vec![0x9a; 32],
+        ));
+        tgt.set_ticket(marked_ticket(format!("referral-ticket-{realm}").as_bytes())?.into());
         align_ticket_service(&mut tgt)?;
         Ok(tgt)
     }
@@ -602,18 +609,18 @@ mod harness {
     #[cfg(feature = "tokio")]
     pub(crate) fn align_ticket_service(session: &mut AsRepSession) -> Result<(), TestError> {
         use rskrb5_ng::ticket;
-        let mut wire = ticket::decode(&session.ticket)?;
-        wire.realm = kerberos_string(&session.service.realm)?;
+        let mut wire = ticket::decode(session.ticket())?;
+        wire.realm = kerberos_string(&session.service().realm)?;
         wire.sname = rasn_kerberos::PrincipalName {
-            r#type: session.service.name_type,
+            r#type: session.service().name_type,
             string: session
-                .service
+                .service()
                 .components
                 .iter()
                 .map(|value| kerberos_string(value))
                 .collect::<Result<_, _>>()?,
         };
-        session.ticket = ticket::encode(&wire)?.into();
+        session.set_ticket(ticket::encode(&wire)?.into());
         Ok(())
     }
 
@@ -622,7 +629,7 @@ mod harness {
     pub(crate) fn marked_ticket(marker: &[u8]) -> Result<Vec<u8>, TestError> {
         use rskrb5_ng::ticket;
         let session = sample_tgt_session()?;
-        let mut ticket = ticket::decode(&session.ticket)?;
+        let mut ticket = ticket::decode(session.ticket())?;
         ticket.enc_part.cipher = marker.to_vec().into();
         Ok(ticket::encode(&ticket)?)
     }
@@ -633,7 +640,7 @@ mod harness {
         tgt: &AsRepSession,
         realm: &str,
     ) -> Result<AsRepSession, TestError> {
-        let referral_service = Principal::new(tgt.service.realm.clone(), 2, ["krbtgt", realm]);
+        let referral_service = Principal::new(tgt.service().realm.clone(), 2, ["krbtgt", realm]);
         let request = build_tgs_req_with_confounder(
             tgt,
             referral_service.clone(),
@@ -645,11 +652,11 @@ mod harness {
         .context("referral TGS-REQ builds")?;
         let response = synthetic_tgs_rep_with_service(
             &request,
-            request.nonce,
-            &tgt.session_key,
+            request.nonce(),
+            tgt.session_key(),
             &referral_service,
         )?;
-        process_tgs_rep_with_referral(&request, &response, &tgt.session_key)
+        process_tgs_rep_with_referral(&request, &response, tgt.session_key())
             .context("referral TGT validates")
     }
 
@@ -662,22 +669,23 @@ mod harness {
     ) -> Result<AsRepSession, TestError> {
         let now = SystemTime::now();
         let mut tgt = sample_tgt_session()?;
-        tgt.auth_time = now
-            .checked_sub(Duration::from_mins(auth_age_minutes))
-            .context("auth time")?;
-        tgt.start_time = tgt.auth_time;
-        tgt.end_time = if remaining_minutes == 0 {
+        tgt.set_auth_time(
+            now.checked_sub(Duration::from_mins(auth_age_minutes))
+                .context("auth time")?,
+        );
+        tgt.set_start_time(tgt.auth_time());
+        tgt.set_end_time(if remaining_minutes == 0 {
             now.checked_sub(Duration::from_mins(1))
                 .context("expired end time")?
         } else {
             now.checked_add(Duration::from_mins(remaining_minutes))
                 .context("end time")?
-        };
-        tgt.renew_till = Some(
+        });
+        tgt.set_renew_till(Some(
             now.checked_add(Duration::from_hours(24))
                 .context("renew time")?,
-        );
-        tgt.key_expiration = Some(tgt.end_time);
+        ));
+        tgt.set_key_expiration(Some(tgt.end_time()));
         Ok(tgt)
     }
 
@@ -701,9 +709,9 @@ mod harness {
     pub(crate) fn sample_built_kpasswd_request() -> Result<BuiltKpasswdRequest, TestError> {
         let tgt = sample_tgt_session()?;
         let request = sample_tgs_request(&tgt)?;
-        let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key)?;
+        let response = synthetic_tgs_rep(&request, request.nonce(), tgt.session_key())?;
         let service_ticket =
-            process_tgs_rep(&request, &response, &tgt.session_key).context("TGS-REP validates")?;
+            process_tgs_rep(&request, &response, tgt.session_key()).context("TGS-REP validates")?;
         let reply_key = EncryptionKey::new(18, vec![0x55; 32]);
         let change_data = ChangePasswdData::for_target(
             Password::copy_from_str("newpassword"),
@@ -743,7 +751,7 @@ mod harness {
         let plaintext = der::encode(&enc_part).context("EncApRepPart encodes")?;
         let cipher = AesSha1Etype::Aes256
             .encrypt_message_with_confounder(
-                &built.ap_req.session_key.value,
+                built.ap_req().session_key().value(),
                 &plaintext,
                 AP_REP_ENCPART_USAGE,
                 &decode_hex(AS_REP_CONFOUNDER)?,
@@ -753,7 +761,7 @@ mod harness {
             pvno: Integer::from(5_i32),
             msg_type: Integer::from(15_i32),
             enc_part: rasn_kerberos::EncryptedData {
-                etype: built.ap_req.session_key.etype,
+                etype: built.ap_req().session_key().etype(),
                 kvno: None,
                 cipher: cipher.into(),
             },
@@ -767,7 +775,9 @@ mod harness {
         ap_rep: &[u8],
     ) -> Result<Vec<u8>, TestError> {
         let mut body = ap_rep.to_vec();
-        body.extend_from_slice(&der::encode(&built.request.krb_priv).context("KRB-PRIV encodes")?);
+        body.extend_from_slice(
+            &der::encode(built.request().krb_priv()).context("KRB-PRIV encodes")?,
+        );
         kpasswd_reply_frame(
             u16::try_from(ap_rep.len()).context("AP-REP length fits u16")?,
             &body,
@@ -878,13 +888,13 @@ mod harness {
         tgt: &AsRepSession,
     ) -> Result<TgsRepSession, TestError> {
         let request = sample_tgs_request(tgt)?;
-        let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key)?;
-        process_tgs_rep(&request, &response, &tgt.session_key).context("TGS-REP validates")
+        let response = synthetic_tgs_rep(&request, request.nonce(), tgt.session_key())?;
+        process_tgs_rep(&request, &response, tgt.session_key()).context("TGS-REP validates")
     }
 
     /// A synthetic AS-REP that answers `request` with `nonce`.
     pub(crate) fn synthetic_as_rep(request: &BuiltAsReq, nonce: u32) -> Result<Vec<u8>, TestError> {
-        synthetic_as_rep_with_ticket_service(request, nonce, &request.service)
+        synthetic_as_rep_with_ticket_service(request, nonce, request.service())
     }
 
     /// A synthetic AS-REP whose ticket names `ticket_service`.
@@ -944,15 +954,15 @@ mod harness {
             start_time: Some(kerberos_time(1_893_553_445)?),
             end_time: kerberos_time(1_893_639_845)?,
             renew_till: Some(kerberos_time(1_894_071_845)?),
-            srealm: realm(&request.service.realm)?,
-            sname: rasn_principal(&request.service)?,
+            srealm: realm(&request.service().realm)?,
+            sname: rasn_principal(request.service())?,
             caddr: None,
             encrypted_pa_data,
         });
         reply_fixture::conform(
-            &request.message.0.req_body,
+            &request.message().0.req_body,
             &mut enc_part.0,
-            request.reply_clock.0,
+            request.reply_clock().0,
         )?;
         let encrypted = encrypt_message(
             reply_key,
@@ -964,8 +974,8 @@ mod harness {
             pvno: Integer::from(5_i32),
             msg_type: Integer::from(11_i32),
             padata: None,
-            crealm: realm(&request.client.realm)?,
-            cname: rasn_principal(&request.client)?,
+            crealm: realm(&request.client().realm)?,
+            cname: rasn_principal(request.client())?,
             ticket: rasn_kerberos::Ticket {
                 tkt_vno: Integer::from(5_i32),
                 realm: realm(&ticket_service.realm)?,
@@ -977,7 +987,7 @@ mod harness {
                 },
             },
             enc_part: rasn_kerberos::EncryptedData {
-                etype: reply_key.etype,
+                etype: reply_key.etype(),
                 kvno: Some(3),
                 cipher: encrypted.into(),
             },
@@ -1008,9 +1018,9 @@ mod harness {
         corrupt_checksum: bool,
     ) -> Result<rasn_kerberos::PaData, TestError> {
         let etype =
-            KerberosEtype::from_etype_id(reply_key.etype).context("supported reply key etype")?;
+            KerberosEtype::from_etype_id(reply_key.etype()).context("supported reply key etype")?;
         let mut checksum = etype
-            .checksum(&reply_key.value, &request.der, AS_REQ_CHECKSUM_USAGE)
+            .checksum(reply_key.value(), request.der(), AS_REQ_CHECKSUM_USAGE)
             .context("AS-REQ checksum computes")?;
         if corrupt_checksum {
             let first = checksum.first_mut().context("checksum is not empty")?;
@@ -1029,7 +1039,7 @@ mod harness {
     /// Whether `request` carries PA-DATA of `padata_type`.
     pub(crate) fn request_has_padata(request: &BuiltAsReq, padata_type: i32) -> bool {
         request
-            .message
+            .message()
             .0
             .padata
             .as_ref()
@@ -1042,7 +1052,7 @@ mod harness {
         nonce: u32,
         tgs_session_key: &EncryptionKey,
     ) -> Result<Vec<u8>, TestError> {
-        synthetic_tgs_rep_with_service(request, nonce, tgs_session_key, &request.service)
+        synthetic_tgs_rep_with_service(request, nonce, tgs_session_key, request.service())
     }
 
     /// A synthetic TGS-REP whose ticket and encrypted part name `reply_service`.
@@ -1074,9 +1084,9 @@ mod harness {
             encrypted_pa_data: None,
         });
         reply_fixture::conform(
-            &request.message.0.req_body,
+            &request.message().0.req_body,
             &mut enc_part.0,
-            request.reply_clock.0,
+            request.reply_clock().0,
         )?;
         let encrypted = encrypt_message(
             tgs_session_key,
@@ -1088,8 +1098,8 @@ mod harness {
             pvno: Integer::from(5_i32),
             msg_type: Integer::from(13_i32),
             padata: None,
-            crealm: realm(&request.client.realm)?,
-            cname: rasn_principal(&request.client)?,
+            crealm: realm(&request.client().realm)?,
+            cname: rasn_principal(request.client())?,
             ticket: rasn_kerberos::Ticket {
                 tkt_vno: Integer::from(5_i32),
                 realm: realm(&reply_service.realm)?,
@@ -1101,12 +1111,12 @@ mod harness {
                 },
             },
             enc_part: rasn_kerberos::EncryptedData {
-                etype: tgs_session_key.etype,
+                etype: tgs_session_key.etype(),
                 kvno: None,
                 cipher: encrypted.into(),
             },
         });
-        tgs_rep.0.ticket = delegated_ticket(&request.client, reply_service)?;
+        tgs_rep.0.ticket = delegated_ticket(request.client(), reply_service)?;
         der::encode(&tgs_rep).context("TGS-REP encodes")
     }
 
@@ -1235,7 +1245,7 @@ mod harness {
             body.till.0.timestamp().saturating_sub(86_400),
         )?)?;
         let mut built = BuiltAsReq::new(message, der.to_vec().into(), client, service, nonce);
-        built.reply_clock.0 = clock;
+        built.set_reply_clock((clock, built.reply_clock().1));
         Ok(built)
     }
 
@@ -1260,7 +1270,7 @@ mod harness {
             kdc_realm,
             nonce,
         );
-        built.reply_clock.0 = clock;
+        built.set_reply_clock((clock, built.reply_clock().1));
         Ok(built)
     }
 
@@ -1272,8 +1282,8 @@ mod harness {
     /// `key` as a rasn encryption key.
     pub(crate) fn rasn_encryption_key(key: &EncryptionKey) -> rasn_kerberos::EncryptionKey {
         rasn_kerberos::EncryptionKey {
-            r#type: key.etype,
-            value: key.value.to_vec().into(),
+            r#type: key.etype(),
+            value: key.value().to_vec().into(),
         }
     }
 
@@ -1285,10 +1295,10 @@ mod harness {
         confounder_hex: &str,
     ) -> Result<Vec<u8>, TestError> {
         let etype =
-            AesSha1Etype::from_etype_id(key.etype).context("AES-SHA1 etype is supported")?;
+            AesSha1Etype::from_etype_id(key.etype()).context("AES-SHA1 etype is supported")?;
         etype
             .encrypt_message_with_confounder(
-                &key.value,
+                key.value(),
                 plaintext,
                 usage,
                 &decode_hex(confounder_hex)?,
@@ -1383,12 +1393,14 @@ mod harness {
         now: u32,
     ) -> Result<(), TestError> {
         let issued = now.checked_sub(60).context("issue time fits u32")?;
-        credential.times.auth_time = issued;
-        credential.times.start_time = issued;
-        credential.times.end_time = now.checked_add(60 * 60).context("end time fits u32")?;
-        credential.times.renew_till = now
+        let mut times = credential.times();
+        times.auth_time = issued;
+        times.start_time = issued;
+        times.end_time = now.checked_add(60 * 60).context("end time fits u32")?;
+        times.renew_till = now
             .checked_add(2 * 60 * 60)
             .context("renew time fits u32")?;
+        credential.set_times(times);
         Ok(())
     }
 
@@ -1402,10 +1414,12 @@ mod harness {
         let issued = now
             .checked_sub(2 * 60 * 60)
             .context("issue time fits u32")?;
-        credential.times.auth_time = issued;
-        credential.times.start_time = issued;
-        credential.times.end_time = now.checked_sub(60 * 60).context("end time fits u32")?;
-        credential.times.renew_till = 0;
+        let mut times = credential.times();
+        times.auth_time = issued;
+        times.start_time = issued;
+        times.end_time = now.checked_sub(60 * 60).context("end time fits u32")?;
+        times.renew_till = 0;
+        credential.set_times(times);
         Ok(())
     }
 
@@ -1570,13 +1584,13 @@ mod harness {
         let pa_for_user =
             PaForUser::decode_der(for_user.value.as_ref()).context("PA-FOR-USER decodes")?;
         assert_eq!(
-            principal_from_parts(&pa_for_user.user_realm, &pa_for_user.user_name)?,
+            principal_from_parts(pa_for_user.user_realm(), pa_for_user.user_name())?,
             expected_user
         );
 
         let mut built = built_tgs_request_from_der(decoded, &request)?;
-        built.client = expected_user;
-        let response = synthetic_tgs_rep(&built, built.nonce, &reply_key)?;
+        built.set_client(expected_user);
+        let response = synthetic_tgs_rep(&built, built.nonce(), &reply_key)?;
         write_tcp_kdc_response(&mut socket, &response).await
     }
 
@@ -1630,8 +1644,8 @@ mod harness {
         );
 
         let mut built = built_tgs_request_from_der(decoded, &request)?;
-        built.client = expected_client;
-        let response = synthetic_tgs_rep(&built, built.nonce, &reply_key)?;
+        built.set_client(expected_client);
+        let response = synthetic_tgs_rep(&built, built.nonce(), &reply_key)?;
         write_tcp_kdc_response(&mut socket, &response).await
     }
 
@@ -1667,7 +1681,7 @@ mod harness {
             .map_err(|error| error.to_string())
             .and_then(|parsed| {
                 decrypt_ap_req_authenticator(
-                    &parsed.ap_req,
+                    parsed.ap_req(),
                     session_key,
                     AP_REQ_AUTHENTICATOR_USAGE,
                 )
@@ -1775,9 +1789,9 @@ mod harness {
             .credentials()
             .iter()
             .filter(|credential| {
-                credential.client.realm == "TEST.GOKRB5"
-                    && credential.client.components == ["testuser1"]
-                    && credential.server == *server
+                credential.client().realm == "TEST.GOKRB5"
+                    && credential.client().components == ["testuser1"]
+                    && credential.server() == server
             })
             .collect()
     }
@@ -1804,22 +1818,24 @@ mod harness {
                 .context("current time is after unix epoch")?
                 .as_secs(),
         )?;
-        service_ticket.auth_time = now
-            .checked_sub(Duration::from_mins(1))
-            .context("auth time")?;
-        service_ticket.start_time = service_ticket.auth_time;
-        service_ticket.end_time = now
-            .checked_add(Duration::from_hours(1))
-            .context("end time")?;
-        service_ticket.renew_till = Some(
+        service_ticket.set_auth_time(
+            now.checked_sub(Duration::from_mins(1))
+                .context("auth time")?,
+        );
+        service_ticket.set_start_time(service_ticket.auth_time());
+        service_ticket.set_end_time(
+            now.checked_add(Duration::from_hours(1))
+                .context("end time")?,
+        );
+        service_ticket.set_renew_till(Some(
             now.checked_add(Duration::from_hours(2))
                 .context("renew time")?,
-        );
-        service_ticket.key_expiration = Some(service_ticket.end_time);
+        ));
+        service_ticket.set_key_expiration(Some(service_ticket.end_time()));
         let mut cache = ccache::CCache::new(ccache::Principal::new(
-            tgt.client.realm,
-            tgt.client.name_type,
-            tgt.client.components,
+            tgt.client().realm.clone(),
+            tgt.client().name_type,
+            tgt.client().components.clone(),
         ));
         drop(
             cache.upsert_credential(

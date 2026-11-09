@@ -55,7 +55,7 @@ pub(super) fn session(
     session: &AsRepSession,
     usage: Use,
 ) -> Result<(), Error> {
-    policy.check_use(session.session_key.etype, usage)?;
+    policy.check_use(session.session_key().etype(), usage)?;
     let ticket = ticket::decode(&session.ticket).map_err(ticket_error)?;
     let ticket_usage = match usage {
         Use::ImportedCredential => Use::ImportedCredential,
@@ -115,7 +115,7 @@ pub(super) fn before_exchange(
     for &etype in etypes {
         policy.check_use(etype, Use::RequestList)?;
     }
-    policy.check_use(key.etype, Use::ReplyKey)?;
+    policy.check_use(key.etype(), Use::ReplyKey)?;
     Ok(())
 }
 
@@ -143,7 +143,7 @@ pub(super) fn delegated(
         super::validate_delegated_ticket(ticket, &request.client, keys)?;
     }
     if u32::from_be_bytes(super::ticket_flags_to_bytes(&rasn_kerberos::TicketFlags(
-        request.message.0.req_body.kdc_options.0.clone(),
+        request.message().0.req_body.kdc_options.0.clone(),
     ))) & super::KDC_OPTION_CNAME_IN_ADDL_TKT
         != 0
     {

@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::{Engine as _, engine::general_purpose};
 use rasn::types::Integer;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize as _, Zeroizing};
 
 use crate::{
     ap_rep::{decode as decode_ap_rep, decrypt_ap_rep_enc_part},
@@ -145,16 +145,50 @@ pub const GSSAPI_INITIATOR_SIGN_USAGE: u32 = 25;
 #[non_exhaustive]
 pub struct MicToken {
     /// RFC4121 token flags.
-    pub flags: u8,
+    flags: u8,
     /// Sender sequence number.
-    pub snd_seq_num: u64,
+    snd_seq_num: u64,
     /// Payload bytes authenticated by this MIC token. Not encoded on the wire.
-    pub payload: Option<Zeroizing<Vec<u8>>>,
+    payload: Option<Zeroizing<Vec<u8>>>,
     /// Token checksum.
-    pub checksum: Option<Vec<u8>>,
+    checksum: Option<Vec<u8>>,
 }
 
 impl MicToken {
+    /// Return token flags.
+    #[inline]
+    #[must_use]
+    pub const fn flags(&self) -> u8 {
+        self.flags
+    }
+    /// Return the sender sequence number.
+    #[inline]
+    #[must_use]
+    pub const fn snd_seq_num(&self) -> u64 {
+        self.snd_seq_num
+    }
+    /// Borrow the protected payload; callers must erase copies.
+    #[inline]
+    #[must_use]
+    pub fn payload(&self) -> Option<&[u8]> {
+        self.payload.as_ref().map(|bytes| bytes.as_slice())
+    }
+    /// Borrow the checksum bytes.
+    #[inline]
+    #[must_use]
+    pub fn checksum(&self) -> Option<&[u8]> {
+        self.checksum.as_deref()
+    }
+    /// Erase the protected payload before clearing its owner.
+    #[inline]
+    pub fn clear_payload(&mut self) {
+        if let Some(bytes) = &mut self.payload {
+            bytes.as_mut_slice().zeroize();
+            #[cfg(test)]
+            erasure_tests::observe("mic-payload-replace", bytes);
+        }
+        self.payload = None;
+    }
     /// Sets `flags`, preserving the other fields.
     #[must_use]
     #[inline]
@@ -173,6 +207,11 @@ impl MicToken {
     #[must_use]
     #[inline]
     pub fn with_checksum(mut self, value: Option<Vec<u8>>) -> Self {
+        if let Some(bytes) = &mut self.checksum {
+            bytes.as_mut_slice().zeroize();
+            #[cfg(test)]
+            erasure_tests::observe("mic-checksum-replace", bytes);
+        }
         self.checksum = value;
         self
     }
@@ -256,6 +295,7 @@ impl MicToken {
     where
         P: Into<Vec<u8>>,
     {
+        self.clear_payload();
         self.payload = Some(Zeroizing::new(payload.into()));
         self
     }
@@ -286,7 +326,7 @@ impl MicToken {
     /// [`Error::GssChecksumMismatch`] when the checksum does not match.
     #[inline]
     pub fn verify(&self, key: &EncryptionKey, key_usage: u32) -> Result<(), Error> {
-        selection::reject_enctype(key.etype)?;
+        selection::reject_enctype(key.etype())?;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
         let mut data = Scratch::new(
             Vec::with_capacity(payload.len().saturating_add(GSS_MIC_HEADER_LEN)),
@@ -294,9 +334,9 @@ impl MicToken {
         );
         data.extend_from_slice(payload);
         data.extend_from_slice(&self.checksum_header());
-        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+        let etype = selection::enctype(key.etype())?.ok_or(Error::UnsupportedEtype(key.etype()))?;
         let actual = self.checksum.as_ref().ok_or(Error::MissingGssChecksum)?;
-        if !etype.verify_checksum(&key.value, &data, actual, key_usage) {
+        if !etype.verify_checksum(key.value(), &data, actual, key_usage) {
             return Err(Error::GssChecksumMismatch);
         }
         Ok(())
@@ -314,7 +354,7 @@ impl MicToken {
         P: Into<Zeroizing<Vec<u8>>>,
     {
         let owned_payload = payload.into();
-        selection::reject_enctype(key.etype)?;
+        selection::reject_enctype(key.etype())?;
         let mut token = Self {
             flags: 0,
             snd_seq_num: 0,
@@ -332,7 +372,7 @@ impl MicToken {
     /// Returns [`Error::MissingGssPayload`] without a payload, [`Error::UnsupportedEtype`] for an
     /// unknown key encryption type, and [`Error::Crypto`] when the checksum computation fails.
     fn compute_checksum(&self, key: &EncryptionKey, key_usage: u32) -> Result<Vec<u8>, Error> {
-        selection::reject_enctype(key.etype)?;
+        selection::reject_enctype(key.etype())?;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
         let mut data = Scratch::new(
             Vec::with_capacity(payload.len().saturating_add(GSS_MIC_HEADER_LEN)),
@@ -341,9 +381,9 @@ impl MicToken {
         data.extend_from_slice(payload);
         data.extend_from_slice(&self.checksum_header());
 
-        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+        let etype = selection::enctype(key.etype())?.ok_or(Error::UnsupportedEtype(key.etype()))?;
         etype
-            .checksum(&key.value, &data, key_usage)
+            .checksum(key.value(), &data, key_usage)
             .map_err(Error::Crypto)
     }
 
@@ -376,29 +416,113 @@ impl fmt::Debug for MicToken {
     }
 }
 
+// Drop audit: checksum storage is erased synchronously before release.
+impl Drop for MicToken {
+    #[inline]
+    fn drop(&mut self) {
+        let Self {
+            flags: _,
+            snd_seq_num: _,
+            payload: _,
+            checksum,
+        } = self;
+        checksum.zeroize();
+    }
+}
+
 /// RFC4121 GSS-API Wrap token.
 #[derive(Clone, Default, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct WrapToken {
     /// RFC4121 token flags.
-    pub flags: u8,
+    flags: u8,
     /// Extra count. This is the checksum length for unsealed tokens and the
     /// filler length for sealed tokens.
-    pub ec: u16,
+    ec: u16,
     /// Right rotation count.
-    pub rrc: u16,
+    rrc: u16,
     /// Sender sequence number.
-    pub snd_seq_num: u64,
+    snd_seq_num: u64,
     /// Wrapped payload bytes.
-    pub payload: Option<Zeroizing<Vec<u8>>>,
+    payload: Option<Zeroizing<Vec<u8>>>,
     /// Token checksum for unsealed tokens.
-    pub checksum: Option<Vec<u8>>,
+    checksum: Option<Vec<u8>>,
     /// Encrypted token body for sealed tokens, stored exactly as transmitted
     /// after the 16-byte Wrap header, including any right rotation.
-    pub encrypted_body: Option<Vec<u8>>,
+    encrypted_body: Option<Vec<u8>>,
+}
+
+// Drop audit: checksum and encrypted-body storage are erased synchronously before release.
+impl Drop for WrapToken {
+    #[inline]
+    fn drop(&mut self) {
+        let Self {
+            flags: _,
+            ec: _,
+            rrc: _,
+            snd_seq_num: _,
+            payload: _,
+            checksum,
+            encrypted_body,
+        } = self;
+        checksum.zeroize();
+        encrypted_body.zeroize();
+    }
 }
 
 impl WrapToken {
+    /// Erase retained plaintext before clearing its owner.
+    #[inline]
+    pub fn clear_payload(&mut self) {
+        if let Some(bytes) = &mut self.payload {
+            bytes.as_mut_slice().zeroize();
+            #[cfg(test)]
+            erasure_tests::observe("wrap-payload-replace", bytes);
+        }
+        self.payload = None;
+    }
+    /// Return token flags.
+    #[inline]
+    #[must_use]
+    pub const fn flags(&self) -> u8 {
+        self.flags
+    }
+    /// Return the extra count.
+    #[inline]
+    #[must_use]
+    pub const fn ec(&self) -> u16 {
+        self.ec
+    }
+    /// Return the rotation count.
+    #[inline]
+    #[must_use]
+    pub const fn rrc(&self) -> u16 {
+        self.rrc
+    }
+    /// Return the sender sequence number.
+    #[inline]
+    #[must_use]
+    pub const fn snd_seq_num(&self) -> u64 {
+        self.snd_seq_num
+    }
+    /// Borrow the protected payload; callers must erase copies.
+    #[inline]
+    #[must_use]
+    pub fn payload(&self) -> Option<&[u8]> {
+        self.payload.as_ref().map(|bytes| bytes.as_slice())
+    }
+    /// Borrow the checksum bytes.
+    #[inline]
+    #[must_use]
+    pub fn checksum(&self) -> Option<&[u8]> {
+        self.checksum.as_deref()
+    }
+    /// Borrow encrypted credential bytes; callers must erase copies.
+    #[inline]
+    #[must_use]
+    pub fn encrypted_body(&self) -> Option<&[u8]> {
+        self.encrypted_body.as_deref()
+    }
     /// Sets `flags`, preserving the other fields.
     #[must_use]
     #[inline]
@@ -431,6 +555,11 @@ impl WrapToken {
     #[must_use]
     #[inline]
     pub fn with_checksum(mut self, value: Option<Vec<u8>>) -> Self {
+        if let Some(bytes) = &mut self.checksum {
+            bytes.as_mut_slice().zeroize();
+            #[cfg(test)]
+            erasure_tests::observe("wrap-checksum-replace", bytes);
+        }
         self.checksum = value;
         self
     }
@@ -438,6 +567,7 @@ impl WrapToken {
     #[must_use]
     #[inline]
     pub fn with_encrypted_body(mut self, value: Option<Vec<u8>>) -> Self {
+        self.encrypted_body.zeroize();
         self.encrypted_body = value;
         self
     }
@@ -603,6 +733,7 @@ impl WrapToken {
     where
         P: Into<Vec<u8>>,
     {
+        self.clear_payload();
         self.payload = Some(Zeroizing::new(payload.into()));
         self
     }
@@ -657,7 +788,7 @@ impl WrapToken {
             return Ok(());
         }
 
-        selection::reject_enctype(key.etype)?;
+        selection::reject_enctype(key.etype())?;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
         let mut data = Scratch::new(
             Vec::with_capacity(payload.len().saturating_add(GSS_WRAP_HEADER_LEN)),
@@ -665,9 +796,9 @@ impl WrapToken {
         );
         data.extend_from_slice(payload);
         data.extend_from_slice(&wrap_checksum_header(self.flags, self.snd_seq_num));
-        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+        let etype = selection::enctype(key.etype())?.ok_or(Error::UnsupportedEtype(key.etype()))?;
         let actual = self.checksum.as_ref().ok_or(Error::MissingGssChecksum)?;
-        if !etype.verify_checksum(&key.value, &data, actual, key_usage) {
+        if !etype.verify_checksum(key.value(), &data, actual, key_usage) {
             return Err(Error::GssChecksumMismatch);
         }
         Ok(())
@@ -686,7 +817,7 @@ impl WrapToken {
         P: Into<Zeroizing<Vec<u8>>>,
     {
         let owned_payload = payload.into();
-        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+        let etype = selection::enctype(key.etype())?.ok_or(Error::UnsupportedEtype(key.etype()))?;
         let mut token = Self {
             flags: 0,
             ec: u16::try_from(etype.hmac_len()).map_err(|_overflow| {
@@ -717,7 +848,7 @@ impl WrapToken {
         P: Into<Zeroizing<Vec<u8>>>,
     {
         let owned_payload = payload.into();
-        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+        let etype = selection::enctype(key.etype())?.ok_or(Error::UnsupportedEtype(key.etype()))?;
         let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
         getrandom::fill(&mut confounder)?;
         Self::new_initiator_sealed_with_confounder(owned_payload, key, &confounder)
@@ -774,7 +905,7 @@ impl WrapToken {
 
         let flags = self.flags | GSS_TOKEN_FLAG_SEALED;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
-        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+        let etype = selection::enctype(key.etype())?.ok_or(Error::UnsupportedEtype(key.etype()))?;
         let ec = match etype {
             KerberosEtype::Des3CbcSha1Kd(_) => {
                 // DES3's 8-byte confounder and the 16-byte header are already block-aligned.
@@ -798,11 +929,20 @@ impl WrapToken {
         plaintext.extend(iter::repeat_n(0, usize::from(ec)));
         plaintext.extend_from_slice(&wrap_header(flags, ec, 0, self.snd_seq_num));
 
-        let encrypted =
-            etype.encrypt_message_with_confounder(&key.value, &plaintext, key_usage, confounder)?;
+        let encrypted = etype.encrypt_message_with_confounder(
+            key.value(),
+            &plaintext,
+            key_usage,
+            confounder,
+        )?;
         self.encrypted_body = Some(rotate_right(&encrypted, usize::from(self.rrc)));
         self.flags = flags;
         self.ec = ec;
+        if let Some(bytes) = &mut self.checksum {
+            bytes.as_mut_slice().zeroize();
+            #[cfg(test)]
+            erasure_tests::observe("wrap-seal-checksum-replace", bytes);
+        }
         self.checksum = None;
         Ok(())
     }
@@ -828,10 +968,10 @@ impl WrapToken {
             .encrypted_body
             .as_ref()
             .ok_or(Error::MissingGssEncryptedBody)?;
-        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+        let etype = selection::enctype(key.etype())?.ok_or(Error::UnsupportedEtype(key.etype()))?;
         let encrypted = rotate_left(encrypted_body, usize::from(self.rrc));
         let mut plaintext = Scratch::new(
-            etype.decrypt_message(&key.value, &encrypted, key_usage)?,
+            etype.decrypt_message(key.value(), &encrypted, key_usage)?,
             "wrap-decrypt",
         );
 
@@ -867,6 +1007,7 @@ impl WrapToken {
         key_usage: u32,
     ) -> Result<&[u8], Error> {
         let payload = Zeroizing::new(self.decrypt_payload(key, key_usage)?);
+        self.clear_payload();
         Ok(self.payload.insert(payload).as_slice())
     }
 
@@ -885,7 +1026,7 @@ impl WrapToken {
     /// Returns [`Error::MissingGssPayload`] without a payload, [`Error::UnsupportedEtype`] for an
     /// unknown key encryption type, and [`Error::Crypto`] when the checksum computation fails.
     fn compute_checksum(&self, key: &EncryptionKey, key_usage: u32) -> Result<Vec<u8>, Error> {
-        selection::reject_enctype(key.etype)?;
+        selection::reject_enctype(key.etype())?;
         let payload = self.payload.as_ref().ok_or(Error::MissingGssPayload)?;
         let mut data = Scratch::new(
             Vec::with_capacity(payload.len().saturating_add(GSS_WRAP_HEADER_LEN)),
@@ -894,9 +1035,9 @@ impl WrapToken {
         data.extend_from_slice(payload);
         data.extend_from_slice(&wrap_checksum_header(self.flags, self.snd_seq_num));
 
-        let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+        let etype = selection::enctype(key.etype())?.ok_or(Error::UnsupportedEtype(key.etype()))?;
         etype
-            .checksum(&key.value, &data, key_usage)
+            .checksum(key.value(), &data, key_usage)
             .map_err(Error::Crypto)
     }
 
@@ -974,14 +1115,45 @@ impl Krb5TokenId {
 #[non_exhaustive]
 pub struct Krb5MechToken {
     /// Token mechanism OID. RFC 4121 KRB5 tokens use [`ObjectIdentifier::krb5`].
-    pub oid: ObjectIdentifier,
+    oid: ObjectIdentifier,
     /// Two-byte KRB5 token ID.
-    pub token_id: Krb5TokenId,
+    token_id: Krb5TokenId,
     /// DER-encoded Kerberos message carried by this token.
-    pub message: Zeroizing<Vec<u8>>,
+    message: Zeroizing<Vec<u8>>,
 }
 
 impl Krb5MechToken {
+    /// Set public mechanism metadata.
+    #[inline]
+    pub fn set_oid(&mut self, value: ObjectIdentifier) {
+        self.oid = value;
+    }
+    /// Borrow the mechanism identifier.
+    #[inline]
+    #[must_use]
+    pub const fn oid(&self) -> &ObjectIdentifier {
+        &self.oid
+    }
+    /// Return the protocol token identifier.
+    #[inline]
+    #[must_use]
+    pub const fn token_id(&self) -> Krb5TokenId {
+        self.token_id
+    }
+    /// Borrow credential bytes; callers must erase copies they create.
+    #[inline]
+    #[must_use]
+    pub fn message(&self) -> &[u8] {
+        &self.message
+    }
+    /// Erase the previous credential before replacing it.
+    #[inline]
+    pub fn set_message(&mut self, value: Zeroizing<Vec<u8>>) {
+        self.message.as_mut_slice().zeroize();
+        #[cfg(test)]
+        erasure_tests::observe("mechanism-replace", &self.message);
+        self.message = value;
+    }
     #[must_use]
     /// Build a KRB5 AP-REQ mech token.
     #[inline]
@@ -1128,16 +1300,71 @@ impl NegState {
 #[non_exhaustive]
 pub struct NegTokenInit {
     /// Offered mechanism OIDs.
-    pub mech_types: Vec<ObjectIdentifier>,
+    mech_types: Vec<ObjectIdentifier>,
     /// Optional DER BIT STRING contents, including the unused-bit count byte.
-    pub req_flags: Option<Vec<u8>>,
+    req_flags: Option<Vec<u8>>,
     /// Optional mechanism token bytes.
-    pub mech_token: Option<Zeroizing<Vec<u8>>>,
+    mech_token: Option<Zeroizing<Vec<u8>>>,
     /// Optional mechanism list MIC bytes.
-    pub mech_list_mic: Option<Zeroizing<Vec<u8>>>,
+    mech_list_mic: Option<Zeroizing<Vec<u8>>>,
 }
 
 impl NegTokenInit {
+    /// Replace public mechanism metadata.
+    #[inline]
+    pub fn set_mech_types(&mut self, value: Vec<ObjectIdentifier>) {
+        self.mech_types = value;
+    }
+    /// Mutably borrow mechanism metadata, which contains no credential bytes.
+    #[inline]
+    #[must_use]
+    pub const fn mech_types_mut(&mut self) -> &mut Vec<ObjectIdentifier> {
+        &mut self.mech_types
+    }
+    /// Borrow offered mechanism identifiers.
+    #[inline]
+    #[must_use]
+    pub fn mech_types(&self) -> &[ObjectIdentifier] {
+        &self.mech_types
+    }
+    /// Borrow request flags.
+    #[inline]
+    #[must_use]
+    pub fn req_flags(&self) -> Option<&[u8]> {
+        self.req_flags.as_deref()
+    }
+    /// Borrow mechanism credentials; callers must erase copies they create.
+    #[inline]
+    #[must_use]
+    pub fn mech_token(&self) -> Option<&[u8]> {
+        self.mech_token.as_ref().map(|bytes| bytes.as_slice())
+    }
+    /// Borrow mechanism MIC bytes; callers must erase copies they create.
+    #[inline]
+    #[must_use]
+    pub fn mech_list_mic(&self) -> Option<&[u8]> {
+        self.mech_list_mic.as_ref().map(|bytes| bytes.as_slice())
+    }
+    /// Erase the previous mechanism credentials before replacement.
+    #[inline]
+    pub fn set_mech_token(&mut self, value: Option<Zeroizing<Vec<u8>>>) {
+        if let Some(bytes) = &mut self.mech_token {
+            bytes.as_mut_slice().zeroize();
+            #[cfg(test)]
+            erasure_tests::observe("init-token-replace", bytes);
+        }
+        self.mech_token = value;
+    }
+    /// Erase the previous mechanism MIC before replacement.
+    #[inline]
+    pub fn set_mech_list_mic(&mut self, value: Option<Zeroizing<Vec<u8>>>) {
+        if let Some(bytes) = &mut self.mech_list_mic {
+            bytes.as_mut_slice().zeroize();
+            #[cfg(test)]
+            erasure_tests::observe("init-mic-replace", bytes);
+        }
+        self.mech_list_mic = value;
+    }
     #[must_use]
     /// Build a `NegTokenInit` that offers Kerberos 5 and carries a KRB5 mech
     /// token.
@@ -1264,16 +1491,70 @@ impl NegTokenInit {
 #[non_exhaustive]
 pub struct NegTokenResp {
     /// Optional negotiation state.
-    pub neg_state: Option<NegState>,
+    neg_state: Option<NegState>,
     /// Optional selected mechanism OID.
-    pub supported_mech: Option<ObjectIdentifier>,
+    supported_mech: Option<ObjectIdentifier>,
     /// Optional response token bytes.
-    pub response_token: Option<Zeroizing<Vec<u8>>>,
+    response_token: Option<Zeroizing<Vec<u8>>>,
     /// Optional mechanism list MIC bytes.
-    pub mech_list_mic: Option<Zeroizing<Vec<u8>>>,
+    mech_list_mic: Option<Zeroizing<Vec<u8>>>,
 }
 
 impl NegTokenResp {
+    /// Set negotiation state metadata.
+    #[inline]
+    pub const fn set_neg_state(&mut self, value: Option<NegState>) {
+        self.neg_state = value;
+    }
+    /// Set selected mechanism metadata.
+    #[inline]
+    pub fn set_supported_mech(&mut self, value: Option<ObjectIdentifier>) {
+        self.supported_mech = value;
+    }
+    /// Return the negotiated state.
+    #[inline]
+    #[must_use]
+    pub const fn neg_state(&self) -> Option<NegState> {
+        self.neg_state
+    }
+    /// Borrow the selected mechanism.
+    #[inline]
+    #[must_use]
+    pub const fn supported_mech(&self) -> Option<&ObjectIdentifier> {
+        self.supported_mech.as_ref()
+    }
+    /// Borrow response credentials; callers must erase copies they create.
+    #[inline]
+    #[must_use]
+    pub fn response_token(&self) -> Option<&[u8]> {
+        self.response_token.as_ref().map(|bytes| bytes.as_slice())
+    }
+    /// Borrow mechanism MIC bytes; callers must erase copies they create.
+    #[inline]
+    #[must_use]
+    pub fn mech_list_mic(&self) -> Option<&[u8]> {
+        self.mech_list_mic.as_ref().map(|bytes| bytes.as_slice())
+    }
+    /// Erase the previous response credentials before replacement.
+    #[inline]
+    pub fn set_response_token(&mut self, value: Option<Zeroizing<Vec<u8>>>) {
+        if let Some(bytes) = &mut self.response_token {
+            bytes.as_mut_slice().zeroize();
+            #[cfg(test)]
+            erasure_tests::observe("response-token-replace", bytes);
+        }
+        self.response_token = value;
+    }
+    /// Erase the previous mechanism MIC before replacement.
+    #[inline]
+    pub fn set_mech_list_mic(&mut self, value: Option<Zeroizing<Vec<u8>>>) {
+        if let Some(bytes) = &mut self.mech_list_mic {
+            bytes.as_mut_slice().zeroize();
+            #[cfg(test)]
+            erasure_tests::observe("response-mic-replace", bytes);
+        }
+        self.mech_list_mic = value;
+    }
     #[must_use]
     /// Build an `accept-completed` response selecting Kerberos 5.
     #[inline]
@@ -1314,7 +1595,7 @@ impl NegTokenResp {
     /// Attach a mechanism response token.
     #[inline]
     pub fn with_response_token(mut self, response_token: Vec<u8>) -> Self {
-        self.response_token = Some(Zeroizing::new(response_token));
+        self.set_response_token(Some(Zeroizing::new(response_token)));
         self
     }
 
@@ -1394,7 +1675,7 @@ impl NegTokenResp {
 }
 
 /// SPNEGO negotiation token choice.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum NegotiationToken {
     /// `NegTokenInit`.
@@ -1437,7 +1718,7 @@ impl NegotiationToken {
 }
 
 /// Full SPNEGO GSS context token.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Token {
     /// Initial context token with SPNEGO OID and `NegTokenInit`.
@@ -1533,26 +1814,56 @@ impl Token {
 }
 
 /// Options for building a client SPNEGO AP-REQ initiator token.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct InitiatorContextOptions {
     /// Runtime policy passed to AP construction; secure defaults when absent.
-    pub crypto_policy: Option<CryptoPolicy>,
+    crypto_policy: Option<CryptoPolicy>,
     /// GSS-API context flags to place in the authenticator checksum.
-    pub context_flags: Vec<u32>,
+    context_flags: Vec<u32>,
     /// AP-REQ option bit string.
-    pub ap_option_bits: u32,
+    ap_option_bits: u32,
     /// Optional client-selected subkey.
-    pub subkey: Option<EncryptionKey>,
+    subkey: Option<EncryptionKey>,
     /// Optional client sequence number.
     ///
     /// [`init_sec_context`] fills a random gokrb5-compatible sequence number
     /// when this is absent. [`init_sec_context_with_confounder`] requires an
     /// explicit value so deterministic construction also conforms to RFC 4121.
-    pub sequence_number: Option<u32>,
+    sequence_number: Option<u32>,
 }
 
 impl InitiatorContextOptions {
+    /// Borrow the requested runtime policy.
+    #[inline]
+    #[must_use]
+    pub const fn crypto_policy(&self) -> Option<&CryptoPolicy> {
+        self.crypto_policy.as_ref()
+    }
+    /// Borrow requested context flags.
+    #[inline]
+    #[must_use]
+    pub fn context_flags(&self) -> &[u32] {
+        &self.context_flags
+    }
+    /// Return AP option bits.
+    #[inline]
+    #[must_use]
+    pub const fn ap_option_bits(&self) -> u32 {
+        self.ap_option_bits
+    }
+    /// Return the requested sequence number.
+    #[inline]
+    #[must_use]
+    pub const fn sequence_number(&self) -> Option<u32> {
+        self.sequence_number
+    }
+    /// Borrow the optional subkey; callers must erase any copied key bytes.
+    #[inline]
+    #[must_use]
+    pub const fn subkey(&self) -> Option<&EncryptionKey> {
+        self.subkey.as_ref()
+    }
     /// Set explicit enctype permission for this initiator context.
     #[inline]
     #[must_use]
@@ -1621,35 +1932,61 @@ impl Default for InitiatorContextOptions {
 #[non_exhaustive]
 pub struct InitiatorContext {
     /// Runtime policy retained for reply keys and server-selected subkeys.
-    pub crypto_policy: CryptoPolicy,
+    crypto_policy: CryptoPolicy,
     /// ASN.1 AP-REQ message.
-    pub ap_req: rasn_kerberos::ApReq,
+    ap_req: rasn_kerberos::ApReq,
     /// DER-encoded AP-REQ bytes.
-    pub ap_req_der: Zeroizing<Vec<u8>>,
+    ap_req_der: Zeroizing<Vec<u8>>,
     /// KRB5 mech token carrying the AP-REQ.
-    pub krb5_token: Krb5MechToken,
+    krb5_token: Krb5MechToken,
     /// SPNEGO `NegTokenInit` context token.
-    pub spnego_token: Token,
+    spnego_token: Token,
     /// HTTP `Authorization` header value.
-    pub header: Zeroizing<String>,
+    header: Zeroizing<String>,
     /// Client principal placed in the authenticator.
-    pub client: Principal,
+    client: Principal,
     /// Service principal from the ticket.
-    pub service: Principal,
+    service: Principal,
     /// Service-ticket session key used for AP-REP verification.
-    pub session_key: EncryptionKey,
+    session_key: EncryptionKey,
     /// Authenticator `ctime` without `cusec`.
-    pub authenticator_ctime: SystemTime,
+    authenticator_ctime: SystemTime,
     /// Authenticator microsecond field.
-    pub authenticator_cusec: u32,
+    authenticator_cusec: u32,
     /// Authenticator timestamp including `cusec`.
-    pub authenticator_time: SystemTime,
+    authenticator_time: SystemTime,
     /// Optional client sequence number supplied in the authenticator.
-    pub sequence_number: Option<u32>,
+    sequence_number: Option<u32>,
     /// GSS-API context flags requested when this context was built.
-    pub context_flags: Vec<u32>,
+    context_flags: Vec<u32>,
     /// Initiator subkey retained for acceptor mechanism-list MIC verification.
-    pub initiator_subkey: Option<EncryptionKey>,
+    initiator_subkey: Option<EncryptionKey>,
+}
+
+// Drop audit: sensitive fields are erased when context is dropped.
+impl Drop for InitiatorContext {
+    #[inline]
+    fn drop(&mut self) {
+        let Self {
+            crypto_policy: _,
+            ap_req: _,
+            ap_req_der,
+            krb5_token: _,
+            spnego_token: _,
+            header,
+            client: _,
+            service: _,
+            session_key: _,
+            authenticator_ctime: _,
+            authenticator_cusec: _,
+            authenticator_time: _,
+            sequence_number: _,
+            context_flags: _,
+            initiator_subkey: _,
+        } = self;
+        ap_req_der.zeroize();
+        header.zeroize();
+    }
 }
 
 impl fmt::Debug for InitiatorContext {
@@ -1687,6 +2024,101 @@ impl fmt::Debug for InitiatorContext {
 }
 
 impl InitiatorContext {
+    /// Borrow the retained runtime policy.
+    #[inline]
+    #[must_use]
+    pub const fn crypto_policy(&self) -> &CryptoPolicy {
+        &self.crypto_policy
+    }
+    /// Borrow the mechanism credential token.
+    #[inline]
+    #[must_use]
+    pub const fn krb5_token(&self) -> &Krb5MechToken {
+        &self.krb5_token
+    }
+    /// Borrow the negotiation credential token.
+    #[inline]
+    #[must_use]
+    pub const fn spnego_token(&self) -> &Token {
+        &self.spnego_token
+    }
+    /// Borrow the client identity.
+    #[inline]
+    #[must_use]
+    pub const fn client(&self) -> &Principal {
+        &self.client
+    }
+    /// Borrow the service identity.
+    #[inline]
+    #[must_use]
+    pub const fn service(&self) -> &Principal {
+        &self.service
+    }
+    /// Return authenticator whole-second time.
+    #[inline]
+    #[must_use]
+    pub const fn authenticator_ctime(&self) -> SystemTime {
+        self.authenticator_ctime
+    }
+    /// Return authenticator microseconds.
+    #[inline]
+    #[must_use]
+    pub const fn authenticator_cusec(&self) -> u32 {
+        self.authenticator_cusec
+    }
+    /// Return the combined authenticator time.
+    #[inline]
+    #[must_use]
+    pub const fn authenticator_time(&self) -> SystemTime {
+        self.authenticator_time
+    }
+    /// Return the sequence number.
+    #[inline]
+    #[must_use]
+    pub const fn sequence_number(&self) -> Option<u32> {
+        self.sequence_number
+    }
+    /// Borrow context flags.
+    #[inline]
+    #[must_use]
+    pub fn context_flags(&self) -> &[u32] {
+        &self.context_flags
+    }
+    /// Borrow the ASN.1 AP-REQ message.
+    #[inline]
+    #[must_use]
+    pub const fn ap_req_ref(&self) -> &rasn_kerberos::ApReq {
+        &self.ap_req
+    }
+
+    /// Borrow the DER-encoded AP-REQ bytes.
+    #[inline]
+    #[must_use]
+    pub fn ap_req_der_ref(&self) -> &[u8] {
+        self.ap_req_der.as_slice()
+    }
+
+    /// Borrow the HTTP Authorization header value.
+    #[inline]
+    #[must_use]
+    pub fn header_ref(&self) -> &str {
+        self.header.as_str()
+    }
+
+    /// Borrow the session key. This key must not be used after context drop.
+    #[inline]
+    #[must_use]
+    pub const fn session_key_ref(&self) -> &EncryptionKey {
+        &self.session_key
+    }
+
+    /// Borrow the initiator subkey if present. This key must not be used after context drop.
+    #[inline]
+    #[must_use]
+    pub const fn initiator_subkey_ref(&self) -> Option<&EncryptionKey> {
+        self.initiator_subkey.as_ref()
+    }
+
     /// Validate completion metadata against the retained offer.
     ///
     /// # Errors
@@ -1723,16 +2155,16 @@ impl InitiatorContext {
             let verified = self.verify_ap_rep(&token.message)?;
             let mic = MicToken::decode(bytes, true).map_err(|_source| Error::InvalidMechListMic)?;
             if mic.flags & GSS_TOKEN_FLAG_SEALED != 0
-                || mic.snd_seq_num != u64::from(verified.sequence_number.unwrap_or(0))
+                || mic.snd_seq_num != u64::from(verified.sequence_number().unwrap_or(0))
             {
                 return Err(Error::InvalidMechListMic);
             }
             let key = if mic.flags & GSS_TOKEN_FLAG_ACCEPTOR_SUBKEY != 0 {
-                verified.subkey.as_ref().ok_or(Error::InvalidMechListMic)?
+                verified.subkey().ok_or(Error::InvalidMechListMic)?
             } else {
                 self.initiator_subkey.as_ref().unwrap_or(&self.session_key)
             };
-            self.crypto_policy.check_use(key.etype, Use::SessionKey)?;
+            self.crypto_policy.check_use(key.etype(), Use::SessionKey)?;
             let encoded = Scratch::new(self.spnego_token.encode()?, "completion-offer");
             let list = negotiation::received_mech_types(&encoded)?;
             mic.with_payload(list)
@@ -1783,7 +2215,7 @@ impl InitiatorContext {
     #[inline]
     pub fn verify_ap_rep(&self, bytes: &[u8]) -> Result<VerifiedApRep, Error> {
         self.crypto_policy
-            .check_use(self.session_key.etype, Use::SessionKey)?;
+            .check_use(self.session_key.etype(), Use::SessionKey)?;
         let ap_rep = decode_ap_rep(bytes).map_err(ap_rep_error)?;
         self.crypto_policy
             .check_use(ap_rep.enc_part.etype, Use::SessionKey)?;
@@ -1805,18 +2237,18 @@ impl InitiatorContext {
             });
         }
 
-        Ok(VerifiedApRep {
+        Ok(VerifiedApRep::new(
             ctime,
             cusec,
             authenticator_time,
-            subkey: enc_part.subkey.as_ref().map(encryption_key_from_rasn),
-            sequence_number: enc_part.seq_number,
-        })
+            enc_part.subkey.as_ref().map(encryption_key_from_rasn),
+            enc_part.seq_number,
+        ))
     }
 }
 
 /// Validated SPNEGO service context.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct AcceptedContext {
     /// Validated AP-REQ details.
@@ -1841,10 +2273,10 @@ impl AcceptedContext {
     #[inline]
     pub fn ap_rep_response_header(&self, options: &ApRepOptions) -> Result<String, Error> {
         self.ap_req
-            .crypto_policy
-            .check_use(self.ap_req.session_key.etype, Use::SessionKey)?;
-        let etype = KerberosEtype::from_etype_id(self.ap_req.session_key.etype)
-            .ok_or(Error::UnsupportedEtype(self.ap_req.session_key.etype))?;
+            .crypto_policy()
+            .check_use(self.ap_req.session_key().etype(), Use::SessionKey)?;
+        let etype = KerberosEtype::from_etype_id(self.ap_req.session_key().etype())
+            .ok_or(Error::UnsupportedEtype(self.ap_req.session_key().etype()))?;
         let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
         getrandom::fill(&mut confounder)?;
         self.ap_rep_response_header_with_confounder(&confounder, options)
@@ -1970,16 +2402,17 @@ pub fn init_sec_context(
     mut options: InitiatorContextOptions,
 ) -> Result<InitiatorContext, Error> {
     let policy = options.crypto_policy.clone().unwrap_or_default();
-    policy.check_use(service_ticket.session_key.etype, Use::SessionKey)?;
+    policy.check_use(service_ticket.session_key().etype(), Use::SessionKey)?;
     if let Some(subkey) = &options.subkey {
-        policy.check_use(subkey.etype, Use::SessionKey)?;
+        policy.check_use(subkey.etype(), Use::SessionKey)?;
     }
     let (timestamp, cusec) = current_time()?;
     if options.sequence_number.is_none() {
         options.sequence_number = Some(random_sequence_number(getrandom::fill)?);
     }
-    let etype = KerberosEtype::from_etype_id(service_ticket.session_key.etype)
-        .ok_or(Error::UnsupportedEtype(service_ticket.session_key.etype))?;
+    let etype = KerberosEtype::from_etype_id(service_ticket.session_key().etype()).ok_or(
+        Error::UnsupportedEtype(service_ticket.session_key().etype()),
+    )?;
     let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     init_sec_context_with_confounder(service_ticket, options, timestamp, cusec, &confounder)
@@ -2020,30 +2453,30 @@ pub fn init_sec_context_with_confounder(
         .with_subkey(options.subkey.clone())
         .with_sequence_number(Some(sequence_number));
     let crypto_policy = options.crypto_policy.unwrap_or_default();
-    ap_req_options.crypto_policy = Some(crypto_policy.clone());
+    ap_req_options.set_crypto_policy(Some(crypto_policy.clone()));
     let built_ap_req =
         build_ap_req_with_confounder(service_ticket, ap_req_options, timestamp, cusec, confounder)
             .map_err(client_error_to_spnego)?;
-    let krb5_token = Krb5MechToken::ap_req(built_ap_req.der.to_vec());
-    let ap_req_der = built_ap_req.der;
+    let krb5_token = Krb5MechToken::ap_req(built_ap_req.der().to_vec());
+    let ap_req_der = built_ap_req.der().clone();
     let krb5_token_der = krb5_token.encode()?;
     let spnego_token = Token::Init(NegTokenInit::krb5(krb5_token_der));
     let header = Zeroizing::new(negotiate_header(&spnego_token)?);
 
     Ok(InitiatorContext {
         crypto_policy,
-        ap_req: built_ap_req.message,
+        ap_req: built_ap_req.message().clone(),
         ap_req_der,
         krb5_token,
         spnego_token,
         header,
-        client: built_ap_req.client,
-        service: built_ap_req.service,
-        session_key: built_ap_req.session_key,
-        authenticator_ctime: built_ap_req.authenticator_ctime,
-        authenticator_cusec: built_ap_req.authenticator_cusec,
-        authenticator_time: built_ap_req.authenticator_time,
-        sequence_number: built_ap_req.sequence_number,
+        client: built_ap_req.client().clone(),
+        service: built_ap_req.service().clone(),
+        session_key: built_ap_req.session_key().clone(),
+        authenticator_ctime: built_ap_req.authenticator_ctime(),
+        authenticator_cusec: built_ap_req.authenticator_cusec(),
+        authenticator_time: built_ap_req.authenticator_time(),
+        sequence_number: built_ap_req.sequence_number(),
         context_flags: options.context_flags,
         initiator_subkey: options.subkey,
     })
@@ -2339,10 +2772,7 @@ fn integer_to_u32(field: &'static str, value: &Integer) -> Result<u32, Error> {
 
 /// Copy an ASN.1 encryption key into the crate's key type.
 fn encryption_key_from_rasn(value: &rasn_kerberos::EncryptionKey) -> EncryptionKey {
-    EncryptionKey {
-        etype: value.r#type,
-        value: value.value.as_ref().to_vec().into(),
-    }
+    EncryptionKey::new(value.r#type, value.value.as_ref().to_vec())
 }
 
 /// Map an AP-REQ construction error onto the SPNEGO error type. Variants without a SPNEGO

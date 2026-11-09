@@ -69,6 +69,11 @@ impl PartialEq<Vec<u8>> for Bytes {
 impl Zeroize for Bytes {
     #[inline]
     fn zeroize(&mut self) {
+        self.0.as_mut_slice().zeroize();
+        #[cfg(test)]
+        tests::ERASED.with_borrow_mut(|events| {
+            events.push((self.0.len(), self.0.iter().all(|byte| *byte == 0)));
+        });
         self.0.zeroize();
     }
 }
@@ -108,5 +113,35 @@ impl Encode for Bytes {
         encoder
             .encode_octet_string(tag, constraints, self.as_ref(), identifier)
             .map(drop)
+    }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests {
+    use core::{cell::RefCell, error::Error};
+
+    use crate::{client::Password, kadmin::ChangePasswdData};
+
+    std::thread_local! {
+        /// Live old-allocation byte observations before replacement.
+        pub(super) static ERASED: RefCell<Vec<(usize, bool)>> = const { RefCell::new(Vec::new()) };
+    }
+
+    /// Replacing password data erases the previous allocation while its container lives.
+    #[test]
+    fn password_setter_erases_previous_bytes() -> Result<(), Box<dyn Error>> {
+        let mut data = ChangePasswdData::decode_der(
+            &ChangePasswdData::new(Password::from_vec(vec![0x41; 16])).encode_der()?,
+        )?;
+        ERASED.with_borrow_mut(Vec::clear);
+        data.set_new_passwd(vec![0x52; 17].into());
+        ERASED.with_borrow(|events| assert_eq!(events.as_slice(), [(16, true)]));
+        Ok(())
     }
 }

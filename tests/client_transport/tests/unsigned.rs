@@ -23,7 +23,7 @@ fn unsigned_results_are_unknown_on_both_helpers() -> Result<(), TestError> {
                     let transport = Tokio::new().with_timeout(Duration::from_secs(1));
                     let server = async {
                         let (request, mut stream) = read_tcp_request(&listener).await?;
-                        assert_eq!(request, built.der);
+                        assert_eq!(request, built.der());
                         write_tcp_response(&mut stream, &response).await
                     };
                     // When either checked API receives the unauthenticated response.

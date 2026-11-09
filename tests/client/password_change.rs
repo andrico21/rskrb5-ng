@@ -72,7 +72,7 @@ TEST.GOKRB5 = {{
         service_session_key: &EncryptionKey,
     ) -> Result<(rasn_kerberos::Authenticator, ChangePasswdData), TestError> {
         let authenticator = decrypt_ap_req_authenticator(
-            &parsed.ap_req,
+            parsed.ap_req(),
             service_session_key,
             AP_REQ_AUTHENTICATOR_USAGE,
         )
@@ -82,7 +82,7 @@ TEST.GOKRB5 = {{
             .as_ref()
             .context("AP-REQ reply key included")?;
         let reply_key = EncryptionKey::new(subkey.r#type, subkey.value.as_ref().to_vec());
-        let enc_part = decrypt_krb_priv_enc_part(&parsed.krb_priv, &reply_key)
+        let enc_part = decrypt_krb_priv_enc_part(parsed.krb_priv(), &reply_key)
             .context("KRB-PRIV payload decrypts")?;
         let change_data = ChangePasswdData::decode_der(enc_part.user_data.as_ref())
             .context("ChangePasswdData decodes")?;
@@ -102,10 +102,10 @@ TEST.GOKRB5 = {{
             let (request, mut socket) = read_tcp_kdc_request(&listener).await?;
             let decoded: rasn_kerberos::AsReq = der::decode(&request).context("AS-REQ decodes")?;
             let built = built_request_from_der(decoded, &request)?;
-            assert_eq!(built.client, client);
-            assert_eq!(built.service, expected_service);
+            assert_eq!(built.client(), &client);
+            assert_eq!(built.service(), &expected_service);
             let response =
-                synthetic_as_rep_with_reply_key(&built, built.nonce, &built.service, reply_key)?;
+                synthetic_as_rep_with_reply_key(&built, built.nonce(), built.service(), reply_key)?;
             write_tcp_kdc_response(&mut socket, &response).await?;
         }
         Ok(())
@@ -124,20 +124,22 @@ TEST.GOKRB5 = {{
             &decode_hex(TGS_REQ_CONFOUNDER)?,
         )
         .context("changepw TGS-REQ builds")?;
-        let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key)?;
+        let response = synthetic_tgs_rep(&request, request.nonce(), tgt.session_key())?;
         let mut changepw_ticket =
-            process_tgs_rep(&request, &response, &tgt.session_key).context("TGS-REP validates")?;
+            process_tgs_rep(&request, &response, tgt.session_key()).context("TGS-REP validates")?;
         let now = SystemTime::now();
-        changepw_ticket.start_time = now
-            .checked_sub(Duration::from_mins(1))
-            .context("start time")?;
-        changepw_ticket.end_time = now
-            .checked_add(Duration::from_hours(1))
-            .context("end time")?;
-        changepw_ticket.renew_till = Some(
+        changepw_ticket.set_start_time(
+            now.checked_sub(Duration::from_mins(1))
+                .context("start time")?,
+        );
+        changepw_ticket.set_end_time(
+            now.checked_add(Duration::from_hours(1))
+                .context("end time")?,
+        );
+        changepw_ticket.set_renew_till(Some(
             now.checked_add(Duration::from_hours(2))
                 .context("renew time")?,
-        );
+        ));
         Ok(changepw_ticket)
     }
 
@@ -146,9 +148,9 @@ TEST.GOKRB5 = {{
     fn builds_kpasswd_request_with_subkey_encrypted_payload() -> Result<(), TestError> {
         let tgt = sample_tgt_session()?;
         let request = sample_tgs_request(&tgt)?;
-        let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key)?;
+        let response = synthetic_tgs_rep(&request, request.nonce(), tgt.session_key())?;
         let service_ticket =
-            process_tgs_rep(&request, &response, &tgt.session_key).context("TGS-REP validates")?;
+            process_tgs_rep(&request, &response, tgt.session_key()).context("TGS-REP validates")?;
         let reply_key = EncryptionKey::new(18, vec![0x55; 32]);
         let change_data = ChangePasswdData::for_target(
             Password::copy_from_str("newpassword"),
@@ -173,33 +175,33 @@ TEST.GOKRB5 = {{
         )
         .context("kpasswd request builds")?;
 
-        assert_eq!(built.reply_key, reply_key);
+        assert_eq!(built.reply_key(), &reply_key);
         assert_eq!(
-            built.der,
-            built.request.encode().context("request encodes")?
+            *built.der(),
+            built.request().encode().context("request encodes")?
         );
-        let parsed = KpasswdRequest::parse(&built.der).context("request parses")?;
-        assert_eq!(parsed.ap_req, built.request.ap_req);
-        assert_eq!(parsed.krb_priv, built.request.krb_priv);
+        let parsed = KpasswdRequest::parse(built.der()).context("request parses")?;
+        assert_eq!(parsed.ap_req(), built.request().ap_req());
+        assert_eq!(parsed.krb_priv(), built.request().krb_priv());
 
         let authenticator_bytes = AesSha1Etype::Aes256
             .decrypt_message(
-                &service_ticket.session_key.value,
-                parsed.ap_req.authenticator.cipher.as_ref(),
+                service_ticket.session_key().value(),
+                parsed.ap_req().authenticator.cipher.as_ref(),
                 AP_REQ_AUTHENTICATOR_USAGE,
             )
             .context("AP-REQ authenticator decrypts")?;
         let authenticator: rasn_kerberos::Authenticator =
             der::decode(&authenticator_bytes).context("Authenticator decodes")?;
         let subkey = authenticator.subkey.context("authenticator subkey")?;
-        assert_eq!(subkey.r#type, reply_key.etype);
-        assert_eq!(subkey.value.as_ref(), reply_key.value.as_slice());
+        assert_eq!(subkey.r#type, reply_key.etype());
+        assert_eq!(subkey.value.as_ref(), reply_key.value().as_slice());
         assert_eq!(authenticator.seq_number, Some(42));
 
         let krb_priv_bytes = AesSha1Etype::Aes256
             .decrypt_message(
-                &reply_key.value,
-                parsed.krb_priv.enc_part.cipher.as_ref(),
+                reply_key.value(),
+                parsed.krb_priv().enc_part.cipher.as_ref(),
                 KRB_PRIV_ENCPART_USAGE,
             )
             .context("KRB-PRIV decrypts")?;
@@ -233,9 +235,9 @@ TEST.GOKRB5 = {{
     fn builds_kpasswd_request_with_generated_reply_key() -> Result<(), TestError> {
         let tgt = sample_tgt_session()?;
         let request = sample_tgs_request(&tgt)?;
-        let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key)?;
+        let response = synthetic_tgs_rep(&request, request.nonce(), tgt.session_key())?;
         let service_ticket =
-            process_tgs_rep(&request, &response, &tgt.session_key).context("TGS-REP validates")?;
+            process_tgs_rep(&request, &response, tgt.session_key()).context("TGS-REP validates")?;
         let change_data = ChangePasswdData::new(Password::copy_from_str("newpassword"));
 
         let built = build_kpasswd_request(
@@ -249,15 +251,18 @@ TEST.GOKRB5 = {{
             ),
         )
         .context("kpasswd request builds")?;
-        let parsed = KpasswdRequest::parse(&built.der).context("request parses")?;
+        let parsed = KpasswdRequest::parse(built.der()).context("request parses")?;
 
-        assert_eq!(built.reply_key.etype, service_ticket.session_key.etype);
-        assert_eq!(built.reply_key.value.len(), 32);
+        assert_eq!(
+            built.reply_key().etype(),
+            service_ticket.session_key().etype()
+        );
+        assert_eq!(built.reply_key().value().len(), 32);
 
         let krb_priv_bytes = AesSha1Etype::Aes256
             .decrypt_message(
-                &built.reply_key.value,
-                parsed.krb_priv.enc_part.cipher.as_ref(),
+                built.reply_key().value(),
+                parsed.krb_priv().enc_part.cipher.as_ref(),
                 KRB_PRIV_ENCPART_USAGE,
             )
             .context("KRB-PRIV decrypts")?;
@@ -283,9 +288,9 @@ TEST.GOKRB5 = {{
             .context("AP-REP verifies")?
             .context("successful reply has AP-REP")?;
 
-        assert_eq!(verified.ctime, timestamp(1_893_553_452)?);
-        assert_eq!(verified.cusec, 456_789);
-        assert_eq!(verified.sequence_number, Some(99));
+        assert_eq!(verified.ctime(), timestamp(1_893_553_452)?);
+        assert_eq!(verified.cusec(), 456_789);
+        assert_eq!(verified.sequence_number(), Some(99));
         Ok(())
     }
 
@@ -329,8 +334,8 @@ TEST.GOKRB5 = {{
             let task = tokio::spawn(async move {
                 let (request, mut socket) = read_tcp_kdc_request(&listener).await?;
                 let parsed = KpasswdRequest::parse(&request).context("kpasswd request parses")?;
-                assert_eq!(parsed.ap_req.msg_type, Integer::from(14_i32));
-                assert_eq!(parsed.krb_priv.msg_type, Integer::from(21_i32));
+                assert_eq!(parsed.ap_req().msg_type, Integer::from(14_i32));
+                assert_eq!(parsed.krb_priv().msg_type, Integer::from(21_i32));
 
                 let session_key = EncryptionKey::new(18, decode_hex(SERVICE_SESSION_KEY)?);
                 let response = kpasswd_authenticated_success_reply(&request, &session_key, 0x77)?;
@@ -366,7 +371,7 @@ TEST.GOKRB5 = {{
         runtime()?.block_on(async {
             let tgt = sample_tgt_session()?;
             let changepw_ticket = current_changepw_ticket(&tgt)?;
-            let changepw_session_key = changepw_ticket.session_key.clone();
+            let changepw_session_key = changepw_ticket.session_key().clone();
             let listener = TcpListener::bind("127.0.0.1:0")
                 .await
                 .context("bind local kpasswd listener")?;
@@ -381,7 +386,7 @@ TEST.GOKRB5 = {{
                 let (request, mut socket) = read_tcp_kdc_request(&listener).await?;
                 let parsed = KpasswdRequest::parse(&request).context("kpasswd request parses")?;
                 let authenticator = decrypt_ap_req_authenticator(
-                    &parsed.ap_req,
+                    parsed.ap_req(),
                     &changepw_session_key,
                     AP_REQ_AUTHENTICATOR_USAGE,
                 )
@@ -428,7 +433,7 @@ TEST.GOKRB5 = {{
                 // Given a real authenticated reply with one invalid protected control.
                 let tgt = sample_tgt_session()?;
                 let ticket = current_changepw_ticket(&tgt)?;
-                let key = ticket.session_key.clone();
+                let key = ticket.session_key().clone();
                 let listener = TcpListener::bind("127.0.0.1:0").await?;
                 let addr = listener.local_addr()?;
                 let mut client = Tokio::from_tgt_session(
@@ -449,8 +454,10 @@ TEST.GOKRB5 = {{
                         "changed",
                     )?;
                     let mut reply = KpasswdReply::parse(&response)?;
-                    let mut part =
-                        decrypt_krb_priv_enc_part(reply.krb_priv.as_ref().context("priv")?, &key)?;
+                    let mut part = decrypt_krb_priv_enc_part(
+                        reply.krb_priv().as_ref().context("priv")?,
+                        &key,
+                    )?;
                     part.seq_number = Some(99);
                     match mode {
                         0 => part.seq_number = None,
@@ -465,12 +472,16 @@ TEST.GOKRB5 = {{
                     }
                     let plaintext = der::encode(&part)?;
                     let cipher = AesSha1Etype::Aes256.encrypt_message_with_confounder(
-                        &key.value,
+                        key.value(),
                         &plaintext,
                         KRB_PRIV_ENCPART_USAGE,
                         &decode_hex(PREAUTH_CONFOUNDER)?,
                     )?;
-                    reply.krb_priv.as_mut().context("priv")?.enc_part.cipher = cipher.into();
+                    let mut modified = reply.krb_priv().cloned();
+                    if let Some(ref mut krb_priv) = modified {
+                        krb_priv.enc_part.cipher = cipher.into();
+                    }
+                    reply.set_krb_priv(modified);
                     write_tcp_kdc_response(&mut socket, &reply.encode()?).await?;
                     Ok::<(), TestError>(())
                 });
@@ -681,7 +692,7 @@ client.cache_service_ticket(ticket)?;
         runtime()?.block_on(async {
             let tgt = sample_tgt_session()?;
             let changepw_ticket = current_changepw_ticket(&tgt)?;
-            let changepw_session_key = changepw_ticket.session_key.clone();
+            let changepw_session_key = changepw_ticket.session_key().clone();
             let target = Principal::new("TEST.GOKRB5", 1, ["other-user"]);
             let target_for_server = target.clone();
             let listener = TcpListener::bind("127.0.0.1:0")
@@ -701,18 +712,14 @@ client.cache_service_ticket(ticket)?;
                     decrypt_change_data(&parsed, &changepw_session_key)?;
                 assert_eq!(
                     principal_from_parts(
+                        change_data.targ_realm().context("target realm set")?,
                         change_data
-                            .targ_realm
-                            .as_ref()
-                            .context("target realm set")?,
-                        change_data
-                            .targ_name
-                            .as_ref()
+                            .targ_name()
                             .context("target principal name set")?,
                     )?,
                     target_for_server
                 );
-                assert_eq!(change_data.new_passwd.to_vec(), b"newpassword".to_vec());
+                assert_eq!(change_data.new_passwd().to_vec(), b"newpassword".to_vec());
                 let response = kpasswd_success_reply_with_ap_rep_subkey(
                     &authenticator,
                     &changepw_session_key,
@@ -804,7 +811,7 @@ client.cache_service_ticket(ticket)?;
             let tgt = sample_tgt_session()?;
             let changepw_ticket = current_changepw_ticket(&tgt)?;
 
-            let changepw_session_key = changepw_ticket.session_key.clone();
+            let changepw_session_key = changepw_ticket.session_key().clone();
             let target = Principal::new("TEST.GOKRB5", 1, ["other-user"]);
             let target_for_server = target.clone();
 
@@ -827,18 +834,12 @@ client.cache_service_ticket(ticket)?;
                     decrypt_change_data(&parsed, &changepw_session_key)?;
                 assert_eq!(
                     principal_from_parts(
-                        change_data
-                            .targ_realm
-                            .as_ref()
-                            .context("target realm set")?,
-                        change_data
-                            .targ_name
-                            .as_ref()
-                            .context("target principal set")?,
+                        change_data.targ_realm().context("target realm set")?,
+                        change_data.targ_name().context("target principal set")?,
                     )?,
                     target_for_server
                 );
-                assert_eq!(change_data.new_passwd.to_vec(), b"newpassword".to_vec());
+                assert_eq!(change_data.new_passwd().to_vec(), b"newpassword".to_vec());
                 let response_key = EncryptionKey::new(18, vec![0x77; 32]);
                 let response = kpasswd_success_reply_with_ap_rep_subkey(
                     &authenticator,
@@ -976,21 +977,15 @@ client.cache_service_ticket(ticket)?;
                         KpasswdRequest::parse(&request).context("kpasswd request parses")?;
                     let (_, change_data) = decrypt_change_data(&parsed, &service_session_key)?;
                     let target = principal_from_parts(
-                        change_data
-                            .targ_realm
-                            .as_ref()
-                            .context("target realm set")?,
-                        change_data
-                            .targ_name
-                            .as_ref()
-                            .context("target principal set")?,
+                        change_data.targ_realm().context("target realm set")?,
+                        change_data.targ_name().context("target principal set")?,
                     )?;
                     if call == 0_i32 {
                         assert_eq!(target, expected_target);
-                        assert_eq!(change_data.new_passwd, new_password.to_vec());
+                        assert_eq!(change_data.new_passwd(), &new_password.to_vec());
                     } else {
                         assert_eq!(target, self_client.clone());
-                        assert_eq!(change_data.new_passwd, old_password.to_vec());
+                        assert_eq!(change_data.new_passwd(), &old_password.to_vec());
                     }
                     let session_key = EncryptionKey::new(18, decode_hex(SESSION_KEY)?);
                     let response =
@@ -1155,14 +1150,14 @@ TEST.GOKRB5 = {{
                     let (request, mut socket) = read_tcp_kdc_request(&kdc_listener).await?;
                     let decoded: rasn_kerberos::AsReq = der::decode(&request)?;
                     let built = built_request_from_der(decoded, &request)?;
-                    assert_eq!(built.client, kdc_task_client);
-                    assert_eq!(built.service, expected_service);
+                    assert_eq!(built.client(), &kdc_task_client);
+                    assert_eq!(built.service(), &expected_service);
                     // The failed change must not rotate the stored credential, so
                     // both AS exchanges have to decrypt under the old reply key.
                     let response = synthetic_as_rep_with_reply_key(
                         &built,
-                        built.nonce,
-                        &built.service,
+                        built.nonce(),
+                        built.service(),
                         &old_reply_key,
                     )?;
                     write_tcp_kdc_response(&mut socket, &response).await?;

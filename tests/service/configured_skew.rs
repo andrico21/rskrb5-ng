@@ -10,7 +10,7 @@ fn authenticator_skew_equality_is_accepted() -> Result<(), TestError> {
     let mut baseline = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
     let accepted = baseline.validate_ap_req(&bytes)?;
     let now = accepted
-        .authenticator_time
+        .authenticator_time()
         .checked_add(Duration::from_secs(2))
         .ok_or("time")?;
     let mut boundary = Validator::new(&keytab)

@@ -102,7 +102,7 @@ mod tests {
             assert_eq!(encrypted.etype, 18_i32);
             let etype = KerberosEtype::from_etype_id(18).context("AES")?;
             let plaintext = etype.decrypt_message(
-                &self.key.value,
+                self.key.value(),
                 encrypted.cipher.as_ref(),
                 AS_REQ_PA_ENC_TIMESTAMP_USAGE,
             )?;
@@ -111,7 +111,7 @@ mod tests {
                 return challenge(24, false, b"terminal");
             }
             let built = built_request_from_der(request, bytes)?;
-            synthetic_as_rep_with_reply_key(&built, built.nonce, &built.service, &self.key)
+            synthetic_as_rep_with_reply_key(&built, built.nonce(), built.service(), &self.key)
         }
     }
 
@@ -168,9 +168,11 @@ mod tests {
                 };
                 // Then the guided response is final, even when it is another hint-free error24.
                 if reject_final {
-                    assert!(matches!(result, Err(Error::Kdc(error)) if error.error_code == 24_i32));
+                    assert!(
+                        matches!(result, Err(Error::Kdc(error)) if error.error_code() == 24_i32)
+                    );
                 } else {
-                    assert_eq!(result?.client, principal);
+                    assert_eq!(result?.client(), &principal);
                 }
                 assert_eq!(script.calls, 3);
             }
@@ -199,7 +201,7 @@ mod tests {
                 } else {
                     login_tgt_with_password(&mut script, principal, TESTUSER_PASSWORD, options)
                 };
-                assert!(matches!(result, Err(Error::Kdc(error)) if error.error_code == code));
+                assert!(matches!(result, Err(Error::Kdc(error)) if error.error_code() == code));
                 assert_eq!(script.calls, 2);
             }
         }
@@ -252,7 +254,7 @@ mod tests {
                     ));
                 } else {
                     assert!(
-                        matches!(result, Err(Error::Kdc(rejection)) if rejection.error_code == 25_i32)
+                        matches!(result, Err(Error::Kdc(rejection)) if rejection.error_code() == 25_i32)
                     );
                 }
                 assert_eq!(script.calls, 2);
@@ -299,7 +301,7 @@ mod tests {
                         }
                     }).await??;
                     // Then success proves affinity, cookies, mechanisms and nondefault hints.
-                    assert_eq!(session.client, principal);
+                    assert_eq!(session.client(), &principal);
                     peers.join_next().await.context("peer")???;
                 }
             }

@@ -110,7 +110,7 @@ mod tests {
 
                 use rskrb5_ng::client::options::AsReq;
                 assert_eq!(
-                    AsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults).kdc_option_bits,
+                    AsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults).kdc_option_bits(),
                     expected
                 );
             }
@@ -147,11 +147,11 @@ mod tests {
                 let initial = AsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults);
                 let service = TgsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults);
                 if name == "ticket_lifetime" {
-                    assert_eq!(initial.ticket_lifetime, actual);
-                    assert_eq!(service.ticket_lifetime, actual);
+                    assert_eq!(initial.ticket_lifetime(), actual);
+                    assert_eq!(service.ticket_lifetime(), actual);
                 } else {
-                    assert_eq!(initial.renew_lifetime, Some(actual));
-                    assert_eq!(service.renew_lifetime, Some(actual));
+                    assert_eq!(initial.renew_lifetime(), Some(actual));
+                    assert_eq!(service.renew_lifetime(), Some(actual));
                 }
             }
         }

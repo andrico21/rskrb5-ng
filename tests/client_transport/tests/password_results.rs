@@ -26,7 +26,12 @@ fn configured_password_paths_reject_permanent_selectors() -> Result<(), TestErro
                         .await
                         .map(|_| ()),
                     1 => transport
-                        .send_to_kpasswd_realm(&config, KdcProtocol::Tcp, "TEST.GOKRB5", &built.der)
+                        .send_to_kpasswd_realm(
+                            &config,
+                            KdcProtocol::Tcp,
+                            "TEST.GOKRB5",
+                            built.der(),
+                        )
                         .await
                         .map(|_| ()),
                     2 => transport
@@ -34,7 +39,7 @@ fn configured_password_paths_reject_permanent_selectors() -> Result<(), TestErro
                             &config,
                             KdcProtocol::Tcp,
                             "TEST.GOKRB5",
-                            &built.request,
+                            built.request(),
                         )
                         .await
                         .map(|_| ()),
@@ -95,7 +100,7 @@ fn checked_replies_enforce_legacy_policy() -> Result<(), TestError> {
                     config.libdefaults.allow_des3 = Toggle::from(true);
                     config.libdefaults.permitted_enctypes = vec!["DEFAULT".to_owned(), "rc4".to_owned(), "des3".to_owned()];
                 }
-                if !configured { built.crypto_policy = CryptoPolicy::from_libdefaults(&config.libdefaults)?; }
+                if !configured { built.set_crypto_policy(CryptoPolicy::from_libdefaults(&config.libdefaults)?); }
                 let transport = Tokio::new().with_timeout(Duration::from_secs(1));
                 let server = async {
                     let (_, mut stream) = read_tcp_request(&listener).await?;
@@ -128,7 +133,9 @@ fn checked_password_policy_rejects_before_endpoint_resolution() -> Result<(), Te
     };
     runtime()?.block_on(async {
         let (mut built, options) = kpasswd_context::request()?;
-        built.reply_key.etype = 23_i32;
+        let mut reply_key = built.reply_key().clone();
+        reply_key.set_etype(23_i32);
+        built.set_reply_key(reply_key);
         let transport = Tokio::new();
         let result = transport
             .exchange_kpasswd_result(KdcProtocol::Tcp, "invalid endpoint", &built, &options)
@@ -297,7 +304,7 @@ fn tokio_transport_rejects_unauthenticated_kpasswd_success_result() -> Result<()
         let addr = listener.local_addr()?;
         let config = config_with_kpasswd_servers([addr.to_string()], 1465)?;
         let (request, options) = kpasswd_context::request()?;
-        let expected_request = request.request.encode()?;
+        let expected_request = request.request().encode()?;
         let response = kpasswd_reply_frame(
             0,
             &kpasswd_result_krb_error(KPASSWD_SUCCESS, "password changed")?,
@@ -339,7 +346,7 @@ fn tokio_transport_exchanges_configured_kpasswd_failure_result() -> Result<(), T
         let addr = listener.local_addr()?;
         let config = config_with_kpasswd_servers([addr.to_string()], 1465)?;
         let (request, options) = kpasswd_context::request()?;
-        let expected_request = request.request.encode()?;
+        let expected_request = request.request().encode()?;
         let response = kpasswd_reply_frame(
             0,
             &kpasswd_result_krb_error(KPASSWD_AUTHERROR, "authentication failed")?,

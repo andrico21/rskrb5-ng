@@ -1,5 +1,5 @@
 /// Crate-level error type.
-#[derive(Debug, thiserror::Error)]
+#[derive(thiserror::Error)]
 #[non_exhaustive]
 pub enum Any {
     /// A requested cryptographic feature violates permanent policy.

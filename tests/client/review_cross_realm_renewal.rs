@@ -24,9 +24,14 @@ mod tests {
     /// A valid renewable krbtgt/B@A, with matching encoded ticket identity.
     fn referral() -> Result<AsRepSession, TestError> {
         let mut session = current_tgt_session(10, 50)?;
-        session.service = Principal::new("TEST.GOKRB5", 2, ["krbtgt", "RESDOM.GOKRB5"]);
-        session.ticket =
-            ticket::encode(&delegated_ticket(&session.client, &session.service)?)?.into();
+        session.set_service(Principal::new(
+            "TEST.GOKRB5",
+            2,
+            ["krbtgt", "RESDOM.GOKRB5"],
+        ));
+        session.set_ticket(
+            ticket::encode(&delegated_ticket(session.client(), session.service())?)?.into(),
+        );
         Ok(session)
     }
 
@@ -47,16 +52,16 @@ mod tests {
                 &[0; 16],
             )?,
         ] {
-            let decoded: rasn_kerberos::TgsReq = der::decode(&request.der)?;
+            let decoded: rasn_kerberos::TgsReq = der::decode(request.der())?;
             // Then the server is exactly krbtgt/B@A, never krbtgt/B@B.
-            assert_eq!(request.kdc_realm, "TEST.GOKRB5");
-            assert_eq!(request.service, session.service);
+            assert_eq!(request.kdc_realm(), "TEST.GOKRB5");
+            assert_eq!(request.service(), session.service());
             assert_eq!(
                 principal_from_parts(
                     &decoded.0.req_body.realm,
                     decoded.0.req_body.sname.as_ref().context("server")?
                 )?,
-                session.service
+                session.service().clone()
             );
             let padata = decoded.0.padata.as_ref().context("padata")?;
             let ap: rasn_kerberos::ApReq = der::decode(
@@ -67,7 +72,10 @@ mod tests {
                     .value
                     .as_ref(),
             )?;
-            assert_eq!(ticket::encode(&ap.ticket)?, *session.ticket);
+            assert_eq!(
+                ticket::encode(&ap.ticket)?.as_slice(),
+                session.ticket().as_slice()
+            );
         }
         Ok(())
     }
@@ -81,10 +89,10 @@ mod tests {
             let destination = TcpListener::bind("127.0.0.1:0").await?;
             let config = Config::parse(&format!("[libdefaults]\n dns_lookup_kdc = false\n[realms]\n TEST.GOKRB5 = {{\n kdc = {}\n }}\n RESDOM.GOKRB5 = {{\n kdc = {}\n }}\n", issuer.local_addr()?, destination.local_addr()?))?;
             let session = referral()?;
-            let expected = session.service.clone();
-            let key = session.session_key.clone();
+            let expected = session.service().clone();
+            let key = session.session_key().clone();
             let primary = current_tgt_session(10, 50)?;
-            let principal = primary.client.clone();
+            let principal = primary.client().clone();
             let mut client = Tokio::from_tgt_session(config, KdcProtocol::Tcp, primary.clone());
             client.cache_tgt_session(session)?;
             let wrong_calls = Arc::new(AtomicUsize::new(0));
@@ -102,15 +110,15 @@ mod tests {
                 let decoded: rasn_kerberos::TgsReq = der::decode(&bytes)?;
                 assert_eq!(principal_from_parts(&decoded.0.req_body.realm, decoded.0.req_body.sname.as_ref().context("server")?)?, reply_server);
                 let mut built = built_tgs_request_from_der(decoded, &bytes)?;
-                built.client = principal;
-                let response = synthetic_tgs_rep_with_service(&built, built.nonce, &key, &reply_server)?;
+                built.set_client(principal);
+                let response = synthetic_tgs_rep_with_service(&built, built.nonce(), &key, &reply_server)?;
                 write_tcp_kdc_response(&mut socket, &response).await?;
                 Ok::<(), TestError>(())
             }));
             // When renewing the destination's cached TGT.
             let renewed = timeout(Duration::from_secs(5), client.renew_tgt_session_for_realm("RESDOM.GOKRB5")).await??;
             // Then issuer reply validates unchanged server identity and destination cache indexing.
-            assert_eq!(renewed.service, expected);
+            assert_eq!(renewed.service(), &expected);
             assert_eq!(client.tgt_session_for_realm("RESDOM.GOKRB5"), Some(&renewed));
             assert_eq!(client.tgt_session(), Some(&primary));
             assert_eq!(wrong_calls.load(Ordering::SeqCst), 0);

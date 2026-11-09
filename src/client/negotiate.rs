@@ -20,10 +20,18 @@ use crate::{
 /// This wrapper keeps the stable HTTP-Negotiate surface narrow while reusing
 /// [`Tokio`] for ticket acquisition, cache reuse, and SPNEGO token
 /// construction. Advanced Kerberos flows remain available on `Tokio`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Client {
     /// High-level client that acquires tickets and builds tokens.
     inner: Tokio,
+}
+
+impl fmt::Debug for Client {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { inner } = self;
+        f.debug_struct("Client").field("inner", inner).finish()
+    }
 }
 
 impl Client {
@@ -181,8 +189,8 @@ impl Client {
         Ok(self
             .authorization_context(service)
             .await?
-            .header
-            .to_string())
+            .header_ref()
+            .to_owned())
     }
 
     /// Build an HTTP `Authorization` header for a host-based service.
@@ -214,8 +222,8 @@ impl Client {
         Ok(self
             .authorization_context_for_host(service, host)
             .await?
-            .header
-            .to_string())
+            .header_ref()
+            .to_owned())
     }
 
     /// Build a SPNEGO initiator context for a Kerberos service principal.

@@ -89,7 +89,7 @@ fn arcs(input: &[u8]) {
         .collect();
     if let Ok(oid) = ObjectIdentifier::from_arcs(values) {
         let mut token = NegTokenResp::accept_completed();
-        token.supported_mech = Some(oid);
+        token.set_supported_mech(Some(oid));
         if let Ok(encoded) = token.encode() {
             let again = NegTokenResp::decode(&encoded).ok();
             assert_eq!(

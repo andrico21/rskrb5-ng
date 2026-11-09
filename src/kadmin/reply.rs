@@ -9,6 +9,65 @@ use super::{
 use crate::{ap_rep, keytab::EncryptionKey, krb_error};
 
 impl Reply {
+    /// Replace the dependency-owned AP-REP; ASN.1 residual copies are not erased.
+    #[inline]
+    pub fn set_ap_rep(&mut self, value: Option<rasn_kerberos::ApRep>) {
+        self.ap_rep = value;
+    }
+
+    /// Replace the dependency-owned KRB-PRIV; ASN.1 residual copies are not erased.
+    #[inline]
+    pub fn set_krb_priv(&mut self, value: Option<rasn_kerberos::KrbPriv>) {
+        self.krb_priv = value;
+    }
+    /// Return the total wire length.
+    #[inline]
+    #[must_use]
+    pub const fn message_length(&self) -> u16 {
+        self.message_length
+    }
+
+    /// Return the framed protocol version.
+    #[inline]
+    #[must_use]
+    pub const fn version(&self) -> u16 {
+        self.version
+    }
+
+    /// Return the encoded AP-REP length.
+    #[inline]
+    #[must_use]
+    pub const fn ap_rep_length(&self) -> u16 {
+        self.ap_rep_length
+    }
+
+    /// Borrow the dependency-owned AP-REP without exposing mutable storage.
+    #[inline]
+    #[must_use]
+    pub const fn ap_rep(&self) -> Option<&rasn_kerberos::ApRep> {
+        self.ap_rep.as_ref()
+    }
+
+    /// Borrow the protected reply payload.
+    #[inline]
+    #[must_use]
+    pub const fn krb_priv(&self) -> Option<&rasn_kerberos::KrbPriv> {
+        self.krb_priv.as_ref()
+    }
+
+    /// Borrow a protocol error response.
+    #[inline]
+    #[must_use]
+    pub const fn krb_error(&self) -> Option<&rasn_kerberos::KrbError> {
+        self.krb_error.as_ref()
+    }
+
+    /// Borrow a decoded result without treating an unauthenticated result as definitive.
+    #[inline]
+    #[must_use]
+    pub const fn result(&self) -> Option<&ChangePasswordResult> {
+        self.result.as_ref()
+    }
     /// Parse a password-change reply frame.
     ///
     /// A standalone KRB-ERROR (application 30) is accepted before checking the

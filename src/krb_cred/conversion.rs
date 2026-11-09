@@ -16,23 +16,23 @@ pub(super) fn ccache_credential_to_krb_cred_info(
 ) -> Result<rasn_kerberos::KrbCredInfo, Error> {
     Ok(rasn_kerberos::KrbCredInfo {
         key: rasn_kerberos::EncryptionKey {
-            r#type: credential.key.etype,
-            value: credential.key.value.to_vec().into(),
+            r#type: credential.key().etype(),
+            value: credential.key().value().to_vec().into(),
         },
-        prealm: Some(kerberos_string(&credential.client.realm)?),
-        pname: Some(principal_name_from_ccache(&credential.client)?),
+        prealm: Some(kerberos_string(&credential.client().realm)?),
+        pname: Some(principal_name_from_ccache(credential.client())?),
         flags: Some(rasn_kerberos::TicketFlags(
-            rasn_kerberos::KerberosFlags::from_slice(&credential.ticket_flags),
+            rasn_kerberos::KerberosFlags::from_slice(&credential.ticket_flags()),
         )),
-        auth_time: Some(kerberos_time_from_u32(credential.times.auth_time)?),
-        start_time: Some(kerberos_time_from_u32(credential.times.start_time)?),
-        end_time: Some(kerberos_time_from_u32(credential.times.end_time)?),
-        renew_till: Some(kerberos_time_from_u32(credential.times.renew_till)?),
-        srealm: Some(kerberos_string(&credential.server.realm)?),
-        sname: Some(principal_name_from_ccache(&credential.server)?),
-        caddr: (!credential.addresses.is_empty()).then(|| {
+        auth_time: Some(kerberos_time_from_u32(credential.times().auth_time)?),
+        start_time: Some(kerberos_time_from_u32(credential.times().start_time)?),
+        end_time: Some(kerberos_time_from_u32(credential.times().end_time)?),
+        renew_till: Some(kerberos_time_from_u32(credential.times().renew_till)?),
+        srealm: Some(kerberos_string(&credential.server().realm)?),
+        sname: Some(principal_name_from_ccache(credential.server())?),
+        caddr: (!credential.addresses().is_empty()).then(|| {
             credential
-                .addresses
+                .addresses()
                 .iter()
                 .map(host_address_from_ccache)
                 .collect()
@@ -65,14 +65,11 @@ pub(super) fn krb_cred_info_to_ccache_credential(
         Some(server) => server,
         None => principal_from_parts(&ticket.realm, &ticket.sname)?,
     };
-    Ok(ccache::Credential {
+    Ok(ccache::Credential::new(
         client,
         server,
-        key: ccache::EncryptionKey {
-            etype: info.key.r#type,
-            value: info.key.value.as_ref().to_vec().into(),
-        },
-        times: ccache::CredentialTimes {
+        ccache::EncryptionKey::new(info.key.r#type, info.key.value.as_ref().to_vec()),
+        ccache::CredentialTimes {
             auth_time: optional_kerberos_time_to_u32(info.auth_time.as_ref())?,
             start_time: optional_kerberos_time_to_u32(
                 info.start_time.as_ref().or(info.auth_time.as_ref()),
@@ -80,14 +77,14 @@ pub(super) fn krb_cred_info_to_ccache_credential(
             end_time: optional_kerberos_time_to_u32(info.end_time.as_ref())?,
             renew_till: optional_kerberos_time_to_u32(info.renew_till.as_ref())?,
         },
-        is_skey: false,
-        ticket_flags: info
-            .flags
+        info.flags
             .as_ref()
             .map(ticket_flags_to_bytes)
             .unwrap_or_default(),
-        addresses: info
-            .caddr
+        encode_ticket(ticket).map_err(ticket_error)?.into(),
+    )
+    .with_addresses(
+        info.caddr
             .as_ref()
             .map(|addresses| {
                 addresses
@@ -99,10 +96,7 @@ pub(super) fn krb_cred_info_to_ccache_credential(
                     .collect()
             })
             .unwrap_or_default(),
-        auth_data: Vec::new(),
-        ticket: encode_ticket(ticket).map_err(ticket_error)?.into(),
-        second_ticket: Vec::new().into(),
-    })
+    ))
 }
 
 /// Convert a ccache principal to a Kerberos principal name.

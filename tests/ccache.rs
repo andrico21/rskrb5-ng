@@ -54,11 +54,11 @@ mod tests {
             None,
             vec![201, 202, 203, 204].into(),
         );
-        credential.second_ticket = vec![211, 212, 213, 214].into();
-        credential.auth_data.push(AuthorizationDataEntry::new(
+        credential = credential.set_second_ticket(vec![211, 212, 213, 214].into());
+        credential = credential.set_auth_data(vec![AuthorizationDataEntry::new(
             1,
             vec![221, 222, 223, 224].into(),
-        ));
+        )]);
         let mut cache = CCache::new(principal);
         cache.credentials_mut().push(credential.clone());
         let encoded = cache.to_bytes()?;
@@ -66,7 +66,7 @@ mod tests {
         let rendered = format!(
             "{parsed:?} {credential:?} {:?} {:?}",
             cache.config_entries(),
-            credential.auth_data
+            credential.auth_data()
         );
         for marker in [
             "201, 202, 203, 204",
@@ -79,7 +79,7 @@ mod tests {
         assert!(format!("{credential:?}").contains("ticket_len: 4, second_ticket_len: 4"));
         assert!(format!("{:?}", cache.config_entries()).contains("value_len: 4"));
         assert_eq!(
-            format!("{:?}", credential.auth_data),
+            format!("{:?}", credential.auth_data()),
             "[AuthorizationDataEntry { ad_type: 1, data_len: 4 }]"
         );
         Ok(())
@@ -721,17 +721,17 @@ mod tests {
         let entry = cache
             .get_entry(&["HTTP", "host.test.gokrb5"])
             .context("HTTP service entry exists")?;
-        assert_eq!(entry.server.realm, "TEST.GOKRB5");
-        assert_eq!(entry.server.name_type, 1_i32);
-        assert_eq!(entry.server.name_string(), "HTTP/host.test.gokrb5");
-        assert_eq!(entry.client.realm, "TEST.GOKRB5");
-        assert_eq!(entry.client.name_string(), "testuser1");
-        assert_eq!(entry.key.etype, 18_i32);
-        assert_eq!(entry.key.value.len(), 32);
-        assert_eq!(entry.ticket_flags, [0x40, 0x89, 0x00, 0x00]);
-        assert_eq!(entry.addresses.len(), 0);
-        assert_eq!(entry.auth_data.len(), 0);
-        assert_eq!(entry.second_ticket.len(), 0);
+        assert_eq!(entry.server().realm, "TEST.GOKRB5");
+        assert_eq!(entry.server().name_type, 1_i32);
+        assert_eq!(entry.server().name_string(), "HTTP/host.test.gokrb5");
+        assert_eq!(entry.client().realm, "TEST.GOKRB5");
+        assert_eq!(entry.client().name_string(), "testuser1");
+        assert_eq!(entry.key().etype(), 18_i32);
+        assert_eq!(entry.key().value().len(), 32);
+        assert_eq!(entry.ticket_flags(), [0x40, 0x89, 0x00, 0x00]);
+        assert_eq!(entry.addresses().len(), 0);
+        assert_eq!(entry.auth_data().len(), 0);
+        assert_eq!(entry.second_ticket().len(), 0);
         Ok(())
     }
 
@@ -768,7 +768,7 @@ mod tests {
             cache
                 .credentials()
                 .iter()
-                .any(|entry| entry.server.realm.starts_with("X-CACHECONF")),
+                .any(|entry| entry.server().realm.starts_with("X-CACHECONF")),
             "the raw credentials keep the config entry"
         );
         Ok(())
@@ -786,17 +786,20 @@ mod tests {
             b"TEST.GOKRB5".to_vec().into(),
         );
 
-        assert_eq!(credential.client, client);
-        assert_eq!(credential.server.realm, "X-CACHECONF:");
+        assert_eq!(credential.client(), &client);
+        assert_eq!(credential.server().realm, "X-CACHECONF:");
         assert_eq!(
-            credential.server.components,
+            credential.server().components,
             ["krb5_ccache_conf_data", "start_realm"]
         );
-        assert_eq!(credential.ticket.as_slice(), b"TEST.GOKRB5");
-        assert_eq!(credential.key.etype, 0_i32);
-        assert!(credential.key.value.is_empty(), "a config entry has no key");
+        assert_eq!(credential.ticket().as_slice(), b"TEST.GOKRB5");
+        assert_eq!(credential.key().etype(), 0_i32);
+        assert!(
+            credential.key().value().is_empty(),
+            "a config entry has no key"
+        );
 
-        let mut cache = CCache::new(credential.client.clone());
+        let mut cache = CCache::new(credential.client().clone());
         assert!(
             cache
                 .upsert_config_entry("start_realm", None, b"TEST.GOKRB5".to_vec().into())
@@ -812,7 +815,7 @@ mod tests {
         let replaced = cache
             .upsert_config_entry("start_realm", None, b"OTHER.GOKRB5".to_vec().into())
             .context("config entry is replaced")?;
-        assert_eq!(replaced.ticket.as_slice(), b"TEST.GOKRB5");
+        assert_eq!(replaced.ticket().as_slice(), b"TEST.GOKRB5");
         assert_eq!(
             cache.config_entry_value("start_realm", None),
             Some(b"OTHER.GOKRB5".as_slice())
@@ -832,7 +835,9 @@ mod tests {
             .get_entry(&["HTTP", "host.test.gokrb5"])
             .context("HTTP service entry exists")?
             .clone();
-        replacement.key.value = vec![1, 2, 3, 4].into();
+        let mut key = replacement.key().clone();
+        key.set_value(vec![1, 2, 3, 4]);
+        replacement = replacement.set_key(key);
 
         let replaced = cache.upsert_credential(replacement.clone());
         assert!(replaced.is_some(), "the upsert replaces the HTTP entry");
@@ -841,9 +846,9 @@ mod tests {
             cache
                 .get_entry(&["HTTP", "host.test.gokrb5"])
                 .context("HTTP service entry still exists")?
-                .key
-                .value,
-            replacement.key.value
+                .key()
+                .value(),
+            replacement.key().value()
         );
 
         let removed = cache.remove_entries_for_client(&client);
@@ -854,7 +859,7 @@ mod tests {
                 .credentials()
                 .first()
                 .context("one credential is left")?
-                .server
+                .server()
                 .realm
                 .starts_with("X-CACHECONF"),
             "the config entry is kept"
@@ -872,9 +877,9 @@ mod tests {
                 .get_entry(&["HTTP", "host.test.gokrb5"])
                 .context("service ticket exists")?
                 .clone();
-            replacement.client.name_type = client_type;
-            replacement.server.name_type = server_type;
-            replacement.ticket = b"replacement ticket".to_vec().into();
+            replacement.client_mut().name_type = client_type;
+            replacement.server_mut().name_type = server_type;
+            replacement = replacement.set_ticket(b"replacement ticket".to_vec().into());
 
             // When upserting the replacement.
             let previous = cache.upsert_credential(replacement.clone());
@@ -900,9 +905,9 @@ mod tests {
             .context("service ticket exists")?
             .clone();
         let mut other_client = original.clone();
-        other_client.client.realm = "OTHER.REALM".to_owned();
+        other_client.client_mut().realm = "OTHER.REALM".to_owned();
         let mut other_server = original;
-        other_server.server.components = vec!["HTTP/host.test.gokrb5".to_owned()];
+        other_server.server_mut().components = vec!["HTTP/host.test.gokrb5".to_owned()];
 
         // When inserting the distinct identities.
         let replaced_client = cache.upsert_credential(other_client);
@@ -969,10 +974,9 @@ mod tests {
         let principal = Principal::new("R", 1, vec!["alice".to_owned()]);
         let mut credential =
             Credential::config_entry(principal.clone(), "opaque", None, vec![0x5a; 100].into());
-        credential.second_ticket = vec![0x6b; 9].into();
-        credential
-            .auth_data
-            .push(AuthorizationDataEntry::new(1, vec![0x7c; 3].into()));
+        credential = credential.set_second_ticket(vec![0x6b; 9].into());
+        credential =
+            credential.set_auth_data(vec![AuthorizationDataEntry::new(1, vec![0x7c; 3].into())]);
         let mut cache = CCache::new(principal);
         cache.credentials_mut().push(credential);
         // When the cache goes through JSON.
@@ -980,7 +984,11 @@ mod tests {
         // Then every payload is identical, and the 100-byte ticket was grown by doubling,
         // so decoding costs a logarithmic number of erased copies, not one per byte.
         assert_eq!(decoded, cache);
-        let ticket = &decoded.credentials().first().context("credential")?.ticket;
+        let ticket = decoded
+            .credentials()
+            .first()
+            .context("credential")?
+            .ticket();
         assert!(ticket.capacity() <= 128, "capacity {}", ticket.capacity());
         // And a payload that is not a byte sequence is refused with the visitor's expectation.
         let mut value = serde_json::to_value(&cache)?;

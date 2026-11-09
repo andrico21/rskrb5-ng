@@ -31,9 +31,9 @@ mod tests {
             0,
             &decode_hex(TGS_REQ_CONFOUNDER)?,
         )?;
-        let response = synthetic_tgs_rep(&request, request.nonce, &tgt.session_key)?;
+        let response = synthetic_tgs_rep(&request, request.nonce(), tgt.session_key())?;
         assert!(matches!(
-            process_tgs_rep(&request, &response, &tgt.session_key),
+            process_tgs_rep(&request, &response, tgt.session_key()),
             Err(Error::InvalidFastNegotiationResponse)
         ));
         Ok(())
@@ -58,31 +58,35 @@ mod tests {
         )?;
         let mut response: rasn_kerberos::TgsRep = der::decode(&synthetic_tgs_rep(
             &request,
-            request.nonce,
-            &tgt.session_key,
+            request.nonce(),
+            tgt.session_key(),
         )?)?;
-        let mut part = decrypt_tgs_rep_enc_part(&response, &tgt.session_key)?;
-        let etype = KerberosEtype::from_etype_id(tgt.session_key.etype).context("etype")?;
+        let mut part = decrypt_tgs_rep_enc_part(&response, tgt.session_key())?;
+        let etype = KerberosEtype::from_etype_id(tgt.session_key().etype()).context("etype")?;
         part.encrypted_pa_data = Some(vec![rasn_kerberos::PaData {
             r#type: PA_REQ_ENC_PA_REP,
             value: PaReqEncPaRep::new(
                 etype.checksum_type_id(),
                 etype
-                    .checksum(&tgt.session_key.value, &request.der, AS_REQ_CHECKSUM_USAGE)?
+                    .checksum(
+                        tgt.session_key().value(),
+                        request.der(),
+                        AS_REQ_CHECKSUM_USAGE,
+                    )?
                     .into(),
             )
             .encode_der()?
             .into(),
         }]);
         response.0.enc_part.cipher = encrypt_message(
-            &tgt.session_key,
+            tgt.session_key(),
             &der::encode(&rasn_kerberos::EncTgsRepPart(part))?,
             TGS_REP_ENCPART_SESSION_KEY_USAGE,
             TGS_REP_CONFOUNDER,
         )?
         .into();
-        let session = process_tgs_rep(&request, &der::encode(&response)?, &tgt.session_key)?;
-        assert_eq!(session.service, request.service);
+        let session = process_tgs_rep(&request, &der::encode(&response)?, tgt.session_key())?;
+        assert_eq!(session.service(), request.service());
         Ok(())
     }
 }

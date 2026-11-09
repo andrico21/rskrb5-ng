@@ -36,7 +36,7 @@ mod tests {
                 etype.string_to_key(TESTUSER_PASSWORD, b"nondefault-salt", "00000002")?,
             );
             let mut response: rasn_kerberos::AsRep = der::decode(
-                &synthetic_as_rep_with_reply_key(&built, built.nonce, &built.service, &key)?,
+                &synthetic_as_rep_with_reply_key(&built, built.nonce(), built.service(), &key)?,
             )?;
             response.0.padata = Some(vec![rasn_kerberos::PaData {
                 r#type: PA_ETYPE_INFO2,
@@ -56,13 +56,13 @@ mod tests {
     /// An initial AS reply can select a nondefault salt and iteration count.
     #[test]
     fn initial_password_reply_uses_info2_salt_and_parameters() -> Result<(), TestError> {
-        let client = sample_request()?.client;
+        let client = sample_request()?.client().clone();
         let defaults = LibDefaults::new().with_min_s2k_iterations(Family::AesSha1, 2)?;
         let mut options = AsReq::new(timestamp(1_893_553_447)?, 42).with_etypes(vec![18_i32]);
-        options.crypto_policy = Ok(CryptoPolicy::from_libdefaults(&defaults)?);
+        options.set_crypto_policy(Ok(CryptoPolicy::from_libdefaults(&defaults)?));
         let session =
             login_tgt_with_password(&mut SaltKdc, client.clone(), TESTUSER_PASSWORD, options)?;
-        assert_eq!(session.client, client);
+        assert_eq!(session.client(), &client);
         Ok(())
     }
 }

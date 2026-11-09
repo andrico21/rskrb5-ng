@@ -3,10 +3,12 @@
 use core::{fmt, mem};
 
 use rasn::types::Integer;
+use zeroize::Zeroize as _;
 
 use super::{
     ChangePasswdData, Error,
     codec::{decode, kerberos_string, principal_name},
+    password::Bytes,
     secret_der,
 };
 use crate::{
@@ -30,6 +32,33 @@ impl fmt::Debug for ChangePasswdData {
 }
 
 impl ChangePasswdData {
+    /// Borrow password bytes; callers must erase any copies.
+    #[inline]
+    #[must_use]
+    pub const fn new_passwd(&self) -> &Bytes {
+        &self.new_passwd
+    }
+
+    /// Borrow the optional target principal.
+    #[inline]
+    #[must_use]
+    pub const fn targ_name(&self) -> Option<&rasn_kerberos::PrincipalName> {
+        self.targ_name.as_ref()
+    }
+
+    /// Borrow the optional target realm.
+    #[inline]
+    #[must_use]
+    pub const fn targ_realm(&self) -> Option<&rasn_kerberos::Realm> {
+        self.targ_realm.as_ref()
+    }
+
+    /// Erase the previous password before adopting a replacement owner.
+    #[inline]
+    pub fn set_new_passwd(&mut self, value: Bytes) {
+        self.new_passwd.zeroize();
+        self.new_passwd = value;
+    }
     /// Create password-change data for the authenticated principal.
     #[must_use]
     #[inline]
@@ -103,9 +132,10 @@ pub(super) fn encrypt(
     key: &EncryptionKey,
     confounder: &[u8],
 ) -> Result<rasn_kerberos::KrbPriv, Error> {
-    let etype = selection::enctype(key.etype)?.ok_or(Error::UnsupportedEtype(key.etype))?;
+    let etype =
+        selection::enctype(key.etype())?.ok_or_else(|| Error::UnsupportedEtype(key.etype()))?;
     let cipher = etype.encrypt_message_with_confounder(
-        &key.value,
+        key.value(),
         plaintext,
         KRB_PRIV_ENCPART_USAGE,
         confounder,
@@ -114,7 +144,7 @@ pub(super) fn encrypt(
         pvno: Integer::from(5_i32),
         msg_type: Integer::from(21_i32),
         enc_part: rasn_kerberos::EncryptedData {
-            etype: key.etype,
+            etype: key.etype(),
             kvno: None,
             cipher: cipher.into(),
         },

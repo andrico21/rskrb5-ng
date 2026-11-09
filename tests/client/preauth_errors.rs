@@ -27,7 +27,7 @@ mod tests {
         // Given a challenge with a known INFO2 hint and a binary cookie.
         let original = synthetic_preauth_required_error()?;
         let expected = process_kdc_error(&original)?;
-        let mut data = expected.method_data;
+        let mut data = expected.method_data().to_vec();
         data.push(rasn_kerberos::PaData {
             r#type: PA_FX_COOKIE,
             value: vec![0, 0xff, 42].into(),
@@ -38,9 +38,9 @@ mod tests {
         let parsed = process_kdc_error(&bytes)?;
 
         // Then neither the INFO2 parameters nor the cookie is discarded.
-        assert_eq!(parsed.error_code, 24_i32);
-        assert_eq!(parsed.preauth_key_info, expected.preauth_key_info);
-        assert_eq!(parsed.method_data, data);
+        assert_eq!(parsed.error_code(), 24_i32);
+        assert_eq!(parsed.preauth_key_info(), expected.preauth_key_info());
+        assert_eq!(parsed.method_data().to_vec(), data);
         Ok(())
     }
 
@@ -72,9 +72,9 @@ mod tests {
         // When parsing it.
         let parsed = process_kdc_error(&bytes)?;
         // Then absent hints remain distinct from malformed input.
-        assert_eq!(parsed.e_data, None);
+        assert_eq!(parsed.e_data(), None);
         assert!(
-            parsed.method_data.is_empty(),
+            parsed.method_data().is_empty(),
             "absent data supplies no hints"
         );
         Ok(())
@@ -89,13 +89,16 @@ mod tests {
         // When parsing it.
         let parsed = process_kdc_error(&bytes)?;
         // Then raw diagnostics survive and cannot supply retry hints.
-        assert_eq!(parsed.e_data.context("opaque data retained")?, opaque);
+        assert_eq!(
+            parsed.e_data().context("opaque data retained")?.as_slice(),
+            opaque.as_slice()
+        );
         assert!(
-            parsed.method_data.is_empty(),
+            parsed.method_data().is_empty(),
             "unrelated data is not METHOD-DATA"
         );
         assert!(
-            parsed.preauth_key_info.is_empty(),
+            parsed.preauth_key_info().is_empty(),
             "unrelated data supplies no key"
         );
         Ok(())

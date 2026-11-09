@@ -47,7 +47,7 @@ fn client_address_general_constructor_accepts_opaque_peer() -> Result<(), TestEr
     // When the caller supplies the same opaque address through the public constructor.
     let accepted = validator.validate_ap_req(&request)?;
     // Then validation matches both the original type and bytes.
-    assert_eq!(accepted.client.name(), "testuser1");
+    assert_eq!(accepted.client().name(), "testuser1");
     Ok(())
 }
 
@@ -64,7 +64,7 @@ fn client_address_ipv6_constructor_accepts_matching_peer() -> Result<(), TestErr
     // When the public IPv6 constructor supplies the observed peer.
     let accepted = validator.validate_ap_req(&request)?;
     // Then the real acceptor recognizes the address.
-    assert_eq!(accepted.client.name(), "testuser1");
+    assert_eq!(accepted.client().name(), "testuser1");
     Ok(())
 }
 
@@ -80,7 +80,7 @@ fn client_address_accepts_matching_entry() -> Result<(), TestError> {
     // When the real acceptor validates the encrypted ticket.
     let accepted = validator.validate_ap_req(&request)?;
     // Then the ticket identity is returned and admitted to replay tracking.
-    assert_eq!(accepted.client.name(), "testuser1");
+    assert_eq!(accepted.client().name(), "testuser1");
     assert_eq!(validator.replay_cache_mut().len(), 1);
     Ok(())
 }

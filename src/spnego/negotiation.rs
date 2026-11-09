@@ -94,8 +94,8 @@ pub(super) fn verify_mic(
 /// from the AP-REP (0 when absent), and both sides must agree on it.
 pub(super) fn response_options(ap_req: &ValidatedApReq, options: &ApRepOptions) -> ApRepOptions {
     let sequence = options
-        .sequence_number
-        .or(ap_req.sequence_number)
+        .sequence_number()
+        .or_else(|| ap_req.sequence_number())
         .unwrap_or(0);
     options.clone().with_sequence_number(Some(sequence))
 }
@@ -110,25 +110,24 @@ pub(super) fn response_mic(
     options: &ApRepOptions,
 ) -> Result<Vec<u8>, Error> {
     let key = options
-        .subkey
-        .as_ref()
-        .or(ap_req.subkey.as_ref())
-        .unwrap_or(&ap_req.session_key);
-    let usage = if options.subkey.is_some() || ap_req.subkey.is_some() {
+        .subkey()
+        .or_else(|| ap_req.subkey())
+        .unwrap_or_else(|| ap_req.session_key());
+    let usage = if options.subkey().is_some() || ap_req.subkey().is_some() {
         Use::AcceptorSubkey
     } else {
         Use::SessionKey
     };
-    ap_req.crypto_policy.check_use(key.etype, usage)?;
+    ap_req.crypto_policy().check_use(key.etype(), usage)?;
     let flags = GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR
-        | if options.subkey.is_some() {
+        | if options.subkey().is_some() {
             GSS_TOKEN_FLAG_ACCEPTOR_SUBKEY
         } else {
             0
         };
     let sequence = options
-        .sequence_number
-        .or(ap_req.sequence_number)
+        .sequence_number()
+        .or_else(|| ap_req.sequence_number())
         .unwrap_or(0);
     let mut mic = MicToken::new(flags, u64::from(sequence)).with_payload(list);
     mic.set_checksum(key, GSSAPI_ACCEPTOR_SIGN_USAGE)?;

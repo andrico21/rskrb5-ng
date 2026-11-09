@@ -38,7 +38,7 @@ pub fn decrypt(
     credential: &rasn_kerberos::KrbCred,
     key: &EncryptionKey,
 ) -> Result<Vec<Credential>, Error> {
-    policy.check_use(key.etype, Use::ImportedCredential)?;
+    policy.check_use(key.etype(), Use::ImportedCredential)?;
     policy.check_use(credential.enc_part.etype, Use::ImportedCredential)?;
     for ticket in &credential.tickets {
         policy.check_use(ticket.enc_part.etype, Use::ImportedCredential)?;
@@ -57,6 +57,6 @@ pub fn decode_decrypt(
     bytes: &[u8],
     key: &EncryptionKey,
 ) -> Result<Vec<Credential>, Error> {
-    policy.check_use(key.etype, Use::ImportedCredential)?;
+    policy.check_use(key.etype(), Use::ImportedCredential)?;
     decrypt(policy, &decode(bytes)?, key)
 }

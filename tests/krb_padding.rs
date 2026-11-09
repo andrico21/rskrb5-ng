@@ -76,7 +76,7 @@ mod tests {
                         kvno: None,
                         cipher: etype
                             .encrypt_message_with_confounder(
-                                &key.value,
+                                key.value(),
                                 &der::encode(&cred_part)?,
                                 14,
                                 &confounder,
@@ -112,7 +112,7 @@ mod tests {
                         kvno: None,
                         cipher: etype
                             .encrypt_message_with_confounder(
-                                &key.value,
+                                key.value(),
                                 &plaintext,
                                 12,
                                 &vec![0x24; etype.confounder_len()],

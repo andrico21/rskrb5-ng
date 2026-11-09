@@ -62,11 +62,11 @@ mod tests {
         let mut plaintext = hex::decode(MARSHALLED_AUTHENTICATOR)?;
         plaintext.push(1);
         let key = reply_key()?;
-        let etype = KerberosEtype::from_etype_id(key.etype).ok_or("etype")?;
-        request.authenticator.etype = key.etype;
+        let etype = KerberosEtype::from_etype_id(key.etype()).ok_or("etype")?;
+        request.authenticator.etype = key.etype();
         request.authenticator.cipher = etype
             .encrypt_message_with_confounder(
-                &key.value,
+                key.value(),
                 &plaintext,
                 AP_REQ_AUTHENTICATOR_USAGE,
                 &[0; 16],
@@ -156,7 +156,7 @@ mod tests {
         let fixture = decode_ap_req(&hex::decode(MARSHALLED_AP_REQ)?)?;
         let authenticator = decode_authenticator(&hex::decode(MARSHALLED_AUTHENTICATOR)?)?;
         let key = reply_key()?;
-        let etype = KerberosEtype::from_etype_id(key.etype).ok_or("AES256 etype")?;
+        let etype = KerberosEtype::from_etype_id(key.etype()).ok_or("AES256 etype")?;
         let confounder = vec![0x44; etype.confounder_len()];
 
         let ap_req = build_ap_req_with_confounder(
@@ -172,7 +172,7 @@ mod tests {
         assert_eq!(ap_req.pvno, Integer::from(5_i32));
         assert_eq!(ap_req.msg_type, Integer::from(KRB_AP_REQ_MSG_TYPE));
         assert_eq!(ap_options_to_bits(&ap_req.ap_options), 0x0102_0304);
-        assert_eq!(ap_req.authenticator.etype, key.etype);
+        assert_eq!(ap_req.authenticator.etype, key.etype());
         assert_eq!(ap_req.authenticator.kvno, Some(9));
         let decrypted = decrypt_ap_req_authenticator(&ap_req, &key, AP_REQ_AUTHENTICATOR_USAGE)?;
         assert_eq!(decrypted, authenticator);
@@ -185,7 +185,7 @@ mod tests {
         let fixture = decode_ap_req(&hex::decode(MARSHALLED_AP_REQ)?)?;
         let authenticator = decode_authenticator(&hex::decode(MARSHALLED_AUTHENTICATOR)?)?;
         let key = reply_key()?;
-        let etype = KerberosEtype::from_etype_id(key.etype).ok_or("AES256 etype")?;
+        let etype = KerberosEtype::from_etype_id(key.etype()).ok_or("AES256 etype")?;
         let confounder = vec![0x22; etype.confounder_len()];
 
         let encoded = encode_build_ap_req_with_confounder(
@@ -199,7 +199,7 @@ mod tests {
         )?;
         let decoded = decode_ap_req(&encoded)?;
 
-        assert_eq!(decoded.authenticator.etype, key.etype);
+        assert_eq!(decoded.authenticator.etype, key.etype());
         assert!(decoded.authenticator.kvno.is_none(), "kvno is absent");
         let decrypted = decrypt_ap_req_authenticator(&decoded, &key, AP_REQ_AUTHENTICATOR_USAGE)?;
         assert_eq!(decrypted, authenticator);
@@ -256,7 +256,7 @@ mod tests {
         let fixture = decode_ap_req(&hex::decode(MARSHALLED_AP_REQ)?)?;
         let authenticator = decode_authenticator(&hex::decode(MARSHALLED_AUTHENTICATOR)?)?;
         let key = reply_key()?;
-        let etype = KerberosEtype::from_etype_id(key.etype).ok_or("AES256 etype")?;
+        let etype = KerberosEtype::from_etype_id(key.etype()).ok_or("AES256 etype")?;
         let confounder = vec![0x44; etype.confounder_len()];
         let ap_req = build_ap_req_with_confounder(
             fixture.ticket,

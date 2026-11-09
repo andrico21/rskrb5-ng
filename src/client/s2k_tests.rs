@@ -123,11 +123,11 @@ fn info2_challenge_checks_before_timestamp_derivation() -> Result<(), Box<dyn Er
         ));
         let defaults = LibDefaults::new().with_min_s2k_iterations(family, 1)?;
         let mut allowed = options;
-        allowed.crypto_policy = Ok(CryptoPolicy::from_libdefaults(&defaults)?);
+        allowed.set_crypto_policy(Ok(CryptoPolicy::from_libdefaults(&defaults)?));
         let (request, key) =
             password_preauth_request(principal, service, b"password", allowed, &bytes)?;
         assert_eq!(pbkdf2_observation::take(), 1);
-        assert_eq!(key.etype, id);
+        assert_eq!(key.etype(), id);
         assert!(
             request
                 .message
@@ -158,14 +158,14 @@ fn accepted_minima_and_overrides_enter_pbkdf2() -> Result<(), Box<dyn Error>> {
             let key = derive_password_reply_key(&principal, b"password", &info)?;
             // Then exactly one actual PBKDF2 call occurred and a real key was produced.
             assert_eq!(pbkdf2_observation::take(), 1);
-            assert_eq!(key.etype, id);
+            assert_eq!(key.etype(), id);
         }
         let defaults = LibDefaults::new().with_min_s2k_iterations(family, 1)?;
         let policy = CryptoPolicy::from_libdefaults(&defaults)?;
         let info = PreauthKeyInfo::new(id).with_s2kparams(Some(1_u32.to_be_bytes().to_vec()));
         let key = super::password_derivation::derive(&policy, &principal, b"password", &info)?;
         assert_eq!(pbkdf2_observation::take(), 1);
-        assert_eq!(key.etype, id);
+        assert_eq!(key.etype(), id);
     }
     Ok(())
 }

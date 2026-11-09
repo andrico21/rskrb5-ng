@@ -28,7 +28,7 @@ where
 {
     let (built, options) = request()?;
     let transport = super::Tokio::new();
-    drop(transport.exchange_kpasswd_request(super::KdcProtocol::Tcp, &addr, &built.request));
+    drop(transport.exchange_kpasswd_request(super::KdcProtocol::Tcp, &addr, built.request()));
     drop(transport.exchange_kpasswd_result(super::KdcProtocol::Tcp, addr, &built, &options));
     Ok(())
 }
@@ -45,7 +45,7 @@ pub(super) fn request() -> Result<(BuiltKpasswdRequest, RequestOptions), TestErr
         Principal::user("TEST.GOKRB5", "testuser1"),
         Principal::new("TEST.GOKRB5", 2, ["kadmin", "changepw"]),
         EncryptionKey::new(18, vec![0x11; 32]),
-        ticket::encode(&fixture.ap_req.ticket)?.into(),
+        ticket::encode(&fixture.ap_req().ticket)?.into(),
         [0; 4],
         time,
         time,
@@ -98,7 +98,7 @@ pub(super) enum ReplyCase {
 
 /// Encode a reply under real keys, corrupting only the selected control.
 pub(super) fn reply(request: &BuiltKpasswdRequest, case: ReplyCase) -> Result<Vec<u8>, TestError> {
-    let mut response_key = request.reply_key.clone();
+    let mut response_key = request.reply_key().clone();
     let mut sequence = Some(99);
     let mut cusec = 456_789_u32;
     let mut subkey = None;
@@ -133,7 +133,7 @@ pub(super) fn reply(request: &BuiltKpasswdRequest, case: ReplyCase) -> Result<Ve
             response_key = EncryptionKey::new(id, vec![0x66; etype.key_len()]);
             subkey = Some(rasn_kerberos::EncryptionKey {
                 r#type: id,
-                value: response_key.value.to_vec().into(),
+                value: response_key.value().to_vec().into(),
             });
         }
         ReplyCase::Rejected => data = b"\x00\x04policy refused",
@@ -145,7 +145,7 @@ pub(super) fn reply(request: &BuiltKpasswdRequest, case: ReplyCase) -> Result<Ve
             subkey,
             seq_number: sequence,
         },
-        &request.ap_req.session_key,
+        request.ap_req().session_key(),
         None,
         &[0x55; 16],
     )?;
@@ -153,7 +153,7 @@ pub(super) fn reply(request: &BuiltKpasswdRequest, case: ReplyCase) -> Result<Ve
         ap_rep.enc_part.cipher = vec![0].into();
     }
     let mut private = match case {
-        ReplyCase::Reflection => request.request.krb_priv.clone(),
+        ReplyCase::Reflection => request.request().krb_priv().clone(),
         ReplyCase::BadApRep
         | ReplyCase::WrongApRepTime
         | ReplyCase::MissingFreshness
@@ -167,7 +167,7 @@ pub(super) fn reply(request: &BuiltKpasswdRequest, case: ReplyCase) -> Result<Ve
         | ReplyCase::Subkey
         | ReplyCase::LegacySubkey(_)
         | ReplyCase::Rejected => {
-            let etype = KerberosEtype::from_etype_id(response_key.etype).ok_or("enctype")?;
+            let etype = KerberosEtype::from_etype_id(response_key.etype()).ok_or("enctype")?;
             kadmin::build_krb_priv_with_confounder(
                 data,
                 options,
@@ -182,7 +182,7 @@ pub(super) fn reply(request: &BuiltKpasswdRequest, case: ReplyCase) -> Result<Ve
         private.enc_part.cipher = AesSha1Etype::from_etype_id(18)
             .ok_or("AES-SHA1")?
             .encrypt_message_with_confounder(
-                &response_key.value,
+                response_key.value(),
                 &der::encode(&part)?,
                 13,
                 &[0x77; 16],

@@ -132,28 +132,28 @@ fn reject(is_as: bool, usage: Use) -> Result<(), Box<dyn Error>> {
     // When processing, request binding intentionally allows both AES types.
     let failure = if is_as {
         let mut request = client::build_as_req(
-            base.client,
-            base.service,
+            base.client().clone(),
+            base.service().clone(),
             AsReq::new(now, 42).with_etypes(vec![17_i32, 18_i32]),
         )?;
         drop(client::process_as_rep(&request, &bytes, &key)?);
-        request.crypto_policy = policy;
+        request.set_crypto_policy(policy);
         client::process_as_rep(&request, &bytes, &key)
             .err()
             .ok_or("excluded AS reply accepted")?
     } else {
         let mut tgt = base;
-        tgt.session_key = key.clone();
+        tgt.set_session_key(key.clone());
         let mut request = client::build_tgs_req_with_confounder(
             &tgt,
-            tgt.service.clone(),
+            tgt.service().clone(),
             TgsReq::new(now, 42).with_etypes(vec![17_i32, 18_i32]),
             now,
             0,
             &[0x22_u8; 16],
         )?;
         drop(client::process_tgs_rep(&request, &bytes, &key)?);
-        request.crypto_policy = policy;
+        request.set_crypto_policy(policy);
         client::process_tgs_rep(&request, &bytes, &key)
             .err()
             .ok_or("excluded TGS reply accepted")?

@@ -51,7 +51,7 @@ mod tests {
             .context("boundary depth is permitted")?
             .context("nested PAC is found")?;
         // Then: the ordinary PAC is still processed.
-        assert_eq!(pac.c_buffers, 5);
+        assert_eq!(pac.c_buffers(), 5);
         Ok(())
     }
 

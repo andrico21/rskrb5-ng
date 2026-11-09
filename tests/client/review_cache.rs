@@ -26,8 +26,8 @@ mod tests {
             let built = built_request_from_der(der::decode(&bytes)?, &bytes)?;
             let reply = synthetic_as_rep_with_reply_key(
                 &built,
-                built.nonce,
-                &built.service,
+                built.nonce(),
+                built.service(),
                 &reply_key()?,
             )?;
             stream.write_u32(u32::try_from(reply.len())?).await?;
@@ -35,8 +35,11 @@ mod tests {
             Ok::<(), TestError>(())
         });
         let mut old = sample_tgt_session()?;
-        old.end_time = timestamp(2_000_000_000)?;
-        old.session_key.value = vec![0x11; 32].into();
+        old.set_end_time(timestamp(2_000_000_000)?);
+        old.set_session_key(EncryptionKey::new(
+            old.session_key().etype(),
+            vec![0x11; 32],
+        ));
         let mut client = Tokio::from_tgt_session(
             config_with_kdc_server(&address.to_string())?,
             KdcProtocol::Tcp,
@@ -45,7 +48,7 @@ mod tests {
         .with_keytab_credential(keytab_with_reply_key(3)?);
         let session = client.login().await?;
         assert_eq!(
-            session.session_key.value.as_slice(),
+            session.session_key().value().as_slice(),
             decode_hex(SESSION_KEY)?
         );
         task.await??;

@@ -28,7 +28,7 @@ fn reflected_reply(ap_rep_valid: bool) -> Result<Client, Box<dyn StdError>> {
         Principal::user("TEST.GOKRB5", "testuser1"),
         Principal::new("TEST.GOKRB5", 2, ["kadmin", "changepw"]),
         EncryptionKey::new(18, vec![0x11; 32]),
-        ticket::encode(&fixture.ap_req.ticket)?.into(),
+        ticket::encode(&fixture.ap_req().ticket)?.into(),
         [0; 4],
         time,
         time,
@@ -56,7 +56,7 @@ fn reflected_reply(ap_rep_valid: bool) -> Result<Client, Box<dyn StdError>> {
     if !ap_rep_valid {
         ap_rep.enc_part.cipher = vec![0].into();
     }
-    let mut reflected = built.request.krb_priv.clone();
+    let mut reflected = built.request.krb_priv().clone();
     reflected.enc_part.kvno = Some(999);
     let mut frame = vec![0; 6];
     let encoded_ap_rep = ap_rep::encode(&ap_rep)?;

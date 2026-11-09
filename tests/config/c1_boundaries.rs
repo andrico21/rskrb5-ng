@@ -160,7 +160,7 @@ mod tests {
                 Principal::user("EXAMPLE", "user"),
                 AsReq::from_libdefaults(UNIX_EPOCH, 7, &config.libdefaults),
             )?;
-            let decoded: rasn_kerberos::AsReq = der::decode(&request.der)?;
+            let decoded: rasn_kerberos::AsReq = der::decode(request.der())?;
             assert_eq!(decoded.0.req_body.etype, vec![17_i32]);
             assert_eq!(
                 decoded.0.req_body.kdc_options.0.get(1).map(|bit| *bit),

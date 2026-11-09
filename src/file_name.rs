@@ -151,8 +151,7 @@ pub(crate) mod tests {
         );
         keytab.entries_mut().push(entry.clone());
         let partial_len = keytab.to_bytes()?.len();
-        let mut invalid = entry;
-        invalid.key.etype = i32::MAX;
+        let invalid = entry.set_key(EncryptionKey::new(i32::MAX, vec![7; 16]));
         keytab.entries_mut().push(invalid);
         ERASED_BYTES.with(|count| count.set(0));
         ERASED_LENGTHS.with(|lengths| lengths.borrow_mut().clear());

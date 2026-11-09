@@ -31,7 +31,7 @@ fn transit_accepts_local_empty_path() -> Result<(), TestError> {
     // When the ticket is validated without a transit policy.
     let accepted = validator.validate_ap_req(&bytes)?;
     // Then the local client is accepted.
-    assert_eq!(accepted.client.realm, "TEST.GOKRB5");
+    assert_eq!(accepted.client().realm, "TEST.GOKRB5");
     Ok(())
 }
 
@@ -46,7 +46,7 @@ fn transit_accepts_kdc_checked_paths() -> Result<(), TestError> {
         // When no caller policy is configured.
         let accepted = validator.validate_ap_req(&bytes)?;
         // Then the KDC decision suffices.
-        assert_eq!(accepted.client.realm, client_realm);
+        assert_eq!(accepted.client().realm, client_realm);
     }
     Ok(())
 }
@@ -67,7 +67,7 @@ fn transit_invokes_same_realm_approving_policy() -> Result<(), TestError> {
     // When the path is validated.
     let accepted = validator.validate_ap_req(&bytes)?;
     // Then acceptance follows an explicit policy decision on this path.
-    assert_eq!(accepted.client.realm, "TEST.GOKRB5");
+    assert_eq!(accepted.client().realm, "TEST.GOKRB5");
     assert!(policy.called.load(Ordering::Relaxed));
     Ok(())
 }

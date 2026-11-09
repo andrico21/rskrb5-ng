@@ -15,7 +15,7 @@ use compcol::{
     Algorithm, lznt1::Lznt1, vec::decompress_to_vec_capped, xpress::Xpress,
     xpress_huffman::XpressHuffman,
 };
-use zeroize::Zeroizing;
+use zeroize::{Zeroize as _, Zeroizing};
 
 use crate::{
     crypto::{KerberosEtype, selection},
@@ -137,40 +137,130 @@ pub const NTLM_SUPPLEMENTAL_CRED_NTOWF: u32 = 2;
 #[non_exhaustive]
 pub struct Pac {
     /// Number of PAC info buffers.
-    pub c_buffers: u32,
+    c_buffers: u32,
     /// PAC version; parsing accepts only zero.
-    pub version: u32,
+    version: u32,
     /// PAC info buffer table.
-    pub buffers: Vec<InfoBuffer>,
+    buffers: Vec<InfoBuffer>,
     /// Original PAC bytes.
-    pub data: Zeroizing<Vec<u8>>,
+    data: Zeroizing<Vec<u8>>,
     /// PAC bytes with server and KDC signature bytes zeroed.
-    pub zero_signature_data: Zeroizing<Vec<u8>>,
+    zero_signature_data: Zeroizing<Vec<u8>>,
     /// Parsed `KERB_VALIDATION_INFO`, if present and processed.
-    pub kerb_validation_info: Option<KerbValidationInfo>,
+    kerb_validation_info: Option<KerbValidationInfo>,
     /// Parsed server checksum, if present and processed.
-    pub server_checksum: Option<SignatureData>,
+    server_checksum: Option<SignatureData>,
     /// Parsed KDC checksum, if present and processed.
-    pub kdc_checksum: Option<SignatureData>,
+    kdc_checksum: Option<SignatureData>,
     /// Parsed credentials info, if present and processed.
     ///
     /// The encrypted nested credential data still requires the AS reply key.
-    pub credentials_info: Option<CredentialsInfo>,
+    credentials_info: Option<CredentialsInfo>,
     /// Parsed client info, if present and processed.
-    pub client_info: Option<ClientInfo>,
+    client_info: Option<ClientInfo>,
     /// Parsed UPN/DNS info, if present and processed.
-    pub upn_dns_info: Option<UpnDnsInfo>,
+    upn_dns_info: Option<UpnDnsInfo>,
     /// Parsed S4U delegation info, if present and processed.
-    pub s4u_delegation_info: Option<S4UDelegationInfo>,
+    s4u_delegation_info: Option<S4UDelegationInfo>,
     /// Parsed device info, if present and processed.
-    pub device_info: Option<DeviceInfo>,
+    device_info: Option<DeviceInfo>,
     /// Parsed client claims info, if present and processed.
-    pub client_claims_info: Option<ClaimsInfo>,
+    client_claims_info: Option<ClaimsInfo>,
     /// Parsed device claims info, if present and processed.
-    pub device_claims_info: Option<ClaimsInfo>,
+    device_claims_info: Option<ClaimsInfo>,
 }
 
 impl Pac {
+    /// Return the buffer count.
+    #[inline]
+    #[must_use]
+    pub const fn c_buffers(&self) -> u32 {
+        self.c_buffers
+    }
+    /// Return the PAC version.
+    #[inline]
+    #[must_use]
+    pub const fn version(&self) -> u32 {
+        self.version
+    }
+    /// Borrow the buffer descriptors.
+    #[inline]
+    #[must_use]
+    pub fn buffers(&self) -> &[InfoBuffer] {
+        &self.buffers
+    }
+    /// Borrow raw PAC bytes; callers must erase copies.
+    #[inline]
+    #[must_use]
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+    /// Borrow the signature-cleared PAC bytes.
+    #[inline]
+    #[must_use]
+    pub fn zero_signature_data(&self) -> &[u8] {
+        &self.zero_signature_data
+    }
+    /// Borrow parsed validation information.
+    #[inline]
+    #[must_use]
+    pub const fn kerb_validation_info(&self) -> Option<&KerbValidationInfo> {
+        self.kerb_validation_info.as_ref()
+    }
+    /// Borrow the server signature.
+    #[inline]
+    #[must_use]
+    pub const fn server_checksum(&self) -> Option<&SignatureData> {
+        self.server_checksum.as_ref()
+    }
+    /// Borrow the KDC signature.
+    #[inline]
+    #[must_use]
+    pub const fn kdc_checksum(&self) -> Option<&SignatureData> {
+        self.kdc_checksum.as_ref()
+    }
+    /// Borrow encrypted credentials.
+    #[inline]
+    #[must_use]
+    pub const fn credentials_info(&self) -> Option<&CredentialsInfo> {
+        self.credentials_info.as_ref()
+    }
+    /// Borrow client metadata.
+    #[inline]
+    #[must_use]
+    pub const fn client_info(&self) -> Option<&ClientInfo> {
+        self.client_info.as_ref()
+    }
+    /// Borrow UPN/DNS metadata.
+    #[inline]
+    #[must_use]
+    pub const fn upn_dns_info(&self) -> Option<&UpnDnsInfo> {
+        self.upn_dns_info.as_ref()
+    }
+    /// Borrow delegation metadata.
+    #[inline]
+    #[must_use]
+    pub const fn s4u_delegation_info(&self) -> Option<&S4UDelegationInfo> {
+        self.s4u_delegation_info.as_ref()
+    }
+    /// Borrow device metadata.
+    #[inline]
+    #[must_use]
+    pub const fn device_info(&self) -> Option<&DeviceInfo> {
+        self.device_info.as_ref()
+    }
+    /// Borrow client claims.
+    #[inline]
+    #[must_use]
+    pub const fn client_claims_info(&self) -> Option<&ClaimsInfo> {
+        self.client_claims_info.as_ref()
+    }
+    /// Borrow device claims.
+    #[inline]
+    #[must_use]
+    pub const fn device_claims_info(&self) -> Option<&ClaimsInfo> {
+        self.device_claims_info.as_ref()
+    }
     /// Parse the PAC header and info buffer table.
     ///
     /// # Errors
@@ -332,7 +422,7 @@ impl Pac {
     /// [`Error::UnsupportedChecksumType`] for an unknown checksum type.
     #[inline]
     pub fn verify_server_checksum(&self, key: &EncryptionKey) -> Result<bool, Error> {
-        selection::reject_enctype(key.etype)?;
+        selection::reject_enctype(key.etype())?;
         let checksum = self
             .server_checksum
             .as_ref()
@@ -342,11 +432,11 @@ impl Pac {
         }
         let etype = kerberos_etype_for_checksum_type(checksum.signature_type)
             .ok_or(Error::UnsupportedChecksumType(checksum.signature_type))?;
-        if key.etype != etype.etype_id() {
+        if key.etype() != etype.etype_id() {
             return Ok(false);
         }
         Ok(etype.verify_checksum(
-            &key.value,
+            key.value(),
             &self.zero_signature_data,
             &checksum.signature,
             PAC_SERVER_CHECKSUM_KEY_USAGE,
@@ -679,18 +769,47 @@ impl UpnDnsInfo {
 /// This PAC buffer is not NDR-wrapped. The nested credential data is encrypted
 /// with key usage 16 and normally requires the AS reply key, so service-side PAC
 /// processing records the encrypted bytes without decrypting them.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct CredentialsInfo {
     /// Credentials info version. The Microsoft format requires zero.
-    pub version: u32,
+    version: u32,
     /// Kerberos encryption type used for the encrypted credential data.
-    pub encryption_type: u32,
+    encryption_type: u32,
     /// Encrypted NDR-encoded `CredentialData`.
-    pub encrypted_credential_data: Vec<u8>,
+    encrypted_credential_data: Zeroizing<Vec<u8>>,
 }
 
 impl CredentialsInfo {
+    /// Return the credential format version.
+    #[inline]
+    #[must_use]
+    pub const fn version(&self) -> u32 {
+        self.version
+    }
+
+    /// Return the credential encryption type.
+    #[inline]
+    #[must_use]
+    pub const fn encryption_type(&self) -> u32 {
+        self.encryption_type
+    }
+
+    /// Borrow the encrypted credential bytes; callers own erasure of any copies.
+    #[inline]
+    #[must_use]
+    pub fn encrypted_credential_data(&self) -> &[u8] {
+        &self.encrypted_credential_data
+    }
+
+    /// Erase the previous credential bytes before adopting their replacement.
+    #[inline]
+    pub fn set_encrypted_credential_data(&mut self, value: Zeroizing<Vec<u8>>) {
+        self.encrypted_credential_data.as_mut_slice().zeroize();
+        #[cfg(test)]
+        credential_secrets::observe_bytes(&self.encrypted_credential_data);
+        self.encrypted_credential_data = value;
+    }
     /// Parse PAC credentials info without decrypting the nested credential data.
     ///
     /// # Errors
@@ -705,7 +824,8 @@ impl CredentialsInfo {
             return Err(Error::InvalidCredentialsInfoVersion(version));
         }
         let encryption_type = reader.read_u32()?;
-        let encrypted_credential_data = reader.read_bytes(reader.remaining())?.to_vec();
+        let encrypted_credential_data =
+            Zeroizing::new(reader.read_bytes(reader.remaining())?.to_vec());
 
         Ok(Self {
             version,
@@ -726,16 +846,16 @@ impl CredentialsInfo {
     pub fn decrypt_credential_data(&self, key: &EncryptionKey) -> Result<CredentialData, Error> {
         let encryption_type =
             i32::try_from(self.encryption_type).map_err(|_out_of_range| Error::LengthOverflow)?;
-        if key.etype != encryption_type {
+        if key.etype() != encryption_type {
             return Err(Error::CredentialKeyTypeMismatch {
                 expected: encryption_type,
-                actual: key.etype,
+                actual: key.etype(),
             });
         }
         let etype = selection::enctype(encryption_type)?
             .ok_or(Error::UnsupportedEncryptionType(encryption_type))?;
         let plaintext = Zeroizing::new(etype.decrypt_message(
-            &key.value,
+            key.value(),
             &self.encrypted_credential_data,
             PAC_CREDENTIALS_KEY_USAGE,
         )?);
@@ -744,16 +864,33 @@ impl CredentialsInfo {
 }
 
 /// Decrypted PAC credential data.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct CredentialData {
     /// Number of supplemental credentials.
-    pub credential_count: u32,
+    credential_count: u32,
     /// Supplemental credentials.
-    pub credentials: Vec<SecpkgSupplementalCredential>,
+    credentials: Vec<SecpkgSupplementalCredential>,
 }
 
 impl CredentialData {
+    /// Return the number of supplemental packages.
+    #[inline]
+    #[must_use]
+    pub const fn credential_count(&self) -> u32 {
+        self.credential_count
+    }
+    /// Borrow supplemental package owners.
+    #[inline]
+    #[must_use]
+    pub fn credentials(&self) -> &[SecpkgSupplementalCredential] {
+        &self.credentials
+    }
+    /// Borrow package owners for their erasing setters, without exposing raw storage.
+    #[inline]
+    pub fn credentials_mut(&mut self) -> &mut [SecpkgSupplementalCredential] {
+        &mut self.credentials
+    }
     /// Parse NDR-encoded PAC credential data.
     ///
     /// # Errors
@@ -789,11 +926,48 @@ impl CredentialData {
 #[non_exhaustive]
 pub struct SecpkgSupplementalCredential {
     /// Supplemental credential package name.
-    pub package_name: RpcUnicodeString,
+    package_name: RpcUnicodeString,
     /// Credential byte length.
-    pub credential_size: u32,
+    credential_size: u32,
     /// Package-specific credential bytes.
-    pub credentials: Zeroizing<Vec<u8>>,
+    credentials: Zeroizing<Vec<u8>>,
+}
+
+impl SecpkgSupplementalCredential {
+    /// Borrow the package name.
+    #[inline]
+    #[must_use]
+    pub const fn package_name(&self) -> &RpcUnicodeString {
+        &self.package_name
+    }
+
+    /// Return the encoded credential size.
+    #[inline]
+    #[must_use]
+    pub const fn credential_size(&self) -> u32 {
+        self.credential_size
+    }
+
+    /// Borrow credential bytes; callers must erase any copies.
+    #[inline]
+    #[must_use]
+    pub fn credentials(&self) -> &[u8] {
+        &self.credentials
+    }
+
+    /// Erase the previous credential and adopt a replacement with its wire size.
+    /// # Errors
+    /// Returns [`Error::LengthOverflow`] if the replacement exceeds the wire size range.
+    #[inline]
+    pub fn set_credentials(&mut self, value: Zeroizing<Vec<u8>>) -> Result<(), Error> {
+        let length = u32::try_from(value.len()).map_err(|_too_long| Error::LengthOverflow)?;
+        self.credentials.as_mut_slice().zeroize();
+        #[cfg(test)]
+        credential_secrets::observe_bytes(&self.credentials);
+        self.credentials = value;
+        self.credential_size = length;
+        Ok(())
+    }
 }
 
 /// NTLM supplemental credential data.
@@ -801,16 +975,73 @@ pub struct SecpkgSupplementalCredential {
 #[non_exhaustive]
 pub struct NtlmSupplementalCredential {
     /// NTLM supplemental credential version. The Microsoft format requires zero.
-    pub version: u32,
+    version: u32,
     /// NTLM supplemental credential flags.
-    pub flags: u32,
+    flags: u32,
     /// LM one-way function, if present and valid.
-    pub lm_password: Option<[u8; 16]>,
+    lm_password: Option<Zeroizing<[u8; 16]>>,
     /// NT one-way function, if present and valid.
-    pub nt_password: Option<[u8; 16]>,
+    nt_password: Option<Zeroizing<[u8; 16]>>,
 }
 
 impl NtlmSupplementalCredential {
+    /// Return the format version.
+    #[must_use]
+    #[inline]
+    pub const fn version(&self) -> u32 {
+        self.version
+    }
+
+    /// Return the validity flags.
+    #[must_use]
+    #[inline]
+    pub const fn flags(&self) -> u32 {
+        self.flags
+    }
+
+    /// Borrow the LM hash; callers must erase any copies they create.
+    #[must_use]
+    #[inline]
+    pub fn lm_password(&self) -> Option<&[u8; 16]> {
+        self.lm_password.as_deref()
+    }
+
+    /// Borrow the NT hash; callers must erase any copies they create.
+    #[must_use]
+    #[inline]
+    pub fn nt_password(&self) -> Option<&[u8; 16]> {
+        self.nt_password.as_deref()
+    }
+
+    /// Erase the previous LM hash before replacing it and updating its validity flag.
+    #[inline]
+    pub fn set_lm_password(&mut self, value: Option<Zeroizing<[u8; 16]>>) {
+        if let Some(previous) = &mut self.lm_password {
+            previous.zeroize();
+        }
+        #[cfg(test)]
+        credential_secrets::observe_replacement(self.lm_password.as_ref());
+        self.flags &= !NTLM_SUPPLEMENTAL_CRED_LMOWF;
+        if value.is_some() {
+            self.flags |= NTLM_SUPPLEMENTAL_CRED_LMOWF;
+        }
+        self.lm_password = value;
+    }
+
+    /// Erase the previous NT hash before replacing it and updating its validity flag.
+    #[inline]
+    pub fn set_nt_password(&mut self, value: Option<Zeroizing<[u8; 16]>>) {
+        if let Some(previous) = &mut self.nt_password {
+            previous.zeroize();
+        }
+        #[cfg(test)]
+        credential_secrets::observe_replacement(self.nt_password.as_ref());
+        self.flags &= !NTLM_SUPPLEMENTAL_CRED_NTOWF;
+        if value.is_some() {
+            self.flags |= NTLM_SUPPLEMENTAL_CRED_NTOWF;
+        }
+        self.nt_password = value;
+    }
     /// Parse package-specific NTLM supplemental credential bytes.
     ///
     /// # Errors
@@ -830,9 +1061,9 @@ impl NtlmSupplementalCredential {
         let lm_slot = Zeroizing::new(reader.read_array()?);
         let nt_slot = Zeroizing::new(reader.read_array()?);
         let lm_password =
-            ntlm_supplemental_flag_set(flags, NTLM_SUPPLEMENTAL_CRED_LMOWF).then_some(*lm_slot);
+            ntlm_supplemental_flag_set(flags, NTLM_SUPPLEMENTAL_CRED_LMOWF).then_some(lm_slot);
         let nt_password =
-            ntlm_supplemental_flag_set(flags, NTLM_SUPPLEMENTAL_CRED_NTOWF).then_some(*nt_slot);
+            ntlm_supplemental_flag_set(flags, NTLM_SUPPLEMENTAL_CRED_NTOWF).then_some(nt_slot);
 
         Ok(Self {
             version,
@@ -1488,82 +1719,305 @@ pub struct AdCredentials {
 }
 
 /// Parsed `KERB_VALIDATION_INFO`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct KerbValidationInfo {
     /// User logon time.
-    pub logon_time: FileTime,
+    logon_time: FileTime,
     /// User logoff time.
-    pub logoff_time: FileTime,
+    logoff_time: FileTime,
     /// Kickoff time.
-    pub kickoff_time: FileTime,
+    kickoff_time: FileTime,
     /// Password last set time.
-    pub password_last_set: FileTime,
+    password_last_set: FileTime,
     /// Password can change time.
-    pub password_can_change: FileTime,
+    password_can_change: FileTime,
     /// Password must change time.
-    pub password_must_change: FileTime,
+    password_must_change: FileTime,
     /// Effective user name.
-    pub effective_name: RpcUnicodeString,
+    effective_name: RpcUnicodeString,
     /// Full user name.
-    pub full_name: RpcUnicodeString,
+    full_name: RpcUnicodeString,
     /// Logon script.
-    pub logon_script: RpcUnicodeString,
+    logon_script: RpcUnicodeString,
     /// Profile path.
-    pub profile_path: RpcUnicodeString,
+    profile_path: RpcUnicodeString,
     /// Home directory.
-    pub home_directory: RpcUnicodeString,
+    home_directory: RpcUnicodeString,
     /// Home directory drive.
-    pub home_directory_drive: RpcUnicodeString,
+    home_directory_drive: RpcUnicodeString,
     /// Logon count.
-    pub logon_count: u16,
+    logon_count: u16,
     /// Bad password count.
-    pub bad_password_count: u16,
+    bad_password_count: u16,
     /// User RID.
-    pub user_id: u32,
+    user_id: u32,
     /// Primary group RID.
-    pub primary_group_id: u32,
+    primary_group_id: u32,
     /// Group count.
-    pub group_count: u32,
+    group_count: u32,
     /// Group memberships.
-    pub group_ids: Vec<GroupMembership>,
+    group_ids: Vec<GroupMembership>,
     /// User flags.
-    pub user_flags: u32,
+    user_flags: u32,
     /// User session key bytes.
-    pub user_session_key: session_key::SessionKey,
+    user_session_key: session_key::SessionKey,
     /// Logon server.
-    pub logon_server: RpcUnicodeString,
+    logon_server: RpcUnicodeString,
     /// Logon domain name.
-    pub logon_domain_name: RpcUnicodeString,
+    logon_domain_name: RpcUnicodeString,
     /// Logon domain SID.
-    pub logon_domain_id: Option<Sid>,
+    logon_domain_id: Option<Sid>,
     /// Reserved values.
-    pub reserved1: [u32; 2],
+    reserved1: [u32; 2],
     /// User account control flags.
-    pub user_account_control: u32,
+    user_account_control: u32,
     /// Sub-authentication status.
-    pub sub_auth_status: u32,
+    sub_auth_status: u32,
     /// Last successful interactive logon.
-    pub last_successful_ilogon: FileTime,
+    last_successful_ilogon: FileTime,
     /// Last failed interactive logon.
-    pub last_failed_ilogon: FileTime,
+    last_failed_ilogon: FileTime,
     /// Failed interactive logon count.
-    pub failed_ilogon_count: u32,
+    failed_ilogon_count: u32,
     /// Reserved value.
-    pub reserved3: u32,
+    reserved3: u32,
     /// Extra SID count.
-    pub sid_count: u32,
+    sid_count: u32,
     /// Extra SIDs.
-    pub extra_sids: Vec<SidAndAttributes>,
+    extra_sids: Vec<SidAndAttributes>,
     /// Resource group domain SID.
-    pub resource_group_domain_sid: Option<Sid>,
+    resource_group_domain_sid: Option<Sid>,
     /// Resource group count.
-    pub resource_group_count: u32,
+    resource_group_count: u32,
     /// Resource groups.
-    pub resource_group_ids: Vec<GroupMembership>,
+    resource_group_ids: Vec<GroupMembership>,
 }
 
 impl KerbValidationInfo {
+    /// Mutably borrow group metadata without exposing credential storage.
+    #[inline]
+    #[must_use]
+    pub const fn group_ids_mut(&mut self) -> &mut Vec<GroupMembership> {
+        &mut self.group_ids
+    }
+    /// Return user logon time.
+    #[inline]
+    #[must_use]
+    pub const fn logon_time(&self) -> FileTime {
+        self.logon_time
+    }
+    /// Return user logoff time.
+    #[inline]
+    #[must_use]
+    pub const fn logoff_time(&self) -> FileTime {
+        self.logoff_time
+    }
+    /// Return kickoff time.
+    #[inline]
+    #[must_use]
+    pub const fn kickoff_time(&self) -> FileTime {
+        self.kickoff_time
+    }
+    /// Return password last-set time.
+    #[inline]
+    #[must_use]
+    pub const fn password_last_set(&self) -> FileTime {
+        self.password_last_set
+    }
+    /// Return earliest password-change time.
+    #[inline]
+    #[must_use]
+    pub const fn password_can_change(&self) -> FileTime {
+        self.password_can_change
+    }
+    /// Return mandatory password-change time.
+    #[inline]
+    #[must_use]
+    pub const fn password_must_change(&self) -> FileTime {
+        self.password_must_change
+    }
+    /// Borrow the effective user name.
+    #[inline]
+    #[must_use]
+    pub const fn effective_name(&self) -> &RpcUnicodeString {
+        &self.effective_name
+    }
+    /// Borrow the full user name.
+    #[inline]
+    #[must_use]
+    pub const fn full_name(&self) -> &RpcUnicodeString {
+        &self.full_name
+    }
+    /// Borrow the logon script.
+    #[inline]
+    #[must_use]
+    pub const fn logon_script(&self) -> &RpcUnicodeString {
+        &self.logon_script
+    }
+    /// Borrow the profile path.
+    #[inline]
+    #[must_use]
+    pub const fn profile_path(&self) -> &RpcUnicodeString {
+        &self.profile_path
+    }
+    /// Borrow the home directory.
+    #[inline]
+    #[must_use]
+    pub const fn home_directory(&self) -> &RpcUnicodeString {
+        &self.home_directory
+    }
+    /// Borrow the home drive.
+    #[inline]
+    #[must_use]
+    pub const fn home_directory_drive(&self) -> &RpcUnicodeString {
+        &self.home_directory_drive
+    }
+    /// Return the logon count.
+    #[inline]
+    #[must_use]
+    pub const fn logon_count(&self) -> u16 {
+        self.logon_count
+    }
+    /// Return the bad-password count.
+    #[inline]
+    #[must_use]
+    pub const fn bad_password_count(&self) -> u16 {
+        self.bad_password_count
+    }
+    /// Return the user RID.
+    #[inline]
+    #[must_use]
+    pub const fn user_id(&self) -> u32 {
+        self.user_id
+    }
+    /// Return the primary group RID.
+    #[inline]
+    #[must_use]
+    pub const fn primary_group_id(&self) -> u32 {
+        self.primary_group_id
+    }
+    /// Return the group count.
+    #[inline]
+    #[must_use]
+    pub const fn group_count(&self) -> u32 {
+        self.group_count
+    }
+    /// Borrow group memberships.
+    #[inline]
+    #[must_use]
+    pub fn group_ids(&self) -> &[GroupMembership] {
+        &self.group_ids
+    }
+    /// Return user flags.
+    #[inline]
+    #[must_use]
+    pub const fn user_flags(&self) -> u32 {
+        self.user_flags
+    }
+    /// Borrow the logon server.
+    #[inline]
+    #[must_use]
+    pub const fn logon_server(&self) -> &RpcUnicodeString {
+        &self.logon_server
+    }
+    /// Borrow the logon domain name.
+    #[inline]
+    #[must_use]
+    pub const fn logon_domain_name(&self) -> &RpcUnicodeString {
+        &self.logon_domain_name
+    }
+    /// Borrow the domain SID.
+    #[inline]
+    #[must_use]
+    pub const fn logon_domain_id(&self) -> Option<&Sid> {
+        self.logon_domain_id.as_ref()
+    }
+    /// Return reserved values.
+    #[inline]
+    #[must_use]
+    pub const fn reserved1(&self) -> [u32; 2] {
+        self.reserved1
+    }
+    /// Return account-control flags.
+    #[inline]
+    #[must_use]
+    pub const fn user_account_control(&self) -> u32 {
+        self.user_account_control
+    }
+    /// Return sub-authentication status.
+    #[inline]
+    #[must_use]
+    pub const fn sub_auth_status(&self) -> u32 {
+        self.sub_auth_status
+    }
+    /// Return the last successful interactive logon time.
+    #[inline]
+    #[must_use]
+    pub const fn last_successful_ilogon(&self) -> FileTime {
+        self.last_successful_ilogon
+    }
+    /// Return the last failed interactive logon time.
+    #[inline]
+    #[must_use]
+    pub const fn last_failed_ilogon(&self) -> FileTime {
+        self.last_failed_ilogon
+    }
+    /// Return the failed interactive-logon count.
+    #[inline]
+    #[must_use]
+    pub const fn failed_ilogon_count(&self) -> u32 {
+        self.failed_ilogon_count
+    }
+    /// Return the reserved scalar.
+    #[inline]
+    #[must_use]
+    pub const fn reserved3(&self) -> u32 {
+        self.reserved3
+    }
+    /// Return the extra SID count.
+    #[inline]
+    #[must_use]
+    pub const fn sid_count(&self) -> u32 {
+        self.sid_count
+    }
+    /// Borrow extra SIDs.
+    #[inline]
+    #[must_use]
+    pub fn extra_sids(&self) -> &[SidAndAttributes] {
+        &self.extra_sids
+    }
+    /// Borrow the resource domain SID.
+    #[inline]
+    #[must_use]
+    pub const fn resource_group_domain_sid(&self) -> Option<&Sid> {
+        self.resource_group_domain_sid.as_ref()
+    }
+    /// Return resource group count.
+    #[inline]
+    #[must_use]
+    pub const fn resource_group_count(&self) -> u32 {
+        self.resource_group_count
+    }
+    /// Borrow resource groups.
+    #[inline]
+    #[must_use]
+    pub fn resource_group_ids(&self) -> &[GroupMembership] {
+        &self.resource_group_ids
+    }
+    /// Borrow the session-key owner; callers must erase any copies they create.
+    #[inline]
+    #[must_use]
+    pub const fn user_session_key(&self) -> &session_key::SessionKey {
+        &self.user_session_key
+    }
+
+    /// Replace the session key, erasing the previous owner's live bytes on drop.
+    #[inline]
+    pub fn set_user_session_key(&mut self, value: session_key::SessionKey) {
+        self.user_session_key = value;
+    }
+
     /// Parse NDR-encoded `KERB_VALIDATION_INFO`.
     ///
     /// # Errors

@@ -20,11 +20,11 @@ mod tests {
         // Given: consistent encoded ticket and session metadata with distinct issuer/destination.
         let local = sample_tgt_session()?;
         let mut referral = local.clone();
-        referral.service = Principal::new("TEST.GOKRB5", 2, ["krbtgt", "OTHER.REALM"]);
-        let mut encoded: rasn_kerberos::Ticket = der::decode(&referral.ticket)?;
-        encoded.sname = rasn_principal(&referral.service)?;
-        encoded.realm = realm(&referral.service.realm)?;
-        referral.ticket = der::encode(&encoded)?.into();
+        referral.set_service(Principal::new("TEST.GOKRB5", 2, ["krbtgt", "OTHER.REALM"]));
+        let mut encoded: rasn_kerberos::Ticket = der::decode(referral.ticket())?;
+        encoded.sname = rasn_principal(referral.service())?;
+        encoded.realm = realm(&referral.service().realm)?;
+        referral.set_ticket(der::encode(&encoded)?.into());
         let mut client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, local);
         client.cache_tgt_session(referral)?;
 

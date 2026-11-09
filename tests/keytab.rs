@@ -94,17 +94,17 @@ mod tests {
             .entries()
             .first()
             .context("keytab has a first entry")?;
-        assert_eq!(first.kvno, 1);
-        assert_eq!(first.kvno8, 1);
-        assert_eq!(first.timestamp, 1_505_669_592);
-        assert_eq!(first.key.etype, 17_i32);
+        assert_eq!(first.kvno(), 1);
+        assert_eq!(first.kvno8(), 1);
+        assert_eq!(first.timestamp(), 1_505_669_592);
+        assert_eq!(first.key().etype(), 17_i32);
         assert_eq!(
-            hex::encode(&first.key.value),
+            hex::encode(first.key().value()),
             "698c4df8e9f60e7eea5a21bf4526ad25"
         );
-        assert_eq!(first.principal.realm, "TEST.GOKRB5");
-        assert_eq!(first.principal.components, ["testuser1"]);
-        assert_eq!(first.principal.name_type, 1_i32);
+        assert_eq!(first.principal().realm, "TEST.GOKRB5");
+        assert_eq!(first.principal().components, ["testuser1"]);
+        assert_eq!(first.principal().name_type, 1_i32);
         Ok(())
     }
 
@@ -470,7 +470,7 @@ mod tests {
         debug.write_fmt(format_args!("{key:?}"))?;
 
         assert_eq!(debug, "EncryptionKey { etype: 18, value_len: 4 }");
-        assert_eq!(format!("{:?}", key.value), "KeyBytes { len: 4 }");
+        assert_eq!(format!("{:?}", key.value()), "KeyBytes { len: 4 }");
         assert!(
             !debug.contains("1, 2, 3, 4"),
             "the key bytes are not rendered"
@@ -531,9 +531,9 @@ mod tests {
             .find_key(&["testuser1"], "TEST.GOKRB5", 2, 18)
             .context("matching key exists")?;
         assert_eq!(kvno, 2);
-        assert_eq!(key.etype, 18_i32);
+        assert_eq!(key.etype(), 18_i32);
         assert_eq!(
-            hex::encode(&key.value),
+            hex::encode(key.value()),
             "bbdc430aab7e2d4622a0b6951481453b0962e9db8e2f168942ad175cda6d9de9"
         );
 
@@ -557,9 +557,9 @@ mod tests {
             .find_key(&["testuser1"], "TEST.GOKRB5", 2, 16)
             .context("DES3 key exists")?;
         assert_eq!(des3_kvno, 2);
-        assert_eq!(des3_key.etype, 16_i32);
+        assert_eq!(des3_key.etype(), 16_i32);
         assert_eq!(
-            hex::encode(&des3_key.value),
+            hex::encode(des3_key.value()),
             "4580fb91760dabe6f808c22c26494f644cb35d61d32c79e3"
         );
 
@@ -567,9 +567,9 @@ mod tests {
             .find_key(&["testuser1"], "TEST.GOKRB5", 2, 23)
             .context("RC4-HMAC key exists")?;
         assert_eq!(rc4_kvno, 2);
-        assert_eq!(rc4_key.etype, 23_i32);
+        assert_eq!(rc4_key.etype(), 23_i32);
         assert_eq!(
-            hex::encode(&rc4_key.value),
+            hex::encode(rc4_key.value()),
             "084768c373663b3bef1f6385883cf7ff"
         );
         Ok(())
@@ -601,11 +601,17 @@ mod tests {
         for field in 0_u8..5 {
             let mut entry = fixture.entries().first().context("fixture entry")?.clone();
             match field {
-                0 => entry.principal.realm = "r".repeat(0x8000),
-                1 => entry.principal.components = vec!["c".repeat(0x8000)],
-                2 => entry.principal.components = vec![String::new(); 0x8000],
-                3 => entry.key.value = vec![0; 0x8000].into(),
-                _ => entry.key.etype = 0x8000_i32,
+                0 => entry.principal_mut().realm = "r".repeat(0x8000),
+                1 => entry.principal_mut().components = vec!["c".repeat(0x8000)],
+                2 => entry.principal_mut().components = vec![String::new(); 0x8000],
+                3 => {
+                    let etype = entry.key().etype();
+                    entry = entry.set_key(EncryptionKey::new(etype, vec![0; 0x8000]));
+                }
+                _ => {
+                    let value = entry.key().value().clone();
+                    entry = entry.set_key(EncryptionKey::new(0x8000_i32, value));
+                }
             }
             let mut keytab = Keytab::new();
             keytab.entries_mut().push(entry);
@@ -627,14 +633,14 @@ mod tests {
     fn serializer_accepts_largest_parseable_fields() -> Result<(), TestError> {
         // Given the largest accepted lengths, count and encryption type.
         let mut entry = synthetic_entry("user", 1, i32::from(i16::MAX), 100);
-        entry.principal.realm = "r".repeat(0x7fff);
-        entry.principal.components = vec![String::new(); 0x7fff];
+        entry.principal_mut().realm = "r".repeat(0x7fff);
+        entry.principal_mut().components = vec![String::new(); 0x7fff];
         *entry
-            .principal
+            .principal_mut()
             .components
             .first_mut()
             .context("first component")? = "c".repeat(0x7fff);
-        entry.key.value = vec![7; 0x7fff].into();
+        entry = entry.set_key(EncryptionKey::new(i32::from(i16::MAX), vec![7; 0x7fff]));
         let mut keytab = Keytab::new();
         keytab.entries_mut().push(entry);
 
@@ -652,15 +658,15 @@ mod tests {
         // Given a version-one keytab with the largest admissible component count.
         let mut keytab = Keytab::parse(&[5, 1])?;
         let mut entry = synthetic_entry("user", 1, 18, 100);
-        entry.principal.name_type = 0_i32;
-        entry.principal.components = vec![String::new(); 0x7ffe];
+        entry.principal_mut().name_type = 0_i32;
+        entry.principal_mut().components = vec![String::new(); 0x7ffe];
         keytab.entries_mut().push(entry);
         assert_eq!(Keytab::parse(&keytab.to_bytes()?)?, keytab);
         keytab
             .entries_mut()
             .first_mut()
             .context("entry")?
-            .principal
+            .principal_mut()
             .components
             .push(String::new());
 
@@ -677,7 +683,7 @@ mod tests {
     fn version_one_rejects_unrepresentable_name_type() -> Result<(), TestError> {
         let mut keys = Keytab::parse(&[5, 1])?;
         let mut entry = synthetic_entry("alice", 1, 18, 100);
-        entry.principal.name_type = 42_i32;
+        entry.principal_mut().name_type = 42_i32;
         keys.entries_mut().push(entry);
         assert!(matches!(
             keys.to_bytes(),
@@ -686,7 +692,7 @@ mod tests {
         keys.entries_mut()
             .first_mut()
             .context("entry")?
-            .principal
+            .principal_mut()
             .name_type = 0_i32;
         assert_eq!(Keytab::parse(&keys.to_bytes()?)?, keys);
         Ok(())
@@ -700,7 +706,7 @@ mod tests {
         // When constructing the entry.
         let entry = Entry::new(principal, 100, 7, EncryptionKey::new(18, vec![7; 16]), 0);
         // Then the effective lookup identity already matches the file interpretation.
-        assert_eq!(entry.kvno, 7);
+        assert_eq!(entry.kvno(), 7);
         let mut keytab = Keytab::new();
         keytab.entries_mut().push(entry);
         assert_eq!(Keytab::parse(&keytab.to_bytes()?)?, keytab);

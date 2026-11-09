@@ -176,29 +176,30 @@ fn build_login_request(
 /// Panics if any of those properties does not hold.
 fn assert_login_session(session: &AsRepSession) {
     assert_eq!(
-        session.client,
+        session.client().clone(),
         Principal::user(REALM, USER),
         "the TGT is issued to the test user"
     );
     assert_eq!(
-        session.service,
+        session.service().clone(),
         Principal::tgt_service(REALM),
         "the session is a TGT of the test realm"
     );
     assert_eq!(
-        session.session_key.etype, AES256_ETYPE,
+        session.session_key().etype(),
+        AES256_ETYPE,
         "the TGT session key is AES256"
     );
     assert!(
-        !session.session_key.value.is_empty(),
-        "session.session_key.value must not be empty"
+        !session.session_key().value().is_empty(),
+        "session.session_key().value must not be empty"
     );
     assert!(
-        !session.ticket.is_empty(),
+        !session.ticket().is_empty(),
         "session.ticket must not be empty"
     );
     assert!(
-        session.end_time > session.start_time,
+        session.end_time() > session.start_time(),
         "the TGT ends after it starts"
     );
 }
@@ -319,18 +320,18 @@ mod tests {
                     .exchange_as_req(protocol, addr.as_str(), &request, &key)
                     .await?;
 
-                assert_eq!(session.client, Principal::user(REALM, USER));
-                assert_eq!(session.service, Principal::tgt_service(REALM));
-                assert_eq!(session.session_key.etype, AES256_ETYPE);
+                assert_eq!(session.client(), &Principal::user(REALM, USER));
+                assert_eq!(session.service(), &Principal::tgt_service(REALM));
+                assert_eq!(session.session_key().etype(), AES256_ETYPE);
                 assert!(
-                    !session.session_key.value.is_empty(),
-                    "session.session_key.value must not be empty"
+                    !session.session_key().value().is_empty(),
+                    "session.session_key().value must not be empty"
                 );
                 assert!(
-                    !session.ticket.is_empty(),
+                    !session.ticket().is_empty(),
                     "session.ticket must not be empty"
                 );
-                assert!(session.end_time > session.start_time);
+                assert!(session.end_time() > session.start_time());
             }
 
             Ok::<_, Box<dyn Error>>(())
@@ -420,18 +421,18 @@ mod tests {
                     )
                     .await?;
 
-                assert_eq!(session.client, Principal::user(REALM, USER));
-                assert_eq!(session.service, Principal::tgt_service(REALM));
-                assert_eq!(session.session_key.etype, RC4_HMAC_ETYPE);
+                assert_eq!(session.client(), &Principal::user(REALM, USER));
+                assert_eq!(session.service(), &Principal::tgt_service(REALM));
+                assert_eq!(session.session_key().etype(), RC4_HMAC_ETYPE);
                 assert!(
-                    !session.session_key.value.is_empty(),
-                    "session.session_key.value must not be empty"
+                    !session.session_key().value().is_empty(),
+                    "session.session_key().value must not be empty"
                 );
                 assert!(
-                    !session.ticket.is_empty(),
+                    !session.ticket().is_empty(),
                     "session.ticket must not be empty"
                 );
-                assert!(session.end_time > session.start_time);
+                assert!(session.end_time() > session.start_time());
             }
 
             Ok::<_, Box<dyn Error>>(())
@@ -468,18 +469,18 @@ mod tests {
                     )
                     .await?;
 
-                assert_eq!(session.client, Principal::user(REALM, USER));
-                assert_eq!(session.service, Principal::tgt_service(REALM));
-                assert_eq!(session.session_key.etype, DES3_ETYPE);
+                assert_eq!(session.client(), &Principal::user(REALM, USER));
+                assert_eq!(session.service(), &Principal::tgt_service(REALM));
+                assert_eq!(session.session_key().etype(), DES3_ETYPE);
                 assert_eq!(
-                    session.session_key.value.len(),
+                    session.session_key().value().len(),
                     Des3CbcSha1KdEtype::key_len()
                 );
                 assert!(
-                    !session.ticket.is_empty(),
+                    !session.ticket().is_empty(),
                     "session.ticket must not be empty"
                 );
-                assert!(session.end_time > session.start_time);
+                assert!(session.end_time() > session.start_time());
             }
 
             Ok::<_, Box<dyn Error>>(())
@@ -588,9 +589,9 @@ mod tests {
                 .with_transport(TokioKdcTransport::new().with_timeout(Duration::from_secs(10)));
                 let session = client.login().await?;
 
-                assert_eq!(session.client, Principal::user(REALM, "testuser2"));
-                assert_eq!(session.service, Principal::tgt_service(REALM));
-                assert_eq!(session.session_key.etype, AES256_ETYPE);
+                assert_eq!(session.client(), &Principal::user(REALM, "testuser2"));
+                assert_eq!(session.service(), &Principal::tgt_service(REALM));
+                assert_eq!(session.session_key().etype(), AES256_ETYPE);
             }
 
             Ok::<_, Box<dyn Error>>(())
@@ -623,7 +624,7 @@ mod tests {
                 .ok_or("invalid service principal must be rejected")?;
 
             assert!(
-                matches!(&error, ClientError::Kdc(kdc_error) if kdc_error.error_code == 7_i32),
+                matches!(&error, ClientError::Kdc(kdc_error) if kdc_error.error_code() == 7_i32),
                 "expected KDC service-principal error, got {error}"
             );
 
@@ -723,10 +724,10 @@ mod tests {
                 assert!(client.tgt_session().is_some());
                 assert_eq!(client.cached_service_ticket_count(), 1);
                 assert_eq!(first, second);
-                assert_eq!(first.client, Principal::user(REALM, USER));
-                assert_eq!(first.service, service);
-                assert_eq!(first.session_key.etype, AES256_ETYPE);
-                assert!(!first.ticket.is_empty(), "first.ticket must not be empty");
+                assert_eq!(first.client(), &Principal::user(REALM, USER));
+                assert_eq!(first.service(), &service);
+                assert_eq!(first.session_key().etype(), AES256_ETYPE);
+                assert!(!first.ticket().is_empty(), "first.ticket must not be empty");
             }
 
             Ok::<_, Box<dyn Error>>(())
@@ -756,7 +757,7 @@ mod tests {
             let ticket = client.get_service_ticket(service.clone()).await?;
 
             assert_login_session(&client.tgt_session().ok_or("TGT is cached")?.clone());
-            assert_eq!(ticket.service, service);
+            assert_eq!(ticket.service(), &service);
             assert_eq!(client.cached_service_ticket_count(), 1);
             assert!(client.cached_service_ticket(service.clone()).is_some());
 
@@ -934,18 +935,21 @@ mod tests {
                 let service = service_principal();
                 let request = build_tgs_req(&tgt, service.clone(), tgs_options(protocol, 4)?)?;
                 let ticket = transport
-                    .exchange_tgs_req(protocol, addr.as_str(), &request, &tgt.session_key)
+                    .exchange_tgs_req(protocol, addr.as_str(), &request, tgt.session_key())
                     .await?;
 
-                assert_eq!(ticket.client, Principal::user(REALM, USER));
-                assert_eq!(ticket.service, service);
-                assert_eq!(ticket.session_key.etype, AES256_ETYPE);
+                assert_eq!(ticket.client(), &Principal::user(REALM, USER));
+                assert_eq!(ticket.service(), &service);
+                assert_eq!(ticket.session_key().etype(), AES256_ETYPE);
                 assert!(
-                    !ticket.session_key.value.is_empty(),
-                    "ticket.session_key.value must not be empty"
+                    !ticket.session_key().value().is_empty(),
+                    "ticket.session_key().value must not be empty"
                 );
-                assert!(!ticket.ticket.is_empty(), "ticket.ticket must not be empty");
-                assert!(ticket.end_time > ticket.start_time);
+                assert!(
+                    !ticket.ticket().is_empty(),
+                    "ticket.ticket must not be empty"
+                );
+                assert!(ticket.end_time() > ticket.start_time());
             }
 
             Ok::<_, Box<dyn Error>>(())
@@ -985,18 +989,21 @@ mod tests {
             let service = service_principal();
             let request = build_tgs_req(&tgt, service.clone(), tgs_options(protocol, 48)?)?;
             let ticket = transport
-                .exchange_tgs_req(protocol, addr.as_str(), &request, &tgt.session_key)
+                .exchange_tgs_req(protocol, addr.as_str(), &request, tgt.session_key())
                 .await?;
 
-            assert_eq!(ticket.client, Principal::user(REALM, USER));
-            assert_eq!(ticket.service, service);
-            assert_eq!(ticket.session_key.etype, AES256_ETYPE);
+            assert_eq!(ticket.client(), &Principal::user(REALM, USER));
+            assert_eq!(ticket.service(), &service);
+            assert_eq!(ticket.session_key().etype(), AES256_ETYPE);
             assert!(
-                !ticket.session_key.value.is_empty(),
-                "ticket.session_key.value must not be empty"
+                !ticket.session_key().value().is_empty(),
+                "ticket.session_key().value must not be empty"
             );
-            assert!(!ticket.ticket.is_empty(), "ticket.ticket must not be empty");
-            assert!(ticket.end_time > ticket.start_time);
+            assert!(
+                !ticket.ticket().is_empty(),
+                "ticket.ticket must not be empty"
+            );
+            assert!(ticket.end_time() > ticket.start_time());
 
             Ok::<_, Box<dyn Error>>(())
         })
@@ -1031,10 +1038,10 @@ mod tests {
                         login_options_with_etypes(protocol, 27, vec![AES128_ETYPE])?,
                     )
                     .await?;
-                assert_eq!(tgt.session_key.etype, AES128_ETYPE);
+                assert_eq!(tgt.session_key().etype(), AES128_ETYPE);
                 assert!(
-                    !tgt.session_key.value.is_empty(),
-                    "tgt.session_key.value must not be empty"
+                    !tgt.session_key().value().is_empty(),
+                    "tgt.session_key().value must not be empty"
                 );
 
                 let service = service_principal();
@@ -1044,18 +1051,21 @@ mod tests {
                     tgs_options_with_etypes(protocol, 28, vec![AES128_ETYPE])?,
                 )?;
                 let ticket = transport
-                    .exchange_tgs_req(protocol, addr.as_str(), &request, &tgt.session_key)
+                    .exchange_tgs_req(protocol, addr.as_str(), &request, tgt.session_key())
                     .await?;
 
-                assert_eq!(ticket.client, Principal::user(REALM, USER));
-                assert_eq!(ticket.service, service);
-                assert_eq!(ticket.session_key.etype, AES128_ETYPE);
+                assert_eq!(ticket.client(), &Principal::user(REALM, USER));
+                assert_eq!(ticket.service(), &service);
+                assert_eq!(ticket.session_key().etype(), AES128_ETYPE);
                 assert!(
-                    !ticket.session_key.value.is_empty(),
-                    "ticket.session_key.value must not be empty"
+                    !ticket.session_key().value().is_empty(),
+                    "ticket.session_key().value must not be empty"
                 );
-                assert!(!ticket.ticket.is_empty(), "ticket.ticket must not be empty");
-                assert!(ticket.end_time > ticket.start_time);
+                assert!(
+                    !ticket.ticket().is_empty(),
+                    "ticket.ticket must not be empty"
+                );
+                assert!(ticket.end_time() > ticket.start_time());
             }
 
             Ok::<_, Box<dyn Error>>(())
@@ -1092,7 +1102,7 @@ mod tests {
                         login_options_with_etypes(protocol, 15, vec![RC4_HMAC_ETYPE])?,
                     )
                     .await?;
-                assert_eq!(tgt.session_key.etype, RC4_HMAC_ETYPE);
+                assert_eq!(tgt.session_key().etype(), RC4_HMAC_ETYPE);
 
                 let service = service_principal();
                 let request = build_tgs_req(
@@ -1101,18 +1111,21 @@ mod tests {
                     tgs_options_with_etypes(protocol, 16, vec![RC4_HMAC_ETYPE])?,
                 )?;
                 let ticket = transport
-                    .exchange_tgs_req(protocol, addr.as_str(), &request, &tgt.session_key)
+                    .exchange_tgs_req(protocol, addr.as_str(), &request, tgt.session_key())
                     .await?;
 
-                assert_eq!(ticket.client, Principal::user(REALM, USER));
-                assert_eq!(ticket.service, service);
-                assert_eq!(ticket.session_key.etype, RC4_HMAC_ETYPE);
+                assert_eq!(ticket.client(), &Principal::user(REALM, USER));
+                assert_eq!(ticket.service(), &service);
+                assert_eq!(ticket.session_key().etype(), RC4_HMAC_ETYPE);
                 assert!(
-                    !ticket.session_key.value.is_empty(),
-                    "ticket.session_key.value must not be empty"
+                    !ticket.session_key().value().is_empty(),
+                    "ticket.session_key().value must not be empty"
                 );
-                assert!(!ticket.ticket.is_empty(), "ticket.ticket must not be empty");
-                assert!(ticket.end_time > ticket.start_time);
+                assert!(
+                    !ticket.ticket().is_empty(),
+                    "ticket.ticket must not be empty"
+                );
+                assert!(ticket.end_time() > ticket.start_time());
             }
 
             Ok::<_, Box<dyn Error>>(())
@@ -1148,7 +1161,7 @@ mod tests {
                         login_options_with_etypes(protocol, 20, vec![DES3_ETYPE])?,
                     )
                     .await?;
-                assert_eq!(tgt.session_key.etype, DES3_ETYPE);
+                assert_eq!(tgt.session_key().etype(), DES3_ETYPE);
 
                 let service = service_principal();
                 let request = build_tgs_req(
@@ -1157,18 +1170,21 @@ mod tests {
                     tgs_options_with_etypes(protocol, 21, vec![DES3_ETYPE])?,
                 )?;
                 let ticket = transport
-                    .exchange_tgs_req(protocol, addr.as_str(), &request, &tgt.session_key)
+                    .exchange_tgs_req(protocol, addr.as_str(), &request, tgt.session_key())
                     .await?;
 
-                assert_eq!(ticket.client, Principal::user(REALM, USER));
-                assert_eq!(ticket.service, service);
-                assert_eq!(ticket.session_key.etype, DES3_ETYPE);
+                assert_eq!(ticket.client(), &Principal::user(REALM, USER));
+                assert_eq!(ticket.service(), &service);
+                assert_eq!(ticket.session_key().etype(), DES3_ETYPE);
                 assert_eq!(
-                    ticket.session_key.value.len(),
+                    ticket.session_key().value().len(),
                     Des3CbcSha1KdEtype::key_len()
                 );
-                assert!(!ticket.ticket.is_empty(), "ticket.ticket must not be empty");
-                assert!(ticket.end_time > ticket.start_time);
+                assert!(
+                    !ticket.ticket().is_empty(),
+                    "ticket.ticket must not be empty"
+                );
+                assert!(ticket.end_time() > ticket.start_time());
             }
 
             Ok::<_, Box<dyn Error>>(())
@@ -1229,10 +1245,10 @@ mod tests {
                             )?,
                         )
                         .await?;
-                    assert_eq!(tgt.session_key.etype, etype);
+                    assert_eq!(tgt.session_key().etype(), etype);
                     assert!(
-                        !tgt.session_key.value.is_empty(),
-                        "tgt.session_key.value must not be empty"
+                        !tgt.session_key().value().is_empty(),
+                        "tgt.session_key().value must not be empty"
                     );
 
                     let service = service_principal();
@@ -1246,18 +1262,21 @@ mod tests {
                         )?,
                     )?;
                     let ticket = transport
-                        .exchange_tgs_req(protocol, addr.as_str(), &request, &tgt.session_key)
+                        .exchange_tgs_req(protocol, addr.as_str(), &request, tgt.session_key())
                         .await?;
 
-                    assert_eq!(ticket.client, Principal::user(REALM, USER));
-                    assert_eq!(ticket.service, service);
-                    assert_eq!(ticket.session_key.etype, etype);
+                    assert_eq!(ticket.client(), &Principal::user(REALM, USER));
+                    assert_eq!(ticket.service(), &service);
+                    assert_eq!(ticket.session_key().etype(), etype);
                     assert!(
-                        !ticket.session_key.value.is_empty(),
-                        "ticket.session_key.value must not be empty"
+                        !ticket.session_key().value().is_empty(),
+                        "ticket.session_key().value must not be empty"
                     );
-                    assert!(!ticket.ticket.is_empty(), "ticket.ticket must not be empty");
-                    assert!(ticket.end_time > ticket.start_time);
+                    assert!(
+                        !ticket.ticket().is_empty(),
+                        "ticket.ticket must not be empty"
+                    );
+                    assert!(ticket.end_time() > ticket.start_time());
                 }
             }
 
@@ -1343,8 +1362,8 @@ mod tests {
         let service = cache
             .get_entry(&["HTTP", SERVICE_HOST])
             .ok_or("HTTP service ticket is cached")?;
-        assert_eq!(service.server.realm, REALM);
-        assert_eq!(service.key.etype, AES256_ETYPE);
+        assert_eq!(service.server().realm, REALM);
+        assert_eq!(service.key().etype(), AES256_ETYPE);
 
         Ok(())
     }
@@ -1371,9 +1390,9 @@ mod tests {
             let second = client.get_service_ticket(service_principal()).await?;
 
             assert_eq!(first, second);
-            assert_eq!(first.client, Principal::user(REALM, USER));
-            assert_eq!(first.service, service_principal());
-            assert_eq!(first.session_key.etype, AES256_ETYPE);
+            assert_eq!(first.client(), &Principal::user(REALM, USER));
+            assert_eq!(first.service(), &service_principal());
+            assert_eq!(first.session_key().etype(), AES256_ETYPE);
             assert_eq!(client.cached_service_ticket_count(), 1);
 
             Ok::<_, Box<dyn Error>>(())
@@ -1404,9 +1423,9 @@ mod tests {
                 .with_transport(TokioKdcTransport::new().with_timeout(Duration::from_secs(10)));
             let ticket = client.get_service_ticket(service_principal()).await?;
 
-            assert_eq!(ticket.client, Principal::user(REALM, USER));
-            assert_eq!(ticket.service, service_principal());
-            assert_eq!(ticket.session_key.etype, AES256_ETYPE);
+            assert_eq!(ticket.client(), &Principal::user(REALM, USER));
+            assert_eq!(ticket.service(), &service_principal());
+            assert_eq!(ticket.session_key().etype(), AES256_ETYPE);
 
             Ok::<_, Box<dyn Error>>(())
         })
@@ -1443,16 +1462,16 @@ mod tests {
                     )
                     .await?;
                 assert_login_session(&tgt.clone());
-                let original_renew_till = tgt.renew_till.ok_or("renewable TGT has renew-till")?;
+                let original_renew_till = tgt.renew_till().ok_or("renewable TGT has renew-till")?;
 
                 let renewed = transport
                     .renew_tgt(protocol, addr.as_str(), &tgt, tgs_options(protocol, 13)?)
                     .await?;
 
                 assert_login_session(&renewed.clone());
-                assert_eq!(renewed.service, Principal::tgt_service(REALM));
-                assert_eq!(renewed.renew_till, Some(original_renew_till));
-                assert!(renewed.end_time <= original_renew_till);
+                assert_eq!(renewed.service(), &Principal::tgt_service(REALM));
+                assert_eq!(renewed.renew_till(), Some(original_renew_till));
+                assert!(renewed.end_time() <= original_renew_till);
             }
 
             Ok::<_, Box<dyn Error>>(())
@@ -1487,14 +1506,15 @@ mod tests {
                 .with_transport(TokioKdcTransport::new().with_timeout(Duration::from_secs(10)));
 
                 let original = client.login().await?.clone();
-                let original_renew_till =
-                    original.renew_till.ok_or("renewable TGT has renew-till")?;
+                let original_renew_till = original
+                    .renew_till()
+                    .ok_or("renewable TGT has renew-till")?;
                 let renewed = client.renew_tgt().await?.clone();
 
                 assert_login_session(&renewed.clone());
-                assert_eq!(renewed.service, Principal::tgt_service(REALM));
-                assert_eq!(renewed.renew_till, Some(original_renew_till));
-                assert!(renewed.end_time <= original_renew_till);
+                assert_eq!(renewed.service(), &Principal::tgt_service(REALM));
+                assert_eq!(renewed.renew_till(), Some(original_renew_till));
+                assert!(renewed.end_time() <= original_renew_till);
             }
 
             Ok::<_, Box<dyn Error>>(())
@@ -1547,15 +1567,18 @@ mod tests {
                     )
                     .await?;
 
-                assert_eq!(ticket.client, Principal::user(REALM, USER));
-                assert_eq!(ticket.service, service);
-                assert_eq!(ticket.session_key.etype, AES256_ETYPE);
+                assert_eq!(ticket.client(), &Principal::user(REALM, USER));
+                assert_eq!(ticket.service(), &service);
+                assert_eq!(ticket.session_key().etype(), AES256_ETYPE);
                 assert!(
-                    !ticket.session_key.value.is_empty(),
-                    "ticket.session_key.value must not be empty"
+                    !ticket.session_key().value().is_empty(),
+                    "ticket.session_key().value must not be empty"
                 );
-                assert!(!ticket.ticket.is_empty(), "ticket.ticket must not be empty");
-                assert!(ticket.end_time > ticket.start_time);
+                assert!(
+                    !ticket.ticket().is_empty(),
+                    "ticket.ticket must not be empty"
+                );
+                assert!(ticket.end_time() > ticket.start_time());
             }
 
             Ok::<_, Box<dyn Error>>(())
@@ -1597,9 +1620,9 @@ mod tests {
                 let second = client.get_service_ticket(service.clone()).await?;
 
                 assert_eq!(first, second);
-                assert_eq!(first.client, Principal::user(REALM, USER));
-                assert_eq!(first.service, service);
-                assert_eq!(first.session_key.etype, AES256_ETYPE);
+                assert_eq!(first.client(), &Principal::user(REALM, USER));
+                assert_eq!(first.service(), &service);
+                assert_eq!(first.session_key().etype(), AES256_ETYPE);
                 assert!(client.tgt_session().is_some());
                 assert!(client.tgt_session_for_realm(RESDOM_REALM).is_some());
                 assert_eq!(client.tgt_session_count(), 2);
@@ -1644,24 +1667,25 @@ mod tests {
                 let service = service_principal();
                 let request = build_tgs_req(&tgt, service.clone(), tgs_options(protocol, 6)?)?;
                 let service_ticket = transport
-                    .exchange_tgs_req(protocol, addr.as_str(), &request, &tgt.session_key)
+                    .exchange_tgs_req(protocol, addr.as_str(), &request, tgt.session_key())
                     .await?;
                 let context = spnego::init_sec_context(
                     &service_ticket,
                     spnego::InitiatorContextOptions::new(),
                 )?;
-                assert_eq!(context.service, service);
-                assert!(context.sequence_number.is_some());
+                assert_eq!(context.service(), &service);
+                assert!(context.sequence_number().is_some());
 
                 let keytab = http_keytab()?;
                 let mut validator = Validator::new(&keytab).with_now(SystemTime::now());
-                validator = validator.with_crypto_policy(context.crypto_policy.clone());
-                let accepted = spnego::accept_sec_context_header(&mut validator, &context.header)?;
+                validator = validator.with_crypto_policy(context.crypto_policy().clone());
+                let accepted =
+                    spnego::accept_sec_context_header(&mut validator, context.header_ref())?;
                 assert_eq!(
-                    accepted.ap_req.client,
+                    accepted.ap_req.client().clone(),
                     ServicePrincipal::new(REALM.to_owned(), 1, vec![USER.to_owned()])
                 );
-                assert_eq!(accepted.ap_req.service.name(), "HTTP/host.test.gokrb5");
+                assert_eq!(accepted.ap_req.service().name(), "HTTP/host.test.gokrb5");
 
                 let elapsed = SystemTime::now().duration_since(UNIX_EPOCH)?;
                 let response_header = accepted.ap_rep_response_header_with_confounder(
@@ -1669,8 +1693,8 @@ mod tests {
                     &ApRepOptions::default(),
                 )?;
                 let verified = context.verify_ap_rep_response_header(&response_header)?;
-                assert_eq!(verified.ctime, context.authenticator_ctime);
-                assert_eq!(verified.cusec, context.authenticator_cusec);
+                assert_eq!(verified.ctime(), context.authenticator_ctime());
+                assert_eq!(verified.cusec(), context.authenticator_cusec());
             }
 
             Ok::<_, Box<dyn Error>>(())
@@ -1704,19 +1728,21 @@ mod tests {
             let mut validator = Validator::new(&keytab).with_now(now);
             drop(spnego::accept_sec_context_header(
                 &mut validator,
-                &first.header,
+                first.header_ref(),
             )?);
             drop(spnego::accept_sec_context_header(
                 &mut validator,
-                &second.header,
+                second.header_ref(),
             )?);
 
-            let first_replay = spnego::accept_sec_context_header(&mut validator, &first.header)
-                .err()
-                .ok_or("first header replay is rejected")?;
-            let second_replay = spnego::accept_sec_context_header(&mut validator, &second.header)
-                .err()
-                .ok_or("second header replay is rejected")?;
+            let first_replay =
+                spnego::accept_sec_context_header(&mut validator, first.header_ref())
+                    .err()
+                    .ok_or("first header replay is rejected")?;
+            let second_replay =
+                spnego::accept_sec_context_header(&mut validator, second.header_ref())
+                    .err()
+                    .ok_or("second header replay is rejected")?;
 
             assert!(matches!(
                 first_replay,
@@ -1826,12 +1852,12 @@ mod tests {
         for context in &contexts {
             drop(spnego::accept_sec_context_header(
                 &mut validator,
-                &context.header,
+                context.header_ref(),
             )?);
         }
         for context in &contexts {
             assert!(matches!(
-                spnego::accept_sec_context_header(&mut validator, &context.header),
+                spnego::accept_sec_context_header(&mut validator, context.header_ref()),
                 Err(SpnegoError::Service(ServiceError::Replay))
             ));
         }
@@ -1899,7 +1925,10 @@ mod tests {
             let service_ticket = client.get_service_ticket(service_principal()).await?;
             let context =
                 spnego::init_sec_context(&service_ticket, spnego::InitiatorContextOptions::new())?;
-            let header = format!("Negotiate {}", base64_encode(&context.krb5_token.encode()?));
+            let header = format!(
+                "Negotiate {}",
+                base64_encode(&context.krb5_token().encode()?)
+            );
             let response = http_get_with_authorization("/modgssapi/index.html", &header)?;
             let status = response.lines().next().unwrap_or_default();
 
@@ -1943,7 +1972,7 @@ mod tests {
                         login_options_with_etypes(protocol, 17, vec![RC4_HMAC_ETYPE])?,
                     )
                     .await?;
-                assert_eq!(tgt.session_key.etype, RC4_HMAC_ETYPE);
+                assert_eq!(tgt.session_key().etype(), RC4_HMAC_ETYPE);
 
                 let service = service_principal();
                 let request = build_tgs_req(
@@ -1952,28 +1981,29 @@ mod tests {
                     tgs_options_with_etypes(protocol, 18, vec![RC4_HMAC_ETYPE])?,
                 )?;
                 let service_ticket = transport
-                    .exchange_tgs_req(protocol, addr.as_str(), &request, &tgt.session_key)
+                    .exchange_tgs_req(protocol, addr.as_str(), &request, tgt.session_key())
                     .await?;
-                assert_eq!(service_ticket.session_key.etype, RC4_HMAC_ETYPE);
+                assert_eq!(service_ticket.session_key().etype(), RC4_HMAC_ETYPE);
 
                 let context = spnego::init_sec_context(
                     &service_ticket,
                     spnego::InitiatorContextOptions::new()
                         .with_crypto_policy(fixture_crypto_policy(&[RC4_HMAC_ETYPE])?),
                 )?;
-                assert_eq!(context.service, service);
-                assert!(context.sequence_number.is_some());
+                assert_eq!(context.service(), &service);
+                assert!(context.sequence_number().is_some());
 
                 let keytab = http_keytab()?;
                 let mut validator = Validator::new(&keytab).with_now(SystemTime::now());
-                validator = validator.with_crypto_policy(context.crypto_policy.clone());
-                let accepted = spnego::accept_sec_context_header(&mut validator, &context.header)?;
+                validator = validator.with_crypto_policy(context.crypto_policy().clone());
+                let accepted =
+                    spnego::accept_sec_context_header(&mut validator, context.header_ref())?;
                 assert_eq!(
-                    accepted.ap_req.client,
+                    accepted.ap_req.client().clone(),
                     ServicePrincipal::new(REALM.to_owned(), 1, vec![USER.to_owned()])
                 );
-                assert_eq!(accepted.ap_req.service.name(), "HTTP/host.test.gokrb5");
-                assert_eq!(accepted.ap_req.session_key.etype, RC4_HMAC_ETYPE);
+                assert_eq!(accepted.ap_req.service().name(), "HTTP/host.test.gokrb5");
+                assert_eq!(accepted.ap_req.session_key().etype(), RC4_HMAC_ETYPE);
 
                 let elapsed = SystemTime::now().duration_since(UNIX_EPOCH)?;
                 let response_header = accepted.ap_rep_response_header_with_confounder(
@@ -1981,8 +2011,8 @@ mod tests {
                     &ApRepOptions::default(),
                 )?;
                 let verified = context.verify_ap_rep_response_header(&response_header)?;
-                assert_eq!(verified.ctime, context.authenticator_ctime);
-                assert_eq!(verified.cusec, context.authenticator_cusec);
+                assert_eq!(verified.ctime(), context.authenticator_ctime());
+                assert_eq!(verified.cusec(), context.authenticator_cusec());
             }
 
             Ok::<_, Box<dyn Error>>(())
@@ -2020,7 +2050,7 @@ mod tests {
                         login_options_with_etypes(protocol, 22, vec![DES3_ETYPE])?,
                     )
                     .await?;
-                assert_eq!(tgt.session_key.etype, DES3_ETYPE);
+                assert_eq!(tgt.session_key().etype(), DES3_ETYPE);
 
                 let service = service_principal();
                 let request = build_tgs_req(
@@ -2029,29 +2059,30 @@ mod tests {
                     tgs_options_with_etypes(protocol, 23, vec![DES3_ETYPE])?,
                 )?;
                 let service_ticket = transport
-                    .exchange_tgs_req(protocol, addr.as_str(), &request, &tgt.session_key)
+                    .exchange_tgs_req(protocol, addr.as_str(), &request, tgt.session_key())
                     .await?;
-                assert_eq!(service_ticket.session_key.etype, DES3_ETYPE);
+                assert_eq!(service_ticket.session_key().etype(), DES3_ETYPE);
 
                 let context = spnego::init_sec_context(
                     &service_ticket,
                     spnego::InitiatorContextOptions::new()
                         .with_crypto_policy(fixture_crypto_policy(&[DES3_ETYPE])?),
                 )?;
-                assert_eq!(context.service, service);
-                assert!(context.sequence_number.is_some());
+                assert_eq!(context.service(), &service);
+                assert!(context.sequence_number().is_some());
 
                 let keytab = http_keytab()?;
                 let mut validator = Validator::new(&keytab)
                     .with_now(SystemTime::now())
-                    .with_crypto_policy(context.crypto_policy.clone());
-                let accepted = spnego::accept_sec_context_header(&mut validator, &context.header)?;
+                    .with_crypto_policy(context.crypto_policy().clone());
+                let accepted =
+                    spnego::accept_sec_context_header(&mut validator, context.header_ref())?;
                 assert_eq!(
-                    accepted.ap_req.client,
+                    accepted.ap_req.client().clone(),
                     ServicePrincipal::new(REALM.to_owned(), 1, vec![USER.to_owned()])
                 );
-                assert_eq!(accepted.ap_req.service.name(), "HTTP/host.test.gokrb5");
-                assert_eq!(accepted.ap_req.session_key.etype, DES3_ETYPE);
+                assert_eq!(accepted.ap_req.service().name(), "HTTP/host.test.gokrb5");
+                assert_eq!(accepted.ap_req.session_key().etype(), DES3_ETYPE);
 
                 let elapsed = SystemTime::now().duration_since(UNIX_EPOCH)?;
                 let response_header = accepted.ap_rep_response_header_with_confounder(
@@ -2059,8 +2090,8 @@ mod tests {
                     &ApRepOptions::default(),
                 )?;
                 let verified = context.verify_ap_rep_response_header(&response_header)?;
-                assert_eq!(verified.ctime, context.authenticator_ctime);
-                assert_eq!(verified.cusec, context.authenticator_cusec);
+                assert_eq!(verified.ctime(), context.authenticator_ctime());
+                assert_eq!(verified.cusec(), context.authenticator_cusec());
             }
 
             Ok::<_, Box<dyn Error>>(())
@@ -2076,17 +2107,17 @@ mod tests {
             let as_options = login_options_with_etypes(KdcProtocol::Tcp, 1, vec![id])?;
             let tgs_options = tgs_options_with_etypes(KdcProtocol::Tcp, 2, vec![id])?;
             as_options
-                .crypto_policy
+                .crypto_policy()
                 .as_ref()
                 .map_err(Clone::clone)?
                 .check_use(id, Use::RequestList)?;
             tgs_options
-                .crypto_policy
+                .crypto_policy()
                 .as_ref()
                 .map_err(Clone::clone)?
                 .check_use(id, Use::RequestList)?;
             let built = build_tgt_as_req(Principal::user(REALM, USER), as_options)?;
-            let decoded: rasn_kerberos::AsReq = der::decode(&built.der)?;
+            let decoded: rasn_kerberos::AsReq = der::decode(built.der())?;
             assert_eq!(decoded.0.req_body.etype, vec![id]);
             let service = Principal::tgt_service(REALM);
             let mut ticket = ap_req::decode(include_bytes!("fixtures/valid_ap_req.der"))?.ticket;
@@ -2113,7 +2144,7 @@ mod tests {
                 now,
             );
             let tgs = build_tgs_req(&session, service_principal(), tgs_options)?;
-            let decoded_tgs: rasn_kerberos::TgsReq = der::decode(&tgs.der)?;
+            let decoded_tgs: rasn_kerberos::TgsReq = der::decode(tgs.der())?;
             assert_eq!(decoded_tgs.0.req_body.etype, vec![id]);
             assert!(matches!(
                 CryptoPolicy::default().check_use(id, Use::RequestList),
@@ -2148,7 +2179,7 @@ mod tests {
         let mut options = AsReq::new(now, nonce)
             .with_ticket_lifetime(Duration::from_hours(24))
             .with_etypes(etypes);
-        options.crypto_policy = Ok(policy);
+        options.set_crypto_policy(Ok(policy));
         Ok(options)
     }
 
@@ -2177,7 +2208,7 @@ mod tests {
         let mut options = TgsReq::new(now, nonce)
             .with_ticket_lifetime(Duration::from_hours(24))
             .with_etypes(etypes);
-        options.crypto_policy = Ok(policy);
+        options.set_crypto_policy(Ok(policy));
         Ok(options)
     }
 
@@ -2327,10 +2358,10 @@ mod tests {
                     )
                     .await?;
                 sequence = sequence.saturating_add(1);
-                assert_eq!(tgt.session_key.etype, *etype);
+                assert_eq!(tgt.session_key().etype(), *etype);
                 assert!(
-                    !tgt.session_key.value.is_empty(),
-                    "tgt.session_key.value must not be empty"
+                    !tgt.session_key().value().is_empty(),
+                    "tgt.session_key().value must not be empty"
                 );
 
                 let service = service_principal();
@@ -2341,18 +2372,21 @@ mod tests {
                 )?;
                 sequence = sequence.saturating_add(1);
                 let ticket = transport
-                    .exchange_tgs_req(protocol, addr, &request, &tgt.session_key)
+                    .exchange_tgs_req(protocol, addr, &request, tgt.session_key())
                     .await?;
 
-                assert_eq!(ticket.client, Principal::user(REALM, USER));
-                assert_eq!(ticket.service, service);
-                assert_eq!(ticket.session_key.etype, *etype);
+                assert_eq!(ticket.client(), &Principal::user(REALM, USER));
+                assert_eq!(ticket.service(), &service);
+                assert_eq!(ticket.session_key().etype(), *etype);
                 assert!(
-                    !ticket.session_key.value.is_empty(),
-                    "ticket.session_key.value must not be empty"
+                    !ticket.session_key().value().is_empty(),
+                    "ticket.session_key().value must not be empty"
                 );
-                assert!(!ticket.ticket.is_empty(), "ticket.ticket must not be empty");
-                assert!(ticket.end_time > ticket.start_time);
+                assert!(
+                    !ticket.ticket().is_empty(),
+                    "ticket.ticket must not be empty"
+                );
+                assert!(ticket.end_time() > ticket.start_time());
             }
         }
 
@@ -2385,10 +2419,10 @@ mod tests {
                     )
                     .await?;
                 sequence = sequence.saturating_add(1);
-                assert_eq!(tgt.session_key.etype, *etype);
+                assert_eq!(tgt.session_key().etype(), *etype);
                 assert!(
-                    !tgt.session_key.value.is_empty(),
-                    "tgt.session_key.value must not be empty"
+                    !tgt.session_key().value().is_empty(),
+                    "tgt.session_key().value must not be empty"
                 );
 
                 let service = service_principal();
@@ -2399,18 +2433,21 @@ mod tests {
                 )?;
                 sequence = sequence.saturating_add(1);
                 let ticket = transport
-                    .exchange_tgs_req(protocol, addr, &request, &tgt.session_key)
+                    .exchange_tgs_req(protocol, addr, &request, tgt.session_key())
                     .await?;
 
-                assert_eq!(ticket.client, Principal::user(REALM, USER));
-                assert_eq!(ticket.service, service);
-                assert_eq!(ticket.session_key.etype, *etype);
+                assert_eq!(ticket.client(), &Principal::user(REALM, USER));
+                assert_eq!(ticket.service(), &service);
+                assert_eq!(ticket.session_key().etype(), *etype);
                 assert!(
-                    !ticket.session_key.value.is_empty(),
-                    "ticket.session_key.value must not be empty"
+                    !ticket.session_key().value().is_empty(),
+                    "ticket.session_key().value must not be empty"
                 );
-                assert!(!ticket.ticket.is_empty(), "ticket.ticket must not be empty");
-                assert!(ticket.end_time > ticket.start_time);
+                assert!(
+                    !ticket.ticket().is_empty(),
+                    "ticket.ticket must not be empty"
+                );
+                assert!(ticket.end_time() > ticket.start_time());
             }
         }
 

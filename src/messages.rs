@@ -1,5 +1,6 @@
 //! Kerberos message/type wrappers that need gokrb5-compatible DER behavior.
 
+mod credential_debug;
 /// Signed key-version conversion for encrypted data.
 mod encrypted_data;
 /// Owning boundary for secret-bearing message DER staging.
@@ -26,36 +27,36 @@ const KRB_ERROR_MSG_TYPE: i32 = 30;
 /// `rasn_kerberos::EncryptedData` models `kvno` as `u32`, which is appropriate
 /// for normal Kerberos messages but normalizes gokrb5's signed edge-case
 /// fixtures on re-encode. This wrapper preserves those DER fixtures exactly.
-#[derive(AsnType, Clone, Debug, Decode, Encode, Eq, PartialEq)]
+#[derive(AsnType, Clone, Decode, Encode, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct EncryptedData {
     /// Identifies the encryption algorithm used to encipher `cipher`.
     #[rasn(tag(explicit(0)))]
-    pub etype: i32,
+    etype: i32,
     /// Key version number, kept as ASN.1 INTEGER for gokrb5 signed edge cases.
     #[rasn(tag(explicit(1)))]
-    pub kvno: Option<Integer>,
+    kvno: Option<Integer>,
     /// Enciphered text.
     #[rasn(tag(explicit(2)))]
-    pub cipher: OctetString,
+    cipher: OctetString,
 }
 
 /// MS-SFU `PA-FOR-USER` padata value used by `S4U2Self`.
-#[derive(AsnType, Clone, Debug, Decode, Encode, Eq, PartialEq)]
+#[derive(AsnType, Clone, Decode, Encode, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct PaForUser {
     /// User principal name.
     #[rasn(tag(explicit(0)))]
-    pub user_name: rasn_kerberos::PrincipalName,
+    user_name: rasn_kerberos::PrincipalName,
     /// User realm.
     #[rasn(tag(explicit(1)))]
-    pub user_realm: rasn_kerberos::Realm,
+    user_realm: rasn_kerberos::Realm,
     /// Checksum over the MS-SFU S4U byte array.
     #[rasn(tag(explicit(2)))]
-    pub cksum: rasn_kerberos::Checksum,
+    cksum: rasn_kerberos::Checksum,
     /// Authentication package name, normally `Kerberos`.
     #[rasn(tag(explicit(3)))]
-    pub auth_package: rasn_kerberos::KerberosString,
+    auth_package: rasn_kerberos::KerberosString,
 }
 
 /// MS-KILE `PA-PAC-OPTIONS` padata value.
@@ -68,18 +69,58 @@ pub struct PaPacOptions {
 }
 
 /// RFC 6806 `PA-REQ-ENC-PA-REP` encrypted padata value.
-#[derive(AsnType, Clone, Debug, Decode, Encode, Eq, PartialEq)]
+#[derive(AsnType, Clone, Decode, Encode, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct PaReqEncPaRep {
     /// Checksum type used to protect the original AS-REQ bytes.
     #[rasn(tag(explicit(0)))]
-    pub checksum_type: i32,
+    checksum_type: i32,
     /// Checksum over the DER-encoded AS-REQ.
     #[rasn(tag(explicit(1)))]
-    pub checksum: OctetString,
+    checksum: OctetString,
 }
 
 impl PaForUser {
+    /// Adopt dependency-owned padata; ASN.1 residual copies are not erased by this wrapper.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        user_name: rasn_kerberos::PrincipalName,
+        user_realm: rasn_kerberos::Realm,
+        cksum: rasn_kerberos::Checksum,
+        auth_package: rasn_kerberos::KerberosString,
+    ) -> Self {
+        Self {
+            user_name,
+            user_realm,
+            cksum,
+            auth_package,
+        }
+    }
+    /// Borrow the user principal.
+    #[inline]
+    #[must_use]
+    pub const fn user_name(&self) -> &rasn_kerberos::PrincipalName {
+        &self.user_name
+    }
+    /// Borrow the user realm.
+    #[inline]
+    #[must_use]
+    pub const fn user_realm(&self) -> &rasn_kerberos::Realm {
+        &self.user_realm
+    }
+    /// Borrow the authentication checksum without exposing mutable storage.
+    #[inline]
+    #[must_use]
+    pub const fn cksum(&self) -> &rasn_kerberos::Checksum {
+        &self.cksum
+    }
+    /// Borrow the authentication package name.
+    #[inline]
+    #[must_use]
+    pub const fn auth_package(&self) -> &rasn_kerberos::KerberosString {
+        &self.auth_package
+    }
     /// Decode a DER-encoded `PA-FOR-USER` value.
     ///
     /// # Errors
@@ -146,6 +187,18 @@ impl PaPacOptions {
 }
 
 impl PaReqEncPaRep {
+    /// Return the checksum algorithm identifier.
+    #[inline]
+    #[must_use]
+    pub const fn checksum_type(&self) -> i32 {
+        self.checksum_type
+    }
+    /// Borrow checksum bytes; dependency-owned copies are not erased.
+    #[inline]
+    #[must_use]
+    pub fn checksum(&self) -> &[u8] {
+        self.checksum.as_ref()
+    }
     /// Creates a `PaReqEncPaRep` from its required fields.
     #[must_use]
     #[inline]
@@ -217,30 +270,88 @@ impl PrincipalNameInfo {
 }
 
 /// Decoded KRB-ERROR fields useful for diagnostics.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct KrbErrorInfo {
     /// Client time, when present.
-    pub ctime: Option<SystemTime>,
+    ctime: Option<SystemTime>,
     /// Client microseconds, when present.
-    pub cusec: Option<u32>,
+    cusec: Option<u32>,
     /// KDC/server time.
-    pub stime: SystemTime,
+    stime: SystemTime,
     /// KDC/server microseconds.
-    pub susec: u32,
+    susec: u32,
     /// Kerberos error code.
-    pub error_code: i32,
+    error_code: i32,
     /// Client principal carried by the error, when present.
-    pub client: Option<PrincipalNameInfo>,
+    client: Option<PrincipalNameInfo>,
     /// Service principal that issued the error.
-    pub service: PrincipalNameInfo,
+    service: PrincipalNameInfo,
     /// Optional human-readable error text.
-    pub e_text: Option<String>,
+    e_text: Option<String>,
     /// Raw e-data bytes, when present.
-    pub e_data: Option<Vec<u8>>,
+    e_data: Option<zeroize::Zeroizing<Vec<u8>>>,
 }
 
 impl KrbErrorInfo {
+    /// Return the optional client clock.
+    #[inline]
+    #[must_use]
+    pub const fn ctime(&self) -> Option<SystemTime> {
+        self.ctime
+    }
+    /// Return optional client microseconds.
+    #[inline]
+    #[must_use]
+    pub const fn cusec(&self) -> Option<u32> {
+        self.cusec
+    }
+    /// Return the server clock.
+    #[inline]
+    #[must_use]
+    pub const fn stime(&self) -> SystemTime {
+        self.stime
+    }
+    /// Return server microseconds.
+    #[inline]
+    #[must_use]
+    pub const fn susec(&self) -> u32 {
+        self.susec
+    }
+    /// Return the protocol error code.
+    #[inline]
+    #[must_use]
+    pub const fn error_code(&self) -> i32 {
+        self.error_code
+    }
+    /// Borrow the optional client identity.
+    #[inline]
+    #[must_use]
+    pub const fn client(&self) -> Option<&PrincipalNameInfo> {
+        self.client.as_ref()
+    }
+    /// Borrow the server identity.
+    #[inline]
+    #[must_use]
+    pub const fn service(&self) -> &PrincipalNameInfo {
+        &self.service
+    }
+    /// Borrow diagnostic text.
+    #[inline]
+    #[must_use]
+    pub fn e_text(&self) -> Option<&str> {
+        self.e_text.as_deref()
+    }
+    /// Transfer the retained zeroizing payload without making another copy.
+    pub(crate) const fn take_e_data(&mut self) -> Option<zeroize::Zeroizing<Vec<u8>>> {
+        self.e_data.take()
+    }
+    /// Borrow opaque error payload bytes; callers must erase copies they create.
+    #[inline]
+    #[must_use]
+    pub fn e_data(&self) -> Option<&[u8]> {
+        self.e_data.as_ref().map(|bytes| bytes.as_slice())
+    }
     /// Decode and validate a DER-encoded KRB-ERROR.
     ///
     /// # Errors
@@ -291,7 +402,10 @@ impl KrbErrorInfo {
                 .as_ref()
                 .map(kerberos_string_to_string)
                 .transpose()?,
-            e_data: error.e_data.as_ref().map(|data| data.as_ref().to_vec()),
+            e_data: error
+                .e_data
+                .as_ref()
+                .map(|data| zeroize::Zeroizing::new(data.as_ref().to_vec())),
         })
     }
 }

@@ -14,8 +14,8 @@ fn service_identity_reports_override_for_alias_ticket() -> Result<(), TestError>
     // When the real service key decrypts the ticket.
     let accepted = validator.validate_ap_req(&bytes)?;
     // Then consumers receive the identity selected for decryption, not the alias.
-    assert_eq!(accepted.service.realm, "TEST.GOKRB5");
-    assert_eq!(accepted.service.components, ["HTTP", "host.test.gokrb5"]);
+    assert_eq!(accepted.service().realm, "TEST.GOKRB5");
+    assert_eq!(accepted.service().components, ["HTTP", "host.test.gokrb5"]);
     Ok(())
 }
 
@@ -29,7 +29,7 @@ fn service_identity_reports_selected_keytab_alias() -> Result<(), TestError> {
     // When the alias selects its own matching keytab entry.
     let accepted = validator.validate_ap_req(&bytes)?;
     // Then shared key material does not invent a canonical principal.
-    assert_eq!(accepted.service.realm, "TEST.GOKRB5");
-    assert_eq!(accepted.service.components, ["HTTP", "alias.test.gokrb5"]);
+    assert_eq!(accepted.service().realm, "TEST.GOKRB5");
+    assert_eq!(accepted.service().components, ["HTTP", "alias.test.gokrb5"]);
     Ok(())
 }

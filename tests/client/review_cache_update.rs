@@ -27,9 +27,11 @@ mod tests {
         assert_eq!(saved?, client.to_ccache()?);
         fs::create_dir_all(&path)?;
         let mut invalid = sample_tgt_session()?;
-        invalid.end_time = UNIX_EPOCH
-            .checked_sub(Duration::from_secs(1))
-            .context("invalid cache timestamp")?;
+        invalid.set_end_time(
+            UNIX_EPOCH
+                .checked_sub(Duration::from_secs(1))
+                .context("invalid cache timestamp")?,
+        );
         let rejected = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, invalid)
             .update_ccache_file(&path);
         let retained = path.is_dir();
@@ -53,14 +55,18 @@ mod tests {
         let tgt = sample_tgt_session()?;
         let old_ticket = tgt.to_ccache_credential()?;
         let mut unrelated = old_ticket.clone();
-        unrelated.client = ccache::Principal::new("OTHER.REALM", 1, vec!["other".to_owned()]);
+        unrelated.set_client(ccache::Principal::new(
+            "OTHER.REALM",
+            1,
+            vec!["other".to_owned()],
+        ));
         let mut metadata = old_ticket.clone();
-        metadata.server = ccache::Principal::new(
+        metadata.set_server(ccache::Principal::new(
             "X-CACHECONF:",
             0,
             vec!["krb5_ccache_conf_data".to_owned(), "fast_avail".to_owned()],
-        );
-        let mut destination = ccache::CCache::new(unrelated.client.clone());
+        ));
+        let mut destination = ccache::CCache::new(unrelated.client().clone());
         destination
             .credentials_mut()
             .extend([old_ticket, metadata, unrelated]);
@@ -73,13 +79,13 @@ mod tests {
             UNIX_EPOCH
                 .checked_add(Duration::from_secs(u64::from(u32::MAX).saturating_add(1)))
                 .context("overflow time")?,
-            tgt.end_time
+            tgt.end_time()
                 .checked_add(Duration::from_millis(500))
                 .context("fractional time")?,
         ];
         for end_time in invalid_times {
             let mut invalid = tgt.clone();
-            invalid.end_time = end_time;
+            invalid.set_end_time(end_time);
             let client = Tokio::from_tgt_session(Config::new(), KdcProtocol::Tcp, invalid);
 
             // When: conversion fails before a replacement can be committed.

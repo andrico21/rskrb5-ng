@@ -68,7 +68,7 @@ fn ap_request_checks_session_and_ticket() -> Result<(), Box<dyn Error>> {
     ] {
         let config = Config::parse("[libdefaults]\npermitted_enctypes = aes128-cts")?;
         let mut options = ApReq::new();
-        options.crypto_policy = Some(CryptoPolicy::from_libdefaults(&config.libdefaults)?);
+        options.set_crypto_policy(Some(CryptoPolicy::from_libdefaults(&config.libdefaults)?));
         // When building with deliberately invalid crypto inputs.
         let error = client::build_ap_req_with_confounder(
             &session(session_id, ticket_id)?,

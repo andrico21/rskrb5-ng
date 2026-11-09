@@ -59,7 +59,9 @@ fn random_reply_retains_permanent_refusal() -> Result<(), Box<dyn Error>> {
     let mut validator = Validator::new(&keys).with_now(now);
     let mut accepted = spnego::accept_sec_context_header(&mut validator, &header)?;
     for id in [1_i32, 24_i32] {
-        accepted.ap_req.session_key = EncryptionKey::new(id, vec![0x42; 16]);
+        accepted
+            .ap_req
+            .set_session_key(EncryptionKey::new(id, vec![0x42; 16]));
         for reply in [
             accepted.ap_rep_response_header_with_confounder(&[0x22; 16], &ApRepOptions::default()),
             accepted.ap_rep_response_header(&ApRepOptions::default()),
@@ -88,7 +90,7 @@ fn service_reply_verifier_admits_all_keys() -> Result<(), Box<dyn Error>> {
         .with_now(now)
         .validate_ap_req(&bytes)?;
     let auth =
-        ap_req::decrypt_ap_req_authenticator(&ap_req::decode(&bytes)?, &accepted.session_key, 11)?;
+        ap_req::decrypt_ap_req_authenticator(&ap_req::decode(&bytes)?, accepted.session_key(), 11)?;
     for (profile, id, permitted) in [
         ("", 1_i32, false),
         ("", 23_i32, false),
@@ -108,7 +110,7 @@ fn service_reply_verifier_admits_all_keys() -> Result<(), Box<dyn Error>> {
     ] {
         let config = Config::parse(&format!("[libdefaults]\n{profile}"))?;
         let mut context = accepted.clone();
-        context.crypto_policy = CryptoPolicy::from_libdefaults(&config.libdefaults)?;
+        context.set_crypto_policy(CryptoPolicy::from_libdefaults(&config.libdefaults)?);
         let part = rasn_kerberos::EncApRepPart {
             ctime: auth.ctime.clone(),
             cusec: auth.cusec.clone(),
@@ -123,10 +125,17 @@ fn service_reply_verifier_admits_all_keys() -> Result<(), Box<dyn Error>> {
             seq_number: Some(42),
         };
         let reply =
-            ap_rep::build_ap_rep_with_confounder(&part, &context.session_key, None, &[0x22; 16])?;
+            ap_rep::build_ap_rep_with_confounder(&part, context.session_key(), None, &[0x22; 16])?;
         let result = context.verify_ap_rep(&ap_rep::encode(&reply)?);
         if permitted {
-            assert_eq!(result?.subkey.ok_or("missing verified subkey")?.etype, id);
+            assert_eq!(
+                result?
+                    .subkey()
+                    .as_ref()
+                    .ok_or("missing verified subkey")?
+                    .etype(),
+                id
+            );
         } else {
             let error = result
                 .err()
@@ -136,7 +145,7 @@ fn service_reply_verifier_admits_all_keys() -> Result<(), Box<dyn Error>> {
     }
     let reply = accepted.build_ap_rep_with_confounder(&[0x22; 16], &ApRepOptions::default())?;
     let mut changed = accepted;
-    changed.session_key = EncryptionKey::new(23, vec![0x43; 16]);
+    changed.set_session_key(EncryptionKey::new(23, vec![0x43; 16]));
     let error = changed
         .verify_ap_rep(&reply)
         .err()
@@ -182,20 +191,22 @@ fn reciprocal_mic_admits_selected_key() -> Result<(), Box<dyn Error>> {
         let config = Config::parse(&format!("[libdefaults]\n{profile}"))?;
         let mut validator = Validator::new(&keys).with_now(now);
         let mut accepted = spnego::accept_sec_context_header(&mut validator, &header)?;
-        accepted.ap_req.crypto_policy = CryptoPolicy::from_libdefaults(&config.libdefaults)?;
-        accepted.ap_req.subkey = initiator.map(|id| {
+        accepted
+            .ap_req
+            .set_crypto_policy(CryptoPolicy::from_libdefaults(&config.libdefaults)?);
+        accepted.ap_req.set_subkey(initiator.map(|id| {
             EncryptionKey::new(
                 id,
                 vec![0x51; KerberosEtype::from_etype_id(id).map_or(8, KerberosEtype::key_len)],
             )
-        });
+        }));
         accepted.mech_types_der = Some(vec![0x30, 0]);
         let options = ApRepOptions::default()
             .with_subkey(acceptor.map(|id| EncryptionKey::new(id, vec![0x52; 32])));
         let result = accepted.ap_rep_response_header_with_confounder(&[0x22; 16], &options);
         if permitted {
             let response = spnego::parse_negotiate_header(&result?)?;
-            assert!(matches!(response, Token::Resp(reply) if reply.mech_list_mic.is_some()));
+            assert!(matches!(response, Token::Resp(reply) if reply.mech_list_mic().is_some()));
         } else {
             let error = result
                 .err()
@@ -278,7 +289,7 @@ fn accepted_reply_enforces_retained_policy() -> Result<(), Box<dyn Error>> {
     let mut accepted = Validator::new(&keys)
         .with_now(now)
         .validate_ap_req(&spnego::parse_negotiate_header(&header)?.krb5_ap_req()?)?;
-    accepted.session_key = EncryptionKey::new(23, vec![0x33; 16]);
+    accepted.set_session_key(EncryptionKey::new(23, vec![0x33; 16]));
     let error = accepted
         .build_ap_rep_with_confounder(&[0x22; 8], &ApRepOptions::default())
         .err()

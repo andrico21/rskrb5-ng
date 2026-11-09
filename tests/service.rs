@@ -157,31 +157,41 @@ mod service {
             .context("AP-REQ validates")?;
 
         assert_eq!(
-            validated.client,
+            validated.client().clone(),
             Principal::new("TEST.GOKRB5".to_owned(), 1, vec!["testuser1".to_owned()])
         );
-        assert_eq!(validated.client.name(), "testuser1");
+        assert_eq!(validated.client().name(), "testuser1");
         assert_eq!(
-            validated.service,
+            validated.service().clone(),
             Principal::new(
                 "TEST.GOKRB5".to_owned(),
                 1,
                 vec!["HTTP".to_owned(), "host.test.gokrb5".to_owned()]
             )
         );
-        assert_eq!(validated.session_key.etype, 18_i32);
-        assert_eq!(hex_encode(&validated.session_key.value), VALID_SESSION_KEY);
-        assert_eq!(validated.subkey.context("subkey exists")?.etype, 18_i32);
-        assert_eq!(validated.sequence_number, Some(42));
-        assert_eq!(validated.ticket_start, timestamp(1_893_553_445)?);
-        assert_eq!(validated.ticket_end, timestamp(1_893_639_845)?);
-        assert_eq!(validated.authenticator_ctime, timestamp(1_893_553_447)?);
-        assert_eq!(validated.authenticator_cusec, 123_456);
+        assert_eq!(validated.session_key().etype(), 18_i32);
         assert_eq!(
-            validated.authenticator_time,
+            hex_encode(validated.session_key().value()),
+            VALID_SESSION_KEY
+        );
+        assert_eq!(
+            validated
+                .subkey()
+                .as_ref()
+                .context("subkey exists")?
+                .etype(),
+            18_i32
+        );
+        assert_eq!(validated.sequence_number(), Some(42));
+        assert_eq!(validated.ticket_start(), timestamp(1_893_553_445)?);
+        assert_eq!(validated.ticket_end(), timestamp(1_893_639_845)?);
+        assert_eq!(validated.authenticator_ctime(), timestamp(1_893_553_447)?);
+        assert_eq!(validated.authenticator_cusec(), 123_456);
+        assert_eq!(
+            validated.authenticator_time(),
             timestamp(1_893_553_447)? + Duration::from_micros(123_456)
         );
-        assert!(validated.pac.is_none());
+        assert!(validated.pac().is_none());
         Ok(())
     }
 
@@ -201,9 +211,9 @@ mod service {
             .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
             .context("AP-REQ validates")?;
 
-        assert_eq!(validated.client.name(), "testuser1");
-        assert_eq!(validated.service.name(), "HTTP/host.test.gokrb5");
-        assert_eq!(validated.session_key.etype, 18_i32);
+        assert_eq!(validated.client().name(), "testuser1");
+        assert_eq!(validated.service().name(), "HTTP/host.test.gokrb5");
+        assert_eq!(validated.session_key().etype(), 18_i32);
         Ok(())
     }
 
@@ -236,9 +246,9 @@ mod service {
             .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
             .map_err(|cause| format!("AP-REQ validates: {cause}"))?;
 
-        assert_eq!(validated.client.name(), "testuser1");
-        assert_eq!(validated.service.name(), "HTTP/host.test.gokrb5");
-        assert_eq!(validated.session_key.etype, 18_i32);
+        assert_eq!(validated.client().name(), "testuser1");
+        assert_eq!(validated.service().name(), "HTTP/host.test.gokrb5");
+        assert_eq!(validated.session_key().etype(), 18_i32);
         Ok(())
     }
 
@@ -259,9 +269,9 @@ mod service {
             .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
             .context("AP-REQ validates")?;
 
-        assert_eq!(validated.client.name(), "testuser1");
-        assert_eq!(validated.service.name(), "HTTP/host.test.gokrb5");
-        assert_eq!(validated.session_key.etype, 18_i32);
+        assert_eq!(validated.client().name(), "testuser1");
+        assert_eq!(validated.service().name(), "HTTP/host.test.gokrb5");
+        assert_eq!(validated.session_key().etype(), 18_i32);
         Ok(())
     }
 
@@ -289,9 +299,9 @@ mod service {
             .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
             .map_err(|cause| format!("AP-REQ validates: {cause}"))?;
 
-        assert_eq!(validated.client.name(), "testuser1");
-        assert_eq!(validated.service.name(), "HTTP/host.test.gokrb5");
-        assert_eq!(validated.session_key.etype, 18_i32);
+        assert_eq!(validated.client().name(), "testuser1");
+        assert_eq!(validated.service().name(), "HTTP/host.test.gokrb5");
+        assert_eq!(validated.session_key().etype(), 18_i32);
         Ok(())
     }
 
@@ -330,9 +340,9 @@ mod service {
             .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
             .map_err(|cause| format!("AP-REQ validates: {cause}"))?;
 
-        assert_eq!(validated.client.name(), "testuser1");
-        assert_eq!(validated.service.name(), "HTTP/host.test.gokrb5");
-        assert_eq!(validated.session_key.etype, 18_i32);
+        assert_eq!(validated.client().name(), "testuser1");
+        assert_eq!(validated.service().name(), "HTTP/host.test.gokrb5");
+        assert_eq!(validated.session_key().etype(), 18_i32);
         Ok(())
     }
 
@@ -346,25 +356,24 @@ mod service {
             .validate_ap_req(&ap_req_with_pac()?)
             .context("AP-REQ with PAC validates")?;
 
-        assert_eq!(validated.client.name(), "testuser1");
-        assert_eq!(validated.service.name(), "sysHTTP");
-        assert_eq!(validated.session_key.etype, 18_i32);
-        assert_eq!(hex_encode(&validated.session_key.value), VALID_SESSION_KEY);
-        let pac = validated
-            .pac
-            .as_ref()
-            .context("PAC extracted and verified")?;
-        assert_eq!(pac.c_buffers, 5);
+        assert_eq!(validated.client().name(), "testuser1");
+        assert_eq!(validated.service().name(), "sysHTTP");
+        assert_eq!(validated.session_key().etype(), 18_i32);
         assert_eq!(
-            pac.kerb_validation_info
-                .as_ref()
+            hex_encode(validated.session_key().value()),
+            VALID_SESSION_KEY
+        );
+        let pac = validated.pac().context("PAC extracted and verified")?;
+        assert_eq!(pac.c_buffers(), 5);
+        assert_eq!(
+            pac.kerb_validation_info()
                 .context("KVI parsed")?
-                .effective_name
+                .effective_name()
                 .value,
             "testuser1"
         );
         assert_eq!(
-            pac.upn_dns_info.as_ref().context("UPN/DNS parsed")?.upn,
+            pac.upn_dns_info().context("UPN/DNS parsed")?.upn,
             "testuser1@test.gokrb5"
         );
         Ok(())
@@ -413,11 +422,14 @@ mod service {
             .verify_ap_rep(&ap_rep)
             .context("AP-REP verifies")?;
 
-        assert_eq!(verified.ctime, validated.authenticator_ctime);
-        assert_eq!(verified.cusec, validated.authenticator_cusec);
-        assert_eq!(verified.authenticator_time, validated.authenticator_time);
-        assert_eq!(verified.subkey, options.subkey);
-        assert_eq!(verified.sequence_number, options.sequence_number);
+        assert_eq!(verified.ctime(), validated.authenticator_ctime());
+        assert_eq!(verified.cusec(), validated.authenticator_cusec());
+        assert_eq!(
+            verified.authenticator_time(),
+            validated.authenticator_time()
+        );
+        assert_eq!(verified.subkey(), options.subkey());
+        assert_eq!(verified.sequence_number(), options.sequence_number());
         Ok(())
     }
 
@@ -429,8 +441,9 @@ mod service {
             .build_ap_rep_with_confounder(&decode_hex(AP_REP_CONFOUNDER)?, &ApRepOptions::default())
             .context("AP-REP builds")?;
         let mut wrong_request = validated;
-        wrong_request.authenticator_cusec += 1;
-        wrong_request.authenticator_time += Duration::from_micros(1);
+        wrong_request.set_authenticator_cusec(wrong_request.authenticator_cusec() + 1);
+        wrong_request
+            .set_authenticator_time(wrong_request.authenticator_time() + Duration::from_micros(1));
 
         assert!(matches!(
             wrong_request
@@ -750,10 +763,10 @@ mod service {
         confounder_hex: &str,
     ) -> Result<Vec<u8>, TestError> {
         let etype =
-            AesSha1Etype::from_etype_id(key.etype).context("AES-SHA1 etype is supported")?;
+            AesSha1Etype::from_etype_id(key.etype()).context("AES-SHA1 etype is supported")?;
         etype
             .encrypt_message_with_confounder(
-                &key.value,
+                key.value(),
                 plaintext,
                 usage,
                 &decode_hex(confounder_hex)?,
@@ -763,8 +776,8 @@ mod service {
 
     fn encryption_key(key: &EncryptionKey) -> rasn_kerberos::EncryptionKey {
         rasn_kerberos::EncryptionKey {
-            r#type: key.etype,
-            value: key.value.to_vec().into(),
+            r#type: key.etype(),
+            value: key.value().to_vec().into(),
         }
     }
 
@@ -1084,9 +1097,9 @@ mod service {
         let ticket = decrypt_ticket_enc_part(&valid_ap_req_struct()?.ticket, service_key)
             .map_err(|cause| format!("ticket decrypts: {cause}"))?;
 
-        assert_ne!(validated.client.name_type, 5_i32);
+        assert_ne!(validated.client().name_type, 5_i32);
         assert_eq!(
-            validated.client,
+            validated.client().clone(),
             Principal::new(
                 "TEST.GOKRB5".to_owned(),
                 ticket.cname.r#type,
@@ -1177,10 +1190,12 @@ mod service {
         let mut alias = keytab
             .entries()
             .iter()
-            .find(|entry| entry.key.etype == 18_i32 && entry.kvno == 1)
+            .find(|entry| entry.key().etype() == 18_i32 && entry.kvno() == 1)
             .ok_or("fixture service key exists")?
             .clone();
-        alias.principal.components = vec!["HTTP".to_owned(), "alias.test.gokrb5".to_owned()];
+        let mut principal = alias.principal().clone();
+        principal.components = vec!["HTTP".to_owned(), "alias.test.gokrb5".to_owned()];
+        alias.set_principal(principal);
         keytab.entries_mut().push(alias);
         Ok(keytab)
     }
@@ -1349,7 +1364,7 @@ mod service {
         let encoded = der::encode(&authenticator)
             .map_err(|cause| format!("Authenticator encodes: {cause}"))?;
         ap_req.authenticator = rasn_kerberos::EncryptedData {
-            etype: session_key.etype,
+            etype: session_key.etype(),
             kvno: None,
             cipher: encrypt_message(
                 &session_key,
@@ -1401,7 +1416,7 @@ mod service {
                 .with_now(timestamp(1_893_553_447)?)
                 .with_transit_validator(Arc::new(policy));
             assert_eq!(
-                validator.validate_ap_req(&bytes)?.client.realm,
+                validator.validate_ap_req(&bytes)?.client().realm,
                 "FOREIGN.DUMMY"
             );
         }
@@ -1447,7 +1462,7 @@ mod service {
         // When the caller explicitly trusts this direct endpoint pair.
         let accepted = validator.validate_ap_req(&bytes)?;
         // Then the cross-domain identity is accepted without weakening the default.
-        assert_eq!(accepted.client.realm, "FOREIGN.DUMMY");
+        assert_eq!(accepted.client().realm, "FOREIGN.DUMMY");
         Ok(())
     }
 
@@ -1465,7 +1480,7 @@ mod service {
         // When the ticket contains precisely the trusted path.
         let accepted = validator.validate_ap_req(&bytes)?;
         // Then the path policy permits it.
-        assert_eq!(accepted.client.realm, "FOREIGN.DUMMY");
+        assert_eq!(accepted.client().realm, "FOREIGN.DUMMY");
         Ok(())
     }
 
@@ -1624,7 +1639,7 @@ mod service {
         let bytes = authdata_ap_req(Some(authorization_element(1, der::encode(&nested)?)), None)?;
         let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
         assert_eq!(
-            validator.validate_ap_req(&bytes)?.client.realm,
+            validator.validate_ap_req(&bytes)?.client().realm,
             "TEST.GOKRB5"
         );
         Ok(())
@@ -2150,7 +2165,7 @@ mod service {
     #[test]
     fn microseconds_rejects_invalid_reply_construction() -> Result<(), TestError> {
         let mut validated = valid_ap_req()?;
-        validated.authenticator_cusec = 1_000_000;
+        validated.set_authenticator_cusec(1_000_000);
         assert!(matches!(
             validated
                 .build_ap_rep_with_confounder(
@@ -2171,7 +2186,7 @@ mod service {
     #[test]
     fn microseconds_rejects_invalid_reply_verification() -> Result<(), TestError> {
         let mut validated = valid_ap_req()?;
-        validated.authenticator_cusec = 1_000_000;
+        validated.set_authenticator_cusec(1_000_000);
         let reply = reply_with_microseconds(&validated, 1_000_000)?;
         assert!(matches!(
             validated
@@ -2191,12 +2206,12 @@ mod service {
     fn microseconds_reply_boundaries_roundtrip() -> Result<(), TestError> {
         for value in [0_u32, 999_999] {
             let mut validated = valid_ap_req()?;
-            validated.authenticator_cusec = value;
+            validated.set_authenticator_cusec(value);
             let reply = validated.build_ap_rep_with_confounder(
                 &decode_hex(AP_REP_CONFOUNDER)?,
                 &ApRepOptions::default(),
             )?;
-            assert_eq!(validated.verify_ap_rep(&reply)?.cusec, value);
+            assert_eq!(validated.verify_ap_rep(&reply)?.cusec(), value);
         }
         Ok(())
     }
@@ -2213,7 +2228,7 @@ mod service {
             seq_number: None,
         };
         let cipher = encrypt_message(
-            &validated.session_key,
+            validated.session_key(),
             &der::encode(&part)?,
             12,
             AP_REP_CONFOUNDER,
@@ -2295,9 +2310,11 @@ mod service {
     #[test]
     fn fractional_time_rejects_reply_construction() -> Result<(), TestError> {
         let mut validated = valid_ap_req()?;
-        validated.authenticator_ctime = timestamp(1_893_553_447)?
-            .checked_add(Duration::from_millis(500))
-            .context("fractional time fits")?;
+        validated.set_authenticator_ctime(
+            timestamp(1_893_553_447)?
+                .checked_add(Duration::from_millis(500))
+                .context("fractional time fits")?,
+        );
         assert!(matches!(
             validated
                 .build_ap_rep_with_confounder(
@@ -2315,17 +2332,19 @@ mod service {
     #[test]
     fn fractional_time_rejects_reply_verification() -> Result<(), TestError> {
         let mut validated = valid_ap_req()?;
-        validated.authenticator_ctime = timestamp(1_893_553_447)?
-            .checked_add(Duration::from_millis(500))
-            .context("fractional time fits")?;
+        validated.set_authenticator_ctime(
+            timestamp(1_893_553_447)?
+                .checked_add(Duration::from_millis(500))
+                .context("fractional time fits")?,
+        );
         let part = rasn_kerberos::EncApRepPart {
             ctime: fractional_kerberos_time()?,
-            cusec: validated.authenticator_cusec.into(),
+            cusec: validated.authenticator_cusec().into(),
             subkey: None,
             seq_number: None,
         };
         let cipher = encrypt_message(
-            &validated.session_key,
+            validated.session_key(),
             &der::encode(&part)?,
             12,
             AP_REP_CONFOUNDER,

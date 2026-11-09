@@ -25,7 +25,7 @@ mod tests {
             vec!["krbtgt"],
         ] {
             let mut malformed = tgt.clone();
-            malformed.service = Principal::new("TEST.GOKRB5", 2, components);
+            malformed.set_service(Principal::new("TEST.GOKRB5", 2, components));
             align_ticket_service(&mut malformed)?;
             assert!(matches!(
                 client.cache_tgt_session(malformed.clone()),
@@ -45,7 +45,11 @@ mod tests {
         }
         for name_type in [0_i32, 10_i32] {
             let mut referral = tgt.clone();
-            referral.service = Principal::new("TEST.GOKRB5", name_type, ["krbtgt", "OTHER.REALM"]);
+            referral.set_service(Principal::new(
+                "TEST.GOKRB5",
+                name_type,
+                ["krbtgt", "OTHER.REALM"],
+            ));
             align_ticket_service(&mut referral)?;
             client.cache_tgt_session(referral)?;
         }
@@ -64,7 +68,7 @@ mod tests {
             Principal::tgt_service("OTHER.REALM"),
         ] {
             let mut mislabeled = tgt.clone();
-            mislabeled.service = service;
+            mislabeled.set_service(service);
             let mut imported = before.clone();
             imported
                 .credentials_mut()
@@ -106,7 +110,9 @@ mod tests {
             assert_eq!(client.to_ccache()?, before);
         }
         let mut advisory = tgt;
-        advisory.service.name_type = 10_i32;
+        let mut service = advisory.service().clone();
+        service.name_type = 10_i32;
+        advisory.set_service(service);
         client.cache_tgt_session(advisory)?;
         Ok(())
     }
@@ -116,7 +122,7 @@ mod tests {
     fn service_cache_preserves_component_boundaries() -> Result<(), TestError> {
         let tgt = current_tgt_session(1, 60)?;
         let mut ticket = tgt.clone();
-        ticket.service = Principal::new("TEST.GOKRB5", 2, ["HTTP", "a\0b"]);
+        ticket.set_service(Principal::new("TEST.GOKRB5", 2, ["HTTP", "a\0b"]));
         align_ticket_service(&mut ticket)?;
         let mut client = Tokio::from_tgt_session(config_without_kdcs()?, KdcProtocol::Tcp, tgt);
         client.cache_service_ticket(ticket)?;
@@ -138,12 +144,12 @@ mod tests {
             Principal::new("TEST.GOKRB5", 1, ["instance", "user"]),
         ] {
             let mut tgt = current_tgt_session(1, 60)?;
-            tgt.client = Principal::new("TEST.GOKRB5", 1, ["user", "instance"]);
+            tgt.set_client(Principal::new("TEST.GOKRB5", 1, ["user", "instance"]));
             let mut ticket = tgt.clone();
-            ticket.client = foreign;
-            ticket.service = sample_service_principal();
+            ticket.set_client(foreign);
+            ticket.set_service(sample_service_principal());
             align_ticket_service(&mut ticket)?;
-            let service = ticket.service.clone();
+            let service = ticket.service().clone();
             let mut client = Tokio::from_tgt_session(config_without_kdcs()?, KdcProtocol::Tcp, tgt);
             client.destroy();
             let before = client.to_ccache()?;
@@ -175,13 +181,13 @@ mod tests {
             for destination in ["TEST.GOKRB5", "OTHER.REALM"] {
                 // Given: an empty identity-bound client and a foreign-client TGT.
                 let mut tgt = current_tgt_session(1, 60)?;
-                tgt.client = Principal::new("TEST.GOKRB5", 1, ["user", "instance"]);
+                tgt.set_client(Principal::new("TEST.GOKRB5", 1, ["user", "instance"]));
                 let mut client =
                     Tokio::from_tgt_session(config_without_kdcs()?, KdcProtocol::Tcp, tgt.clone());
                 client.destroy();
                 let before = client.to_ccache()?;
-                tgt.client = foreign.clone();
-                tgt.service = Principal::new("TEST.GOKRB5", 2, ["krbtgt", destination]);
+                tgt.set_client(foreign.clone());
+                tgt.set_service(Principal::new("TEST.GOKRB5", 2, ["krbtgt", destination]));
                 align_ticket_service(&mut tgt)?;
 
                 // When: the foreign TGT is offered for insertion.
@@ -208,9 +214,11 @@ mod tests {
             let mut client =
                 Tokio::from_tgt_session(config_without_kdcs()?, KdcProtocol::Tcp, tgt.clone());
             client.destroy();
-            tgt.client.name_type = name_type;
+            let mut identity = tgt.client().clone();
+            identity.name_type = name_type;
+            tgt.set_client(identity);
             let mut ticket = tgt.clone();
-            ticket.service = sample_service_principal();
+            ticket.set_service(sample_service_principal());
             align_ticket_service(&mut ticket)?;
 
             // When: both session kinds are inserted.
@@ -219,14 +227,14 @@ mod tests {
 
             // Then: login and service acquisition reuse those sessions without a KDC.
             assert_eq!(
-                runtime()?.block_on(client.affirm_login())?.client,
-                tgt.client
+                runtime()?.block_on(client.affirm_login())?.client(),
+                tgt.client()
             );
             assert_eq!(
                 runtime()?
-                    .block_on(client.get_service_ticket(ticket.service))?
-                    .client,
-                ticket.client
+                    .block_on(client.get_service_ticket(ticket.service().clone()))?
+                    .client(),
+                ticket.client()
             );
         }
         Ok(())

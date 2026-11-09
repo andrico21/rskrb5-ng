@@ -46,7 +46,7 @@ pub(super) fn build_kpasswd_ap_req_with_confounder(
     let mut ap_options = ApReq::new()
         .with_subkey(Some(reply_key.clone()))
         .with_sequence_number(Some(options.sequence_number));
-    ap_options.crypto_policy.clone_from(&options.crypto_policy);
+    ap_options.set_crypto_policy(options.crypto_policy.clone());
     build_ap_req_with_confounder(
         service_ticket,
         ap_options,
@@ -117,7 +117,7 @@ mod tests {
             Principal::user("TEST.GOKRB5", "testuser1"),
             Principal::new("TEST.GOKRB5", 2, ["kadmin", "changepw"]),
             EncryptionKey::new(18, vec![0x11; 32]),
-            ticket::encode(&fixture.ap_req.ticket)?.into(),
+            ticket::encode(&fixture.ap_req().ticket)?.into(),
             [0; 4],
             time,
             time,
@@ -172,7 +172,7 @@ mod tests {
                 Principal::user("TEST.GOKRB5", "testuser1"),
                 Principal::new("TEST.GOKRB5", 2, ["kadmin", "changepw"]),
                 EncryptionKey::new(id, vec![0x11; etype.key_len()]),
-                ticket::encode(&fixture.ap_req.ticket)?.into(),
+                ticket::encode(&fixture.ap_req().ticket)?.into(),
                 [0; 4],
                 time,
                 time,
@@ -198,7 +198,7 @@ mod tests {
                 );
                 assert_eq!(result.is_ok(), permitted);
                 if permitted {
-                    assert_eq!(result?.request.krb_priv.enc_part.etype, id);
+                    assert_eq!(result?.request.krb_priv().enc_part.etype, id);
                 }
             }
         }

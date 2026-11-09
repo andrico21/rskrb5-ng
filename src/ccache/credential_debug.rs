@@ -2,7 +2,25 @@
 
 use core::fmt;
 
-use super::{AuthorizationDataEntry, ConfigEntry, Credential};
+use super::{AuthorizationDataEntry, CCache, ConfigEntry, Credential};
+
+impl fmt::Debug for CCache {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            version,
+            header,
+            default_principal,
+            credentials,
+        } = self;
+        f.debug_struct("CCache")
+            .field("version", version)
+            .field("header", header)
+            .field("default_principal", default_principal)
+            .field("credentials", credentials)
+            .finish()
+    }
+}
 
 impl fmt::Debug for ConfigEntry<'_> {
     #[inline]
