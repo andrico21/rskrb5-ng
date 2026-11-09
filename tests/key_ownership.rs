@@ -27,7 +27,10 @@ mod tests {
         owns_erasure(&keytab.value);
         let mut erased = keytab.value.clone();
         erased.zeroize();
-        assert!(erased.is_empty(), "zeroize leaves no key bytes");
-        Ok(())
+        if erased.is_empty() {
+            Ok(())
+        } else {
+            Err("zeroize left key bytes".into())
+        }
     }
 }
