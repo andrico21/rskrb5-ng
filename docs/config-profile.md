@@ -388,6 +388,8 @@ socket or HTTPS proxy transport.
 identity policies are diagnostic because no PKINIT certificate is accepted
 today; no requested restriction is bypassed by a PKINIT exchange. Authorization
 rules/names are diagnostic because no local-login grant is performed.
+An admitted `auth_to_local_names` subsection emits one WP-17 diagnostic,
+including an explicit empty map; omission and discarded later scopes emit none.
 V4 and enabled draft-9 selectors keep todo-14's permanent typed rejection.
 Every deferred diagnostic becomes an error in Strict mode.
 

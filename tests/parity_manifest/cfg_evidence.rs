@@ -14,6 +14,9 @@ fn symbol_evidence_requires_enabled_items() -> Result<(), TestError> {
         "#[cfg(not(all()))]",
         "#[cfg_attr(all(), cfg(any()))]",
         "#[cfg(unix)]\n#[cfg(windows)]",
+        "#[cfg(all(feature = \"tower\", not(feature = \"http\")))]",
+        "#[cfg(feature = \"spnego\")]\n#[cfg(not(feature = \"messages\"))]",
+        "#[cfg_attr(feature = \"serde\", cfg(any()))]\n#[cfg(feature = \"default\")]",
     ] {
         let disabled = vec![(
             "src/keytab.rs".to_owned(),

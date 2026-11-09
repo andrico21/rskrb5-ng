@@ -386,6 +386,30 @@ Release workflow, CI docs and fixture scripts:
 
 #### Changes from the follow-up review
 
+- The workflow gate requires the docs-validation job and its checksum and
+  pinned lychee steps to execute unconditionally, without advisory failures or
+  skippable prerequisites; decoy link arguments no longer certify it (FU-GATE-R13).
+
+- The package-link gate matches complete equal-length backtick runs, respects
+  escaped openers and block boundaries, and keeps links after unmatched backticks
+  visible to validation (FU-CI-R05).
+
+- Parity symbol evidence must be satisfiable by an actual Cargo feature closure;
+  impossible combinations such as Tower without HTTP no longer certify an API
+  (FU-TST-R20).
+
+- Explicit empty `auth_to_local_names` maps now produce the WP-17 deferred
+  diagnostic and fail Strict parsing. Populated maps report once per admitted
+  map rather than once per mapping entry (FU-CFG-R14).
+
+- Local principal mapping keys under `[realms]/<realm>/auth_to_local_names`
+  may spell prohibited protocol selectors without selecting those protocols;
+  actual selectors remain rejected (FU-CFG-R13).
+
+- Configured service validators preserve permanent `Policy::RejectedFeature`
+  causes through `Error::source`, matching the HTTP layer and service constructors;
+  other invalid configurations remain `InvalidConfiguration` (FU-SPN-R17).
+
 Each fixed row of the follow-up review of `6586b7a` with a behaviour or API
 change, by area, with its register ID. The proofs and commits are in
 `docs/review/followup-6586b7a.md`, and the migration guide's "Follow-up review

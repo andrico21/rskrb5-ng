@@ -8,6 +8,7 @@
 
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import feature_closures
 import workflow_gate
@@ -19,6 +20,50 @@ def self_test() -> int:
     prek = (root / "prek.toml").read_text()
     assert workflow_gate.wiring_errors(ci, prek) == []
     assert len(feature_closures.ci_matrix(ci)) == 36
+    with TemporaryDirectory() as directory:
+        scratch = Path(directory)
+        workflows = scratch / ".github/workflows"
+        workflows.mkdir(parents=True)
+        for path in (root / ".github/workflows").glob("*.yml"):
+            (workflows / path.name).write_text(path.read_text())
+        (scratch / "prek.toml").write_text(prek)
+        assert workflow_gate.check(scratch) == []
+        for before, after in (
+            ("  docs-validate:\n", "  docs-validate:\n    if: false\n"),
+            (
+                "  docs-validate:\n",
+                "  docs-validate:\n    if: github.event_name == 'schedule'\n",
+            ),
+            ("  docs-validate:\n", "  docs-validate:\n    needs: mutants\n"),
+            ("  docs-validate:\n", "  docs-validate:\n    continue-on-error: true\n"),
+            (
+                "      - name: Check Markdown links (offline)",
+                "      - if: false\n        name: Check Markdown links (offline)",
+            ),
+            (
+                "      - name: Verify vendored guideline checksums",
+                "      - if: false\n        name: Verify vendored guideline checksums",
+            ),
+            ("          fail: true", "          fail: false"),
+            ("          args: --offline", "          decoy: --offline"),
+            (
+                "  docs-validate:\n",
+                "  docs-validate:\n    needs: [mutants]\n    if: always()\n",
+            ),
+            ("uses: lycheeverse/lychee-action@", "uses: other/decoy@"),
+            (
+                "run: (cd docs/rust-guidelines && sha256sum -c SHA256SUMS)",
+                "run: echo '(cd docs/rust-guidelines && sha256sum -c SHA256SUMS)'",
+            ),
+            (
+                "      - name: Check Markdown links (offline)",
+                "      - continue-on-error: true\n        name: Check Markdown links (offline)",
+            ),
+        ):
+            hostile = ci.replace(before, after)
+            assert hostile != ci, before
+            (workflows / "ci.yml").write_text(hostile)
+            assert workflow_gate.check(scratch), f"skippable docs accepted: {after}"
     gate = "python3 scripts/lint-gates/allow_gate.py --enforce"
     fixtures = {
         "fb19af4/U6-09 echo": ci.replace("run: " + gate, "run: echo '" + gate + "'"),
@@ -108,7 +153,7 @@ def self_test() -> int:
         "jobs:\n  build:\n    steps:\n      - <<: *action",
     ):
         assert workflow_gate.pin_errors({"hostile.yml": hostile}), hostile
-    print("workflow_regressions self-test: ok (four critic rounds, real workflows)")
+    print("workflow_regressions self-test: ok (five critic rounds, real workflows)")
     return 0
 
 

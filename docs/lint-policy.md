@@ -98,10 +98,10 @@ mandatory jobs use only known plain keys, literal run commands and SHA-pinned
 setup actions with version comments. Extra lint run steps are rejected, including
 preparation steps that write interpreter settings through `GITHUB_ENV` or
 `GITHUB_PATH`. Only the documented bytecode/color environment settings are allowed.
-Both `lint-gates` and `closures` must be independent: `needs` and `if` are outside
+The `lint-gates`, `closures` and `docs-validate` jobs must be independent: `needs` and `if` are outside
 the supported shape, including `always()` with an explicit success check. Their
 effective job condition therefore has no prerequisite state to evaluate; skipped,
-cancelled and failed jobs elsewhere cannot skip either mandatory job. Supporting
+cancelled and failed jobs elsewhere cannot skip these mandatory jobs. Supporting
 dependencies would require a separately reviewed condition model, not an exception
 for one expression spelling.
 
@@ -109,14 +109,19 @@ The global action-pin check reads structural keys, including plain single/double
 quoted `uses` outside the mandatory jobs. Escaped keys, tags, anchors, aliases,
 merge keys, duplicate mappings and flow mappings are unsupported and rejected;
 flow sequences are limited to scalar lists (such as event and runner lists).
-`workflow_regressions.py --self-test` exercises the four critic rounds against
+`workflow_regressions.py --self-test` exercises the five critic rounds against
 mutations of the actual workflows, alongside each owner's more detailed fixtures.
+The docs job requires checkout, the vendored checksum command and the pinned
+lychee action in order; the action's actual inputs must enable recursive offline
+fragment checks and `fail: true`. Conditional or advisory steps are rejected.
 
 Parity evidence uses a separate cfg-aware lexer adapter: `cfg(any())`, test-only
 and contradictory predicates cannot establish public symbols. Supported feature,
 Unix/Windows, pointer-width and debug predicates must admit a non-test build;
 unsupported predicates are excluded, not presumed enabled. The adapter preserves
 item boundaries and does not change lint gates, which still inspect disabled code.
+Feature predicates use the resolved closures from `feature_closures.py list`,
+not independent feature assignments, so Cargo implications also constrain evidence.
 
 `docsrs_check.py` holds `[package.metadata.docs.rs]` to the advertised
 optional APIs (`http`, `tower`); the `docs` job builds rustdoc with exactly

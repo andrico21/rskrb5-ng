@@ -114,14 +114,6 @@ pub(super) fn finish(
                             .insert(name.clone(), text.to_owned()),
                     );
                 }
-                realm_values::report(
-                    ConfigDiagnostic::NotYetEffective {
-                        relation: "auth_to_local_names",
-                        package: "plan 2 WP-17",
-                    },
-                    config.libdefaults.parse_mode(),
-                    &mut config.libdefaults.enctype_diagnostics,
-                )?;
             }
             [section, interface, key]
                 if section == "plugins" && matches!(key.as_str(), "disable" | "enable_only") =>

@@ -7,6 +7,29 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+CI maintainers must keep `docs-validate` independent and unconditional
+(FU-GATE-R13). Job/step conditions, `needs`, advisory failures and decoy action
+inputs are rejected. Its checkout, checksum command and pinned lychee action
+must run in order, with recursive offline fragment checking and `fail: true`.
+The schedule/dispatch-only advisory jobs do not exempt `docs-validate`.
+
+Package documentation with unmatched or escaped backticks no longer hides later
+relative links from the package gate (FU-CI-R05). Fix any newly reported target
+rather than relying on malformed code-span delimiters. Real equal-length code
+spans still suppress link syntax, including multiline spans within one block;
+backslashes inside code spans are literal under CommonMark.
+
+When maintaining parity manifests, cite symbols enabled by at least one resolved
+Cargo feature closure (FU-TST-R20). The evidence lexer uses the same closure
+universe as `feature_closures.py list`, including feature implications; independent
+Boolean assignments such as `tower` without `http` no longer count as evidence.
+
+Configured acceptors (`Validator`, `NegotiateLayer` and `NegotiateService`)
+retain permanent `Policy::RejectedFeature` causes from both whole-configuration
+admission and enctype policy construction (FU-SPN-R17). Inspect `Error::source`
+to distinguish the exact prohibited feature from ordinary `InvalidConfiguration`;
+both `from_default_keytab_name` and `from_default_keytab` refuse before discovery.
+
 Replace the dependency:
 
 ```toml
@@ -26,6 +49,21 @@ It depends on `rasn` and `rasn-kerberos` 0.29; a caller that passes `rasn`
 values to or from this crate needs the same versions.
 
 ## New configuration keys
+
+An explicit `auth_to_local_names = { ... }` subsection selects deferred local
+authorization even if it is empty (FU-CFG-R14). Compatible parsing reports one
+`NotYetEffective` diagnostic per admitted map; Strict parsing rejects it with
+relation `auth_to_local_names` and package `plan 2 WP-17`. Omit the subsection
+when no local-name mapping is intended. Finalized, discarded later scopes do
+not select it. This diagnostic policy is stricter than MIT's profile getter,
+which simply finds no relation in an empty subsection.
+
+Principal keys such as `krb4_get_tickets` or `pkinit_draft9` inside a realm's
+`auth_to_local_names` map now parse as names rather than protocol selections
+(FU-CFG-R13). Their case and first mapping value are retained. The exemption is
+limited to that exact mapping path; enabled protocol selectors elsewhere,
+including discarded scopes, still fail permanently. Local authorization remains
+deferred to WP-17 and Strict mode still rejects its diagnostic.
 
 Two `[libdefaults]` flags gate the legacy enctypes. Both default to false,
 independently of `allow_weak_crypto`:

@@ -15,7 +15,7 @@ use rskrb5_ng::{
         section_values::{Plugins, Value},
     },
     crypto::CryptoPolicy,
-    error::Policy,
+    error::{Policy, RejectedFeature},
     http::{NegotiateLayer, NegotiateService},
     service::Validator,
     spnego::{self, Krb5MechToken, NegTokenInit, Token},
@@ -47,6 +47,71 @@ impl Service<Request<()>> for Accepted {
     fn call(&mut self, _req: Request<()>) -> Self::Future {
         ready(Ok(Response::new(())))
     }
+}
+
+/// Configured acceptors preserve exact permanent policy causes before discovery.
+#[test]
+fn configured_constructors_retain_policy_causes() -> Result<(), Box<dyn Error>> {
+    for (enctype, selector, expected) in [
+        ("des-cbc-crc", "", Some(RejectedFeature::SingleDes)),
+        ("rc4-hmac-exp", "", Some(RejectedFeature::Rc4Export)),
+        ("", "krb4_get_tickets", Some(RejectedFeature::KerberosV4)),
+        ("", "pkinit_draft9", Some(RejectedFeature::Draft9Pkinit)),
+        ("", "pkinit_rsa_only", Some(RejectedFeature::RsaPkinit)),
+        ("", "krb4_convert", Some(RejectedFeature::V4Conversion)),
+        (
+            "",
+            "kpasswd_unprotected",
+            Some(RejectedFeature::UnprotectedPasswordChange),
+        ),
+        ("unknown-enctype", "", None),
+        ("", "disable_encrypted_timestamp", None),
+    ] {
+        let mut config = Config::parse("[realms]\nR = {\nkdc = host\n}")?;
+        config.libdefaults.default_keytab_name = "unsupported:admission-first".to_owned();
+        if enctype.is_empty() {
+            drop(
+                config
+                    .realms
+                    .first_mut()
+                    .ok_or("realm")?
+                    .relations
+                    .insert(selector.to_owned(), Value::Boolean(Toggle::Enabled)),
+            );
+        } else {
+            config.libdefaults.permitted_enctypes = vec![enctype.to_owned()];
+        }
+        for cause in [
+            Validator::from_default_keytab_name(&config)
+                .err()
+                .map(|error| policy_cause(&error).copied()),
+            Validator::from_default_keytab(&config)
+                .err()
+                .map(|error| policy_cause(&error).copied()),
+            NegotiateLayer::from_default_keytab_name(&config)
+                .err()
+                .map(|error| policy_cause(&error).copied()),
+            NegotiateLayer::from_default_keytab(&config)
+                .err()
+                .map(|error| policy_cause(&error).copied()),
+            NegotiateService::from_default_keytab_name(Accepted, &config)
+                .err()
+                .map(|error| policy_cause(&error).copied()),
+            NegotiateService::from_default_keytab(Accepted, &config)
+                .err()
+                .map(|error| policy_cause(&error).copied()),
+        ] {
+            let policy = cause.flatten().ok_or("constructor lost policy source")?;
+            match expected {
+                Some(expected_feature) => assert!(
+                    matches!(policy, Policy::RejectedFeature { feature, reason: _ } if feature == expected_feature),
+                    "constructor lost {expected_feature}: {policy:?}"
+                ),
+                None => assert_eq!(policy, Policy::InvalidConfiguration),
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Config-backed HTTP constructors refuse unsupported restrictions before keytab discovery.
