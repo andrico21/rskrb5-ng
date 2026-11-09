@@ -8,6 +8,7 @@ is a parity feature, not a defect>`.
 
 | Source finding | Register ID | Parity |
 | --- | --- | --- |
+| critic:critics-5b34622/u2.md#U2-01 | FU-CLI-R13 | no |
 | critic:critics-5b34622/u2.md#U2-02 | FU-CLI-R14 | no |
 | critic:critics-5b34622/u3.md#U3-02 | FU-TRN-R10 | no |
 | critic:critics-5b34622/u4.md#U4-02 | FU-PAC-R10 | no |
