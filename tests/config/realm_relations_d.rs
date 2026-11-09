@@ -11,6 +11,7 @@ mod tests {
     use core::error::Error;
 
     use rskrb5_ng::config::{Config, ConfigDiagnostic, ParseMode, section_values::Value};
+    use rskrb5_ng::error::Config as ConfigError;
 
     /// Exercise typed admission and the actual diagnostic/error boundary.
     fn deferred(name: &str, kind: &str, inputs: &[&str]) -> Result<(), Box<dyn Error>> {
@@ -110,7 +111,16 @@ mod tests {
     /// Local mapping keys preserve case and first-wins selection.
     #[test]
     fn auth_to_local_names() -> Result<(), Box<dyn Error>> {
-        for name in ["Alice", "ALICE"] {
+        for name in [
+            "Alice",
+            "ALICE",
+            "krb4_get_tickets",
+            "v4_realm",
+            "pkinit_draft9",
+            "pkinit_rsa_only",
+            "kpasswd_unprotected",
+            "kpasswd_protocol",
+        ] {
             let config = Config::parse(&format!(
                 "[realms]\n EXAMPLE = {{\n auth_to_local_names = {{\n {name} = local\n {name} = ignored\n }}\n }}\n"
             ))?;
@@ -123,6 +133,34 @@ mod tests {
                     .map(String::as_str),
                 Some("local")
             );
+        }
+        for name in [
+            "krb4_get_tickets",
+            "v4_realm",
+            "pkinit_draft9",
+            "pkinit_rsa_only",
+            "kpasswd_unprotected",
+            "kpasswd_protocol",
+        ] {
+            for text in [
+                format!("[libdefaults]\n{name} = true"),
+                format!("[realms]\nR = {{\n{name} = true\n}}"),
+                format!("[plugins]\nR = {{\nauth_to_local_names = {{\n{name} = true\n}}\n}}"),
+                format!(
+                    "[realms]\nR = {{\nother = {{\nauth_to_local_names = {{\n{name} = true\n}}\n}}\n}}"
+                ),
+                format!("[realms]*\nR = {{\nkdc = host\n}}\n[realms]\nR = {{\n{name} = true\n}}"),
+            ] {
+                for mode in [ParseMode::Compatible, ParseMode::Strict] {
+                    assert!(
+                        matches!(
+                            Config::parse_with_mode(&text, mode),
+                            Err(ConfigError::Policy(_))
+                        ),
+                        "selector admitted: {text}"
+                    );
+                }
+            }
         }
         Ok(())
     }

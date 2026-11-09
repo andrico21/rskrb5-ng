@@ -386,6 +386,10 @@ Release workflow, CI docs and fixture scripts:
 
 #### Changes from the follow-up review
 
+- Local principal mapping keys under `[realms]/<realm>/auth_to_local_names`
+  may spell prohibited protocol selectors without selecting those protocols;
+  actual selectors remain rejected (FU-CFG-R13).
+
 - Configured service validators preserve permanent `Policy::RejectedFeature`
   causes through `Error::source`, matching the HTTP layer and service constructors;
   other invalid configurations remain `InvalidConfiguration` (FU-SPN-R17).

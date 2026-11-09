@@ -33,6 +33,13 @@ values to or from this crate needs the same versions.
 
 ## New configuration keys
 
+Principal keys such as `krb4_get_tickets` or `pkinit_draft9` inside a realm's
+`auth_to_local_names` map now parse as names rather than protocol selections
+(FU-CFG-R13). Their case and first mapping value are retained. The exemption is
+limited to that exact mapping path; enabled protocol selectors elsewhere,
+including discarded scopes, still fail permanently. Local authorization remains
+deferred to WP-17 and Strict mode still rejects its diagnostic.
+
 Two `[libdefaults]` flags gate the legacy enctypes. Both default to false,
 independently of `allow_weak_crypto`:
 

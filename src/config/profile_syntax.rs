@@ -174,7 +174,10 @@ impl State {
             marker(value)
         };
         let decoded = quoted(body, line)?;
-        if section != "domain_realm" {
+        if section != "domain_realm"
+            && !matches!(path.as_slice(), [section, _, map, _]
+                if section == "realms" && map == "auth_to_local_names")
+        {
             protocol::relation(&key, &decoded)?;
         }
         if !discarded {
