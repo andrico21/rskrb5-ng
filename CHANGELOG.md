@@ -386,6 +386,10 @@ Release workflow, CI docs and fixture scripts:
 
 #### Changes from the follow-up review
 
+- Configured service validators preserve permanent `Policy::RejectedFeature`
+  causes through `Error::source`, matching the HTTP layer and service constructors;
+  other invalid configurations remain `InvalidConfiguration` (FU-SPN-R17).
+
 Each fixed row of the follow-up review of `6586b7a` with a behaviour or API
 change, by area, with its register ID. The proofs and commits are in
 `docs/review/followup-6586b7a.md`, and the migration guide's "Follow-up review

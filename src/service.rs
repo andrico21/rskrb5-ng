@@ -944,9 +944,9 @@ impl Validator<'static> {
     /// or the file cannot be read or parsed.
     #[inline]
     pub fn from_default_keytab_name(config: &Config) -> Result<Self, Error> {
-        restrictions::config(config).map_err(|_invalid| error::Policy::InvalidConfiguration)?;
+        restrictions::config(config).map_err(|error| restrictions::configuration_policy(&error))?;
         let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)
-            .map_err(|_invalid| error::Policy::InvalidConfiguration)?;
+            .map_err(|error| restrictions::configuration_policy(&error))?;
         Self::from_keytab(keytab::configured_keytab(
             &config.libdefaults,
             DefaultName::Keytab,
@@ -974,9 +974,9 @@ impl Validator<'static> {
     /// or the file cannot be read or parsed.
     #[inline]
     pub fn from_default_keytab(config: &Config) -> Result<Self, Error> {
-        restrictions::config(config).map_err(|_invalid| error::Policy::InvalidConfiguration)?;
+        restrictions::config(config).map_err(|error| restrictions::configuration_policy(&error))?;
         let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)
-            .map_err(|_invalid| error::Policy::InvalidConfiguration)?;
+            .map_err(|error| restrictions::configuration_policy(&error))?;
         Self::from_keytab(keytab::default_keytab_name(&config.libdefaults)?)
             .with_crypto_policy(policy)
             .with_max_clock_skew(config.libdefaults.clockskew)

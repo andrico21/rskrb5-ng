@@ -33,6 +33,8 @@ use crate::client::{
 #[cfg(feature = "tower")]
 use crate::config::{Config, parameters::DefaultName, restrictions};
 #[cfg(feature = "tower")]
+use crate::crypto::CryptoPolicy;
+#[cfg(feature = "tower")]
 use crate::keytab::{self, Keytab};
 #[cfg(feature = "tower")]
 use crate::service::{ApRepOptions, HostAddress, SharedReplayCache, TransitValidator};
@@ -41,26 +43,6 @@ use crate::{
     service::{Validator, VerifiedApRep},
     spnego::{self, AcceptedContext},
 };
-#[cfg(feature = "tower")]
-use crate::{
-    crypto::CryptoPolicy,
-    error::{Config as ConfigError, Policy},
-};
-
-/// Preserve permanent policy causes while classifying other invalid configuration.
-#[cfg(feature = "tower")]
-const fn configuration_policy(error: &ConfigError) -> Policy {
-    if let ConfigError::Policy(policy)
-    | ConfigError::RejectedEnctype {
-        source: policy,
-        token: _,
-    } = error
-    {
-        *policy
-    } else {
-        Policy::InvalidConfiguration
-    }
-}
 
 /// HTTP Negotiate adapter result.
 pub type Result<T> = CoreResult<T, Error>;
@@ -1202,9 +1184,9 @@ impl NegotiateLayer<'static> {
     /// or the file cannot be read or parsed.
     #[inline]
     pub fn from_default_keytab_name(config: &Config) -> Result<Self> {
-        restrictions::config(config).map_err(|error| configuration_policy(&error))?;
+        restrictions::config(config).map_err(|error| restrictions::configuration_policy(&error))?;
         let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)
-            .map_err(|error| configuration_policy(&error))?;
+            .map_err(|error| restrictions::configuration_policy(&error))?;
         Self::from_keytab(keytab::configured_keytab(
             &config.libdefaults,
             DefaultName::Keytab,
@@ -1232,9 +1214,9 @@ impl NegotiateLayer<'static> {
     /// or the file cannot be read or parsed.
     #[inline]
     pub fn from_default_keytab(config: &Config) -> Result<Self> {
-        restrictions::config(config).map_err(|error| configuration_policy(&error))?;
+        restrictions::config(config).map_err(|error| restrictions::configuration_policy(&error))?;
         let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)
-            .map_err(|error| configuration_policy(&error))?;
+            .map_err(|error| restrictions::configuration_policy(&error))?;
         Self::from_keytab(keytab::default_keytab_name(&config.libdefaults)?)
             .with_crypto_policy(policy)
             .with_max_clock_skew(config.libdefaults.clockskew)

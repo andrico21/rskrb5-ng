@@ -7,6 +7,12 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Configured acceptors (`Validator`, `NegotiateLayer` and `NegotiateService`)
+retain permanent `Policy::RejectedFeature` causes from both whole-configuration
+admission and enctype policy construction (FU-SPN-R17). Inspect `Error::source`
+to distinguish the exact prohibited feature from ordinary `InvalidConfiguration`;
+both `from_default_keytab_name` and `from_default_keytab` refuse before discovery.
+
 Replace the dependency:
 
 ```toml

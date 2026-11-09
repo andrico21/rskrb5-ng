@@ -6,6 +6,23 @@ use super::{
     Config, Error, LibDefaults, Realm, Toggle,
     section_values::{Plugins, Value},
 };
+#[cfg(feature = "messages")]
+use crate::error::Policy;
+
+/// Preserve permanent policy causes when admitting configured acceptors.
+#[cfg(feature = "messages")]
+pub(crate) const fn configuration_policy(error: &Error) -> Policy {
+    if let Error::Policy(policy)
+    | Error::RejectedEnctype {
+        source: policy,
+        token: _,
+    } = error
+    {
+        *policy
+    } else {
+        Policy::InvalidConfiguration
+    }
+}
 
 /// Reject restrictions whose consumers have not been implemented.
 /// # Errors
