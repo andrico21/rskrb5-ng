@@ -27,7 +27,7 @@ import json
 import sys
 import tomllib
 from workflow_shape import mandatory_runs
-from workflow_yaml import structure
+from workflow_yaml import structure, children, only, subtree
 from pathlib import Path
 from contextlib import redirect_stdout
 from io import StringIO
@@ -222,17 +222,28 @@ def check(root: Path) -> list[str]:
         for path in sorted((root / ".github/workflows").glob("*.yml"))
     }
     link_errors = []
-    docs = job_text(workflows.get("ci.yml", ""), "docs-validate")
-    if not any(
-        "args:" in line
-        and "--offline" in line
-        and "--include-fragments" in line
-        and "'docs/**/*.md'" in line
-        for line in docs.splitlines()
-    ):
-        link_errors.append(
-            "docs-validate must check nested Markdown offline with fragments"
-        )
+    try:
+        ci = workflows.get("ci.yml", "")
+        runs = mandatory_runs(ci, "docs-validate")
+        if runs != ["(cd docs/rust-guidelines && sha256sum -c SHA256SUMS)"]:
+            raise RuntimeError(
+                "docs-validate must execute the guideline checksum check"
+            )
+        lines = structure(ci)
+        top = [i for i, line in enumerate(lines) if line.indent == 0]
+        jobs = only(lines, top, "jobs", "ci.yml")
+        docs = only(lines, children(lines, jobs), "docs-validate", "jobs")
+        steps = [
+            line.value.split("@", 1)[0] if line.key == "uses" else "checksum"
+            for line in subtree(lines, docs)
+            if line.key in {"uses", "run"}
+        ]
+        if steps != ["actions/checkout", "checksum", "lycheeverse/lychee-action"]:
+            raise RuntimeError(
+                "docs-validate needs checkout, checksum and mandatory lychee scan in order"
+            )
+    except RuntimeError as error:
+        link_errors.append(str(error))
     return (
         link_errors
         + wiring_errors(

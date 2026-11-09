@@ -7,6 +7,12 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+CI maintainers must keep `docs-validate` independent and unconditional
+(FU-GATE-R13). Job/step conditions, `needs`, advisory failures and decoy action
+inputs are rejected. Its checkout, checksum command and pinned lychee action
+must run in order, with recursive offline fragment checking and `fail: true`.
+The schedule/dispatch-only advisory jobs do not exempt `docs-validate`.
+
 Package documentation with unmatched or escaped backticks no longer hides later
 relative links from the package gate (FU-CI-R05). Fix any newly reported target
 rather than relying on malformed code-span delimiters. Real equal-length code

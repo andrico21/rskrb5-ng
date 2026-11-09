@@ -4,7 +4,7 @@
 # dependencies = []
 # ///
 # How to run: python3 scripts/lint-gates/workflow_shape.py --self-test
-"""Allow-listed execution shapes shared by the two mandatory CI jobs.
+"""Allow-listed execution shapes shared by mandatory CI jobs.
 
 This is deliberately a YAML subset, not a permissive YAML implementation.
 Only known mapping keys, literal run scalars and pinned setup actions enter
@@ -23,6 +23,10 @@ from workflow_yaml import Line, children, scalar, structure
 PIN: Final = re.compile(r"([\w.-]+/[\w./-]+)@([0-9a-f]{40})\s+#\s+(\S+)")
 ROOT_KEYS: Final = frozenset({"name", "on", "permissions", "env", "jobs"})
 JOB_KEYS: Final = frozenset({"name", "runs-on", "env", "steps", "strategy"})
+DOCS_INPUTS: Final = {
+    "args": "--offline --include-fragments --no-progress README.md PROVENANCE.md RUST_GUIDELINES.md CHANGELOG.md 'docs/**/*.md'",
+    "fail": "true",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,7 +101,12 @@ def setup(lines: list[Line], fields: Mapping, job: str) -> None:
         )
     action, _, channel = match.groups()
     allowed: dict[str, str] = {}
-    if action == "dtolnay/rust-toolchain" and channel in {"stable", "master"}:
+    if job == "docs-validate":
+        if action == "lycheeverse/lychee-action":
+            allowed = DOCS_INPUTS
+        elif action != "actions/checkout":
+            raise RuntimeError("docs-validate needs checkout or lychee action")
+    elif action == "dtolnay/rust-toolchain" and channel in {"stable", "master"}:
         allowed = {"components": "clippy"}
         if channel == "master" and job == "lint-gates":
             allowed["toolchain"] = "nightly-2026-10-03"
@@ -111,6 +120,10 @@ def setup(lines: list[Line], fields: Mapping, job: str) -> None:
         inputs = mapping(
             lines, block(lines, fields.entries["with"]), frozenset(allowed)
         ).entries
+        if action == "lycheeverse/lychee-action" and set(inputs) != set(DOCS_INPUTS):
+            raise RuntimeError(
+                "lychee needs offline nested-document args and fail: true"
+            )
         for key, child in inputs.items():
             if (
                 children(lines, child)
@@ -119,6 +132,8 @@ def setup(lines: list[Line], fields: Mapping, job: str) -> None:
                 raise RuntimeError(
                     f"ci.yml:{lines[child].number}: unapproved setup input"
                 )
+    elif action == "lycheeverse/lychee-action":
+        raise RuntimeError("lychee requires explicit inputs")
     elif action == "dtolnay/rust-toolchain" and channel == "master":
         raise RuntimeError("dated nightly setup requires explicit toolchain input")
 
@@ -188,7 +203,7 @@ def mandatory_runs(text: str, job: str) -> list[str]:
         if "run" in keys:
             runs.append(run_value(text, lines[step.entries["run"]]))
         else:
-            if runs:
+            if runs and job != "docs-validate":
                 raise RuntimeError("setup actions must precede all run steps")
             setup(lines, step, job)
     return runs
@@ -197,7 +212,7 @@ def mandatory_runs(text: str, job: str) -> list[str]:
 def self_test() -> int:
     text = "jobs:\n  lint-gates:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n"
     assert mandatory_runs(text, "lint-gates") == ["true"]
-    for job in ("lint-gates", "closures"):
+    for job in ("lint-gates", "closures", "docs-validate"):
         for condition in (
             "needs: mutants",
             "needs: [mutants]",

@@ -386,6 +386,10 @@ Release workflow, CI docs and fixture scripts:
 
 #### Changes from the follow-up review
 
+- The workflow gate requires the docs-validation job and its checksum and
+  pinned lychee steps to execute unconditionally, without advisory failures or
+  skippable prerequisites; decoy link arguments no longer certify it (FU-GATE-R13).
+
 - The package-link gate matches complete equal-length backtick runs, respects
   escaped openers and block boundaries, and keeps links after unmatched backticks
   visible to validation (FU-CI-R05).
