@@ -113,26 +113,6 @@ def effective_commands(blocks: list[str], hook: bool = False) -> set[str]:
     return accepted
 
 
-def job_text(workflow: str, job: str) -> str:
-    """The job's lines without comment lines; empty when the job is absent."""
-    lines = workflow.splitlines()
-    try:
-        start = lines.index(f"  {job}:")
-    except ValueError:
-        return ""
-    body = []
-    for line in lines[start + 1 :]:
-        if (
-            line.strip()
-            and not line.startswith("   ")
-            and not line.lstrip().startswith("#")
-        ):
-            break
-        if not line.lstrip().startswith("#"):
-            body.append(line)
-    return "\n".join(body)
-
-
 def wiring_errors(workflow: str, prek: str) -> list[str]:
     errors = []
     blocks: list[str] = []
@@ -256,9 +236,7 @@ def check(root: Path) -> list[str]:
 
 def self_test() -> int:
     actual_ci = (ROOT / ".github/workflows/ci.yml").read_text()
-    assert "'docs/**/*.md'" in job_text(actual_ci, "docs-validate"), (
-        "nested docs omitted"
-    )
+    assert check(ROOT) == [], "actual workflows must enforce required checks"
     commands = [SELF_TEST_LOOP, *REQUIRED[1:-1]]
     run = "".join(f"      - run: {command}\n" for command in commands)
     run += (
