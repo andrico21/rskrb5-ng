@@ -7,6 +7,12 @@ the `[0.3.0]` section of `CHANGELOG.md`.
 
 ## Dependency and imports
 
+Package documentation with unmatched or escaped backticks no longer hides later
+relative links from the package gate (FU-CI-R05). Fix any newly reported target
+rather than relying on malformed code-span delimiters. Real equal-length code
+spans still suppress link syntax, including multiline spans within one block;
+backslashes inside code spans are literal under CommonMark.
+
 When maintaining parity manifests, cite symbols enabled by at least one resolved
 Cargo feature closure (FU-TST-R20). The evidence lexer uses the same closure
 universe as `feature_closures.py list`, including feature implications; independent

@@ -386,6 +386,10 @@ Release workflow, CI docs and fixture scripts:
 
 #### Changes from the follow-up review
 
+- The package-link gate matches complete equal-length backtick runs, respects
+  escaped openers and block boundaries, and keeps links after unmatched backticks
+  visible to validation (FU-CI-R05).
+
 - Parity symbol evidence must be satisfiable by an actual Cargo feature closure;
   impossible combinations such as Tower without HTTP no longer certify an API
   (FU-TST-R20).

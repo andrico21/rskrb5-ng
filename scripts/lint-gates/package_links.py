@@ -116,22 +116,7 @@ def link_targets(text: str) -> list[tuple[int, str]]:
     for number, raw in prose_lines(normalized):
         lines[number - 1] = raw
     prose = "\n".join(lines)
-    chars = list(prose)
-    index = 0
-    while index < len(prose):
-        if prose[index] == "`":
-            end = index
-            while end < len(prose) and prose[end] == "`":
-                end += 1
-            close = prose.find(prose[index:end], end)
-            if close >= 0:
-                for position in range(index, close + end - index):
-                    if chars[position] != "\n":
-                        chars[position] = " "
-                index = close + end - index
-                continue
-        index += 1
-    visible = "".join(chars)
+    visible = code_spans(prose)
     found: list[tuple[int, str]] = []
     index = 0
     while index < len(visible):
@@ -160,6 +145,59 @@ def link_targets(text: str) -> list[tuple[int, str]]:
     parser.close()
     found.extend(parser.targets)
     return found
+
+
+def code_spans(prose: str) -> str:
+    """Blank exact-run spans within blocks; escapes apply only outside spans."""
+    boundaries = {0, len(prose)}
+    offset = 0
+    for line in prose.splitlines(keepends=True):
+        content = line.rstrip("\n")
+        if not content.strip() or re.match(
+            r" {0,3}(?:#{1,6}(?:\s|$)|>|[-+*]\s|\d+[.)]\s|<[/!A-Za-z])",
+            content,
+        ):
+            boundaries.add(offset)
+        if (
+            not content.strip()
+            or re.match(r" {0,3}#{1,6}(?:\s|$)", content)
+            or re.fullmatch(
+                r" {0,3}(?:=+|-+|(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})[ \t]*",
+                content,
+            )
+        ):
+            boundaries.add(offset + len(line))
+        offset += len(line)
+    chars = list(prose)
+    ordered = sorted(boundaries)
+    for start, stop in zip(ordered, ordered[1:]):
+        index = start
+        while index < stop:
+            if prose[index] == "\\":
+                index += 2
+                continue
+            opening = re.match(r"`+", prose[index:stop])
+            if opening is None:
+                index += 1
+                continue
+            end = index + len(opening[0])
+            closing = next(
+                (
+                    run
+                    for run in re.finditer(r"`+", prose[end:stop])
+                    if len(run[0]) == len(opening[0])
+                ),
+                None,
+            )
+            if closing is None:
+                index = end
+                continue
+            close = end + closing.end()
+            for position in range(index, close):
+                if chars[position] != "\n":
+                    chars[position] = " "
+            index = close
+    return "".join(chars)
 
 
 class LinkAttributes(HTMLParser):
@@ -309,6 +347,21 @@ def self_test() -> int:
             "# Title\n\n## Two words `code`\n\n## Two words code\n"
         )
         for bad, count in (
+            (b"` unmatched\n[bad](missing.md)\n``code``", 1),
+            (b"`` unmatched\n[bad](missing.md)\n`code`", 1),
+            (b"` unmatched [bad](missing.md)", 1),
+            (b"\\` [bad](missing.md) `", 1),
+            (b"`code\\` [bad](missing.md) `", 1),
+            (b"`` [bad](missing.md) ` literal ``", 0),
+            (b"` [bad](missing.md) `", 0),
+            (b"` code\n[bad](missing.md) `", 0),
+            (b"` code\n\n[bad](missing.md) `", 1),
+            (b"` code\n# [bad](missing.md) `", 1),
+            (b"# ` code\n[bad](missing.md) `", 1),
+            (b"- ` code\n- [bad](missing.md) `", 1),
+            (b"` code\n---\n[bad](missing.md) `", 1),
+            (b"` code\n> [bad](missing.md) `", 1),
+            (b"` code\n<div>\n[bad](missing.md) `\n</div>", 1),
             (b"see [review](docs/review/README.md)\n", 1),
             (b"see [review](docs/review/README.md)\r\nmore\r\n", 1),
             (b"[ref]: docs/review/README.md\n", 1),
