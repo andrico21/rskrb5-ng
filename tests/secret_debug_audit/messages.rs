@@ -602,9 +602,10 @@ pub(super) mod tests {
     ) -> Result<(), Box<dyn Error>> {
         use tower_layer::Layer as _;
         use tower_service::Service as _;
-        let mut service = rskrb5_ng::http::NegotiateLayer::new(tab)
-            .with_now(now)
-            .layer(CredentialService::new(pattern(113)));
+        let layer = rskrb5_ng::http::NegotiateLayer::new(tab).with_now(now);
+        redacted(&layer, secrets);
+        let mut service = layer.layer(CredentialService::new(pattern(113)));
+        redacted(&service, secrets);
         let mut request = http_types::Request::new(());
         set_authorization_header(&mut request, &spnego::negotiate_header(token)?)?;
         redacted(&service.call(request), secrets);

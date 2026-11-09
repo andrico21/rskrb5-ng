@@ -581,11 +581,12 @@ mod tests {
         assert_eq!(PA_AS_FRESHNESS, 150_i32);
     }
 
-    /// Pins that nonces keep the top bit clear and are not constant.
+    /// Pins that nonces keep the top bit clear and are not constant; 64 draws
+    /// leave a random top bit set unnoticed with probability 2^-64.
     #[test]
     fn random_nonce_keeps_the_top_bit_clear_and_varies() -> Result<(), TestError> {
         let draws = iter::repeat_with(random_nonce)
-            .take(8)
+            .take(64)
             .collect::<Result<Vec<u32>, _>>()?;
         assert!(draws.iter().all(|nonce| nonce & 0x8000_0000 == 0));
         assert!(

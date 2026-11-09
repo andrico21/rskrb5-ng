@@ -735,6 +735,30 @@ mod tests {
         Ok(())
     }
 
+    /// Credential flags and authorization-data types are read back as stored.
+    #[test]
+    fn credential_accessors_return_stored_fields() {
+        let client = Principal::new("EXAMPLE.COM", 1, vec!["alice".to_owned()]);
+        let server = Principal::new("EXAMPLE.COM", 1, vec!["service".to_owned()]);
+        let mut credential = Credential::new(
+            client,
+            server,
+            EncryptionKey::new(17, vec![0x41; 16]),
+            CredentialTimes::default(),
+            [0; 4],
+            vec![0x52; 16].into(),
+        )
+        .with_auth_data(vec![AuthorizationDataEntry::new(5, vec![0x63; 4].into())]);
+        assert!(!credential.is_skey(), "a new credential is not session-key based");
+        credential.set_ticket_flags([0x40, 0x81, 0x00, 0x10]);
+        assert_eq!(credential.ticket_flags(), [0x40, 0x81, 0x00, 0x10]);
+        assert_eq!(
+            credential.auth_data().iter().map(AuthorizationDataEntry::ad_type).collect::<Vec<_>>(),
+            [5]
+        );
+        assert!(credential.with_is_skey(true).is_skey(), "the session-key flag is kept");
+    }
+
     /// Pins that `X-CACHECONF:` credentials are config entries, not ticket entries.
     #[test]
     fn entries_filter_out_x_cacheconf_credentials() -> Result<(), TestError> {

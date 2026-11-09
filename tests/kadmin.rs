@@ -923,8 +923,9 @@ mod tests {
         let bytes = decode_hex(KRB_ERROR_WITH_EDATA)?;
         // When the response parser dispatches it.
         let reply = Reply::parse(&bytes)?;
-        // Then it retains the error result and bare encoding.
+        // Then it retains the error result, the synthetic version and bare encoding.
         assert!(reply.is_krb_error());
+        assert_eq!(reply.version(), 0xff80);
         assert_eq!(
             reply.decrypt_result(&EncryptionKey::new(18, vec![0; 32]))?,
             ChangePasswordResult::parse(b"krb5data")?

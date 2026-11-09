@@ -370,6 +370,19 @@ mod tests {
         Ok(())
     }
 
+    /// A decoded `reqFlags` BIT STRING is kept with its unused-bit count.
+    #[test]
+    fn neg_token_init_keeps_request_flags() -> Result<(), TestError> {
+        let bytes = decode_hex(concat!(
+            "a0173015a00d300b06092a864886f712010202",
+            "a10403020106",
+        ))?;
+        let token = NegTokenInit::decode(&bytes).context("NegTokenInit decodes")?;
+        assert_eq!(token.req_flags(), Some([0x01, 0x06].as_slice()));
+        assert_eq!(token.encode().context("NegTokenInit encodes")?, bytes);
+        Ok(())
+    }
+
     /// Pins that the gokrb5 `NegTokenResp` decodes and re-encodes byte for byte.
     #[test]
     fn decodes_and_roundtrips_gokrb5_neg_token_resp() -> Result<(), TestError> {
@@ -1346,6 +1359,31 @@ mod tests {
             &decode_hex(AP_REP_CONFOUNDER)?,
         );
         assert!(matches!(result, Err(Spnego::MissingAuthenticatorSequence)));
+        Ok(())
+    }
+
+    /// Initiator options and the built context return the configured policy, sequence and subkey.
+    #[test]
+    fn initiator_options_and_context_keep_configured_values() -> Result<(), TestError> {
+        use rskrb5_ng::crypto::CryptoPolicy;
+        let session = service_ticket_session_from_valid_ap_req()?;
+        let subkey = EncryptionKey::new(18, vec![0x35; 32]);
+        let policy = CryptoPolicy::default();
+        let options = InitiatorContextOptions::new()
+            .with_crypto_policy(policy.clone())
+            .with_sequence_number(Some(42))
+            .with_subkey(Some(subkey.clone()));
+        assert_eq!(options.crypto_policy(), Some(&policy));
+        assert_eq!(options.sequence_number(), Some(42));
+        assert_eq!(options.subkey(), Some(&subkey));
+        let context = spnego::init_sec_context_with_confounder(
+            &session,
+            options,
+            timestamp(1_893_553_447)?,
+            123_456,
+            &decode_hex(AP_REP_CONFOUNDER)?,
+        )?;
+        assert_eq!(context.initiator_subkey_ref(), Some(&subkey));
         Ok(())
     }
 

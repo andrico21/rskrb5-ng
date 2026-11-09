@@ -87,6 +87,8 @@ const TESTUSER_SALT: &str = "TEST.GOKRB5testuser1";
 mod as_exchange;
 #[path = "client/login_preauth.rs"]
 mod login_preauth;
+#[path = "client/owner_accessors.rs"]
+mod owner_accessors;
 #[path = "client/password_change.rs"]
 mod password_change;
 #[path = "client/preauth_errors.rs"]
@@ -1533,11 +1535,15 @@ mod harness {
     }
 
     /// Accepts one TCP client on `listener` and reads its length-prefixed request.
+    /// A client that never connects fails the test after 10 s instead of hanging it.
     #[cfg(feature = "tokio")]
     pub(crate) async fn read_tcp_kdc_request(
         listener: &TcpListener,
     ) -> Result<(Vec<u8>, TcpStream), TestError> {
-        let (mut socket, _) = listener.accept().await.context("accept client")?;
+        let (mut socket, _) = tokio::time::timeout(Duration::from_secs(10), listener.accept())
+            .await
+            .context("client connects within 10 s")?
+            .context("accept client")?;
         let mut header = [0_u8; 4];
         let _: usize = socket
             .read_exact(&mut header)

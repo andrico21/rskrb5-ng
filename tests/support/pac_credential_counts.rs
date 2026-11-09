@@ -82,6 +82,7 @@ mod tests {
             data.credentials().is_empty(),
             "zero count has no credentials"
         );
+        assert_eq!(data.credential_count(), 0);
         Ok(())
     }
 

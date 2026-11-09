@@ -430,6 +430,7 @@ mod service {
         );
         assert_eq!(verified.subkey(), options.subkey());
         assert_eq!(verified.sequence_number(), options.sequence_number());
+        assert_eq!(options.kvno(), Some(5));
         Ok(())
     }
 
@@ -442,8 +443,9 @@ mod service {
             .context("AP-REP builds")?;
         let mut wrong_request = validated;
         wrong_request.set_authenticator_cusec(wrong_request.authenticator_cusec() + 1);
-        wrong_request
-            .set_authenticator_time(wrong_request.authenticator_time() + Duration::from_micros(1));
+        let shifted = wrong_request.authenticator_time() + Duration::from_micros(1);
+        wrong_request.set_authenticator_time(shifted);
+        assert_eq!(wrong_request.authenticator_time(), shifted);
 
         assert!(matches!(
             wrong_request
