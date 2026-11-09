@@ -741,17 +741,15 @@ mod tests {
         let mut bytes = decode_hex(pac_trust::PAC_KERB_VALIDATION_INFO_TRUST)?;
         assert_eq!(bytes.get(116..118), Some(46_u16.to_le_bytes().as_slice()));
         assert_eq!(bytes.get(228..232), Some(2_u32.to_le_bytes().as_slice()));
-        for (offset, value) in [(118_usize, 3_u16.to_le_bytes().to_vec())]
-            .into_iter()
-            .chain(
-                [(176_usize, 5_u32), (180, 6), (188, 7), (208, 8), (212, 9)]
-                    .map(|(offset, value)| (offset, value.to_le_bytes().to_vec())),
-            )
-        {
+        bytes
+            .get_mut(118..120)
+            .context("bad-password count")?
+            .copy_from_slice(&3_u16.to_le_bytes());
+        for (offset, value) in [(176_usize, 5_u32), (180, 6), (188, 7), (208, 8), (212, 9)] {
             bytes
-                .get_mut(offset..offset.saturating_add(value.len()))
+                .get_mut(offset..offset.saturating_add(4))
                 .context("validation-info field")?
-                .copy_from_slice(&value);
+                .copy_from_slice(&value.to_le_bytes());
         }
         let mut kvi = KerbValidationInfo::parse(&bytes).context("patched KVI parses")?;
         kvi.set_user_session_key(pac::session_key::SessionKey::new([0x63; 16].into()));

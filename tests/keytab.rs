@@ -591,7 +591,11 @@ mod tests {
             .context("newest matching key exists")?;
         assert_eq!(kvno, 2);
         assert_eq!(
-            keytab.entries().iter().map(Entry::kvno8).collect::<Vec<_>>(),
+            keytab
+                .entries()
+                .iter()
+                .map(Entry::kvno8)
+                .collect::<Vec<_>>(),
             [1, 2, 3, 4]
         );
         Ok(())

@@ -238,7 +238,10 @@ mod tests {
             .with_payload(decode_hex(MIC_PAYLOAD)?);
         assert_eq!(acceptor.flags(), GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR);
         assert_eq!(acceptor.snd_seq_num(), 0x575e_85d6);
-        assert_eq!(acceptor.payload(), Some(decode_hex(MIC_PAYLOAD)?.as_slice()));
+        assert_eq!(
+            acceptor.payload(),
+            Some(decode_hex(MIC_PAYLOAD)?.as_slice())
+        );
         assert_eq!(
             acceptor.checksum(),
             decode_hex(MIC_FROM_ACCEPTOR)?.get(16..)

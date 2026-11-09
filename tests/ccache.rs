@@ -749,14 +749,24 @@ mod tests {
             vec![0x52; 16].into(),
         )
         .with_auth_data(vec![AuthorizationDataEntry::new(5, vec![0x63; 4].into())]);
-        assert!(!credential.is_skey(), "a new credential is not session-key based");
+        assert!(
+            !credential.is_skey(),
+            "a new credential is not session-key based"
+        );
         credential.set_ticket_flags([0x40, 0x81, 0x00, 0x10]);
         assert_eq!(credential.ticket_flags(), [0x40, 0x81, 0x00, 0x10]);
         assert_eq!(
-            credential.auth_data().iter().map(AuthorizationDataEntry::ad_type).collect::<Vec<_>>(),
-            [5]
+            credential
+                .auth_data()
+                .iter()
+                .map(AuthorizationDataEntry::ad_type)
+                .collect::<Vec<_>>(),
+            [5_i32]
         );
-        assert!(credential.with_is_skey(true).is_skey(), "the session-key flag is kept");
+        assert!(
+            credential.with_is_skey(true).is_skey(),
+            "the session-key flag is kept"
+        );
     }
 
     /// Pins that `X-CACHECONF:` credentials are config entries, not ticket entries.

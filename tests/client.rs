@@ -205,6 +205,7 @@ mod harness {
     use tokio::{
         net::TcpStream,
         runtime::{Builder as RuntimeBuilder, Runtime},
+        time::timeout,
     };
 
     use super::*;
@@ -1540,7 +1541,7 @@ mod harness {
     pub(crate) async fn read_tcp_kdc_request(
         listener: &TcpListener,
     ) -> Result<(Vec<u8>, TcpStream), TestError> {
-        let (mut socket, _) = tokio::time::timeout(Duration::from_secs(10), listener.accept())
+        let (mut socket, _) = timeout(Duration::from_secs(10), listener.accept())
             .await
             .context("client connects within 10 s")?
             .context("accept client")?;
