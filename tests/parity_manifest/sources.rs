@@ -233,7 +233,9 @@ pub(crate) fn declares(sources: &[(String, String)], symbol: &str) -> bool {
 ///
 /// Paths and texts cross the pipe as NUL-terminated UTF-8 fields, so every feature closure
 /// builds this without the optional `serde_json` dependency.
-fn sanitized_sources(sources: &[(String, String)]) -> Result<Vec<(String, String)>, TestError> {
+pub(crate) fn sanitized_sources(
+    sources: &[(String, String)],
+) -> Result<Vec<(String, String)>, TestError> {
     let mut input = String::new();
     for (path, text) in sources {
         if path.contains('\0') || text.contains('\0') {
@@ -333,30 +335,79 @@ fn declares_clean(
     originals: &[(String, String)],
     symbol: &str,
 ) -> bool {
+    declares_in(sources, &scopes(sources, originals), symbol)
+}
+
+/// Facts of one source that do not depend on the symbol being looked up.
+pub(crate) struct Scope {
+    /// Module after `include!` and `#[path]` redirection.
+    module: String,
+    /// Trimmed lines declaring a struct, public or not.
+    structs: Vec<String>,
+    /// Trimmed names imported by `use super::` statements.
+    imports: Vec<String>,
+}
+
+/// The [`Scope`] of each source, in source order.
+///
+/// It depends only on the checkout, so a caller checking many symbols computes it once.
+pub(crate) fn scopes(sources: &[(String, String)], originals: &[(String, String)]) -> Vec<Scope> {
+    sources
+        .iter()
+        .map(|(file, source)| {
+            let module = file
+                .strip_prefix("src/")
+                .unwrap_or(file)
+                .trim_end_matches(".rs")
+                .replace('/', "::");
+            let included = originals.iter().find(|(_, parent)| {
+                parent.contains(&format!(
+                    "include!(\"{}\")",
+                    file.trim_start_matches("src/")
+                ))
+            });
+            let effective_module = included.map_or(module, |(parent, _)| {
+                parent
+                    .trim_start_matches("src/")
+                    .trim_end_matches(".rs")
+                    .replace('/', "::")
+            });
+            let structs = source
+                .lines()
+                .map(str::trim)
+                .filter(|line| line.starts_with("pub struct ") || line.starts_with("struct "))
+                .map(str::to_owned)
+                .collect();
+            let imports = source
+                .split(';')
+                .filter_map(|statement| statement.trim().strip_prefix("use super::"))
+                .flat_map(|imports| {
+                    imports
+                        .trim()
+                        .trim_start_matches('{')
+                        .trim_end_matches('}')
+                        .split(',')
+                        .map(|entry| entry.trim().to_owned())
+                })
+                .collect();
+            Scope {
+                module: path_module(originals, file).unwrap_or(effective_module),
+                structs,
+                imports,
+            }
+        })
+        .collect()
+}
+
+/// [`declares_clean`] with the [`Scope`] of each source already resolved.
+pub(crate) fn declares_in(sources: &[(String, String)], scopes: &[Scope], symbol: &str) -> bool {
     let resolved = resolve_alias(sources, symbol);
     let segments: Vec<&str> = resolved.split("::").collect();
     let Some((item, parents)) = segments.split_last() else {
         return false;
     };
-    sources.iter().any(|(file, source)| {
-        let module = file
-            .strip_prefix("src/")
-            .unwrap_or(file)
-            .trim_end_matches(".rs")
-            .replace('/', "::");
-        let included = originals.iter().find(|(_, parent)| {
-            parent.contains(&format!(
-                "include!(\"{}\")",
-                file.trim_start_matches("src/")
-            ))
-        });
-        let effective_module = included.map_or(module, |(parent, _)| {
-            parent
-                .trim_start_matches("src/")
-                .trim_end_matches(".rs")
-                .replace('/', "::")
-        });
-        let module_name = path_module(originals, file).unwrap_or(effective_module);
+    sources.iter().zip(scopes).any(|((_, source), scope)| {
+        let module_name = &scope.module;
         let mut depth = 0_usize;
         let mut owner: Option<(String, usize)> = None;
         for line in source.lines().map(str::trim) {
@@ -379,7 +430,7 @@ fn declares_clean(
                         character.is_alphanumeric() || matches!(character, '_' | ':')
                     })
                     .collect();
-                let qualified = impl_owner(source, &module_name, &name);
+                let qualified = impl_owner(scope, &name);
                 owner = Some((qualified, depth));
             } else if let Some(header) = line.strip_prefix("pub enum ") {
                 owner = Some((format!("{module_name}::{}", identifier(header)), depth));
@@ -394,16 +445,15 @@ fn declares_clean(
                         let expected = parents.join("::");
                         if method {
                             if let Some((ty, _)) = &owner {
-                                if expected == *ty && declares_clean(sources, originals, &expected)
-                                {
+                                if expected == *ty && declares_in(sources, scopes, &expected) {
                                     return true;
                                 }
-                            } else if module_name == expected {
+                            } else if *module_name == expected {
                                 return true;
                             } else {
                                 // The same item name in a different module is not evidence.
                             }
-                        } else if module_name == expected {
+                        } else if *module_name == expected {
                             return true;
                         } else {
                             // Type declarations must belong to the requested module.
@@ -450,7 +500,8 @@ fn path_module(sources: &[(String, String)], file: &str) -> Option<String> {
 }
 
 /// Resolve explicit parent paths and imported parent types without basename conflation.
-fn impl_owner(source: &str, module: &str, name: &str) -> String {
+fn impl_owner(scope: &Scope, name: &str) -> String {
+    let module = &scope.module;
     let parent = module.rsplit_once("::").map_or("", |(prefix, _)| prefix);
     if let Some(path) = name.strip_prefix("super::") {
         return format!("{parent}::{path}");
@@ -458,23 +509,13 @@ fn impl_owner(source: &str, module: &str, name: &str) -> String {
     if let Some(path) = name.strip_prefix("crate::") {
         return path.to_owned();
     }
-    let local = source.lines().any(|entry| {
-        entry.trim().starts_with(&format!("pub struct {name}"))
-            || entry.trim().starts_with(&format!("struct {name}"))
-    });
-    let imported = source.split(';').any(|statement| {
-        statement
-            .trim()
-            .strip_prefix("use super::")
-            .is_some_and(|imports| {
-                imports
-                    .trim()
-                    .trim_start_matches('{')
-                    .trim_end_matches('}')
-                    .split(',')
-                    .any(|entry| entry.trim() == name)
-            })
-    });
+    let public = format!("pub struct {name}");
+    let private = format!("struct {name}");
+    let local = scope
+        .structs
+        .iter()
+        .any(|entry| entry.starts_with(&public) || entry.starts_with(&private));
+    let imported = scope.imports.iter().any(|entry| entry == name);
     if imported && !local {
         format!("{parent}::{name}")
     } else {
