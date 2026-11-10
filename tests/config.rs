@@ -1739,7 +1739,7 @@ mod tests {
         let now = UNIX_EPOCH
             .checked_add(Duration::from_secs(1_893_553_447))
             .ok_or("the fixed request time fits in SystemTime")?;
-        let options = AsReq::from_libdefaults(now, 0x1122_3344, defaults);
+        let options = AsReq::from_libdefaults(now, 0x1122_3344, defaults)?;
         let request = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)
             .map_err(|cause| format!("AS-REQ builds: {cause}"))?;
         let decoded: rasn_kerberos::AsReq =

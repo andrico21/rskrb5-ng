@@ -247,3 +247,15 @@ mod exchange_admission;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod additional_tickets;
+
+/// Programmatic request selection and causal admission errors.
+#[cfg(test)]
+#[cfg(feature = "tokio")]
+#[path = "policy/staged_requests.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod staged_requests;

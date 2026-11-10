@@ -181,11 +181,11 @@ mod tests {
 
                 use rskrb5_ng::client::options::{AsReq, TgsReq};
                 assert_eq!(
-                    AsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults).clock_skew(),
+                    AsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults)?.clock_skew(),
                     Duration::from_secs(seconds)
                 );
                 assert_eq!(
-                    TgsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults).clock_skew(),
+                    TgsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults)?.clock_skew(),
                     Duration::from_secs(seconds)
                 );
             }
@@ -212,11 +212,11 @@ mod tests {
 
                 use rskrb5_ng::client::options::{AsReq, TgsReq};
                 let request_ids = if name == "default_tkt_enctypes" {
-                    AsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults)
+                    AsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults)?
                         .etypes()
                         .to_vec()
                 } else {
-                    TgsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults)
+                    TgsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults)?
                         .etypes()
                         .to_vec()
                 };

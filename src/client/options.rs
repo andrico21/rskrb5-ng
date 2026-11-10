@@ -188,30 +188,25 @@ impl AsReq {
         }
     }
 
-    #[must_use]
     /// Construct options from parsed `[libdefaults]`.
     ///
-    /// When `permitted_enctypes_explicit` is set, the request list is narrowed
-    /// to `permitted_enctype_ids`. `Config::parse` already rejects an explicit
-    /// `default_tkt_enctypes` naming an enctype outside the allowlist, so for
-    /// parsed configs this only narrows the seeded default list that no
-    /// operator requested. A programmatically built `LibDefaults` whose lists
-    /// are disjoint, or whose `permitted_enctype_ids` is empty, yields an
-    /// empty list, which the request builders reject.
+    /// Parsed implicit defaults already inherit the permitted list. Staged
+    /// request lists are validated without removing any requested enctype.
+    /// # Errors
+    /// Returns named configuration errors or the permanent policy cause.
     #[inline]
-    pub fn from_libdefaults(now: SystemTime, nonce: u32, defaults: &LibDefaults) -> Self {
+    pub fn from_libdefaults(
+        now: SystemTime,
+        nonce: u32,
+        defaults: &LibDefaults,
+    ) -> Result<Self, ClientError> {
         let mut options = Self::new(now, nonce);
-        options.crypto_policy = CryptoPolicy::from_libdefaults(defaults)
-            .map_err(|_invalid_config| Policy::InvalidConfiguration);
+        options.crypto_policy = Ok(super::crypto_policy::configured(defaults)?);
         options.clock_skew = defaults.clockskew;
         options.ticket_lifetime = defaults.ticket_lifetime;
         options.renew_lifetime =
             (defaults.renew_lifetime != Duration::ZERO).then_some(defaults.renew_lifetime);
         options.etypes = defaults.default_tkt_enctype_ids();
-        if defaults.permitted_enctypes_explicit.is_enabled() {
-            let permitted = defaults.permitted_enctype_ids();
-            options.etypes.retain(|etype| permitted.contains(etype));
-        }
         options.kdc_option_bits = defaults.kdc_default_options;
         options.kdc_option_bits &= !0x4000_0000;
         options.kdc_option_bits &= !0x1000_0000;
@@ -224,7 +219,7 @@ impl AsReq {
         if defaults.canonicalize.is_enabled() {
             options.kdc_option_bits |= KDC_OPTION_CANONICALIZE;
         }
-        options
+        Ok(options)
     }
 
     #[must_use]
@@ -495,30 +490,25 @@ impl TgsReq {
         }
     }
 
-    #[must_use]
     /// Construct options from parsed `[libdefaults]`.
     ///
-    /// When `permitted_enctypes_explicit` is set, the request list is narrowed
-    /// to `permitted_enctype_ids`. `Config::parse` already rejects an explicit
-    /// `default_tgs_enctypes` naming an enctype outside the allowlist, so for
-    /// parsed configs this only narrows the seeded default list that no
-    /// operator requested. A programmatically built `LibDefaults` whose lists
-    /// are disjoint, or whose `permitted_enctype_ids` is empty, yields an
-    /// empty list, which the request builders reject.
+    /// Parsed implicit defaults already inherit the permitted list. Staged
+    /// request lists are validated without removing any requested enctype.
+    /// # Errors
+    /// Returns named configuration errors or the permanent policy cause.
     #[inline]
-    pub fn from_libdefaults(now: SystemTime, nonce: u32, defaults: &LibDefaults) -> Self {
+    pub fn from_libdefaults(
+        now: SystemTime,
+        nonce: u32,
+        defaults: &LibDefaults,
+    ) -> Result<Self, ClientError> {
         let mut options = Self::new(now, nonce);
-        options.crypto_policy = CryptoPolicy::from_libdefaults(defaults)
-            .map_err(|_invalid_config| Policy::InvalidConfiguration);
+        options.crypto_policy = Ok(super::crypto_policy::configured(defaults)?);
         options.clock_skew = defaults.clockskew;
         options.ticket_lifetime = defaults.ticket_lifetime;
         options.renew_lifetime =
             (defaults.renew_lifetime != Duration::ZERO).then_some(defaults.renew_lifetime);
         options.etypes = defaults.default_tgs_enctype_ids();
-        if defaults.permitted_enctypes_explicit.is_enabled() {
-            let permitted = defaults.permitted_enctype_ids();
-            options.etypes.retain(|etype| permitted.contains(etype));
-        }
         options.kdc_option_bits = defaults.kdc_default_options;
         options.kdc_option_bits &= !0x4000_0000;
         options.kdc_option_bits &= !0x1000_0000;
@@ -531,7 +521,7 @@ impl TgsReq {
         if defaults.canonicalize.is_enabled() {
             options.kdc_option_bits |= KDC_OPTION_CANONICALIZE;
         }
-        options
+        Ok(options)
     }
 
     #[must_use]

@@ -91,7 +91,7 @@ mod tests {
             .with_canonicalize(true.into())
             .with_kdc_default_options(0x0000_0010);
         let client = Principal::user("TEST.GOKRB5", "testuser1");
-        let options = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
+        let options = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults)?;
 
         let request = build_tgt_as_req(client, options).context("AS-REQ builds")?;
         let decoded: rasn_kerberos::AsReq = der::decode(request.der()).context("AS-REQ decodes")?;
@@ -421,11 +421,12 @@ mod tests {
             ])
             .with_permitted_enctypes(vec!["aes256-cts".into()])
             .with_permitted_enctypes_explicit(true.into());
-        let options = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
-        let error = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)
+        let error = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults)
             .err()
             .context("disabled mixed list is rejected")?;
-        assert!(matches!(error, Error::EmptyEtypes));
+        assert!(
+            matches!(error, Error::Config(ConfigError::DisabledEnctype { token }) if token == "rc4-hmac")
+        );
         Ok(())
     }
 
@@ -436,24 +437,18 @@ mod tests {
             .with_default_tkt_enctypes(vec!["aes256-cts".into()])
             .with_permitted_enctypes(vec!["aes128-cts".into()])
             .with_permitted_enctypes_explicit(true.into());
-        let options = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
+        let error = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults)
+            .err()
+            .context("disjoint request must fail closed")?;
         assert!(
-            options.etypes().is_empty(),
-            "no requested etype is permitted: {:?}",
-            options.etypes()
+            matches!(error, Error::Config(ConfigError::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype }) if enctype == "aes256-cts-hmac-sha1-96")
         );
-
-        let Err(error) = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)
-        else {
-            return Err("an empty request list must fail closed".into());
-        };
-        assert!(matches!(error, Error::EmptyEtypes));
         Ok(())
     }
 
-    /// Pins that SHA2 request etypes survive when `permitted_enctypes` is implicit.
+    /// Invalid staged permission is rejected even when its explicit flag is unset.
     #[test]
-    fn sha2_request_list_survives_the_implicit_permitted_set() -> Result<(), TestError> {
+    fn disabled_permitted_token_rejected_with_implicit_flag() -> Result<(), TestError> {
         let defaults = LibDefaults::default()
             .with_default_tkt_enctypes(vec!["aes128-sha2".into(), "aes256-sha2".into()])
             .with_permitted_enctypes(vec![
@@ -461,9 +456,12 @@ mod tests {
                 "aes128-cts".into(),
                 "rc4-hmac".into(),
             ]);
-        let options = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
-
-        assert_eq!(options.etypes(), [19_i32, 20_i32]);
+        let error = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults)
+            .err()
+            .context("disabled permitted token is rejected")?;
+        assert!(
+            matches!(error, Error::Config(ConfigError::DisabledEnctype { token }) if token == "rc4-hmac")
+        );
         Ok(())
     }
 
@@ -480,7 +478,7 @@ mod tests {
         assert!(!config.libdefaults.permitted_enctypes_explicit.is_enabled());
 
         let options =
-            AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &config.libdefaults);
+            AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &config.libdefaults)?;
         assert_eq!(options.etypes(), [19_i32]);
         Ok(())
     }
@@ -610,7 +608,7 @@ mod tests {
         )?;
 
         let options =
-            AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &config.libdefaults);
+            AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &config.libdefaults)?;
         let request = build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), options)?;
         let decoded: rasn_kerberos::AsReq = der::decode(request.der())?;
         assert_eq!(decoded.0.req_body.etype, vec![18_i32, 16_i32]);

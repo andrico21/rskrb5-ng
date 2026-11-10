@@ -7,9 +7,8 @@ use rasn::{Encode, der};
 use zeroize::Zeroizing;
 
 use super::{AsRepSession, Error, ticket_error};
-#[cfg(feature = "tokio")]
-use crate::config::{LibDefaults, restrictions};
 use crate::{
+    config::{LibDefaults, restrictions},
     crypto::{CryptoPolicy, Use, selection},
     error::Policy,
     keytab::EncryptionKey,
@@ -29,10 +28,24 @@ pub(super) fn padata(data: &[rasn_kerberos::PaData]) -> Result<(), Error> {
 /// Resolve public defaults without allowing invalid input to become unrestricted.
 /// # Errors
 /// Returns typed policy rejection for invalid configuration.
-#[cfg(feature = "tokio")]
 pub(super) fn configured(defaults: &LibDefaults) -> Result<CryptoPolicy, Error> {
-    CryptoPolicy::from_libdefaults(defaults)
-        .map_err(|_invalid_config| Policy::InvalidConfiguration.into())
+    CryptoPolicy::from_libdefaults(defaults).map_err(|error| {
+        match restrictions::configuration_policy(&error) {
+            Policy::InvalidConfiguration => Error::from(error),
+            policy @ (Policy::UnknownEnctype { etype: _ }
+            | Policy::S2kIterationsTooLow {
+                etype: _,
+                minimum: _,
+                actual: _,
+            }
+            | Policy::InvalidS2kMinimum { minimum: _ }
+            | Policy::EnctypeNotPermitted { etype: _, usage: _ }
+            | Policy::RejectedFeature {
+                feature: _,
+                reason: _,
+            }) => Error::from(policy),
+        }
+    })
 }
 
 /// Check every requested enctype before encoding, derivation or transport.

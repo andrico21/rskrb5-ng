@@ -108,16 +108,7 @@ impl Policy {
         }
         super::selection::reject_checksum(defaults.safe_checksum_type)?;
         let resolved = defaults.resolve_names(&defaults.permitted_enctypes)?;
-        for names in [
-            &defaults.default_tkt_enctypes,
-            &defaults.default_tgs_enctypes,
-        ] {
-            drop(EnctypeExpr::parse(&names.join(" "))?.resolve(
-                Toggle::Enabled,
-                Toggle::Enabled,
-                ParseMode::Compatible,
-            )?);
-        }
+        defaults.validate_request_enctypes(&resolved)?;
         Ok(Self {
             minima: defaults.min_s2k_iterations,
             permitted: resolved.enctypes().to_vec(),

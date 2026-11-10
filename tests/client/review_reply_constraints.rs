@@ -249,7 +249,7 @@ mod tests {
         let config = Config::parse("[libdefaults]\n clockskew = 2s\n")?;
         let mut request = build_tgt_as_req(
             Principal::user("TEST.GOKRB5", "testuser1"),
-            AsReq::from_libdefaults(timestamp(1_893_553_447)?, 42, &config.libdefaults),
+            AsReq::from_libdefaults(timestamp(1_893_553_447)?, 42, &config.libdefaults)?,
         )?;
         let bytes = as_reply(&request, None)?;
         let accepted = process_as_rep(&request, &bytes, &reply_key()?)?;

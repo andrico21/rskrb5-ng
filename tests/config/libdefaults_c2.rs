@@ -148,18 +148,18 @@ mod tests {
         for (value, expected) in [("on", 0x1000_0000_u32), ("off", 0)] {
             let config = Config::parse(&format!("[libdefaults]\n proxiable = {value}\n"))?;
             assert_eq!(
-                AsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults).kdc_option_bits()
+                AsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults)?.kdc_option_bits()
                     & 0x1000_0000,
                 expected
             );
             assert_eq!(
-                TgsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults).kdc_option_bits()
+                TgsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults)?.kdc_option_bits()
                     & 0x1000_0000,
                 expected
             );
             let request = build_tgt_as_req(
                 Principal::user("EXAMPLE", "user"),
-                AsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults),
+                AsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults)?,
             )?;
             let decoded: rasn_kerberos::AsReq = der::decode(request.der())?;
             assert_eq!(

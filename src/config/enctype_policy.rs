@@ -14,6 +14,10 @@ pub(crate) trait EnctypeDefaults {
     /// # Errors
     /// Rejects invalid, disabled or forbidden selections and empty results.
     fn resolve_names(&self, names: &[String]) -> Result<ResolvedEnctypes, Error>;
+    /// Validate staged request names against the effective permissions.
+    /// # Errors
+    /// Returns named expression or request-membership errors without narrowing.
+    fn validate_request_enctypes(&self, permitted: &ResolvedEnctypes) -> Result<(), Error>;
     /// Legacy accessor returns no usable IDs for invalid public mutation.
     fn effective_enctype_ids(&self, names: &[String]) -> Vec<i32>;
 }
@@ -127,5 +131,24 @@ impl EnctypeDefaults for LibDefaults {
                     .collect()
             },
         )
+    }
+
+    fn validate_request_enctypes(&self, permitted: &ResolvedEnctypes) -> Result<(), Error> {
+        let ticket = self.resolve_names(&self.default_tkt_enctypes)?;
+        let service = self.resolve_names(&self.default_tgs_enctypes)?;
+        for (key, requested) in [
+            ("default_tkt_enctypes", ticket),
+            ("default_tgs_enctypes", service),
+        ] {
+            for &etype in requested.enctypes() {
+                if !permitted.enctypes().contains(&etype) {
+                    return Err(Error::EnctypeNotPermitted {
+                        key,
+                        enctype: enctype_names::canonical_name(etype).to_owned(),
+                    });
+                }
+            }
+        }
+        Ok(())
     }
 }
