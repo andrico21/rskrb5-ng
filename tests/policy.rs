@@ -223,3 +223,27 @@ mod protocols;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod documentation;
+
+/// Checked request representation and outgoing credential admission.
+#[cfg(test)]
+#[cfg(feature = "tokio")]
+#[path = "policy/exchange_admission.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod exchange_admission;
+
+/// Additional-ticket policy before TGS and S4U cryptography.
+#[cfg(test)]
+#[cfg(feature = "tokio")]
+#[path = "policy/additional_tickets.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod additional_tickets;
