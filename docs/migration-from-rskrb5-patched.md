@@ -50,6 +50,22 @@ values to or from this crate needs the same versions.
 
 ## New configuration keys
 
+`client::options::AsReq::from_libdefaults` and `TgsReq::from_libdefaults` now
+return `Result<Self, error::Client>`: add `?` before chaining option builders.
+Programmatically supplied request lists are validated under the actual legacy
+permissions and parse mode and rejected by name if any entry is outside the
+permitted set; no intersection silently removes entries. Parsed implicit
+request defaults continue to inherit the permitted list. Programmatic callers
+setting a narrower permitted list must also set compatible request lists.
+Client admission preserves permanent `Policy::RejectedFeature` causes through
+`Error::source`, and ordinary configuration failures retain their named
+`error::Config` cause rather than becoming `InvalidConfiguration`.
+
+Raw AS, TGS and KDC-request-body encoders reject permanently prohibited numeric
+requested enctypes, including single DES and RC4-EXP. Passive decoding remains
+available for historical records; raw encoding still does not impose runtime
+RC4-HMAC or DES3 opt-in permission.
+
 An explicit `auth_to_local_names = { ... }` subsection selects deferred local
 authorization even if it is empty (FU-CFG-R14). Compatible parsing reports one
 `NotYetEffective` diagnostic per admitted map; Strict parsing rejects it with

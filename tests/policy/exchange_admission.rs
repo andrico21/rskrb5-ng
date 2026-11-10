@@ -34,7 +34,7 @@ fn requests(wire: &KdcReq) -> Result<(BuiltAsReq, BuiltTgsReq), Box<dyn Error>> 
     let config = Config::parse("[libdefaults]\npermitted_enctypes = aes128-cts")?;
     let original = client::build_tgt_as_req(
         Principal::user("EXAMPLE.COM", "alice"),
-        AsReq::from_libdefaults(SystemTime::UNIX_EPOCH, 42, &config.libdefaults),
+        AsReq::from_libdefaults(SystemTime::UNIX_EPOCH, 42, &config.libdefaults)?,
     )?;
     let mut as_request = BuiltAsReq::new(
         original.message().clone(),
@@ -72,7 +72,7 @@ fn allowed_message() -> Result<KdcReq, Box<dyn Error>> {
     let config = Config::parse("[libdefaults]\npermitted_enctypes = aes128-cts")?;
     Ok(client::build_tgt_as_req(
         Principal::user("EXAMPLE.COM", "alice"),
-        AsReq::from_libdefaults(SystemTime::UNIX_EPOCH, 42, &config.libdefaults),
+        AsReq::from_libdefaults(SystemTime::UNIX_EPOCH, 42, &config.libdefaults)?,
     )?
     .message()
     .0

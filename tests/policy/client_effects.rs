@@ -11,7 +11,7 @@ use rskrb5_ng::{
         transport::KdcProtocol,
     },
     crypto::{CryptoPolicy, Use},
-    error::{Client as ClientError, Policy},
+    error::{Client as ClientError, Config as ConfigError, Policy},
     keytab::Keytab,
 };
 use tokio::runtime::Builder;
@@ -106,8 +106,8 @@ fn empty_allowlist_cannot_admit_credentials() -> Result<(), Box<dyn Error>> {
         .ok_or("empty allowlist admitted cache")?;
     // Then invalid configuration is a typed permanent operational failure.
     assert!(matches!(
-        policy_cause(&error),
-        Some(Policy::InvalidConfiguration)
+        error,
+        ClientError::Config(ConfigError::EmptyEnctypeExpression)
     ));
     Ok(())
 }
@@ -117,7 +117,7 @@ fn empty_allowlist_cannot_admit_credentials() -> Result<(), Box<dyn Error>> {
 fn preauth_cannot_use_overridden_excluded_request() -> Result<(), Box<dyn Error>> {
     // Given a configured AES128 policy overridden to request AES256.
     let config = Config::parse("[libdefaults]\npermitted_enctypes = aes128-cts")?;
-    let options = AsReq::from_libdefaults(SystemTime::now(), 1, &config.libdefaults)
+    let options = AsReq::from_libdefaults(SystemTime::now(), 1, &config.libdefaults)?
         .with_etypes(vec![18_i32])
         .with_assume_preauthentication(true);
     let principal = Principal::user("EXAMPLE.COM", "alice");

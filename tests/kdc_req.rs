@@ -13,14 +13,20 @@ mod tests {
     use core::error;
 
     use pretty_assertions::assert_eq;
-    use rasn::types::{GeneralString, Integer};
+    use rasn::{
+        der,
+        types::{GeneralString, Integer},
+    };
     use rasn_kerberos::{
         EncryptedData, HostAddress, KdcOptions, KdcReq, KdcReqBody, PaData, PrincipalName, Ticket,
     };
-    use rskrb5_ng::kdc_req::{
-        KRB_AS_REQ_MSG_TYPE, KRB_TGS_REQ_MSG_TYPE, build_as_req, build_tgs_req, decode_as_req,
-        decode_kdc_req_body, decode_tgs_req, encode_as_req, encode_build_as_req,
-        encode_build_tgs_req, encode_kdc_req_body, encode_tgs_req,
+    use rskrb5_ng::{
+        error::{Crypto, KdcReq as RequestError, Policy, RejectedFeature},
+        kdc_req::{
+            KRB_AS_REQ_MSG_TYPE, KRB_TGS_REQ_MSG_TYPE, build_as_req, build_tgs_req, decode_as_req,
+            decode_kdc_req_body, decode_tgs_req, encode_as_req, encode_build_as_req,
+            encode_build_tgs_req, encode_kdc_req_body, encode_tgs_req,
+        },
     };
 
     /// Error type of the `Result`-returning tests.
@@ -58,7 +64,7 @@ mod tests {
         ServerOnly,
     }
 
-    /// Pins that the gokrb5 KDC-REQ-BODY fixtures decode to their shapes and re-encode byte for byte.
+    /// Historical body fixtures decode intact but cannot select DES on output.
     #[test]
     fn decodes_gokrb5_kdc_req_body_fixtures() -> Result<(), TestError> {
         for (fixture, shape) in [
@@ -77,12 +83,13 @@ mod tests {
             let body = decode_kdc_req_body(&bytes)?;
 
             assert_kdc_req_body(&body, shape)?;
-            assert_eq!(encode_kdc_req_body(&body)?, bytes);
+            assert_eq!(der::encode(&body)?, bytes);
+            assert_des_rejected(&encode_kdc_req_body(&body));
         }
         Ok(())
     }
 
-    /// Pins that the gokrb5 AS-REQ fixtures decode to their shapes and re-encode byte for byte.
+    /// Historical AS fixtures decode intact but cannot select DES on output.
     #[test]
     fn decodes_gokrb5_as_req_fixtures() -> Result<(), TestError> {
         for (fixture, shape) in [
@@ -98,12 +105,13 @@ mod tests {
             let as_req = decode_as_req(&bytes)?;
 
             assert_kdc_req_fields(&as_req.0, KRB_AS_REQ_MSG_TYPE, shape)?;
-            assert_eq!(encode_as_req(&as_req)?, bytes);
+            assert_eq!(der::encode(&as_req)?, bytes);
+            assert_des_rejected(&encode_as_req(&as_req));
         }
         Ok(())
     }
 
-    /// Pins that the gokrb5 TGS-REQ fixtures decode to their shapes and re-encode byte for byte.
+    /// Historical TGS fixtures decode intact but cannot select DES on output.
     #[test]
     fn decodes_gokrb5_tgs_req_fixtures() -> Result<(), TestError> {
         for (fixture, shape) in [
@@ -119,12 +127,13 @@ mod tests {
             let tgs_req = decode_tgs_req(&bytes)?;
 
             assert_kdc_req_fields(&tgs_req.0, KRB_TGS_REQ_MSG_TYPE, shape)?;
-            assert_eq!(encode_tgs_req(&tgs_req)?, bytes);
+            assert_eq!(der::encode(&tgs_req)?, bytes);
+            assert_des_rejected(&encode_tgs_req(&tgs_req));
         }
         Ok(())
     }
 
-    /// Pins that an AS-REQ built from a body and pre-authentication data encodes to the gokrb5 fixture.
+    /// AS construction preserves historical fields while outgoing encoding rejects DES.
     #[test]
     fn builds_as_req_from_body_and_padata() -> Result<(), TestError> {
         let body = decode_kdc_req_body(&hex::decode(KDC_REQ_BODY)?)?;
@@ -137,15 +146,13 @@ mod tests {
         assert_eq!(built.0.msg_type, Integer::from(KRB_AS_REQ_MSG_TYPE));
         assert_eq!(built.0.padata, padata);
         assert_eq!(built.0.req_body, body);
-        assert_eq!(encode_as_req(&built)?, hex::decode(AS_REQ)?);
-        assert_eq!(
-            encode_build_as_req(body, fixture.0.padata)?,
-            hex::decode(AS_REQ)?
-        );
+        assert_eq!(der::encode(&built)?, hex::decode(AS_REQ)?);
+        assert_des_rejected(&encode_as_req(&built));
+        assert_des_rejected(&encode_build_as_req(body, fixture.0.padata));
         Ok(())
     }
 
-    /// Pins that a TGS-REQ built from a body and pre-authentication data encodes to the gokrb5 fixture.
+    /// TGS construction preserves historical fields while outgoing encoding rejects DES.
     #[test]
     fn builds_tgs_req_from_body_and_padata() -> Result<(), TestError> {
         let body = decode_kdc_req_body(&hex::decode(KDC_REQ_BODY)?)?;
@@ -158,12 +165,23 @@ mod tests {
         assert_eq!(built.0.msg_type, Integer::from(KRB_TGS_REQ_MSG_TYPE));
         assert_eq!(built.0.padata, padata);
         assert_eq!(built.0.req_body, body);
-        assert_eq!(encode_tgs_req(&built)?, hex::decode(TGS_REQ)?);
-        assert_eq!(
-            encode_build_tgs_req(body, fixture.0.padata)?,
-            hex::decode(TGS_REQ)?
-        );
+        assert_eq!(der::encode(&built)?, hex::decode(TGS_REQ)?);
+        assert_des_rejected(&encode_tgs_req(&built));
+        assert_des_rejected(&encode_build_tgs_req(body, fixture.0.padata));
         Ok(())
+    }
+
+    /// Require the historical fixture's exact permanent DES refusal.
+    fn assert_des_rejected(result: &Result<Vec<u8>, RequestError>) {
+        assert!(matches!(
+            result,
+            Err(RequestError::Crypto(Crypto::Policy(
+                Policy::RejectedFeature {
+                    feature: RejectedFeature::SingleDes,
+                    reason: _,
+                }
+            )))
+        ));
     }
 
     /// Asserts the KDC-REQ header, pre-authentication data and body of a fixture shape.

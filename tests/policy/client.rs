@@ -75,7 +75,7 @@ pub(super) fn session(
 fn as_request_rejects_excluded_list() -> Result<(), Box<dyn Error>> {
     // Given AES128-only config and a subsequently overridden request list.
     let config = Config::parse("[libdefaults]\npermitted_enctypes = aes128-cts")?;
-    let options = AsReq::from_libdefaults(SystemTime::now(), 1, &config.libdefaults)
+    let options = AsReq::from_libdefaults(SystemTime::now(), 1, &config.libdefaults)?
         .with_etypes(vec![18_i32]);
     // When building before any exchange.
     let error = client::build_tgt_as_req(Principal::user("EXAMPLE.COM", "alice"), options)
@@ -132,7 +132,7 @@ fn cache_rejects_excluded_session_and_ticket() -> Result<(), Box<dyn Error>> {
 fn tgs_request_rejects_excluded_session() -> Result<(), Box<dyn Error>> {
     // Given an AES256 TGT-like session under AES128-only request policy.
     let config = Config::parse("[libdefaults]\npermitted_enctypes = aes128-cts")?;
-    let options = TgsReq::from_libdefaults(SystemTime::now(), 1, &config.libdefaults);
+    let options = TgsReq::from_libdefaults(SystemTime::now(), 1, &config.libdefaults)?;
     // When building a deterministic TGS request.
     let error = client::build_tgs_req_with_confounder(
         &session(18, 17)?,
@@ -162,7 +162,7 @@ fn as_reply_rejects_excluded_key_before_crypto() -> Result<(), Box<dyn Error>> {
     let config = Config::parse("[libdefaults]\npermitted_enctypes = aes128-cts")?;
     let request = client::build_tgt_as_req(
         Principal::user("EXAMPLE.COM", "alice"),
-        AsReq::from_libdefaults(SystemTime::now(), 1, &config.libdefaults),
+        AsReq::from_libdefaults(SystemTime::now(), 1, &config.libdefaults)?,
     )?;
     // When processing bytes with an excluded reply key.
     let error = client::process_as_rep(&request, &[], &EncryptionKey::new(18, Vec::new()))

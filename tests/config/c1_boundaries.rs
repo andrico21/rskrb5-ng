@@ -158,7 +158,7 @@ mod tests {
             ))?;
             let request = build_tgt_as_req(
                 Principal::user("EXAMPLE", "user"),
-                AsReq::from_libdefaults(UNIX_EPOCH, 7, &config.libdefaults),
+                AsReq::from_libdefaults(UNIX_EPOCH, 7, &config.libdefaults)?,
             )?;
             let decoded: rasn_kerberos::AsReq = der::decode(request.der())?;
             assert_eq!(decoded.0.req_body.etype, vec![17_i32]);

@@ -35,7 +35,7 @@ fn tgs_builder_checks_every_additional_ticket() -> Result<(), Box<dyn Error>> {
             .iter()
             .map(|&etype| Ok(der::decode::<Ticket>(session(17, etype)?.ticket())?))
             .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
-        let options = TgsReq::from_libdefaults(SystemTime::UNIX_EPOCH, 42, &config.libdefaults)
+        let options = TgsReq::from_libdefaults(SystemTime::UNIX_EPOCH, 42, &config.libdefaults)?
             .with_additional_tickets(tickets.clone());
         let result = client::build_tgs_req_with_confounder(
             &tgt,
@@ -77,7 +77,7 @@ fn s4u_proxy_checks_option_ticket_after_evidence() -> Result<(), Box<dyn Error>>
     tgt.set_client(evidence.service().clone());
     for etype in [18_i32, 17_i32] {
         let extra: Ticket = der::decode(session(17, etype)?.ticket())?;
-        let options = TgsReq::from_libdefaults(SystemTime::UNIX_EPOCH, 42, &config.libdefaults)
+        let options = TgsReq::from_libdefaults(SystemTime::UNIX_EPOCH, 42, &config.libdefaults)?
             .with_additional_tickets(vec![extra.clone()]);
         let result = client::build_s4u2proxy_req_with_confounder(
             &tgt,

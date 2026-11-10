@@ -62,8 +62,11 @@ mod tests {
             let options = AsReq::from_libdefaults(UNIX_EPOCH, 42, &config.libdefaults);
             assert!(
                 matches!(
-                    build_tgt_as_req(Principal::user("R", "alice"), options),
-                    Err(Client::Crypto(_))
+                    options,
+                    Err(Client::Config(ConfigError::NotYetEffective {
+                        relation: _,
+                        package: _
+                    }))
                 ),
                 "request accepted {field}"
             );

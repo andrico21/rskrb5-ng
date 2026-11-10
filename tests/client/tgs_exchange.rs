@@ -11,10 +11,12 @@ use super::*;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use rasn::{der, types::Integer};
+    #[cfg(feature = "tokio")]
+    use rskrb5_ng::error::{Crypto, Policy};
     use rskrb5_ng::{
         ap_req::decrypt_ap_req_authenticator,
         config::LibDefaults,
-        error::{Crypto, Policy},
+        error::Config as ConfigError,
         messages::{PaForUser, PaPacOptions},
     };
 
@@ -124,7 +126,7 @@ mod tests {
             .with_kdc_default_options(0x0000_0010);
         let tgt = sample_tgt_session()?;
         let service = sample_service_principal();
-        let options = TgsReq::from_libdefaults(timestamp(1_893_553_450)?, 0x5566_7788, &defaults);
+        let options = TgsReq::from_libdefaults(timestamp(1_893_553_450)?, 0x5566_7788, &defaults)?;
 
         let request = build_tgs_req_with_confounder(
             &tgt,
@@ -1078,18 +1080,12 @@ mod tests {
             ])
             .with_permitted_enctypes(vec!["aes256-cts".into()])
             .with_permitted_enctypes_explicit(true.into());
-        let options = TgsReq::from_libdefaults(timestamp(1_893_553_450)?, 0x5566_7788, &defaults);
-        let request = build_tgs_req_with_confounder(
-            &sample_tgt_session()?,
-            sample_service_principal(),
-            options,
-            timestamp(1_893_553_451)?,
-            654_321,
-            &decode_hex(TGS_REQ_CONFOUNDER)?,
-        )
-        .err()
-        .context("disabled mixed list is rejected")?;
-        assert!(matches!(request, Error::EmptyEtypes));
+        let request = TgsReq::from_libdefaults(timestamp(1_893_553_450)?, 0x5566_7788, &defaults)
+            .err()
+            .context("disabled mixed list is rejected")?;
+        assert!(
+            matches!(request, Error::Config(ConfigError::DisabledEnctype { token }) if token == "rc4-hmac")
+        );
         Ok(())
     }
 
@@ -1315,7 +1311,7 @@ mod tests {
             );
             assert!(matches!(
                 error,
-                Error::Crypto(Crypto::Policy(Policy::InvalidConfiguration))
+                Error::Config(ConfigError::EmptyEnctypeExpression)
             ));
             Ok::<(), TestError>(())
         })
@@ -1379,7 +1375,7 @@ mod tests {
             );
             assert!(matches!(
                 error,
-                Error::Crypto(Crypto::Policy(Policy::InvalidConfiguration))
+                Error::Config(ConfigError::EmptyEnctypeExpression)
             ));
             Ok::<(), TestError>(())
         })
@@ -1395,42 +1391,20 @@ mod tests {
             .with_permitted_enctypes(Vec::new())
             .with_permitted_enctypes_explicit(true.into());
 
-        let as_options = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults);
-        assert!(
-            as_options.etypes().is_empty(),
-            "no AS-REQ etype is permitted: {:?}",
-            as_options.etypes()
-        );
-        let Err(as_error) =
-            build_tgt_as_req(Principal::user("TEST.GOKRB5", "testuser1"), as_options)
-        else {
-            return Err("an empty explicit allowlist must fail the AS-REQ closed".into());
-        };
+        let as_error = AsReq::from_libdefaults(timestamp(1_893_553_447)?, 0x1122_3344, &defaults)
+            .err()
+            .context("empty AS policy rejected")?;
         assert!(matches!(
             as_error,
-            Error::Crypto(Crypto::Policy(Policy::InvalidConfiguration))
+            Error::Config(ConfigError::EmptyEnctypeExpression)
         ));
 
-        let tgs_options =
-            TgsReq::from_libdefaults(timestamp(1_893_553_450)?, 0x5566_7788, &defaults);
-        assert!(
-            tgs_options.etypes().is_empty(),
-            "no TGS-REQ etype is permitted: {:?}",
-            tgs_options.etypes()
-        );
-        let Err(tgs_error) = build_tgs_req_with_confounder(
-            &sample_tgt_session()?,
-            sample_service_principal(),
-            tgs_options,
-            timestamp(1_893_553_451)?,
-            654_321,
-            &decode_hex(TGS_REQ_CONFOUNDER)?,
-        ) else {
-            return Err("an empty explicit allowlist must fail the TGS-REQ closed".into());
-        };
+        let tgs_error = TgsReq::from_libdefaults(timestamp(1_893_553_450)?, 0x5566_7788, &defaults)
+            .err()
+            .context("empty TGS policy rejected")?;
         assert!(matches!(
             tgs_error,
-            Error::Crypto(Crypto::Policy(Policy::InvalidConfiguration))
+            Error::Config(ConfigError::EmptyEnctypeExpression)
         ));
         Ok(())
     }

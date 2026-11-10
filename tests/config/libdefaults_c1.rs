@@ -144,8 +144,8 @@ mod tests {
                 "[libdefaults]\n forwardable = {value}\n kdc_default_options = 40000010\n"
             ))?;
             // When deriving actual request options.
-            let initial = AsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults);
-            let service = TgsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults);
+            let initial = AsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults)?;
+            let service = TgsReq::from_libdefaults(UNIX_EPOCH, 1, &config.libdefaults)?;
             // Then the profile value governs the forwardable bit in both paths.
             assert_eq!(initial.kdc_option_bits() & 0x4000_0000, expected);
             assert_eq!(service.kdc_option_bits() & 0x4000_0000, expected);

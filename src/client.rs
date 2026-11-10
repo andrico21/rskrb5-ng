@@ -2600,7 +2600,7 @@ impl Tokio {
     fn as_req_options(&self) -> Result<AsReq, Error> {
         crypto_policy::ready(self)?;
         Ok(
-            AsReq::from_libdefaults(SystemTime::now(), random_nonce()?, &self.config.libdefaults)
+            AsReq::from_libdefaults(SystemTime::now(), random_nonce()?, &self.config.libdefaults)?
                 .with_assume_preauthentication(self.assume_preauthentication)
                 .with_fast_negotiation(self.fast_negotiation),
         )
@@ -2612,11 +2612,7 @@ impl Tokio {
     /// Returns [`Error::Random`] when the nonce cannot be generated.
     fn tgs_req_options(&self) -> Result<TgsReq, Error> {
         crypto_policy::ready(self)?;
-        Ok(TgsReq::from_libdefaults(
-            SystemTime::now(),
-            random_nonce()?,
-            &self.config.libdefaults,
-        ))
+        TgsReq::from_libdefaults(SystemTime::now(), random_nonce()?, &self.config.libdefaults)
     }
     /// Fill in an empty service realm from the domain-realm mapping, falling back
     /// to the client realm.
