@@ -9,7 +9,12 @@
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    use core::{error::Error, time::Duration};
+    use core::{
+        error::Error,
+        pin::pin,
+        task::{Context, Poll, Waker},
+        time::Duration,
+    };
     use std::time::UNIX_EPOCH;
 
     use rskrb5_ng::{
@@ -32,6 +37,7 @@ mod tests {
     /// Serde and programmatic defaults cannot silently weaken unavailable restrictions.
     #[test]
     fn restrictive_defaults_fail_before_requests() -> Result<(), Box<dyn Error>> {
+        let runtime = Builder::new_current_thread().enable_all().build()?;
         for field in [
             "no_addresses",
             "request_timeout",
@@ -78,6 +84,14 @@ mod tests {
                 ),
                 "admission ignored {field}"
             );
+            assert!(
+                matches!(
+                    runtime.block_on(Transport::new().discover_kdcs(&config, "R", KdcProtocol::Tcp)),
+                    Err(Client::Config(ConfigError::NotYetEffective { relation: named, package: owner }))
+                        if named == relation && owner == package
+                ),
+                "discovery ignored {field}"
+            );
         }
         Ok(())
     }
@@ -85,6 +99,7 @@ mod tests {
     /// Wrong public value variants cannot bypass restrictive realm admission.
     #[test]
     fn realm_restriction_rejects_wrong_value_variants() -> Result<(), Box<dyn Error>> {
+        let runtime = Builder::new_current_thread().enable_all().build()?;
         for value in [
             Value::Text("true".to_owned()),
             Value::Choice("true".to_owned()),
@@ -104,6 +119,29 @@ mod tests {
                     .insert("disable_encrypted_timestamp".to_owned(), value),
             );
             assert_eq!(config.configured_kdcs("R").is_ok(), accepted);
+            let discovery =
+                runtime.block_on(Transport::new().discover_kdcs(&config, "R", KdcProtocol::Tcp));
+            match config
+                .realms
+                .first()
+                .ok_or("realm")?
+                .relations
+                .get("disable_encrypted_timestamp")
+            {
+                Some(Value::Boolean(Toggle::Disabled)) => assert_eq!(discovery?.len(), 1),
+                Some(Value::Boolean(Toggle::Enabled)) => assert!(matches!(
+                    discovery,
+                    Err(Client::Config(ConfigError::NotYetEffective { relation, package }))
+                        if relation == "disable_encrypted_timestamp" && package == "plan 2 WP-07"
+                )),
+                Some(Value::Text(_) | Value::Choice(_) | Value::List(_) | Value::Locations(_)) => {
+                    assert!(
+                        matches!(discovery, Err(Client::Config(ConfigError::InvalidBoolean(name)))
+                        if name == "disable_encrypted_timestamp")
+                    );
+                }
+                None | Some(_) => return Err("unexpected restriction variant".into()),
+            }
             assert_eq!(
                 serde_json::from_value::<Config>(serde_json::to_value(&config)?).is_ok(),
                 accepted
@@ -186,6 +224,21 @@ mod tests {
                 assert!(
                     matches!(result, Err(Client::Config(ConfigError::NotYetEffective { relation, package: owner })) if relation == expected && owner == package),
                     "transport ignored {scope}"
+                );
+            }
+            let mut dns_config = config.clone();
+            dns_config.realms.first_mut().ok_or("realm")?.kdc.clear();
+            dns_config.libdefaults.dns_lookup_kdc = Toggle::Enabled;
+            let _runtime_guard = runtime.enter();
+            for candidate in [&config, &dns_config] {
+                let mut discovery = pin!(transport.discover_kdcs(candidate, "R", KdcProtocol::Tcp));
+                assert!(
+                    matches!(
+                        discovery.as_mut().poll(&mut Context::from_waker(Waker::noop())),
+                        Poll::Ready(Err(Client::Config(ConfigError::NotYetEffective { relation, package: owner })))
+                            if relation == expected && owner == package
+                    ),
+                    "discovery must refuse {scope} before endpoint/DNS handling"
                 );
             }
             let mut client = Tokio::with_password(

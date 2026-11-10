@@ -578,10 +578,12 @@ impl Tokio {
     ///
     /// Configured `[realms]` KDCs are preferred. DNS SRV lookup is attempted
     /// only when no KDCs are configured and `dns_lookup_kdc = true`.
+    /// Whole-configuration restrictions are admitted before endpoint selection or DNS.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidKdcEndpoint`] for a malformed configured KDC
+    /// Returns [`Error::Config`] for an unsupported or malformed configuration restriction,
+    /// [`Error::InvalidKdcEndpoint`] for a malformed configured KDC
     /// entry, [`Error::DnsResolverConfig`] or [`Error::DnsSrvLookup`] when DNS SRV
     /// discovery fails, [`Error::DnsServiceUnavailable`] for a root SRV target,
     /// [`Error::NoKdcEndpoints`] when the realm is configured
@@ -599,6 +601,7 @@ impl Tokio {
         realm: &str,
         protocol: KdcProtocol,
     ) -> Result<Vec<KdcEndpoint>, Error> {
+        restrictions::config(config)?;
         if let Some(realm_entry) = config.realm(realm)
             && !realm_entry.kdc.is_empty()
         {
