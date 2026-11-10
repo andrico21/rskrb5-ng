@@ -49,6 +49,44 @@ timeout.
 
 ## Verification
 
+### In-diff check after critic round 6 (todo 46)
+
+Todos 41 and 43 changed `src/` after the todo 39 check (FU-CLI-R20: the
+encryption types inside PA-TGS-REQ and PA-ENC-TIMESTAMP are authorized under
+the effective policy; FU-SPN-R18: `NegTokenInit::set_req_flags`; FU-CFG-R16:
+`module` admitted as a local-name mapping in
+`[realms]/realm/auth_to_local_names`). Todos 42, 44 and 45 changed tests,
+gate scripts and documents only.
+
+- Diff: `git diff b136e34 e4807ce -- src` (7 files). `b136e34` is `main`
+  after todo 39 and has the code that check covered; `e4807ce` is `main` after
+  todo 45.
+- The check ran locally as in todo 39: `cargo mutants --all-features
+  --no-shuffle --cap-lints=true --in-diff <diff> --shard k/4 -j 2
+  --copy-target=false` at `e4807ce`, cargo-mutants 27.1.0,
+  `CARGO_BUILD_WARNINGS=allow`, no debug info and an 8 GiB address-space cap.
+  Each shard measured its own baseline (46 s to 50 s build, 63 s to 66 s test),
+  and cargo-mutants set the timeout from it (319 s to 333 s).
+- `mutants_report.py --artifacts <the 4 shard outputs> --expect-shards 4
+  --register docs/review/mutants.md --campaign
+  e4807cec96386e43cf8080b446b86cd312e7ce95 --enforce` prints `mutants:
+  caught=15 missed=0 timeout=0 unviable=21 success=0` and `0 problem(s)`.
+
+| Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 9 | 0 | 0 | 0 | 9 | 167 |
+| 1 | 9 | 0 | 0 | 0 | 9 | 171 |
+| 2 | 9 | 8 | 0 | 0 | 1 | 361 |
+| 3 | 9 | 7 | 0 | 0 | 2 | 289 |
+
+No mutant survived, so the check adds no register row. The 21 unviable
+mutants return `Default::default()` for types without a `Default`
+(`BuiltAsReq`, `BuiltTgsReq`, `TgsFastRequestParts`, `EncryptionKey`), or
+call `Zeroizing` constructors that do not exist. No file of this diff is
+pulled in with `include!`: `src/config/profile_syntax.rs` is a module
+(`#[path]`), and its 7 mutants were tested and caught, so no inlined copy was
+needed.
+
 ### In-diff check after the policy fixes (todo 39)
 
 Todos 31 to 36 changed `src/` after the campaign above (POL-01 to POL-06,
