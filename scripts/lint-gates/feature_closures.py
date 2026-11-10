@@ -124,7 +124,7 @@ def check_workflow_scope(lines: list[Line], top: list[int]) -> None:
 
 
 def check_cargo_config(path: Path) -> None:
-    """`.cargo/config.toml` keeps `build.warnings = "deny"` and adds no flags or wrapper."""
+    """Keep strict native compilation and test execution free of overrides."""
     try:
         config = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as error:
@@ -140,10 +140,11 @@ def check_cargo_config(path: Path) -> None:
                 f"{path}: build.{key} would change how the closures compile"
             )
     for name, table in config.get("target", {}).items():
-        if isinstance(table, dict) and "rustflags" in table:
-            raise RuntimeError(
-                f"{path}: target.{name}.rustflags would change how the closures compile"
-            )
+        for key in ("rustflags", "runner"):
+            if isinstance(table, dict) and key in table:
+                raise RuntimeError(
+                    f"{path}: target.{name}.{key} would change how the closures compile or execute"
+                )
     if any(name.startswith(("CARGO", "RUST")) for name in config.get("env", {})):
         raise RuntimeError(f"{path}: [env] sets a Cargo or rustc variable")
 
@@ -416,6 +417,8 @@ def self_test() -> int:
             '[build]\nwarnings = "allow"\n',
             '[build]\nwarnings = "deny"\nrustflags = ["--cap-lints=allow"]\n',
             '[build]\nwarnings = "deny"\n[target.x86_64-unknown-linux-gnu]\nrustflags = ["--cap-lints", "allow"]\n',
+            '[build]\nwarnings = "deny"\n[target.x86_64-unknown-linux-gnu]\nrunner = "/usr/bin/true"\n',
+            '[build]\nwarnings = "deny"\n[target.\'cfg(unix)\']\nrunner = ["/usr/bin/true"]\n',
             '[build]\nwarnings = "deny"\nrustc-wrapper = "/tmp/w"\n',
             '[build]\nwarnings = "deny"\n[env]\nRUSTFLAGS = "--cap-lints=allow"\n',
         )
