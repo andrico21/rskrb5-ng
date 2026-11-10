@@ -487,6 +487,8 @@ jobs:
       # Its self-test runs in the loop above; this lists the package with Cargo.
       - name: Packaged Markdown links stay inside the package
         run: python3 scripts/lint-gates/package_links.py --enforce
+      - name: Overlay facts match CI and the ambient reader guard
+        run: python3 scripts/lint-gates/overlay_facts.py --enforce
       - name: Allow gate
         run: python3 scripts/lint-gates/allow_gate.py --enforce
       - name: Exception gate

@@ -11,6 +11,7 @@ is a parity feature, not a defect>`.
 | critic:rskrb5-ng-b07c837/rel.md#REL-01 | FU-GATE-R14 | no |
 | critic:rskrb5-ng-b07c837/rel.md#REL-02 | FU-GATE-R15 | no |
 | critic:rskrb5-ng-b07c837/rel.md#REL-03 | FU-CI-R06 | no |
+| critic:rskrb5-ng-b07c837/rel.md#REL-04 | FU-DOC-R17 | no |
 | critic:rskrb5-ng-b07c837/sec.md#SEC-01 | FU-TRN-R11 | no |
 | critic:rskrb5-ng-b07c837/sec.md#SEC-02 | FU-TRN-R12 | no |
 | critic:rskrb5-ng-b07c837/sec.md#SEC-03 | FU-HTTP-R08 | no |

@@ -70,7 +70,7 @@ https://github.com/andrico21/rskrb5-ng refs/heads/main`), the commit of CI run
   `readme-commands`, `test`, `i686`, `docs`, `msrv`, `semver-checks`, `publish-dryrun`,
   `consumer`, `deny`, `audit`, `vet`, `machete`, `taplo`, `docs-validate`, `lint-gates`,
   `fuzz-build`, `package`; advisory (`continue-on-error: true`): `geiger`,
-  `rustdoc-nightly-canary`, and on schedule or dispatch `mutants` (whole crate, 16
+  `rustdoc-nightly-canary`, and on schedule or dispatch `mutants` (whole crate, 32
   shards), `mutants-report` and `fuzz`. CI run `40580987728` on `5761ba7` (then 25
   jobs): 63 jobs `success`, 2 `skipped`, 1 `failure` (the advisory `geiger`).
 - **Tests:** `cargo test --all-features --no-fail-fast` passes 786 tests in 35
@@ -81,7 +81,9 @@ https://github.com/andrico21/rskrb5-ng refs/heads/main`), the commit of CI run
   `spnego_token`.
 - **Review backlog:** closed. `docs/review/README.md` "Totals": 78 rows covering 100 keys;
   rows 75 fixed and 3 dismissed; keys 97 fixed and 3 dismissed.
-- **Ambient inputs:** 12 audited environment readers, listed in `READERS` of
+- **Ambient inputs:** 13 audited reader functions (15 reader/variable inventory entries
+  over `KRB5_CONFIG`, `KRB5CCNAME`, `KRB5_KTNAME`, `KRB5_CLIENT_KTNAME`, `HOME`, `TMPDIR`,
+  `TEMP` and `APPDATA`), listed in `READERS` of
   `tests/ambient_guard.rs` and enforced by `cargo test --all-features --test
   ambient_guard`. `rg -c '# Ambient input' src` counts 16 sections. `LibDefaults::new()`
   reads nothing; `LibDefaults::from_env()` is the explicit constructor that reads `HOME`
@@ -162,7 +164,9 @@ https://github.com/andrico21/rskrb5-ng refs/heads/main`), the commit of CI run
     pull requests. They receive no commits and no deletion.
 13. **Ambient inputs:** library code reads the environment only in named
     ambient-discovery constructors (`KRB5_CONFIG`, `KRB5CCNAME`, `KRB5_KTNAME`,
-    `KRB5_CLIENT_KTNAME`, and `HOME` in `LibDefaults::from_env`). Each one is documented
+    `KRB5_CLIENT_KTNAME`, and `HOME` in `LibDefaults::from_env`) and in the credential
+    template expansion (`TMPDIR` on non-Windows, `TEMP` and `APPDATA` on Windows, in
+    `resolve_credential_template`). Each one is documented
     with an `# Ambient input` section and pinned by a guard test. There are no implicit
     reads anywhere else.
 14. **A new stable Rust is adopted by procedure:** the core Section 9 profile is updated
