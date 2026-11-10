@@ -1,7 +1,7 @@
 //! HTTP Negotiate helper, client wrapper and Tower layer tests against the gokrb5 vectors.
 #![cfg(feature = "http")]
 
-#[cfg(feature = "tokio")]
+#[cfg(any(feature = "tokio", feature = "tower"))]
 extern crate alloc;
 #[path = "support/context.rs"]
 mod context;
@@ -62,7 +62,7 @@ mod tests {
     use rskrb5_ng::config::Config;
     #[cfg(feature = "tower")]
     use rskrb5_ng::error::Service as ServiceError;
-    #[cfg(feature = "tokio")]
+    #[cfg(any(feature = "tokio", feature = "tower"))]
     use rskrb5_ng::service::ReplayCache;
     #[cfg(any(feature = "tokio", feature = "tower"))]
     use rskrb5_ng::service::SharedReplayCache;
@@ -329,7 +329,7 @@ mod tests {
     /// Replay-cache incompatibility is rejected before serving requests.
     #[cfg(feature = "tower")]
     #[test]
-    fn internal_validation_failure_returns_500() -> Result<(), TestError> {
+    fn incompatible_replay_cache_is_rejected_at_construction() -> Result<(), TestError> {
         let keytab = keytab()?;
         let service = krb_http::NegotiateLayer::new(&keytab)
             .with_now(timestamp(1_893_553_447)?)
@@ -344,6 +344,68 @@ mod tests {
                 }
             )))
         ));
+        Ok(())
+    }
+
+    /// Runtime replay exhaustion is an opaque internal fault, not credential rejection.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn runtime_replay_capacity_fault_returns_500() -> Result<(), TestError> {
+        use alloc::sync::Arc;
+
+        let keytab = keytab()?;
+        let cache =
+            SharedReplayCache::from_cache(ReplayCache::with_limits(Duration::from_mins(5), 0));
+        let mut service = krb_http::NegotiateLayer::new(&keytab)
+            .with_now(timestamp(1_893_553_447)?)
+            .with_shared_replay_cache(cache)?
+            .layer(PanicService);
+        for (header, expected) in [
+            (
+                valid_authorization_header()?,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            ("Negotiate invalid".to_owned(), StatusCode::UNAUTHORIZED),
+        ] {
+            let mut request = Request::new(());
+            krb_http::set_authorization_header(&mut request, &header)?;
+            // PanicService returns an error if called: a response proves zero inner calls.
+            let response = run_ready(service.call(request))??;
+            assert_eq!(response.status(), expected);
+            let cause = response.extensions().get::<Arc<HttpError>>();
+            if expected == StatusCode::INTERNAL_SERVER_ERROR {
+                assert!(matches!(
+                    cause.map(AsRef::as_ref),
+                    Some(HttpError::Spnego(SpnegoError::Service(
+                        ServiceError::ReplayCacheCapacityExceeded { capacity: 0 }
+                    )))
+                ));
+            } else {
+                assert!(cause.is_none());
+            }
+            assert!(
+                response.body().is_empty(),
+                "fault body must not expose internal details"
+            );
+            for name in [
+                "strict-transport-security",
+                "x-content-type-options",
+                "x-frame-options",
+                "content-security-policy",
+                "referrer-policy",
+                "permissions-policy",
+                "cross-origin-embedder-policy",
+                "cross-origin-opener-policy",
+                "cross-origin-resource-policy",
+                "cache-control",
+                "x-dns-prefetch-control",
+                "x-permitted-cross-domain-policies",
+            ] {
+                assert!(response.headers().contains_key(name), "missing {name}");
+            }
+            assert!(!response.headers().contains_key("server"));
+            assert!(!response.headers().contains_key("x-powered-by"));
+        }
         Ok(())
     }
 
@@ -1825,7 +1887,7 @@ mod tests {
 
     #[cfg(feature = "tower")]
     impl Service<Request<()>> for PanicService {
-        type Response = Response<()>;
+        type Response = Response<String>;
         type Error = TestError;
         type Future = Ready<Result<Self::Response, Self::Error>>;
 
