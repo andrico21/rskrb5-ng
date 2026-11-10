@@ -489,6 +489,8 @@ jobs:
         run: python3 scripts/lint-gates/package_links.py --enforce
       - name: Overlay facts match CI and the ambient reader guard
         run: python3 scripts/lint-gates/overlay_facts.py --enforce
+      - name: Changelog names every register behaviour change
+        run: python3 scripts/lint-gates/changelog_rows.py --enforce
       - name: Allow gate
         run: python3 scripts/lint-gates/allow_gate.py --enforce
       - name: Exception gate

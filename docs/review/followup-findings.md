@@ -12,6 +12,7 @@ is a parity feature, not a defect>`.
 | critic:critics-b136e34/u6.md#U6-01 | FU-GATE-R17 | no |
 | critic:critics-b136e34/u6.md#U6-02 | FU-GATE-R18 | no |
 | critic:critics-b136e34/u6.md#U6-03 | FU-CI-R07 | no |
+| critic:critics-b136e34/u6.md#U6-04 | FU-DOC-R19 | no |
 | critic:rskrb5-ng-b07c837/pol.md#POL-01 | FU-CLI-R15 | no |
 | critic:rskrb5-ng-b07c837/pol.md#POL-02 | FU-CLI-R16 | no |
 | critic:rskrb5-ng-b07c837/pol.md#POL-03 | FU-MSG-R02 | no |

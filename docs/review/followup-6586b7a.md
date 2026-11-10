@@ -465,6 +465,12 @@ Original review rows:
 | --- | --- | --- | --- | --- | --- | --- |
 | FU-CLI-R20 | major | Known PA credential envelopes bypass outgoing enctype policy (U2-01) | fixed | `checked_exchanges_reject_nested_padata_enctypes`, `tokio_exchanges_reject_nested_padata_enctypes`, `builders_reject_nested_padata_before_crypto`, `builders_reject_malformed_nested_padata`, `checked_exchanges_preserve_permitted_padata`; commit `client: authorize nested PA credential enctypes (FU-CLI-R20)` | Shared outgoing PA admission completely decodes PA-TGS-REQ and PA-ENC-TIMESTAMP, authorizing visible ticket, authenticator and timestamp enctypes under the effective policy before request cryptography or transport. Cookies and unknown informational PA payloads remain opaque. Canonical request DER and additional-ticket admission remain enforced. | task-41-rskrb5-ng-zero-open-items.log: pre-fix four negative tests failed, including two forbidden sends and missing exact Tokio policy causes; permitted control passed. Post-fix all five pass, covering first/later PA entries, AS/TGS option inputs, configured policy overrides and malformed/trailing DER. |
 
+## Release change record follow-up (todo 45)
+
+| ID | Sev | Title | Status | Proof | Behaviour change | Evidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| FU-DOC-R19 | minor | Final policy fixes are missing from the release change record (U6-04) | fixed | `changelog_rows.py --enforce` red (16 fixed behaviour-change rows unnamed in CHANGELOG.md, exit 1) then green; `changelog_rows.py --self-test`; commit subject `docs: record final policy fixes in release notes (FU-DOC-R19)` | New lint gate (CI lint-gates job, prek hook, workflow_gate REQUIRED) requires CHANGELOG.md to name every fixed register row whose behaviour change is not `none`; CHANGELOG and migration guide now describe FU-CLI-R15/R16/R18/R19/R20, FU-MSG-R02, FU-SPN-R18, FU-CFG-R15/R16, FU-TRN-R11/R12 and FU-GATE-R14/R15/R17/R18, FU-CI-R07. The gate matches register IDs only; migration-guide prose has no machine check (pure prose, no prose-pinning test). | task-45-rskrb5-ng-zero-open-items.log: red run, hand comparison of register cells against CHANGELOG/migration lines, green gates; critic:critics-b136e34/u6.md#U6-04. |
+
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 
 - RVX-u1-01 → FU-TST-01 (also: the test never exercises the router wiring cited by the review doc; covered by FU-TST-01's Proof)
