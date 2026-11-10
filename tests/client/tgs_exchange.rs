@@ -11,10 +11,12 @@ use super::*;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use rasn::{der, types::Integer};
+    #[cfg(feature = "tokio")]
+    use rskrb5_ng::error::{Crypto, Policy};
     use rskrb5_ng::{
         ap_req::decrypt_ap_req_authenticator,
         config::LibDefaults,
-        error::{Config as ConfigError, Crypto, Policy},
+        error::Config as ConfigError,
         messages::{PaForUser, PaPacOptions},
     };
 
