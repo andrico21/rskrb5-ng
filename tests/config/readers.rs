@@ -162,6 +162,11 @@ mod tests {
             "[plugins]\nclpreauth = {\nmodule = test:/never/load.so\n}\n",
             "[plugins]*\n[plugins]\nmodule* = /never/load.so\n",
             "[unknown]\nmodule = /never/load.so\n",
+            "[realms]\nR = {\nmodule=/never/load.so\n}\n",
+            "[plugins]\nR = {\nauth_to_local_names = {\nmodule=local\n}\n}\n",
+            "[realms]\nR = {\nother = {\nauth_to_local_names = {\nmodule=local\n}\n}\n}\n",
+            "[realms]\nR = {\nauth_to_local_names = {\nmodule = {\nname = local\n}\n}\n}\n",
+            "[realms]*\nR = {\n}\n[realms]\nR = {\nmodule=/never/load.so\n}\n",
         ] {
             for mode in [ParseMode::Compatible, ParseMode::Strict] {
                 // When parsing under either mode.

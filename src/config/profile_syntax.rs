@@ -27,6 +27,16 @@ pub(super) struct State {
 }
 
 impl State {
+    /// Only scalar assignments in the exact local-name namespace are mapping data.
+    pub(super) fn local_mapping_assignment(&self, text: &str) -> bool {
+        let Some((tag, raw)) = text.split_once('=') else {
+            return false;
+        };
+        let mut path: Vec<String> = self.scopes.iter().map(|scope| scope.name.clone()).collect();
+        path.push(marker(tag.trim()).0.to_owned());
+        local_mapping(&path) && !matches!(raw.trim(), "" | "{")
+    }
+
     /// Whether include ordering needs a suffix lookahead to resolve an empty scalar.
     pub(super) const fn needs_include_lookahead(&self) -> bool {
         self.pending_scalar.is_some()
@@ -122,7 +132,8 @@ impl State {
         let (raw_tag, raw) = text.split_once('=').ok_or_else(|| invalid(line))?;
         (!self.scopes.is_empty() && !raw_tag.trim().is_empty()).ok_or_else(|| invalid(line))?;
         let (tag, tag_final) = marker(raw_tag.trim());
-        (!tag.eq_ignore_ascii_case("module")).ok_or(Error::UnsupportedDynamicModule)?;
+        (!tag.eq_ignore_ascii_case("module") || self.local_mapping_assignment(text))
+            .ok_or(Error::UnsupportedDynamicModule)?;
         (!tag.is_empty()).ok_or_else(|| invalid(line))?;
         let section = self.scopes.first().map_or("", |scope| scope.name.as_str());
         let key = if section == "libdefaults" && tag.eq_ignore_ascii_case("no_addresses") {

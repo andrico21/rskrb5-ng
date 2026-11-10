@@ -2069,6 +2069,7 @@ impl IncludeExpansion {
                 .split_whitespace()
                 .next()
                 .is_some_and(|word| word.eq_ignore_ascii_case("module"))
+                && !state.local_mapping_assignment(cleaned)
             {
                 return Err(Error::UnsupportedDynamicModule);
             }
