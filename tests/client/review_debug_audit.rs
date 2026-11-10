@@ -62,6 +62,16 @@ mod tests {
         // Given each manually redacted struct, including todo6's file-key owners.
         for (file, owner, fields) in [
             (
+                "src/client/credential_debug.rs",
+                "BuiltApReq",
+                "message:_,der,client,service,session_key,authenticator_ctime,authenticator_cusec,authenticator_time,sequence_number,subkey",
+            ),
+            (
+                "src/client/credential_debug.rs",
+                "AsRepSession",
+                "client,service,session_key,ticket,ticket_flags,auth_time,start_time,end_time,renew_till,key_expiration",
+            ),
+            (
                 "src/client.rs",
                 "TgsFastRequestParts",
                 "request,ap_req_der,authenticator_subkey",
