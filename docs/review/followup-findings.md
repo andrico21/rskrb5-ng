@@ -157,3 +157,5 @@ is a parity feature, not a defect>`.
 | executor:todo-24#kadmin-invalid-message-length | FU-DOC-R14 | no |
 | executor:todo-26#borrowed-password-constructors | FU-DOC-R15 | no |
 | executor:todo-29#parity-todo-index-plan-1-rows | FU-DOC-R16 | no |
+| owner:rskrb5-ng-b07c837/verdict.md#ORA-03 | FU-GATE-R16 | no |
+| owner:rskrb5-ng-b07c837/verdict.md#ORA-07 | FU-CLI-R17 | no |
