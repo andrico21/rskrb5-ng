@@ -1,5 +1,16 @@
 # Committed inventory of the plan todos that the parity manifests may name.
 # Copied from the two execution plans; the tests read this file, never the plans.
+# Each [[plan]] row declares the plan's count of numbered todos; the tests require
+# a [[todo]] row for every number from 1 to that count. Update both when a plan
+# gains a todo.
+
+[[plan]]
+number = 1
+todos = 40
+
+[[plan]]
+number = 2
+todos = 31
 
 [[todo]]
 plan = 1
@@ -115,6 +126,91 @@ title = "Independent critic pass on the final tree"
 plan = 1
 number = 23
 title = "Final register, gates, housekeeping and push"
+
+[[todo]]
+plan = 1
+number = 24
+title = "Close the F2 finding: kadmin InvalidMessageLength documentation"
+
+[[todo]]
+plan = 1
+number = 25
+title = "Complete the evidence record (F1 findings 1, 2, 4, 5, 6 and the detached-checkout observation)"
+
+[[todo]]
+plan = 1
+number = 26
+title = "Close the F2 (rerun) finding: erasure-duty docs on four borrowed password constructors"
+
+[[todo]]
+plan = 1
+number = 27
+title = "Close the F1 (rerun) evidence gaps: archive every cached log the evidence cites, and complete the todo-9 note"
+
+[[todo]]
+plan = 1
+number = 28
+title = "Finish todo 27's class fix completely (F1 third pass, shortfalls 1-3)"
+
+[[todo]]
+plan = 1
+number = 29
+title = "ORA-04: add plan-1 todos 24-29+ to docs/parity-todo-index.toml (FIRST; plan 2 precondition)"
+
+[[todo]]
+plan = 1
+number = 30
+title = "Relabel D17 and D18 as executor decisions; record the owner decisions of 2026-11-10"
+
+[[todo]]
+plan = 1
+number = 31
+title = "POL-01 and POL-02: authorize what is sent in checked AS/TGS exchanges"
+
+[[todo]]
+plan = 1
+number = 32
+title = "POL-03, POL-04, POL-05: encoder rejection, no silent narrowing, preserved error causes"
+
+[[todo]]
+plan = 1
+number = 33
+title = "POL-06 and POL-07: includedir depth limit; config-profile doc"
+
+[[todo]]
+plan = 1
+number = 34
+title = "SEC-01/02/03: discover_kdcs restrictions and the runtime Tower classifier proof"
+
+[[todo]]
+plan = 1
+number = 35
+title = "REL-01/02/03: gate scanning, closure runner, release-publish behaviour tests"
+
+[[todo]]
+plan = 1
+number = 36
+title = "ORA-03 and ORA-07: sweep hash compare; Debug field audit"
+
+[[todo]]
+plan = 1
+number = 37
+title = "REL-04: overlay fact-fix commit and re-vendor"
+
+[[todo]]
+plan = 1
+number = 38
+title = "Disclose the 48 lost evidence logs; boulder note on FU-OPS-02"
+
+[[todo]]
+plan = 1
+number = 39
+title = "Mutation check on the changed code"
+
+[[todo]]
+plan = 1
+number = 40
+title = "Clean critic round on the changed units"
 
 [[todo]]
 plan = 1

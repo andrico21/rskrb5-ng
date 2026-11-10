@@ -147,7 +147,43 @@ pub(crate) fn todo_index() -> Result<BTreeSet<(i64, i64)>, TestError> {
         };
         assert!(fresh, "duplicate todo in plan {plan}");
     }
+    check_complete(&table, &numbered)?;
     Ok(numbered)
+}
+
+/// Each `[[plan]]` row declares how many numbered todos its plan has; the index must list
+/// exactly todos `1..=todos` of every plan it names.
+fn check_complete(table: &Table, numbered: &BTreeSet<(i64, i64)>) -> Result<(), TestError> {
+    let rows = table.get("plan").and_then(Value::as_array);
+    let mut declared = BTreeSet::new();
+    for row in rows.ok_or("index has a plan array")? {
+        let entry = row.as_table().ok_or("plan row is a table")?;
+        assert_eq!(entry.len(), 2, "plan rows carry number and todos");
+        let plan = entry
+            .get("number")
+            .and_then(Value::as_integer)
+            .ok_or("plan number")?;
+        let count = entry
+            .get("todos")
+            .and_then(Value::as_integer)
+            .ok_or("plan todos")?;
+        assert!(declared.insert(plan), "duplicate plan {plan}");
+        let listed: BTreeSet<i64> = numbered
+            .range((plan, i64::MIN)..=(plan, i64::MAX))
+            .map(|&(_, todo)| todo)
+            .collect();
+        let expected: BTreeSet<i64> = (1..=count).collect();
+        assert_eq!(
+            listed, expected,
+            "plan {plan}: the index lists exactly todos 1..={count}"
+        );
+    }
+    let indexed: BTreeSet<i64> = numbered.iter().map(|&(plan, _)| plan).collect();
+    assert_eq!(
+        declared, indexed,
+        "every indexed plan declares its todo count"
+    );
+    Ok(())
 }
 
 /// Whether `label` is a final-verification todo such as `F1`.
