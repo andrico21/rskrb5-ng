@@ -78,10 +78,13 @@ def prose_lines(text: str) -> list[tuple[int, str]]:
                 opening
                 and opening.group(1)[0] == fence[0]
                 and len(opening.group(1)) >= len(fence)
+                and not line[opening.end() :].strip()
             ):
                 fence = ""
             continue
-        if opening:
+        if opening and (
+            opening.group(1).startswith("~") or "`" not in line[opening.end() :]
+        ):
             fence = opening.group(1)
             continue
         lines.append((number, line))
@@ -347,6 +350,11 @@ def self_test() -> int:
             "# Title\n\n## Two words `code`\n\n## Two words code\n"
         )
         for bad, count in (
+            (b"``` invalid ` info\n\n[bad](missing.md)\n", 1),
+            (b"```md\n``` trailing\n[bad](missing.md)\n```\n", 0),
+            (b"~~~md\n~~~ trailing\n[bad](missing.md)\n~~~\n", 0),
+            (b"~~~ invalid ` info\n[bad](missing.md)\n~~~\n", 0),
+            (b"```md\n[bad](missing.md)\n``` \t\n[bad](missing.md)\n", 1),
             (b"` unmatched\n[bad](missing.md)\n``code``", 1),
             (b"`` unmatched\n[bad](missing.md)\n`code`", 1),
             (b"` unmatched [bad](missing.md)", 1),

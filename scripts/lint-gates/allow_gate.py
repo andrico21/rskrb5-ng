@@ -117,6 +117,30 @@ def self_test() -> int:
         assert "build.rs:1:" in printed.getvalue(), printed.getvalue()
         assert "probe.rs:1:" in printed.getvalue(), printed.getvalue()
         assert "allow_gate: 2 " in printed.getvalue(), printed.getvalue()
+        # U6-01: macro names (also repeated) cannot load unscanned siblings.
+        (package / "tools/probe.rs").write_text("fn main() {}\n")
+        (package / "hidden.rs").write_text(
+            '#[allow(clippy::print_stdout)]\npub fn emit() { println!("hidden"); }\n'
+        )
+        accepted = []
+        for source in (
+            "macro_rules! load { ($name:ident) => { mod $name; } }\nload!(hidden);\n",
+            "macro_rules! load { ($($name:ident),*) => { $(mod $name;)* } }\nload!(hidden);\n",
+        ):
+            (package / "build.rs").write_text(
+                source + "fn main() { hidden::emit(); }\n"
+            )
+            with redirect_stdout(StringIO()) as printed:
+                result = main(["--enforce", "--root", str(package)])
+            if result != 1:
+                accepted.append((source, result, printed.getvalue()))
+        assert not accepted, ("macro sibling source loading accepted", accepted)
+        (package / "build.rs").write_text(
+            "macro_rules! load { ($name:ident) => { mod $name {} } }\n"
+            "load!(inline);\nfn main() {}\n"
+        )
+        with redirect_stdout(StringIO()):
+            assert main(["--enforce", "--root", str(package)]) == 0
         # REL-01: root single-file targets cannot hide included source.
         (package / "tools/probe.rs").write_text("fn main() {}\n")
         (package / "build_impl.rs").write_text(

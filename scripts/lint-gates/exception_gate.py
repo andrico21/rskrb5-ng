@@ -394,6 +394,29 @@ def self_test() -> int:
             assert main(["--enforce", "--root", str(root)]) == 1
         assert "build.rs:1:" in printed.getvalue(), printed.getvalue()
         assert "tools/probe.rs:1:" in printed.getvalue(), printed.getvalue()
+        # U6-01: macro names (also repeated) cannot load unscanned siblings.
+        (root / "tools/probe.rs").write_text("fn main() {}\n")
+        (root / "hidden.rs").write_text(
+            '#[expect(clippy::print_stdout, reason = "not sanctioned")]\n'
+            'pub fn emit() { println!("hidden"); }\n'
+        )
+        accepted = []
+        for source in (
+            "macro_rules! load { ($name:ident) => { mod $name; } }\nload!(hidden);\n",
+            "macro_rules! load { ($($name:ident),*) => { $(mod $name;)* } }\nload!(hidden);\n",
+        ):
+            (root / "build.rs").write_text(source + "fn main() { hidden::emit(); }\n")
+            with redirect_stdout(StringIO()) as printed:
+                result = main(["--enforce", "--root", str(root)])
+            if result != 1:
+                accepted.append((source, result, printed.getvalue()))
+        assert not accepted, ("macro sibling source loading accepted", accepted)
+        (root / "build.rs").write_text(
+            "macro_rules! load { ($name:ident) => { mod $name {} } }\n"
+            "load!(inline);\nfn main() {}\n"
+        )
+        with redirect_stdout(StringIO()):
+            assert main(["--enforce", "--root", str(root)]) == 0
         # REL-01: root single-file targets cannot hide included exceptions.
         (root / "tools/probe.rs").write_text("fn main() {}\n")
         (root / "build_impl.rs").write_text(REJECTED[0][2])

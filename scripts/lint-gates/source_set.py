@@ -31,7 +31,7 @@ from rust_lex import iter_attributes, strip_comments_and_strings
 AUTO_DIRS: Final = ("src", "tests", "examples", "benches")
 TARGET_TABLES: Final = ("bin", "example", "test", "bench")
 SKIPPED_DIRS: Final = frozenset({"target", "vendor", "node_modules"})
-OUT_OF_LINE_MOD: Final = re.compile(r"(?<![\w$])mod\s+(?:r#)?\w+\s*;")
+OUT_OF_LINE_MOD: Final = re.compile(r"(?<![\w$])mod\s+(?:\$\s*)?(?:r#)?\w+\s*;")
 INCLUDE: Final = re.compile(r"(?<![\w$])(?:r#)?include\s*!\s*[(\[{]")
 PATH_ATTRIBUTE: Final = re.compile(r"[\[(,]\s*(?:r#)?path\s*=")
 
