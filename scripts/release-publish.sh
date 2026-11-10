@@ -294,6 +294,9 @@ EOF
 #!/usr/bin/env bash
 echo "gh $*" >>"$STATE/log"
 case "$1 $2" in
+  "api "*)
+    [[ "${STUB_CI_API_FAILURE:-0}" == 0 ]] || { cat "$STATE/ci-runs.json"; echo "HTTP 502" >&2; exit 1; }
+    cat "$STATE/ci-runs.json" ;;
   "release view") [[ -f "$STATE/release" ]] ;;
   "release create")
     if [[ -f "$STATE/gh-fail" ]]; then rm -f "$STATE/gh-fail"; echo "HTTP 502" >&2; exit 1; fi
@@ -307,6 +310,32 @@ EOF
   bad="$(printf '%s' other-bytes | sha256sum | cut -d' ' -f1)"
   local -a stubbed=(env "PATH=$stubs:$PATH" "STATE=$state" "CARGO_TARGET_DIR=$scratch/target"
     "STUB_CRATE=crate-bytes" "ROOT_DIR_OVERRIDE=$work" bash "${BASH_SOURCE[0]}")
+  local ci_case conclusion event repository expected
+  for ci_case in \
+    'success|push|andrico21/rskrb5-ng|accept' \
+    'success|workflow_dispatch|andrico21/rskrb5-ng|accept' \
+    'failure|push|andrico21/rskrb5-ng|reject' \
+    'pending|push|andrico21/rskrb5-ng|reject' \
+    'success|pull_request|andrico21/rskrb5-ng|reject' \
+    'success|push|foreign/rskrb5-ng|reject'; do
+    IFS='|' read -r conclusion event repository expected <<<"$ci_case"
+    jq -n --arg conclusion "$conclusion" --arg event "$event" --arg repo "$repository" \
+      '{workflow_runs: [{conclusion: (if $conclusion == "pending" then null else $conclusion end),
+        event: $event, head_repository: {full_name: $repo}}]}' >"$state/ci-runs.json"
+    if "${stubbed[@]}" check-ci-run andrico21/rskrb5-ng "$sha" >"$state/ci-result" 2>&1; then
+      [[ "$expected" == accept ]] || st_fail "check-ci-run accepted $ci_case"
+    else
+      [[ "$expected" == reject ]] || st_fail "check-ci-run rejected $ci_case: $(cat "$state/ci-result")"
+    fi
+  done
+  printf '{"workflow_runs": []}\n' >"$state/ci-runs.json"
+  if "${stubbed[@]}" check-ci-run andrico21/rskrb5-ng "$sha" >"$state/ci-result" 2>&1; then
+    st_fail "check-ci-run accepted an empty run list"
+  fi
+  printf '{"workflow_runs": [{"conclusion": "success", "event": "push", "head_repository": {"full_name": "andrico21/rskrb5-ng"}}]}\n' >"$state/ci-runs.json"
+  if STUB_CI_API_FAILURE=1 "${stubbed[@]}" check-ci-run andrico21/rskrb5-ng "$sha" >"$state/ci-result" 2>&1; then
+    st_fail "check-ci-run accepted an API failure"
+  fi
   publish_and_release() {
     "${stubbed[@]}" publish 0.3.0 "$1" >/dev/null 2>&1 && "${stubbed[@]}" release 0.3.0 0.3.0 >/dev/null 2>&1
   }

@@ -11,8 +11,9 @@ directories) contributes its auto-discovery directories (`src`, `tests`,
 `examples`, `benches`), its build script and every explicit target `path`. A
 target outside such a directory adds its own directory; one that sits directly
 in the package directory (a root `build.rs`) is scanned as a file and must not
-load further module files. A path outside the checkout, an out-of-line `mod` in
-such a file, or an empty result is an error: the gates fail closed.
+load further source files through `mod`, `include!` or `#[path]`. A path outside
+the checkout, source loading in such a file, or an empty result is an error:
+the gates fail closed.
 """
 
 from __future__ import annotations
@@ -25,12 +26,14 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final
 
-from rust_lex import strip_comments_and_strings
+from rust_lex import iter_attributes, strip_comments_and_strings
 
 AUTO_DIRS: Final = ("src", "tests", "examples", "benches")
 TARGET_TABLES: Final = ("bin", "example", "test", "bench")
 SKIPPED_DIRS: Final = frozenset({"target", "vendor", "node_modules"})
 OUT_OF_LINE_MOD: Final = re.compile(r"(?<![\w$])mod\s+(?:r#)?\w+\s*;")
+INCLUDE: Final = re.compile(r"(?<![\w$])(?:r#)?include\s*!\s*[(\[{]")
+PATH_ATTRIBUTE: Final = re.compile(r"[\[(,]\s*(?:r#)?path\s*=")
 
 
 class SourceSetError(ValueError):
@@ -95,11 +98,17 @@ def rust_sources(given: Path, baseline: tuple[str, ...] = ()) -> list[Path]:
         directories |= {d.resolve() for d in package_directories}
         files |= package_files
     for path in files:
-        if OUT_OF_LINE_MOD.search(
-            strip_comments_and_strings(path.read_text(encoding="utf-8"))
-        ):
+        stripped = strip_comments_and_strings(path.read_text(encoding="utf-8"))
+        if OUT_OF_LINE_MOD.search(stripped):
             raise SourceSetError(
                 f"{path}: an out-of-line `mod` outside a scanned directory"
+            )
+        if INCLUDE.search(stripped) or any(
+            PATH_ATTRIBUTE.search(stripped[start:end])
+            for start, end, _, _ in iter_attributes(stripped)
+        ):
+            raise SourceSetError(
+                f"{path}: source loading (`include!` or `#[path]`) outside a scanned directory"
             )
     found = files | {
         path

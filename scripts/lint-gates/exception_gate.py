@@ -394,6 +394,24 @@ def self_test() -> int:
             assert main(["--enforce", "--root", str(root)]) == 1
         assert "build.rs:1:" in printed.getvalue(), printed.getvalue()
         assert "tools/probe.rs:1:" in printed.getvalue(), printed.getvalue()
+        # REL-01: root single-file targets cannot hide included exceptions.
+        (root / "tools/probe.rs").write_text("fn main() {}\n")
+        (root / "build_impl.rs").write_text(REJECTED[0][2])
+        for source in (
+            'include!("build_impl.rs");\n',
+            'r#include! { "build_impl.rs" }\n',
+            '#[path = "hidden"] mod inline { include!("build_impl.rs"); }\n',
+            '#[cfg_attr(all(), path = "hidden")] mod inline {}\n',
+        ):
+            (root / "build.rs").write_text(source)
+            with redirect_stdout(StringIO()) as printed:
+                result = main(["--enforce", "--root", str(root)])
+            assert result == 1, (
+                "root source loading accepted",
+                source,
+                printed.getvalue(),
+            )
+            assert "build.rs" in printed.getvalue(), printed.getvalue()
     print(
         "exception_gate self-test: ok (six sanctioned forms and a deny opt-in "
         "accepted; five rejected forms, seven near misses, "

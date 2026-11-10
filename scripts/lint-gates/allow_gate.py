@@ -117,6 +117,26 @@ def self_test() -> int:
         assert "build.rs:1:" in printed.getvalue(), printed.getvalue()
         assert "probe.rs:1:" in printed.getvalue(), printed.getvalue()
         assert "allow_gate: 2 " in printed.getvalue(), printed.getvalue()
+        # REL-01: root single-file targets cannot hide included source.
+        (package / "tools/probe.rs").write_text("fn main() {}\n")
+        (package / "build_impl.rs").write_text(
+            '#[allow(clippy::print_stdout)]\nfn main() { println!("hidden"); }\n'
+        )
+        for source in (
+            'include!("build_impl.rs");\n',
+            'r#include! { "build_impl.rs" }\n',
+            '#[path = "hidden"] mod inline { include!("build_impl.rs"); }\n',
+            '#[cfg_attr(all(), path = "hidden")] mod inline {}\n',
+        ):
+            (package / "build.rs").write_text(source)
+            with redirect_stdout(StringIO()) as printed:
+                result = main(["--enforce", "--root", str(package)])
+            assert result == 1, (
+                "root source loading accepted",
+                source,
+                printed.getvalue(),
+            )
+            assert "build.rs" in printed.getvalue(), printed.getvalue()
         # An empty source set is an error, never a clean pass.
         (package / "src/lib.rs").unlink()
         (package / "build.rs").unlink()
