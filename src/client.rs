@@ -3027,8 +3027,8 @@ pub fn build_as_req(
     service: Principal,
     mut options: AsReq,
 ) -> Result<BuiltAsReq, Error> {
-    crypto_policy::padata(options.padata())?;
     let crypto_policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
+    crypto_policy::padata(&crypto_policy, options.padata())?;
     if options.etypes().is_empty() {
         return Err(Error::EmptyEtypes);
     }
@@ -3227,8 +3227,8 @@ pub fn build_preauthenticated_as_req(
     key: &EncryptionKey,
     kvno: Option<u32>,
 ) -> Result<BuiltAsReq, Error> {
-    crypto_policy::padata(options.padata())?;
     let policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
+    crypto_policy::padata(&policy, options.padata())?;
     policy.check_use(key.etype(), Use::ReplyKey)?;
     let (timestamp, cusec) = current_preauth_time()?;
     options
@@ -3284,8 +3284,8 @@ pub fn build_tgs_req_for_realm<P>(
 where
     P: Into<String>,
 {
-    crypto_policy::padata(options.padata())?;
     let policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
+    crypto_policy::padata(&policy, options.padata())?;
     crypto_policy::session(&policy, tgt, Use::SessionKey)?;
     let (timestamp, cusec) = current_preauth_time()?;
     let etype = KerberosEtype::from_etype_id(tgt.session_key.etype())
@@ -3342,8 +3342,8 @@ pub fn build_s4u2self_req(
     user: Principal,
     options: TgsReq,
 ) -> Result<BuiltTgsReq, Error> {
-    crypto_policy::padata(options.padata())?;
     let policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
+    crypto_policy::padata(&policy, options.padata())?;
     crypto_policy::session(&policy, service_tgt, Use::SessionKey)?;
     let (timestamp, cusec) = current_preauth_time()?;
     let etype = KerberosEtype::from_etype_id(service_tgt.session_key.etype())
@@ -3367,8 +3367,8 @@ pub fn build_s4u2self_req_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<BuiltTgsReq, Error> {
-    crypto_policy::padata(options.padata())?;
     let policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
+    crypto_policy::padata(&policy, options.padata())?;
     crypto_policy::session(&policy, service_tgt, Use::SessionKey)?;
     options
         .padata_mut()
@@ -3403,8 +3403,8 @@ pub fn build_s4u2proxy_req(
     target_service: Principal,
     options: TgsReq,
 ) -> Result<BuiltTgsReq, Error> {
-    crypto_policy::padata(options.padata())?;
     let policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
+    crypto_policy::padata(&policy, options.padata())?;
     crypto_policy::session(&policy, service_tgt, Use::SessionKey)?;
     crypto_policy::session(&policy, evidence_ticket, Use::TicketKey)?;
     let (timestamp, cusec) = current_preauth_time()?;
@@ -3440,8 +3440,8 @@ pub fn build_s4u2proxy_req_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<BuiltTgsReq, Error> {
-    crypto_policy::padata(options.padata())?;
     let policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
+    crypto_policy::padata(&policy, options.padata())?;
     crypto_policy::session(&policy, service_tgt, Use::SessionKey)?;
     crypto_policy::session(&policy, evidence_ticket, Use::TicketKey)?;
     if !principal_matches(&evidence_ticket.service, &service_tgt.client) {
@@ -3534,8 +3534,8 @@ pub fn build_tgs_req_for_realm_with_subkey<R>(
 where
     R: Into<String>,
 {
-    crypto_policy::padata(options.padata())?;
     let policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
+    crypto_policy::padata(&policy, options.padata())?;
     crypto_policy::session(&policy, tgt, Use::SessionKey)?;
     let (timestamp, cusec) = current_preauth_time()?;
     let etype = KerberosEtype::from_etype_id(tgt.session_key.etype())
@@ -3727,8 +3727,8 @@ fn build_tgs_req_for_realm_inner(
     mut options: TgsReq,
     authenticator_context: TgsAuthenticatorContext<'_>,
 ) -> Result<(BuiltTgsReq, Zeroizing<Vec<u8>>), Error> {
-    crypto_policy::padata(options.padata())?;
     let crypto_policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
+    crypto_policy::padata(&crypto_policy, options.padata())?;
     crypto_policy::session(&crypto_policy, tgt, Use::SessionKey)?;
     crypto_policy::additional_tickets(&crypto_policy, options.additional_tickets())?;
     let TgsAuthenticatorContext {
@@ -4841,8 +4841,8 @@ fn password_initial_as_req(
     password: &[u8],
     requested: AsReq,
 ) -> Result<BuiltAsReq, Error> {
-    crypto_policy::padata(requested.padata())?;
     let policy = crypto_policy::request(requested.crypto_policy(), requested.etypes())?;
+    crypto_policy::padata(&policy, requested.padata())?;
     let options = initial_preauth_probe_options(requested);
     if options.assume_preauthentication() {
         let key_info = assumed_preauth_key_info(options.etypes())?;
@@ -5721,10 +5721,13 @@ mod tests {
     #[test]
     fn padata_policy_rejects_draft9() {
         assert!(
-            super::crypto_policy::padata(&[rasn_kerberos::PaData {
-                r#type: 14,
-                value: vec![].into()
-            }])
+            super::crypto_policy::padata(
+                &super::CryptoPolicy::default(),
+                &[rasn_kerberos::PaData {
+                    r#type: 14,
+                    value: vec![].into()
+                }]
+            )
             .is_err()
         );
     }
