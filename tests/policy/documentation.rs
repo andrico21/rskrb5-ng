@@ -1,6 +1,49 @@
 use core::error::Error;
 use std::fs;
 
+/// The profile guide's delivery index resolves every completed stage to a section.
+#[test]
+fn profile_delivery_index_is_complete() -> Result<(), Box<dyn Error>> {
+    // Given the packaged reference and its machine-readable delivery index.
+    let document = fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/docs/config-profile.md"
+    ))?;
+    let index = document
+        .split_once("<!-- profile-delivery:start -->")
+        .ok_or("missing profile delivery index")?
+        .1
+        .split_once("<!-- profile-delivery:end -->")
+        .ok_or("unterminated profile delivery index")?
+        .0;
+    // When parsing the status/link rows, as the parity docs tests parse status fields.
+    let mut anchors = Vec::new();
+    for row in index.lines().filter(|line| line.starts_with("| [")) {
+        let cells: Vec<&str> = row.split('|').map(str::trim).collect();
+        let status = cells.get(2).ok_or("delivery status")?;
+        let anchor = cells
+            .get(1)
+            .ok_or("delivery reference")?
+            .split_once("](#")
+            .ok_or("delivery link")?
+            .1
+            .strip_suffix(')')
+            .ok_or("delivery anchor")?;
+        // Then every entry is delivered, uniquely linked and locally resolvable.
+        assert_eq!(*status, "delivered", "{anchor}");
+        assert!(!anchors.contains(&anchor), "duplicate {anchor}");
+        assert!(
+            document
+                .lines()
+                .any(|line| line.trim() == format!("<a id=\"{anchor}\"></a>")),
+            "missing {anchor}"
+        );
+        anchors.push(anchor);
+    }
+    assert_eq!(anchors.len(), 8, "all eight profile stages must be indexed");
+    Ok(())
+}
+
 /// Every catalogue entry must link a real packaged policy section.
 #[test]
 fn catalogue_policy_anchors_exist() -> Result<(), Box<dyn Error>> {

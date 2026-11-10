@@ -2234,12 +2234,17 @@ impl IncludeExpansion {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::IncludeDir`] for a directory that cannot be resolved or
+    /// Returns [`Error::IncludeTooDeep`] past [`MAX_INCLUDE_DEPTH`],
+    /// [`Error::IncludeDir`] for a directory that cannot be resolved or
     /// listed, [`Error::IncludeCycle`] for a directory already being expanded,
     /// [`Error::IncludeTooMany`] once its accepted names pass
     /// [`MAX_INCLUDE_FILES`], and the [`Self::include_file`] error of any
     /// accepted file.
     fn include_dir(&mut self, dir: &Path, depth: usize) -> Result<(), Error> {
+        (depth <= MAX_INCLUDE_DEPTH).ok_or(Error::IncludeTooDeep {
+            depth,
+            limit: MAX_INCLUDE_DEPTH,
+        })?;
         let canonical = fs::canonicalize(dir).map_err(|source| Error::IncludeDir {
             path: dir.to_path_buf(),
             source,
@@ -3075,8 +3080,8 @@ mod fork_tests {
     /// named rather than merely deep.
     ///
     /// `top/up` is `top` itself, and the directive that names it sits at the
-    /// eighth include level, one past where an untracked directory would leave
-    /// the file-level check.
+    /// eighth include level. The ninth edge fails the depth cap first; the same
+    /// cycle at the eighth edge is still named.
     #[cfg(target_family = "unix")]
     #[test]
     fn a_symlinked_includedir_cycle_is_named() -> Result<(), Box<dyn error::Error>> {
@@ -3109,11 +3114,18 @@ mod fork_tests {
         )?;
 
         let error = refusal(Config::load(&root), "the symlinked cycle is refused")?;
+        let earlier = chain.get(5).ok_or("the chain has a sixth file")?;
+        fs::write(earlier, format!("includedir {}\n", cycle.display()))?;
+        let within_limit = refusal(Config::load(&root), "the shallower cycle is refused")?;
         remove_fixture(&dir);
 
         assert!(
-            matches!(&error, Error::IncludeCycle { path } if path == &cycle),
-            "the symlink names the directory that is already being read: {error:?}"
+            matches!(error, Error::IncludeTooDeep { depth: 9, limit: 8 }),
+            "the ninth edge is rejected before resolving the directory"
+        );
+        assert!(
+            matches!(&within_limit, Error::IncludeCycle { path } if path == &cycle),
+            "the symlink names the directory that is already being read: {within_limit:?}"
         );
         Ok(())
     }
