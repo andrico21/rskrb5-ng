@@ -121,6 +121,42 @@ mod tests {
         Ok(())
     }
 
+    /// Directory directives obey the depth cap even without eligible entries.
+    #[test]
+    fn includedir_depth_boundary_without_eligible_files() -> Result<(), Box<dyn Error>> {
+        // Given empty and ignored-only directories at the eighth and ninth edges.
+        for ignored in [false, true] {
+            for depth in [8_usize, 9] {
+                let dir = directory()?;
+                let included = dir.join("included");
+                fs::create_dir_all(&included)?;
+                if ignored {
+                    fs::write(included.join(".hidden.conf"), "not a profile")?;
+                    fs::write(included.join("backup.conf~"), "not a profile")?;
+                }
+                let mut input = format!("includedir {}\n", included.display());
+                for index in 1..depth {
+                    let file = dir.join(format!("{index}.conf"));
+                    fs::write(&file, input)?;
+                    input = format!("include {}\n", file.display());
+                }
+                // When the real profile loader follows the directive chain.
+                let result = Config::parse(&input);
+                fs::remove_dir_all(dir)?;
+                // Then eight edges succeed and the ninth has the typed depth error.
+                match depth {
+                    8 => assert_eq!(result?, Config::new()),
+                    9 => assert!(matches!(
+                        result,
+                        Err(ConfigError::IncludeTooDeep { depth: 9, limit: 8 })
+                    )),
+                    _ => return Err("unexpected fixture depth".into()),
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Final scopes block later sources and includes within their defining scopes.
     #[test]
     fn finals_cross_file_boundaries() -> Result<(), Box<dyn Error>> {
