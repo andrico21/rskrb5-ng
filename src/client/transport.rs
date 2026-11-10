@@ -997,10 +997,10 @@ impl Tokio {
     where
         A: ToSocketAddrs + Clone,
     {
-        super::crypto_policy::padata(request.message.0.padata.as_deref().unwrap_or_default())?;
+        super::crypto_policy::wire_message(&request.message, &request.der, "AS-REQ")?;
         super::crypto_policy::before_exchange(
             &request.crypto_policy,
-            &request.message.0.req_body.etype,
+            &request.message.0,
             reply_key,
         )?;
         let response = self.send(protocol, addr, &request.der).await?;
@@ -1033,12 +1033,8 @@ impl Tokio {
     ) -> Result<AsRepSession, Error> {
         restrictions::config(config)?;
         let policy = super::crypto_policy::configured(&config.libdefaults)?;
-        super::crypto_policy::padata(request.message.0.padata.as_deref().unwrap_or_default())?;
-        super::crypto_policy::before_exchange(
-            &policy,
-            &request.message.0.req_body.etype,
-            reply_key,
-        )?;
+        super::crypto_policy::wire_message(&request.message, &request.der, "AS-REQ")?;
+        super::crypto_policy::before_exchange(&policy, &request.message.0, reply_key)?;
         let mut bound = request.clone();
         bound.crypto_policy = policy;
         let response = self
@@ -1079,10 +1075,10 @@ impl Tokio {
     where
         A: ToSocketAddrs + Clone,
     {
-        super::crypto_policy::padata(request.message.0.padata.as_deref().unwrap_or_default())?;
+        super::crypto_policy::wire_message(&request.message, &request.der, "TGS-REQ")?;
         super::crypto_policy::before_exchange(
             &request.crypto_policy,
-            &request.message.0.req_body.etype,
+            &request.message.0,
             tgs_session_key,
         )?;
         let response = self.send(protocol, addr, &request.der).await?;
@@ -1114,12 +1110,8 @@ impl Tokio {
         tgs_session_key: &EncryptionKey,
     ) -> Result<TgsRepSession, Error> {
         let policy = super::crypto_policy::configured(&config.libdefaults)?;
-        super::crypto_policy::padata(request.message.0.padata.as_deref().unwrap_or_default())?;
-        super::crypto_policy::before_exchange(
-            &policy,
-            &request.message.0.req_body.etype,
-            tgs_session_key,
-        )?;
+        super::crypto_policy::wire_message(&request.message, &request.der, "TGS-REQ")?;
+        super::crypto_policy::before_exchange(&policy, &request.message.0, tgs_session_key)?;
         let mut bound = request.clone();
         bound.crypto_policy = policy;
         let response = self

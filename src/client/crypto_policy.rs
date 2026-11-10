@@ -3,6 +3,9 @@
 #[cfg(feature = "tokio")]
 use core::error::Error as _;
 
+use rasn::{Encode, der};
+use zeroize::Zeroizing;
+
 use super::{AsRepSession, Error, ticket_error};
 #[cfg(feature = "tokio")]
 use crate::config::{LibDefaults, restrictions};
@@ -104,18 +107,57 @@ pub(super) fn ready(client: &super::Tokio) -> Result<(), Error> {
     Ok(())
 }
 
-/// Validate request preferences and the reply key before opening a transport.
+/// Require the supplied bytes to encode exactly the message being authorized.
+/// # Errors
+/// Returns an encoding error for malformed or independently replaced wire bytes.
+pub(super) fn wire_message<T>(message: &T, bytes: &[u8], target: &'static str) -> Result<(), Error>
+where
+    T: Encode,
+{
+    let encoded = Zeroizing::new(der::encode(message).map_err(|error| Error::Encode {
+        target,
+        message: error.to_string(),
+    })?);
+    (encoded.as_slice() == bytes).ok_or_else(|| Error::Encode {
+        target,
+        message: "request DER does not match the authorized message".to_owned(),
+    })
+}
+
+/// Authorize every additional credential before request cryptography or transport.
+/// # Errors
+/// Returns the first ticket encryption policy refusal.
+pub(super) fn additional_tickets(
+    policy: &CryptoPolicy,
+    tickets: &[rasn_kerberos::Ticket],
+) -> Result<(), Error> {
+    for ticket in tickets {
+        policy.check_use(ticket.enc_part.etype, Use::TicketKey)?;
+    }
+    Ok(())
+}
+
+/// Validate request selections, additional tickets and the reply key before transport.
 /// # Errors
 /// Returns the first typed policy refusal without performing I/O.
 pub(super) fn before_exchange(
     policy: &CryptoPolicy,
-    etypes: &[i32],
+    message: &rasn_kerberos::KdcReq,
     key: &EncryptionKey,
 ) -> Result<(), Error> {
-    for &etype in etypes {
+    padata(message.padata.as_deref().unwrap_or_default())?;
+    for &etype in &message.req_body.etype {
         policy.check_use(etype, Use::RequestList)?;
     }
     policy.check_use(key.etype(), Use::ReplyKey)?;
+    additional_tickets(
+        policy,
+        message
+            .req_body
+            .additional_tickets
+            .as_deref()
+            .unwrap_or_default(),
+    )?;
     Ok(())
 }
 

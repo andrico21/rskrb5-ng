@@ -3734,6 +3734,7 @@ fn build_tgs_req_for_realm_inner(
     crypto_policy::padata(options.padata())?;
     let crypto_policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
     crypto_policy::session(&crypto_policy, tgt, Use::SessionKey)?;
+    crypto_policy::additional_tickets(&crypto_policy, options.additional_tickets())?;
     let TgsAuthenticatorContext {
         timestamp,
         cusec,
@@ -3985,12 +3986,8 @@ pub fn exchange_as_req<T>(
 where
     T: KdcTransport + ?Sized,
 {
-    crypto_policy::padata(request.message.0.padata.as_deref().unwrap_or_default())?;
-    crypto_policy::before_exchange(
-        &request.crypto_policy,
-        &request.message.0.req_body.etype,
-        reply_key,
-    )?;
+    crypto_policy::wire_message(&request.message, &request.der, "AS-REQ")?;
+    crypto_policy::before_exchange(&request.crypto_policy, &request.message.0, reply_key)?;
     let response = transport.send(&request.client.realm, &request.der)?;
     process_as_rep(request, &response, reply_key)
 }
@@ -4008,12 +4005,8 @@ pub fn exchange_tgs_req<T>(
 where
     T: KdcTransport + ?Sized,
 {
-    crypto_policy::padata(request.message.0.padata.as_deref().unwrap_or_default())?;
-    crypto_policy::before_exchange(
-        &request.crypto_policy,
-        &request.message.0.req_body.etype,
-        tgs_session_key,
-    )?;
+    crypto_policy::wire_message(&request.message, &request.der, "TGS-REQ")?;
+    crypto_policy::before_exchange(&request.crypto_policy, &request.message.0, tgs_session_key)?;
     let response = transport.send(&request.kdc_realm, &request.der)?;
     process_tgs_rep(request, &response, tgs_session_key)
 }
