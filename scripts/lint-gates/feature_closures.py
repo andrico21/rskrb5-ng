@@ -125,6 +125,11 @@ def check_workflow_scope(lines: list[Line], top: list[int]) -> None:
 
 def check_cargo_config(path: Path) -> None:
     """Keep strict native compilation and test execution free of overrides."""
+    legacy = path.with_name("config")
+    if legacy.exists():
+        raise RuntimeError(
+            f"{legacy}: legacy Cargo config overrides the strict config.toml"
+        )
     try:
         config = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as error:
@@ -425,6 +430,19 @@ def self_test() -> int:
         for text in accepted_configs:
             config.write_text(text)
             check_cargo_config(config)
+        legacy = config.with_name("config")
+        legacy.write_text(
+            '[build]\nwarnings = "deny"\n[target.\'cfg(unix)\']\nrunner = "/usr/bin/true"\n'
+        )
+        try:
+            check_cargo_config(config)
+        except RuntimeError as error:
+            assert str(legacy) in str(error), error
+        else:
+            raise AssertionError(
+                "check-ci accepted hostile legacy config beside clean config.toml"
+            )
+        legacy.unlink()
         for text in rejected_configs:
             config.write_text(text)
             try:
