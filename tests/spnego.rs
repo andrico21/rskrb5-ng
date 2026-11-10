@@ -370,7 +370,7 @@ mod tests {
         Ok(())
     }
 
-    /// A decoded `reqFlags` BIT STRING is kept with its unused-bit count.
+    /// Decoded and caller-selected request flags retain their BIT STRING contents.
     #[test]
     fn neg_token_init_keeps_request_flags() -> Result<(), TestError> {
         let bytes = decode_hex(concat!(
@@ -380,6 +380,20 @@ mod tests {
         let token = NegTokenInit::decode(&bytes).context("NegTokenInit decodes")?;
         assert_eq!(token.req_flags(), Some([0x01, 0x06].as_slice()));
         assert_eq!(token.encode().context("NegTokenInit encodes")?, bytes);
+
+        let mut constructed = NegTokenInit::krb5(vec![1]);
+        constructed.set_req_flags(Some(vec![1, 6]));
+        let encoded = constructed.encode()?;
+        assert_eq!(
+            NegTokenInit::decode(&encoded)?.req_flags(),
+            Some([1, 6].as_slice())
+        );
+
+        constructed.set_req_flags(None);
+        assert_eq!(
+            NegTokenInit::decode(&constructed.encode()?)?.req_flags(),
+            None
+        );
         Ok(())
     }
 

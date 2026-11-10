@@ -1310,6 +1310,11 @@ pub struct NegTokenInit {
 }
 
 impl NegTokenInit {
+    /// Replace or clear request flags; BIT STRING validation occurs during encoding.
+    #[inline]
+    pub fn set_req_flags(&mut self, value: Option<Vec<u8>>) {
+        self.req_flags = value;
+    }
     /// Replace public mechanism metadata.
     #[inline]
     pub fn set_mech_types(&mut self, value: Vec<ObjectIdentifier>) {

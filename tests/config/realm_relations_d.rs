@@ -116,6 +116,7 @@ mod tests {
         for name in [
             "Alice",
             "ALICE",
+            "module",
             "krb4_get_tickets",
             "v4_realm",
             "pkinit_draft9",
@@ -134,6 +135,13 @@ mod tests {
                     .get(name)
                     .map(String::as_str),
                 Some("local")
+            );
+            assert_eq!(
+                config.diagnostics(),
+                &[ConfigDiagnostic::NotYetEffective {
+                    relation: "auth_to_local_names",
+                    package: "plan 2 WP-17",
+                }]
             );
         }
         for name in [
