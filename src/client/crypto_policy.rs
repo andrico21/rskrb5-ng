@@ -8,6 +8,7 @@ use zeroize::Zeroizing;
 
 use super::{AsRepSession, Error, ticket_error};
 use crate::{
+    ap_req,
     config::{LibDefaults, restrictions},
     crypto::{CryptoPolicy, Use, selection},
     error::Policy,
@@ -17,10 +18,23 @@ use crate::{
 
 /// Check explicit PA selections before preparing cryptographic request data.
 /// # Errors
-/// Returns permanent draft-9 rejection for outgoing PA types 14 or 15.
-pub(super) fn padata(data: &[rasn_kerberos::PaData]) -> Result<(), Error> {
+/// Returns policy rejection for a forbidden selection, or malformed credential DER.
+pub(super) fn padata(policy: &CryptoPolicy, data: &[rasn_kerberos::PaData]) -> Result<(), Error> {
     for entry in data {
         selection::preauth(entry.r#type)?;
+        match entry.r#type {
+            super::PA_TGS_REQ => {
+                let request = ap_req::decode(&entry.value).map_err(super::ap_req_error)?;
+                policy.check_use(request.ticket.enc_part.etype, Use::TicketKey)?;
+                policy.check_use(request.authenticator.etype, Use::SessionKey)?;
+            }
+            super::PA_ENC_TIMESTAMP => {
+                let encrypted: rasn_kerberos::EncryptedData =
+                    super::decode("PA-ENC-TIMESTAMP", &entry.value)?;
+                policy.check_use(encrypted.etype, Use::ReplyKey)?;
+            }
+            _ => {}
+        }
     }
     Ok(())
 }
@@ -158,7 +172,7 @@ pub(super) fn before_exchange(
     message: &rasn_kerberos::KdcReq,
     key: &EncryptionKey,
 ) -> Result<(), Error> {
-    padata(message.padata.as_deref().unwrap_or_default())?;
+    padata(policy, message.padata.as_deref().unwrap_or_default())?;
     for &etype in &message.req_body.etype {
         policy.check_use(etype, Use::RequestList)?;
     }

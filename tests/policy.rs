@@ -259,3 +259,15 @@ mod additional_tickets;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod staged_requests;
+
+/// Nested credential encryption admission before transport and request cryptography.
+#[cfg(test)]
+#[cfg(feature = "tokio")]
+#[path = "policy/nested_padata.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod nested_padata;

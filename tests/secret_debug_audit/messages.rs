@@ -119,8 +119,13 @@ pub(super) mod tests {
         let checksum = pattern(97);
         let subkey = pattern(113);
         let data = vec![rasn_kerberos::PaData {
-            r#type: 1,
-            value: preauth.clone().into(),
+            r#type: 2,
+            value: der::encode(&rasn_kerberos::EncryptedData {
+                etype: 17,
+                kvno: None,
+                cipher: preauth.clone().into(),
+            })?
+            .into(),
         }];
         let frame = Request::parse(&hex::decode(
             include_str!("../fixtures/kpasswd-request.hex").trim(),
