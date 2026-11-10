@@ -98,14 +98,14 @@ mod tests {
 
     /// KRB-ERROR preauthentication setters are read back unchanged.
     #[test]
-    fn kdc_error_preauth_replacements_are_kept() {
+    fn kdc_error_preauth_replacements_are_kept() -> Result<(), TestError> {
         let padata = rasn_kerberos::PaData {
             r#type: PA_ETYPE_INFO2,
             value: vec![0x30, 0x00].into(),
         };
         let hint = PreauthKeyInfo::new(17).with_salt(Some("TEST.GOKRB5alice".to_owned()));
         let mut error = KdcError::new(
-            UNIX_EPOCH,
+            timestamp(1_893_553_452)?,
             0,
             KDC_ERR_PREAUTH_REQUIRED,
             Principal::tgt_service("TEST.GOKRB5"),
@@ -114,6 +114,7 @@ mod tests {
         error.set_preauth_key_info(vec![hint.clone()]);
         assert_eq!(error.method_data(), [padata]);
         assert_eq!(error.preauth_key_info(), [hint]);
+        Ok(())
     }
 
     /// AS, TGS and AP-REQ options return every configured component.
