@@ -10,6 +10,9 @@ is a parity feature, not a defect>`.
 | --- | --- | --- |
 | critic:rskrb5-ng-b07c837/pol.md#POL-01 | FU-CLI-R15 | no |
 | critic:rskrb5-ng-b07c837/pol.md#POL-02 | FU-CLI-R16 | no |
+| critic:rskrb5-ng-b07c837/pol.md#POL-03 | FU-MSG-R02 | no |
+| critic:rskrb5-ng-b07c837/pol.md#POL-04 | FU-CLI-R18 | no |
+| critic:rskrb5-ng-b07c837/pol.md#POL-05 | FU-CLI-R19 | no |
 | critic:rskrb5-ng-b07c837/pol.md#POL-06 | FU-CFG-R15 | no |
 | critic:rskrb5-ng-b07c837/pol.md#POL-07 | FU-DOC-R18 | no |
 | critic:rskrb5-ng-b07c837/rel.md#REL-01 | FU-GATE-R14 | no |
