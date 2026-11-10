@@ -1275,6 +1275,11 @@ impl fmt::Debug for Tokio {
 #[cfg(feature = "tokio")]
 impl Tokio {
     /// Create a password-backed client using KDCs discovered from config.
+    ///
+    /// # Security
+    ///
+    /// Borrowed inputs are copied; the caller remains responsible for erasing the original and
+    /// any copies; pass an owned `String`/`Vec<u8>` to transfer the allocation.
     #[inline]
     pub fn with_password<P>(
         config: Config,
@@ -1417,6 +1422,11 @@ impl Tokio {
     ///
     /// This is useful when starting from a ccache-loaded client and keeping
     /// live credentials available for later refreshes.
+    ///
+    /// # Security
+    ///
+    /// Borrowed inputs are copied; the caller remains responsible for erasing the original and
+    /// any copies; pass an owned `String`/`Vec<u8>` to transfer the allocation.
     #[inline]
     pub fn with_password_credential<P>(mut self, password: P) -> Self
     where

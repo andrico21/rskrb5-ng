@@ -22,6 +22,11 @@ impl BlockingClient {
 
     /// Create a password-backed blocking Negotiate client.
     ///
+    /// # Security
+    ///
+    /// Borrowed inputs are copied; the caller remains responsible for erasing the original and
+    /// any copies; pass an owned `String`/`Vec<u8>` to transfer the allocation.
+    ///
     /// # Errors
     ///
     /// Returns the runtime errors of [`Self::new`].

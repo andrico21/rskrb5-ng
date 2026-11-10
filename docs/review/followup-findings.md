@@ -144,3 +144,4 @@ is a parity feature, not a defect>`.
 | executor:todo-22#secret-debug-audit-feature-closures | FU-TST-R21 | no |
 | executor:todo-22#windows-loopback-port-pair-permission-denied | FU-TST-R19 | no |
 | executor:todo-24#kadmin-invalid-message-length | FU-DOC-R14 | no |
+| executor:todo-26#borrowed-password-constructors | FU-DOC-R15 | no |

@@ -43,6 +43,11 @@ impl Client {
     }
 
     /// Create a password-backed Negotiate client using automatic UDP/TCP KDC transport.
+    ///
+    /// # Security
+    ///
+    /// Borrowed inputs are copied; the caller remains responsible for erasing the original and
+    /// any copies; pass an owned `String`/`Vec<u8>` to transfer the allocation.
     #[inline]
     pub fn with_password<P>(config: Config, client: Principal, password: P) -> Self
     where
