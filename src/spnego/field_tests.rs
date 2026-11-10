@@ -24,7 +24,7 @@ fn req_flags_reject_malformed_bit_strings() -> Result<(), Error> {
             drop(decoded?);
         }
         let mut token = NegTokenInit::krb5(vec![1]);
-        token.req_flags = Some(contents);
+        token.set_req_flags(Some(contents));
         assert_eq!(token.encode().is_ok(), valid);
     }
     Ok(())
