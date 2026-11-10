@@ -18,10 +18,24 @@ pub(super) struct Owner {
     pub derived_debug: bool,
 }
 
-/// Canonicalize local import and type aliases before field classification.
-fn resolve_aliases(words: &[String], field_type: &[String]) -> Vec<String> {
+/// Canonicalize aliases, rejecting referenced basenames whose scope is ambiguous.
+fn resolve_aliases(words: &[String], field_type: &[String]) -> Result<Vec<String>, io::Error> {
     let mut mappings = Vec::new();
+    let mut implementation_end = 0_usize;
     for (index, word) in words.iter().enumerate() {
+        if index < implementation_end {
+            continue;
+        }
+        if word == "impl"
+            && let Some(open) = words
+                .iter()
+                .enumerate()
+                .skip(index)
+                .find_map(|(position, item)| (item == "{").then_some(position))
+        {
+            implementation_end = closing(words, open)?.saturating_add(1);
+            continue;
+        }
         if word == "as"
             && let (Some(original), Some(alias)) = (
                 index
@@ -47,15 +61,20 @@ fn resolve_aliases(words: &[String], field_type: &[String]) -> Vec<String> {
     for _ in 0..mappings.len() {
         output = output
             .into_iter()
-            .flat_map(|word| {
-                mappings
-                    .iter()
-                    .find(|(alias, _)| *alias == word)
-                    .map_or_else(|| vec![word], |(_, target)| target.clone())
+            .map(|word| {
+                let mut matches = mappings.iter().filter(|(alias, _)| *alias == word);
+                let mapping = matches.next();
+                if matches.next().is_some() {
+                    return Err(io::Error::other(format!("ambiguous alias {word}")));
+                }
+                Ok(mapping.map_or_else(|| vec![word], |(_, target)| target.clone()))
             })
+            .collect::<Result<Vec<_>, io::Error>>()?
+            .into_iter()
+            .flatten()
             .collect();
     }
-    output
+    Ok(output)
 }
 
 /// Match a referenced owner in its module, or an unambiguous cross-module type.
@@ -168,6 +187,13 @@ pub(super) fn declarations(file: &str, words: &[String]) -> Result<Vec<Owner>, i
     let mut index = 0_usize;
     let mut attributes = Vec::new();
     while let Some(word) = words.get(index) {
+        if word == "$"
+            && words
+                .get(index.saturating_add(2))
+                .is_some_and(|item| matches!(item.as_str(), "struct" | "enum"))
+        {
+            return Err(io::Error::other("unsupported macro visibility declaration"));
+        }
         if word == "#"
             && words
                 .get(index.saturating_add(1))
@@ -232,8 +258,8 @@ pub(super) fn declarations(file: &str, words: &[String]) -> Result<Vec<Owner>, i
                 name,
                 fields: members
                     .into_iter()
-                    .map(|(field, public, ty)| (field, public, resolve_aliases(words, &ty)))
-                    .collect(),
+                    .map(|(field, public, ty)| Ok((field, public, resolve_aliases(words, &ty)?)))
+                    .collect::<Result<_, io::Error>>()?,
                 derived_debug: attributes.iter().any(|item| item == "derive")
                     && attributes.iter().any(|item| item == "Debug"),
             });

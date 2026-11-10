@@ -560,6 +560,55 @@ mod tests {
                 "src/example.rs",
                 &tokens("pub struct Truncated { key: Vec<u8>")?
              ), Err(error) if error.kind() == io::ErrorKind::Other));
+        let mut missed = Vec::new();
+        for (source, cause) in [
+            (
+                "macro_rules! credential_owner { ($vis:vis) => { #[derive(Debug)] $vis struct Leaked { password: Vec<u8> } }; } credential_owner!(pub);",
+                "unsupported macro visibility declaration",
+            ),
+            (
+                "macro_rules! credential_owner { ($vis:vis) => { #[derive(Debug)] $vis enum Leaked { Password(Vec<u8>) } }; } credential_owner!(pub);",
+                "unsupported macro visibility declaration",
+            ),
+            (
+                "mod unrelated { type Payload = u32; } type Payload = Vec<u8>; #[derive(Debug)] pub struct Leaked { password: Payload }",
+                "ambiguous alias Payload",
+            ),
+            (
+                "type Payload = Vec<u8>; mod unrelated { type Payload = u32; } #[derive(Debug)] pub struct Leaked { password: Payload }",
+                "ambiguous alias Payload",
+            ),
+            (
+                "type Payload = u32; mod nested { type Payload = Vec<u8>; #[derive(Debug)] pub struct Leaked { password: Payload } }",
+                "ambiguous alias Payload",
+            ),
+            (
+                "mod unrelated { use core::primitive::u32 as Payload; } type Payload = Vec<u8>; #[derive(Debug)] pub struct Leaked { password: Payload }",
+                "ambiguous alias Payload",
+            ),
+        ] {
+            for spelling in [source.to_owned(), source.replace(' ', "\r\n")] {
+                if !matches!(declarations("src/example.rs", &tokens(&spelling)?), Err(error) if error.to_string().contains(cause))
+                {
+                    missed.push(format!("missing {cause}: {source}"));
+                }
+            }
+        }
+        for source in [
+            "mod unrelated { type Payload = Vec<u8>; } #[derive(Debug)] pub struct Scalar { password: u32 }",
+            "type Payload = u32; #[derive(Debug)] pub struct Scalar { password: Payload }",
+            "type Payload = u32; trait HasPayload { type Payload; } impl HasPayload for Scalar { type Payload = Vec<u8>; } #[derive(Debug)] pub struct Scalar { password: Payload }",
+            "/* $vis struct Leaked { password: Vec<u8> } type Payload = Vec<u8>; */ type Payload = u32; pub struct Scalar { password: Payload }",
+            "const TEXT: &str = r###\"$vis struct Leaked { password: Vec<u8> } type Payload = Vec<u8>;\"###; type Payload = u32; pub struct Scalar { password: Payload }",
+        ] {
+            let owners = declarations("src/example.rs", &tokens(source)?)?;
+            assert_eq!(owners.len(), 1);
+            assert!(
+                secret_owners(&owners).is_empty(),
+                "scalar owner is not secret"
+            );
+        }
+        assert!(missed.is_empty(), "{}", missed.join("\n"));
         Ok(())
     }
 
