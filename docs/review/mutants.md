@@ -49,6 +49,56 @@ timeout.
 
 ## Verification
 
+### In-diff check after the policy fixes (todo 39)
+
+Todos 31 to 36 changed `src/` after the campaign above (POL-01 to POL-06,
+SEC-01, SEC-02 and ORA-07: request DER bound to the authorized message,
+additional tickets checked, raw encoders refusing prohibited enctypes, staged
+request lists refused instead of narrowed, the `includedir` depth cap, KDC
+discovery admitted through `restrictions::config`, and the destructuring
+`Debug` impls). The changed code was checked with `cargo mutants --in-diff`.
+
+- Diff: `git diff f77562b 68fb2d6 -- src` (11 files). `f77562b` is the code
+  campaign `d7666e7` covered (`git diff f77562b d7666e7 -- src` is empty);
+  `68fb2d6` is `main` after todo 38.
+- CI's `mutants` job cannot take a diff (`workflow_dispatch` declares no
+  inputs), so the check ran locally with the job's flags: `cargo mutants
+  --all-features --no-shuffle --cap-lints=true --in-diff <diff> --shard k/4 -j 2
+  --copy-target=false` at `68fb2d6`, cargo-mutants 27.1.0,
+  `CARGO_BUILD_WARNINGS=allow`, no debug info and an 8 GiB address-space cap.
+  Each shard measured its own baseline (48 s to 50 s build, 64 s to 65 s test),
+  and cargo-mutants set the timeout from it (325 s to 326 s).
+- `mutants_report.py --artifacts <the 4 shard outputs> --expect-shards 4
+  --register docs/review/mutants.md --campaign
+  68fb2d64aa5b9def9698f9720cb80b791f754107 --enforce` prints `mutants:
+  caught=21 missed=0 timeout=0 unviable=21 success=0` and `0 problem(s)`.
+
+| Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 11 | 0 | 0 | 0 | 11 | 182 |
+| 1 | 11 | 8 | 0 | 0 | 3 | 318 |
+| 2 | 11 | 11 | 0 | 0 | 0 | 441 |
+| 3 | 9 | 2 | 0 | 0 | 7 | 216 |
+
+No mutant survived, so the check adds no register row. The 21 unviable
+mutants return `Default::default()` for types without a `Default`
+(`BuiltTgsReq`, `AsReq`, `TgsReq`, `AsRepSession`, `TgsRepSession`,
+`KdcEndpoint`), or call `Zeroizing` constructors that do not exist.
+
+cargo-mutants does not mutate files that are pulled in with `include!`. The
+diff changes one of them, `src/config/enctype_policy.rs` (included by
+`src/config.rs`), whose new `validate_request_enctypes` therefore had no
+mutant in this or any earlier campaign. It was checked in a scratch copy with
+the file inlined into `src/config.rs` (`cargo mutants --all-features
+--no-shuffle --cap-lints=true --file src/config.rs --re
+validate_request_enctypes -j 2`). Both mutants were caught. The replacement
+`Ok(())` failed the client tests
+`as_req_with_disjoint_permitted_enctypes_fails_closed`,
+`as_req_rejects_mixed_disabled_enctype_list` and
+`tgs_req_rejects_mixed_disabled_enctype_list`. The deleted `!` failed 12 library
+tests, among them
+`checked_derivation_enforces_floors_before_pbkdf2`.
+
 ### Final tree after critic round 5 (todo 22r)
 
 Critic round 5 (`f77562b`) made the credential owners private, with
