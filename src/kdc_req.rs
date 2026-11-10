@@ -49,9 +49,11 @@ pub fn validate_kdc_req_body(req_body: &rasn_kerberos::KdcReqBody) -> Result<(),
 ///
 /// # Errors
 ///
-/// Returns [`Error::Encode`] when the DER encoder fails.
+/// Returns [`Error::Encode`] when DER encoding fails, or a policy cause when a
+/// requested enctype is permanently prohibited.
 #[inline]
 pub fn encode_kdc_req_body(req_body: &rasn_kerberos::KdcReqBody) -> Result<Vec<u8>, Error> {
+    reject_requested_enctypes(req_body)?;
     encode("KDC-REQ-BODY", req_body)
 }
 
@@ -84,9 +86,11 @@ pub fn validate_as_req(as_req: &rasn_kerberos::AsReq) -> Result<(), Error> {
 ///
 /// # Errors
 ///
-/// Returns [`Error::Encode`] when the DER encoder fails.
+/// Returns [`Error::Encode`] when DER encoding fails, or a policy cause for a
+/// permanently prohibited requested enctype or preauthentication mechanism.
 #[inline]
 pub fn encode_as_req(as_req: &rasn_kerberos::AsReq) -> Result<Vec<u8>, Error> {
+    reject_requested_enctypes(&as_req.0.req_body)?;
     for data in as_req.0.padata.as_deref().unwrap_or_default() {
         selection::preauth(data.r#type)?;
     }
@@ -111,7 +115,7 @@ pub fn build_as_req(
 ///
 /// # Errors
 ///
-/// Returns [`Error::Encode`] when the DER encoder fails.
+/// Returns the encoding and permanent-selection errors of [`encode_as_req`].
 #[inline]
 pub fn encode_build_as_req(
     req_body: rasn_kerberos::KdcReqBody,
@@ -149,9 +153,11 @@ pub fn validate_tgs_req(tgs_req: &rasn_kerberos::TgsReq) -> Result<(), Error> {
 ///
 /// # Errors
 ///
-/// Returns [`Error::Encode`] when the DER encoder fails.
+/// Returns [`Error::Encode`] when DER encoding fails, or a policy cause for a
+/// permanently prohibited requested enctype or preauthentication mechanism.
 #[inline]
 pub fn encode_tgs_req(tgs_req: &rasn_kerberos::TgsReq) -> Result<Vec<u8>, Error> {
+    reject_requested_enctypes(&tgs_req.0.req_body)?;
     for data in tgs_req.0.padata.as_deref().unwrap_or_default() {
         selection::preauth(data.r#type)?;
     }
@@ -176,13 +182,23 @@ pub fn build_tgs_req(
 ///
 /// # Errors
 ///
-/// Returns [`Error::Encode`] when the DER encoder fails.
+/// Returns the encoding and permanent-selection errors of [`encode_tgs_req`].
 #[inline]
 pub fn encode_build_tgs_req(
     req_body: rasn_kerberos::KdcReqBody,
     padata: Option<Vec<rasn_kerberos::PaData>>,
 ) -> Result<Vec<u8>, Error> {
     encode_tgs_req(&build_tgs_req(req_body, padata))
+}
+
+/// Reject permanent numeric selections without imposing runtime legacy permission.
+/// # Errors
+/// Returns the permanent policy cause for a prohibited requested encryption type.
+fn reject_requested_enctypes(body: &rasn_kerberos::KdcReqBody) -> Result<(), Error> {
+    for &etype in &body.etype {
+        selection::reject_enctype(etype)?;
+    }
+    Ok(())
 }
 
 /// Check a KDC request's protocol version, message type and request body.
