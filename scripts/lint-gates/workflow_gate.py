@@ -53,6 +53,7 @@ REQUIRED: Final = (
     "python3 scripts/check-config-relations.py",
     "python3 scripts/lint-gates/package_links.py --enforce",
     "python3 scripts/lint-gates/overlay_facts.py --enforce",
+    "python3 scripts/lint-gates/changelog_rows.py --enforce",
     "python3 scripts/check-github-ad-gate.py --self-test",
     "python3 scripts/check-ad-integration-env-smoke.py",
     "bash scripts/run-gated-integration.sh self-test",

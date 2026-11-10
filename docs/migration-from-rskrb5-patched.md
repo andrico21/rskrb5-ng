@@ -56,15 +56,16 @@ Programmatically supplied request lists are validated under the actual legacy
 permissions and parse mode and rejected by name if any entry is outside the
 permitted set; no intersection silently removes entries. Parsed implicit
 request defaults continue to inherit the permitted list. Programmatic callers
-setting a narrower permitted list must also set compatible request lists.
+setting a narrower permitted list must also set compatible request lists
+(FU-CLI-R18).
 Client admission preserves permanent `Policy::RejectedFeature` causes through
 `Error::source`, and ordinary configuration failures retain their named
-`error::Config` cause rather than becoming `InvalidConfiguration`.
+`error::Config` cause rather than becoming `InvalidConfiguration` (FU-CLI-R19).
 
 Raw AS, TGS and KDC-request-body encoders reject permanently prohibited numeric
 requested enctypes, including single DES and RC4-EXP. Passive decoding remains
 available for historical records; raw encoding still does not impose runtime
-RC4-HMAC or DES3 opt-in permission.
+RC4-HMAC or DES3 opt-in permission (FU-MSG-R02).
 
 An explicit `auth_to_local_names = { ... }` subsection selects deferred local
 authorization even if it is empty (FU-CFG-R14). Compatible parsing reports one
@@ -80,6 +81,10 @@ Principal keys such as `krb4_get_tickets` or `pkinit_draft9` inside a realm's
 limited to that exact mapping path; enabled protocol selectors elsewhere,
 including discarded scopes, still fail permanently. Local authorization remains
 deferred to WP-17 and Strict mode still rejects its diagnostic.
+
+A local principal literally named `module` in that exact map is now mapping
+data rather than `UnsupportedDynamicModule` (FU-CFG-R16); real `module`
+declarations elsewhere are still rejected.
 
 Two `[libdefaults]` flags gate the legacy enctypes. Both default to false,
 independently of `allow_weak_crypto`:
@@ -1196,6 +1201,10 @@ Include parsing (FU-CFG-R12): repeated includes no longer rescan a comment tail
 unless resolving a pending scalar. Precedence, accepted syntax and include
 limits are unchanged; no configuration migration is needed.
 
+Include depth (FU-CFG-R15): an `includedir` reached at depth 9 now returns
+`IncludeTooDeep` even when the directory is empty or holds only ignored files.
+Keep include chains within eight levels.
+
 #### Client, transport and kpasswd
 
 KRB-ERROR UTF-8 causes (FU-API-R01): `KrbErrorCodec::InvalidString` now contains
@@ -1277,6 +1286,34 @@ and zero padding now return `Client::Decode` naming the hint. Correct malformed
 producers rather than relying on prefix decoding; unrelated opaque e-data
 keeps its existing handling.
 
+Checked request bytes (FU-CLI-R15): the synchronous and Tokio checked AS/TGS
+exchanges compare the built request's DER with the canonical DER encoding of
+its `message` and return `error::Client::Encode` before transport when they
+differ. `set_message` does not re-encode, and built requests have no DER
+setter: after replacing the message, or when assembling metadata by hand, pass
+`BuiltAsReq::new`/`BuiltTgsReq::new` the bytes of `kdc_req::encode_as_req`/
+`encode_tgs_req` for that same message. `new` starts from the default policy and
+reply clock (and session reply usage for TGS), so set those again. Requests from
+the crate's builders already match.
+
+Additional TGS tickets (FU-CLI-R16): every ticket passed through
+`TgsReq::with_additional_tickets`, S4U evidence included, must use an enctype
+the effective policy permits for ticket keys. The builders check it before
+checksum or encryption, and checked exchanges check every additional ticket of
+a directly built request again. Permit the family (`allow_rc4`/`allow_des3`
+plus membership) or obtain an AES ticket instead.
+
+Preauthentication envelopes (FU-CLI-R20): PA-TGS-REQ and PA-ENC-TIMESTAMP data
+passed through `with_padata`, or present in a built request, is decoded and its
+ticket, authenticator and timestamp enctypes authorized under the effective
+policy before cryptography or transport. Malformed or trailing DER in those two
+types now fails. PA cookies and unknown PA types stay opaque.
+
+Public KDC discovery (FU-TRN-R11, FU-TRN-R12): `transport::Tokio::discover_kdcs`
+now applies the same whole-configuration admission as login, so unsupported
+restrictions and non-Boolean realm timestamp restrictions fail before endpoint
+selection or DNS.
+
 Checked kpasswd transport now enforces crypto policy before delivery and on
 authenticated replies (FU-TRN-R01). `RequestOptions.crypto_policy` is optional
 (secure defaults when absent); `BuiltKpasswdRequest.crypto_policy` binds the
@@ -1320,6 +1357,10 @@ For trusted count-one vectors, construct a policy from `LibDefaults` with
 policy-free raw primitive. The upper work limit still applies.
 
 #### SPNEGO, HTTP, service and messages
+
+Request flags (FU-SPN-R18): set or clear `NegTokenInit` request flags with
+`set_req_flags(Some(bits))` or `set_req_flags(None)`; the field stays private
+and encoding still validates the BIT STRING.
 
 HTTP clone configuration now checks cache compatibility against the shared
 validator under its lock (FU-HTTP-R04). Handle the existing typed skew error
