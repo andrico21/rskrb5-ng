@@ -13,7 +13,7 @@ mod tests {
     use core::{error, time::Duration};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use rasn::der;
+    use rasn::{der, types::Integer};
     use rasn_kerberos::{Checksum, KrbError};
     use rskrb5_ng::{
         error::Messages as Error,
@@ -165,6 +165,10 @@ mod tests {
             assert_eq!(decoded.cipher(), TEST_CIPHER);
             assert_eq!(der::encode(&decoded)?, bytes);
         }
+        let built = EncryptedData::new(18, TEST_CIPHER.to_vec().into())
+            .with_kvno(Some(Integer::from(7_i32)));
+        assert_eq!(built.etype(), 18_i32);
+        assert_eq!(built.kvno(), Some(&Integer::from(7_i32)));
         Ok(())
     }
 

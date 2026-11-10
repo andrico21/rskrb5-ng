@@ -78,6 +78,7 @@ mod tests {
 
         assert_eq!(pac.c_buffers(), 5);
         assert_eq!(pac.version(), 0);
+        assert_eq!(pac.data(), bytes.as_slice());
         assert_eq!(pac.buffers().len(), 5);
         assert!(pac.kerb_validation_info().is_some());
         assert!(pac.client_info().is_some());
@@ -594,6 +595,24 @@ mod tests {
         Ok(())
     }
 
+    /// Replacing either NTLM hash keeps the other validity flag and sets its own.
+    #[test]
+    fn ntlm_hash_replacement_updates_only_its_flag() -> Result<(), TestError> {
+        let mut ntlm = NtlmSupplementalCredential::parse(&ntlm_supplemental_credential_bytes())
+            .context("NTLM supplemental credential parses")?;
+        ntlm.set_lm_password(None);
+        assert_eq!(ntlm.flags(), 2);
+        ntlm.set_lm_password(Some([0x33; 16].into()));
+        assert_eq!(ntlm.flags(), 3);
+        ntlm.set_nt_password(None);
+        assert_eq!(ntlm.flags(), 1);
+        ntlm.set_nt_password(Some([0x44; 16].into()));
+        assert_eq!(ntlm.flags(), 3);
+        assert_eq!(ntlm.lm_password(), Some(&[0x33; 16]));
+        assert_eq!(ntlm.nt_password(), Some(&[0x44; 16]));
+        Ok(())
+    }
+
     /// Pins that credential data parses on its own.
     #[test]
     fn parses_credential_data_directly() -> Result<(), TestError> {
@@ -670,6 +689,7 @@ mod tests {
         assert_eq!(kvi.effective_name().value, "testuser1");
         assert_eq!(kvi.full_name().value, "Test1 User1");
         assert_eq!(kvi.logon_count(), 46);
+        assert_eq!(kvi.bad_password_count(), 0);
         assert_eq!(kvi.user_id(), 1106);
         assert_eq!(kvi.primary_group_id(), 513);
         assert_eq!(
@@ -711,6 +731,36 @@ mod tests {
                 "S-1-5-21-3062750306-1230139592-1973306805-1108",
             ]
         );
+        Ok(())
+    }
+
+    /// Scalar validation-info fields are read from their own NDR offsets, and the
+    /// session key is replaced.
+    #[test]
+    fn validation_info_reads_scalar_fields() -> Result<(), TestError> {
+        let mut bytes = decode_hex(pac_trust::PAC_KERB_VALIDATION_INFO_TRUST)?;
+        assert_eq!(bytes.get(116..118), Some(46_u16.to_le_bytes().as_slice()));
+        assert_eq!(bytes.get(228..232), Some(2_u32.to_le_bytes().as_slice()));
+        bytes
+            .get_mut(118..120)
+            .context("bad-password count")?
+            .copy_from_slice(&3_u16.to_le_bytes());
+        for (offset, value) in [(176_usize, 5_u32), (180, 6), (188, 7), (208, 8), (212, 9)] {
+            bytes
+                .get_mut(offset..offset.saturating_add(4))
+                .context("validation-info field")?
+                .copy_from_slice(&value.to_le_bytes());
+        }
+        let mut kvi = KerbValidationInfo::parse(&bytes).context("patched KVI parses")?;
+        kvi.set_user_session_key(pac::session_key::SessionKey::new([0x63; 16].into()));
+        assert_eq!(kvi.user_session_key().as_bytes(), &[0x63; 16]);
+        assert_eq!(kvi.logon_count(), 46);
+        assert_eq!(kvi.bad_password_count(), 3);
+        assert_eq!(kvi.reserved1(), [5, 6]);
+        assert_eq!(kvi.sub_auth_status(), 7);
+        assert_eq!(kvi.failed_ilogon_count(), 8);
+        assert_eq!(kvi.reserved3(), 9);
+        assert_eq!(kvi.resource_group_count(), 2);
         Ok(())
     }
 

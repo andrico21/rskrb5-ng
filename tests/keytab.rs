@@ -590,6 +590,14 @@ mod tests {
             .find_key(&["HTTP"], "TEST.GOKRB5", 0, 18)
             .context("newest matching key exists")?;
         assert_eq!(kvno, 2);
+        assert_eq!(
+            keytab
+                .entries()
+                .iter()
+                .map(Entry::kvno8)
+                .collect::<Vec<_>>(),
+            [1, 2, 3, 4]
+        );
         Ok(())
     }
 

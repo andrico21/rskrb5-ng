@@ -614,7 +614,8 @@ mod tests {
 
     use rskrb5_ng::{ccache, keytab};
 
-    /// Reject raw, escaped, decimal, hexadecimal and base64 disclosures in both formats.
+    /// Reject raw, escaped, decimal, hexadecimal and base64 disclosures in both
+    /// formats; an empty rendering hides the disclosure check and the diagnostic.
     pub(super) fn redacted<T>(owner: &T, secrets: &[&[u8]])
     where
         T: Debug,
@@ -627,6 +628,11 @@ mod tests {
             let _: bool = owners.insert(type_name::<T>().to_owned());
         });
         for output in [format!("{owner:?}"), format!("{owner:#?}")] {
+            assert!(
+                !output.is_empty(),
+                "{} diagnostics remain useful",
+                type_name::<T>()
+            );
             let compact: String = output.chars().filter(|ch| !ch.is_whitespace()).collect();
             for secret in secrets {
                 assert!(

@@ -319,6 +319,7 @@ mod tests {
             target_service,
             TgsReq::new(timestamp(1_893_553_450)?, 0x8877_6655)
                 .with_etypes(vec![18_i32])
+                .with_kdc_option_bits(KDC_OPTION_CNAME_IN_ADDL_TKT)
                 .with_padata(vec![pac_options]),
             timestamp(1_893_553_451)?,
             654_321,
@@ -327,6 +328,11 @@ mod tests {
         .context("S4U2Proxy TGS-REQ builds")?;
         let decoded: rasn_kerberos::TgsReq =
             der::decode(request.der()).context("TGS-REQ decodes")?;
+        assert_eq!(
+            decoded.0.req_body.kdc_options.0.as_raw_slice(),
+            KDC_OPTION_CNAME_IN_ADDL_TKT.to_be_bytes().as_slice(),
+            "a caller-set CNAME-IN-ADDL-TKT bit stays set"
+        );
         let padata = decoded.0.padata.as_ref().context("S4U2Proxy padata")?;
 
         assert_eq!(padata.len(), 2);

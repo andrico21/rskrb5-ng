@@ -17,6 +17,7 @@ mod tests {
     use rasn::types::Integer;
     use rasn_kerberos::{MethodData, PaData};
     use rskrb5_ng::{
+        client::process_kdc_error,
         error::KrbErrorCodec as Error,
         krb_error::{
             KRB_ERROR_MSG_TYPE, KRB5_PVNO, decode as decode_krb_error, decode_krb_error_info,
@@ -77,6 +78,11 @@ mod tests {
         assert_eq!(info.service().name(), "hftsai/extra");
         assert_eq!(info.e_text(), Some("krb5data"));
         assert_eq!(info.e_data(), Some(b"krb5data".as_slice()));
+        let client_error = process_kdc_error(&bytes)?;
+        assert_eq!(client_error.ctime(), Some(timestamp(TEST_TIME_SECONDS)?));
+        assert_eq!(client_error.cusec(), Some(123_456));
+        assert_eq!(client_error.susec(), 123_456);
+        assert_eq!(client_error.text(), Some("krb5data"));
         assert_eq!(encode_krb_error(&krb_error)?, bytes);
         Ok(())
     }
@@ -99,6 +105,9 @@ mod tests {
         assert_eq!(info.service().name(), "hftsai/extra");
         assert_eq!(info.e_text(), None);
         assert_eq!(info.e_data(), None);
+        let client_error = process_kdc_error(&bytes)?;
+        assert_eq!(client_error.ctime(), None);
+        assert_eq!(client_error.text(), None);
         assert_eq!(encode_krb_error(&krb_error)?, bytes);
         Ok(())
     }
