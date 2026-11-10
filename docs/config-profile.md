@@ -1,10 +1,29 @@
-# Profile composition and name expansion (todo 15, Steps A/B1/B2)
+# Profile composition, typed relations and name expansion
 
-This step changes profile composition, not the set of effective Kerberos
-features. B1 adds explicit-context credential-name parameter expansion.
-B2 adds bounded reader adapters, dynamic-provider rejection and existing
-credential-consumer integration. Additional typed relations and diagnostics
-remain subsequent steps.
+WP-01 (todo 15) delivers MIT profile composition, explicit-context credential-name
+expansion, bounded readers, typed relations and diagnostics. The generated
+[relation catalogue](config-relations.md) covers 43 libdefaults, 28 realm and six
+section rows. Each setting has an effective consumer or a diagnostic naming its
+deferred plan-2 package; unsupported restrictions fail closed.
+
+The delivery index links the completed parts of this reference. Stage labels
+identify the implementation sequence, not outstanding work. The docs tests parse
+the delimited status/link rows and check their local destinations.
+
+<!-- profile-delivery:start -->
+| Part | Status |
+| --- | --- |
+| [A: composition](#composition) | delivered |
+| [B1: expansion](#expansion) | delivered |
+| [B2: readers and consumers](#readers) | delivered |
+| [C1: initial typed relations](#relations-c1) | delivered |
+| [C2: complete libdefaults](#relations-c2) | delivered |
+| [D: realm and section relations](#relations-d) | delivered |
+| [E: diagnostics](#diagnostics) | delivered |
+| [F: generated catalogue](#catalogue) | delivered |
+<!-- profile-delivery:end -->
+
+<a id="composition"></a>
 
 ## Reference and lookup classification
 
@@ -17,7 +36,10 @@ collects all values for multi-valued lookup. Boolean and integer getters use
 the scalar lookup. A whitespace/comma-separated list inside one value is **not**
 a multi-valued profile relation.
 
-| Section | Relations currently decoded | Lookup kind |
+The table below groups representative lookups; the generated catalogue lists
+every typed relation and its current consumer or deferred classification.
+
+| Section | Relations | Lookup kind |
 | --- | --- | --- |
 | libdefaults | allow_rc4, allow_des3, allow_weak_crypto, canonicalize, dns_canonicalize_hostname, dns_lookup_kdc, dns_lookup_realm, forwardable, ignore_acceptor_hostname, k5login_authoritative, noaddresses (alias no_addresses), proxiable, rdns, verify_ap_req_nofail | Boolean; first value |
 | libdefaults | ccache_type, clockskew, default_ccache_name, default_client_keytab_name, default_keytab_name, default_realm, k5login_directory, kdc_default_options, kdc_timesync, realm_try_domains, renew_lifetime, safe_checksum_type, ticket_lifetime, udp_preference_limit | Single; first value |
@@ -32,12 +54,12 @@ a multi-valued profile relation.
 The separate kadm5 consumer selects a single string; this crate does not yet
 implement that consumer.
 
-Future typed decoding must preserve the distinction: `auth_to_local`, capaths
+Typed decoding preserves the distinction: `auth_to_local`, capaths
 intermediates, plugin `disable`/`enable_only`/`module`, and endpoint
 `primary_kdc` are multi-valued. Other libdefaults list syntax (for example
 `spake_preauth_groups`) is contained in a scalar relation. Unknown paths are
-retained during composition but are not exposed as new effective consumers in
-Step A. See the later relation/diagnostic work before claiming completeness.
+retained during composition and reported by the diagnostic classifier. Typed
+decoding does not activate the deferred mechanism consumers.
 
 ## Sources, finals and syntax
 
@@ -98,6 +120,7 @@ Composition and boundary tests live in `tests/config/profile*.rs`; the original
 config tests remain, with deliberately changed expectations recorded in the
 follow-up register and task evidence.
 
+<a id="expansion"></a>
 ## Explicit-context name expansion (B1)
 
 `config::parameters::expand(template, &ExpansionContext)` is pure: it reads no
@@ -139,14 +162,14 @@ unknown tokens and bare `%{`, remain literal and are never recursively expanded.
 Caller facts retain their path separators, rather than MIT Windows' final slash
 conversion. The result is resolved data: use literal-path APIs (`Keytab::load`,
 `CCache::load`) after handling any store prefix, not token-expanding name APIs.
-At B1, existing name loaders retained their Linux procfs UID/eUID behavior and
-the exact-owner guard inventory was unchanged. B2 connects the consumers below.
+The name loaders retain their Linux procfs UID/eUID behavior and use the
+consumer integration described below.
 
 `tests/config/expansion.rs` covers each token, platform identity policy,
 missing facts, exact-name errors, malformed tokens, literal percent signs,
 nonrecursive Unicode replacements and resolution of all three profile names.
-B1 alone does not close GAP-4/WP-01 or any additional follow-up register row.
 
+<a id="readers"></a>
 ## Reader adapters and dynamic providers (B2)
 
 GO-config-1 names gokrb5 `Load`, `NewFromString`, `NewFromReader`,
@@ -195,29 +218,30 @@ The three new environment reads are pinned by exact path/owner in
 alternatives. Configured-name loaders avoid the name-override environment but
 are no longer environment-free when their templates request these facts.
 
-For Step E: all three relations have consumers. Ambient effective-username,
+All three default-name relations have consumers. Ambient effective-username,
 Windows SID and installation-directory discovery is unavailable under the
 current no-unsafe/no-new-dependency implementation; such tokens fail typed
 `Unavailable` instead of silently selecting a wrong credential. Applications
-can supply those facts through B1's pure API and use explicit literal paths.
-No additional ledger row closes: FU-CFG-09 was already marked fixed by Step A;
-B2 completes its separately noted dynamic-module refusal. GAP-4 remains open.
+can supply those facts through the pure API and use explicit literal paths.
+Dynamic-module refusal is delivered alongside composition and decoding.
 
-## C1: first 22 libdefaults relations
+<a id="relations-c1"></a>
+## C1: initial typed libdefaults relations
 
-The typed public `LibDefaults` fields expose all 22 values from `allow_des3`
-through `ignore_acceptor_hostname`. `hostname::Canonicalization` preserves
+The first group of typed public `LibDefaults` fields covers the 22 values from
+`allow_des3` through `ignore_acceptor_hostname`; C2 completes the 43-relation
+catalogue. `hostname::Canonicalization` preserves
 `Never`, `Always`, and `Fallback`; boolean serde representations remain
 compatible, with the additional string `"fallback"`. Existing boolean builders
 remain available. New fields are `default_rcache_name`, `dns_uri_lookup`,
 `enforce_ok_as_delegate`, and `err_fmt`.
 
 `src/config/libdefaults/relations.rs::RELATIONS` is the machine-readable source
-for step F. Its 22 literal rows contain six columns: relation, value kind, MIT
-default, consumer symbol or `plan 2 WP-xx`, fail-closed rationale, and named test
-in `tests/config/relations_c1.rs`. Every relation is a **scalar lookup**; list
-tokens are inside that first value. Step F still owns generating and checking
-`docs/config-relations.md`; C1 does not claim all 43 relations are complete.
+for the generated catalogue. Its 43 literal rows contain six columns: relation,
+value kind, MIT default, consumer symbol or `plan 2 WP-xx`, fail-closed rationale,
+and named test. The initial group's tests are in `tests/config/relations_c1.rs`.
+Every libdefaults relation is a **scalar lookup**; list tokens are inside that
+first value. The generated catalogue is checked by the delivered step-F checker.
 
 The production classifier reads the same table after complete decoding and
 enctype resolution. `Config::diagnostics()` exposes its `NotYetEffective`
@@ -263,8 +287,8 @@ options; enctype expressions and default-name loaders retain WP-02/B2 consumers.
   trailing garbage are errors. Negative tolerances fail closed. MIT's context
   initializer actually reads clockskew as integer seconds: time syntax here is
   the requested extension. Unlike MIT's lexer, unknown trailing characters
-  are not treated as end-of-input. Other duration relations retain their
-  previous parser pending C2; this is not a global duration-parser rewrite.
+  are not treated as end-of-input. Other duration relations use the same
+  bounded interval parser described in C2 below.
 - [localaddr.c](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/localaddr.c):
   address lists accept commas and ASCII whitespace. This crate deliberately
   rejects malformed address tokens instead of silently narrowing the list.
@@ -275,14 +299,15 @@ that diagnostic exclusion. The malformed-address regression retains the same
 bad input but changes partial acceptance to `InvalidAddress`; a valid uppercase
 fixture preserves the original case-folding and address-order assertions.
 
+<a id="relations-c2"></a>
 ## C2: complete 43-relation libdefaults catalogue
 
 `RELATIONS` now has **43 rows**, with the same six columns and the same
 production classifier. `relations_match_todo_15_item_2` compares its ordered
 names and count with an independent literal checklist copied from todo 15
 item 2. `tests/config/relations_c2.rs` provides one named table-driven test
-per additional relation. This completes the libdefaults catalogue, not the
-remaining realm/section/provider work or step F's generated documentation.
+per additional relation. Realm/section decoding and generated documentation are
+also delivered, as described below; deferred mechanism providers remain plan 2.
 
 MIT defaults and relation types are sourced from the pinned
 [1.22.2 krb5.conf documentation, lines 274–420](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/doc/admin/conf_files/krb5_conf.rst#L274-L420).
@@ -344,8 +369,9 @@ Three old fixture tests used `noaddresses=false`: each now asserts its typed
 WP-04 error on the same original input, then checks its existing loading,
 realm, and serialization behavior with an explicitly addressless copy. This
 is a deliberate policy change, not silently weakening those fixtures. The
-register remains unchanged at this substep.
+follow-up register records the behavior changes and their proofs.
 
+<a id="relations-d"></a>
 ## D: typed realm and other profile sections
 
 `REALM_RELATIONS` has **28 rows**: all 13 relations in the krb5.conf realms
@@ -435,6 +461,7 @@ keys remain valid JSON. D adds no implicit ambient reads or plan-2 mechanism.
 The generic PKINIT libdefaults/realm-subsection override hierarchy is not added
 by this realm-section substep; its mechanism consumers remain WP-06.
 
+<a id="diagnostics"></a>
 ## E: complete diagnostic promotion and classification review
 
 `Config::diagnostics()` returns the diagnostics accumulated by profile parsing:
@@ -524,6 +551,7 @@ independent snippet parse in Compatible with diagnostics and AES IDs 20/19/18/17
 TEST.RSKRB5 disable_encrypted_timestamp=true fails with the named WP-07 error.
 Tests read no host config at runtime and require no LF-only checkout or network.
 
+<a id="catalogue"></a>
 ## F: generated catalogue and differential fixture provenance
 
 [config-relations.md](config-relations.md) is generated directly from the three
