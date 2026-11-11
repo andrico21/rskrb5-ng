@@ -26,6 +26,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final
 
+from root_attributes import opaque_root_attributes
 from rust_lex import iter_attributes, match_bracket, strip_comments_and_strings
 
 AUTO_DIRS: Final = ("src", "tests", "examples", "benches")
@@ -191,6 +192,10 @@ def rust_sources(given: Path, baseline: tuple[str, ...] = ()) -> list[Path]:
         if opaque_root_macros(stripped):
             raise SourceSetError(
                 f"{path}: opaque macro expansion outside a scanned directory"
+            )
+        if opaque_root_attributes(stripped):
+            raise SourceSetError(
+                f"{path}: opaque attribute expansion outside a scanned directory"
             )
     found = files | {
         path

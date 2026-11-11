@@ -46,6 +46,14 @@ REFERENCE: Final = re.compile(
 AUTOLINK: Final = re.compile(r"<([A-Za-z][A-Za-z0-9+.-]*:[^\s<>]*)>")
 ANCHOR: Final = re.compile(r"""<a\s[^>]*\b(?:id|name)\s*=\s*["']([^"']+)["']""")
 HEADING: Final = re.compile(r" {0,3}#{1,6}\s+(.*?)\s*#*\s*$")
+# HTML tokens take precedence over Markdown backticks and fence-looking lines.
+HTML_TOKEN: Final = re.compile(
+    r"<!--[\s\S]*?(?:-->|\Z)|<!\[CDATA\[[\s\S]*?(?:\]\]>|\Z)|<\?[\s\S]*?(?:\?>|\Z)|<![A-Z][^>]*(?:>|\Z)"
+    r"|<(script|style|pre|textarea)(?:\s[^>]*)?>[\s\S]*?(?:</\1\s*>|\Z)"
+    r'|</?[A-Za-z][A-Za-z0-9-]*(?:\s+(?:[^<>\'"]|"[^"]*"|\'[^\']*\')*)?\s*/?>'
+    r"|<[A-Za-z][A-Za-z0-9+.-]*:[^\s<>]*>",
+    re.IGNORECASE,
+)
 
 
 def package_files(root: Path) -> frozenset[str]:
@@ -69,6 +77,12 @@ def prose_lines(text: str) -> list[tuple[int, str]]:
     """Numbered lines outside fenced code blocks."""
     lines = []
     fence = ""
+    html_block = False
+    html_lines = set()
+    for token in HTML_TOKEN.finditer(text):
+        first = text.count("\n", 0, token.start()) + 1
+        last = text.count("\n", 0, token.end()) + 1
+        html_lines.update(range(first + 1, last + 1))
     for number, line in enumerate(
         text.replace("\r\n", "\n").replace("\r", "\n").split("\n"), 1
     ):
@@ -82,8 +96,15 @@ def prose_lines(text: str) -> list[tuple[int, str]]:
             ):
                 fence = ""
             continue
-        if opening and (
-            opening.group(1).startswith("~") or "`" not in line[opening.end() :]
+        if not line.strip():
+            html_block = False
+        elif re.match(r" {0,3}</?[A-Za-z][A-Za-z0-9-]*(?:\s|/?>)", line):
+            html_block = True
+        if (
+            not html_block
+            and number not in html_lines
+            and opening
+            and (opening.group(1).startswith("~") or "`" not in line[opening.end() :])
         ):
             fence = opening.group(1)
             continue
@@ -120,6 +141,11 @@ def link_targets(text: str) -> list[tuple[int, str]]:
         lines[number - 1] = raw
     prose = "\n".join(lines)
     visible = code_spans(prose)
+    visible = re.sub(
+        r"<!--[\s\S]*?(?:-->|\Z)",
+        lambda m: "".join("\n" if c == "\n" else " " for c in m[0]),
+        visible,
+    )
     found: list[tuple[int, str]] = []
     index = 0
     while index < len(visible):
@@ -153,6 +179,12 @@ def link_targets(text: str) -> list[tuple[int, str]]:
 def code_spans(prose: str) -> str:
     """Blank exact-run spans within blocks; escapes apply only outside spans."""
     boundaries = {0, len(prose)}
+    references = {}
+    for reference in REFERENCE.finditer(prose):
+        end = prose.find("\n", reference.end())
+        end = len(prose) if end < 0 else end
+        references[reference.start()] = end
+        boundaries.update((reference.start(), end))
     offset = 0
     for line in prose.splitlines(keepends=True):
         content = line.rstrip("\n")
@@ -176,8 +208,15 @@ def code_spans(prose: str) -> str:
     for start, stop in zip(ordered, ordered[1:]):
         index = start
         while index < stop:
+            if index in references:
+                index = references[index]
+                continue
             if prose[index] == "\\":
                 index += 2
+                continue
+            html = HTML_TOKEN.match(prose, index)
+            if html is not None:
+                index = html.end()
                 continue
             opening = re.match(r"`+", prose[index:stop])
             if opening is None:
@@ -351,6 +390,33 @@ def self_test() -> int:
         )
         failures = []
         for bad, count in (
+            (b'<a title="`">x</a> [bad](missing.md) <a title="`">y</a>', 1),
+            (b'see <a title="`">x</a> [bad](missing.md) <a title="`">y</a>', 1),
+            (b"see <a title='``'>x</a> [bad](missing.md) <a title='``'>y</a>", 1),
+            (b"see <!-- ` --> [bad](missing.md) <!-- ` -->", 1),
+            (b'[bad]: missing`file.md "`title`"\n[x][bad]', 1),
+            (b'[bad]: <missing`file.md> "`title`"\n[x][bad]', 1),
+            (b"<!--\n```\n-->\n[bad](missing.md)\n", 1),
+            (b'<div title="x\n```\n">\n</div>\n\n[bad](missing.md)\n', 1),
+            (b'`<a title="x"> [bad](missing.md) </a>`', 0),
+            (b"`<!-- [bad](missing.md) -->`", 0),
+            (b'```html\n<a title="`"> [bad](missing.md)\n```\n', 0),
+            (
+                b'see <a title="`" href="docs/a.md">ok</a> [ok](docs/a.md) <a title="`">ok</a>',
+                0,
+            ),
+            (b"see <!-- ` --> [ok](docs/a.md) <!-- ` -->", 0),
+            (b"<https://example.org/`x> [bad](missing.md) `", 1),
+            (b"[bad]: missing`file`.md\n[x][bad]", 1),
+            (b'[ok]: docs/a.md "`title"\n[x][ok]\n[bad](missing.md) `', 1),
+            (
+                b'see <a title="`" href=https://example.org>x</a> [bad](missing.md) <a title="`">y</a>',
+                1,
+            ),
+            (b"<script>`</script>\n\n[bad](missing.md) `", 1),
+            (b"<style>\n```\n</style>\n\n[bad](missing.md)\n", 1),
+            (b"<div>\n```\n</div>\n\n[bad](missing.md)\n", 1),
+            (b"<![CDATA[\n```\n]]>\n\n[bad](missing.md)\n", 1),
             (
                 "```text\ninside\n```\u00a0\ninside\n```\n[bad](missing.md)\n".encode(),
                 1,
