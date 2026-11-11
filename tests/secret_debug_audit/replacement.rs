@@ -20,7 +20,7 @@ mod replacement_readers;
 pub(super) struct Method {
     /// Physical source, owner and method identity.
     pub identity: String,
-    /// Concrete receiver name.
+    /// Concrete receiver identity, including its physical declaration scope.
     pub owner: String,
     /// Assigned or mutably exposed receiver fields.
     pub fields: Vec<String>,
@@ -35,12 +35,22 @@ struct Writes {
     opaque: Option<proc_macro2::Span>,
     /// Fields whose resolved storage has reviewed read-only operations.
     readers: Vec<String>,
+    /// The signature permits replacement through the receiver binding.
+    mutable_receiver: bool,
+    /// All fields of the resolved receiver declaration.
+    receiver_fields: Vec<String>,
 }
 
 impl Writes {
     /// Only receiver fields count, not unrelated object members.
     fn record(&mut self, expression: &Expr) {
         match expression {
+            Expr::Path(path) if self.mutable_receiver && path.path.is_ident("self") => {
+                self.fields.extend(self.receiver_fields.clone());
+                if self.receiver_fields.is_empty() {
+                    self.opaque = path.path.segments.first().map(|part| part.ident.span());
+                }
+            }
             Expr::Paren(value) => self.record(&value.expr),
             Expr::Group(value) => self.record(&value.expr),
             Expr::Index(value) => self.record(&value.expr),
@@ -96,6 +106,14 @@ impl Writes {
 }
 
 impl<'ast> Visit<'ast> for Writes {
+    fn visit_expr_call(&mut self, i: &'ast syn::ExprCall) {
+        for argument in &i.args {
+            if matches!(argument, Expr::Path(path) if path.path.is_ident("self")) {
+                self.record(argument);
+            }
+        }
+        visit::visit_expr_call(self, i);
+    }
     fn visit_expr_binary(&mut self, i: &'ast syn::ExprBinary) {
         if matches!(
             i.op,
@@ -127,11 +145,12 @@ impl<'ast> Visit<'ast> for Writes {
     fn visit_expr_method_call(&mut self, i: &'ast syn::ExprMethodCall) {
         let mut receiver = Self::default();
         receiver.record(&i.receiver);
-        if !(receiver
-            .fields
-            .iter()
-            .all(|field| self.readers.contains(field))
-            && replacement_readers::METHODS.contains(&i.method.to_string().as_str()))
+        if !(matches!(&*i.receiver, Expr::Path(path) if path.path.is_ident("self"))
+            || (receiver
+                .fields
+                .iter()
+                .all(|field| self.readers.contains(field))
+                && replacement_readers::METHODS.contains(&i.method.to_string().as_str())))
         {
             self.record(&i.receiver);
         }
@@ -151,7 +170,7 @@ impl<'ast> Visit<'ast> for Writes {
 /// Extract public inherent methods from parsed impl blocks.
 pub(super) fn methods(file: &str, source: &str) -> Result<Vec<Method>, io::Error> {
     parsed_methods(
-        file,
+        (file, file),
         &parse(file, source)?.items,
         &super::declarations::declarations(file, source)?,
     )
@@ -159,7 +178,7 @@ pub(super) fn methods(file: &str, source: &str) -> Result<Vec<Method>, io::Error
 
 /// Inspect each impl's concrete receiver and complete method body.
 fn parsed_methods(
-    file: &str,
+    (file, scope): (&str, &str),
     items: &[Item],
     owners: &[super::inventory::Owner],
 ) -> Result<Vec<Method>, io::Error> {
@@ -171,7 +190,11 @@ fn parsed_methods(
         if let Item::Mod(module) = item
             && let Some((_, nested)) = &module.content
         {
-            output.extend(parsed_methods(file, nested, owners)?);
+            output.extend(parsed_methods(
+                (file, &format!("{scope}::{}", module.ident)),
+                nested,
+                owners,
+            )?);
         }
         if let Item::Impl(implementation) = item {
             let Type::Path(path) = &*implementation.self_ty else {
@@ -180,16 +203,41 @@ fn parsed_methods(
             let Some(owner) = path.path.segments.last() else {
                 continue;
             };
+            let identity = format!("{scope}::{}", owner.ident);
             for member in &implementation.items {
                 if let ImplItem::Fn(function) = member
                     && matches!(function.vis, Visibility::Public(_))
                 {
-                    let mut writes = Writes::default();
+                    if path.qself.is_some() || path.path.segments.len() != 1 {
+                        return Err(unsupported(
+                            file,
+                            owner.ident.span(),
+                            "unresolved receiver type",
+                        ));
+                    }
+                    let mutable_receiver = function.sig.receiver().is_some_and(|receiver| {
+                        match &receiver.kind {
+                            syn::ReceiverKind::Reference(_, _, mutability) => mutability.is_some(),
+                            syn::ReceiverKind::Typed(_, ty) => {
+                                matches!(&**ty, Type::Reference(reference) if reference.mutability.is_some())
+                            }
+                            syn::ReceiverKind::Value => false,
+                            _ => true,
+                        }
+                    });
+                    let mut writes = Writes {
+                        fields: Vec::new(),
+                        opaque: None,
+                        readers: Vec::new(),
+                        mutable_receiver,
+                        receiver_fields: Vec::new(),
+                    };
                     for declaration in owners
                         .iter()
-                        .filter(|candidate| owner.ident == candidate.name)
+                        .filter(|candidate| candidate.identity == identity)
                     {
                         for (name, _, ty) in &declaration.fields {
+                            writes.receiver_fields.push(name.clone());
                             if replacement_readers::classified(ty) {
                                 writes.readers.push(name.clone());
                             }
@@ -197,13 +245,17 @@ fn parsed_methods(
                     }
                     writes.visit_block(&function.block);
                     if let Some(span) = writes.opaque {
-                        return Err(unsupported(file, span, "opaque replacement macro"));
+                        return Err(unsupported(
+                            file,
+                            span,
+                            "opaque replacement or receiver escape",
+                        ));
                     }
                     writes.fields.sort();
                     writes.fields.dedup();
                     output.push(Method {
-                        identity: format!("{file}::{}::{}", owner.ident, function.sig.ident),
-                        owner: owner.ident.to_string(),
+                        identity: format!("{identity}::{}", function.sig.ident),
+                        owner: identity.clone(),
                         fields: writes.fields,
                     });
                 }
@@ -229,7 +281,11 @@ pub(super) fn inspect(root: &Path, directory: &Path) -> Result<Vec<Method>, io::
             .map_err(io::Error::other)?
             .to_string_lossy()
             .replace('\\', "/");
-        output.extend(parsed_methods(&relative, &unit.tree.items, &owners)?);
+        output.extend(parsed_methods(
+            (&relative, &relative),
+            &unit.tree.items,
+            &owners,
+        )?);
     }
     Ok(output)
 }

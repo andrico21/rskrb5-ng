@@ -1,7 +1,13 @@
 //! Live-byte observations for replacement within a retained client owner.
 
+#[cfg(feature = "tokio")]
+use core::time::Duration;
 use core::{cell::RefCell, error::Error};
 use std::time::UNIX_EPOCH;
+
+#[cfg(feature = "tokio")]
+#[path = "replacement_login_tests.rs"]
+mod login;
 
 use super::{AsRepSession, BuiltApReq, KdcError, TgsFastRequestParts, principal::Principal};
 #[cfg(feature = "spnego")]
@@ -43,6 +49,59 @@ fn session_and_error_replacements_erase_old_bytes() -> Result<(), Box<dyn Error>
     error.set_e_data(None);
     EVENTS.with_borrow(|events| assert_eq!(events.as_slice(), [(17, true), (18, true)]));
     KEY_EVENTS.with_borrow(|events| assert_eq!(events.as_slice(), [(16, true)]));
+    Ok(())
+}
+
+/// Admission replaces an expired service key and erases its live allocation.
+#[cfg(feature = "tokio")]
+#[test]
+fn client_cache_insertion_erases_live_key_owner() -> Result<(), Box<dyn Error>> {
+    let frame = kadmin::Request::parse(&hex::decode(
+        include_str!("../../tests/fixtures/kpasswd-request.hex").trim(),
+    )?)?;
+    let principal = Principal::user("TEST.GOKRB5", "alice");
+    let service = Principal::new("TEST.GOKRB5", 2, ["kadmin", "changepw"]);
+    let old = AsRepSession::new(
+        principal.clone(),
+        service.clone(),
+        EncryptionKey::new(18, vec![0x41; 32]),
+        ticket::encode(&frame.ap_req().ticket)?.into(),
+        [0; 4],
+        UNIX_EPOCH,
+        UNIX_EPOCH,
+    );
+    let new = AsRepSession::new(
+        principal.clone(),
+        service.clone(),
+        EncryptionKey::new(18, vec![0x52; 32]),
+        ticket::encode(&frame.ap_req().ticket)?.into(),
+        [0; 4],
+        UNIX_EPOCH,
+        UNIX_EPOCH + Duration::from_secs(4_000_000_000),
+    );
+    let mut client = super::Tokio::new(
+        crate::Config::new(),
+        super::transport::KdcProtocol::Tcp,
+        principal,
+        None,
+    );
+    drop(
+        client
+            .service_tickets
+            .insert(super::service_cache_key(&service), old),
+    );
+    KEY_EVENTS.with_borrow_mut(Vec::clear);
+    client.cache_service_ticket(new)?;
+    KEY_EVENTS.with_borrow(|events| assert_eq!(events.as_slice(), [(32, true)]));
+    assert_eq!(
+        client
+            .cached_service_ticket(service)
+            .ok_or("cached replacement")?
+            .session_key()
+            .value()
+            .as_ref(),
+        &[0x52; 32]
+    );
     Ok(())
 }
 
