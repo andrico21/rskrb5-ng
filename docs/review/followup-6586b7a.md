@@ -485,6 +485,12 @@ Original review rows:
 | --- | --- | --- | --- | --- | --- | --- |
 | FU-SPN-R19 | minor | Request flags admit oversized and nonminimal ContextFlags | fixed | `req_flags_encoding_rejects_noncanonical_named_bits`, `req_flags_decoding_rejects_noncanonical_named_bits`, `req_flags_canonical_named_bits_roundtrip`; commit subject `spnego: reject noncanonical context flags (FU-SPN-R19)` | Both codec boundaries reject more than 32 significant bits and trailing zero named bits with InvalidReqFlags; canonical empty contents [0] and valid sets retain exact bytes without truncation. | task-49-rskrb5-ng-zero-open-items.log: both independent boundaries accepted all five invalid cases before the fix (exit 101); canonical controls passed. critic:critics-7286a80/u1.md#U1-01; RFC 4178 section 4.2.1. |
 
+## Round 7 local-name directive follow-up (todo 49)
+
+| ID | Sev | Title | Status | Proof | Behaviour change | Evidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| FU-CFG-R17 | minor | Local principals include and includedir are mistaken for directives | fixed | `realm_relations_d::tests::auth_to_local_names`, `local_maps_expand_includes_with_independent_child_state`; commit subject `config: preserve include principal mapping data (FU-CFG-R17)` | Exact scalar realm auth_to_local_names assignments preserve include/includedir names with spaced, tabbed and unspaced separators, first-value selection and one WP-17 diagnostic. Real directives inside maps still expand with independent child syntax state; actual child modules remain refused. | task-49-rskrb5-ng-zero-open-items.log: spaced assignment fabricated IncludeFile '= local' before the fix (exit 101); real file/directory expansion and child provider controls passed before and after. critic:critics-7286a80/u5.md#U5-01. |
+
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 
 - RVX-u1-01 → FU-TST-01 (also: the test never exercises the router wiring cited by the review doc; covered by FU-TST-01's Proof)

@@ -117,6 +117,8 @@ mod tests {
             "Alice",
             "ALICE",
             "module",
+            "include",
+            "includedir",
             "krb4_get_tickets",
             "v4_realm",
             "pkinit_draft9",
@@ -124,25 +126,27 @@ mod tests {
             "kpasswd_unprotected",
             "kpasswd_protocol",
         ] {
-            let config = Config::parse(&format!(
-                "[realms]\n EXAMPLE = {{\n auth_to_local_names = {{\n {name} = local\n {name} = ignored\n }}\n }}\n"
-            ))?;
-            assert_eq!(
-                config
-                    .realm("EXAMPLE")
-                    .ok_or("realm")?
-                    .auth_to_local_names
-                    .get(name)
-                    .map(String::as_str),
-                Some("local")
-            );
-            assert_eq!(
-                config.diagnostics(),
-                &[ConfigDiagnostic::NotYetEffective {
-                    relation: "auth_to_local_names",
-                    package: "plan 2 WP-17",
-                }]
-            );
+            for separator in ["=", " = ", "\t=\t"] {
+                let config = Config::parse(&format!(
+                    "[realms]\n EXAMPLE = {{\n auth_to_local_names = {{\n {name}{separator}local\n {name}{separator}ignored\n }}\n }}\n"
+                ))?;
+                assert_eq!(
+                    config
+                        .realm("EXAMPLE")
+                        .ok_or("realm")?
+                        .auth_to_local_names
+                        .get(name)
+                        .map(String::as_str),
+                    Some("local")
+                );
+                assert_eq!(
+                    config.diagnostics(),
+                    &[ConfigDiagnostic::NotYetEffective {
+                        relation: "auth_to_local_names",
+                        package: "plan 2 WP-17",
+                    }]
+                );
+            }
         }
         for name in [
             "krb4_get_tickets",
