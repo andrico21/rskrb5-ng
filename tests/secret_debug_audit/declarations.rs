@@ -28,6 +28,15 @@ pub(super) fn graph_unit(
     unit: &super::source::Parsed,
     graph: &[super::source::Parsed],
 ) -> Result<Vec<Owner>, io::Error> {
+    super::attributes::check(
+        file,
+        &unit.tree,
+        &graph
+            .iter()
+            .filter(|part| part.module == unit.module)
+            .map(|part| part.tree.items.as_slice())
+            .collect::<Vec<_>>(),
+    )?;
     let generics = Generics::default();
     let scope = Scope {
         file,
@@ -49,6 +58,7 @@ pub(super) fn scoped<'ast>(
     tree: &'ast syn::File,
     scopes: Vec<&'ast [Item]>,
 ) -> Result<Vec<Owner>, io::Error> {
+    super::attributes::check(file, tree, &scopes)?;
     let generics = Generics::default();
     let scope = Scope {
         file,

@@ -2,6 +2,35 @@
 
 use std::{io, path::Path};
 
+/// Generated owners require a located refusal rather than a partial inventory.
+#[test]
+fn inventory_refuses_opaque_attributes() -> Result<(), io::Error> {
+    for source in [
+        "#[external::owners] pub struct Marker;",
+        "#[derive(external::Owners)] pub struct Marker;",
+        "#[cfg_attr(feature = \"serde\", external::owners)] pub struct Marker;",
+        "#[derive(Debug, external::Owners)] pub struct Marker;",
+        "pub struct Marker; impl Marker { #[external::owners] pub fn make() {} }",
+        "use external::Owners as Debug; #[derive(Debug)] pub struct Marker;",
+        "use external as serde; #[derive(serde::Serialize)] pub struct Marker;",
+        "mod serde {} #[derive(serde::Serialize)] pub struct Marker;",
+        "use external::owners as serde; #[serde] pub struct Marker;",
+    ] {
+        drop(super::source::parse("src/attributes.rs", source)?);
+        assert!(
+            super::declarations::declarations("src/attributes.rs", source)
+                .is_err_and(|error| error.to_string().contains("src/attributes.rs:1:")),
+            "opaque expansion admitted: {source}"
+        );
+    }
+    let owners = super::declarations::declarations(
+        "src/attributes.rs",
+        "#[derive(Clone, Debug)] #[repr(C)] #[must_use] pub struct Marker;",
+    )?;
+    assert_eq!(owners.len(), 1);
+    Ok(())
+}
+
 /// Replacement discovery retains inline impls, transparent wrappers and opaque mutations.
 #[test]
 fn replacement_accounts_for_indirect_mutations() -> Result<(), io::Error> {

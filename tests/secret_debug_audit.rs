@@ -97,6 +97,9 @@ mod parser_tests;
 #[path = "secret_debug_audit/scope_tests.rs"]
 mod scope_tests;
 
+#[path = "secret_debug_audit/attributes.rs"]
+mod attributes;
+
 #[cfg(test)]
 #[expect(
     clippy::missing_errors_doc,
