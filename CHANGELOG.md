@@ -13,6 +13,11 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### Crate, library and repository
 
+- Configuration relation tags use MIT's ASCII whitespace contract: Unicode
+  whitespace in principal names is preserved, while internal ASCII whitespace
+  returns a line-numbered syntax error; padding around `=` remains accepted
+  (FU-CFG-R19, FU-CFG-R20).
+
 - The package is `rskrb5-ng` (was `rskrb5-patched`) and the library
   `rskrb5_ng` (was `rskrb5`): depend on `rskrb5-ng = "0.3"` and replace
   `use rskrb5::` with `use rskrb5_ng::`.

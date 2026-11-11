@@ -2061,7 +2061,9 @@ impl IncludeExpansion {
         let mut state = profile_syntax::State::default();
         let mut lines = input.lines().enumerate();
         while let Some((index, line)) = lines.next() {
-            let cleaned = profile_syntax::comments(line).trim();
+            let cleaned = profile_syntax::comments(line)
+                .trim_start_matches(profile_syntax::tag_whitespace)
+                .trim_end();
             if cleaned.is_empty() {
                 continue;
             }
