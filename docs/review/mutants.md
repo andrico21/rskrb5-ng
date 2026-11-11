@@ -49,6 +49,43 @@ timeout.
 
 ## Verification
 
+### In-diff check after critic round 7 (todo 51)
+
+Todos 47 and 49 changed `src/` after the todo 46 check (FU-CLI-R21: request
+`enc-authorization-data` is authorized as a session-key use, and credential
+preauthentication types without a checked envelope are rejected before
+transport; FU-SPN-R19: `reqFlags` must be canonical RFC 4178 `ContextFlags`;
+FU-CFG-R17: an `include` line that is a local-name mapping assignment stays
+mapping data). The other commits of the range changed tests, gate scripts
+and documents only, and `src/crypto/policy.rs` changed a doc comment.
+
+- Diff: `git diff 7286a80 77e3fdc -- src` (5 files). `7286a80` is `main`
+  after todo 46 and has the code that check covered; `77e3fdc` is `main` after
+  todo 50.
+- The check ran locally as in todo 46: `cargo mutants --all-features
+  --no-shuffle --cap-lints=true --in-diff <diff> --shard k/2 -j 2
+  --copy-target=false` at `77e3fdc`, cargo-mutants 27.1.0,
+  `CARGO_BUILD_WARNINGS=allow`, no debug info and an 8 GiB address-space cap.
+  Each shard measured its own baseline (47 s build, 62 s test), and
+  cargo-mutants set the timeout from it (314 s and 315 s).
+- `mutants_report.py --artifacts <the 2 shard outputs> --expect-shards 2
+  --register docs/review/mutants.md --campaign
+  77e3fdc62f8777546f17449138f5eb230e260c98 --enforce` prints `mutants:
+  caught=12 missed=0 timeout=0 unviable=1 success=0` and `0 problem(s)`.
+
+| Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 7 | 6 | 0 | 0 | 1 | 265 |
+| 1 | 6 | 6 | 0 | 0 | 0 | 302 |
+
+No mutant survived, so the check adds no register row. The unviable mutant
+replaces `&&` with `||` in the `let` chain of `IncludeExpansion::expand`,
+which Rust rejects (`||` operators are not supported in let chain
+conditions). No file of this diff is pulled in with `include!`:
+`src/client/crypto_policy.rs`, `src/spnego/field_tests.rs` and
+`src/crypto/policy.rs` are modules, and the changed lines of `src/config.rs`
+lie outside its `include!`d files, so no inlined copy was needed.
+
 ### In-diff check after critic round 6 (todo 46)
 
 Todos 41 and 43 changed `src/` after the todo 39 check (FU-CLI-R20: the
