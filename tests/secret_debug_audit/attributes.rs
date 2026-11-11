@@ -156,6 +156,12 @@ impl Admission<'_> {
                         [] => DERIVES.contains(&name.as_str()),
                         [(_, target)] if path.segments.len() == 1 => {
                             DERIVES.contains(&target.as_str())
+                                // Debug classification uses the written name. Until it
+                                // carries resolved identities, refuse renamed Debug.
+                                && !(matches!(
+                                    target.as_str(),
+                                    "Debug" | "core::fmt::Debug" | "std::fmt::Debug"
+                                ) && name != "Debug")
                                 && !self.bindings.iter().any(|(binding, _)| {
                                     target.split("::").next() == Some(binding.as_str())
                                 })
