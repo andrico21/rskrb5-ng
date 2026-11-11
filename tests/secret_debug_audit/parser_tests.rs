@@ -5,7 +5,31 @@ use std::io;
 use super::{
     inventory::{declarations, secret_owners},
     lex::tokens,
+    source::parse,
 };
+
+/// Syntax failures retain the actual line after inert text, including CRLF input.
+#[test]
+fn parser_reports_original_error_line() -> Result<(), io::Error> {
+    for newline in ["\n", "\r\n"] {
+        let source = [
+            "// pub struct Decoy;",
+            "const TEXT: &str = r###\"enum Decoy {}\"###;",
+            "pub struct Broken { password: }",
+        ]
+        .join(newline);
+        let Err(error) = parse("src/probe.rs", &source) else {
+            return Err(io::Error::other("malformed field accepted"));
+        };
+        assert!(
+            error
+                .to_string()
+                .starts_with("unsupported source src/probe.rs:3:"),
+            "incorrect original source location: {error}"
+        );
+    }
+    Ok(())
+}
 
 /// Every unclassified source must fail explicitly, with its source location.
 fn rejects(sources: &[&str]) -> Result<(), io::Error> {
