@@ -8,17 +8,68 @@
 )]
 #[path = "secret_debug_audit/inventory.rs"]
 mod inventory;
+
+#[cfg(test)]
+#[path = "secret_debug_audit/nonsecret.rs"]
+mod nonsecret;
+
 #[cfg(test)]
 #[expect(
     clippy::missing_errors_doc,
     reason = "test code is not rendered API documentation"
 )]
-#[path = "secret_debug_audit/lex.rs"]
-mod lex;
+#[path = "secret_debug_audit/source.rs"]
+mod source;
 
 #[cfg(test)]
-#[path = "secret_debug_audit/nonsecret.rs"]
-mod nonsecret;
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[path = "secret_debug_audit/macros.rs"]
+mod macros;
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[path = "secret_debug_audit/resolve.rs"]
+mod resolve;
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[path = "secret_debug_audit/declarations.rs"]
+mod declarations;
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[path = "secret_debug_audit/configuration.rs"]
+mod configuration;
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[path = "secret_debug_audit/graph.rs"]
+mod graph;
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "secret_debug_audit/parser_tests.rs"]
+mod parser_tests;
 
 #[cfg(test)]
 #[expect(
@@ -130,7 +181,10 @@ mod tests {
         }
         if identity.starts_with("src/http.rs") {
             return cfg!(feature = "http")
-                && (!identity.contains("TowerError") && !identity.contains("NegotiateFuture")
+                && (!identity.contains("TowerError")
+                    && !identity.contains("NegotiateFuture")
+                    && !identity.contains("NegotiateLayer")
+                    && !identity.contains("NegotiateService")
                     || cfg!(feature = "tower"))
                 && (!identity.contains("NegotiateHttp") || cfg!(feature = "tokio"));
         }
@@ -216,6 +270,10 @@ mod tests {
 
     /// Reviewed operations that do not destroy retained secret bytes.
     const REPLACEMENT_EXCEPTIONS: &[(&str, &str)] = &[
+        (
+            "src/http.rs::NegotiateService::inner_mut",
+            "Caller-owned generic service; mutation and erasure remain the inner service's contract, not first-party credential storage.",
+        ),
         (
             "src/client.rs::BuiltApReq::set_message",
             "Dependency-owned rasn OctetString residual; no mutable byte API, documented in security-policy residual copies.",
@@ -452,6 +510,8 @@ mod tests {
 
     /// Owners exercised with populated credential fields by this integration target.
     const COVERED: &[&str] = &[
+        "src/http.rs::NegotiateService",
+        "src/http.rs::NegotiateLayer",
         "src/keytab.rs::EncryptionKey",
         "src/keytab.rs::Entry",
         "src/keytab.rs::Keytab",
@@ -523,7 +583,7 @@ mod tests {
     /// Literal decoys and CRLF cannot hide public credential owners or Debug derives.
     #[test]
     fn inventory_rejects_uncovered_secret_shapes() -> Result<(), io::Error> {
-        use super::{inventory::declarations, lex::tokens};
+        use super::declarations::declarations;
         for source in [
             "#[derive(Debug)] pub struct Secret { password: Vec<u8> }",
             "#[cfg_attr(feature = \"x\", derive(Debug))] pub struct Secret { key: [u8; 16] }",
@@ -532,9 +592,10 @@ mod tests {
             "use zeroize::Zeroizing as Erased; pub struct Secret { bytes: Erased<Vec<u8>> }",
             "type Payload = Vec<u8>; pub struct Secret { password: Payload }",
             "#[derive(Debug)] pub struct Secret { r#password: Vec<u8> }",
+            "pub union Secret { password: [u8; 16], scalar: u32 }",
         ] {
             for spelling in [source.to_owned(), source.replace(' ', "\r\n")] {
-                let owners = declarations("src/example.rs", &tokens(&spelling)?)?;
+                let owners = declarations("src/example.rs", &spelling)?;
                 assert_eq!(owners.len(), 1);
                 assert!(
                     owners.iter().any(|owner| owner
@@ -547,18 +608,18 @@ mod tests {
         }
         let decoys = "/* pub struct Wrong { key: Vec<u8> } */ const TEXT: &str = r###\"pub struct Wrong { secret: String }\"###;";
         assert!(
-            declarations("src/example.rs", &tokens(decoys)?)?.is_empty(),
+            declarations("src/example.rs", decoys)?.is_empty(),
             "literal declarations are inert"
         );
         assert!(
-            matches!(tokens("/* unterminated"), Err(error) if error.kind() == io::ErrorKind::Other)
+            matches!(declarations("src/example.rs", "/* unterminated"), Err(error) if error.kind() == io::ErrorKind::Other)
         );
         assert!(
-            matches!(tokens("r##\"unterminated"), Err(error) if error.kind() == io::ErrorKind::Other)
+            matches!(declarations("src/example.rs", "r##\"unterminated"), Err(error) if error.kind() == io::ErrorKind::Other)
         );
         assert!(matches!(declarations(
                 "src/example.rs",
-                &tokens("pub struct Truncated { key: Vec<u8>")?
+                 "pub struct Truncated { key: Vec<u8>"
              ), Err(error) if error.kind() == io::ErrorKind::Other));
         Ok(())
     }
@@ -566,68 +627,72 @@ mod tests {
     /// Opaque macros and aliases fail closed; resolvable scalar storage stays nonsecret.
     #[test]
     fn inventory_rejects_opaque_declarations() -> Result<(), io::Error> {
-        use super::{inventory::declarations, lex::tokens};
+        use super::declarations::declarations;
         let mut missed = Vec::new();
         for (source, cause) in [
             (
                 "macro_rules! credential_owner { ($vis:vis) => { #[derive(Debug)] $vis struct Leaked { password: Vec<u8> } }; } credential_owner!(pub);",
-                "unsupported macro visibility declaration",
+                "unclassified local macro transcriber",
             ),
             (
                 "macro_rules! credential_owner { ($vis:vis) => { #[derive(Debug)] $vis enum Leaked { Password(Vec<u8>) } }; } credential_owner!(pub);",
-                "unsupported macro visibility declaration",
+                "unclassified local macro transcriber",
             ),
             (
                 "macro_rules! credential_owner { ($($vis:vis,)?) => { #[derive(Debug)] $($vis)? struct Leaked { password: Vec<u8> } }; } credential_owner!(pub,);",
-                "unsupported macro visibility declaration",
+                "unclassified local macro transcriber",
             ),
             (
                 "macro_rules! credential_owner { ($($vis:vis,)*) => { #[derive(Debug)] $($vis)* enum Leaked { Password(Vec<u8>) } }; } credential_owner!(pub,);",
-                "unsupported macro visibility declaration",
+                "unclassified local macro transcriber",
             ),
             (
                 "macro_rules! credential_owner { ($($vis:vis,)?) => { $( $($vis)? struct Leaked { password: Vec<u8> } )? }; } credential_owner!(pub,);",
-                "unsupported macro visibility declaration",
+                "unclassified local macro transcriber",
             ),
             (
                 "type Payload<T = u8> = Vec<T>; #[derive(Debug)] pub struct Leaked { password: Payload }",
-                "unresolved generic alias Payload",
+                "unresolved generic alias",
             ),
             (
                 "type Payload<T> = Vec<T>; #[derive(Debug)] pub struct Leaked { password: Payload<u8> }",
-                "unresolved generic alias Payload",
+                "unresolved generic alias",
             ),
             (
                 "type Payload<T = u8> = Vec<T>; type Storage = Payload; #[derive(Debug)] pub struct Leaked { password: Storage }",
-                "unresolved generic alias Payload",
+                "unresolved generic alias",
             ),
             (
                 "type Scalar<T = u32> = T; #[derive(Debug)] pub struct Counter { password: Scalar }",
-                "unresolved generic alias Scalar",
+                "unresolved generic alias",
             ),
             (
                 "type Payload<T = u8> = Vec<T>; use self::Payload as Storage; pub struct Leaked { password: Storage }",
-                "unresolved generic alias Payload",
+                "unresolved generic alias",
             ),
             (
                 "mod unrelated { type Payload = u32; } type Payload = Vec<u8>; #[derive(Debug)] pub struct Leaked { password: Payload }",
-                "ambiguous alias Payload",
+                "resolved secret",
             ),
             (
                 "type Payload = Vec<u8>; mod unrelated { type Payload = u32; } #[derive(Debug)] pub struct Leaked { password: Payload }",
-                "ambiguous alias Payload",
+                "resolved secret",
             ),
             (
                 "type Payload = u32; mod nested { type Payload = Vec<u8>; #[derive(Debug)] pub struct Leaked { password: Payload } }",
-                "ambiguous alias Payload",
+                "resolved secret",
             ),
             (
                 "mod unrelated { use core::primitive::u32 as Payload; } type Payload = Vec<u8>; #[derive(Debug)] pub struct Leaked { password: Payload }",
-                "ambiguous alias Payload",
+                "resolved secret",
             ),
         ] {
             for spelling in [source.to_owned(), source.replace(' ', "\r\n")] {
-                if !matches!(declarations("src/example.rs", &tokens(&spelling)?), Err(error) if error.to_string().contains(cause))
+                if cause == "resolved secret" {
+                    resolved_secret(&spelling)?;
+                    continue;
+                }
+                if !matches!(declarations("src/example.rs", &spelling), Err(error) if error.to_string().contains(cause))
                 {
                     missed.push(format!("missing {cause}: {source}"));
                 }
@@ -642,7 +707,7 @@ mod tests {
             "/* $vis struct Leaked { password: Vec<u8> } type Payload = Vec<u8>; */ type Payload = u32; pub struct Scalar { password: Payload }",
             "const TEXT: &str = r###\"$vis struct Leaked { password: Vec<u8> } type Payload = Vec<u8>;\"###; type Payload = u32; pub struct Scalar { password: Payload }",
         ] {
-            let owners = declarations("src/example.rs", &tokens(source)?)?;
+            let owners = declarations("src/example.rs", source)?;
             assert_eq!(owners.len(), 1);
             assert!(
                 secret_owners(&owners).is_empty(),
@@ -655,11 +720,23 @@ mod tests {
             "const TEXT: &str = r###\"macro_rules! hidden { () => { $($vis)? enum Leaked {} }; }\"###;",
         ] {
             assert!(
-                declarations("src/example.rs", &tokens(source)?)?.is_empty(),
+                declarations("src/example.rs", source)?.is_empty(),
                 "plain macros and literal declarations are inert"
             );
         }
         assert!(missed.is_empty(), "{}", missed.join("\n"));
+        Ok(())
+    }
+
+    /// Scoped aliases resolve to one credential owner rather than an unrelated scalar.
+    fn resolved_secret(source: &str) -> Result<(), io::Error> {
+        let owners = super::declarations::declarations("src/example.rs", source)?;
+        assert_eq!(owners.len(), 1);
+        assert_eq!(
+            secret_owners(&owners).len(),
+            1,
+            "scoped credential alias omitted"
+        );
         Ok(())
     }
 
@@ -675,21 +752,18 @@ mod tests {
     /// Direct assignment, builder replacement and mutable escape all require audit coverage.
     #[test]
     fn replacement_inventory_detects_mutation_forms() -> Result<(), io::Error> {
-        use super::{
-            lex::tokens,
-            replacement::{methods, replaced_fields},
-        };
+        use super::replacement::{methods, replaced_fields};
         for operation in [
             "self.secret = value;",
             "self.secret.replace(value);",
             "self.secret.clear();",
             "core::mem::replace(&mut self.secret, value);",
-            "&mut self.secret",
+            "&mut self.secret;",
         ] {
             let source = format!(
                 "impl Owner {{ pub fn with_secret(mut self, value: Vec<u8>) -> Self {{ {operation} self }} }}"
             );
-            let found = methods("src/owner.rs", &tokens(&source)?)?;
+            let found = methods("src/owner.rs", &source)?;
             assert_eq!(found.len(), 1);
             assert_eq!(
                 replaced_fields(found.first().ok_or_else(|| io::Error::other("method"))?),
@@ -698,7 +772,7 @@ mod tests {
         }
         let found = methods(
             "src/owner.rs",
-            &tokens("impl Owner { pub fn equals(&self) -> bool { self.secret == other } }")?,
+            "impl Owner { pub fn equals(&self) -> bool { self.secret == other } }",
         )?;
         assert!(
             replaced_fields(found.first().ok_or_else(|| io::Error::other("method"))?).is_empty(),

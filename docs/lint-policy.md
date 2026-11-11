@@ -181,6 +181,24 @@ ownership conversions don't count, because an unused `Ok(())` wrapper would
 trigger `clippy::unnecessary_wraps`. Unknown calls, fallible calls nested in
 conversions, `?`, `expect` and `unwrap` outside assertions still require it.
 
+## Dependency changes
+
+The zero-open-items plan compares the runtime `[dependencies]` table against
+`6586b7a`; test-only `[dev-dependencies]` are a separate table. The owner
+approved `syn` on 2026-11-11 for replacing the credential audit's handwritten
+scanner. On the same date the owner approved option 1: a direct dev edge to
+existing `proc-macro2` 1.0.107 solely enabling `span-locations` for accurate
+file:line diagnostics. These edges reuse locked packages (`syn` 3.0.9), add
+no package, and leave the runtime dependency table unchanged. Compare
+`cargo tree -e normal --all-features` before and after the change as well as
+the runtime table against `6586b7a`. The existing dual-version ban
+justification and cargo-vet exemptions still apply.
+
+This approval does not waive `cargo deny check`, `cargo audit`,
+`cargo vet --locked`, `cargo machete`, or `taplo fmt --check`. Cargo-deny's
+license check covers both existing transitive crates; both are dual
+MIT/Apache-2.0 licensed. There is no separate committed SBOM to update.
+
 ## Every closure, and Windows
 
 `feature_closures.py list` computes the distinct closures of the `[features]`

@@ -1,0 +1,2 @@
+type Payload = Vec<u8>;
+include!("scoped-owner.rs.txt");

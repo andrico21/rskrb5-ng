@@ -1,0 +1,6 @@
+#[path = "module-alias.rs.txt"]
+mod storage;
+use storage::Payload as Bytes;
+pub struct Included {
+    password: Bytes,
+}

@@ -172,6 +172,12 @@ is a parity feature, not a defect>`.
 | critic:critics-fb19af4/u6.md#U6-13 | FU-TST-R10 | no |
 | critic:critics-fb19af4/u6.md#U6-14 | FU-DOC-R11 | no |
 | critic:critics-fb19af4/u6.md#U6-15 | FU-DOC-R12 | no |
+| critic:critics-367edde/u2.md#U2-05 | FU-TST-R30 | no |
+| critic:critics-367edde/u2.md#U2-01 | FU-TST-R36 | no |
+| critic:critics-367edde/u2.md#U2-02 | FU-TST-R37 | no |
+| critic:critics-367edde/u2.md#U2-03 | FU-TST-R38 | no |
+| critic:critics-367edde/u2.md#U2-04 | FU-TST-R39 | no |
+| critic:critics-367edde/u2.md#U2-06 | FU-TST-R31 | no |
 | executor:todo-16#transit-validator-rustdoc | FU-DOC-R02 | no |
 | executor:todo-21#replay-quota-partial-expiry | FU-TST-R10 | no |
 | executor:todo-22#packaged-tests-include-excluded-fixture | FU-TST-R16 | no |
