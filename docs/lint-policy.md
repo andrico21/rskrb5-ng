@@ -181,6 +181,20 @@ ownership conversions don't count, because an unused `Ok(())` wrapper would
 trigger `clippy::unnecessary_wraps`. Unknown calls, fallible calls nested in
 conversions, `?`, `expect` and `unwrap` outside assertions still require it.
 
+## Dependency changes
+
+The zero-open-items plan compares the runtime `[dependencies]` table against
+`6586b7a`; test-only `[dev-dependencies]` are a separate table. The owner
+approved `syn` on 2026-11-11 for replacing the credential audit's handwritten
+scanner. Its direct dev edge reuses locked `syn` 3.0.9 and adds no package to
+the lockfile or runtime dependency table. The existing dual-version ban
+justification and cargo-vet exemptions still apply.
+
+This approval does not waive `cargo deny check`, `cargo audit`,
+`cargo vet --locked`, `cargo machete`, or `taplo fmt --check`. Cargo-deny's
+license check covers the existing transitive parser; the crate is dual
+MIT/Apache-2.0 licensed. There is no separate committed SBOM to update.
+
 ## Every closure, and Windows
 
 `feature_closures.py list` computes the distinct closures of the `[features]`
