@@ -45,6 +45,8 @@ is a parity feature, not a defect>`.
 | critic:critics-5b34622/u6.md#U6-01 | FU-TST-R20 | no |
 | critic:critics-5b34622/u6.md#U6-02 | FU-CI-R05 | no |
 | critic:critics-5b34622/u6.md#U6-03 | FU-GATE-R13 | no |
+| critic:critics-7286a80/u2.md#U2-02 | FU-TST-R24 | no |
+| critic:critics-7286a80/u2.md#U2-03 | FU-TST-R25 | no |
 | critic:critics-87d6d5f/u1.md#U1-01 | FU-SPN-R15 | no |
 | critic:critics-87d6d5f/u1.md#U1-02 | FU-SPN-R16 | no |
 | critic:critics-87d6d5f/u3.md#U3-01 | FU-TRN-R08 | no |
