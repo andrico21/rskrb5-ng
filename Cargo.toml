@@ -117,8 +117,12 @@ axum = { version = "0.8", default-features = false, features = [
 hex = "0.4"
 pretty_assertions = "1.4"
 proptest = "1.12"
-# Owner approved 2026-11-11: replace the credential audit's handwritten scanner.
-# Test-only edge; reuse the locked parser without changing runtime dependencies.
+# Owner approved 2026-11-11: syn replaces the credential audit's handwritten scanner;
+# proc-macro2/span-locations supplies accurate file:line errors (option 1 approval).
+# Test-only edges reuse locked packages; no new package or runtime dependency.
+proc-macro2 = { version = "1.0.107", default-features = false, features = [
+  "span-locations",
+] }
 syn = { version = "3.0.9", default-features = false, features = [
   "full",
   "visit",

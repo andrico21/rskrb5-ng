@@ -1492,6 +1492,7 @@ dependencies = [
  "picky-asn1-der",
  "picky-krb",
  "pretty_assertions",
+ "proc-macro2",
  "proptest",
  "rasn",
  "rasn-kerberos",
