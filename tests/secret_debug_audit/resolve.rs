@@ -135,7 +135,7 @@ impl Scope<'_> {
                             "associated-type projection",
                         ));
                     }
-                    return self.parameter(parameter, next);
+                    return self.parameter(parameter);
                 }
                 let mut output = self.binding(&name, next)?.map_or_else(
                     || {
@@ -383,38 +383,10 @@ impl Scope<'_> {
         Ok(output)
     }
 
-    /// Only a proven scalar default can classify a generic owner as nonsecret.
-    fn parameter(
-        &self,
-        parameter: &syn::TypeParam,
-        depth: usize,
-    ) -> Result<Vec<String>, io::Error> {
-        let Some((_, default)) = &parameter.default else {
+    /// Defaults do not constrain explicit instantiations of generic storage.
+    fn parameter(&self, parameter: &syn::TypeParam) -> Result<Vec<String>, io::Error> {
+        if parameter.default.is_none() {
             return Ok(vec!["GenericStorage".to_owned()]);
-        };
-        let resolved = self.expand(default, depth)?;
-        if resolved.iter().all(|word| {
-            matches!(
-                word.as_str(),
-                "bool"
-                    | "char"
-                    | "u8"
-                    | "u16"
-                    | "u32"
-                    | "u64"
-                    | "u128"
-                    | "usize"
-                    | "i8"
-                    | "i16"
-                    | "i32"
-                    | "i64"
-                    | "i128"
-                    | "isize"
-                    | "f32"
-                    | "f64"
-            )
-        }) {
-            return Ok(resolved);
         }
         Err(unsupported(
             self.file,
