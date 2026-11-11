@@ -126,11 +126,7 @@ fn items_from(
                 });
             }
             Item::Union(item) if matches!(item.vis, Visibility::Public(_)) => {
-                return Err(unsupported(
-                    scope.file,
-                    item.union_token.span,
-                    "union storage requires an owning audit",
-                ));
+                owners.push(union(scope, identity, item)?);
             }
             Item::Mod(module) => {
                 if let Some((_, content)) = &module.content {
@@ -176,6 +172,37 @@ fn items_from(
         }
     }
     Ok(owners)
+}
+
+/// Union fields are independent storage alternatives and all require classification.
+fn union(scope: &Scope<'_>, identity: &str, item: &syn::ItemUnion) -> Result<Owner, io::Error> {
+    let nested = Scope {
+        file: scope.file,
+        items: scope.items.clone(),
+        generics: &item.generics,
+        graph: scope.graph,
+        module: scope.module,
+    };
+    let mut members = Vec::new();
+    for field in &item.fields.named {
+        if super::configuration::included(scope.file, &field.attrs)? {
+            let name = field
+                .ident
+                .as_ref()
+                .ok_or_else(|| unsupported(scope.file, item.ident.span(), "unnamed union field"))?;
+            members.push((
+                name.to_string(),
+                matches!(field.vis, Visibility::Public(_)),
+                nested.resolve(&field.ty)?,
+            ));
+        }
+    }
+    Ok(Owner {
+        identity: format!("{identity}::{}", item.ident),
+        name: item.ident.to_string(),
+        fields: members,
+        derived_debug: debug(&item.attrs)?,
+    })
 }
 
 /// Preserve original token locations even when Syn cannot classify an item.

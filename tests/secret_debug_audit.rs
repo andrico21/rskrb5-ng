@@ -589,6 +589,7 @@ mod tests {
             "use zeroize::Zeroizing as Erased; pub struct Secret { bytes: Erased<Vec<u8>> }",
             "type Payload = Vec<u8>; pub struct Secret { password: Payload }",
             "#[derive(Debug)] pub struct Secret { r#password: Vec<u8> }",
+            "pub union Secret { password: [u8; 16], scalar: u32 }",
         ] {
             for spelling in [source.to_owned(), source.replace(' ', "\r\n")] {
                 let owners = declarations("src/example.rs", &spelling)?;
