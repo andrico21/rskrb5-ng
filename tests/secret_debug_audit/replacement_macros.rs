@@ -70,8 +70,11 @@ pub(super) fn expressions(invocation: &Macro) -> Option<Vec<Expr>> {
 mod tests {
     use std::io;
 
+    use crate::source::parse;
+
+    /// Shadowing a standard macro cannot hide receiver writes.
     #[test]
-    fn replacement_refuses_shadowed_expression_macros() {
+    fn replacement_refuses_shadowed_expression_macros() -> Result<(), io::Error> {
         for name in ["vec", "format", "matches", "assert", "assert_eq"] {
             let source = format!(
                 "macro_rules! {name} {{ ($owner:expr) => {{ $owner.secret.clear() }}; }}\npub struct Owner {{ secret: Vec<u8> }}\nimpl Owner {{ pub fn clear(&mut self) {{ {name}!(self); }} }}"
@@ -81,16 +84,17 @@ mod tests {
                 result.is_err(),
                 "shadowed {name} mutation omitted: {result:?}"
             );
-            assert!(
-                result
-                    .err()
-                    .is_some_and(|error| error.to_string().contains("src/probe.rs:3:"))
-            );
+            let error = result
+                .err()
+                .ok_or_else(|| io::Error::other("shadowed macro admitted"))?;
+            assert!(error.to_string().contains("src/probe.rs:3:"));
         }
+        Ok(())
     }
 
+    /// Whole receiver writes require all retained fields or a located refusal.
     #[test]
-    fn whole_receiver_mutations_require_proof() {
+    fn whole_receiver_mutations_require_proof() -> Result<(), io::Error> {
         for body in [
             "*self = Self { secret: value };",
             "core::mem::replace(self, Self { secret: value });",
@@ -100,6 +104,7 @@ mod tests {
             let source = format!(
                 "pub struct Owner {{ secret: Vec<u8> }}\nimpl Owner {{ pub fn set(&mut self, value: Vec<u8>) {{ {body} }} }}"
             );
+            drop(parse("src/probe.rs", &source)?);
             match super::super::methods("src/probe.rs", &source) {
                 Ok(methods) => assert!(
                     methods
@@ -110,8 +115,10 @@ mod tests {
                 Err(error) => assert!(error.to_string().contains("src/probe.rs:2:")),
             }
         }
+        Ok(())
     }
 
+    /// Physical receiver identities separate unrelated types and consuming moves.
     #[test]
     fn receiver_identity_and_moves_are_distinct() -> Result<(), io::Error> {
         let source = "pub struct Owner { secret: Vec<u8> }

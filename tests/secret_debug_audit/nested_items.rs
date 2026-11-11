@@ -147,12 +147,18 @@ impl<'ast> Visit<'ast> for Definitions<'ast> {
 #[cfg(test)]
 #[expect(
     clippy::missing_panics_doc,
+    clippy::missing_errors_doc,
     reason = "test code is not rendered API documentation"
 )]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
+    use std::io;
+
     use crate::declarations::declarations;
+
+    /// Expression generators cannot conceal credential-bearing local owners.
     #[test]
-    fn expression_generators_cannot_hide_password_owners() {
+    fn expression_generators_cannot_hide_password_owners() -> Result<(), io::Error> {
         for body in [
             "pub fn make() -> impl core::fmt::Debug { make_owner!() }",
             "pub fn make() -> impl core::fmt::Debug { (|| make_owner!())() }",
@@ -167,11 +173,11 @@ mod tests {
                 result.is_err(),
                 "expression generator hid password owner: {result:?}"
             );
-            assert!(
-                result
-                    .err()
-                    .is_some_and(|error| error.to_string().contains("src/probe.rs:"))
-            );
+            let error = result
+                .err()
+                .ok_or_else(|| io::Error::other("generator admitted"))?;
+            assert!(error.to_string().contains("src/probe.rs:"));
         }
+        Ok(())
     }
 }
