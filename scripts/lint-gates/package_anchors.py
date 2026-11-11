@@ -89,6 +89,8 @@ def anchors(text: str) -> frozenset[str]:
 def self_test() -> int:
     assert anchors("## A &amp; B\n\nTitle\n=====\n") == {"a--b", "title"}
     assert anchors("## A\n\n## A\n\n## A\n") == {"a", "a-1", "a-2"}
+    assert anchors('<a id="a"></a>\n\n## A\n\n## A\n') == {"a", "a-1"}
+    assert anchors("## A_B - C.D!\n\n## Café Ω 中文\n") == {"a_b---cd", "café-ω-中文"}
     for heading in (
         "## A ![alt](x) B",
         "## A <span>B</span>",
