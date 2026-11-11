@@ -17,6 +17,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
   whitespace in principal names is preserved, while internal ASCII whitespace
   returns a line-numbered syntax error; padding around `=` remains accepted
   (FU-CFG-R19, FU-CFG-R20).
+- Resolve packaged Markdown destinations after CommonMark entity and backslash
+  decoding, and keep code-span or escaped HTML delimiters from hiding later
+  rendered links across fences (FU-CI-R10, FU-CI-R11).
 
 - The package is `rskrb5-ng` (was `rskrb5-patched`) and the library
   `rskrb5_ng` (was `rskrb5`): depend on `rskrb5-ng = "0.3"` and replace
