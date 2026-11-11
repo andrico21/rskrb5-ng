@@ -82,6 +82,14 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Single-file root Cargo targets fail closed on unclassified procedural
+  attributes and derives, including nested inactive `cfg_attr` and imported
+  derive aliases, while retaining built-in and inspectable macro controls
+  (FU-GATE-R21).
+- Package-link checks preserve HTML-contained backticks and fence-looking
+  lines, and literal reference-definition backticks, so rendered links cannot
+  disappear behind Markdown code-span stripping (FU-CI-R09).
+
 - Checked AS/TGS exchanges authorize encrypted request-body authorization data
   under the effective crypto policy before transport, preserving typed causes.
   Known unsupported credential PA envelopes (including FAST, encrypted challenge
