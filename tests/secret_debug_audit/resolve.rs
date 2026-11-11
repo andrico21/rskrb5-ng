@@ -4,7 +4,7 @@ use std::io;
 
 use syn::{GenericArgument, Generics, Item, PathArguments, Type, UseTree};
 
-use super::source::{type_span, unsupported};
+use super::source::{Parsed, type_span, unsupported};
 
 /// Type resolution retains lexical item scopes and the owning generic parameters.
 pub(super) struct Scope<'ast> {
@@ -14,9 +14,79 @@ pub(super) struct Scope<'ast> {
     pub items: Vec<&'ast [Item]>,
     /// Generic parameters of the declaration being inspected.
     pub generics: &'ast Generics,
+    /// Other physical source units in the same library graph.
+    pub graph: &'ast [Parsed],
+    /// Logical module containing the current declaration.
+    pub module: &'ast str,
 }
 
 impl Scope<'_> {
+    /// Resolve file-module aliases in their defining scope, retaining their diagnostic file.
+    fn graph_alias(&self, path: &[String], depth: usize) -> Result<Option<Vec<String>>, io::Error> {
+        if depth >= 32 {
+            return Err(unsupported(
+                self.file,
+                proc_macro2::Span::call_site(),
+                "cross-module alias cycle",
+            ));
+        }
+        let Some((name, prefix)) = path.split_last() else {
+            return Ok(None);
+        };
+        if prefix.is_empty() {
+            return Ok(None);
+        }
+        let mut segments: Vec<_> = self
+            .module
+            .split("::")
+            .filter(|part| !part.is_empty())
+            .map(str::to_owned)
+            .collect();
+        let mut parts = prefix.iter();
+        match parts.next().map(String::as_str) {
+            Some("crate") => segments.clear(),
+            Some("self") | None => {}
+            Some("super") => {
+                drop(segments.pop());
+            }
+            Some(first) => segments.push(first.to_owned()),
+        }
+        for part in parts {
+            segments.push(part.clone());
+        }
+        let module = format!("::{}", segments.join("::"));
+        for unit in self.graph.iter().filter(|unit| unit.module == module) {
+            for item in &unit.tree.items {
+                if let Item::Type(alias) = item
+                    && alias.ident == name
+                {
+                    let file = unit.path.display().to_string();
+                    if !alias.generics.params.is_empty() {
+                        return Err(unsupported(
+                            &file,
+                            alias.ident.span(),
+                            "unresolved generic alias",
+                        ));
+                    }
+                    let scope = Scope {
+                        file: &file,
+                        items: self
+                            .graph
+                            .iter()
+                            .filter(|candidate| candidate.module == module)
+                            .map(|candidate| candidate.tree.items.as_slice())
+                            .collect(),
+                        generics: &alias.generics,
+                        graph: self.graph,
+                        module: &unit.module,
+                    };
+                    return scope.expand(&alias.ty, depth.saturating_add(1)).map(Some);
+                }
+            }
+        }
+        Ok(None)
+    }
+
     /// Resolve storage structurally; projections and opaque syntax fail closed.
     pub(super) fn resolve(&self, ty: &Type) -> Result<Vec<String>, io::Error> {
         self.expand(ty, 0)
@@ -47,6 +117,10 @@ impl Scope<'_> {
                     ));
                 }
                 let name = first.ident.to_string();
+                let path_names = names(&path.path);
+                if let Some(resolved) = self.graph_alias(&path_names, next)? {
+                    return Ok(resolved);
+                }
                 self.qualified(&path.path)?;
                 if let Some(parameter) = self
                     .generics
@@ -329,6 +403,11 @@ impl Scope<'_> {
                                     depth.saturating_add(1),
                                 );
                             }
+                            if let Some(resolved) =
+                                self.graph_alias(&path, depth.saturating_add(1))?
+                            {
+                                return Ok(Some(resolved));
+                            }
                             return Ok(Some(path));
                         }
                     }
@@ -353,6 +432,14 @@ impl Scope<'_> {
         }
         Ok(None)
     }
+}
+
+/// Preserve every segment when resolving a path through the source graph.
+fn names(path: &syn::Path) -> Vec<String> {
+    path.segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect()
 }
 
 /// Find the path bound by a named use-tree leaf, including grouped renames.

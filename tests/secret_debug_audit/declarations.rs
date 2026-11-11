@@ -25,6 +25,27 @@ pub(super) fn parsed(file: &str, tree: &syn::File) -> Result<Vec<Owner>, io::Err
     scoped(file, tree, vec![tree.items.as_slice()])
 }
 
+/// A library source unit resolves file-module aliases using the complete loaded graph.
+pub(super) fn graph_unit(
+    file: &str,
+    unit: &super::source::Parsed,
+    graph: &[super::source::Parsed],
+) -> Result<Vec<Owner>, io::Error> {
+    let generics = Generics::default();
+    let scope = Scope {
+        file,
+        items: graph
+            .iter()
+            .filter(|candidate| candidate.module == unit.module)
+            .map(|candidate| candidate.tree.items.as_slice())
+            .collect(),
+        generics: &generics,
+        graph,
+        module: &unit.module,
+    };
+    items_from(&scope, file, &unit.tree.items)
+}
+
 /// Included files contribute bindings to their actual enclosing module.
 pub(super) fn scoped<'ast>(
     file: &'ast str,
@@ -36,6 +57,8 @@ pub(super) fn scoped<'ast>(
         file,
         items: scopes,
         generics: &generics,
+        graph: &[],
+        module: "",
     };
     items_from(&scope, file, &tree.items)
 }
@@ -69,6 +92,8 @@ fn items_from(
                     file: scope.file,
                     items: scope.items.clone(),
                     generics: &item.generics,
+                    graph: scope.graph,
+                    module: scope.module,
                 };
                 owners.push(Owner {
                     identity: format!("{identity}::{}", item.ident),
@@ -82,6 +107,8 @@ fn items_from(
                     file: scope.file,
                     items: scope.items.clone(),
                     generics: &item.generics,
+                    graph: scope.graph,
+                    module: scope.module,
                 };
                 let mut members = Vec::new();
                 for variant in &item.variants {
@@ -113,6 +140,8 @@ fn items_from(
                         file: scope.file,
                         items: scopes,
                         generics: scope.generics,
+                        graph: scope.graph,
+                        module: scope.module,
                     };
                     owners.extend(items(&nested, &format!("{identity}::{}", module.ident))?);
                 }

@@ -91,12 +91,7 @@ pub(super) fn inspect(root: &Path, directory: &Path) -> Result<Vec<Owner>, io::E
             .map_err(io::Error::other)?
             .to_string_lossy()
             .replace('\\', "/");
-        let scopes = graph
-            .iter()
-            .filter(|candidate| candidate.module == unit.module)
-            .map(|candidate| candidate.tree.items.as_slice())
-            .collect();
-        owners.extend(super::declarations::scoped(&relative, &unit.tree, scopes)?);
+        owners.extend(super::declarations::graph_unit(&relative, unit, &graph)?);
     }
     Ok(owners)
 }

@@ -95,6 +95,21 @@ fn literal_includes_load_original_source() -> Result<(), io::Error> {
         1,
         "include lost enclosing alias"
     );
+    let modules = super::graph::load(&fixtures.join("module-root.rs.txt"))?;
+    let mut module_owners = Vec::new();
+    for unit in &modules {
+        module_owners.extend(super::declarations::graph_unit(
+            &unit.path.display().to_string(),
+            unit,
+            &modules,
+        )?);
+    }
+    assert_eq!(module_owners.len(), 1);
+    assert_eq!(
+        secret_owners(&module_owners).len(),
+        1,
+        "module alias lost credential storage"
+    );
     for file in ["missing.rs.txt", "cycle.rs.txt"] {
         let Err(error) = super::source::load(&fixtures.join(file)) else {
             return Err(io::Error::other("unresolved include accepted"));
