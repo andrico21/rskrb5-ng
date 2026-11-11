@@ -262,16 +262,19 @@ impl Scope<'_> {
         let Some(first) = path.segments.first() else {
             return Ok(());
         };
+        let root = if matches!(first.ident.to_string().as_str(), "self" | "super" | "crate") {
+            path.segments.iter().nth(1).unwrap_or(first)
+        } else {
+            first
+        };
         for item in self.items.iter().rev().flat_map(|items| items.iter()) {
             let concrete = match item {
                 Item::Struct(owner) => owner.ident == first.ident,
                 Item::Enum(owner) => owner.ident == first.ident,
                 Item::Union(owner) => owner.ident == first.ident,
                 Item::Type(alias) => alias.ident == first.ident,
-                Item::Mod(module) if module.ident == first.ident => {
-                    if let Some((_, nested)) = &module.content
-                        && nested.iter().any(|entry| matches!(entry, Item::Type(_)))
-                    {
+                Item::Mod(module) if module.ident == root.ident => {
+                    if module.content.is_some() {
                         return Err(unsupported(
                             self.file,
                             first.ident.span(),
