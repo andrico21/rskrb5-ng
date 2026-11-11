@@ -8,13 +8,6 @@
 )]
 #[path = "secret_debug_audit/inventory.rs"]
 mod inventory;
-#[cfg(test)]
-#[expect(
-    clippy::missing_errors_doc,
-    reason = "test code is not rendered API documentation"
-)]
-#[path = "secret_debug_audit/lex.rs"]
-mod lex;
 
 #[cfg(test)]
 #[path = "secret_debug_audit/nonsecret.rs"]
@@ -755,21 +748,18 @@ mod tests {
     /// Direct assignment, builder replacement and mutable escape all require audit coverage.
     #[test]
     fn replacement_inventory_detects_mutation_forms() -> Result<(), io::Error> {
-        use super::{
-            lex::tokens,
-            replacement::{methods, replaced_fields},
-        };
+        use super::replacement::{methods, replaced_fields};
         for operation in [
             "self.secret = value;",
             "self.secret.replace(value);",
             "self.secret.clear();",
             "core::mem::replace(&mut self.secret, value);",
-            "&mut self.secret",
+            "&mut self.secret;",
         ] {
             let source = format!(
                 "impl Owner {{ pub fn with_secret(mut self, value: Vec<u8>) -> Self {{ {operation} self }} }}"
             );
-            let found = methods("src/owner.rs", &tokens(&source)?)?;
+            let found = methods("src/owner.rs", &source)?;
             assert_eq!(found.len(), 1);
             assert_eq!(
                 replaced_fields(found.first().ok_or_else(|| io::Error::other("method"))?),
@@ -778,7 +768,7 @@ mod tests {
         }
         let found = methods(
             "src/owner.rs",
-            &tokens("impl Owner { pub fn equals(&self) -> bool { self.secret == other } }")?,
+            "impl Owner { pub fn equals(&self) -> bool { self.secret == other } }",
         )?;
         assert!(
             replaced_fields(found.first().ok_or_else(|| io::Error::other("method"))?).is_empty(),
