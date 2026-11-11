@@ -123,11 +123,17 @@ def wiring_errors(workflow: str, prek: str) -> list[str]:
     blocks: list[str] = []
     try:
         blocks = mandatory_runs(workflow, "lint-gates")
-        if blocks.count(PARSER_INSTALL) != 1 or blocks.index(
-            PARSER_INSTALL
-        ) >= blocks.index(SELF_TEST_LOOP):
+        if blocks.count(PARSER_INSTALL) != 1 or any(
+            index <= blocks.index(PARSER_INSTALL)
+            for index, block in enumerate(blocks)
+            if effective_commands([block])
+            and (
+                block == SELF_TEST_LOOP
+                or re.search(r"package_(?:links|markdown|anchors)\b", block)
+            )
+        ):
             errors.append(
-                "lint-gates must install hash-pinned parser dependencies before self-tests"
+                "lint-gates must install hash-pinned parser dependencies before every parser importer"
             )
         for block in blocks:
             if not effective_commands([block]):
@@ -293,6 +299,15 @@ def self_test() -> int:
         f"      - run: {SELF_TEST_LOOP}\n      - run: {PARSER_INSTALL}\n",
     )
     assert wiring_errors(late_install, prek), "parser installed after self-tests"
+    # FU-CI-R16: enforcement also imports the parser on startup.
+    enforcement = "      - run: python3 scripts/lint-gates/package_links.py --enforce\n"
+    early_enforcement = ci.replace(enforcement, "").replace(
+        f"      - run: {PARSER_INSTALL}\n",
+        enforcement + f"      - run: {PARSER_INSTALL}\n",
+    )
+    assert wiring_errors(early_enforcement, prek), (
+        "parser enforcement before install accepted"
+    )
     assert wiring_errors(
         ci.replace("    steps:\n", "    needs: mutants\n    steps:\n", 1), prek
     ), "skippable prerequisite admitted"
