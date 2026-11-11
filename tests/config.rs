@@ -61,6 +61,9 @@ mod mutation_values;
 #[path = "config/mutation_core.rs"]
 mod mutation_core;
 
+#[path = "config/whitespace.rs"]
+mod whitespace;
+
 /// Configuration parsing, loading and realm resolution tests.
 #[cfg(test)]
 #[expect(

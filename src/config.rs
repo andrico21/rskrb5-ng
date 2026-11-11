@@ -1986,7 +1986,9 @@ impl<'line> IncludeDirective<'line> {
 /// Whether `text` begins with whitespace (and so the keyword before it was a
 /// whole token).
 fn starts_with_whitespace(text: &str) -> bool {
-    text.chars().next().is_some_and(char::is_whitespace)
+    text.chars()
+        .next()
+        .is_some_and(profile_syntax::tag_whitespace)
 }
 
 /// Whether `name` is one an `includedir` accepts, per MIT's `valid_name`.
@@ -2063,12 +2065,12 @@ impl IncludeExpansion {
         while let Some((index, line)) = lines.next() {
             let cleaned = profile_syntax::comments(line)
                 .trim_start_matches(profile_syntax::tag_whitespace)
-                .trim_end();
+                .trim_end_matches(profile_syntax::tag_whitespace);
             if cleaned.is_empty() {
                 continue;
             }
             if cleaned
-                .split_whitespace()
+                .split(profile_syntax::tag_whitespace)
                 .next()
                 .is_some_and(|word| word.eq_ignore_ascii_case("module"))
                 && !state.local_mapping_assignment(cleaned)

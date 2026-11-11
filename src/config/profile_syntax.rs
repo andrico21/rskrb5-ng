@@ -109,20 +109,20 @@ impl State {
         if let Some(header) = text.strip_prefix('[') {
             self.finish(profile)?;
             let (raw_name, suffix) = header.split_once(']').ok_or_else(|| invalid(line))?;
-            if raw_name.trim().is_empty() || !matches!(suffix.trim(), "" | "*") {
-                return Err(invalid(line));
-            }
-            let name = raw_name.trim().to_ascii_lowercase();
+            let tail = suffix.strip_prefix('*').unwrap_or(suffix);
+            (!raw_name.is_empty() && tail.chars().all(tag_whitespace))
+                .ok_or_else(|| invalid(line))?;
+            let name = raw_name.to_ascii_lowercase();
             let discarded = profile.closed(slice::from_ref(&name));
             if !discarded {
                 profile.scope(slice::from_ref(&name));
             }
-            if !discarded && suffix.trim() == "*" {
+            if !discarded && suffix.starts_with('*') {
                 profile.finalize(vec![name.clone()]);
             }
             self.scopes.push(Scope {
                 name,
-                final_marker: suffix.trim() == "*",
+                final_marker: suffix.starts_with('*'),
                 discarded,
             });
             return Ok(());
