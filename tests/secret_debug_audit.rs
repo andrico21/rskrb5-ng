@@ -25,6 +25,15 @@ mod nonsecret;
     clippy::missing_errors_doc,
     reason = "test code is not rendered API documentation"
 )]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "secret_debug_audit/parser_tests.rs"]
+mod parser_tests;
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
 #[path = "secret_debug_audit/replacement.rs"]
 mod replacement;
 
