@@ -216,9 +216,21 @@ mod tests {
                 ("preferred_preauth_types", "17"),
             ] {
                 for padded in [format!("{space}{value}"), format!("{value}{space}")] {
+                    let failure = Config::parse(&format!("[libdefaults]\n{key} = {padded}\n"))
+                        .err()
+                        .ok_or_else(|| format!("{key}: admitted {padded:?}"))?;
                     assert!(
-                        Config::parse(&format!("[libdefaults]\n{key} = {padded}\n")).is_err(),
-                        "{key}: {padded:?}"
+                        matches!(
+                            failure,
+                            Failure::InvalidBoolean(_)
+                                | Failure::InvalidDuration(_)
+                                | Failure::InvalidInteger {
+                                    line: _,
+                                    key: _,
+                                    value: _
+                                }
+                        ),
+                        "{key}: {failure:?}"
                     );
                 }
             }
