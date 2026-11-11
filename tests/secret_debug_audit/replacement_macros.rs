@@ -71,6 +71,25 @@ mod tests {
     use std::io;
 
     #[test]
+    fn replacement_refuses_shadowed_expression_macros() {
+        for name in ["vec", "format", "matches", "assert", "assert_eq"] {
+            let source = format!(
+                "macro_rules! {name} {{ ($owner:expr) => {{ $owner.secret.clear() }}; }}\npub struct Owner {{ secret: Vec<u8> }}\nimpl Owner {{ pub fn clear(&mut self) {{ {name}!(self); }} }}"
+            );
+            let result = super::super::methods("src/probe.rs", &source);
+            assert!(
+                result.is_err(),
+                "shadowed {name} mutation omitted: {result:?}"
+            );
+            assert!(
+                result
+                    .err()
+                    .is_some_and(|error| error.to_string().contains("src/probe.rs:3:"))
+            );
+        }
+    }
+
+    #[test]
     fn whole_receiver_mutations_require_proof() {
         for body in [
             "*self = Self { secret: value };",

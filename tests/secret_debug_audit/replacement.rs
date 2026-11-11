@@ -15,6 +15,9 @@ mod replacement_macros;
 #[path = "replacement_readers.rs"]
 mod replacement_readers;
 
+#[path = "expression_bindings.rs"]
+mod expression_bindings;
+
 /// A public method and its structurally identified receiver writes.
 #[derive(Debug)]
 pub(super) struct Method {
@@ -169,6 +172,7 @@ impl<'ast> Visit<'ast> for Writes {
 
 /// Extract public inherent methods from parsed impl blocks.
 pub(super) fn methods(file: &str, source: &str) -> Result<Vec<Method>, io::Error> {
+    expression_bindings::check(file, &parse(file, source)?.items)?;
     parsed_methods(
         (file, file),
         &parse(file, source)?.items,
@@ -274,13 +278,15 @@ pub(super) fn replaced_fields(method: &Method) -> Vec<String> {
 pub(super) fn inspect(root: &Path, directory: &Path) -> Result<Vec<Method>, io::Error> {
     let mut output = Vec::new();
     let owners = super::inventory::inspect(root, directory)?;
-    for unit in super::graph::load(&directory.join("lib.rs"))? {
+    let graph = super::graph::load(&directory.join("lib.rs"))?;
+    for unit in &graph {
         let relative = unit
             .path
             .strip_prefix(root)
             .map_err(io::Error::other)?
             .to_string_lossy()
             .replace('\\', "/");
+        expression_bindings::graph_check(&relative, &unit.tree.items, &graph)?;
         output.extend(parsed_methods(
             (&relative, &relative),
             &unit.tree.items,
