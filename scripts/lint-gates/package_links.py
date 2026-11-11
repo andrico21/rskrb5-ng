@@ -27,6 +27,7 @@ import subprocess
 import sys
 from contextlib import redirect_stdout
 from io import StringIO
+from html.entities import html5
 from html.parser import HTMLParser
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -75,17 +76,16 @@ def package_files(root: Path) -> frozenset[str]:
 
 def prose_lines(text: str) -> list[tuple[int, str]]:
     """Numbered lines outside fenced code blocks."""
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     lines = []
     fence = ""
     html_block = False
     html_lines = set()
-    for token in HTML_TOKEN.finditer(text):
-        first = text.count("\n", 0, token.start()) + 1
-        last = text.count("\n", 0, token.end()) + 1
-        html_lines.update(range(first + 1, last + 1))
-    for number, line in enumerate(
-        text.replace("\r\n", "\n").replace("\r", "\n").split("\n"), 1
-    ):
+    html_prose = code_spans(text)
+    offset = 0
+    for number, line in enumerate(text.split("\n"), 1):
+        line_offset = offset
+        offset += len(line) + 1
         opening = FENCE.match(line)
         if fence:
             if (
@@ -96,6 +96,16 @@ def prose_lines(text: str) -> list[tuple[int, str]]:
             ):
                 fence = ""
             continue
+        for token_start in re.finditer("<", html_prose[line_offset : offset - 1]):
+            position = line_offset + token_start.start()
+            if escaped(text, position):
+                continue
+            full = HTML_TOKEN.match(html_prose, position)
+            if full is not None and not (
+                text[line_offset:position].strip() and re.search(r"\n[ \t]*\n", full[0])
+            ):
+                last = text.count("\n", 0, full.end()) + 1
+                html_lines.update(range(number + 1, last + 1))
         if not line.strip():
             html_block = False
         elif re.match(r" {0,3}</?[A-Za-z][A-Za-z0-9-]*(?:\s|/?>)", line):
@@ -115,7 +125,8 @@ def prose_lines(text: str) -> list[tuple[int, str]]:
 def destination(line: str, start: int) -> str:
     if line.startswith("<", start):
         end = line.find(">", start)
-        return line[start + 1 : end if end >= 0 else len(line)]
+        raw = line[start + 1 : end if end >= 0 else len(line)]
+        return markdown_destination(raw)
     depth, index = 0, start
     while index < len(line):
         char = line[index]
@@ -131,7 +142,35 @@ def destination(line: str, start: int) -> str:
         elif char.isspace():
             break
         index += 1
-    return line[start:index]
+    return markdown_destination(line[start:index])
+
+
+def markdown_destination(raw: str) -> str:
+    return re.sub(
+        r"\\([!\"#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~])|&(?:#[xX][0-9a-fA-F]{1,6}|#[0-9]{1,7}|[A-Za-z][A-Za-z0-9]{1,31});",
+        lambda match: (
+            match[1] if match[1] is not None else character_reference(match[0])
+        ),
+        raw,
+    )
+
+
+def character_reference(raw: str) -> str:
+    if not raw.startswith("&#"):
+        return html5.get(raw[1:], raw)
+    value = int(raw[3:-1], 16) if raw[2:3].lower() == "x" else int(raw[2:-1])
+    return (
+        chr(value)
+        if 0 < value <= 0x10FFFF and not 0xD800 <= value <= 0xDFFF
+        else "\ufffd"
+    )
+
+
+def escaped(text: str, position: int) -> bool:
+    start = position
+    while start and text[start - 1] == "\\":
+        start -= 1
+    return (position - start) % 2 == 1
 
 
 def link_targets(text: str) -> list[tuple[int, str]]:
@@ -141,11 +180,17 @@ def link_targets(text: str) -> list[tuple[int, str]]:
         lines[number - 1] = raw
     prose = "\n".join(lines)
     visible = code_spans(prose)
-    visible = re.sub(
-        r"<!--[\s\S]*?(?:-->|\Z)",
-        lambda m: "".join("\n" if c == "\n" else " " for c in m[0]),
-        visible,
-    )
+    chars = list(visible)
+    for comment in re.finditer(r"<!--[\s\S]*?(?:-->|\Z)", visible):
+        prefix = visible[visible.rfind("\n", 0, comment.start()) + 1 : comment.start()]
+        if escaped(visible, comment.start()) or (
+            prefix.strip() and re.search(r"\n[ \t]*\n", comment[0])
+        ):
+            continue
+        chars[comment.start() : comment.end()] = [
+            "\n" if c == "\n" else " " for c in comment[0]
+        ]
+    visible = "".join(chars)
     found: list[tuple[int, str]] = []
     index = 0
     while index < len(visible):
@@ -389,6 +434,69 @@ def self_test() -> int:
             "# Title\n\n## Two words `code`\n\n## Two words code\n"
         )
         failures = []
+        (root / "missing&").write_text("decoy")
+        entity_files = files | {"missing&"}
+        for label, markdown, expected in (
+            (
+                "entity_fragment",
+                "[real](docs/a.md&#35;absent)",
+                [(1, "docs/a.md#absent")],
+            ),
+            (
+                "entity_query",
+                "[real](missing&#46;md?x=1&amp;y=2)",
+                [(1, "missing.md?x=1&y=2")],
+            ),
+            ("escaped_entity", r"[real](missing\&#46;md)", [(1, "missing&#46;md")]),
+            ("single_decode", "[real](missing&amp;#46;md)", [(1, "missing&#46;md")]),
+            (
+                "unmatched_code_comment",
+                "`<!--\n\n```\n<!--\n```\n\n[real](missing2.md)\n-->\n`",
+                [(7, "missing2.md")],
+            ),
+            (
+                "escaped_comment",
+                "\\<!--\n\n```\n<!--\n```\n\n[real](missing2.md)\n-->\n`",
+                [(7, "missing2.md")],
+            ),
+            (
+                "code_comment_before_fence",
+                "`<!--`\n\n```\n-->\n[code](README.md)\n```\n[real](missing2.md)",
+                [(7, "missing2.md")],
+            ),
+            ("inline_entity", "[real](missing&#46;md)", [(1, "missing.md")]),
+            ("reference_entity", "[x][r]\n\n[r]: missing&#46;md", [(3, "missing.md")]),
+            ("angle_entity", "[real](<missing&#x2e;md>)", [(1, "missing.md")]),
+            ("named_entity", "[real](missing&period;md)", [(1, "missing.md")]),
+            (
+                "existing_entity",
+                "[real](docs/a&#46;md#title)",
+                [(1, "docs/a.md#title")],
+            ),
+            ("escaped_destination", r"[real](missing\&.md)", [(1, "missing&.md")]),
+            ("entity_zero", "[real](missing&#0;.md)", [(1, "missing\ufffd.md")]),
+            ("entity_c1", "[real](missing&#128;.md)", [(1, "missing\x80.md")]),
+            (
+                "entity_unknown",
+                "[real](missing&notanentity;.md)",
+                [(1, "missing&notanentity;.md")],
+            ),
+        ):
+            (root / "README.md").write_text(markdown)
+            targets = link_targets(markdown)
+            if targets != expected:
+                failures.append((label, targets, expected))
+            found = check(root, entity_files)
+            wanted = (
+                0
+                if label in {"existing_entity", "escaped_entity", "single_decode"}
+                else 1
+            )
+            if len(found) != wanted or (
+                wanted
+                and f"README.md:{expected[0][0]}: ({expected[0][1]})" not in found[0]
+            ):
+                failures.append((label, found, expected))
         for bad, count in (
             (b'<a title="`">x</a> [bad](missing.md) <a title="`">y</a>', 1),
             (b'see <a title="`">x</a> [bad](missing.md) <a title="`">y</a>', 1),
