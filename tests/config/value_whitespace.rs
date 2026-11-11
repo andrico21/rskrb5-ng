@@ -18,6 +18,7 @@ mod tests {
     ];
     const ASCII: [char; 5] = [' ', '\t', '\r', '\u{b}', '\u{c}'];
 
+    /// Unicode padding remains value data; C-locale padding is removed.
     #[test]
     fn value_padding_uses_c_locale() -> Result<(), Box<dyn Error>> {
         for (spaces, preserves) in [(UNICODE.as_slice(), true), (ASCII.as_slice(), false)] {
@@ -35,6 +36,7 @@ mod tests {
         Ok(())
     }
 
+    /// Only ASCII-only blank assignments await a subsection opener.
     #[test]
     fn whitespace_only_values_keep_scalar_or_scope() -> Result<(), Box<dyn Error>> {
         for space in UNICODE {
@@ -51,6 +53,7 @@ mod tests {
         Ok(())
     }
 
+    /// Unicode adjacent to a brace is scalar data, not a subsection.
     #[test]
     fn subsection_openers_use_c_locale() -> Result<(), Box<dyn Error>> {
         for space in UNICODE {
@@ -68,6 +71,7 @@ mod tests {
         Ok(())
     }
 
+    /// Quoting preserves both ASCII and Unicode padding inside the value.
     #[test]
     fn quoted_values_preserve_whitespace() -> Result<(), Box<dyn Error>> {
         for space in UNICODE.into_iter().chain(ASCII) {
@@ -83,6 +87,7 @@ mod tests {
         Ok(())
     }
 
+    /// Local-map keyword leaves retain Unicode-only and brace-like scalar values.
     #[test]
     fn local_mapping_values_keep_unicode_structure() -> Result<(), Box<dyn Error>> {
         for space in UNICODE {
@@ -109,6 +114,7 @@ mod tests {
         Ok(())
     }
 
+    /// Unicode scalar lookahead cannot reclassify a pending parent before an include.
     #[test]
     fn include_lookahead_preserves_unicode_scalars() -> Result<(), Box<dyn Error>> {
         let root = env::temp_dir().join(format!("t64-lookahead-{}", process::id()));
@@ -130,6 +136,7 @@ mod tests {
         Ok(())
     }
 
+    /// Include kinds select exact Unicode paths with and without unsuffixed siblings.
     #[test]
     fn include_arguments_preserve_exact_unicode_paths() -> Result<(), Box<dyn Error>> {
         let root = env::temp_dir().join(format!("t64-exact-path-{}", process::id()));
@@ -177,6 +184,7 @@ mod tests {
         Ok(())
     }
 
+    /// Existing ASCII edge-padding admission applies to both include kinds.
     #[test]
     fn include_arguments_accept_ascii_padding() -> Result<(), Box<dyn Error>> {
         let root = env::temp_dir().join(format!("t64-ascii-path-{}", process::id()));
@@ -198,8 +206,9 @@ mod tests {
         Ok(())
     }
 
+    /// Typed profile values reject Unicode padding instead of silently normalizing it.
     #[test]
-    fn profile_typed_values_reject_unicode_padding() {
+    fn profile_typed_values_reject_unicode_padding() -> Result<(), Box<dyn Error>> {
         for space in UNICODE {
             for (key, value) in [
                 ("allow_rc4", "true"),
@@ -214,5 +223,6 @@ mod tests {
                 }
             }
         }
+        Ok(())
     }
 }
