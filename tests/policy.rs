@@ -1,4 +1,5 @@
-//! Autonomous public policy API regression tests; no network or ambient inputs.
+//! Autonomous public policy API tests use local fixtures, including loopback UDP,
+//! without an external KDC or ambient configuration.
 
 /// Typed rejection propagation.
 #[cfg(test)]
