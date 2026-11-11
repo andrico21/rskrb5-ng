@@ -14,8 +14,10 @@ fn parse_assignment<'line>(
         });
     };
     Ok((
-        key.trim(),
-        line.value.as_deref().unwrap_or_else(|| value.trim()),
+        key.trim_matches(profile_syntax::tag_whitespace),
+        line.value
+            .as_deref()
+            .unwrap_or_else(|| value.trim_matches(profile_syntax::tag_whitespace)),
     ))
 }
 

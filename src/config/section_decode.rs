@@ -81,10 +81,9 @@ pub(super) fn finish(
             }
             [section, client, server] if section == "capaths" => {
                 let realms = strings(lines)?;
-                if realms
-                    .iter()
-                    .any(|name| name.is_empty() || name.contains(char::is_whitespace))
-                {
+                if realms.iter().any(|name| {
+                    name.is_empty() || name.contains(super::profile_syntax::tag_whitespace)
+                }) {
                     return Err(invalid(first));
                 }
                 let route = if realms.iter().all(|name| name == ".") {
@@ -119,10 +118,9 @@ pub(super) fn finish(
                 if section == "plugins" && matches!(key.as_str(), "disable" | "enable_only") =>
             {
                 let names = strings(lines)?;
-                if names
-                    .iter()
-                    .any(|name| name.is_empty() || name.contains(char::is_whitespace))
-                {
+                if names.iter().any(|name| {
+                    name.is_empty() || name.contains(super::profile_syntax::tag_whitespace)
+                }) {
                     return Err(invalid(first));
                 }
                 if interface == "clpreauth"

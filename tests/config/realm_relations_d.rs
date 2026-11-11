@@ -113,6 +113,7 @@ mod tests {
     /// Local mapping keys preserve case and first-wins selection.
     #[test]
     fn auth_to_local_names() -> Result<(), Box<dyn Error>> {
+        let unicode_local = "\u{a0}\u{2003}\u{202f}local";
         for name in [
             "Alice",
             "ALICE",
@@ -153,7 +154,7 @@ mod tests {
                 ("   = ", "\"a=b\"", "a=b"),
                 ("\t=\t", "\" padded \"", " padded "),
                 ("\u{b}\u{c}\r=\u{b}\u{c}\r", "local", "local"),
-                ("=", "\u{a0}\u{2003}\u{202f}local", "local"),
+                ("=", unicode_local, unicode_local),
                 (
                     "=",
                     "\"\u{a0}\u{2003}\u{202f}local\"",
