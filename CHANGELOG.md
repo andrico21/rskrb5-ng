@@ -13,6 +13,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### Crate, library and repository
 
+- Preserve Unicode relation-tag data in directive prechecks and padding bytes
+  inside section names; reject non-ASCII header suffixes instead of silently
+  selecting a recognized policy section (FU-CFG-R21, FU-CFG-R22).
 - Configuration relation tags use MIT's ASCII whitespace contract: Unicode
   whitespace in principal names is preserved, while internal ASCII whitespace
   returns a line-numbered syntax error; padding around `=` remains accepted
