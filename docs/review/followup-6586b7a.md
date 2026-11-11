@@ -425,6 +425,33 @@ Original review rows:
 | --- | --- | --- | --- | --- | --- | --- |
 | FU-TST-R30 | nit | Policy test description incorrectly promises no network I/O | fixed | Source review of `tokio_exchanges_admit_body_authorization_enctype` and `counted` in `tests/policy/body_authorization.rs`; pure-prose fix with no new test because no machine consumer checks this summary | none; test-target documentation now names autonomous loopback UDP fixtures and absence of external KDC or ambient configuration | task-53-rskrb5-ng-zero-open-items.log; critic:critics-367edde/u2.md#U2-05; no prose-pinning test |
 | FU-TST-R31 | nit | Earlier credential inventory rows name the former regression test | fixed | Source review of `inventory_rejects_opaque_declarations` and the FU-TST-R22/FU-TST-R23 proof cells; pure-prose correction with no new test | none; both proof cells name the current test while retaining historical evidence and other proofs | task-53-rskrb5-ng-zero-open-items.log; critic:critics-367edde/u2.md#U2-06 |
+| FU-TST-R36 | minor | Keyword-fragment and opaque item macros hide credential owners | fixed | `inventory_rejects_keyword_fragment_macros`, `local_macro_transcribers_require_structural_proof`, `literal_includes_load_original_source`, `library_graph_excludes_only_test_sources`, `public_secret_owners_are_audited`; commits `fa1e3ca`, `2635ef5`, `5d73ad8`, `c0b8609`, `8fbb8b7` | none in library/API; test inventory uses Syn declarations, bounded local macro classification and literal source loading instead of a handwritten lexer | task-53-rskrb5-ng-zero-open-items.log: original red fixtures exit 101; struct/enum/union fields, inert text and expression/impl controls retained; executor decisions below; critic:critics-367edde/u2.md#U2-01 |
+| FU-TST-R37 | minor | Local standard-module shadowing conceals aliased credential storage | fixed | `inventory_rejects_standard_module_shadowing`, `inventory_rejects_opaque_declarations`, `literal_includes_load_original_source`; commits `4782084`, `68c6f07`, `f086d99`, `4702c7e` | none in library/API; scoped aliases resolve or fail explicitly, including referenced generic aliases; sibling alias fixtures now require actual secret classification rather than file-wide ambiguity | task-53-rskrb5-ng-zero-open-items.log: local core/std red fixtures and additional direct/renamed module aliases failed before their guards; external core Result and scalar controls pass; critic:critics-367edde/u2.md#U2-02 |
+| FU-TST-R38 | minor | Associated projections are silently treated as nonsecret storage | fixed | `inventory_rejects_associated_projections`, `parser_reports_original_error_line`; commits `4782084`, `68c6f07`, `742fbc7`, `07c5dda` | none in library/API; associated and unresolved field storage fail with original source locations rather than becoming arbitrary nonsecret identifiers | task-53-rskrb5-ng-zero-open-items.log: direct/aliased/wrapped projection red fixtures; exact-location test kills an off-by-one mutation; impl-associated scalar control remains nonsecret; critic:critics-367edde/u2.md#U2-03 |
+| FU-TST-R39 | minor | Generic owner defaults conceal credential storage | fixed | `inventory_rejects_generic_owner_defaults`, `inventory_preserves_nonsecret_controls`, `generic_service_redacts_inner_credentials`, `public_secret_owners_are_audited`; commits `4782084`, `c0b8609`, `8a2c256` | none in library/API; non-scalar unresolved defaults reject, scalar defaults remain supported, unconstrained generic storage requires populated credential coverage | task-53-rskrb5-ng-zero-open-items.log: original default/wrapped-default fixtures fail first; stronger inventory found missing NegotiateService/NegotiateLayer witnesses, now populated with real credential bytes; caller-owned inner-service replacement remains its own erasure contract; critic:critics-367edde/u2.md#U2-04 |
+
+Todo 53 dependency admission: the owner approved `syn` on 2026-11-11 and
+the existing `proc-macro2` 1.0.107 dev edge solely for `span-locations` on
+the same date (option 1). `Cargo.toml` records both approvals. No new locked
+package or runtime dependency was added; before/after
+`cargo tree -e normal --all-features` outputs are byte-identical. Deny
+(including licenses), vet, audit, machete and Taplo remain required;
+`docs/lint-policy.md` records the runtime-table dependency-diff rule and
+the absence of a separate committed SBOM.
+
+Executor decisions of 2026-11-11 (not owner dependency approvals): literal
+`include!` targets are parsed relative to their including file with bounded
+cycle/depth checks. Only locally defined macro transcribers proven to emit
+impls or declaration-free expressions are accepted; opaque/external item
+invocations fail closed. The inventory scope changes from a directory walk
+to the library module graph rooted at `src/lib.rs`. Every library feature
+branch remains present; only structurally proven test-only items, fields
+and module files are excluded, and ambiguous cfg syntax rejects. This
+keeps test-support `thread_local!`/`proptest!` outside the library owner
+inventory without a filename or macro-name allowlist. Production sources
+are unchanged. Earlier FU-TST-R21..R25 fixtures remain, with the four
+resolvable sibling/parent-child alias cases upgraded from ambiguity errors
+to exact secret-owner assertions on the same inputs and CRLF variants.
 
 ## Owner review b07c837, release gates (todo 35)
 
