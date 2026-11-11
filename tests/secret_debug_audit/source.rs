@@ -8,6 +8,39 @@ use std::{
 use proc_macro2::Span;
 use syn::File;
 
+/// Extract an original field-type token span without enabling Syn's printing feature.
+pub(super) fn type_span(ty: &syn::Type) -> Span {
+    match ty {
+        syn::Type::Array(value) => value.bracket_token.span.open(),
+        syn::Type::FnPtr(value) => value.fn_token.span,
+        syn::Type::Group(value) => value.group_token.span,
+        syn::Type::ImplTrait(value) => value.impl_token.span,
+        syn::Type::Infer(value) => value.underscore_token.span,
+        syn::Type::Macro(value) => value.mac.bang_token.span,
+        syn::Type::Never(value) => value.bang_token.span,
+        syn::Type::Paren(value) => value.paren_token.span.open(),
+        syn::Type::Path(value) => value
+            .path
+            .segments
+            .first()
+            .map_or_else(Span::call_site, |segment| segment.ident.span()),
+        syn::Type::Ptr(value) => value.star_token.span,
+        syn::Type::Reference(value) => value.and_token.span,
+        syn::Type::Slice(value) => value.bracket_token.span.open(),
+        syn::Type::TraitObject(value) => value
+            .dyn_token
+            .as_ref()
+            .map_or_else(Span::call_site, |token| token.span),
+        syn::Type::Tuple(value) => value.paren_token.span.open(),
+        syn::Type::Verbatim(value) => value
+            .clone()
+            .into_iter()
+            .next()
+            .map_or_else(Span::call_site, |token| token.span()),
+        _ => Span::call_site(),
+    }
+}
+
 /// A parsed source file keeps its physical path for included-item diagnostics.
 pub(super) struct Parsed {
     /// Path of the bytes parsed into this tree.

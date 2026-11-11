@@ -4,7 +4,7 @@ use std::io;
 
 use syn::{GenericArgument, Generics, Item, PathArguments, Type, UseTree};
 
-use super::source::unsupported;
+use super::source::{type_span, unsupported};
 
 /// Type resolution retains lexical item scopes and the owning generic parameters.
 pub(super) struct Scope<'ast> {
@@ -27,10 +27,7 @@ impl Scope<'_> {
         if depth >= 32 {
             return Err(unsupported(
                 self.file,
-                self.generics
-                    .lt_token
-                    .as_ref()
-                    .map_or_else(proc_macro2::Span::call_site, |token| token.span),
+                type_span(ty),
                 "type recursion limit",
             ));
         }
@@ -115,7 +112,7 @@ impl Scope<'_> {
             | Type::Verbatim(_)
             | _ => Err(unsupported(
                 self.file,
-                proc_macro2::Span::call_site(),
+                type_span(ty),
                 "unclassified field type",
             )),
         }

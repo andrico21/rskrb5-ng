@@ -150,6 +150,17 @@ fn parser_reports_original_error_line() -> Result<(), io::Error> {
             "incorrect original source location: {error}"
         );
     }
+    let Err(error) = declarations(
+        "src/types.rs",
+        "// header\n\npub struct Owner { password: *const u8 }",
+    ) else {
+        return Err(io::Error::other("opaque pointer storage accepted"));
+    };
+    assert!(
+        error
+            .to_string()
+            .starts_with("unsupported source src/types.rs:3:")
+    );
     Ok(())
 }
 
