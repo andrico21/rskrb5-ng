@@ -49,6 +49,44 @@ timeout.
 
 ## Verification
 
+### In-diff check after critic round 9 (todo 59)
+
+Todo 56 changed `src/` after the todo 55 check (FU-CFG-R19, FU-CFG-R20: a
+relation tag is trimmed of the C-locale ASCII whitespace that MIT
+`prof_parse.c` skips, vertical tab included, must be nonempty and must not
+contain such whitespace, and Unicode space characters stay tag data; the
+include scanner strips the same leading whitespace). Todos 57 and 58 changed
+gate scripts, tests and documents only.
+
+- Diff: `git diff 320ed26 8cc4907 -- src` (2 files, `src/config.rs` and
+  `src/config/profile_syntax.rs`). `320ed26` is `main` after todo 55 and has
+  the code that check covered; `8cc4907` is `main` after todo 58.
+- The check ran locally as in todo 55: `cargo mutants --all-features
+  --no-shuffle --cap-lints=true --in-diff <diff> --shard k/2 -j 2
+  --copy-target=false` at `8cc4907`, cargo-mutants 27.1.0,
+  `CARGO_BUILD_WARNINGS=allow`, no debug info and an 8 GiB address-space cap.
+  The diff yields 17 mutants, so two shards ran. Each shard measured its own
+  baseline (85 s build and 75 s test; 70 s build and 72 s test), and
+  cargo-mutants set the timeout from it (378 s and 363 s).
+- `mutants_report.py --artifacts <the 2 shard outputs> --expect-shards 2
+  --register docs/review/mutants.md --campaign
+  8cc49070cc8bd58b9977a6b5aca5f090b4fef54f --enforce` prints `mutants:
+  caught=17 missed=0 timeout=0 unviable=0 success=0` and `0 problem(s)`.
+
+| Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 9 | 9 | 0 | 0 | 0 | 484 |
+| 1 | 8 | 8 | 0 | 0 | 0 | 405 |
+
+No mutant survived, so the check adds no register row. The mutants replace
+`IncludeExpansion::expand`, `State::local_mapping_assignment`,
+`State::content`, the new `tag_whitespace` and `relation_tag` and the changed
+`marker` with constant results, delete the negations and swap `&&` for `||`
+in `relation_tag`, and delete the negation in `State::content`. No file of
+this diff is pulled in with `include!`: `src/config/profile_syntax.rs` is a
+module of `src/config.rs`, and the changed lines of `src/config.rs` lie
+outside its `include!`d files, so no inlined copy was needed.
+
 ### In-diff check after critic round 8 (todo 55)
 
 Todo 52 changed `src/` after the todo 51 check (FU-CFG-R18: a line whose
