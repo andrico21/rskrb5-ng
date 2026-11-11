@@ -32,6 +32,9 @@ impl State {
         let Some((tag, raw)) = text.split_once('=') else {
             return false;
         };
+        if tag.trim().contains(char::is_whitespace) {
+            return false;
+        }
         let mut path: Vec<String> = self.scopes.iter().map(|scope| scope.name.clone()).collect();
         path.push(marker(tag.trim()).0.to_owned());
         local_mapping(&path) && !matches!(raw.trim(), "" | "{")
