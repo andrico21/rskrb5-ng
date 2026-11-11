@@ -32,7 +32,7 @@ fn req_flags_reject_malformed_bit_strings() -> Result<(), Error> {
 
 /// Encoding rejects oversized and nonminimal `ContextFlags` without truncating set bits.
 #[test]
-fn req_flags_encoding_rejects_noncanonical_named_bits() {
+fn req_flags_encoding_rejects_noncanonical_named_bits() -> Result<(), Error> {
     let outcomes: Vec<bool> = [
         vec![7, 0, 0, 0, 0, 0x80],
         vec![0, 0x80],
@@ -47,12 +47,12 @@ fn req_flags_encoding_rejects_noncanonical_named_bits() {
         matches!(token.encode(), Err(Error::InvalidReqFlags))
     })
     .collect();
-    assert_eq!(outcomes, [true; 5]);
+    (outcomes == [true; 5]).ok_or(Error::InvalidReqFlags)
 }
 
 /// Independently framed input enforces the same `ContextFlags` size and DER rules.
 #[test]
-fn req_flags_decoding_rejects_noncanonical_named_bits() {
+fn req_flags_decoding_rejects_noncanonical_named_bits() -> Result<(), Error> {
     let outcomes: Vec<bool> = [
         vec![7, 0, 0, 0, 0, 0x80],
         vec![0, 0x80],
@@ -73,7 +73,7 @@ fn req_flags_decoding_rejects_noncanonical_named_bits() {
         )
     })
     .collect();
-    assert_eq!(outcomes, [true; 5]);
+    (outcomes == [true; 5]).ok_or(Error::InvalidReqFlags)
 }
 
 /// Canonical empty, one-bit, seven-bit and 32-bit sets retain their exact bytes.
