@@ -73,9 +73,20 @@ pub(super) mod tests {
     #[cfg(feature = "tower")]
     #[test]
     fn generic_service_redacts_inner_credentials() {
-        use rskrb5_ng::{http::NegotiateService, keytab::Keytab};
+        use rskrb5_ng::{
+            http::{NegotiateLayer, NegotiateService},
+            keytab::{EncryptionKey, Entry, Keytab, Principal},
+        };
         let secret = pattern(65);
-        let keytab = Keytab::default();
+        let mut keytab = Keytab::new();
+        keytab.entries_mut().push(Entry::new(
+            Principal::new("EXAMPLE.COM", 1, ["alice"]),
+            1,
+            1,
+            EncryptionKey::new(17, secret.clone()),
+            1,
+        ));
+        redacted(&NegotiateLayer::new(&keytab), &[&secret]);
         let service = NegotiateService::new(CredentialService::new(secret.clone()), &keytab);
         redacted(&service, &[&secret]);
     }

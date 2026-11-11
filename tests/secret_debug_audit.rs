@@ -515,6 +515,7 @@ mod tests {
     /// Owners exercised with populated credential fields by this integration target.
     const COVERED: &[&str] = &[
         "src/http.rs::NegotiateService",
+        "src/http.rs::NegotiateLayer",
         "src/keytab.rs::EncryptionKey",
         "src/keytab.rs::Entry",
         "src/keytab.rs::Keytab",
@@ -586,7 +587,7 @@ mod tests {
     /// Literal decoys and CRLF cannot hide public credential owners or Debug derives.
     #[test]
     fn inventory_rejects_uncovered_secret_shapes() -> Result<(), io::Error> {
-        use super::{inventory::declarations, lex::tokens};
+        use super::declarations::declarations;
         for source in [
             "#[derive(Debug)] pub struct Secret { password: Vec<u8> }",
             "#[cfg_attr(feature = \"x\", derive(Debug))] pub struct Secret { key: [u8; 16] }",
@@ -597,7 +598,7 @@ mod tests {
             "#[derive(Debug)] pub struct Secret { r#password: Vec<u8> }",
         ] {
             for spelling in [source.to_owned(), source.replace(' ', "\r\n")] {
-                let owners = declarations("src/example.rs", &tokens(&spelling)?)?;
+                let owners = declarations("src/example.rs", &spelling)?;
                 assert_eq!(owners.len(), 1);
                 assert!(
                     owners.iter().any(|owner| owner
@@ -610,18 +611,18 @@ mod tests {
         }
         let decoys = "/* pub struct Wrong { key: Vec<u8> } */ const TEXT: &str = r###\"pub struct Wrong { secret: String }\"###;";
         assert!(
-            declarations("src/example.rs", &tokens(decoys)?)?.is_empty(),
+            declarations("src/example.rs", decoys)?.is_empty(),
             "literal declarations are inert"
         );
         assert!(
-            matches!(tokens("/* unterminated"), Err(error) if error.kind() == io::ErrorKind::Other)
+            matches!(declarations("src/example.rs", "/* unterminated"), Err(error) if error.kind() == io::ErrorKind::Other)
         );
         assert!(
-            matches!(tokens("r##\"unterminated"), Err(error) if error.kind() == io::ErrorKind::Other)
+            matches!(declarations("src/example.rs", "r##\"unterminated"), Err(error) if error.kind() == io::ErrorKind::Other)
         );
         assert!(matches!(declarations(
                 "src/example.rs",
-                &tokens("pub struct Truncated { key: Vec<u8>")?
+                 "pub struct Truncated { key: Vec<u8>"
              ), Err(error) if error.kind() == io::ErrorKind::Other));
         Ok(())
     }
@@ -629,68 +630,72 @@ mod tests {
     /// Opaque macros and aliases fail closed; resolvable scalar storage stays nonsecret.
     #[test]
     fn inventory_rejects_opaque_declarations() -> Result<(), io::Error> {
-        use super::{inventory::declarations, lex::tokens};
+        use super::declarations::declarations;
         let mut missed = Vec::new();
         for (source, cause) in [
             (
                 "macro_rules! credential_owner { ($vis:vis) => { #[derive(Debug)] $vis struct Leaked { password: Vec<u8> } }; } credential_owner!(pub);",
-                "unsupported macro visibility declaration",
+                "unclassified local macro transcriber",
             ),
             (
                 "macro_rules! credential_owner { ($vis:vis) => { #[derive(Debug)] $vis enum Leaked { Password(Vec<u8>) } }; } credential_owner!(pub);",
-                "unsupported macro visibility declaration",
+                "unclassified local macro transcriber",
             ),
             (
                 "macro_rules! credential_owner { ($($vis:vis,)?) => { #[derive(Debug)] $($vis)? struct Leaked { password: Vec<u8> } }; } credential_owner!(pub,);",
-                "unsupported macro visibility declaration",
+                "unclassified local macro transcriber",
             ),
             (
                 "macro_rules! credential_owner { ($($vis:vis,)*) => { #[derive(Debug)] $($vis)* enum Leaked { Password(Vec<u8>) } }; } credential_owner!(pub,);",
-                "unsupported macro visibility declaration",
+                "unclassified local macro transcriber",
             ),
             (
                 "macro_rules! credential_owner { ($($vis:vis,)?) => { $( $($vis)? struct Leaked { password: Vec<u8> } )? }; } credential_owner!(pub,);",
-                "unsupported macro visibility declaration",
+                "unclassified local macro transcriber",
             ),
             (
                 "type Payload<T = u8> = Vec<T>; #[derive(Debug)] pub struct Leaked { password: Payload }",
-                "unresolved generic alias Payload",
+                "unresolved generic alias",
             ),
             (
                 "type Payload<T> = Vec<T>; #[derive(Debug)] pub struct Leaked { password: Payload<u8> }",
-                "unresolved generic alias Payload",
+                "unresolved generic alias",
             ),
             (
                 "type Payload<T = u8> = Vec<T>; type Storage = Payload; #[derive(Debug)] pub struct Leaked { password: Storage }",
-                "unresolved generic alias Payload",
+                "unresolved generic alias",
             ),
             (
                 "type Scalar<T = u32> = T; #[derive(Debug)] pub struct Counter { password: Scalar }",
-                "unresolved generic alias Scalar",
+                "unresolved generic alias",
             ),
             (
                 "type Payload<T = u8> = Vec<T>; use self::Payload as Storage; pub struct Leaked { password: Storage }",
-                "unresolved generic alias Payload",
+                "unresolved generic alias",
             ),
             (
                 "mod unrelated { type Payload = u32; } type Payload = Vec<u8>; #[derive(Debug)] pub struct Leaked { password: Payload }",
-                "ambiguous alias Payload",
+                "resolved secret",
             ),
             (
                 "type Payload = Vec<u8>; mod unrelated { type Payload = u32; } #[derive(Debug)] pub struct Leaked { password: Payload }",
-                "ambiguous alias Payload",
+                "resolved secret",
             ),
             (
                 "type Payload = u32; mod nested { type Payload = Vec<u8>; #[derive(Debug)] pub struct Leaked { password: Payload } }",
-                "ambiguous alias Payload",
+                "resolved secret",
             ),
             (
                 "mod unrelated { use core::primitive::u32 as Payload; } type Payload = Vec<u8>; #[derive(Debug)] pub struct Leaked { password: Payload }",
-                "ambiguous alias Payload",
+                "resolved secret",
             ),
         ] {
             for spelling in [source.to_owned(), source.replace(' ', "\r\n")] {
-                if !matches!(declarations("src/example.rs", &tokens(&spelling)?), Err(error) if error.to_string().contains(cause))
+                if cause == "resolved secret" {
+                    resolved_secret(&spelling)?;
+                    continue;
+                }
+                if !matches!(declarations("src/example.rs", &spelling), Err(error) if error.to_string().contains(cause))
                 {
                     missed.push(format!("missing {cause}: {source}"));
                 }
@@ -705,7 +710,7 @@ mod tests {
             "/* $vis struct Leaked { password: Vec<u8> } type Payload = Vec<u8>; */ type Payload = u32; pub struct Scalar { password: Payload }",
             "const TEXT: &str = r###\"$vis struct Leaked { password: Vec<u8> } type Payload = Vec<u8>;\"###; type Payload = u32; pub struct Scalar { password: Payload }",
         ] {
-            let owners = declarations("src/example.rs", &tokens(source)?)?;
+            let owners = declarations("src/example.rs", source)?;
             assert_eq!(owners.len(), 1);
             assert!(
                 secret_owners(&owners).is_empty(),
@@ -718,11 +723,23 @@ mod tests {
             "const TEXT: &str = r###\"macro_rules! hidden { () => { $($vis)? enum Leaked {} }; }\"###;",
         ] {
             assert!(
-                declarations("src/example.rs", &tokens(source)?)?.is_empty(),
+                declarations("src/example.rs", source)?.is_empty(),
                 "plain macros and literal declarations are inert"
             );
         }
         assert!(missed.is_empty(), "{}", missed.join("\n"));
+        Ok(())
+    }
+
+    /// Scoped aliases resolve to one credential owner rather than an unrelated scalar.
+    fn resolved_secret(source: &str) -> Result<(), io::Error> {
+        let owners = super::declarations::declarations("src/example.rs", source)?;
+        assert_eq!(owners.len(), 1);
+        assert_eq!(
+            secret_owners(&owners).len(),
+            1,
+            "scoped credential alias omitted"
+        );
         Ok(())
     }
 
