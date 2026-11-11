@@ -897,6 +897,16 @@ Transport:
 
 Gates, tests and CI:
 
+- Root single-file Cargo targets reject opaque item-generating macro expansions
+  and unknown macro calls rather than certifying an incomplete source inventory;
+  inspectable inline-module macros and unshadowed standard non-item macros remain supported
+  (FU-GATE-R19).
+- Packaged Markdown fences close only with ASCII spaces or tabs after the
+  delimiter; Unicode whitespace no longer hides rendered links (FU-CI-R08).
+- The changelog gate handles escaped register-table pipes and fails closed on
+  uninterpretable FU rows, preserving explicit `none` exemptions and matching
+  whole register IDs (FU-GATE-R20).
+
 - The gates scan every Rust source Cargo compiles, including build scripts and
   custom target paths, and fail closed on a source outside the checkout or an
   empty set (FU-GATE-01).
