@@ -3,10 +3,7 @@
 use std::io;
 
 use proc_macro2::{Span, TokenStream};
-use syn::{
-    Attribute, Fields, Generics, Item, ItemMacro, Meta, Token, Visibility, parse::Parser as _,
-    punctuated::Punctuated,
-};
+use syn::{Fields, Generics, Item, Visibility};
 
 use super::{
     inventory::Owner,
@@ -31,6 +28,15 @@ pub(super) fn graph_unit(
     unit: &super::source::Parsed,
     graph: &[super::source::Parsed],
 ) -> Result<Vec<Owner>, io::Error> {
+    super::attributes::check(
+        file,
+        &unit.tree,
+        &graph
+            .iter()
+            .filter(|part| part.module == unit.module)
+            .map(|part| part.tree.items.as_slice())
+            .collect::<Vec<_>>(),
+    )?;
     let generics = Generics::default();
     let scope = Scope {
         file,
@@ -52,6 +58,7 @@ pub(super) fn scoped<'ast>(
     tree: &'ast syn::File,
     scopes: Vec<&'ast [Item]>,
 ) -> Result<Vec<Owner>, io::Error> {
+    super::attributes::check(file, tree, &scopes)?;
     let generics = Generics::default();
     let scope = Scope {
         file,
@@ -79,6 +86,7 @@ fn items_from(
     declarations: &[Item],
 ) -> Result<Vec<Owner>, io::Error> {
     let mut owners = Vec::new();
+    super::nested_items::check(scope.file, declarations)?;
     for declaration in declarations {
         if !super::configuration::included(
             scope.file,
@@ -99,7 +107,7 @@ fn items_from(
                     identity: format!("{identity}::{}", item.ident),
                     name: item.ident.to_string(),
                     fields: fields(&nested, &item.fields, "")?,
-                    derived_debug: debug(&item.attrs)?,
+                    derived_debug: super::configuration::debug(&item.attrs)?,
                 });
             }
             Item::Enum(item) if matches!(item.vis, Visibility::Public(_)) => {
@@ -122,7 +130,7 @@ fn items_from(
                     identity: format!("{identity}::{}", item.ident),
                     name: item.ident.to_string(),
                     fields: members,
-                    derived_debug: debug(&item.attrs)?,
+                    derived_debug: super::configuration::debug(&item.attrs)?,
                 });
             }
             Item::Union(item) if matches!(item.vis, Visibility::Public(_)) => {
@@ -144,7 +152,7 @@ fn items_from(
             }
             Item::Macro(item) if item.ident.is_some() && item.mac.path.is_ident("macro_rules") => {}
             Item::Macro(item) => {
-                invocation(scope, item)?;
+                super::macro_scope::invocation(scope, item)?;
             }
             Item::Const(_)
             | Item::Enum(_)
@@ -201,7 +209,7 @@ fn union(scope: &Scope<'_>, identity: &str, item: &syn::ItemUnion) -> Result<Own
         identity: format!("{identity}::{}", item.ident),
         name: item.ident.to_string(),
         fields: members,
-        derived_debug: debug(&item.attrs)?,
+        derived_debug: super::configuration::debug(&item.attrs)?,
     })
 }
 
@@ -212,31 +220,6 @@ fn first_span(tokens: &TokenStream) -> Span {
         .into_iter()
         .next()
         .map_or_else(Span::call_site, |token| token.span())
-}
-
-/// An item invocation needs a locally visible definition with classifiable output.
-fn invocation(scope: &Scope<'_>, item: &ItemMacro) -> Result<(), io::Error> {
-    let Some(name) = item.mac.path.get_ident() else {
-        return Err(unsupported(
-            scope.file,
-            item.mac.bang_token.span,
-            "external item macro",
-        ));
-    };
-    for candidate in scope.items.iter().rev().flat_map(|items| items.iter()) {
-        if let Item::Macro(local) = candidate
-            && local.ident.as_ref() == Some(name)
-            && local.mac.path.is_ident("macro_rules")
-        {
-            super::macros::classify(scope.file, &local.mac)?;
-            return super::macros::arguments(scope.file, &item.mac);
-        }
-    }
-    Err(unsupported(
-        scope.file,
-        item.mac.bang_token.span,
-        "unknown item macro",
-    ))
 }
 
 /// Named and positional fields preserve visibility and structurally resolved storage.
@@ -268,42 +251,4 @@ fn fields(
             ))
         })
         .collect()
-}
-
-/// Inspect derive lists and every `cfg_attr` branch without interpreting string contents.
-fn debug(attributes: &[Attribute]) -> Result<bool, io::Error> {
-    for attribute in attributes {
-        if debug_meta(&attribute.meta)? {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-/// Nested conditional attributes carry real meta syntax, not searchable prose.
-fn debug_meta(meta: &Meta) -> Result<bool, io::Error> {
-    let Meta::List(list) = meta else {
-        return Ok(false);
-    };
-    if list.path.is_ident("derive") {
-        let paths = Punctuated::<syn::Path, Token![,]>::parse_terminated
-            .parse2(list.tokens.clone())
-            .map_err(io::Error::other)?;
-        return Ok(paths.iter().any(|path| {
-            path.segments
-                .last()
-                .is_some_and(|segment| segment.ident == "Debug")
-        }));
-    }
-    if list.path.is_ident("cfg_attr") {
-        let nested = Punctuated::<Meta, Token![,]>::parse_terminated
-            .parse2(list.tokens.clone())
-            .map_err(io::Error::other)?;
-        for attribute in nested.iter().skip(1) {
-            if debug_meta(attribute)? {
-                return Ok(true);
-            }
-        }
-    }
-    Ok(false)
 }

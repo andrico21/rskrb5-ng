@@ -258,6 +258,8 @@ fn inventory_rejects_generic_owner_defaults() -> Result<(), io::Error> {
     rejects(&[
         "#[derive(Debug)] pub struct Leaked<T = Vec<u8>> { password: T }",
         "#[derive(Debug)] pub struct Leaked<T = Vec<u8>> { password: Option<T> }",
+        "#[derive(Debug)] pub struct Scalar<T = u32> { password: T }",
+        "#[derive(Debug)] pub struct Scalar<T = u32> { password: Option<T> }",
     ])
 }
 
@@ -265,7 +267,6 @@ fn inventory_rejects_generic_owner_defaults() -> Result<(), io::Error> {
 #[test]
 fn inventory_preserves_nonsecret_controls() -> Result<(), io::Error> {
     for source in [
-        "#[derive(Debug)] pub struct Scalar<T = u32> { password: T }",
         "#[derive(Debug)] pub struct Scalar { password: u32 }",
         "use core::result::Result as Outcome; pub struct Scalar { value: Outcome<u32, u32> }",
         "/* owner!(struct Leaked); */ const TEXT: &str = r###\"pub struct Leaked { password: Vec<u8> }\"###; pub struct Scalar { password: u32 }",

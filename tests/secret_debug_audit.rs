@@ -34,6 +34,22 @@ mod macros;
     clippy::missing_errors_doc,
     reason = "test code is not rendered API documentation"
 )]
+#[path = "secret_debug_audit/macro_scope.rs"]
+mod macro_scope;
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[path = "secret_debug_audit/nested_items.rs"]
+mod nested_items;
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
 #[path = "secret_debug_audit/resolve.rs"]
 mod resolve;
 
@@ -70,6 +86,19 @@ mod graph;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 #[path = "secret_debug_audit/parser_tests.rs"]
 mod parser_tests;
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "secret_debug_audit/scope_tests.rs"]
+mod scope_tests;
+
+#[path = "secret_debug_audit/attributes.rs"]
+mod attributes;
 
 #[cfg(test)]
 #[expect(
@@ -270,6 +299,10 @@ mod tests {
 
     /// Reviewed operations that do not destroy retained secret bytes.
     const REPLACEMENT_EXCEPTIONS: &[(&str, &str)] = &[
+        (
+            "src/client.rs::Tokio::remove_cached_service_ticket",
+            "BTreeMap::remove transfers the owned session to the caller without destroying its credential storage; the returned session retains its erasure contract.",
+        ),
         (
             "src/http.rs::NegotiateService::inner_mut",
             "Caller-owned generic service; mutation and erasure remain the inner service's contract, not first-party credential storage.",

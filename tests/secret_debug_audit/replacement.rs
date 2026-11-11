@@ -7,7 +7,13 @@ use syn::{
     visit::{self, Visit},
 };
 
-use super::source::parse;
+use super::source::{parse, unsupported};
+
+#[path = "replacement_macros.rs"]
+mod replacement_macros;
+
+#[path = "replacement_readers.rs"]
+mod replacement_readers;
 
 /// A public method and its structurally identified receiver writes.
 #[derive(Debug)]
@@ -22,23 +28,92 @@ pub(super) struct Method {
 
 /// Collect field mutations through the real expression tree.
 #[derive(Default)]
-struct Writes(Vec<String>);
+struct Writes {
+    /// Receiver fields requiring a replacement proof.
+    fields: Vec<String>,
+    /// Opaque syntax cannot certify an empty write set.
+    opaque: Option<proc_macro2::Span>,
+    /// Fields whose resolved storage has reviewed read-only operations.
+    readers: Vec<String>,
+}
 
 impl Writes {
     /// Only receiver fields count, not unrelated object members.
     fn record(&mut self, expression: &Expr) {
-        if let Expr::Field(field) = expression
-            && matches!(&*field.base, Expr::Path(path) if path.path.is_ident("self"))
-        {
-            self.0.push(match &field.member {
-                Member::Named(name) => name.to_string(),
-                Member::Unnamed(index) => index.index.to_string(),
-            });
+        match expression {
+            Expr::Paren(value) => self.record(&value.expr),
+            Expr::Group(value) => self.record(&value.expr),
+            Expr::Index(value) => self.record(&value.expr),
+            Expr::Unary(value) => self.record(&value.expr),
+            Expr::Reference(value) => self.record(&value.expr),
+            Expr::Field(field) => {
+                if matches!(&*field.base, Expr::Path(path) if path.path.is_ident("self")) {
+                    self.fields.push(match &field.member {
+                        Member::Named(name) => name.to_string(),
+                        Member::Unnamed(index) => index.index.to_string(),
+                    });
+                } else {
+                    self.record(&field.base);
+                }
+            }
+            Expr::Array(_)
+            | Expr::Assign(_)
+            | Expr::Async(_)
+            | Expr::Await(_)
+            | Expr::Binary(_)
+            | Expr::Block(_)
+            | Expr::Break(_)
+            | Expr::Call(_)
+            | Expr::Cast(_)
+            | Expr::Closure(_)
+            | Expr::Const(_)
+            | Expr::Continue(_)
+            | Expr::ForLoop(_)
+            | Expr::If(_)
+            | Expr::Infer(_)
+            | Expr::Let(_)
+            | Expr::Lit(_)
+            | Expr::Loop(_)
+            | Expr::Macro(_)
+            | Expr::Match(_)
+            | Expr::MethodCall(_)
+            | Expr::Path(_)
+            | Expr::Range(_)
+            | Expr::RawAddr(_)
+            | Expr::Repeat(_)
+            | Expr::Return(_)
+            | Expr::Struct(_)
+            | Expr::Try(_)
+            | Expr::TryBlock(_)
+            | Expr::Tuple(_)
+            | Expr::Unsafe(_)
+            | Expr::Verbatim(_)
+            | Expr::While(_)
+            | Expr::Yield(_)
+            | _ => {}
         }
     }
 }
 
 impl<'ast> Visit<'ast> for Writes {
+    fn visit_expr_binary(&mut self, i: &'ast syn::ExprBinary) {
+        if matches!(
+            i.op,
+            syn::BinOp::AddAssign(_)
+                | syn::BinOp::SubAssign(_)
+                | syn::BinOp::MulAssign(_)
+                | syn::BinOp::DivAssign(_)
+                | syn::BinOp::RemAssign(_)
+                | syn::BinOp::BitXorAssign(_)
+                | syn::BinOp::BitAndAssign(_)
+                | syn::BinOp::BitOrAssign(_)
+                | syn::BinOp::ShlAssign(_)
+                | syn::BinOp::ShrAssign(_)
+        ) {
+            self.record(&i.left);
+        }
+        visit::visit_expr_binary(self, i);
+    }
     fn visit_expr_assign(&mut self, i: &'ast syn::ExprAssign) {
         self.record(&i.left);
         visit::visit_expr_assign(self, i);
@@ -50,25 +125,54 @@ impl<'ast> Visit<'ast> for Writes {
         visit::visit_expr_reference(self, i);
     }
     fn visit_expr_method_call(&mut self, i: &'ast syn::ExprMethodCall) {
-        if matches!(
-            i.method.to_string().as_str(),
-            "replace" | "take" | "clear" | "truncate" | "clone_from" | "insert"
-        ) {
+        let mut receiver = Self::default();
+        receiver.record(&i.receiver);
+        if !(receiver
+            .fields
+            .iter()
+            .all(|field| self.readers.contains(field))
+            && replacement_readers::METHODS.contains(&i.method.to_string().as_str()))
+        {
             self.record(&i.receiver);
         }
         visit::visit_expr_method_call(self, i);
+    }
+    fn visit_macro(&mut self, i: &'ast syn::Macro) {
+        if let Some(arguments) = replacement_macros::expressions(i) {
+            for argument in &arguments {
+                self.visit_expr(argument);
+            }
+        } else {
+            self.opaque = Some(i.bang_token.span);
+        }
     }
 }
 
 /// Extract public inherent methods from parsed impl blocks.
 pub(super) fn methods(file: &str, source: &str) -> Result<Vec<Method>, io::Error> {
-    Ok(parsed_methods(file, &parse(file, source)?))
+    parsed_methods(
+        file,
+        &parse(file, source)?.items,
+        &super::declarations::declarations(file, source)?,
+    )
 }
 
 /// Inspect each impl's concrete receiver and complete method body.
-fn parsed_methods(file: &str, tree: &syn::File) -> Vec<Method> {
+fn parsed_methods(
+    file: &str,
+    items: &[Item],
+    owners: &[super::inventory::Owner],
+) -> Result<Vec<Method>, io::Error> {
     let mut output = Vec::new();
-    for item in &tree.items {
+    for item in items {
+        if !super::configuration::included(file, super::configuration::attributes(item)?)? {
+            continue;
+        }
+        if let Item::Mod(module) = item
+            && let Some((_, nested)) = &module.content
+        {
+            output.extend(parsed_methods(file, nested, owners)?);
+        }
         if let Item::Impl(implementation) = item {
             let Type::Path(path) = &*implementation.self_ty else {
                 continue;
@@ -81,19 +185,32 @@ fn parsed_methods(file: &str, tree: &syn::File) -> Vec<Method> {
                     && matches!(function.vis, Visibility::Public(_))
                 {
                     let mut writes = Writes::default();
+                    for declaration in owners
+                        .iter()
+                        .filter(|candidate| owner.ident == candidate.name)
+                    {
+                        for (name, _, ty) in &declaration.fields {
+                            if replacement_readers::classified(ty) {
+                                writes.readers.push(name.clone());
+                            }
+                        }
+                    }
                     writes.visit_block(&function.block);
-                    writes.0.sort();
-                    writes.0.dedup();
+                    if let Some(span) = writes.opaque {
+                        return Err(unsupported(file, span, "opaque replacement macro"));
+                    }
+                    writes.fields.sort();
+                    writes.fields.dedup();
                     output.push(Method {
                         identity: format!("{file}::{}::{}", owner.ident, function.sig.ident),
                         owner: owner.ident.to_string(),
-                        fields: writes.0,
+                        fields: writes.fields,
                     });
                 }
             }
         }
     }
-    output
+    Ok(output)
 }
 
 /// Return the already-classified receiver mutations.
@@ -104,6 +221,7 @@ pub(super) fn replaced_fields(method: &Method) -> Vec<String> {
 /// Library source graph selects production mutation boundaries independently of features.
 pub(super) fn inspect(root: &Path, directory: &Path) -> Result<Vec<Method>, io::Error> {
     let mut output = Vec::new();
+    let owners = super::inventory::inspect(root, directory)?;
     for unit in super::graph::load(&directory.join("lib.rs"))? {
         let relative = unit
             .path
@@ -111,7 +229,7 @@ pub(super) fn inspect(root: &Path, directory: &Path) -> Result<Vec<Method>, io::
             .map_err(io::Error::other)?
             .to_string_lossy()
             .replace('\\', "/");
-        output.extend(parsed_methods(&relative, &unit.tree));
+        output.extend(parsed_methods(&relative, &unit.tree.items, &owners)?);
     }
     Ok(output)
 }

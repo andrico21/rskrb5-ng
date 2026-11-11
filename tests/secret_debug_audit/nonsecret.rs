@@ -3,6 +3,16 @@
 /// Each exclusion identifies one owner and field, never an entire module.
 pub(super) const FIELDS: &[(&str, &str, &str)] = &[
     (
+        "src/http.rs::ValidatorOptions",
+        "keytab_principal",
+        "Principal selector components, not retained keytab credentials.",
+    ),
+    (
+        "src/config/enctype_expr.rs::EnctypeTerm",
+        "token",
+        "Configuration enctype expression spelling, not an authentication token.",
+    ),
+    (
         "src/error.rs::Config",
         "NoKpasswdServer.0",
         "Realm name identifying missing password-service configuration.",

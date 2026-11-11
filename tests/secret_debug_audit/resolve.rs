@@ -135,7 +135,7 @@ impl Scope<'_> {
                             "associated-type projection",
                         ));
                     }
-                    return self.parameter(parameter, next);
+                    return self.parameter(parameter);
                 }
                 let mut output = self.binding(&name, next)?.map_or_else(
                     || {
@@ -210,6 +210,7 @@ impl Scope<'_> {
         {
             return Ok(());
         }
+        self.private_storage(segment, depth)?;
         for item in self.items.iter().flat_map(|items| items.iter()) {
             if matches!(item, Item::Struct(owner) if owner.ident == name)
                 || matches!(item, Item::Enum(owner) if owner.ident == name)
@@ -254,6 +255,82 @@ impl Scope<'_> {
         ))
     }
 
+    /// Referenced private storage must be proven nonsecret before it can remain unlisted.
+    fn private_storage(&self, segment: &syn::PathSegment, depth: usize) -> Result<(), io::Error> {
+        let name = segment.ident.to_string();
+        for item in self.items.iter().flat_map(|items| items.iter()) {
+            let private_fields = match item {
+                Item::Struct(owner)
+                    if owner.ident == name && !matches!(owner.vis, syn::Visibility::Public(_)) =>
+                {
+                    Some(&owner.fields)
+                }
+                Item::Enum(owner)
+                    if owner.ident == name
+                        && !matches!(owner.vis, syn::Visibility::Public(_))
+                        && owner
+                            .variants
+                            .iter()
+                            .any(|variant| !variant.fields.is_empty()) =>
+                {
+                    return Err(unsupported(
+                        self.file,
+                        segment.ident.span(),
+                        "unclassified private enum storage",
+                    ));
+                }
+                Item::Union(owner)
+                    if owner.ident == name && !matches!(owner.vis, syn::Visibility::Public(_)) =>
+                {
+                    return Err(unsupported(
+                        self.file,
+                        segment.ident.span(),
+                        "unclassified private union storage",
+                    ));
+                }
+                Item::Const(_)
+                | Item::Enum(_)
+                | Item::ExternCrate(_)
+                | Item::Fn(_)
+                | Item::ForeignMod(_)
+                | Item::Impl(_)
+                | Item::Macro(_)
+                | Item::Mod(_)
+                | Item::Static(_)
+                | Item::Struct(_)
+                | Item::Trait(_)
+                | Item::TraitAlias(_)
+                | Item::Type(_)
+                | Item::Union(_)
+                | Item::Use(_)
+                | Item::Verbatim(_)
+                | _ => None,
+            };
+            if let Some(fields) = private_fields {
+                for field in fields {
+                    let storage = self.expand(&field.ty, depth.saturating_add(1))?;
+                    let field_name = field
+                        .ident
+                        .as_ref()
+                        .map_or_else(String::new, ToString::to_string);
+                    if super::inventory::secret_field(&field_name, &storage)
+                        && !super::nonsecret::contains(
+                            &format!("{}::{name}", self.file),
+                            &field_name,
+                        )
+                    {
+                        return Err(unsupported(
+                            self.file,
+                            segment.ident.span(),
+                            "unclassified private credential owner",
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Qualified local aliases and concrete associated projections require explicit resolution.
     fn qualified(&self, path: &syn::Path) -> Result<(), io::Error> {
         if path.segments.len() < 2 {
@@ -262,16 +339,19 @@ impl Scope<'_> {
         let Some(first) = path.segments.first() else {
             return Ok(());
         };
+        let root = if matches!(first.ident.to_string().as_str(), "self" | "super" | "crate") {
+            path.segments.iter().nth(1).unwrap_or(first)
+        } else {
+            first
+        };
         for item in self.items.iter().rev().flat_map(|items| items.iter()) {
             let concrete = match item {
                 Item::Struct(owner) => owner.ident == first.ident,
                 Item::Enum(owner) => owner.ident == first.ident,
                 Item::Union(owner) => owner.ident == first.ident,
                 Item::Type(alias) => alias.ident == first.ident,
-                Item::Mod(module) if module.ident == first.ident => {
-                    if let Some((_, nested)) = &module.content
-                        && nested.iter().any(|entry| matches!(entry, Item::Type(_)))
-                    {
+                Item::Mod(module) if module.ident == root.ident => {
+                    if module.content.is_some() {
                         return Err(unsupported(
                             self.file,
                             first.ident.span(),
@@ -380,38 +460,10 @@ impl Scope<'_> {
         Ok(output)
     }
 
-    /// Only a proven scalar default can classify a generic owner as nonsecret.
-    fn parameter(
-        &self,
-        parameter: &syn::TypeParam,
-        depth: usize,
-    ) -> Result<Vec<String>, io::Error> {
-        let Some((_, default)) = &parameter.default else {
+    /// Defaults do not constrain explicit instantiations of generic storage.
+    fn parameter(&self, parameter: &syn::TypeParam) -> Result<Vec<String>, io::Error> {
+        if parameter.default.is_none() {
             return Ok(vec!["GenericStorage".to_owned()]);
-        };
-        let resolved = self.expand(default, depth)?;
-        if resolved.iter().all(|word| {
-            matches!(
-                word.as_str(),
-                "bool"
-                    | "char"
-                    | "u8"
-                    | "u16"
-                    | "u32"
-                    | "u64"
-                    | "u128"
-                    | "usize"
-                    | "i8"
-                    | "i16"
-                    | "i32"
-                    | "i64"
-                    | "i128"
-                    | "isize"
-                    | "f32"
-                    | "f64"
-            )
-        }) {
-            return Ok(resolved);
         }
         Err(unsupported(
             self.file,
