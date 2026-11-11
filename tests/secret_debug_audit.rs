@@ -63,6 +63,14 @@ mod configuration;
 #[cfg(test)]
 #[expect(
     clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[path = "secret_debug_audit/graph.rs"]
+mod graph;
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
     clippy::missing_panics_doc,
     reason = "test code is not rendered API documentation"
 )]

@@ -38,6 +38,29 @@ fn inventory_cfg_preserves_library_branches() -> Result<(), io::Error> {
     Ok(())
 }
 
+/// The real library graph retains features and excludes test-only macro-bearing files.
+#[test]
+fn library_graph_excludes_only_test_sources() -> Result<(), io::Error> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let graph = super::graph::load(&root.join("src/lib.rs"))?;
+    assert!(
+        graph.iter().any(|unit| unit.path.ends_with("http.rs")),
+        "optional HTTP source missing"
+    );
+    assert!(
+        !graph
+            .iter()
+            .any(|unit| unit.path.ends_with("payload_tests.rs")),
+        "test-only file included"
+    );
+    let owners = declarations(
+        "src/probe.rs",
+        "#[cfg(feature = \"x\")] pub struct Included { password: Vec<u8> } #[cfg(test)] pub struct Excluded { password: Vec<u8> }",
+    )?;
+    assert_eq!(secret_owners(&owners), ["src/probe.rs::Included"]);
+    Ok(())
+}
+
 /// Includes preserve physical source identity and reject missing targets and cycles.
 #[test]
 fn literal_includes_load_original_source() -> Result<(), io::Error> {

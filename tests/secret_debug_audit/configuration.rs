@@ -2,9 +2,31 @@
 
 use std::io;
 
-use syn::{Attribute, Expr, Lit, Meta, Token, parse::Parser as _, punctuated::Punctuated};
+use syn::{Attribute, Expr, Item, Lit, Meta, Token, parse::Parser as _, punctuated::Punctuated};
 
 use super::source::unsupported;
+
+/// Every parsed item exposes its actual attributes; unknown item syntax fails closed.
+pub(super) fn attributes(item: &Item) -> Result<&[Attribute], io::Error> {
+    match item {
+        Item::Const(value) => Ok(&value.attrs),
+        Item::Enum(value) => Ok(&value.attrs),
+        Item::ExternCrate(value) => Ok(&value.attrs),
+        Item::Fn(value) => Ok(&value.attrs),
+        Item::ForeignMod(value) => Ok(&value.attrs),
+        Item::Impl(value) => Ok(&value.attrs),
+        Item::Macro(value) => Ok(&value.attrs),
+        Item::Mod(value) => Ok(&value.attrs),
+        Item::Static(value) => Ok(&value.attrs),
+        Item::Struct(value) => Ok(&value.attrs),
+        Item::Trait(value) => Ok(&value.attrs),
+        Item::TraitAlias(value) => Ok(&value.attrs),
+        Item::Type(value) => Ok(&value.attrs),
+        Item::Union(value) => Ok(&value.attrs),
+        Item::Use(value) => Ok(&value.attrs),
+        Item::Verbatim(_) | _ => Err(io::Error::other("unclassified item attributes")),
+    }
+}
 
 /// Possible truth values with test disabled and other predicates unconstrained.
 #[derive(Clone, Copy)]

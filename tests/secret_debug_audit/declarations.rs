@@ -2,6 +2,7 @@
 
 use std::io;
 
+use proc_macro2::{Span, TokenStream};
 use syn::{
     Attribute, Fields, Generics, Item, ItemMacro, Meta, Token, Visibility, parse::Parser as _,
     punctuated::Punctuated,
@@ -16,6 +17,11 @@ use super::{
 /// Inventory one complete source unit without expanding opaque item invocations.
 pub(super) fn declarations(file: &str, text: &str) -> Result<Vec<Owner>, io::Error> {
     let tree = parse(file, text)?;
+    parsed(file, &tree)
+}
+
+/// Inspect a loaded tree after source-graph selection without losing physical spans.
+pub(super) fn parsed(file: &str, tree: &syn::File) -> Result<Vec<Owner>, io::Error> {
     let generics = Generics::default();
     let scope = Scope {
         file,
@@ -30,6 +36,12 @@ fn items(scope: &Scope<'_>, identity: &str) -> Result<Vec<Owner>, io::Error> {
     let mut owners = Vec::new();
     let declarations = scope.items.last().copied().unwrap_or_default();
     for declaration in declarations {
+        if !super::configuration::included(
+            scope.file,
+            super::configuration::attributes(declaration)?,
+        )? {
+            continue;
+        }
         match declaration {
             Item::Struct(item) if matches!(item.vis, Visibility::Public(_)) => {
                 let nested = Scope {
@@ -102,26 +114,27 @@ fn items(scope: &Scope<'_>, identity: &str) -> Result<Vec<Owner>, io::Error> {
             | Item::Union(_)
             | Item::Use(_) => {}
             Item::Verbatim(tokens) => {
-                return Err(unsupported(
-                    scope.file,
-                    tokens
-                        .clone()
-                        .into_iter()
-                        .next()
-                        .map_or_else(proc_macro2::Span::call_site, |token| token.span()),
-                    "unparsed item",
-                ));
+                return Err(unsupported(scope.file, first_span(tokens), "unparsed item"));
             }
             _ => {
                 return Err(unsupported(
                     scope.file,
-                    proc_macro2::Span::call_site(),
+                    Span::call_site(),
                     "unsupported item",
                 ));
             }
         }
     }
     Ok(owners)
+}
+
+/// Preserve original token locations even when Syn cannot classify an item.
+fn first_span(tokens: &TokenStream) -> Span {
+    tokens
+        .clone()
+        .into_iter()
+        .next()
+        .map_or_else(Span::call_site, |token| token.span())
 }
 
 /// An item invocation needs a locally visible definition with classifiable output.
