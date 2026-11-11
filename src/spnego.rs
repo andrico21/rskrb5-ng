@@ -1310,7 +1310,7 @@ pub struct NegTokenInit {
 }
 
 impl NegTokenInit {
-    /// Replace or clear request flags; BIT STRING validation occurs during encoding.
+    /// Replace or clear request flags; canonical `ContextFlags` validation occurs during encoding.
     #[inline]
     pub fn set_req_flags(&mut self, value: Option<Vec<u8>>) {
         self.req_flags = value;
@@ -2717,19 +2717,19 @@ fn rotate_left(bytes: &[u8], count: usize) -> Vec<u8> {
 
 use crate::error::Spnego as Error;
 
-/// Enforce DER BIT STRING content rules at both reqFlags boundaries.
+/// Enforce RFC 4178 section 4.2.1 `ContextFlags` size and named-bit DER at both boundaries.
 ///
 /// # Errors
-/// Returns `InvalidReqFlags` for missing count bytes or invalid padding.
+/// Returns `InvalidReqFlags` for invalid padding, more than 32 bits or trailing zero bits.
 fn validate_req_flags(bytes: &[u8]) -> Result<(), Error> {
     let Some((&unused, bits)) = bytes.split_first() else {
         return Err(Error::InvalidReqFlags);
     };
     (unused <= 7
-        && (unused == 0
-            || bits
-                .last()
-                .is_some_and(|last| last & (1_u8 << unused).wrapping_sub(1) == 0)))
+        && bits.len() <= 4
+        && bits.last().map_or(unused == 0, |last| {
+            last.trailing_zeros() == u32::from(unused)
+        }))
     .ok_or(Error::InvalidReqFlags)
 }
 

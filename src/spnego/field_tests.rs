@@ -11,7 +11,7 @@ fn req_flags_reject_malformed_bit_strings() -> Result<(), Error> {
         (vec![1], false),
         (vec![1, 1], false),
         (vec![0], true),
-        (vec![1, 0x80], true),
+        (vec![7, 0x80], true),
     ] {
         let fields = [
             vec![0xa0, 5, 0x30, 3, 6, 1, 0x2a],
@@ -26,6 +26,64 @@ fn req_flags_reject_malformed_bit_strings() -> Result<(), Error> {
         let mut token = NegTokenInit::krb5(vec![1]);
         token.set_req_flags(Some(contents));
         assert_eq!(token.encode().is_ok(), valid);
+    }
+    Ok(())
+}
+
+/// Encoding rejects oversized and nonminimal `ContextFlags` without truncating set bits.
+#[test]
+fn req_flags_encoding_rejects_noncanonical_named_bits() {
+    let outcomes: Vec<bool> = [
+        vec![7, 0, 0, 0, 0, 0x80],
+        vec![0, 0x80],
+        vec![1, 0x80],
+        vec![0, 0],
+        vec![7, 0x80, 0],
+    ]
+    .into_iter()
+    .map(|contents| {
+        let mut token = NegTokenInit::krb5(vec![1]);
+        token.set_req_flags(Some(contents));
+        matches!(token.encode(), Err(Error::InvalidReqFlags))
+    })
+    .collect();
+    assert_eq!(outcomes, [true; 5]);
+}
+
+/// Independently framed input enforces the same `ContextFlags` size and DER rules.
+#[test]
+fn req_flags_decoding_rejects_noncanonical_named_bits() {
+    let outcomes: Vec<bool> = [
+        vec![7, 0, 0, 0, 0, 0x80],
+        vec![0, 0x80],
+        vec![1, 0x80],
+        vec![0, 0],
+        vec![7, 0x80, 0],
+    ]
+    .into_iter()
+    .map(|contents| {
+        let fields = [
+            vec![0xa0, 5, 0x30, 3, 6, 1, 0x2a],
+            encode_tlv(0xa1, &encode_tlv(3, &contents)),
+        ]
+        .concat();
+        matches!(
+            NegTokenInit::decode(&encode_tlv(0xa0, &encode_tlv(0x30, &fields))),
+            Err(Error::InvalidReqFlags)
+        )
+    })
+    .collect();
+    assert_eq!(outcomes, [true; 5]);
+}
+
+/// Canonical empty, one-bit, seven-bit and 32-bit sets retain their exact bytes.
+#[test]
+fn req_flags_canonical_named_bits_roundtrip() -> Result<(), Error> {
+    for contents in [vec![0], vec![7, 0x80], vec![1, 0x02], vec![0, 0, 0, 0, 1]] {
+        let mut token = NegTokenInit::krb5(vec![1]);
+        token.set_req_flags(Some(contents.clone()));
+        let decoded = NegTokenInit::decode(&token.encode()?)?;
+        assert_eq!(decoded.req_flags(), Some(contents.as_slice()));
     }
     Ok(())
 }

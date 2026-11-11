@@ -11,6 +11,7 @@ is a parity feature, not a defect>`.
 | critic:critics-7286a80/u6.md#U6-01 | FU-GATE-R19 | no |
 | critic:critics-7286a80/u6.md#U6-02 | FU-CI-R08 | no |
 | critic:critics-7286a80/u6.md#U6-03 | FU-GATE-R20 | no |
+| critic:critics-7286a80/u1.md#U1-01 | FU-SPN-R19 | no |
 | critic:critics-b136e34/u2.md#U2-01 | FU-CLI-R20 | no |
 | critic:critics-b136e34/u6.md#U6-01 | FU-GATE-R17 | no |
 | critic:critics-b136e34/u6.md#U6-02 | FU-GATE-R18 | no |
