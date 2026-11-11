@@ -560,6 +560,13 @@ mod tests {
                 "src/example.rs",
                 &tokens("pub struct Truncated { key: Vec<u8>")?
              ), Err(error) if error.kind() == io::ErrorKind::Other));
+        Ok(())
+    }
+
+    /// Opaque macros and aliases fail closed; resolvable scalar storage stays nonsecret.
+    #[test]
+    fn inventory_rejects_opaque_declarations() -> Result<(), io::Error> {
+        use super::{inventory::declarations, lex::tokens};
         let mut missed = Vec::new();
         for (source, cause) in [
             (
@@ -569,6 +576,38 @@ mod tests {
             (
                 "macro_rules! credential_owner { ($vis:vis) => { #[derive(Debug)] $vis enum Leaked { Password(Vec<u8>) } }; } credential_owner!(pub);",
                 "unsupported macro visibility declaration",
+            ),
+            (
+                "macro_rules! credential_owner { ($($vis:vis,)?) => { #[derive(Debug)] $($vis)? struct Leaked { password: Vec<u8> } }; } credential_owner!(pub,);",
+                "unsupported macro visibility declaration",
+            ),
+            (
+                "macro_rules! credential_owner { ($($vis:vis,)*) => { #[derive(Debug)] $($vis)* enum Leaked { Password(Vec<u8>) } }; } credential_owner!(pub,);",
+                "unsupported macro visibility declaration",
+            ),
+            (
+                "macro_rules! credential_owner { ($($vis:vis,)?) => { $( $($vis)? struct Leaked { password: Vec<u8> } )? }; } credential_owner!(pub,);",
+                "unsupported macro visibility declaration",
+            ),
+            (
+                "type Payload<T = u8> = Vec<T>; #[derive(Debug)] pub struct Leaked { password: Payload }",
+                "unresolved generic alias Payload",
+            ),
+            (
+                "type Payload<T> = Vec<T>; #[derive(Debug)] pub struct Leaked { password: Payload<u8> }",
+                "unresolved generic alias Payload",
+            ),
+            (
+                "type Payload<T = u8> = Vec<T>; type Storage = Payload; #[derive(Debug)] pub struct Leaked { password: Storage }",
+                "unresolved generic alias Payload",
+            ),
+            (
+                "type Scalar<T = u32> = T; #[derive(Debug)] pub struct Counter { password: Scalar }",
+                "unresolved generic alias Scalar",
+            ),
+            (
+                "type Payload<T = u8> = Vec<T>; use self::Payload as Storage; pub struct Leaked { password: Storage }",
+                "unresolved generic alias Payload",
             ),
             (
                 "mod unrelated { type Payload = u32; } type Payload = Vec<u8>; #[derive(Debug)] pub struct Leaked { password: Payload }",
@@ -597,6 +636,8 @@ mod tests {
         for source in [
             "mod unrelated { type Payload = Vec<u8>; } #[derive(Debug)] pub struct Scalar { password: u32 }",
             "type Payload = u32; #[derive(Debug)] pub struct Scalar { password: Payload }",
+            "type Payload<T = u8> = Vec<T>; #[derive(Debug)] pub struct Scalar { password: u32 }",
+            "use core::result::Result as Outcome; type Result<T> = Outcome<T, u32>; pub struct Scalar { value: Outcome<u32, u32> }",
             "type Payload = u32; trait HasPayload { type Payload; } impl HasPayload for Scalar { type Payload = Vec<u8>; } #[derive(Debug)] pub struct Scalar { password: Payload }",
             "/* $vis struct Leaked { password: Vec<u8> } type Payload = Vec<u8>; */ type Payload = u32; pub struct Scalar { password: Payload }",
             "const TEXT: &str = r###\"$vis struct Leaked { password: Vec<u8> } type Payload = Vec<u8>;\"###; type Payload = u32; pub struct Scalar { password: Payload }",
@@ -606,6 +647,16 @@ mod tests {
             assert!(
                 secret_owners(&owners).is_empty(),
                 "scalar owner is not secret"
+            );
+        }
+        for source in [
+            "macro_rules! plain { ($($value:expr),*) => { ($($value),*) }; } plain!(1, 2);",
+            "/* macro_rules! hidden { () => { $($vis)? struct Leaked {} }; } */",
+            "const TEXT: &str = r###\"macro_rules! hidden { () => { $($vis)? enum Leaked {} }; }\"###;",
+        ] {
+            assert!(
+                declarations("src/example.rs", &tokens(source)?)?.is_empty(),
+                "plain macros and literal declarations are inert"
             );
         }
         assert!(missed.is_empty(), "{}", missed.join("\n"));

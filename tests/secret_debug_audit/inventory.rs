@@ -44,7 +44,15 @@ fn resolve_aliases(words: &[String], field_type: &[String]) -> Result<Vec<String
                 words.get(index.saturating_add(1)),
             )
         {
-            mappings.push((alias.clone(), vec![original.clone()]));
+            let import = words.get(..index).unwrap_or_default();
+            let start = import
+                .iter()
+                .rposition(|item| item == "use")
+                .unwrap_or(index);
+            let standard = import
+                .get(start.saturating_add(1))
+                .is_some_and(|root| matches!(root.as_str(), "core" | "std"));
+            mappings.push((alias.clone(), Some(vec![original.clone()]), !standard));
         }
         if word == "type"
             && let Some(alias) = words.get(index.saturating_add(1))
@@ -53,28 +61,52 @@ fn resolve_aliases(words: &[String], field_type: &[String]) -> Result<Vec<String
             if rest.first().is_some_and(|item| item == "=")
                 && let Some(end) = rest.iter().position(|item| item == ";")
             {
-                mappings.push((alias.clone(), rest.get(1..end).unwrap_or_default().to_vec()));
+                mappings.push((
+                    alias.clone(),
+                    Some(rest.get(1..end).unwrap_or_default().to_vec()),
+                    true,
+                ));
+            }
+            if rest.first().is_some_and(|item| item == "<") {
+                // Substitution and defaults need a scoped generic parser. Until then,
+                // retain the alias identity so a reference cannot become nonsecret.
+                mappings.push((alias.clone(), None, true));
             }
         }
     }
-    let mut output = field_type.to_vec();
+    let mut output: Vec<_> = field_type
+        .iter()
+        .cloned()
+        .map(|word| (word, true))
+        .collect();
     for _ in 0..mappings.len() {
         output = output
             .into_iter()
-            .map(|word| {
-                let mut matches = mappings.iter().filter(|(alias, _)| *alias == word);
+            .map(|(word, local)| {
+                if !local {
+                    return Ok(vec![(word, false)]);
+                }
+                let mut matches = mappings.iter().filter(|(alias, _, _)| *alias == word);
                 let mapping = matches.next();
                 if matches.next().is_some() {
                     return Err(io::Error::other(format!("ambiguous alias {word}")));
                 }
-                Ok(mapping.map_or_else(|| vec![word], |(_, target)| target.clone()))
+                match mapping {
+                    Some((_, Some(target), expand)) => {
+                        Ok(target.iter().cloned().map(|item| (item, *expand)).collect())
+                    }
+                    Some((_, None, _)) => {
+                        Err(io::Error::other(format!("unresolved generic alias {word}")))
+                    }
+                    None => Ok(vec![(word, true)]),
+                }
             })
             .collect::<Result<Vec<_>, io::Error>>()?
             .into_iter()
             .flatten()
             .collect();
     }
-    Ok(output)
+    Ok(output.into_iter().map(|(word, _)| word).collect())
 }
 
 /// Match a referenced owner in its module, or an unambiguous cross-module type.
@@ -187,12 +219,10 @@ pub(super) fn declarations(file: &str, words: &[String]) -> Result<Vec<Owner>, i
     let mut index = 0_usize;
     let mut attributes = Vec::new();
     while let Some(word) = words.get(index) {
-        if word == "$"
-            && words
-                .get(index.saturating_add(2))
-                .is_some_and(|item| matches!(item.as_str(), "struct" | "enum"))
-        {
-            return Err(io::Error::other("unsupported macro visibility declaration"));
+        if word == "macro_rules" {
+            attributes.clear();
+            index = macro_end(words, index)?.saturating_add(1);
+            continue;
         }
         if word == "#"
             && words
@@ -273,6 +303,27 @@ pub(super) fn declarations(file: &str, words: &[String]) -> Result<Vec<Owner>, i
         index = index.saturating_add(1);
     }
     Ok(owners)
+}
+
+/// Reject unexpanded declaration macros before their opaque visibility can hide owners.
+fn macro_end(words: &[String], start: usize) -> Result<usize, io::Error> {
+    let open = words
+        .iter()
+        .enumerate()
+        .skip(start)
+        .find_map(|(position, item)| matches!(item.as_str(), "{" | "(" | "[").then_some(position))
+        .ok_or_else(|| io::Error::other("macro body"))?;
+    let end = closing(words, open)?;
+    let body = words
+        .get(open..=end)
+        .ok_or_else(|| io::Error::other("macro extent"))?;
+    if body
+        .iter()
+        .any(|item| matches!(item.as_str(), "struct" | "enum"))
+    {
+        return Err(io::Error::other("unsupported macro visibility declaration"));
+    }
+    Ok(end)
 }
 
 /// Propagate secret ownership through containers without relying on field spelling.
