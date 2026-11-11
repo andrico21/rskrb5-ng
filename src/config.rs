@@ -2073,7 +2073,9 @@ impl IncludeExpansion {
             {
                 return Err(Error::UnsupportedDynamicModule);
             }
-            if let Some(directive) = IncludeDirective::parse(cleaned) {
+            if !state.local_mapping_assignment(cleaned)
+                && let Some(directive) = IncludeDirective::parse(cleaned)
+            {
                 let opens_subsection = state.needs_include_lookahead()
                     && lines
                         .clone()

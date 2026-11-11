@@ -152,6 +152,55 @@ mod tests {
         Ok(())
     }
 
+    /// Real directives inside local maps expand with independent child namespaces.
+    #[test]
+    fn local_maps_expand_includes_with_independent_child_state() -> Result<(), Box<dyn Error>> {
+        let directory = env::temp_dir().join(format!("t49-map-includes-{}", process::id()));
+        fs::create_dir_all(&directory)?;
+        let child = directory.join("child.conf");
+        for directive in ["include", "includedir"] {
+            let target = if directive == "include" {
+                &child
+            } else {
+                &directory
+            };
+            let text = format!(
+                "[realms]\nPARENT = {{\nauth_to_local_names = {{\n{directive} {}\nBob = parent\n}}\n}}\n",
+                target.display()
+            );
+            fs::write(
+                &child,
+                "[realms]\nCHILD = {\nauth_to_local_names = {\nAlice = child\n}\n}\n",
+            )?;
+            let config = Config::parse(&text)?;
+            assert_eq!(
+                config
+                    .realm("CHILD")
+                    .ok_or("child realm")?
+                    .auth_to_local_names
+                    .get("Alice")
+                    .map(String::as_str),
+                Some("child")
+            );
+            assert_eq!(
+                config
+                    .realm("PARENT")
+                    .ok_or("parent realm")?
+                    .auth_to_local_names
+                    .get("Bob")
+                    .map(String::as_str),
+                Some("parent")
+            );
+            fs::write(&child, "module /never/load.so:provider\n")?;
+            assert!(matches!(
+                Config::parse(&text),
+                Err(Failure::UnsupportedDynamicModule)
+            ));
+        }
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
+
     /// A dynamic provider cannot hide in ignored/finalized sections or plugin blocks.
     #[test]
     fn dynamic_modules_fail_in_every_mode() -> Result<(), Box<dyn Error>> {

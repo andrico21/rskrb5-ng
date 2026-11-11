@@ -431,6 +431,14 @@ Release workflow, CI docs and fixture scripts:
 - New `spnego::NegTokenInit::set_req_flags(Option<Vec<u8>>)` sets or clears
   request flags; encoding keeps the existing BIT STRING validation (FU-SPN-R18).
 
+- SPNEGO request flags reject more than 32 significant bits and nonminimal
+  named-bit DER at encoding and decoding; canonical empty and valid sets retain
+  their exact bytes (FU-SPN-R19).
+
+- Local principals named `include` or `includedir` retain their scalar mapping
+  values with ordinary assignment spacing and one WP-17 diagnostic; real include
+  directives inside a map still expand independently (FU-CFG-R17).
+
 Each fixed row of the follow-up review of `6586b7a` with a behaviour or API
 change, by area, with its register ID. The proofs and commits are in
 `docs/review/followup-6586b7a.md`, and the migration guide's "Follow-up review
