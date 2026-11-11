@@ -1,12 +1,35 @@
 //! Round-eight source inventory regressions use the real inventory boundary.
 
-use std::io;
+use std::{io, path::Path};
 
 use super::{
     inventory::{declarations, secret_owners},
     lex::tokens,
     source::parse,
 };
+
+/// Includes preserve physical source identity and reject missing targets and cycles.
+#[test]
+fn literal_includes_load_original_source() -> Result<(), io::Error> {
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/secret_debug_audit/fixtures");
+    let loaded = super::source::load(&fixtures.join("include.rs.txt"))?;
+    assert_eq!(loaded.len(), 2);
+    let included = loaded
+        .get(1)
+        .ok_or_else(|| io::Error::other("included tree missing"))?;
+    assert!(included.path.ends_with("owner.rs.txt"));
+    let Some(syn::Item::Struct(owner)) = included.tree.items.first() else {
+        return Err(io::Error::other("included owner missing"));
+    };
+    assert_eq!(owner.ident.to_string(), "Included");
+    for file in ["missing.rs.txt", "cycle.rs.txt"] {
+        let Err(error) = super::source::load(&fixtures.join(file)) else {
+            return Err(io::Error::other("unresolved include accepted"));
+        };
+        assert!(error.to_string().contains(&format!("{file}:1:")));
+    }
+    Ok(())
+}
 
 /// Local macro output must prove its item shape, including nested declarations.
 #[test]
