@@ -84,7 +84,7 @@ def foreign_sources(original: str, stripped: str) -> list[tuple[int, str]]:
 
 
 def unscannable(original: str, stripped: str) -> list[tuple[int, str]]:
-    """Every construct that could hide an `allow`/`expect` from the gates."""
+    """Per-file opaque constructs; root expansion admission is owned by source_set."""
     return sorted(opaque_constructs(stripped) + foreign_sources(original, stripped))
 
 

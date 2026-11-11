@@ -417,6 +417,57 @@ def self_test() -> int:
             if result != 1:
                 accepted.append((source, result, printed.getvalue()))
         assert not accepted, ("macro sibling source loading accepted", accepted)
+        # Round-8 U6-01: the compiling procedural fixture emits hidden.rs.
+        (root / "generator/src").mkdir(parents=True)
+        (root / "generator/Cargo.toml").write_text(
+            '[package]\nname = "generator"\nversion = "0.0.0"\n'
+            "[lib]\nproc-macro = true\n"
+        )
+        (root / "generator/src/lib.rs").write_text(
+            "extern crate proc_macro;\n#[proc_macro_attribute]\n"
+            "pub fn load(_: proc_macro::TokenStream, _: proc_macro::TokenStream) "
+            '-> proc_macro::TokenStream { "mod hidden; fn main() { hidden::emit(); }".parse().unwrap() }\n'
+        )
+        (root / "Cargo.toml").write_text(
+            '[package]\nname = "p"\nversion = "0.0.0"\n'
+            '[build-dependencies]\ngenerator = { path = "generator" }\n'
+        )
+        (root / "hidden.rs").write_text(
+            '#[allow(dead_code)]\n#[expect(clippy::missing_const_for_fn, reason = "not sanctioned")]\n'
+            "pub fn emit() {}\n"
+        )
+        accepted = []
+        for attribute in (
+            "generator::load",
+            "load",
+            "r#generator :: r#load",
+            "cfg_attr(all(), generator::load)",
+            "cfg_attr(any(), cfg_attr(all(), generator::load))",
+            "derive(generator::Load)",
+            "derive(Debug, Load)",
+            "cfg_attr(all(), derive(Debug, generator::Load))",
+            "other_tool::load",
+            "proc_macro_attribute",
+        ):
+            (root / "build.rs").write_text(f"#[{attribute}]\nfn main() {{}}\n")
+            with redirect_stdout(StringIO()) as printed:
+                result = main(["--enforce", "--root", str(root)])
+            if result != 1:
+                accepted.append((attribute, result, printed.getvalue()))
+        assert not accepted, ("procedural root attributes accepted", accepted)
+        (root / "build.rs").write_text(
+            "use generator::Load as Debug;\n#[derive(Debug)]\nstruct Hidden;\nfn main() {}\n"
+        )
+        with redirect_stdout(StringIO()) as printed:
+            result = main(["--enforce", "--root", str(root)])
+        assert result == 1, ("shadowed root derive accepted", printed.getvalue())
+        (root / "build.rs").write_text(
+            "#![forbid(unsafe_code)]\n#[cfg_attr(all(), inline)]\nfn main() {}\n"
+            "#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]\n"
+            "struct Plain;\n"
+        )
+        with redirect_stdout(StringIO()):
+            assert main(["--enforce", "--root", str(root)]) == 0
         (root / "build.rs").write_text(
             "macro_rules! load { ($name:ident) => { mod $name {} } }\n"
             "load!(inline);\nfn main() {}\n"
