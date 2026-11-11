@@ -51,16 +51,64 @@ impl Scope<'_> {
             }
             Some(first) => segments.push(first.to_owned()),
         }
-        for part in parts {
-            segments.push(part.clone());
-        }
+        segments.extend(parts.cloned());
         let module = format!("::{}", segments.join("::"));
         for unit in self.graph.iter().filter(|unit| unit.module == module) {
             for item in &unit.tree.items {
+                let file = unit.path.display().to_string();
+                let mut scope = Scope {
+                    file: &file,
+                    items: self
+                        .graph
+                        .iter()
+                        .filter(|candidate| candidate.module == module)
+                        .map(|candidate| candidate.tree.items.as_slice())
+                        .collect(),
+                    generics: self.generics,
+                    graph: self.graph,
+                    module: &unit.module,
+                };
+                if let Item::Use(import) = item
+                    && let Some(imported) = import_path(&import.tree, name, Vec::new())
+                {
+                    return scope.graph_alias(&imported, depth.saturating_add(1));
+                }
+                let concrete = match item {
+                    Item::Struct(owner) if owner.ident == name => {
+                        Some((&owner.ident, &owner.generics))
+                    }
+                    Item::Enum(owner) if owner.ident == name => {
+                        Some((&owner.ident, &owner.generics))
+                    }
+                    Item::Union(owner) if owner.ident == name => {
+                        Some((&owner.ident, &owner.generics))
+                    }
+                    Item::Const(_)
+                    | Item::Enum(_)
+                    | Item::ExternCrate(_)
+                    | Item::Fn(_)
+                    | Item::ForeignMod(_)
+                    | Item::Impl(_)
+                    | Item::Macro(_)
+                    | Item::Mod(_)
+                    | Item::Static(_)
+                    | Item::Struct(_)
+                    | Item::Trait(_)
+                    | Item::TraitAlias(_)
+                    | Item::Type(_)
+                    | Item::Union(_)
+                    | Item::Use(_)
+                    | Item::Verbatim(_)
+                    | _ => None,
+                };
+                if let Some((ident, generics)) = concrete {
+                    scope.generics = generics;
+                    let segment = syn::PathSegment::from(ident.clone());
+                    scope.private_storage(&segment, depth.saturating_add(1))?;
+                }
                 if let Item::Type(alias) = item
                     && alias.ident == name
                 {
-                    let file = unit.path.display().to_string();
                     if !alias.generics.params.is_empty() {
                         return Err(unsupported(
                             &file,
@@ -68,18 +116,7 @@ impl Scope<'_> {
                             "unresolved generic alias",
                         ));
                     }
-                    let scope = Scope {
-                        file: &file,
-                        items: self
-                            .graph
-                            .iter()
-                            .filter(|candidate| candidate.module == module)
-                            .map(|candidate| candidate.tree.items.as_slice())
-                            .collect(),
-                        generics: &alias.generics,
-                        graph: self.graph,
-                        module: &unit.module,
-                    };
+                    scope.generics = &alias.generics;
                     return scope.expand(&alias.ty, depth.saturating_add(1)).map(Some);
                 }
             }
@@ -158,6 +195,9 @@ impl Scope<'_> {
                 );
                 for segment in &path.path.segments {
                     output.extend(self.arguments(segment, next)?);
+                }
+                if let Some(resolved) = self.graph_alias(&output, next)? {
+                    return Ok(resolved);
                 }
                 Ok(output)
             }
@@ -263,7 +303,7 @@ impl Scope<'_> {
                 Item::Struct(owner)
                     if owner.ident == name && !matches!(owner.vis, syn::Visibility::Public(_)) =>
                 {
-                    Some(&owner.fields)
+                    Some(owner.fields.iter().collect::<Vec<_>>())
                 }
                 Item::Enum(owner)
                     if owner.ident == name
@@ -273,11 +313,13 @@ impl Scope<'_> {
                             .iter()
                             .any(|variant| !variant.fields.is_empty()) =>
                 {
-                    return Err(unsupported(
-                        self.file,
-                        segment.ident.span(),
-                        "unclassified private enum storage",
-                    ));
+                    Some(
+                        owner
+                            .variants
+                            .iter()
+                            .flat_map(|variant| variant.fields.iter())
+                            .collect(),
+                    )
                 }
                 Item::Union(owner)
                     if owner.ident == name && !matches!(owner.vis, syn::Visibility::Public(_)) =>

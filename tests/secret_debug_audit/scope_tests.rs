@@ -2,6 +2,27 @@
 
 use std::{io, path::Path};
 
+/// Physical private storage must not disappear behind a qualified type path.
+#[test]
+fn inventory_accounts_for_physical_private_storage() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    for fixture in ["private_storage", "private_import", "private_reexport"] {
+        let result = super::inventory::inspect(
+            root,
+            &root.join("tests/secret_debug_audit/fixtures").join(fixture),
+        );
+        assert!(
+            result.is_err(),
+            "physical private password owner omitted: {result:?}"
+        );
+        assert!(
+            result
+                .err()
+                .is_some_and(|error| error.to_string().contains("hidden.rs:2:"))
+        );
+    }
+}
+
 /// Generated owners require a located refusal rather than a partial inventory.
 #[test]
 fn inventory_refuses_opaque_attributes() -> Result<(), io::Error> {

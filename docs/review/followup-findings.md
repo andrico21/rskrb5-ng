@@ -199,6 +199,7 @@ is a parity feature, not a defect>`.
 | critic:critics-62709b5/u2.md#U2-02 | FU-TST-R48 | no |
 | critic:critics-62709b5/u2.md#U2-03 | FU-TST-R49 | no |
 | critic:critics-62709b5/u2.md#U2-04 | FU-TST-R50 | no |
+| critic:critics-62709b5/u2.md#U2-05 | FU-TST-R51 | no |
 | executor:todo-21#replay-quota-partial-expiry | FU-TST-R10 | no |
 | executor:todo-22#packaged-tests-include-excluded-fixture | FU-TST-R16 | no |
 | executor:todo-22#secret-debug-audit-feature-closures | FU-TST-R21 | no |
