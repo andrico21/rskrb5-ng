@@ -131,6 +131,7 @@ def self_test() -> int:
             "other_crate::load!(hidden);\n",
             "use other_crate::load as println;\nprintln!(hidden);\n",
             "use other_crate::*;\nprintln!(hidden);\n",
+            "use other_crate::load;\nfn scope() { macro_rules! load { () => {} } }\nload!(hidden);\n",
         ):
             (package / "build.rs").write_text(
                 source + "fn main() { hidden::emit(); }\n"

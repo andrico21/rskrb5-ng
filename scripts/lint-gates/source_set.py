@@ -109,7 +109,7 @@ def opaque_root_macros(stripped: str) -> bool:
                 return True
     for call in MACRO_CALL.finditer(stripped):
         name = re.sub(r"\s+|r#", "", call[1])
-        if name not in local and (imported or name not in ORDINARY_MACROS):
+        if imported or (name not in local and name not in ORDINARY_MACROS):
             return True
     return False
 
