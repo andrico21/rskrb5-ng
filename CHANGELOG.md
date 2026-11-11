@@ -82,6 +82,11 @@ These are breaking; the migration guide maps each one.
 
 ### Behaviour changes
 
+- Checked AS/TGS exchanges authorize encrypted request-body authorization data
+  under the effective crypto policy before transport, preserving typed causes.
+  Known unsupported credential PA envelopes (including FAST, encrypted challenge
+  and PKINIT) and outgoing peer-only enctype hints are rejected (FU-CLI-R21).
+
 - Ccache parsing bounds every record count (principal components, addresses,
   authorization data) against the remaining input before reserving memory, so
   a short malformed cache returns `error::Ccache::Truncated` instead of

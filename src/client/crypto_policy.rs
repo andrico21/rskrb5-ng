@@ -33,6 +33,29 @@ pub(super) fn padata(policy: &CryptoPolicy, data: &[rasn_kerberos::PaData]) -> R
                     super::decode("PA-ENC-TIMESTAMP", &entry.value)?;
                 policy.check_use(encrypted.etype, Use::ReplyKey)?;
             }
+            // These credential mechanisms have no checked envelope implementation.
+            // Reject rather than transmit opaque nested encryption (including FAST).
+            5..=9
+            | 11..=13
+            | 16..=17
+            | 19_i32
+            | 22..=23
+            | 30..=31
+            | 41_i32
+            | 130_i32
+            | 134..=136
+            | 138_i32
+            | 141..=148
+            | 151..=153
+            | 165_i32 => {
+                return Err(Error::Encode {
+                    target: "PA-DATA",
+                    message: format!(
+                        "unsupported credential preauthentication type {}",
+                        entry.r#type
+                    ),
+                });
+            }
             _ => {}
         }
     }
@@ -164,7 +187,10 @@ pub(super) fn additional_tickets(
     Ok(())
 }
 
-/// Validate request selections, additional tickets and the reply key before transport.
+/// Validate every visible request encryption envelope and reply key before transport.
+///
+/// Body authorization data uses the TGT session key or authenticator subkey
+/// (RFC 4120 section 5.4.1, key usages 4/5), classified as `Use::SessionKey`.
 /// # Errors
 /// Returns the first typed policy refusal without performing I/O.
 pub(super) fn before_exchange(
@@ -177,6 +203,9 @@ pub(super) fn before_exchange(
         policy.check_use(etype, Use::RequestList)?;
     }
     policy.check_use(key.etype(), Use::ReplyKey)?;
+    if let Some(encrypted) = &message.req_body.enc_authorization_data {
+        policy.check_use(encrypted.etype, Use::SessionKey)?;
+    }
     additional_tickets(
         policy,
         message

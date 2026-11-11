@@ -465,6 +465,12 @@ Original review rows:
 | --- | --- | --- | --- | --- | --- | --- |
 | FU-CLI-R20 | major | Known PA credential envelopes bypass outgoing enctype policy (U2-01) | fixed | `checked_exchanges_reject_nested_padata_enctypes`, `tokio_exchanges_reject_nested_padata_enctypes`, `builders_reject_nested_padata_before_crypto`, `builders_reject_malformed_nested_padata`, `checked_exchanges_preserve_permitted_padata`; commit `client: authorize nested PA credential enctypes (FU-CLI-R20)` | Shared outgoing PA admission completely decodes PA-TGS-REQ and PA-ENC-TIMESTAMP, authorizing visible ticket, authenticator and timestamp enctypes under the effective policy before request cryptography or transport. Cookies and unknown informational PA payloads remain opaque. Canonical request DER and additional-ticket admission remain enforced. | task-41-rskrb5-ng-zero-open-items.log: pre-fix four negative tests failed, including two forbidden sends and missing exact Tokio policy causes; permitted control passed. Post-fix all five pass, covering first/later PA entries, AS/TGS option inputs, configured policy overrides and malformed/trailing DER. |
 
+## Round 7 outgoing envelope follow-up (todo 47)
+
+| ID | Sev | Title | Status | Proof | Behaviour change | Evidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| FU-CLI-R21 | major | Checked exchanges omit encrypted body authorization data (U2-01) | fixed | `checked_exchanges_admit_body_authorization_enctype`, `tokio_exchanges_admit_body_authorization_enctype`, `outgoing_encryption_inventory_is_guarded`, `outgoing_unsupported_credential_padata_is_rejected`; commit `client: authorize every outgoing credential envelope (FU-CLI-R21)` | Shared admission checks body enc-authorization-data with Use::SessionKey and preserves typed policy causes across synchronous and explicit/configured Tokio AS/TGS exchanges. Known unsupported credential PA mechanisms and outgoing peer-only enctype hints are rejected before transport instead of passed through opaquely. | task-47-rskrb5-ng-zero-open-items.log: matching-DER counting-transport regressions fail before the fix (sync 2 sends, Tokio 1); field-by-field inventory fails on the omitted body. Green covers excluded AES, permanent SingleDes, permitted controls and every visible encrypted field; exhaustive rasn-kerberos patterns require review on schema growth. critic:critics-7286a80/u2.md#U2-01. |
+
 ## Release change record follow-up (todo 45)
 
 | ID | Sev | Title | Status | Proof | Behaviour change | Evidence |

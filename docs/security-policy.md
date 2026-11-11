@@ -53,6 +53,26 @@ crypto or transport. Draft-9 preferences are ignored with
 retains the informational IDs and `LibDefaults::diagnostics()` reports them via
 `Cow<[ConfigDiagnostic]>`. Neither permits an outgoing draft-9 exchange.
 
+Checked AS/TGS exchanges authorize every visible encrypted envelope before
+transport: the body enctype list, optional encrypted authorization data,
+additional tickets, PA-TGS-REQ ticket/authenticator, PA-ENC-TIMESTAMP, and the
+supplied reply key. Body authorization data uses `Use::SessionKey`, including
+the authenticator subkey case (RFC 4120 section 5.4.1, key usages 4/5).
+Admission does not decrypt ciphertext or certify that a KDC will accept it.
+Encrypted ticket contents and authenticator plaintext are not visible envelope
+fields; builders check locally selected keys before encryption.
+
+The checked PA boundary rejects known unsupported credential mechanisms with
+`error::Client::Encode` targeting `PA-DATA`: legacy Unix-time/hardware/SAM,
+SESAME/DCE, modern PKINIT, embedded PA/extra TGT, X509 S4U, authentication sets,
+FAST armor, encrypted challenge, OTP, EPAK, PKINIT key exchange, PKU2U, SPAKE,
+OAuth2 and passkey mechanisms. Outgoing peer-only enctype hints (11/19/23/165)
+are rejected too; incoming capability parsing is unchanged. Draft-9 retains
+its permanent typed policy cause. Cookies, ordinary informational PA data and
+unknown extension IDs remain opaque; unknown payloads are not a supported
+credential mechanism or a promise of nested policy enforcement. Implementing
+a new credential PA type requires extending admission and its inventory tests.
+
 <a id="single-des"></a>
 ## Single DES
 

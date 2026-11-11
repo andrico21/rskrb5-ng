@@ -21,7 +21,7 @@ pub enum Use {
     RequestList,
     /// KDC reply encryption key.
     ReplyKey,
-    /// Ticket session key.
+    /// Ticket session key, including request authorization data protected by it or a subkey.
     SessionKey,
     /// Ticket-encryption key.
     TicketKey,
