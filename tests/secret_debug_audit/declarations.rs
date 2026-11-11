@@ -221,7 +221,15 @@ fn fields(
     fields
         .iter()
         .enumerate()
-        .map(|(index, field)| {
+        .filter_map(|(index, field)| {
+            match super::configuration::included(scope.file, &field.attrs) {
+                Ok(true) => Some(Ok((index, field))),
+                Ok(false) => None,
+                Err(error) => Some(Err(error)),
+            }
+        })
+        .map(|entry| {
+            let (index, field) = entry?;
             let name = field
                 .ident
                 .as_ref()

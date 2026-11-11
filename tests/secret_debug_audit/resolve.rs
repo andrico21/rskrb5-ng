@@ -117,6 +117,7 @@ impl Scope<'_> {
                     ));
                 }
                 let name = first.ident.to_string();
+                self.known(&path.path, next)?;
                 let path_names = names(&path.path);
                 if let Some(resolved) = self.graph_alias(&path_names, next)? {
                     return Ok(resolved);
@@ -190,6 +191,67 @@ impl Scope<'_> {
                 "unclassified field type",
             )),
         }
+    }
+
+    /// Unknown local names cannot silently become scalar storage.
+    fn known(&self, path: &syn::Path, depth: usize) -> Result<(), io::Error> {
+        if path.segments.len() != 1 {
+            return Ok(());
+        }
+        let Some(segment) = path.segments.first() else {
+            return Ok(());
+        };
+        let name = segment.ident.to_string();
+        if self.binding(&name, depth)?.is_some()
+            || self
+                .generics
+                .type_params()
+                .any(|parameter| parameter.ident == name)
+        {
+            return Ok(());
+        }
+        for item in self.items.iter().flat_map(|items| items.iter()) {
+            if matches!(item, Item::Struct(owner) if owner.ident == name)
+                || matches!(item, Item::Enum(owner) if owner.ident == name)
+                || matches!(item, Item::Union(owner) if owner.ident == name)
+            {
+                return Ok(());
+            }
+        }
+        if matches!(
+            name.as_str(),
+            "bool"
+                | "char"
+                | "str"
+                | "u8"
+                | "u16"
+                | "u32"
+                | "u64"
+                | "u128"
+                | "usize"
+                | "i8"
+                | "i16"
+                | "i32"
+                | "i64"
+                | "i128"
+                | "isize"
+                | "f32"
+                | "f64"
+                | "Vec"
+                | "String"
+                | "Option"
+                | "Result"
+                | "Box"
+                | "Self"
+                | "Zeroizing"
+        ) {
+            return Ok(());
+        }
+        Err(unsupported(
+            self.file,
+            segment.ident.span(),
+            "unresolved field type",
+        ))
     }
 
     /// Qualified local aliases and concrete associated projections require explicit resolution.

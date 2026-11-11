@@ -248,6 +248,7 @@ fn inventory_rejects_associated_projections() -> Result<(), io::Error> {
         "trait HasPayload { type Payload; } pub struct Provider; impl HasPayload for Provider { type Payload = Vec<u8>; } type Storage = <Provider as HasPayload>::Payload; pub struct Leaked { password: Storage }",
         "trait HasPayload { type Payload; } pub struct Provider; impl HasPayload for Provider { type Payload = Vec<u8>; } pub struct Leaked { password: Option<<Provider as HasPayload>::Payload> }",
         "pub struct Provider; pub struct Leaked { password: Provider::Payload }",
+        "pub struct Leaked { password: UnknownStorage }",
     ])
 }
 
