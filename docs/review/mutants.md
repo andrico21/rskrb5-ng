@@ -49,6 +49,44 @@ timeout.
 
 ## Verification
 
+### In-diff check after critic round 10 (todo 63)
+
+Todo 60 changed `src/` after the todo 59 check (FU-CFG-R21, FU-CFG-R22: the
+dynamic-module precheck and the include scanner split and trim on the ASCII
+whitespace of MIT `prof_parse.c` only, a section name keeps its padding
+bytes, and the text after `]` follows the ASCII grammar). Todo 62 added test
+modules under `src/client/` (`replacement_tests.rs` and
+`replacement_login_tests.rs`), which build only under `cfg(test)`, so
+cargo-mutants generates no mutant in them. Todo 61 changed gate scripts only.
+
+- Diff: `git diff 62709b5 fa282fc -- src` (4 files, `src/config.rs`,
+  `src/config/profile_syntax.rs` and the 2 test modules). `62709b5` is `main`
+  after todo 59 and has the code that check covered; `fa282fc` is `main`
+  after todo 62.
+- The check ran locally as in todo 59: `cargo mutants --all-features
+  --no-shuffle --cap-lints=true --in-diff <diff> --shard 0/1 -j 2
+  --copy-target=false` at `fa282fc`, cargo-mutants 27.1.0,
+  `CARGO_BUILD_WARNINGS=allow`, no debug info and an 8 GiB address-space cap.
+  The diff yields 8 mutants, so one shard ran. It measured its own baseline
+  (91 s build and 87 s test), and cargo-mutants set the timeout from it
+  (436 s).
+- `mutants_report.py --artifacts <the shard output> --expect-shards 1
+  --register docs/review/mutants.md --campaign
+  fa282fcebfa364b03bc127a11ffb80295468c8a8 --enforce` prints `mutants:
+  caught=8 missed=0 timeout=0 unviable=0 success=0` and `0 problem(s)`.
+
+| Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 8 | 8 | 0 | 0 | 0 | 647 |
+
+No mutant survived, so the check adds no register row. The mutants replace
+the changed `starts_with_whitespace`, `IncludeExpansion::expand` and
+`State::content` with constant results, and delete the negations and swap
+`&&` for `||` in the section-header check of `State::content`. No file of
+this diff is pulled in with `include!`: `src/config/profile_syntax.rs` is a
+module of `src/config.rs`, and the changed lines of `src/config.rs` lie
+outside its `include!`d files, so no inlined copy was needed.
+
 ### In-diff check after critic round 9 (todo 59)
 
 Todo 56 changed `src/` after the todo 55 check (FU-CFG-R19, FU-CFG-R20: a
