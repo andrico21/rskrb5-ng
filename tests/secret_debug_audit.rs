@@ -34,6 +34,14 @@ mod macros;
     clippy::missing_errors_doc,
     reason = "test code is not rendered API documentation"
 )]
+#[path = "secret_debug_audit/macro_scope.rs"]
+mod macro_scope;
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
 #[path = "secret_debug_audit/resolve.rs"]
 mod resolve;
 
@@ -70,6 +78,16 @@ mod graph;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 #[path = "secret_debug_audit/parser_tests.rs"]
 mod parser_tests;
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "secret_debug_audit/scope_tests.rs"]
+mod scope_tests;
 
 #[cfg(test)]
 #[expect(

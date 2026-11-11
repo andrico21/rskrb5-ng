@@ -1,0 +1,1 @@
+macro_rules! owner { () => { pub struct Leaked { password: Vec<u8> } }; }

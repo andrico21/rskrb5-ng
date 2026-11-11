@@ -1,0 +1,4 @@
+pub struct Dummy;
+macro_rules! owner { () => { impl Dummy {} }; }
+include!("macro-shadow.rs.txt");
+owner!();

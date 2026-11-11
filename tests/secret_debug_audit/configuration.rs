@@ -6,6 +6,44 @@ use syn::{Attribute, Expr, Item, Lit, Meta, Token, parse::Parser as _, punctuate
 
 use super::source::unsupported;
 
+/// Inspect derive lists and every `cfg_attr` branch without interpreting string contents.
+pub(super) fn debug(attributes: &[Attribute]) -> Result<bool, io::Error> {
+    for attribute in attributes {
+        if debug_meta(&attribute.meta)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Nested conditional attributes carry real meta syntax, not searchable prose.
+fn debug_meta(meta: &Meta) -> Result<bool, io::Error> {
+    let Meta::List(list) = meta else {
+        return Ok(false);
+    };
+    if list.path.is_ident("derive") {
+        let paths = Punctuated::<syn::Path, Token![,]>::parse_terminated
+            .parse2(list.tokens.clone())
+            .map_err(io::Error::other)?;
+        return Ok(paths.iter().any(|path| {
+            path.segments
+                .last()
+                .is_some_and(|segment| segment.ident == "Debug")
+        }));
+    }
+    if list.path.is_ident("cfg_attr") {
+        let nested = Punctuated::<Meta, Token![,]>::parse_terminated
+            .parse2(list.tokens.clone())
+            .map_err(io::Error::other)?;
+        for attribute in nested.iter().skip(1) {
+            if debug_meta(attribute)? {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
 /// Every parsed item exposes its actual attributes; unknown item syntax fails closed.
 pub(super) fn attributes(item: &Item) -> Result<&[Attribute], io::Error> {
     match item {
