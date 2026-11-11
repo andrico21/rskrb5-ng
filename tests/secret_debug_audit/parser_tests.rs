@@ -122,6 +122,7 @@ fn inventory_rejects_keyword_fragment_macros() -> Result<(), io::Error> {
         "macro_rules! owner { ($kind:ident $name:ident) => { #[derive(Debug)] pub $kind $name { password: Vec<u8> } }; } owner!(struct Leaked);",
         "macro_rules! owner { ($kind:ident $name:ident) => { #[derive(Debug)] pub $kind $name { Password(Vec<u8>) } }; } owner!(enum Leaked);",
         "external::owner!(Leaked);",
+        "macro_rules! plain { ($value:expr) => { $value }; } plain!({ struct Hidden { password: Vec<u8> } });",
     ])
 }
 

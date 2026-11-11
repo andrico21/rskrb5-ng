@@ -5,7 +5,8 @@ use std::io;
 use proc_macro2::{Delimiter, Group, TokenStream, TokenTree};
 use syn::{
     Expr, File, Item, Macro,
-    parse::{Parse, ParseStream},
+    parse::{Parse, ParseStream, Parser as _},
+    punctuated::Punctuated,
     visit::{self, Visit},
 };
 
@@ -183,6 +184,25 @@ pub(super) fn classify(file: &str, definition: &Macro) -> Result<(), io::Error> 
         if opaque.0 {
             return Err(reject());
         }
+    }
+    Ok(())
+}
+
+/// Invocation expressions cannot inject declarations through an otherwise safe capture.
+pub(super) fn arguments(file: &str, invocation: &Macro) -> Result<(), io::Error> {
+    let expressions = Punctuated::<Expr, syn::Token![,]>::parse_terminated
+        .parse2(invocation.tokens.clone())
+        .map_err(|error| unsupported(file, error.span(), "unclassified macro arguments"))?;
+    let mut opaque = Opaque::default();
+    for expression in expressions {
+        opaque.visit_expr(&expression);
+    }
+    if opaque.0 {
+        return Err(unsupported(
+            file,
+            invocation.bang_token.span,
+            "macro arguments contain opaque declarations",
+        ));
     }
     Ok(())
 }

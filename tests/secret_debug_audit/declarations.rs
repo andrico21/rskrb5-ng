@@ -138,6 +138,7 @@ fn invocation(scope: &Scope<'_>, item: &ItemMacro) -> Result<(), io::Error> {
             && local.ident.as_ref() == Some(name)
             && local.mac.path.is_ident("macro_rules")
         {
+            super::macros::arguments(scope.file, &item.mac)?;
             return super::macros::classify(scope.file, &local.mac);
         }
     }
