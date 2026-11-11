@@ -50,6 +50,7 @@ impl Scope<'_> {
                     ));
                 }
                 let name = first.ident.to_string();
+                self.qualified(&path.path)?;
                 if let Some(parameter) = self
                     .generics
                     .type_params()
@@ -118,6 +119,57 @@ impl Scope<'_> {
                 "unclassified field type",
             )),
         }
+    }
+
+    /// Qualified local aliases and concrete associated projections require explicit resolution.
+    fn qualified(&self, path: &syn::Path) -> Result<(), io::Error> {
+        if path.segments.len() < 2 {
+            return Ok(());
+        }
+        let Some(first) = path.segments.first() else {
+            return Ok(());
+        };
+        for item in self.items.iter().rev().flat_map(|items| items.iter()) {
+            let concrete = match item {
+                Item::Struct(owner) => owner.ident == first.ident,
+                Item::Enum(owner) => owner.ident == first.ident,
+                Item::Union(owner) => owner.ident == first.ident,
+                Item::Type(alias) => alias.ident == first.ident,
+                Item::Mod(module) if module.ident == first.ident => {
+                    if let Some((_, nested)) = &module.content
+                        && nested.iter().any(|entry| matches!(entry, Item::Type(_)))
+                    {
+                        return Err(unsupported(
+                            self.file,
+                            first.ident.span(),
+                            "unresolved module alias",
+                        ));
+                    }
+                    false
+                }
+                Item::Const(_)
+                | Item::ExternCrate(_)
+                | Item::Fn(_)
+                | Item::ForeignMod(_)
+                | Item::Impl(_)
+                | Item::Macro(_)
+                | Item::Mod(_)
+                | Item::Static(_)
+                | Item::Trait(_)
+                | Item::TraitAlias(_)
+                | Item::Use(_)
+                | Item::Verbatim(_)
+                | _ => false,
+            };
+            if concrete {
+                return Err(unsupported(
+                    self.file,
+                    first.ident.span(),
+                    "associated-type projection",
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// Trait-object paths preserve generic arguments and refuse opaque bounds.
@@ -259,6 +311,15 @@ impl Scope<'_> {
                     }
                     Item::Use(import) => {
                         if let Some(path) = import_path(&import.tree, name, Vec::new()) {
+                            let parsed =
+                                syn::parse_str::<syn::Path>(&path.join("::")).map_err(|error| {
+                                    unsupported(
+                                        self.file,
+                                        import.use_token.span,
+                                        &error.to_string(),
+                                    )
+                                })?;
+                            self.qualified(&parsed)?;
                             let Some(root) = path.first() else {
                                 return Ok(None);
                             };

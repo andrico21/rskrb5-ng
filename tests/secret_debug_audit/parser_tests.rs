@@ -189,6 +189,8 @@ fn inventory_rejects_standard_module_shadowing() -> Result<(), io::Error> {
     rejects(&[
         "mod core { pub type Payload<T = u8> = Vec<T>; } use core::Payload as Storage; #[derive(Debug)] pub struct Leaked { password: Storage }",
         "mod std { pub type Payload<T = u8> = Vec<T>; } use std::Payload as Storage; #[derive(Debug)] pub struct Leaked { password: Storage }",
+        "mod hidden { pub type Payload = Vec<u8>; } use hidden::Payload as Storage; pub struct Leaked { password: Storage }",
+        "mod hidden { pub type Payload = Vec<u8>; } pub struct Leaked { password: hidden::Payload }",
     ])
 }
 
@@ -199,6 +201,7 @@ fn inventory_rejects_associated_projections() -> Result<(), io::Error> {
         "trait HasPayload { type Payload; } pub struct Provider; impl HasPayload for Provider { type Payload = Vec<u8>; } #[derive(Debug)] pub struct Leaked { password: <Provider as HasPayload>::Payload }",
         "trait HasPayload { type Payload; } pub struct Provider; impl HasPayload for Provider { type Payload = Vec<u8>; } type Storage = <Provider as HasPayload>::Payload; pub struct Leaked { password: Storage }",
         "trait HasPayload { type Payload; } pub struct Provider; impl HasPayload for Provider { type Payload = Vec<u8>; } pub struct Leaked { password: Option<<Provider as HasPayload>::Payload> }",
+        "pub struct Provider; pub struct Leaked { password: Provider::Payload }",
     ])
 }
 
