@@ -83,14 +83,20 @@ pub(super) fn secret_owners(owners: &[Owner]) -> Vec<String> {
 /// Follow literal source edges; never inventory test support by directory proximity.
 pub(super) fn inspect(root: &Path, directory: &Path) -> Result<Vec<Owner>, io::Error> {
     let mut owners = Vec::new();
-    for unit in super::graph::load(&directory.join("lib.rs"))? {
+    let graph = super::graph::load(&directory.join("lib.rs"))?;
+    for unit in &graph {
         let relative = unit
             .path
             .strip_prefix(root)
             .map_err(io::Error::other)?
             .to_string_lossy()
             .replace('\\', "/");
-        owners.extend(super::declarations::parsed(&relative, &unit.tree)?);
+        let scopes = graph
+            .iter()
+            .filter(|candidate| candidate.module == unit.module)
+            .map(|candidate| candidate.tree.items.as_slice())
+            .collect();
+        owners.extend(super::declarations::scoped(&relative, &unit.tree, scopes)?);
     }
     Ok(owners)
 }

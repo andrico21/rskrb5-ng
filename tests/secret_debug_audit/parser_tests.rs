@@ -75,6 +75,26 @@ fn literal_includes_load_original_source() -> Result<(), io::Error> {
         return Err(io::Error::other("included owner missing"));
     };
     assert_eq!(owner.ident.to_string(), "Included");
+    let graph = super::graph::load(&fixtures.join("scoped.rs.txt"))?;
+    let mut owners = Vec::new();
+    for unit in &graph {
+        let scopes = graph
+            .iter()
+            .filter(|candidate| candidate.module == unit.module)
+            .map(|candidate| candidate.tree.items.as_slice())
+            .collect();
+        owners.extend(super::declarations::scoped(
+            &unit.path.display().to_string(),
+            &unit.tree,
+            scopes,
+        )?);
+    }
+    assert_eq!(owners.len(), 1);
+    assert_eq!(
+        secret_owners(&owners).len(),
+        1,
+        "include lost enclosing alias"
+    );
     for file in ["missing.rs.txt", "cycle.rs.txt"] {
         let Err(error) = super::source::load(&fixtures.join(file)) else {
             return Err(io::Error::other("unresolved include accepted"));

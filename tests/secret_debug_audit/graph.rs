@@ -18,13 +18,14 @@ pub(super) fn load(path: &Path) -> Result<Vec<Parsed>, io::Error> {
     let directory = path
         .parent()
         .ok_or_else(|| io::Error::other("library parent"))?;
-    file(path, directory, &mut Vec::new())
+    file(path, directory, "", &mut Vec::new())
 }
 
 /// Canonical active paths bound both include and module recursion.
 fn file(
     path: &Path,
     directory: &Path,
+    module: &str,
     active: &mut Vec<PathBuf>,
 ) -> Result<Vec<Parsed>, io::Error> {
     let display = path.display().to_string();
@@ -43,9 +44,10 @@ fn file(
         return Ok(Vec::new());
     }
     let mut children = Vec::new();
-    tree.items = items(path, directory, tree.items, active, &mut children)?;
+    tree.items = items(path, directory, module, tree.items, active, &mut children)?;
     drop(active.pop());
     let mut output = vec![Parsed {
+        module: module.to_owned(),
         path: path.to_path_buf(),
         tree,
     }];
@@ -57,6 +59,7 @@ fn file(
 fn items(
     path: &Path,
     directory: &Path,
+    module_scope: &str,
     input: Vec<Item>,
     active: &mut Vec<PathBuf>,
     children: &mut Vec<Parsed>,
@@ -73,6 +76,7 @@ fn items(
                     *nested = items(
                         path,
                         &directory.join(module.ident.to_string()),
+                        &format!("{module_scope}::{}", module.ident),
                         mem::take(nested),
                         active,
                         children,
@@ -85,7 +89,12 @@ fn items(
                         } else {
                             target.with_extension("")
                         };
-                    children.extend(file(&target, &module_directory, active)?);
+                    children.extend(file(
+                        &target,
+                        &module_directory,
+                        &format!("{module_scope}::{}", module.ident),
+                        active,
+                    )?);
                 }
             }
             Item::Macro(invocation) if invocation.mac.path.is_ident("include") => {
@@ -94,9 +103,11 @@ fn items(
                         unsupported(&display, error.span(), "include requires literal path")
                     })?;
                 let target = path.parent().unwrap_or(directory).join(literal.value());
-                children.extend(file(&target, directory, active).map_err(|error| {
-                    unsupported(&display, invocation.mac.bang_token.span, &error.to_string())
-                })?);
+                children.extend(file(&target, directory, module_scope, active).map_err(
+                    |error| {
+                        unsupported(&display, invocation.mac.bang_token.span, &error.to_string())
+                    },
+                )?);
                 continue;
             }
             Item::Const(_)

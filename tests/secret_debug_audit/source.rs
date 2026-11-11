@@ -43,6 +43,8 @@ pub(super) fn type_span(ty: &syn::Type) -> Span {
 
 /// A parsed source file keeps its physical path for included-item diagnostics.
 pub(super) struct Parsed {
+    /// Logical library module; literal includes share the including module.
+    pub module: String,
     /// Path of the bytes parsed into this tree.
     pub path: PathBuf,
     /// Parsed item declarations.
@@ -73,6 +75,7 @@ fn load_inner(path: &Path, active: &mut Vec<PathBuf>) -> Result<Vec<Parsed>, io:
     include_items(path, &tree.items, active, &mut included)?;
     drop(active.pop());
     let mut output = vec![Parsed {
+        module: String::new(),
         path: path.to_path_buf(),
         tree,
     }];

@@ -22,19 +22,40 @@ pub(super) fn declarations(file: &str, text: &str) -> Result<Vec<Owner>, io::Err
 
 /// Inspect a loaded tree after source-graph selection without losing physical spans.
 pub(super) fn parsed(file: &str, tree: &syn::File) -> Result<Vec<Owner>, io::Error> {
+    scoped(file, tree, vec![tree.items.as_slice()])
+}
+
+/// Included files contribute bindings to their actual enclosing module.
+pub(super) fn scoped<'ast>(
+    file: &'ast str,
+    tree: &'ast syn::File,
+    scopes: Vec<&'ast [Item]>,
+) -> Result<Vec<Owner>, io::Error> {
     let generics = Generics::default();
     let scope = Scope {
         file,
-        items: vec![tree.items.as_slice()],
+        items: scopes,
         generics: &generics,
     };
-    items(&scope, file)
+    items_from(&scope, file, &tree.items)
 }
 
 /// Read each lexical module independently while retaining its parent bindings.
 fn items(scope: &Scope<'_>, identity: &str) -> Result<Vec<Owner>, io::Error> {
+    items_from(
+        scope,
+        identity,
+        scope.items.last().copied().unwrap_or_default(),
+    )
+}
+
+/// Bindings may span includes; emitted owners belong only to the current source unit.
+fn items_from(
+    scope: &Scope<'_>,
+    identity: &str,
+    declarations: &[Item],
+) -> Result<Vec<Owner>, io::Error> {
     let mut owners = Vec::new();
-    let declarations = scope.items.last().copied().unwrap_or_default();
     for declaration in declarations {
         if !super::configuration::included(
             scope.file,
