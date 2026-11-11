@@ -181,7 +181,10 @@ mod tests {
         }
         if identity.starts_with("src/http.rs") {
             return cfg!(feature = "http")
-                && (!identity.contains("TowerError") && !identity.contains("NegotiateFuture")
+                && (!identity.contains("TowerError")
+                    && !identity.contains("NegotiateFuture")
+                    && !identity.contains("NegotiateLayer")
+                    && !identity.contains("NegotiateService")
                     || cfg!(feature = "tower"))
                 && (!identity.contains("NegotiateHttp") || cfg!(feature = "tokio"));
         }
