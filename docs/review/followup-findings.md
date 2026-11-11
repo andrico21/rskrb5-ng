@@ -209,3 +209,5 @@ is a parity feature, not a defect>`.
 | executor:todo-29#parity-todo-index-plan-1-rows | FU-DOC-R16 | no |
 | owner:rskrb5-ng-b07c837/verdict.md#ORA-03 | FU-GATE-R16 | no |
 | owner:rskrb5-ng-b07c837/verdict.md#ORA-07 | FU-CLI-R17 | no |
+| critic:critics-6b9d5f0/u6.md#U6-01 | FU-CI-R15 | no |
+| critic:critics-6b9d5f0/u6.md#U6-02 | FU-CI-R16 | no |

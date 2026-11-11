@@ -13,6 +13,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### Crate, library and repository
 
+- Derive packaged heading fragments from parsed inline text, including entities
+  and Setext headings; refuse unsupported anchor shapes. Require parser
+  installation before every admitted importer in CI (FU-CI-R15, FU-CI-R16).
 - Collect package links with a hash-pinned CommonMark parser, preserving
   destination backticks, Unicode filenames and raw HTML attributes; reject
   unclassifiable destinations (FU-CI-R12, FU-CI-R13, FU-CI-R14).
