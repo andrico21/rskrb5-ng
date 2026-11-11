@@ -13,6 +13,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### Crate, library and repository
 
+- Collect package links with a hash-pinned CommonMark parser, preserving
+  destination backticks, Unicode filenames and raw HTML attributes; reject
+  unclassifiable destinations (FU-CI-R12, FU-CI-R13, FU-CI-R14).
 - Preserve Unicode relation-tag data in directive prechecks and padding bytes
   inside section names; reject non-ASCII header suffixes instead of silently
   selecting a recognized policy section (FU-CFG-R21, FU-CFG-R22).

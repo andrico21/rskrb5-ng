@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.11"
-# dependencies = []
+# dependencies = ["markdown-it-py==3.0.0", "mdurl==0.1.2"]
 # ///
 # How to run: python3 scripts/lint-gates/package_links.py --enforce
 """Hold every relative Markdown link of the published package inside it.
@@ -27,34 +27,20 @@ import subprocess
 import sys
 from contextlib import redirect_stdout
 from io import StringIO
-from html.entities import html5
-from html.parser import HTMLParser
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final
 from urllib.parse import unquote
+
+from package_markdown import UnclassifiableDestination, link_targets, markdown_parser
 
 ROOT: Final = Path(__file__).resolve().parents[2]
 REPO_URL: Final = re.compile(
     r"https://github\.com/andrico21/rskrb5-ng/(blob|tree)/main/([^#?]+)"
 )
 SCHEME: Final = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:")
-FENCE: Final = re.compile(r" {0,3}(`{3,}|~{3,})")
-REFERENCE: Final = re.compile(
-    r"^ {0,3}\[(?!\^)(?:\\[^\n]|[^\]\\])+\]:[ \t]*(?:\n[ \t]*)?",
-    re.MULTILINE,
-)
-AUTOLINK: Final = re.compile(r"<([A-Za-z][A-Za-z0-9+.-]*:[^\s<>]*)>")
 ANCHOR: Final = re.compile(r"""<a\s[^>]*\b(?:id|name)\s*=\s*["']([^"']+)["']""")
 HEADING: Final = re.compile(r" {0,3}#{1,6}\s+(.*?)\s*#*\s*$")
-# HTML tokens take precedence over Markdown backticks and fence-looking lines.
-HTML_TOKEN: Final = re.compile(
-    r"<!--[\s\S]*?(?:-->|\Z)|<!\[CDATA\[[\s\S]*?(?:\]\]>|\Z)|<\?[\s\S]*?(?:\?>|\Z)|<![A-Z][^>]*(?:>|\Z)"
-    r"|<(script|style|pre|textarea)(?:\s[^>]*)?>[\s\S]*?(?:</\1\s*>|\Z)"
-    r'|</?[A-Za-z][A-Za-z0-9-]*(?:\s+(?:[^<>\'"]|"[^"]*"|\'[^\']*\')*)?\s*/?>'
-    r"|<[A-Za-z][A-Za-z0-9+.-]*:[^\s<>]*>",
-    re.IGNORECASE,
-)
 
 
 def package_files(root: Path) -> frozenset[str]:
@@ -75,229 +61,17 @@ def package_files(root: Path) -> frozenset[str]:
 
 
 def prose_lines(text: str) -> list[tuple[int, str]]:
-    """Numbered lines outside fenced code blocks."""
+    """Numbered lines outside parser-recognized code and HTML blocks."""
     text = text.replace("\r\n", "\n").replace("\r", "\n")
-    lines = []
-    fence = ""
-    html_block = False
-    html_lines = set()
-    html_prose = code_spans(text)
-    offset = 0
-    for number, line in enumerate(text.split("\n"), 1):
-        line_offset = offset
-        offset += len(line) + 1
-        opening = FENCE.match(line)
-        if fence:
-            if (
-                opening
-                and opening.group(1)[0] == fence[0]
-                and len(opening.group(1)) >= len(fence)
-                and re.fullmatch(r"[ \t]*", line[opening.end() :]) is not None
-            ):
-                fence = ""
-            continue
-        for token_start in re.finditer("<", html_prose[line_offset : offset - 1]):
-            position = line_offset + token_start.start()
-            if escaped(text, position):
-                continue
-            full = HTML_TOKEN.match(html_prose, position)
-            if full is not None and not (
-                text[line_offset:position].strip() and re.search(r"\n[ \t]*\n", full[0])
-            ):
-                last = text.count("\n", 0, full.end()) + 1
-                html_lines.update(range(number + 1, last + 1))
-        if not line.strip():
-            html_block = False
-        elif re.match(r" {0,3}</?[A-Za-z][A-Za-z0-9-]*(?:\s|/?>)", line):
-            html_block = True
-        if (
-            not html_block
-            and number not in html_lines
-            and opening
-            and (opening.group(1).startswith("~") or "`" not in line[opening.end() :])
-        ):
-            fence = opening.group(1)
-            continue
-        lines.append((number, line))
-    return lines
-
-
-def destination(line: str, start: int) -> str:
-    if line.startswith("<", start):
-        end = line.find(">", start)
-        raw = line[start + 1 : end if end >= 0 else len(line)]
-        return markdown_destination(raw)
-    depth, index = 0, start
-    while index < len(line):
-        char = line[index]
-        if char == "\\":
-            index += 2
-            continue
-        if char == "(":
-            depth += 1
-        elif char == ")":
-            if depth == 0:
-                break
-            depth -= 1
-        elif char.isspace():
-            break
-        index += 1
-    return markdown_destination(line[start:index])
-
-
-def markdown_destination(raw: str) -> str:
-    return re.sub(
-        r"\\([!\"#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~])|&(?:#[xX][0-9a-fA-F]{1,6}|#[0-9]{1,7}|[A-Za-z][A-Za-z0-9]{1,31});",
-        lambda match: (
-            match[1] if match[1] is not None else character_reference(match[0])
-        ),
-        raw,
-    )
-
-
-def character_reference(raw: str) -> str:
-    if not raw.startswith("&#"):
-        return html5.get(raw[1:], raw)
-    value = int(raw[3:-1], 16) if raw[2:3].lower() == "x" else int(raw[2:-1])
-    return (
-        chr(value)
-        if 0 < value <= 0x10FFFF and not 0xD800 <= value <= 0xDFFF
-        else "\ufffd"
-    )
-
-
-def escaped(text: str, position: int) -> bool:
-    start = position
-    while start and text[start - 1] == "\\":
-        start -= 1
-    return (position - start) % 2 == 1
-
-
-def link_targets(text: str) -> list[tuple[int, str]]:
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-    lines = [""] * len(normalized.split("\n"))
-    for number, raw in prose_lines(normalized):
-        lines[number - 1] = raw
-    prose = "\n".join(lines)
-    visible = code_spans(prose)
-    chars = list(visible)
-    for comment in re.finditer(r"<!--[\s\S]*?(?:-->|\Z)", visible):
-        prefix = visible[visible.rfind("\n", 0, comment.start()) + 1 : comment.start()]
-        if escaped(visible, comment.start()) or (
-            prefix.strip() and re.search(r"\n[ \t]*\n", comment[0])
-        ):
-            continue
-        chars[comment.start() : comment.end()] = [
-            "\n" if c == "\n" else " " for c in comment[0]
-        ]
-    visible = "".join(chars)
-    found: list[tuple[int, str]] = []
-    index = 0
-    while index < len(visible):
-        if visible[index] == "\\":
-            index += 2
-            continue
-        if visible.startswith("](", index):
-            start = index + 2
-            while start < len(visible) and visible[start].isspace():
-                start += 1
-            found.append(
-                (visible.count("\n", 0, index) + 1, destination(visible, start))
-            )
-        index += 1
-    for reference in REFERENCE.finditer(visible):
-        found.append(
-            (
-                visible.count("\n", 0, reference.start()) + 1,
-                destination(visible, reference.end()),
-            )
-        )
-    for number, line in enumerate(visible.splitlines(), 1):
-        found.extend((number, m.group(1)) for m in AUTOLINK.finditer(line))
-    parser = LinkAttributes()
-    parser.feed(visible)
-    parser.close()
-    found.extend(parser.targets)
-    return found
-
-
-def code_spans(prose: str) -> str:
-    """Blank exact-run spans within blocks; escapes apply only outside spans."""
-    boundaries = {0, len(prose)}
-    references = {}
-    for reference in REFERENCE.finditer(prose):
-        end = prose.find("\n", reference.end())
-        end = len(prose) if end < 0 else end
-        references[reference.start()] = end
-        boundaries.update((reference.start(), end))
-    offset = 0
-    for line in prose.splitlines(keepends=True):
-        content = line.rstrip("\n")
-        if not content.strip() or re.match(
-            r" {0,3}(?:#{1,6}(?:\s|$)|>|[-+*]\s|\d+[.)]\s|<[/!A-Za-z])",
-            content,
-        ):
-            boundaries.add(offset)
-        if (
-            not content.strip()
-            or re.match(r" {0,3}#{1,6}(?:\s|$)", content)
-            or re.fullmatch(
-                r" {0,3}(?:=+|-+|(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})[ \t]*",
-                content,
-            )
-        ):
-            boundaries.add(offset + len(line))
-        offset += len(line)
-    chars = list(prose)
-    ordered = sorted(boundaries)
-    for start, stop in zip(ordered, ordered[1:]):
-        index = start
-        while index < stop:
-            if index in references:
-                index = references[index]
-                continue
-            if prose[index] == "\\":
-                index += 2
-                continue
-            html = HTML_TOKEN.match(prose, index)
-            if html is not None:
-                index = html.end()
-                continue
-            opening = re.match(r"`+", prose[index:stop])
-            if opening is None:
-                index += 1
-                continue
-            end = index + len(opening[0])
-            closing = next(
-                (
-                    run
-                    for run in re.finditer(r"`+", prose[end:stop])
-                    if len(run[0]) == len(opening[0])
-                ),
-                None,
-            )
-            if closing is None:
-                index = end
-                continue
-            close = end + closing.end()
-            for position in range(index, close):
-                if chars[position] != "\n":
-                    chars[position] = " "
-            index = close
-    return "".join(chars)
-
-
-class LinkAttributes(HTMLParser):
-    """Accumulate real HTML link attributes with parser source positions."""
-
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.targets: list[tuple[int, str]] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        for name, value in attrs:
-            if name in {"href", "src"} and value is not None:
-                self.targets.append((self.getpos()[0], value))
+    excluded = set()
+    for token in markdown_parser().parse(text):
+        if token.type in {"fence", "code_block", "html_block"} and token.map:
+            excluded.update(range(token.map[0] + 1, token.map[1] + 1))
+    return [
+        (number, line)
+        for number, line in enumerate(text.split("\n"), 1)
+        if number not in excluded
+    ]
 
 
 def anchors(text: str) -> frozenset[str]:
@@ -362,7 +136,12 @@ def check(root: Path, files: frozenset[str]) -> list[str]:
     problems = []
     for source in sorted(name for name in files if name.endswith(".md")):
         text = (root / source).read_bytes().decode("utf-8")
-        for number, target in link_targets(text):
+        try:
+            targets = link_targets(text)
+        except UnclassifiableDestination as error:
+            problems.append(f"{source}: {error}")
+            continue
+        for number, target in targets:
             problem = target_problem(root, files, source, target)
             if problem is not None:
                 problems.append(f"{source}:{number}: ({target}) {problem}")
@@ -434,6 +213,48 @@ def self_test() -> int:
             "# Title\n\n## Two words `code`\n\n## Two words code\n"
         )
         failures = []
+        # U6-01..03: complete rendered targets must defeat packaged decoys.
+        (root / "missing").write_text("decoy")
+        for label, markdown, expected in (
+            ("inline_backtick", "[real](missing`file`.md)", "missing`file`.md"),
+            ("angle_backtick", "[real](<missing`file`.md>)", "missing`file`.md"),
+            (
+                "title_backtick",
+                '[ok](README.md "`title") [real](missing.md) `',
+                "missing.md",
+            ),
+            (
+                "image_backtick",
+                '![ok](README.md "`title") ![real](missing.md) `',
+                "missing.md",
+            ),
+            ("unicode_nbsp", "[real](missing\u00a0file.md)", "missing\u00a0file.md"),
+            ("unicode_emspace", "[real](missing\u2003file.md)", "missing\u2003file.md"),
+            (
+                "unicode_narrow_nbsp",
+                "[real](missing\u202ffile.md)",
+                "missing\u202ffile.md",
+            ),
+            (
+                "html_div_backtick",
+                '<div>\n`<a href="missing.md">real</a>`\n</div>',
+                "missing.md",
+            ),
+            (
+                "html_pre_backtick",
+                '<pre>\n`<a href="missing.md">real</a>`\n</pre>',
+                "missing.md",
+            ),
+            (
+                "html_custom_backtick",
+                '<custom>\n`<img src="missing.md">`\n</custom>',
+                "missing.md",
+            ),
+        ):
+            (root / "README.md").write_text(markdown)
+            found = check(root, files | {"missing"})
+            if len(found) != 1 or f"({expected})" not in found[0]:
+                failures.append((label, found, expected))
         (root / "missing&").write_text("decoy")
         entity_files = files | {"missing&"}
         for label, markdown, expected in (
@@ -552,7 +373,8 @@ def self_test() -> int:
             (b"- ` code\n- [bad](missing.md) `", 1),
             (b"` code\n---\n[bad](missing.md) `", 1),
             (b"` code\n> [bad](missing.md) `", 1),
-            (b"` code\n<div>\n[bad](missing.md) `\n</div>", 1),
+            # CommonMark and lychee render no link here (todo 61 evidence).
+            (b"` code\n<div>\n[bad](missing.md) `\n</div>", 0),
             (b"see [review](docs/review/README.md)\n", 1),
             (b"see [review](docs/review/README.md)\r\nmore\r\n", 1),
             (b"[ref]: docs/review/README.md\n", 1),

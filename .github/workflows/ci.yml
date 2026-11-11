@@ -478,6 +478,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: clippy
+      - name: Install hash-pinned CommonMark gate dependencies
+        run: python3 -m pip install --require-hashes -r scripts/lint-gates/requirements.txt
       - name: Run every lint gate self-test
         run: for s in scripts/lint-gates/*.py scripts/check-error-constructions.py; do python3 "$s" --self-test || exit 1; done
       - name: Configuration relation generator self-tests

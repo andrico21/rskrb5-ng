@@ -183,6 +183,21 @@ conversions, `?`, `expect` and `unwrap` outside assertions still require it.
 
 ## Dependency changes
 
+The owner approved markdown-it-py 3.0.0 and its mdurl 0.1.2 dependency on
+2026-11-11 for the package-link gate (FU-CI-R12, FU-CI-R13, FU-CI-R14).
+`scripts/lint-gates/requirements.txt` pins exact versions and PyPI wheel
+SHA-256 hashes. CI installs with `python3 -m pip install --require-hashes -r
+scripts/lint-gates/requirements.txt` before running gates. Local system-Python
+hooks require the same dependencies already installed; gate execution itself
+is offline. Both packages are MIT-licensed, checkout-only tooling, outside
+Cargo's dependency graph and package payload; cargo-deny/vet cover Rust
+dependencies, while the hash-pinned requirements cover this Python edge.
+The token collector retains raw parser-recognized destination spans only to
+repair numeric references the parser left undecoded. It never decodes an
+already-decoded ampersand twice, and refuses overlong references that the
+parser decoded contrary to CommonMark. HTML attributes use HTMLParser's
+separate HTML decoding rules. Unknown token shapes fail closed.
+
 The zero-open-items plan compares the runtime `[dependencies]` table against
 `6586b7a`; test-only `[dev-dependencies]` are a separate table. The owner
 approved `syn` on 2026-11-11 for replacing the credential audit's handwritten

@@ -35,6 +35,9 @@ from tempfile import TemporaryDirectory
 from typing import Final
 
 ROOT: Final = Path(__file__).resolve().parents[2]
+PARSER_INSTALL: Final = (
+    "python3 -m pip install --require-hashes -r scripts/lint-gates/requirements.txt"
+)
 REQUIRED: Final = (
     'for s in scripts/lint-gates/*.py scripts/check-error-constructions.py; do python3 "$s" --self-test',
     "python3 scripts/lint-gates/allow_gate.py --enforce",
@@ -106,7 +109,7 @@ def effective_commands(blocks: list[str], hook: bool = False) -> set[str]:
                 mapped.append(REQUIRED[0])
             elif command == "NEGATIVE_SEARCH":
                 mapped.append(REQUIRED[-1])
-            elif command in REQUIRED[1:-1]:
+            elif command in REQUIRED[1:-1] or (not hook and command == PARSER_INSTALL):
                 mapped.append(command)
             else:
                 mapped = []
@@ -120,10 +123,16 @@ def wiring_errors(workflow: str, prek: str) -> list[str]:
     blocks: list[str] = []
     try:
         blocks = mandatory_runs(workflow, "lint-gates")
+        if blocks.count(PARSER_INSTALL) != 1 or blocks.index(
+            PARSER_INSTALL
+        ) >= blocks.index(SELF_TEST_LOOP):
+            errors.append(
+                "lint-gates must install hash-pinned parser dependencies before self-tests"
+            )
         for block in blocks:
             if not effective_commands([block]):
                 errors.append("lint-gates contains an unapproved run block")
-    except RuntimeError as error:
+    except (RuntimeError, ValueError) as error:
         errors.append(str(error))
     hook_config = tomllib.loads(prek)
     if any(key in hook_config for key in ("files", "exclude")):
@@ -238,9 +247,26 @@ def check(root: Path) -> list[str]:
 
 def self_test() -> int:
     actual_ci = (ROOT / ".github/workflows/ci.yml").read_text()
+    actual_hook = (ROOT / "prek.toml").read_text()
+    install = (
+        "python3 -m pip install --require-hashes -r scripts/lint-gates/requirements.txt"
+    )
+    for replacement in ("", install.replace("--require-hashes ", "")):
+        assert wiring_errors(actual_ci.replace(install, replacement), actual_hook), (
+            "unverified parser installation accepted"
+        )
+    assert wiring_errors(
+        actual_ci.replace(
+            "      - name: Run every lint gate self-test",
+            "      - run: " + install + "\n      - name: Run every lint gate self-test",
+        ),
+        actual_hook,
+    ), "duplicate parser installation accepted"
     assert check(ROOT) == [], "actual workflows must enforce required checks"
     commands = [SELF_TEST_LOOP, *REQUIRED[1:-1]]
-    run = "".join(f"      - run: {command}\n" for command in commands)
+    run = "".join(
+        f"      - run: {command}\n" for command in [PARSER_INSTALL, *commands]
+    )
     run += (
         "      - run: |\n          " + CI_NEGATIVE.replace("\n", "\n          ") + "\n"
     )
@@ -259,6 +285,14 @@ def self_test() -> int:
         + ', language = "system", pass_filenames = false, stages = ["pre-push", "manual"], files = "\\\\.(rs|toml|py|yml|md)$" }]\n'
     )
     assert wiring_errors(ci, prek) == [], wiring_errors(ci, prek)
+    assert wiring_errors(ci.replace(f"      - run: {PARSER_INSTALL}\n", ""), prek), (
+        "missing parser installation accepted"
+    )
+    late_install = ci.replace(f"      - run: {PARSER_INSTALL}\n", "").replace(
+        f"      - run: {SELF_TEST_LOOP}\n",
+        f"      - run: {SELF_TEST_LOOP}\n      - run: {PARSER_INSTALL}\n",
+    )
+    assert wiring_errors(late_install, prek), "parser installed after self-tests"
     assert wiring_errors(
         ci.replace("    steps:\n", "    needs: mutants\n    steps:\n", 1), prek
     ), "skippable prerequisite admitted"
