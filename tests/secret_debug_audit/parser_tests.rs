@@ -4,6 +4,40 @@ use std::{io, path::Path};
 
 use super::{declarations::declarations, inventory::secret_owners, source::parse};
 
+/// Only provably test-only predicates exclude owners; features remain visible.
+#[test]
+fn inventory_cfg_preserves_library_branches() -> Result<(), io::Error> {
+    for (attribute, expected) in [
+        ("#[cfg(test)]", false),
+        ("#[cfg(all(test, feature = \"x\"))]", false),
+        ("#[cfg(feature = \"x\")]", true),
+        ("#[cfg(not(feature = \"x\"))]", true),
+        ("#[cfg(any(test, feature = \"x\"))]", true),
+        ("#[cfg(not(test))]", true),
+    ] {
+        let tree = parse(
+            "src/cfg.rs",
+            &format!("{attribute} pub struct Owner {{ password: Vec<u8> }}"),
+        )?;
+        let Some(syn::Item::Struct(owner)) = tree.items.first() else {
+            return Err(io::Error::other("missing cfg fixture"));
+        };
+        assert_eq!(
+            super::configuration::included("src/cfg.rs", &owner.attrs)?,
+            expected,
+            "{attribute}"
+        );
+    }
+    let tree = parse("src/cfg.rs", "#[cfg(mystery(test))] pub struct Owner;")?;
+    let Some(syn::Item::Struct(owner)) = tree.items.first() else {
+        return Err(io::Error::other("missing cfg fixture"));
+    };
+    assert!(
+        matches!(super::configuration::included("src/cfg.rs", &owner.attrs), Err(error) if error.to_string().contains("src/cfg.rs:1:"))
+    );
+    Ok(())
+}
+
 /// Includes preserve physical source identity and reject missing targets and cycles.
 #[test]
 fn literal_includes_load_original_source() -> Result<(), io::Error> {
