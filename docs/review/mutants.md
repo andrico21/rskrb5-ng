@@ -49,6 +49,39 @@ timeout.
 
 ## Verification
 
+### In-diff check after critic round 8 (todo 55)
+
+Todo 52 changed `src/` after the todo 51 check (FU-CFG-R18: a line whose
+tag before `=` contains whitespace, such as an `include` path with an equals
+sign inside a local-name map, is not a mapping assignment, so the include is
+expanded and its policy applies). Todos 53 and 54 changed tests, gate
+scripts and documents only.
+
+- Diff: `git diff 367edde 8ed61ac -- src` (1 file,
+  `src/config/profile_syntax.rs`). `367edde` is `main` after todo 51 and has
+  the code that check covered; `8ed61ac` is `main` after todo 54.
+- The check ran locally as in todo 51: `cargo mutants --all-features
+  --no-shuffle --cap-lints=true --in-diff <diff> --shard 0/1 -j 2
+  --copy-target=false` at `8ed61ac`, cargo-mutants 27.1.0,
+  `CARGO_BUILD_WARNINGS=allow`, no debug info and an 8 GiB address-space cap.
+  The diff yields 2 mutants, so one shard ran; it measured its own baseline
+  (67 s build, 73 s test), and cargo-mutants set the timeout to 370 s.
+- `mutants_report.py --artifacts <the shard output> --expect-shards 1
+  --register docs/review/mutants.md --campaign
+  8ed61acd981da3f660377c1efa61fabd280d7519 --enforce` prints `mutants:
+  caught=2 missed=0 timeout=0 unviable=0 success=0` and `0 problem(s)`.
+
+| Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 2 | 2 | 0 | 0 | 0 | 253 |
+
+No mutant survived, so the check adds no register row. The two mutants
+replace `State::local_mapping_assignment` with `true` and with `false`; the
+added guard has no operator cargo-mutants mutates, and deleting it is the
+pre-fix code on which the three FU-CFG-R18 tests fail. No file of this diff
+is pulled in with `include!`: `src/config/profile_syntax.rs` is a module of
+`src/config.rs`, so no inlined copy was needed.
+
 ### In-diff check after critic round 7 (todo 51)
 
 Todos 47 and 49 changed `src/` after the todo 46 check (FU-CLI-R21: request
