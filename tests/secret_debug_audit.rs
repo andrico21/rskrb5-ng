@@ -297,6 +297,10 @@ mod tests {
     /// Reviewed operations that do not destroy retained secret bytes.
     const REPLACEMENT_EXCEPTIONS: &[(&str, &str)] = &[
         (
+            "src/client.rs::Tokio::remove_cached_service_ticket",
+            "BTreeMap::remove transfers the owned session to the caller without destroying its credential storage; the returned session retains its erasure contract.",
+        ),
+        (
             "src/http.rs::NegotiateService::inner_mut",
             "Caller-owned generic service; mutation and erasure remain the inner service's contract, not first-party credential storage.",
         ),

@@ -2,6 +2,43 @@
 
 use std::{io, path::Path};
 
+/// Replacement discovery retains inline impls, transparent wrappers and opaque mutations.
+#[test]
+fn replacement_accounts_for_indirect_mutations() -> Result<(), io::Error> {
+    for source in [
+        "mod nested { impl Owner { pub fn set(&mut self, value: Vec<u8>) { self.secret = value; } } }",
+        "impl Owner { pub fn set(&mut self, value: Vec<u8>) { (self.secret) = value; } }",
+        "impl Owner { pub fn set(&mut self, value: Vec<u8>) { self.secret.swap_remove(0); } }",
+        "impl Owner { pub fn set(&mut self, value: Vec<u8>) { replace_secret!(self, value); } }",
+        "impl Owner { pub fn set(&mut self, value: Vec<u8>) { self.secret[0] = 0; } }",
+        "impl Owner { pub fn set(&mut self, value: Vec<u8>) { self.secret += value; } }",
+        "impl Owner { pub fn set(&mut self, value: Vec<u8>) { let secret = &mut self.secret; secret.clear(); } }",
+        "impl Owner { pub fn set(&mut self, value: Vec<u8>) { self.secret.get(); } }",
+    ] {
+        drop(super::source::parse("src/mutation.rs", source)?);
+        match super::replacement::methods("src/mutation.rs", source) {
+            Ok(methods) => assert!(
+                methods
+                    .iter()
+                    .any(|method| method.fields.iter().any(|field| field == "secret")),
+                "mutation omitted: {methods:?}"
+            ),
+            Err(error) => assert!(error.to_string().contains("src/mutation.rs:1:"), "{error}"),
+        }
+    }
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let methods = super::replacement::inspect(
+        root,
+        &root.join("tests/secret_debug_audit/fixtures/replacement"),
+    )?;
+    assert_eq!(methods.len(), 1);
+    assert_eq!(
+        methods.first().map(|method| method.fields.as_slice()),
+        Some(["secret".to_owned()].as_slice())
+    );
+    Ok(())
+}
+
 /// Private wrappers and opaque function returns cannot hide credential owners.
 #[test]
 fn inventory_accounts_for_hidden_owners() -> Result<(), io::Error> {
