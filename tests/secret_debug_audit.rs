@@ -275,6 +275,10 @@ mod tests {
     /// Reviewed operations that do not destroy retained secret bytes.
     const REPLACEMENT_EXCEPTIONS: &[(&str, &str)] = &[
         (
+            "src/http.rs::NegotiateService::inner_mut",
+            "Caller-owned generic service; mutation and erasure remain the inner service's contract, not first-party credential storage.",
+        ),
+        (
             "src/client.rs::BuiltApReq::set_message",
             "Dependency-owned rasn OctetString residual; no mutable byte API, documented in security-policy residual copies.",
         ),
@@ -510,6 +514,7 @@ mod tests {
 
     /// Owners exercised with populated credential fields by this integration target.
     const COVERED: &[&str] = &[
+        "src/http.rs::NegotiateService",
         "src/keytab.rs::EncryptionKey",
         "src/keytab.rs::Entry",
         "src/keytab.rs::Keytab",

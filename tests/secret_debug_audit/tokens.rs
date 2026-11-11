@@ -55,6 +55,8 @@ pub(super) mod tests {
     }
 
     pub(crate) fn run_audit() -> Result<(), Box<dyn Error>> {
+        #[cfg(feature = "tower")]
+        generic_service_redacts_inner_credentials();
         negotiation_tokens_redact_credentials()?;
         error_wrappers_redact_credential_payloads()?;
         #[cfg(feature = "tokio")]
@@ -65,6 +67,17 @@ pub(super) mod tests {
             http_response_redacts_credential_payloads()?;
         }
         initiator_context_redacts_credentials()
+    }
+
+    /// A caller-provided service may contain credential bytes and must stay redacted.
+    #[cfg(feature = "tower")]
+    #[test]
+    fn generic_service_redacts_inner_credentials() {
+        use rskrb5_ng::{http::NegotiateService, keytab::Keytab};
+        let secret = pattern(65);
+        let keytab = Keytab::default();
+        let service = NegotiateService::new(CredentialService::new(secret.clone()), &keytab);
+        redacted(&service, &[&secret]);
     }
 
     /// Direct and nested negotiation tokens redact both token and MIC bytes.

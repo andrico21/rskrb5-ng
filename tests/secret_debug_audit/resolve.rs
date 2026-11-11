@@ -64,22 +64,25 @@ impl Scope<'_> {
                     }
                     return self.parameter(parameter, next);
                 }
-                let mut output = if let Some(resolved) = self.binding(&name, next)? {
-                    if path.path.segments.len() != 1 {
-                        return Err(unsupported(
-                            self.file,
-                            first.ident.span(),
-                            "unclassified scoped type path",
-                        ));
-                    }
-                    resolved
-                } else {
-                    path.path
-                        .segments
-                        .iter()
-                        .map(|segment| segment.ident.to_string())
-                        .collect()
-                };
+                let mut output = self.binding(&name, next)?.map_or_else(
+                    || {
+                        path.path
+                            .segments
+                            .iter()
+                            .map(|segment| segment.ident.to_string())
+                            .collect()
+                    },
+                    |mut qualified| {
+                        qualified.extend(
+                            path.path
+                                .segments
+                                .iter()
+                                .skip(1)
+                                .map(|segment| segment.ident.to_string()),
+                        );
+                        qualified
+                    },
+                );
                 for segment in &path.path.segments {
                     output.extend(self.arguments(segment, next)?);
                 }
@@ -102,12 +105,12 @@ impl Scope<'_> {
                 Ok(output)
             }
             Type::Never(_) => Ok(Vec::new()),
+            Type::TraitObject(object) => self.trait_object(object, next),
             Type::FnPtr(_)
             | Type::ImplTrait(_)
             | Type::Infer(_)
             | Type::Macro(_)
             | Type::Ptr(_)
-            | Type::TraitObject(_)
             | Type::Verbatim(_)
             | _ => Err(unsupported(
                 self.file,
@@ -115,6 +118,43 @@ impl Scope<'_> {
                 "unclassified field type",
             )),
         }
+    }
+
+    /// Trait-object paths preserve generic arguments and refuse opaque bounds.
+    fn trait_object(
+        &self,
+        object: &syn::TypeTraitObject,
+        depth: usize,
+    ) -> Result<Vec<String>, io::Error> {
+        let mut output = Vec::new();
+        for bound in &object.bounds {
+            match bound {
+                syn::TypeParamBound::Trait(trait_bound) => {
+                    output.extend(
+                        trait_bound
+                            .path
+                            .segments
+                            .iter()
+                            .map(|segment| segment.ident.to_string()),
+                    );
+                    for segment in &trait_bound.path.segments {
+                        output.extend(self.arguments(segment, depth)?);
+                    }
+                }
+                syn::TypeParamBound::Lifetime(_) => {}
+                syn::TypeParamBound::PreciseCapture(_) | syn::TypeParamBound::Verbatim(_) | _ => {
+                    return Err(unsupported(
+                        self.file,
+                        object
+                            .dyn_token
+                            .as_ref()
+                            .map_or_else(proc_macro2::Span::call_site, |token| token.span),
+                        "unclassified trait storage",
+                    ));
+                }
+            }
+        }
+        Ok(output)
     }
 
     /// Container arguments retain every nested storage type rather than only the basename.
@@ -162,11 +202,7 @@ impl Scope<'_> {
         depth: usize,
     ) -> Result<Vec<String>, io::Error> {
         let Some((_, default)) = &parameter.default else {
-            return Err(unsupported(
-                self.file,
-                parameter.ident.span(),
-                "unresolved generic owner storage",
-            ));
+            return Ok(vec!["GenericStorage".to_owned()]);
         };
         let resolved = self.expand(default, depth)?;
         if resolved.iter().all(|word| {

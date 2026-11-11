@@ -1,9 +1,9 @@
 //! Structural credential ownership discovery over every source feature branch.
 // allow: SIZE_OK - declaration, alias and containment analysis form one fail-closed source inventory.
 
-use std::{fs, io, path::Path};
+use std::{io, path::Path};
 
-use super::lex::{closing, tokens};
+use super::lex::closing;
 
 /// A public owner and its direct field declarations.
 #[derive(Debug)]
@@ -357,26 +357,17 @@ pub(super) fn secret_owners(owners: &[Owner]) -> Vec<String> {
     secret
 }
 
-/// Read all Rust files, independent of enabled build features.
+/// Follow the library graph across every feature branch, excluding proven test-only code.
 pub(super) fn inspect(root: &Path, directory: &Path) -> Result<Vec<Owner>, io::Error> {
     let mut owners = Vec::new();
-    for entry in fs::read_dir(directory)? {
-        let path = entry?.path();
-        if path.is_dir() {
-            owners.extend(inspect(root, &path)?);
-            continue;
-        }
-        if path.extension().is_some_and(|extension| extension == "rs") {
-            let relative = path
-                .strip_prefix(root)
-                .map_err(io::Error::other)?
-                .to_string_lossy()
-                .replace('\\', "/");
-            owners.extend(declarations(
-                &relative,
-                &tokens(&fs::read_to_string(path)?)?,
-            )?);
-        }
+    for unit in super::graph::load(&directory.join("lib.rs"))? {
+        let relative = unit
+            .path
+            .strip_prefix(root)
+            .map_err(io::Error::other)?
+            .to_string_lossy()
+            .replace('\\', "/");
+        owners.extend(super::declarations::parsed(&relative, &unit.tree)?);
     }
     Ok(owners)
 }
@@ -412,6 +403,7 @@ pub(super) fn secret_field(name: &str, ty: &[String]) -> bool {
             matches!(
                 word.as_str(),
                 "Zeroizing"
+                    | "GenericStorage"
                     | "EncryptionKey"
                     | "KeyBytes"
                     | "key_bytes"
