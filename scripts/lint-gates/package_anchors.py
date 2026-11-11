@@ -48,6 +48,7 @@ def anchors(text: str) -> frozenset[str]:
     """Number duplicate rendered heading slugs; refuse unproved renderer shapes."""
     seen: dict[str, int] = {}
     found = set(ANCHOR.findall(text))
+    heading_slugs = set()
     tokens = markdown_parser().parse(text)
     for index, token in enumerate(tokens):
         if token.type != "heading_open":
@@ -77,10 +78,11 @@ def anchors(text: str) -> frozenset[str]:
         ).replace(" ", "-")
         count = seen.get(slug, 0)
         candidate = slug if count == 0 else f"{slug}-{count}"
-        if candidate in found:
+        if candidate in heading_slugs:
             raise UnclassifiableAnchor("heading slug collides with another anchor")
         seen[slug] = count + 1
         found.add(candidate)
+        heading_slugs.add(candidate)
     return frozenset(found)
 
 
