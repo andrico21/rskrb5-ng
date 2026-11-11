@@ -18,6 +18,17 @@ mod replacement_readers;
 #[path = "expression_bindings.rs"]
 mod expression_bindings;
 
+pub(super) fn macro_expressions(invocation: &syn::Macro) -> Option<Vec<Expr>> {
+    replacement_macros::expressions(invocation)
+}
+
+pub(super) fn expression_bindings(
+    scope: &super::resolve::Scope<'_>,
+    items: &[Item],
+) -> Result<(), io::Error> {
+    expression_bindings::graph_check(scope.file, items, scope.graph)
+}
+
 /// A public method and its structurally identified receiver writes.
 #[derive(Debug)]
 pub(super) struct Method {
