@@ -29,14 +29,14 @@ pub(super) struct State {
 impl State {
     /// Only scalar assignments in the exact local-name namespace are mapping data.
     pub(super) fn local_mapping_assignment(&self, text: &str) -> bool {
-        let Some((tag, raw)) = text.split_once('=') else {
+        let Some((raw_tag, raw)) = text.split_once('=') else {
             return false;
         };
-        if tag.trim().contains(char::is_whitespace) {
+        let Some(tag) = relation_tag(raw_tag) else {
             return false;
-        }
+        };
         let mut path: Vec<String> = self.scopes.iter().map(|scope| scope.name.clone()).collect();
-        path.push(marker(tag.trim()).0.to_owned());
+        path.push(marker(tag).0.to_owned());
         local_mapping(&path) && !matches!(raw.trim(), "" | "{")
     }
 
@@ -133,8 +133,8 @@ impl State {
             return Ok(());
         }
         let (raw_tag, raw) = text.split_once('=').ok_or_else(|| invalid(line))?;
-        (!self.scopes.is_empty() && !raw_tag.trim().is_empty()).ok_or_else(|| invalid(line))?;
-        let (tag, tag_final) = marker(raw_tag.trim());
+        (!self.scopes.is_empty()).ok_or_else(|| invalid(line))?;
+        let (tag, tag_final) = marker(relation_tag(raw_tag).ok_or_else(|| invalid(line))?);
         (!tag.eq_ignore_ascii_case("module") || self.local_mapping_assignment(text))
             .ok_or(Error::UnsupportedDynamicModule)?;
         (!tag.is_empty()).ok_or_else(|| invalid(line))?;
@@ -242,10 +242,22 @@ fn local_mapping(path: &[String]) -> bool {
     matches!(path, [section, _, map, _] if section == "realms" && map == "auth_to_local_names")
 }
 
+/// MIT `prof_parse.c` scans bytes with C-locale `isspace`, including vertical tab.
+pub(super) const fn tag_whitespace(ch: char) -> bool {
+    matches!(ch, ' ' | '\t' | '\n' | '\u{b}' | '\u{c}' | '\r')
+}
+
+/// Strip ASCII padding and admit one nonempty tag; Unicode space bytes are data.
+fn relation_tag(raw: &str) -> Option<&str> {
+    let tag = raw.trim_matches(tag_whitespace);
+    (!tag.is_empty() && !tag.contains(tag_whitespace)).then_some(tag)
+}
+
 /// Split a trailing final marker from a tag or unquoted extension value.
 fn marker(text: &str) -> (&str, bool) {
-    text.strip_suffix('*')
-        .map_or((text, false), |body| (body.trim_end(), true))
+    text.strip_suffix('*').map_or((text, false), |body| {
+        (body.trim_end_matches(tag_whitespace), true)
+    })
 }
 
 /// Decode MIT quoted strings without treating their contents as structure.

@@ -178,6 +178,8 @@ is a parity feature, not a defect>`.
 | critic:critics-367edde/u2.md#U2-03 | FU-TST-R38 | no |
 | critic:critics-367edde/u2.md#U2-04 | FU-TST-R39 | no |
 | critic:critics-367edde/u2.md#U2-06 | FU-TST-R31 | no |
+| critic:critics-320ed26/u5.md#U5-01 | FU-CFG-R19 | no |
+| critic:critics-320ed26/u5.md#U5-02 | FU-CFG-R20 | no |
 | executor:todo-16#transit-validator-rustdoc | FU-DOC-R02 | no |
 | executor:todo-21#replay-quota-partial-expiry | FU-TST-R10 | no |
 | executor:todo-22#packaged-tests-include-excluded-fixture | FU-TST-R16 | no |

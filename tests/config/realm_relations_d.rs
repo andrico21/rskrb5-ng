@@ -125,6 +125,24 @@ mod tests {
             "pkinit_rsa_only",
             "kpasswd_unprotected",
             "kpasswd_protocol",
+            "include\u{a0}Alice",
+            "include\u{2003}Alice",
+            "include\u{202f}Alice",
+            "includedir\u{a0}Alice",
+            "includedir\u{2003}Alice",
+            "includedir\u{202f}Alice",
+            "module\u{a0}Alice",
+            "module\u{2003}Alice",
+            "module\u{202f}Alice",
+            "Alice\u{a0}Smith",
+            "Alice\u{2003}Smith",
+            "Alice\u{202f}Smith",
+            "\u{a0}Alice",
+            "\u{2003}Alice",
+            "\u{202f}Alice",
+            "Alice\u{a0}",
+            "Alice\u{2003}",
+            "Alice\u{202f}",
         ] {
             for (separator, input, expected) in [
                 ("=", "local", "local"),
@@ -134,9 +152,16 @@ mod tests {
                 (" \t = ", "\"{\"", "{"),
                 ("   = ", "\"a=b\"", "a=b"),
                 ("\t=\t", "\" padded \"", " padded "),
+                ("\u{b}\u{c}\r=\u{b}\u{c}\r", "local", "local"),
+                ("=", "\u{a0}\u{2003}\u{202f}local", "local"),
+                (
+                    "=",
+                    "\"\u{a0}\u{2003}\u{202f}local\"",
+                    "\u{a0}\u{2003}\u{202f}local",
+                ),
             ] {
                 let config = Config::parse(&format!(
-                    "[realms]\n EXAMPLE = {{\n auth_to_local_names = {{\n {name}{separator}{input}\n {name}{separator}ignored\n }}\n }}\n"
+                    "[realms]\n EXAMPLE = {{\n auth_to_local_names = {{\n \t{name}{separator}{input}\n {name}{separator}ignored\n }}\n }}\n"
                 ))?;
                 assert_eq!(
                     config
@@ -183,6 +208,45 @@ mod tests {
                     );
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// Internal ASCII whitespace is invalid in every ordinary relation namespace.
+    #[test]
+    fn relation_tags_reject_internal_ascii_whitespace() -> Result<(), Box<dyn Error>> {
+        for (prefix, suffix, number) in [
+            ("[realms]\nR = {\nauth_to_local_names = {\n", "\n}\n}", 4),
+            ("[libdefaults]\n", "", 2),
+            ("[domain_realm]\n", "", 2),
+            ("[appdefaults]\n", "", 2),
+            ("[unknown]\n", "", 2),
+        ] {
+            for tag in [
+                "Alice Smith",
+                "Alice\tSmith",
+                "Alice\u{b}Smith",
+                "Alice\u{c}Smith",
+                "Alice\rSmith",
+                "",
+                " \t\u{b}\u{c}\r",
+            ] {
+                let assignment = format!("{tag} = local");
+                for mode in [ParseMode::Compatible, ParseMode::Strict] {
+                    let result =
+                        Config::parse_with_mode(&format!("{prefix}{assignment}{suffix}"), mode);
+                    assert!(
+                        matches!(result, Err(ConfigError::InvalidLine { section: "profile", line, text }) if line == number && text == assignment.trim()),
+                        "malformed tag admitted or wrong syntax location: {tag:?}"
+                    );
+                }
+            }
+        }
+        for ending in ["\n", "\r\n"] {
+            let config = Config::parse(&format!(
+                "[libdefaults]{ending} \tdefault_realm \t= \tEXAMPLE{ending}"
+            ))?;
+            assert_eq!(config.libdefaults.default_realm, "EXAMPLE");
         }
         Ok(())
     }
