@@ -15,9 +15,64 @@ struct Nested<'file> {
     file: &'file str,
     /// First source-completeness failure.
     error: Option<io::Error>,
+    definitions: Vec<&'file syn::ItemMacro>,
 }
 
 impl<'ast> Visit<'ast> for Nested<'_> {
+    fn visit_macro(&mut self, i: &'ast syn::Macro) {
+        if let Some(arguments) = super::replacement::macro_expressions(i) {
+            for argument in &arguments {
+                self.visit_expr(argument);
+            }
+            return;
+        }
+        if [
+            "include_str",
+            "include_bytes",
+            "env",
+            "option_env",
+            "concat",
+            "stringify",
+            "line",
+            "column",
+            "file",
+            "module_path",
+            "cfg",
+        ]
+        .iter()
+        .any(|name| i.path.is_ident(name))
+        {
+            return;
+        }
+        let candidates = self
+            .definitions
+            .iter()
+            .filter(|definition| {
+                definition
+                    .ident
+                    .as_ref()
+                    .is_some_and(|name| i.path.is_ident(name))
+            })
+            .collect::<Vec<_>>();
+        let result = if candidates.is_empty() {
+            Err({
+                unsupported(
+                    self.file,
+                    i.bang_token.span,
+                    "unresolved expression generator",
+                )
+            })
+        } else {
+            candidates
+                .iter()
+                .try_for_each(|definition| super::macros::classify(self.file, &definition.mac))
+                .and_then(|()| super::macros::arguments(self.file, i))
+        };
+        if let Err(error) = result {
+            self.error = Some(error);
+        }
+    }
+    fn visit_item_macro(&mut self, _: &'ast syn::ItemMacro) {}
     fn visit_stmt(&mut self, i: &'ast syn::Stmt) {
         if let syn::Stmt::Item(item) = i {
             let span = match item {
@@ -63,9 +118,66 @@ impl<'ast> Visit<'ast> for Nested<'_> {
 
 /// Traverse function, impl, const and closure bodies rather than silently skipping them.
 pub(super) fn check(file: &str, items: &[Item]) -> Result<(), io::Error> {
-    let mut nested = Nested { file, error: None };
+    let mut definitions = Definitions::default();
+    for item in items {
+        definitions.visit_item(item);
+    }
+    let mut nested = Nested {
+        file,
+        error: None,
+        definitions: definitions.0,
+    };
     for item in items {
         nested.visit_item(item);
     }
     nested.error.map_or(Ok(()), Err)
+}
+
+#[derive(Default)]
+struct Definitions<'ast>(Vec<&'ast syn::ItemMacro>);
+
+impl<'ast> Visit<'ast> for Definitions<'ast> {
+    fn visit_item_macro(&mut self, i: &'ast syn::ItemMacro) {
+        if i.ident.is_some() {
+            self.0.push(i);
+        }
+    }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_panics_doc,
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests {
+    use std::io;
+
+    use crate::declarations::declarations;
+
+    /// Expression generators cannot conceal credential-bearing local owners.
+    #[test]
+    fn expression_generators_cannot_hide_password_owners() -> Result<(), io::Error> {
+        for body in [
+            "pub fn make() -> impl core::fmt::Debug { make_owner!() }",
+            "pub fn make() -> impl core::fmt::Debug { (|| make_owner!())() }",
+            "const VALUE: () = { let _owner = make_owner!(); };",
+            "pub trait Make { fn make() -> impl core::fmt::Debug { make_owner!() } }",
+        ] {
+            let source = format!(
+                "macro_rules! make_owner {{ () => {{{{ #[derive(Debug)] struct Owner {{ password: Vec<u8> }} Owner {{ password: vec![65; 16] }} }}}}; }}\n{body}"
+            );
+            let result = declarations("src/probe.rs", &source);
+            assert!(
+                result.is_err(),
+                "expression generator hid password owner: {result:?}"
+            );
+            let error = result
+                .err()
+                .ok_or_else(|| io::Error::other("generator admitted"))?;
+            assert!(error.to_string().contains("src/probe.rs:"));
+        }
+        Ok(())
+    }
 }

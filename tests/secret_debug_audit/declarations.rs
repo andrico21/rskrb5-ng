@@ -86,6 +86,7 @@ fn items_from(
     declarations: &[Item],
 ) -> Result<Vec<Owner>, io::Error> {
     let mut owners = Vec::new();
+    super::replacement::expression_bindings(scope, declarations)?;
     super::nested_items::check(scope.file, declarations)?;
     for declaration in declarations {
         if !super::configuration::included(

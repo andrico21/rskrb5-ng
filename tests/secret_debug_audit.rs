@@ -249,29 +249,50 @@ mod tests {
         format!("rskrb5_ng::{module}::{owner}")
     }
 
-    /// Every public secret replacement needs an independently observed wipe case.
+    /// Replacement evidence distinguishes observed wipes from dependency contracts.
+    enum ReplacementProof<'proof> {
+        LiveWipe(&'proof str),
+        DependencyContractReplacement {
+            test: &'proof str,
+            contract: &'proof str,
+        },
+    }
+
+    /// Every public secret replacement needs independently registered evidence.
     #[test]
     fn public_secret_replacements_are_audited() -> Result<(), io::Error> {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let owners = inspect(root, &root.join("src"))?;
         let names = secret_owners(&owners);
         let methods = super::replacement::inspect(root, &root.join("src"))?;
-        let tests = super::replacement::test_names(&root.join("src"))?;
-        for (_, proof) in REPLACEMENT_PROOFS {
+        let mut tests = super::replacement::test_names(&root.join("src"))?;
+        tests.extend(super::replacement::test_names(&root.join("tests"))?);
+        let proofs = REPLACEMENT_PROOFS.iter().map(|(method, test)| (*method, ReplacementProof::LiveWipe(test)))
+            .chain([("src/client.rs::Tokio::change_password_for_with_options", ReplacementProof::DependencyContractReplacement {
+                test: "confirmed_own_change_rotates_name_type_zero",
+                contract: "TokioClientCredentials::Password retains dependency-owned Zeroizing<Vec<u8>>: old-value erasure rests on zeroize's Drop contract, not an observed first-party wipe. The authenticated change followed by new-password login proves functional replacement.",
+            })]).collect::<Vec<_>>();
+        for (_, proof) in &proofs {
+            let test = match proof {
+                ReplacementProof::LiveWipe(test) => test,
+                ReplacementProof::DependencyContractReplacement { test, contract } => {
+                    assert!(
+                        !contract.is_empty(),
+                        "dependency replacement requires its erasure contract"
+                    );
+                    test
+                }
+            };
             assert!(
-                tests.iter().any(|name| name == proof),
-                "missing observed wipe test {proof}"
+                tests.iter().any(|name| name == test),
+                "missing replacement proof test {test}"
             );
         }
         let mut failures = Vec::new();
         for method in methods {
             let replaced = super::replacement::replaced_fields(&method);
-            if names
-                .iter()
-                .any(|name| name.ends_with(&format!("::{}", method.owner)))
-                && !replaced.is_empty()
-            {
-                for owner in owners.iter().filter(|owner| owner.name == method.owner) {
+            if names.contains(&method.owner) && !replaced.is_empty() {
+                for owner in owners.iter().filter(|owner| owner.identity == method.owner) {
                     for (field, _, ty) in &owner.fields {
                         if replaced.contains(field)
                             && secret_field(field, ty)
@@ -279,9 +300,9 @@ mod tests {
                             && !REPLACEMENT_EXCEPTIONS.iter().any(|(identity, reason)| {
                                 *identity == method.identity && !reason.is_empty()
                             })
-                            && !REPLACEMENT_PROOFS.iter().any(|(identity, proof)| {
-                                *identity == method.identity && !proof.is_empty()
-                            })
+                            && !proofs
+                                .iter()
+                                .any(|(identity, _)| *identity == method.identity)
                         {
                             failures.push(format!("{} replaces {field}", method.identity));
                         }
@@ -355,6 +376,18 @@ mod tests {
 
     /// Methods with live pre-replacement byte observations in their owning unit tests.
     const REPLACEMENT_PROOFS: &[(&str, &str)] = &[
+        (
+            "src/client.rs::Tokio::cache_service_ticket",
+            "client_cache_insertion_erases_live_key_owner",
+        ),
+        (
+            "src/client.rs::Tokio::login",
+            "login_replacement_erases_live_cached_key",
+        ),
+        (
+            "src/client.rs::Tokio::affirm_login",
+            "login_replacement_erases_live_cached_key",
+        ),
         (
             "src/spnego.rs::WrapToken::encrypt_payload_with_confounder",
             "sealed_wrap_replacements_erase_live_credentials",

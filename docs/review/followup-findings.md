@@ -195,6 +195,11 @@ is a parity feature, not a defect>`.
 | executor:todo-16#transit-validator-rustdoc | FU-DOC-R02 | no |
 | critic:critics-62709b5/u5.md#U5-01 | FU-CFG-R21 | no |
 | critic:critics-62709b5/u5.md#U5-02 | FU-CFG-R22 | no |
+| critic:critics-62709b5/u2.md#U2-01 | FU-TST-R47 | no |
+| critic:critics-62709b5/u2.md#U2-02 | FU-TST-R48 | no |
+| critic:critics-62709b5/u2.md#U2-03 | FU-TST-R49 | no |
+| critic:critics-62709b5/u2.md#U2-04 | FU-TST-R50 | no |
+| critic:critics-62709b5/u2.md#U2-05 | FU-TST-R51 | no |
 | executor:todo-21#replay-quota-partial-expiry | FU-TST-R10 | no |
 | executor:todo-22#packaged-tests-include-excluded-fixture | FU-TST-R16 | no |
 | executor:todo-22#secret-debug-audit-feature-closures | FU-TST-R21 | no |

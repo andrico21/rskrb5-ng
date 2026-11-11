@@ -1,6 +1,58 @@
 //! Lexical macro binding regressions at the owner inventory boundary.
 
-use std::{io, path::Path};
+use std::{env, fs, io, path::Path, process};
+
+/// Physical private storage must not disappear behind a qualified type path.
+#[test]
+fn inventory_accounts_for_physical_private_storage() -> Result<(), io::Error> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    for fixture in ["private_storage", "private_import"] {
+        let result = super::inventory::inspect(
+            root,
+            &root.join("tests/secret_debug_audit/fixtures").join(fixture),
+        );
+        assert!(
+            result.is_err(),
+            "physical private password owner omitted: {result:?}"
+        );
+        let error = result
+            .err()
+            .ok_or_else(|| io::Error::other("private storage admitted"))?;
+        assert!(error.to_string().contains("hidden.rs:2:"));
+    }
+    Ok(())
+}
+
+/// A physical re-export cannot hide a private credential owner from graph traversal.
+#[test]
+fn inventory_accounts_for_reexported_private_storage() -> Result<(), io::Error> {
+    let root = env::temp_dir().join(format!("rskrb5-t62-reexport-{}", process::id()));
+    fs::create_dir_all(&root)?;
+    let result = (|| {
+        fs::write(
+            root.join("lib.rs"),
+            "mod hidden; mod bridge; #[derive(Debug)] pub struct Outer { value: bridge::Storage }",
+        )?;
+        fs::write(
+            root.join("hidden.rs"),
+            "#[derive(Debug)]\npub(crate) struct Hidden { pub(crate) password: Vec<u8> }",
+        )?;
+        fs::write(
+            root.join("bridge.rs"),
+            "pub(crate) use crate::hidden::Hidden as Storage;",
+        )?;
+        let observed = super::inventory::inspect(&root, &root);
+        let error = observed
+            .err()
+            .ok_or_else(|| io::Error::other("re-exported private credential omitted"))?;
+        if !error.to_string().contains("hidden.rs:2:") {
+            return Err(error);
+        }
+        Ok(())
+    })();
+    fs::remove_dir_all(&root)?;
+    result
+}
 
 /// Generated owners require a located refusal rather than a partial inventory.
 #[test]

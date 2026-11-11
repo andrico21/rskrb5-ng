@@ -59,3 +59,84 @@ pub(super) fn expressions(invocation: &Macro) -> Option<Vec<Expr>> {
     }
     None
 }
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_panics_doc,
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests {
+    use std::io;
+
+    use crate::source::parse;
+
+    /// Shadowing a standard macro cannot hide receiver writes.
+    #[test]
+    fn replacement_refuses_shadowed_expression_macros() -> Result<(), io::Error> {
+        for name in ["vec", "format", "matches", "assert", "assert_eq"] {
+            let source = format!(
+                "macro_rules! {name} {{ ($owner:expr) => {{ $owner.secret.clear() }}; }}\npub struct Owner {{ secret: Vec<u8> }}\nimpl Owner {{ pub fn clear(&mut self) {{ {name}!(self); }} }}"
+            );
+            let result = super::super::methods("src/probe.rs", &source);
+            assert!(
+                result.is_err(),
+                "shadowed {name} mutation omitted: {result:?}"
+            );
+            let error = result
+                .err()
+                .ok_or_else(|| io::Error::other("shadowed macro admitted"))?;
+            assert!(error.to_string().contains("src/probe.rs:3:"));
+        }
+        Ok(())
+    }
+
+    /// Whole receiver writes require all retained fields or a located refusal.
+    #[test]
+    fn whole_receiver_mutations_require_proof() -> Result<(), io::Error> {
+        for body in [
+            "*self = Self { secret: value };",
+            "core::mem::replace(self, Self { secret: value });",
+            "core::mem::take(self);",
+            "let receiver = &mut *self; consume(receiver);",
+        ] {
+            let source = format!(
+                "pub struct Owner {{ secret: Vec<u8> }}\nimpl Owner {{ pub fn set(&mut self, value: Vec<u8>) {{ {body} }} }}"
+            );
+            drop(parse("src/probe.rs", &source)?);
+            match super::super::methods("src/probe.rs", &source) {
+                Ok(methods) => assert!(
+                    methods
+                        .iter()
+                        .any(|method| method.fields.contains(&"secret".to_owned())),
+                    "whole receiver mutation omitted: {body}: {methods:?}"
+                ),
+                Err(error) => assert!(error.to_string().contains("src/probe.rs:2:")),
+            }
+        }
+        Ok(())
+    }
+
+    /// Physical receiver identities separate unrelated types and consuming moves.
+    #[test]
+    fn receiver_identity_and_moves_are_distinct() -> Result<(), io::Error> {
+        let source = "pub struct Owner { secret: Vec<u8> }
+        impl Owner { pub fn moved(mut self) -> Self { consume(self) } }
+        mod transport {
+            pub struct Owner { count: usize }
+            impl Owner { pub fn set(&mut self) { consume(self); } }
+        }";
+        let methods = super::super::methods("src/probe.rs", source)?;
+        let [moved, transport] = methods.as_slice() else {
+            return Err(io::Error::other("two receiver methods required"));
+        };
+        assert!(
+            moved.fields.is_empty(),
+            "moving a receiver is not replacement"
+        );
+        assert_eq!(transport.owner, "src/probe.rs::transport::Owner");
+        assert_eq!(transport.fields, ["count"]);
+        Ok(())
+    }
+}
