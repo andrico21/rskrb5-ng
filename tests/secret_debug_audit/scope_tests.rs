@@ -2,6 +2,37 @@
 
 use std::{io, path::Path};
 
+/// Private wrappers and opaque function returns cannot hide credential owners.
+#[test]
+fn inventory_accounts_for_hidden_owners() -> Result<(), io::Error> {
+    for (source, expected) in [
+        (
+            "#[derive(Debug)] struct Hidden { password: Vec<u8> } #[derive(Debug)] pub struct Outer { value: Hidden }",
+            "src/hidden.rs::Outer",
+        ),
+        (
+            "pub fn make() -> impl core::fmt::Debug { #[derive(Debug)] pub struct Owner { password: Vec<u8> } Owner { password: vec![65; 16] } }",
+            "src/hidden.rs::make::Owner",
+        ),
+        (
+            "pub struct Factory; impl Factory { pub fn make() -> impl core::fmt::Debug { #[derive(Debug)] struct Owner { password: Vec<u8> } Owner { password: vec![65; 16] } } }",
+            "src/hidden.rs::Factory::make::Owner",
+        ),
+    ] {
+        drop(super::source::parse("src/hidden.rs", source)?);
+        match super::declarations::declarations("src/hidden.rs", source) {
+            Ok(owners) => assert!(
+                super::inventory::secret_owners(&owners)
+                    .iter()
+                    .any(|owner| owner == expected),
+                "hidden credential omitted: {owners:?}"
+            ),
+            Err(error) => assert!(error.to_string().contains("src/hidden.rs:1:"), "{error}"),
+        }
+    }
+    Ok(())
+}
+
 /// Inline alias chains must resolve to credentials or refuse at their source location.
 #[test]
 fn inventory_refuses_unresolved_inline_aliases() -> Result<(), io::Error> {

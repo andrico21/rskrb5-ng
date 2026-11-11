@@ -42,6 +42,14 @@ mod macro_scope;
     clippy::missing_errors_doc,
     reason = "test code is not rendered API documentation"
 )]
+#[path = "secret_debug_audit/nested_items.rs"]
+mod nested_items;
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
 #[path = "secret_debug_audit/resolve.rs"]
 mod resolve;
 
