@@ -404,6 +404,11 @@ def self_test() -> int:
         for source in (
             "macro_rules! load { ($name:ident) => { mod $name; } }\nload!(hidden);\n",
             "macro_rules! load { ($($name:ident),*) => { $(mod $name;)* } }\nload!(hidden);\n",
+            "macro_rules! load { ($kind:ident $name:ident) => { $kind $name; } }\nload!(mod hidden);\n",
+            "macro_rules! load { ($($token:tt)*) => { $($token)* } }\nload!(mod hidden);\n",
+            "other_crate::load!(hidden);\n",
+            "use other_crate::load as println;\nprintln!(hidden);\n",
+            "use other_crate::*;\nprintln!(hidden);\n",
         ):
             (root / "build.rs").write_text(source + "fn main() { hidden::emit(); }\n")
             with redirect_stdout(StringIO()) as printed:
@@ -414,6 +419,12 @@ def self_test() -> int:
         (root / "build.rs").write_text(
             "macro_rules! load { ($name:ident) => { mod $name {} } }\n"
             "load!(inline);\nfn main() {}\n"
+        )
+        with redirect_stdout(StringIO()):
+            assert main(["--enforce", "--root", str(root)]) == 0
+        (root / "build.rs").write_text(
+            'fn main() { println!("cargo:rerun-if-changed=build.rs"); '
+            'let _ = format!("{}", env!("CARGO_PKG_NAME")); }\n'
         )
         with redirect_stdout(StringIO()):
             assert main(["--enforce", "--root", str(root)]) == 0
