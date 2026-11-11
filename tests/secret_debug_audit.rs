@@ -39,6 +39,22 @@ mod macros;
 #[cfg(test)]
 #[expect(
     clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[path = "secret_debug_audit/resolve.rs"]
+mod resolve;
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[path = "secret_debug_audit/declarations.rs"]
+mod declarations;
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
     clippy::missing_panics_doc,
     reason = "test code is not rendered API documentation"
 )]

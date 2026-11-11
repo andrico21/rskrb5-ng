@@ -2,11 +2,7 @@
 
 use std::{io, path::Path};
 
-use super::{
-    inventory::{declarations, secret_owners},
-    lex::tokens,
-    source::parse,
-};
+use super::{declarations::declarations, inventory::secret_owners, source::parse};
 
 /// Includes preserve physical source identity and reject missing targets and cycles.
 #[test]
@@ -104,7 +100,7 @@ fn parser_reports_original_error_line() -> Result<(), io::Error> {
 fn rejects(sources: &[&str]) -> Result<(), io::Error> {
     let mut missed = Vec::new();
     for source in sources {
-        match declarations("src/probe.rs", &tokens(source)?) {
+        match declarations("src/probe.rs", source) {
             Err(error)
                 if error
                     .to_string()
@@ -112,8 +108,11 @@ fn rejects(sources: &[&str]) -> Result<(), io::Error> {
             result => missed.push(format!("{source}\nresult: {result:?}")),
         }
     }
-    assert!(missed.is_empty(), "{}", missed.join("\n"));
-    Ok(())
+    if missed.is_empty() {
+        Ok(())
+    } else {
+        Err(io::Error::other(missed.join("\n")))
+    }
 }
 
 /// Keyword fragments and opaque item calls cannot hide credential declarations.
@@ -163,7 +162,7 @@ fn inventory_preserves_nonsecret_controls() -> Result<(), io::Error> {
         "use core::result::Result as Outcome; pub struct Scalar { value: Outcome<u32, u32> }",
         "/* owner!(struct Leaked); */ const TEXT: &str = r###\"pub struct Leaked { password: Vec<u8> }\"###; pub struct Scalar { password: u32 }",
     ] {
-        let owners = declarations("src/probe.rs", &tokens(source)?)?;
+        let owners = declarations("src/probe.rs", source)?;
         assert_eq!(owners.len(), 1, "scalar owner omitted: {source}");
         assert!(
             secret_owners(&owners).is_empty(),
@@ -172,7 +171,7 @@ fn inventory_preserves_nonsecret_controls() -> Result<(), io::Error> {
     }
     let plain = "macro_rules! plain { ($($value:expr),*) => { ($($value),*) }; } plain!(1, 2);";
     assert!(
-        declarations("src/probe.rs", &tokens(plain)?)?.is_empty(),
+        declarations("src/probe.rs", plain)?.is_empty(),
         "expression-only macro declares no owners"
     );
     Ok(())
