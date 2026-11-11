@@ -78,7 +78,7 @@ def prose_lines(text: str) -> list[tuple[int, str]]:
                 opening
                 and opening.group(1)[0] == fence[0]
                 and len(opening.group(1)) >= len(fence)
-                and not line[opening.end() :].strip()
+                and re.fullmatch(r"[ \t]*", line[opening.end() :]) is not None
             ):
                 fence = ""
             continue
@@ -349,7 +349,16 @@ def self_test() -> int:
         (root / "docs/a.md").write_text(
             "# Title\n\n## Two words `code`\n\n## Two words code\n"
         )
+        failures = []
         for bad, count in (
+            (
+                "```text\ninside\n```\u00a0\ninside\n```\n[bad](missing.md)\n".encode(),
+                1,
+            ),
+            (
+                "~~~text\r\ninside\r\n~~~\u2003\r\ninside\r\n~~~\r\n[bad](missing.md)\r\n".encode(),
+                1,
+            ),
             (b"``` invalid ` info\n\n[bad](missing.md)\n", 1),
             (b"```md\n``` trailing\n[bad](missing.md)\n```\n", 0),
             (b"~~~md\n~~~ trailing\n[bad](missing.md)\n~~~\n", 0),
@@ -383,7 +392,10 @@ def self_test() -> int:
             ),
             (b"[d](scripts/) ~~~\n", 1),
         ):
-            assert len(problems(bad)) == count, (bad, problems(bad))
+            found = problems(bad)
+            if len(found) != count:
+                failures.append((bad, found, count))
+        assert not failures, failures
         headings = (root / "docs/a.md").read_text()
         (root / "docs/a.md").write_text(
             headings + "[r](review/README.md) [s](../scripts/x.py)\n"

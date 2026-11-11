@@ -26,7 +26,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final
 
-from rust_lex import iter_attributes, strip_comments_and_strings
+from rust_lex import iter_attributes, match_bracket, strip_comments_and_strings
 
 AUTO_DIRS: Final = ("src", "tests", "examples", "benches")
 TARGET_TABLES: Final = ("bin", "example", "test", "bench")
@@ -34,6 +34,84 @@ SKIPPED_DIRS: Final = frozenset({"target", "vendor", "node_modules"})
 OUT_OF_LINE_MOD: Final = re.compile(r"(?<![\w$])mod\s+(?:\$\s*)?(?:r#)?\w+\s*;")
 INCLUDE: Final = re.compile(r"(?<![\w$])(?:r#)?include\s*!\s*[(\[{]")
 PATH_ATTRIBUTE: Final = re.compile(r"[\[(,]\s*(?:r#)?path\s*=")
+MACRO_CALL: Final = re.compile(
+    r"(?<![\w$])((?:::\s*)?(?:r#)?\w+(?:\s*::\s*(?:r#)?\w+)*)\s*!\s*[(\[{]"
+)
+# These standard macros produce expressions/statements or literal data, never
+# source-loading items. Qualified calls are opaque (a foreign macro may shadow
+# any of these names). Local definitions also take precedence over this set.
+ORDINARY_MACROS: Final = frozenset(
+    {
+        "assert",
+        "assert_eq",
+        "assert_ne",
+        "debug_assert",
+        "debug_assert_eq",
+        "debug_assert_ne",
+        "cfg",
+        "column",
+        "compile_error",
+        "concat",
+        "dbg",
+        "env",
+        "eprint",
+        "eprintln",
+        "file",
+        "format",
+        "format_args",
+        "include_bytes",
+        "include_str",
+        "line",
+        "matches",
+        "module_path",
+        "option_env",
+        "panic",
+        "print",
+        "println",
+        "stringify",
+        "todo",
+        "unimplemented",
+        "unreachable",
+        "vec",
+        "write",
+        "writeln",
+    }
+)
+
+
+def opaque_root_macros(stripped: str) -> bool:
+    """Admit only inspectable local expansions and standard non-item macros.
+
+    A local transcriber may splice a module *name* after literal `mod` only
+    when followed by an inline body. Other metavariables are opaque: they can
+    supply item keywords, complete items, or calls to other source generators.
+    All transcribers and nested calls are checked, even in unused rules.
+    """
+    # Imports share the macro namespace. Without name resolution, an imported
+    # alias/glob or macro_use can shadow any supposedly standard macro name.
+    imported = bool(re.search(r"\buse\b|\bmacro_use\b", stripped))
+    local = set()
+    for definition in re.finditer(
+        r"\bmacro_rules\s*!\s*(?:r#)?(\w+)\s*[(\[{]", stripped
+    ):
+        local.add(definition[1])
+        close = match_bracket(stripped, definition.end() - 1)
+        if close is None:
+            return True
+        body = stripped[definition.end() : close]
+        for rule in re.finditer(r"=>\s*[(\[{]", body):
+            end = match_bracket(body, rule.end() - 1)
+            if end is None:
+                return True
+            expansion = body[rule.end() : end]
+            visible = re.sub(r"\bmod\s+\$\s*\w+\s*(?=\{)", "mod inline ", expansion)
+            if "$" in visible:
+                return True
+    for call in MACRO_CALL.finditer(stripped):
+        name = re.sub(r"\s+|r#", "", call[1])
+        if name not in local and (imported or name not in ORDINARY_MACROS):
+            return True
+    return False
 
 
 class SourceSetError(ValueError):
@@ -109,6 +187,10 @@ def rust_sources(given: Path, baseline: tuple[str, ...] = ()) -> list[Path]:
         ):
             raise SourceSetError(
                 f"{path}: source loading (`include!` or `#[path]`) outside a scanned directory"
+            )
+        if opaque_root_macros(stripped):
+            raise SourceSetError(
+                f"{path}: opaque macro expansion outside a scanned directory"
             )
     found = files | {
         path

@@ -21,6 +21,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final
 
+from mutants_report import cells
+
 ROOT: Final = Path(__file__).resolve().parents[2]
 REGISTER: Final = "docs/review/followup-6586b7a.md"
 CHANGELOG: Final = "CHANGELOG.md"
@@ -30,21 +32,37 @@ ROW_ID: Final = re.compile(r"FU-[A-Z]+-R?\d+")
 def changed_rows(register: str) -> list[str]:
     rows = []
     for line in register.splitlines():
-        cells = [cell.strip() for cell in line.split("|")]
-        if len(cells) < 8 or ROW_ID.fullmatch(cells[1]) is None:
+        values = cells(line)
+        if not values or not values[0].startswith("FU-"):
             continue
-        if cells[4] == "fixed" and not cells[6].lower().startswith("none"):
-            rows.append(cells[1])
+        if (
+            len(values) != 7
+            or ROW_ID.fullmatch(values[0]) is None
+            or values[3] not in {"fixed", "dismissed", "transferred", "open"}
+            or any(not value for value in values[:6])
+            or (values[3] == "fixed" and values[5] == "-")
+        ):
+            raise RegisterSchemaError(f"{REGISTER}: uninterpretable FU row: {line}")
+        if values[3] == "fixed" and not values[5].lower().startswith("none"):
+            rows.append(values[0])
     return rows
+
+
+class RegisterSchemaError(ValueError):
+    """A FU row cannot be interpreted as the seven-column register schema."""
 
 
 def check(root: Path) -> list[str]:
     register = (root / REGISTER).read_text(encoding="utf-8")
     changelog = (root / CHANGELOG).read_text(encoding="utf-8")
     named = set(re.findall(r"(?<![\w-])FU-[A-Z]+-R?\d+(?![\w-])", changelog))
+    try:
+        changed = changed_rows(register)
+    except RegisterSchemaError as error:
+        return [str(error)]
     return [
         f"{REGISTER}: {row} records a behaviour change missing from {CHANGELOG}"
-        for row in changed_rows(register)
+        for row in changed
         if row not in named
     ]
 
@@ -74,6 +92,24 @@ def self_test() -> int:
             (root / CHANGELOG).write_text(changelog, encoding="utf-8")
             found = [ROW_ID.search(problem)[0] for problem in check(root)]
             assert found == expected, (changelog, found)
+        (root / CHANGELOG).write_text("", encoding="utf-8")
+        failures = []
+        for label, row in (
+            (
+                "escaped title",
+                r"| FU-CLI-R999 | minor | AS \| TGS admission | fixed | proof | Rejects bad input. | evidence |",
+            ),
+            (
+                "escaped proof",
+                r"| FU-CLI-R999 | minor | admission | fixed | AS \| none | Rejects bad input. | evidence |",
+            ),
+            ("uninterpretable", "| FU-CLI-R999 | minor | admission | fixed | proof |"),
+        ):
+            (root / REGISTER).write_text(header + row + "\n", encoding="utf-8")
+            problems = check(root)
+            if len(problems) != 1 or "FU-CLI-R999" not in problems[0]:
+                failures.append((label, problems))
+        assert not failures, ("register rows escaped enforcement", failures)
     print("changelog_rows self-test passed")
     return 0
 
