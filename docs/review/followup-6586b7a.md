@@ -511,6 +511,12 @@ Original review rows:
 | --- | --- | --- | --- | --- | --- | --- |
 | FU-CFG-R17 | minor | Local principals include and includedir are mistaken for directives | fixed | `realm_relations_d::tests::auth_to_local_names`, `local_maps_expand_includes_with_independent_child_state`; commit subject `config: preserve include principal mapping data (FU-CFG-R17)` | Exact scalar realm auth_to_local_names assignments preserve include/includedir names with spaced, tabbed and unspaced separators, first-value selection and one WP-17 diagnostic. Real directives inside maps still expand with independent child syntax state; actual child modules remain refused. | task-49-rskrb5-ng-zero-open-items.log: spaced assignment fabricated IncludeFile '= local' before the fix (exit 101); real file/directory expansion and child provider controls passed before and after. critic:critics-7286a80/u5.md#U5-01. |
 
+## Round 8 include-path policy follow-up (todo 52)
+
+| ID | Sev | Title | Status | Proof | Behaviour change | Evidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| FU-CFG-R18 | major | Equals signs in real include paths bypass child policy inside local-name maps | fixed | `include_paths_preserve_child_policy`, `include_arguments_remain_directives`, `module_paths_remain_directives`, `realm_relations_d::tests::auth_to_local_names`, `local_maps_expand_includes_with_independent_child_state`; commit subject `config: enforce policy for equals-bearing include paths (FU-CFG-R18)` | Only a single relation tag qualifies for scalar local-map exemption. Real include/includedir paths containing equals expand and enforce child policy; relative/quoted paths retain typed refusal and module paths remain rejected. Keyword-named principal assignments keep scalar decoding, first-value selection and WP-17 diagnostics. | task-52-rskrb5-ng-zero-open-items.log: three pre-fix failures (exit 101), both include kinds and space/tab separators, exact and lookalike scopes; config/policy/include-order green. critic:critics-367edde/u5.md#U5-01. |
+
 Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 
 - RVX-u1-01 → FU-TST-01 (also: the test never exercises the router wiring cited by the review doc; covered by FU-TST-01's Proof)

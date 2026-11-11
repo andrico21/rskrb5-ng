@@ -1,5 +1,8 @@
 //! Bounded reader adapters and dynamic-provider rejection.
 
+#[path = "include_policy.rs"]
+mod include_policy;
+
 #[cfg(test)]
 #[expect(
     clippy::missing_errors_doc,

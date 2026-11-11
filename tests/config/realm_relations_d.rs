@@ -126,9 +126,17 @@ mod tests {
             "kpasswd_unprotected",
             "kpasswd_protocol",
         ] {
-            for separator in ["=", " = ", "\t=\t"] {
+            for (separator, input, expected) in [
+                ("=", "local", "local"),
+                (" = ", "local", "local"),
+                ("\t=\t", "local", "local"),
+                ("   = ", "\"\"", ""),
+                (" \t = ", "\"{\"", "{"),
+                ("   = ", "\"a=b\"", "a=b"),
+                ("\t=\t", "\" padded \"", " padded "),
+            ] {
                 let config = Config::parse(&format!(
-                    "[realms]\n EXAMPLE = {{\n auth_to_local_names = {{\n {name}{separator}local\n {name}{separator}ignored\n }}\n }}\n"
+                    "[realms]\n EXAMPLE = {{\n auth_to_local_names = {{\n {name}{separator}{input}\n {name}{separator}ignored\n }}\n }}\n"
                 ))?;
                 assert_eq!(
                     config
@@ -137,7 +145,7 @@ mod tests {
                         .auth_to_local_names
                         .get(name)
                         .map(String::as_str),
-                    Some("local")
+                    Some(expected)
                 );
                 assert_eq!(
                     config.diagnostics(),
