@@ -32,15 +32,14 @@ from tempfile import TemporaryDirectory
 from typing import Final
 from urllib.parse import unquote
 
-from package_markdown import UnclassifiableDestination, link_targets, markdown_parser
+from package_markdown import UnclassifiableDestination, link_targets
+from package_anchors import UnclassifiableAnchor, anchors
 
 ROOT: Final = Path(__file__).resolve().parents[2]
 REPO_URL: Final = re.compile(
     r"https://github\.com/andrico21/rskrb5-ng/(blob|tree)/main/([^#?]+)"
 )
 SCHEME: Final = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:")
-ANCHOR: Final = re.compile(r"""<a\s[^>]*\b(?:id|name)\s*=\s*["']([^"']+)["']""")
-HEADING: Final = re.compile(r" {0,3}#{1,6}\s+(.*?)\s*#*\s*$")
 
 
 def package_files(root: Path) -> frozenset[str]:
@@ -58,36 +57,6 @@ def package_files(root: Path) -> frozenset[str]:
     return frozenset(
         line.strip() for line in listing.stdout.splitlines() if line.strip()
     )
-
-
-def prose_lines(text: str) -> list[tuple[int, str]]:
-    """Numbered lines outside parser-recognized code and HTML blocks."""
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    excluded = set()
-    for token in markdown_parser().parse(text):
-        if token.type in {"fence", "code_block", "html_block"} and token.map:
-            excluded.update(range(token.map[0] + 1, token.map[1] + 1))
-    return [
-        (number, line)
-        for number, line in enumerate(text.split("\n"), 1)
-        if number not in excluded
-    ]
-
-
-def anchors(text: str) -> frozenset[str]:
-    """GitHub heading slugs (duplicates numbered) plus explicit HTML anchors."""
-    seen: dict[str, int] = {}
-    found = set(ANCHOR.findall(text))
-    for _, line in prose_lines(text):
-        heading = HEADING.match(line.replace("`", ""))
-        if heading is None:
-            continue
-        title = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", heading.group(1))
-        slug = re.sub(r"[^\w\- ]", "", title.lower()).replace(" ", "-")
-        count = seen.get(slug, 0)
-        seen[slug] = count + 1
-        found.add(slug if count == 0 else f"{slug}-{count}")
-    return frozenset(found)
 
 
 def target_problem(
@@ -127,7 +96,11 @@ def target_problem(
         return f"`{path}` is {where}; use https://github.com/andrico21/rskrb5-ng/{kind}/main/{path}"
     if fragment and path.endswith(".md"):
         text = (root / path).read_bytes().decode("utf-8")
-        if unquote(fragment) not in anchors(text):
+        try:
+            found = anchors(text)
+        except (UnclassifiableAnchor, UnclassifiableDestination) as error:
+            return f"`{path}`: {error}"
+        if unquote(fragment) not in found:
             return f"`{path}` has no anchor `#{fragment}`"
     return None
 
@@ -185,6 +158,34 @@ def self_test() -> int:
         )
         assert problems(clean) == [], problems(clean)
         assert problems(clean.replace(b"\n", b"\r\n")) == [], "CRLF clean"
+        # FU-CI-R15: rendered headings, not Markdown source spellings.
+        heading_failures = []
+        for label, heading, valid, invalid in (
+            ("entity", "## A &amp; B\n", "a--b", "a-amp-b"),
+            ("setext", "Title\n=====\n", "title", "title-"),
+            (
+                "inline",
+                "## *A* **B** `C` [D](https://x.org)\n",
+                "a-b-c-d",
+                "a-b-c-dhttpsxorg",
+            ),
+            (
+                "reference",
+                "## [Title][ref]\n\n[ref]: https://x.org\n",
+                "title",
+                "titleref",
+            ),
+            ("escaped", r"## A \* B" + "\n", "a--b", "a-b"),
+        ):
+            (root / "docs/a.md").write_text(heading)
+            for fragment, expected in ((valid, 0), (invalid, 1)):
+                found = problems(f"[x](docs/a.md#{fragment})".encode())
+                if len(found) != expected:
+                    heading_failures.append((label, fragment, found, expected))
+        assert heading_failures == [], heading_failures
+        (root / "docs/a.md").write_text(
+            "# Title\n\n## Two words `code`\n\n## Two words code\n"
+        )
         for link in (
             "[bad]:\n  missing.md\n[x][bad]",
             "[long\n label]:\n  missing.md\n[x][long label]",
