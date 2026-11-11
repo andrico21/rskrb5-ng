@@ -8,6 +8,52 @@ use super::{
     source::parse,
 };
 
+/// Local macro output must prove its item shape, including nested declarations.
+#[test]
+fn local_macro_transcribers_require_structural_proof() -> Result<(), io::Error> {
+    for (source, accepted) in [
+        (
+            "macro_rules! plain { ($($value:expr),*) => { ($($value),*) }; }",
+            true,
+        ),
+        (
+            "macro_rules! convert { ($($domain:ident),+) => { $(impl From<u32> for $domain { fn from(value: u32) -> Self { Self(value) } })+ }; }",
+            true,
+        ),
+        (
+            "macro_rules! leak { ($name:ident) => { pub struct $name { password: Vec<u8> } }; }",
+            false,
+        ),
+        (
+            "macro_rules! leak { ($kind:ident $name:ident) => { pub $kind $name { password: Vec<u8> } }; }",
+            false,
+        ),
+        (
+            "macro_rules! leak { () => { impl Owner { fn method() { struct Hidden { password: Vec<u8> } } } }; }",
+            false,
+        ),
+        ("macro_rules! leak { () => { another::items!(); }; }", false),
+        ("macro_rules! leak { ($value:tt) => { $value }; }", false),
+    ] {
+        let tree = parse("src/macros.rs", source)?;
+        let Some(syn::Item::Macro(item)) = tree.items.first() else {
+            return Err(io::Error::other("missing macro fixture"));
+        };
+        match super::macros::classify("src/macros.rs", &item.mac) {
+            Ok(()) => assert!(accepted, "unsafe transcriber accepted: {source}"),
+            Err(error) => {
+                assert!(!accepted, "safe transcriber rejected: {source}: {error}");
+                assert!(
+                    error
+                        .to_string()
+                        .starts_with("unsupported source src/macros.rs:1:")
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Syntax failures retain the actual line after inert text, including CRLF input.
 #[test]
 fn parser_reports_original_error_line() -> Result<(), io::Error> {
