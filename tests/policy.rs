@@ -271,3 +271,15 @@ mod staged_requests;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod nested_padata;
+
+/// Encrypted body admission at synchronous and Tokio transport boundaries.
+#[cfg(test)]
+#[cfg(feature = "tokio")]
+#[path = "policy/body_authorization.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod body_authorization;
