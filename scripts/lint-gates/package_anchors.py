@@ -77,9 +77,8 @@ def anchors(text: str) -> frozenset[str]:
         ).replace(" ", "-")
         count = seen.get(slug, 0)
         candidate = slug if count == 0 else f"{slug}-{count}"
-        while candidate in found:
-            count += 1
-            candidate = f"{slug}-{count}"
+        if candidate in found:
+            raise UnclassifiableAnchor("heading slug collides with another anchor")
         seen[slug] = count + 1
         found.add(candidate)
     return frozenset(found)
@@ -87,8 +86,14 @@ def anchors(text: str) -> frozenset[str]:
 
 def self_test() -> int:
     assert anchors("## A &amp; B\n\nTitle\n=====\n") == {"a--b", "title"}
-    assert anchors("## A\n\n## A\n\n## A-1\n\n## A\n") == {"a", "a-1", "a-1-1", "a-2"}
-    for heading in ("## A ![alt](x) B", "## A <span>B</span>", "A\nB\n===", "## A 😀"):
+    assert anchors("## A\n\n## A\n\n## A\n") == {"a", "a-1", "a-2"}
+    for heading in (
+        "## A ![alt](x) B",
+        "## A <span>B</span>",
+        "A\nB\n===",
+        "## A 😀",
+        "## A\n\n## A\n\n## A-1",
+    ):
         try:
             anchors(heading)
         except UnclassifiableAnchor:
