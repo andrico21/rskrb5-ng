@@ -25,6 +25,8 @@ use crate::{
     keytab::{EncryptionKey, key_bytes::EVENTS},
 };
 
+#[path = "replacement_renewal_tests.rs"]
+mod renewal;
 #[path = "replacement_service_tests.rs"]
 mod service;
 
