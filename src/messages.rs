@@ -6,10 +6,7 @@ mod encrypted_data;
 /// Owning boundary for secret-bearing message DER staging.
 pub(crate) mod secret_der;
 
-use core::{
-    str::{self},
-    time::Duration,
-};
+use core::{str, time::Duration};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rasn::{
