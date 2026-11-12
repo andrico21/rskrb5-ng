@@ -158,6 +158,11 @@ mod tests {
             .find(|method| method.identity.ends_with("::wrap"))
             .ok_or_else(|| io::Error::other("counter wrapper"))?;
         super::validate(counted, &local, &proofs, &secret)?;
+        let cyclic = replacement::methods(
+            "src/probe.rs",
+            "pub struct Owner { secret: Vec<u8> }\nimpl Owner { fn write(&mut self) { self.secret.clear(); } pub fn left(&mut self) { self.right(); self.write(); } pub fn right(&mut self) { self.left(); } }",
+        );
+        assert!(cyclic.is_err_and(|error| error.to_string().contains("cyclic")));
         Ok(())
     }
 }

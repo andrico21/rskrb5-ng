@@ -280,6 +280,18 @@ mod tests {
             }), ("src/client.rs::Tokio::get_service_ticket_with_clock", ReplacementProof::DependencyContractReplacement {
                 test: "service_acquisition_replaces_expired_cached_session",
                 contract: "Public service acquisition replaces the retained session. Key erasure relies on its owning type's Drop contract; rasn ticket copies remain residuals. This own proof terminates the four-edge SPNEGO inheritance chain.",
+            }), ("src/client.rs::Tokio::prune_unusable_sessions_at", ReplacementProof::DependencyContractReplacement {
+                test: "tokio_client_prunes_expired_sessions_despite_renewable_metadata",
+                contract: "Pruning removes expired TGT and service sessions from the retained maps; their key erasure relies on the removed sessions' Drop contract, not an observed first-party wipe.",
+            }), ("src/client.rs::Tokio::prune_unusable_sessions_at", ReplacementProof::DependencyContractReplacement {
+                test: "tokio_client_prunes_expired_nonrenewable_primary_tgt",
+                contract: "Pruning clears an expired primary TGT; its key erasure relies on the dropped session's Drop contract, not an observed first-party wipe.",
+            }), ("src/client.rs::Tokio::renew_tgt_session_for_realm", ReplacementProof::DependencyContractReplacement {
+                test: "tokio_client_renews_tgt_session_for_realm",
+                contract: "Renewal replaces the cached referral TGT for its realm; old-key erasure relies on the replaced session's Drop contract, not an observed first-party wipe.",
+            }), ("src/client.rs::Tokio::renew_tgt_session_for_realm", ReplacementProof::DependencyContractReplacement {
+                test: "tokio_client_renews_primary_tgt_and_clears_service_cache",
+                contract: "Primary-realm renewal replaces the primary TGT and clears the service ticket cache; old-key erasure relies on the replaced sessions' Drop contract, not an observed first-party wipe.",
             })]).collect::<Vec<_>>();
         for (_, proof) in &proofs {
             let test = match proof {
@@ -297,12 +309,19 @@ mod tests {
                 "missing replacement proof test {test}"
             );
         }
-        let certificates = proofs.iter().map(|(identity, proof)| {
-            let test = match proof {
-                ReplacementProof::LiveWipe(test) | ReplacementProof::DependencyContractReplacement { test, contract: _ } => *test,
-            };
-            (*identity, test)
-        }).chain(super::replacement_registry::DELEGATIONS.iter().copied()).collect::<Vec<_>>();
+        let certificates = proofs
+            .iter()
+            .map(|(identity, proof)| {
+                let test = match proof {
+                    ReplacementProof::LiveWipe(test)
+                    | ReplacementProof::DependencyContractReplacement { test, contract: _ } => {
+                        *test
+                    }
+                };
+                (*identity, test)
+            })
+            .chain(super::replacement_registry::DELEGATIONS.iter().copied())
+            .collect::<Vec<_>>();
         let mut failures = Vec::new();
         for method in &methods {
             let replaced = super::replacement::replaced_fields(&method);
@@ -316,16 +335,30 @@ mod tests {
                                 *identity == method.identity && !reason.is_empty()
                             })
                         {
-                            if let Err(error) = super::replacement_certification::validate(method, &methods, &certificates, &|candidate, name| {
-                                owners.iter().filter(|declared| declared.identity == candidate.owner).any(|declared| {
-                                    declared.fields.iter().any(|(declared_field, _, declared_ty)| {
-                                        declared_field == name
-                                            && secret_field(declared_field, declared_ty)
-                                            && !super::nonsecret::contains(&declared.identity, declared_field)
-                                    })
-                                })
-                            }) {
-                                failures.push(format!("{} replaces {field}: {error}", method.identity));
+                            if let Err(error) = super::replacement_certification::validate(
+                                method,
+                                &methods,
+                                &certificates,
+                                &|candidate, name| {
+                                    owners
+                                        .iter()
+                                        .filter(|declared| declared.identity == candidate.owner)
+                                        .any(|declared| {
+                                            declared.fields.iter().any(
+                                                |(declared_field, _, declared_ty)| {
+                                                    declared_field == name
+                                                        && secret_field(declared_field, declared_ty)
+                                                        && !super::nonsecret::contains(
+                                                            &declared.identity,
+                                                            declared_field,
+                                                        )
+                                                },
+                                            )
+                                        })
+                                },
+                            ) {
+                                failures
+                                    .push(format!("{} replaces {field}: {error}", method.identity));
                             }
                         }
                     }
@@ -375,11 +408,11 @@ mod tests {
             "Dependency-owned rasn checksum residual; no mutable byte API, documented in security-policy residual copies.",
         ),
         (
-            "src/kadmin/reply.rs::Reply::set_ap_rep",
+            "src/kadmin.rs::Reply::set_ap_rep",
             "Dependency-owned rasn AP-REP residual; no mutable byte API, documented in security-policy residual copies.",
         ),
         (
-            "src/kadmin/reply.rs::Reply::set_krb_priv",
+            "src/kadmin.rs::Reply::set_krb_priv",
             "Dependency-owned rasn KRB-PRIV residual; no mutable byte API, documented in security-policy residual copies.",
         ),
         (
@@ -400,6 +433,10 @@ mod tests {
     const REPLACEMENT_PROOFS: &[(&str, &str)] = &[
         (
             "src/client.rs::Tokio::cache_service_ticket",
+            "client_cache_insertion_erases_live_key_owner",
+        ),
+        (
+            "src/client/cache_insert.rs::service_ticket",
             "client_cache_insertion_erases_live_key_owner",
         ),
         (
@@ -527,7 +564,7 @@ mod tests {
             "built_password_frame_replacement_erases_old_bytes",
         ),
         (
-            "src/kadmin/payload.rs::ChangePasswdData::set_new_passwd",
+            "src/kadmin.rs::ChangePasswdData::set_new_passwd",
             "password_setter_erases_previous_bytes",
         ),
         (
