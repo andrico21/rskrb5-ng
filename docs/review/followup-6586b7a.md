@@ -633,6 +633,12 @@ Findings of revmux unit-1 run 02 that duplicate an existing row (no new row):
 - RVX-u1-07 → FU-SVC-04
 - RVX-u1-08 → FU-AMB-01
 
+## Stable Rust 1.100 unused dependency follow-up (todo 78)
+
+| ID | Sev | Title | Status | Proof | Behaviour change | Evidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| FU-CI-R17 | major | Cargo 1.100's `unused_dependencies` lint fails every CI closure with `evaluation` on `picky-krb` | fixed | `cargo +1.100.0 check --all-targets` over the 36 CI feature closures and the 5 check-job argument sets: red at `db858e9` (exit 101, ``unused dependency `picky-krb` `` denied by `build.warnings`) in the 16 closures with `evaluation`, green in all 41 after the move; the evaluation test targets pass with `--features evaluation`; commit subject `build: move picky-krb to dev-dependencies (FU-CI-R17)` | `picky-krb` moves from an optional dependency enabled by `evaluation` to `[dev-dependencies]`: the `evaluation` feature no longer builds `picky-krb`, `picky-asn1-x509`, `cbc`, `byteorder` or `crypto-bigint` for a consumer, and their cargo-vet exemptions drop to `safe-to-run`. | task-78-rskrb5-ng-zero-open-items.log: verbatim per-closure red and green under rustc 1.100.0; CI run 43280026843 on `db858e9` (41 of 67 jobs red). executor:todo-78#unused-dependencies-1-100 |
+
 ## Added rows
 
 Rows added after the ledger from revmux unit-1 run 02, with the owning todo of plan `rskrb5-ng-zero-open-items`:
