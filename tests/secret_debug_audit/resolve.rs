@@ -6,6 +6,9 @@ use syn::{GenericArgument, Generics, Item, PathArguments, Type, UseTree};
 
 use super::source::{Parsed, type_span, unsupported};
 
+#[path = "graph_paths.rs"]
+mod graph_paths;
+
 /// Type resolution retains lexical item scopes and the owning generic parameters.
 pub(super) struct Scope<'ast> {
     /// Physical source name used in failure diagnostics.
@@ -36,23 +39,29 @@ impl Scope<'_> {
         if prefix.is_empty() {
             return Ok(None);
         }
-        let mut segments: Vec<_> = self
-            .module
-            .split("::")
-            .filter(|part| !part.is_empty())
-            .map(str::to_owned)
-            .collect();
-        let mut parts = prefix.iter();
-        match parts.next().map(String::as_str) {
-            Some("crate") => segments.clear(),
-            Some("self") | None => {}
-            Some("super") => {
-                drop(segments.pop());
-            }
-            Some(first) => segments.push(first.to_owned()),
-        }
-        segments.extend(parts.cloned());
+        let segments = graph_paths::module_segments(self, prefix)?;
         let module = format!("::{}", segments.join("::"));
+        let target_module = if segments.is_empty() {
+            format!("::{name}")
+        } else {
+            format!("{module}::{name}")
+        };
+        if self.graph.iter().any(|unit| unit.module == target_module) {
+            return Ok(None);
+        }
+        if !self.graph.iter().any(|unit| unit.module == module)
+            && let Some((unit, imported)) = graph_paths::module_import(self, &segments, name)
+        {
+            let scope = Scope {
+                file: self.file,
+                items: vec![unit.tree.items.as_slice()],
+                generics: self.generics,
+                graph: self.graph,
+                module: &unit.module,
+            };
+            return scope.graph_alias(&imported, depth.saturating_add(1));
+        }
+        let mut concrete_found = false;
         for unit in self.graph.iter().filter(|unit| unit.module == module) {
             for item in &unit.tree.items {
                 let file = unit.path.display().to_string();
@@ -73,35 +82,9 @@ impl Scope<'_> {
                 {
                     return scope.graph_alias(&imported, depth.saturating_add(1));
                 }
-                let concrete = match item {
-                    Item::Struct(owner) if owner.ident == name => {
-                        Some((&owner.ident, &owner.generics))
-                    }
-                    Item::Enum(owner) if owner.ident == name => {
-                        Some((&owner.ident, &owner.generics))
-                    }
-                    Item::Union(owner) if owner.ident == name => {
-                        Some((&owner.ident, &owner.generics))
-                    }
-                    Item::Const(_)
-                    | Item::Enum(_)
-                    | Item::ExternCrate(_)
-                    | Item::Fn(_)
-                    | Item::ForeignMod(_)
-                    | Item::Impl(_)
-                    | Item::Macro(_)
-                    | Item::Mod(_)
-                    | Item::Static(_)
-                    | Item::Struct(_)
-                    | Item::Trait(_)
-                    | Item::TraitAlias(_)
-                    | Item::Type(_)
-                    | Item::Union(_)
-                    | Item::Use(_)
-                    | Item::Verbatim(_)
-                    | _ => None,
-                };
+                let concrete = graph_paths::concrete(item, name);
                 if let Some((ident, generics)) = concrete {
+                    concrete_found = true;
                     scope.generics = generics;
                     let segment = syn::PathSegment::from(ident.clone());
                     scope.private_storage(&segment, depth.saturating_add(1))?;
@@ -120,6 +103,22 @@ impl Scope<'_> {
                     return scope.expand(&alias.ty, depth.saturating_add(1)).map(Some);
                 }
             }
+        }
+        if !self.graph.is_empty()
+            && !concrete_found
+            && path
+                .first()
+                .is_some_and(|root| matches!(root.as_str(), "self" | "super" | "crate"))
+        {
+            return Err(unsupported(
+                self.file,
+                proc_macro2::Span::call_site(),
+                &format!(
+                    "unresolved local graph path {} in {}",
+                    path.join("::"),
+                    self.module
+                ),
+            ));
         }
         Ok(None)
     }

@@ -219,6 +219,19 @@ impl Admission<'_> {
 }
 
 impl<'ast> Visit<'ast> for Admission<'_> {
+    fn visit_block(&mut self, i: &'ast syn::Block) {
+        let previous = self.bindings.len();
+        let mut local = Bindings::default();
+        for statement in &i.stmts {
+            if let syn::Stmt::Item(item) = statement {
+                local.visit_item(item);
+            }
+        }
+        self.bindings.extend(local.0);
+        visit::visit_block(self, i);
+        self.bindings.truncate(previous);
+    }
+
     fn visit_item(&mut self, i: &'ast Item) {
         let item = i;
         let previous = self.bindings.len();

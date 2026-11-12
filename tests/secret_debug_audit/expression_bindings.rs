@@ -11,7 +11,7 @@ use syn::{
 };
 
 use crate::{
-    configuration,
+    configuration, nested_items,
     source::{Parsed, unsupported},
 };
 
@@ -116,7 +116,8 @@ impl<'ast> Visit<'ast> for Check<'_> {
                 .scopes
                 .iter()
                 .any(|scope| scope.wildcard || scope.names.contains(&name.to_string()))
-            && super::replacement_macros::expressions(i).is_some()
+            && (super::replacement_macros::expressions(i).is_some()
+                || nested_items::declaration_free(i))
         {
             self.error = Some(unsupported(
                 self.file,

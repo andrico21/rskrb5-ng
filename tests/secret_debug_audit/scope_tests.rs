@@ -2,6 +2,40 @@
 
 use std::{env, fs, io, path::Path, process};
 
+#[path = "physical_paths.rs"]
+mod physical_paths;
+
+#[test]
+fn block_imports_cannot_impersonate_helper_attributes() -> Result<(), io::Error> {
+    for source in [
+        "pub struct Marker; pub fn make() { use external::owners as rasn; #[rasn] fn inner() {} }",
+        "pub struct Marker; pub fn make() { #[rasn] fn inner() {} use external::owners as rasn; }",
+        "pub struct Marker; pub fn make() { let _ = || { use external::owners as serde; #[serde] fn inner() {} }; }",
+        "pub struct Marker; pub fn make() { { use external::owners as zeroize; #[zeroize] fn inner() {} } }",
+        "pub struct Marker; pub fn make() { use external::Owners as Debug; #[derive(Debug)] fn inner() {} }",
+        "pub struct Marker; pub fn make() { use external::*; #[rasn] fn inner() {} }",
+    ] {
+        let result = super::declarations::declarations("src/block.rs", source);
+        assert!(
+            result.is_err(),
+            "block helper binding admitted: {source}: {result:?}"
+        );
+        let error = result
+            .err()
+            .ok_or_else(|| io::Error::other("block helper admitted"))?;
+        assert!(error.to_string().contains("src/block.rs:1:"), "{error}");
+    }
+    for source in [
+        "pub struct Marker; pub fn make() { { use external::owners as rasn; } #[rasn] fn inner() {} }",
+        "pub struct Marker; pub fn first() { use external::owners as rasn; } pub fn second() { #[rasn] fn inner() {} }",
+        "pub struct Marker; pub fn make() { use serde::Serialize; #[derive(Serialize)] fn inner() {} }",
+        "pub struct Marker; pub fn make() { #[cfg(test)] use external::owners as rasn; #[rasn] fn inner() {} }",
+    ] {
+        drop(super::declarations::declarations("src/block.rs", source)?);
+    }
+    Ok(())
+}
+
 /// Physical private storage must not disappear behind a qualified type path.
 #[test]
 fn inventory_accounts_for_physical_private_storage() -> Result<(), io::Error> {

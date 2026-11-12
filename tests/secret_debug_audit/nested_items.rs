@@ -9,6 +9,24 @@ use syn::{
 
 use super::source::unsupported;
 
+pub(super) fn declaration_free(invocation: &syn::Macro) -> bool {
+    [
+        "include_str",
+        "include_bytes",
+        "env",
+        "option_env",
+        "concat",
+        "stringify",
+        "line",
+        "column",
+        "file",
+        "module_path",
+        "cfg",
+    ]
+    .iter()
+    .any(|name| invocation.path.is_ident(name))
+}
+
 /// A block-local item has no module-level owner identity.
 struct Nested<'file> {
     /// Physical file for diagnostics.
@@ -26,22 +44,7 @@ impl<'ast> Visit<'ast> for Nested<'_> {
             }
             return;
         }
-        if [
-            "include_str",
-            "include_bytes",
-            "env",
-            "option_env",
-            "concat",
-            "stringify",
-            "line",
-            "column",
-            "file",
-            "module_path",
-            "cfg",
-        ]
-        .iter()
-        .any(|name| i.path.is_ident(name))
-        {
+        if declaration_free(i) {
             return;
         }
         let candidates = self
@@ -155,6 +158,55 @@ mod tests {
     use std::io;
 
     use crate::declarations::declarations;
+
+    /// Every trusted builtin requires an unshadowed lexical binding, not its spelling.
+    #[test]
+    fn shadowed_builtins_cannot_hide_password_owners() -> Result<(), io::Error> {
+        for name in [
+            "stringify",
+            "include_bytes",
+            "include_str",
+            "env",
+            "option_env",
+            "concat",
+            "line",
+            "column",
+            "file",
+            "module_path",
+            "cfg",
+        ] {
+            let source = format!(
+                "macro_rules! {name} {{ () => {{{{ #[derive(Debug)] struct Owner {{ password: Vec<u8> }} Owner {{ password: vec![65; 16] }} }}}}; }}\npub fn make() -> impl core::fmt::Debug {{ {name}!() }}"
+            );
+            let result = declarations("src/builtin.rs", &source);
+            assert!(result.is_err(), "shadowed {name} hid owner: {result:?}");
+            let error = result
+                .err()
+                .ok_or_else(|| io::Error::other("builtin admitted"))?;
+            assert!(error.to_string().contains("src/builtin.rs:2:"), "{error}");
+        }
+        for source in [
+            "use external::owners as stringify; pub fn make() { stringify!(); }",
+            "pub fn make() { stringify!(); use external::owners as stringify; }",
+            "#[macro_use] extern crate external; pub fn make() { stringify!(); }",
+            "mod child { use external::*; pub fn make() { stringify!(); } }",
+        ] {
+            let result = declarations("src/builtin.rs", source);
+            assert!(
+                matches!(result, Err(error) if error.to_string().contains("src/builtin.rs:1:")),
+                "{source}"
+            );
+        }
+        for source in [
+            "pub fn make() { stringify!(Owner); }",
+            "pub fn make() { stringify!(Owner); } macro_rules! stringify { () => {} }",
+            "mod child { use external::owners as stringify; } pub fn make() { stringify!(Owner); }",
+            "pub fn make() { { use external::owners as stringify; } stringify!(Owner); }",
+        ] {
+            drop(declarations("src/builtin.rs", source)?);
+        }
+        Ok(())
+    }
 
     /// Expression generators cannot conceal credential-bearing local owners.
     #[test]
