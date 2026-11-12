@@ -250,3 +250,6 @@ is a parity feature, not a defect>`.
 | executor:todo-83#intermediate-state-premises | FU-DOC-R32 | no |
 | executor:todo-83#gate-claims-without-baseline | FU-DOC-R33 | no |
 | executor:todo-83#false-baseline-explanations | FU-DOC-R34 | no |
+| executor:todo-85#mirrored-premises | FU-DOC-R35 | no |
+| executor:todo-85#intermediate-state-remain-claims | FU-DOC-R36 | no |
+| executor:todo-85#gate-contrast-clauses | FU-DOC-R37 | no |
