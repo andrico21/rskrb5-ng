@@ -1533,10 +1533,7 @@ impl Tokio {
                 process_tgs_rep_with_referral(&request, &response, current_tgt.session_key())?;
 
             if principal_matches(&ticket.service, &service) {
-                return Ok(ReferralTgsResult {
-                    ticket,
-                    referral_tgts,
-                });
+                return Ok(ReferralTgsResult::new(ticket, referral_tgts));
             }
 
             let referred_realm =

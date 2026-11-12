@@ -848,9 +848,9 @@ pub type TgsRepSession = AsRepSession;
 #[non_exhaustive]
 pub struct ReferralTgsResult {
     /// Final service ticket.
-    pub ticket: TgsRepSession,
+    ticket: TgsRepSession,
     /// Intermediate referral TGTs acquired while reaching the service realm.
-    pub referral_tgts: Vec<AsRepSession>,
+    referral_tgts: Vec<AsRepSession>,
 }
 impl ReferralTgsResult {
     /// Adopt the final ticket and referral owners without copying credential bytes.
@@ -861,6 +861,31 @@ impl ReferralTgsResult {
             ticket,
             referral_tgts,
         }
+    }
+
+    /// Borrow the final service ticket.
+    #[inline]
+    #[must_use]
+    pub const fn ticket(&self) -> &TgsRepSession {
+        &self.ticket
+    }
+
+    /// Borrow the intermediate referral TGTs acquired while reaching the service realm.
+    #[inline]
+    #[must_use]
+    pub const fn referral_tgts(&self) -> &[AsRepSession] {
+        self.referral_tgts.as_slice()
+    }
+
+    /// Transfer the final service ticket and the referral TGTs to the caller.
+    #[inline]
+    #[must_use]
+    pub fn into_parts(self) -> (TgsRepSession, Vec<AsRepSession>) {
+        let Self {
+            ticket,
+            referral_tgts,
+        } = self;
+        (ticket, referral_tgts)
     }
 }
 /// Runtime-neutral boundary for KDC request/response transport.
@@ -2371,10 +2396,10 @@ impl Tokio {
                 self.tgs_req_options()?,
             )
             .await?;
-        for referral_tgt in result.referral_tgts {
+        let (ticket, referral_tgts) = result.into_parts();
+        for referral_tgt in referral_tgts {
             self.cache_tgt_session(referral_tgt)?;
         }
-        let ticket = result.ticket;
         self.cache_service_ticket(ticket.clone())?;
         Ok(ticket)
     }

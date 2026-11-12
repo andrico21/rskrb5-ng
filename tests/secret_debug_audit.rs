@@ -135,7 +135,7 @@ mod tests {
     use core::cell::RefCell;
     use std::{env, fs, io, path::Path, process};
 
-    use super::inventory::{inspect, secret_field, secret_owners, session_storage};
+    use super::inventory::{inspect, secret_field, secret_owners};
 
     std::thread_local! {
         static EXERCISED: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
@@ -367,7 +367,7 @@ mod tests {
             for owner in owners.iter().filter(|owner| owner.identity == method.owner) {
                 for (field, _, ty) in &owner.fields {
                     if replaced.contains(field)
-                        && (secret_field(field, ty) || session_storage(ty))
+                        && secret_field(field, ty)
                         && !super::nonsecret::contains(&owner.identity, field)
                         && !REPLACEMENT_EXCEPTIONS.iter().any(|(identity, reason)| {
                             *identity == method.identity && !reason.is_empty()
@@ -429,7 +429,7 @@ mod tests {
             .any(|declared| {
                 declared.fields.iter().any(|(field, _, ty)| {
                     field == name
-                        && (secret_field(field, ty) || session_storage(ty))
+                        && secret_field(field, ty)
                         && !super::nonsecret::contains(&declared.identity, field)
                 })
             })
