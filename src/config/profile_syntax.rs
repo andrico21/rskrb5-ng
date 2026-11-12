@@ -37,7 +37,7 @@ impl State {
         };
         let mut path: Vec<String> = self.scopes.iter().map(|scope| scope.name.clone()).collect();
         path.push(marker(tag).0.to_owned());
-        local_mapping(&path) && !matches!(raw.trim(), "" | "{")
+        local_mapping(&path) && !matches!(raw.trim_matches(tag_whitespace), "" | "{")
     }
 
     /// Whether include ordering needs a suffix lookahead to resolve an empty scalar.
@@ -83,7 +83,7 @@ impl State {
         if line
             .text
             .split_once('=')
-            .is_some_and(|(_, value)| value.trim().is_empty())
+            .is_some_and(|(_, value)| value.trim_matches(tag_whitespace).is_empty())
             && self.scopes.first().is_some_and(|scope| {
                 !matches!(
                     scope.name.as_str(),
@@ -156,7 +156,7 @@ impl State {
         path.push(key.clone());
         let discarded =
             self.scopes.iter().any(|scope| scope.discarded) || profile.child_closed(&path);
-        let value = raw.trim();
+        let value = raw.trim_matches(tag_whitespace);
         if value == "{"
             || (value.is_empty()
                 && matches!(section, "realms" | "appdefaults" | "plugins" | "capaths"))

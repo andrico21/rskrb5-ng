@@ -8,7 +8,7 @@ use super::super::Error;
 /// # Errors
 /// Rejects malformed, negative-total and overflowing signed-32-bit intervals.
 pub(crate) fn parse(input: &str) -> Result<Duration, Error> {
-    let text = input.trim();
+    let text = input.trim_matches(super::super::profile_syntax::tag_whitespace);
     let (first, rest) = number(text).ok_or_else(|| Error::InvalidDuration(input.to_owned()))?;
     let seconds = if rest.is_empty() {
         first
@@ -86,7 +86,9 @@ fn units(first: i32, text: &str) -> Option<i32> {
         }
         total = total.checked_add(value.checked_mul(multiplier)?)?;
         previous = rank;
-        remaining = remaining.get(1..)?.trim_start();
+        remaining = remaining
+            .get(1..)?
+            .trim_start_matches(super::super::profile_syntax::tag_whitespace);
         if remaining.is_empty() {
             return Some(total);
         }

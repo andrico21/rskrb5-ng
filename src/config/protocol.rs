@@ -33,7 +33,9 @@ pub(super) fn recognized(key: &str) -> bool {
 #[inline]
 pub fn relation(raw_key: &str, raw_value: &str) -> Result<(), Error> {
     let key = raw_key.trim_end_matches('*').to_ascii_lowercase();
-    let value = raw_value.trim().trim_matches('"');
+    let value = raw_value
+        .trim_matches(super::profile_syntax::tag_whitespace)
+        .trim_matches('"');
     let disabled = (value.is_empty() || parse_boolean(value).is_ok_and(|enabled| !enabled))
         && !matches!(key.as_str(), "kpasswd_version" | "kpasswd_protocol");
     if disabled {

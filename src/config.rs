@@ -1463,7 +1463,11 @@ pub fn parse_duration(value: &str) -> Result<Duration, Error> {
 /// The existing gokrb5 `f` spelling remains a compatible extension.
 #[inline]
 pub fn parse_boolean(value: &str) -> Result<bool, Error> {
-    match value.trim().to_ascii_lowercase().as_str() {
+    match value
+        .trim_matches(profile_syntax::tag_whitespace)
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "1" | "t" | "true" | "y" | "yes" | "on" => Ok(true),
         "0" | "f" | "false" | "n" | "no" | "nil" | "off" => Ok(false),
         _ => Err(Error::InvalidBoolean(value.to_owned())),
@@ -1912,8 +1916,8 @@ fn parse_i32(value: &str, line: &Line, key: &str) -> Result<i32, Error> {
 fn parse_i32_list(value: &str, line: &Line, key: &str) -> Result<Vec<i32>, Error> {
     value
         .split([',', ' ', '\t'])
-        .filter(|part| !part.trim().is_empty())
-        .map(|part| parse_i32(part.trim(), line, key))
+        .filter(|part| !part.trim_matches(profile_syntax::tag_whitespace).is_empty())
+        .map(|part| parse_i32(part.trim_matches(profile_syntax::tag_whitespace), line, key))
         .collect()
 }
 
@@ -1973,11 +1977,15 @@ impl<'line> IncludeDirective<'line> {
         if let Some(rest) = line.strip_prefix("includedir")
             && starts_with_whitespace(rest)
         {
-            return Some(Self::Directory(rest.trim()));
+            return Some(Self::Directory(
+                rest.trim_matches(profile_syntax::tag_whitespace),
+            ));
         }
         let rest = line.strip_prefix("include")?;
         if starts_with_whitespace(rest) {
-            return Some(Self::File(rest.trim()));
+            return Some(Self::File(
+                rest.trim_matches(profile_syntax::tag_whitespace),
+            ));
         }
         None
     }
@@ -2087,7 +2095,8 @@ impl IncludeExpansion {
                             #[cfg(test)]
                             fork_tests::LOOKAHEAD_SCANS
                                 .with(|count| count.set(count.get().saturating_add(1)));
-                            profile_syntax::comments(text).trim()
+                            profile_syntax::comments(text)
+                                .trim_matches(profile_syntax::tag_whitespace)
                         })
                         .find(|text| !text.is_empty() && IncludeDirective::parse(text).is_none())
                         == Some("{");

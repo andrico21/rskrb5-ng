@@ -61,6 +61,8 @@ mod mutation_values;
 #[path = "config/mutation_core.rs"]
 mod mutation_core;
 
+#[path = "config/value_whitespace.rs"]
+mod value_whitespace;
 #[path = "config/whitespace.rs"]
 mod whitespace;
 

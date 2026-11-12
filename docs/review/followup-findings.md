@@ -195,6 +195,8 @@ is a parity feature, not a defect>`.
 | executor:todo-16#transit-validator-rustdoc | FU-DOC-R02 | no |
 | critic:critics-62709b5/u5.md#U5-01 | FU-CFG-R21 | no |
 | critic:critics-62709b5/u5.md#U5-02 | FU-CFG-R22 | no |
+| critic:critics-6b9d5f0/u5.md#U5-01 | FU-CFG-R23 | no |
+| critic:critics-6b9d5f0/u5.md#U5-02 | FU-CFG-R24 | no |
 | critic:critics-62709b5/u2.md#U2-01 | FU-TST-R47 | no |
 | critic:critics-62709b5/u2.md#U2-02 | FU-TST-R48 | no |
 | critic:critics-62709b5/u2.md#U2-03 | FU-TST-R49 | no |

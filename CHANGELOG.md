@@ -16,6 +16,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 - Derive packaged heading fragments from parsed inline text, including entities
   and Setext headings; refuse unsupported anchor shapes. Require parser
   installation before every admitted importer in CI (FU-CI-R15, FU-CI-R16).
+- Preserve Unicode profile value and include/includedir path bytes with one
+  C-locale padding predicate; distinguish scalar data from subsection syntax
+  and keep exact included-source policy admission (FU-CFG-R23, FU-CFG-R24).
 - Collect package links with a hash-pinned CommonMark parser, preserving
   destination backticks, Unicode filenames and raw HTML attributes; reject
   unclassifiable destinations (FU-CI-R12, FU-CI-R13, FU-CI-R14).
