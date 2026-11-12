@@ -322,45 +322,31 @@ mod tests {
             })
             .chain(super::replacement_registry::DELEGATIONS.iter().copied())
             .collect::<Vec<_>>();
+        let secret = |candidate: &super::replacement::Method, name: &str| {
+            credential_storage(&owners, &candidate.owner, name)
+        };
         let mut failures = Vec::new();
         for method in &methods {
-            let replaced = super::replacement::replaced_fields(&method);
-            if names.contains(&method.owner) && !replaced.is_empty() {
-                for owner in owners.iter().filter(|owner| owner.identity == method.owner) {
-                    for (field, _, ty) in &owner.fields {
-                        if replaced.contains(field)
-                            && secret_field(field, ty)
-                            && !super::nonsecret::contains(&owner.identity, field)
-                            && !REPLACEMENT_EXCEPTIONS.iter().any(|(identity, reason)| {
-                                *identity == method.identity && !reason.is_empty()
-                            })
-                        {
-                            if let Err(error) = super::replacement_certification::validate(
-                                method,
-                                &methods,
-                                &certificates,
-                                &|candidate, name| {
-                                    owners
-                                        .iter()
-                                        .filter(|declared| declared.identity == candidate.owner)
-                                        .any(|declared| {
-                                            declared.fields.iter().any(
-                                                |(declared_field, _, declared_ty)| {
-                                                    declared_field == name
-                                                        && secret_field(declared_field, declared_ty)
-                                                        && !super::nonsecret::contains(
-                                                            &declared.identity,
-                                                            declared_field,
-                                                        )
-                                                },
-                                            )
-                                        })
-                                },
-                            ) {
-                                failures
-                                    .push(format!("{} replaces {field}: {error}", method.identity));
-                            }
-                        }
+            let replaced = super::replacement::replaced_fields(method);
+            if !names.contains(&method.owner) || replaced.is_empty() {
+                continue;
+            }
+            for owner in owners.iter().filter(|owner| owner.identity == method.owner) {
+                for (field, _, ty) in &owner.fields {
+                    if replaced.contains(field)
+                        && secret_field(field, ty)
+                        && !super::nonsecret::contains(&owner.identity, field)
+                        && !REPLACEMENT_EXCEPTIONS.iter().any(|(identity, reason)| {
+                            *identity == method.identity && !reason.is_empty()
+                        })
+                        && let Err(error) = super::replacement_certification::validate(
+                            method,
+                            &methods,
+                            &certificates,
+                            &secret,
+                        )
+                    {
+                        failures.push(format!("{} replaces {field}: {error}", method.identity));
                     }
                 }
             }
@@ -371,6 +357,20 @@ mod tests {
             failures.join("\n")
         );
         Ok(())
+    }
+
+    /// Whether `name` is credential storage of the declared owner `identity`.
+    fn credential_storage(owners: &[super::inventory::Owner], identity: &str, name: &str) -> bool {
+        owners
+            .iter()
+            .filter(|declared| declared.identity == identity)
+            .any(|declared| {
+                declared.fields.iter().any(|(field, _, ty)| {
+                    field == name
+                        && secret_field(field, ty)
+                        && !super::nonsecret::contains(&declared.identity, field)
+                })
+            })
     }
 
     /// Reviewed operations that do not destroy retained secret bytes.

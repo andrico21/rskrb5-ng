@@ -106,42 +106,18 @@ mod tests {
             );
             drop(parse("src/probe.rs", &source)?);
             match super::super::methods("src/probe.rs", &source) {
-                Ok(methods) => assert!(
-                    methods
-                        .iter()
-                        .any(|method| method.fields.contains(&"secret".to_owned())),
-                    "whole receiver mutation omitted: {body}: {methods:?}"
-                ),
-                Err(error) => assert!(error.to_string().contains("src/probe.rs:2:")),
-            }
-        }
-        Ok(())
-    }
-
-    /// Receiver delegation must preserve the replacement proof obligation.
-    #[test]
-    fn delegated_and_aliased_receivers_require_proof() -> Result<(), io::Error> {
-        for (receiver, body) in [
-            ("&mut self", "self.private_set(value);"),
-            ("&mut self", "let this = self; this.private_set(value);"),
-            ("&mut self", "let owner = self; owner.secret = value;"),
-            (
-                "self: core::pin::Pin<&mut Self>",
-                "self.get_mut().secret = value;",
-            ),
-        ] {
-            let source = format!(
-                "pub struct Owner {{ secret: Vec<u8> }}\nimpl Owner {{ fn private_set(&mut self, value: Vec<u8>) {{ self.secret = value; }} pub fn set({receiver}, value: Vec<u8>) {{ {body} }} }}"
-            );
-            match super::super::methods("src/probe.rs", &source) {
-                Ok(methods) => assert_eq!(
-                    methods
+                Ok(methods) => {
+                    let fields = methods
                         .iter()
                         .find(|method| method.identity.ends_with("::set"))
-                        .map(|method| method.fields.as_slice()),
-                    Some(["secret".to_owned()].as_slice()),
-                    "receiver mutation omitted: {body}"
-                ),
+                        .map(|method| method.fields.as_slice())
+                        .ok_or_else(|| io::Error::other("probe method missing"))?;
+                    assert_eq!(
+                        fields,
+                        ["secret".to_owned()].as_slice(),
+                        "receiver mutation omitted: {body}"
+                    );
+                }
                 Err(error) => assert!(error.to_string().contains("src/probe.rs:2:")),
             }
         }

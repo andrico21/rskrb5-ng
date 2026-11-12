@@ -86,17 +86,23 @@ struct Writes {
 impl Writes {
     /// Parentheses, reborrows and dereferences preserve receiver identity.
     fn receiver(&self, expression: &Expr) -> bool {
-        match expression {
-            Expr::Path(path) => {
-                path.path.is_ident("self")
-                    || self.aliases.iter().any(|name| path.path.is_ident(name))
-            }
-            Expr::Paren(value) => self.receiver(&value.expr),
-            Expr::Group(value) => self.receiver(&value.expr),
-            Expr::Unary(value) => self.receiver(&value.expr),
-            Expr::Reference(value) => self.receiver(&value.expr),
-            _ => false,
+        if let Expr::Path(path) = expression {
+            return path.path.is_ident("self")
+                || self.aliases.iter().any(|name| path.path.is_ident(name));
         }
+        if let Expr::Paren(value) = expression {
+            return self.receiver(&value.expr);
+        }
+        if let Expr::Group(value) = expression {
+            return self.receiver(&value.expr);
+        }
+        if let Expr::Unary(value) = expression {
+            return self.receiver(&value.expr);
+        }
+        if let Expr::Reference(value) = expression {
+            return self.receiver(&value.expr);
+        }
+        false
     }
 
     /// Only receiver fields count, not unrelated object members.
@@ -174,14 +180,19 @@ impl<'ast> Visit<'ast> for Writes {
             .init
             .as_ref()
             .is_some_and(|init| self.receiver(&init.expr));
-        if let syn::Pat::Ident(binding) = &i.pat {
-            self.aliases
-                .retain(|name| *name != binding.ident.to_string());
+        let binding = if let syn::Pat::Ident(binding) = &i.pat {
+            Some(binding)
+        } else {
+            None
+        };
+        if let Some(named) = binding {
+            self.aliases.retain(|name| named.ident != *name);
             if aliases_receiver {
-                self.aliases.push(binding.ident.to_string());
+                self.aliases.push(named.ident.to_string());
                 return;
             }
-        } else if aliases_receiver && self.mutable_receiver {
+        }
+        if binding.is_none() && aliases_receiver && self.mutable_receiver {
             self.opaque = Some(i.let_token.span);
         }
         visit::visit_local(self, i);
@@ -332,21 +343,19 @@ fn parsed_methods(
                             "unresolved receiver type",
                         ));
                     }
-                    let mutable_receiver =
-                        function
-                            .sig
-                            .receiver()
-                            .is_some_and(|receiver| match &receiver.kind {
-                                syn::ReceiverKind::Reference(_, _, mutability) => {
-                                    mutability.is_some()
-                                }
-                                syn::ReceiverKind::Typed(_, ty) => match &**ty {
-                                    Type::Reference(reference) => reference.mutability.is_some(),
-                                    _ => true,
-                                },
-                                syn::ReceiverKind::Value => false,
-                                _ => false,
-                            });
+                    let mutable_receiver = function.sig.receiver().is_some_and(|receiver| {
+                        if let syn::ReceiverKind::Reference(_, _, mutability) = &receiver.kind {
+                            return mutability.is_some();
+                        }
+                        if let syn::ReceiverKind::Typed(_, ty) = &receiver.kind {
+                            return if let Type::Reference(reference) = &**ty {
+                                reference.mutability.is_some()
+                            } else {
+                                true
+                            };
+                        }
+                        false
+                    });
                     let mut writes = Writes {
                         fields: Vec::new(),
                         opaque: None,

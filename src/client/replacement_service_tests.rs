@@ -18,7 +18,10 @@ use tokio::{
 use super::TestError;
 use crate::{
     Config, ap_req,
-    client::{AsRepSession, Principal, Tokio, principal_to_rasn, transport::KdcProtocol},
+    client::{
+        AsRepSession, Principal, Tokio, principal_to_rasn, service_cache_key,
+        transport::KdcProtocol,
+    },
     crypto::AesSha1Etype,
     keytab::EncryptionKey,
     ticket,
@@ -39,7 +42,7 @@ async fn answer_service(listener: TcpListener) -> Result<(), TestError> {
             .0
             .padata
             .as_ref()
-            .and_then(|data| data.iter().find(|value| value.r#type == 1))
+            .and_then(|data| data.iter().find(|value| value.r#type == 1_i32))
             .ok_or("AP request")?
             .value
             .as_ref(),
@@ -136,7 +139,7 @@ fn service_acquisition_replaces_expired_cached_session() -> Result<(), TestError
         };
         let old = AsRepSession::new(principal, service.clone(), EncryptionKey::new(18, vec![0x31; 32]),
             ticket::encode(&old_ticket)?.into(), [0; 4], UNIX_EPOCH, UNIX_EPOCH);
-        drop(client.service_tickets.insert(crate::client::service_cache_key(&service), old));
+        drop(client.service_tickets.insert(service_cache_key(&service), old));
         let (issued, ()) = timeout(Duration::from_secs(10), async {
             tokio::try_join!(async { client.get_service_ticket(service.clone()).await.map_err(|err| TestError::from(format!("service acquisition: {err} ({err:?})"))) }, answer_service(listener))
         }).await??;

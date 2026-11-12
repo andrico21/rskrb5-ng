@@ -68,8 +68,8 @@ fn resolve<'graph>(
         .filter(|part| !part.is_empty())
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    let mut prefix = prefix.iter().peekable();
-    while let Some(part) = prefix.peek() {
+    let mut parts = prefix.iter().peekable();
+    while let Some(part) = parts.peek() {
         match part.as_str() {
             "crate" => segments.clear(),
             "self" => {}
@@ -82,9 +82,9 @@ fn resolve<'graph>(
             }
             _ => break,
         }
-        let _segment = prefix.next();
+        let _segment = parts.next();
     }
-    segments.extend(prefix.cloned());
+    segments.extend(parts.cloned());
     let target = if segments.is_empty() {
         String::new()
     } else {
@@ -98,12 +98,20 @@ fn resolve<'graph>(
         let mut items = unit.tree.items.as_slice();
         let mut inline = Vec::new();
         for segment in suffix.split("::").filter(|segment| !segment.is_empty()) {
-            let Some(nested) = items.iter().find_map(|item| match item {
-                Item::Mod(value) if value.ident == segment => {
-                    value.content.as_ref().map(|(_, items)| items.as_slice())
+            let current = items;
+            let found = current.iter().find_map(|item| {
+                if let Item::Mod(value) = item
+                    && value.ident == segment
+                {
+                    value
+                        .content
+                        .as_ref()
+                        .map(|(_, content)| content.as_slice())
+                } else {
+                    None
                 }
-                _ => None,
-            }) else {
+            });
+            let Some(nested) = found else {
                 items = &[];
                 break;
             };
@@ -111,21 +119,22 @@ fn resolve<'graph>(
             items = nested;
         }
         for item in items {
-            match item {
-                Item::Struct(value) if value.ident == name => {
-                    inline.push(name);
-                    return Ok(Some((&unit.path, inline.join("::"))));
-                }
-                Item::Enum(value) if value.ident == name => {
-                    inline.push(name);
-                    return Ok(Some((&unit.path, inline.join("::"))));
-                }
-                Item::Use(value) => {
-                    if let Some(imported) = import(&value.tree, name, Vec::new()) {
-                        return resolve(graph, &target, &imported, depth.saturating_add(1));
-                    }
-                }
-                _ => {}
+            if let Item::Struct(value) = item
+                && value.ident == name
+            {
+                inline.push(name);
+                return Ok(Some((&unit.path, inline.join("::"))));
+            }
+            if let Item::Enum(value) = item
+                && value.ident == name
+            {
+                inline.push(name);
+                return Ok(Some((&unit.path, inline.join("::"))));
+            }
+            if let Item::Use(value) = item
+                && let Some(imported) = import(&value.tree, name, Vec::new())
+            {
+                return resolve(graph, &target, &imported, depth.saturating_add(1));
             }
         }
     }
@@ -149,7 +158,7 @@ fn import(tree: &UseTree, name: &str, mut prefix: Vec<String>) -> Option<Vec<Str
         UseTree::Group(group) => group
             .items
             .iter()
-            .find_map(|tree| import(tree, name, prefix.clone())),
+            .find_map(|inner| import(inner, name, prefix.clone())),
         UseTree::Name(_) | UseTree::Rename(_) | UseTree::Glob(_) => None,
     }
 }

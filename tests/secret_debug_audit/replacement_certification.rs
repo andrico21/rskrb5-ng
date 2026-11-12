@@ -7,6 +7,8 @@ use super::replacement::Method;
 /// Classifies one owner field as credential storage; other writes need no proof.
 pub(super) type Secret<'secret> = &'secret dyn Fn(&Method, &str) -> bool;
 
+/// # Errors
+/// Returns the first missing, mismatched, cyclic or direct-write proof obligation.
 pub(super) fn validate(
     method: &Method,
     methods: &[Method],
@@ -16,6 +18,8 @@ pub(super) fn validate(
     check(method, methods, proofs, secret, &mut Vec::new())
 }
 
+/// # Errors
+/// Returns the proof obligation that the method fails to meet.
 fn check(
     method: &Method,
     methods: &[Method],
@@ -131,11 +135,11 @@ mod tests {
             "src/probe.rs",
             "pub struct Owner { secret: Vec<u8> }\nimpl Owner { fn write(&mut self) { self.secret.clear(); } pub fn wrap(&mut self) { self.secret = vec![]; self.write(); } }",
         )?;
-        let wrapper = changed
+        let edited = changed
             .iter()
             .find(|method| method.identity.ends_with("::wrap"))
             .ok_or_else(|| io::Error::other("changed wrapper"))?;
-        assert!(super::validate(wrapper, &changed, &proofs, &secret).is_err());
+        assert!(super::validate(edited, &changed, &proofs, &secret).is_err());
         let changed_edge = replacement::methods(
             "src/probe.rs",
             "pub struct Owner { secret: Vec<u8> } impl Owner { fn write(&mut self) { self.secret.clear(); } fn other(&mut self) { self.secret.clear(); } pub fn wrap(&mut self) { self.other(); } }",
