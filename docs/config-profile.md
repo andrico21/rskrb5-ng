@@ -455,11 +455,11 @@ is diagnostic WP-11 metadata, **not** active routing or transited validation.
 Existing acceptor behavior still requires explicit caller transit policy for
 cross-realm acceptance; callers do not acquire that policy by parsing capaths.
 
-`Config::plugins` holds per-interface repeated disable/enable_only names.
-No plugin registry or loading is introduced. Controls that would disable the
+`Config::plugins` holds per-interface repeated disable/enable_only names. No
+plugin registry or loading is introduced. Controls that would disable the
 existing encrypted-timestamp mechanism (`clpreauth` disable encrypted_timestamp
 or enable_only excluding it) fail closed. Controls for unavailable mechanisms
-are diagnostic. `module` remains `UnsupportedDynamicModule` in every mode.
+are diagnostic. `module` is `UnsupportedDynamicModule` in every mode.
 Server-only `[kdcdefaults]`, `[dbmodules]`, `[logging]` headers, including empty
 sections, construct `ConfigDiagnostic::ServerOnly` in production and error in
 Strict mode. No server configuration is acted upon.

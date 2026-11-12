@@ -16,7 +16,7 @@ The schedule/dispatch-only advisory jobs do not exempt `docs-validate`.
 Package documentation with unmatched or escaped backticks does not hide later
 relative links from the package gate (FU-CI-R05). Fix any newly reported target
 rather than relying on malformed code-span delimiters. Real equal-length code
-spans still suppress link syntax, including multiline spans within one block;
+spans suppress link syntax, including multiline spans within one block;
 backslashes inside code spans are literal under CommonMark.
 
 When maintaining parity manifests, cite symbols enabled by at least one resolved
@@ -57,10 +57,9 @@ permissions and parse mode and rejected by name if any entry is outside the
 permitted set; no intersection silently removes entries. Parsed implicit
 request defaults continue to inherit the permitted list. Programmatic callers
 setting a narrower permitted list must also set compatible request lists
-(FU-CLI-R18).
-Client admission preserves permanent `Policy::RejectedFeature` causes through
-`Error::source`, and ordinary configuration failures retain their named
-`error::Config` cause rather than becoming `InvalidConfiguration` (FU-CLI-R19).
+(FU-CLI-R18). Client admission preserves permanent `Policy::RejectedFeature`
+causes through `Error::source`, and ordinary configuration failures retain
+their named `error::Config` cause (FU-CLI-R19).
 
 Raw AS, TGS and KDC-request-body encoders reject permanently prohibited numeric
 requested enctypes, including single DES and RC4-EXP. Passive decoding remains
@@ -76,15 +75,14 @@ not select it. This diagnostic policy is stricter than MIT's profile getter,
 which simply finds no relation in an empty subsection.
 
 Principal keys such as `krb4_get_tickets` or `pkinit_draft9` inside a realm's
-`auth_to_local_names` map now parse as names rather than protocol selections
-(FU-CFG-R13). Their case and first mapping value are retained. The exemption is
-limited to that exact mapping path; enabled protocol selectors elsewhere,
-including discarded scopes, still fail permanently. Local authorization remains
-deferred to WP-17 and Strict mode still rejects its diagnostic.
+`auth_to_local_names` map now parse as names (FU-CFG-R13). Their case and first
+mapping value are retained. The exemption is limited to that exact mapping
+path; enabled protocol selectors elsewhere, including discarded scopes, fail
+permanently. Local authorization is deferred to WP-17 and Strict mode rejects
+its diagnostic.
 
-A local principal literally named `module` in that exact map is now mapping
-data rather than `UnsupportedDynamicModule` (FU-CFG-R16); real `module`
-declarations elsewhere are still rejected.
+A local principal literally named `module` in that exact map is mapping data
+(FU-CFG-R16); real `module` declarations elsewhere are rejected.
 
 Two `[libdefaults]` flags gate the legacy enctypes. Both default to false,
 independently of `allow_weak_crypto`:
@@ -328,11 +326,11 @@ Admission expires records through an ordered expiry index and no longer
 scans the live digest table (FU-SVC-04); each client principal is limited to a
 share of the capacity ("Replay cache" under the follow-up changes).
 
-Explicit `clear`/`force_clear_older_than*` remain administrative overrides that can erase
-live replay protection. Do not schedule aggressive pruning; automatic admission
-now maintains expiry. Replace caches only with service downtime lasting at least
-the replay window; creating a fresh cache or restarting still loses in-memory
-evidence. Capacity bounds records, not principal-string bytes or allocator RSS.
+Explicit `clear`/`force_clear_older_than*` are administrative overrides that can erase
+live replay protection. Do not schedule aggressive pruning; automatic admission now
+maintains expiry. Replace caches only with service downtime lasting at least the replay
+window; creating a fresh cache or restarting still loses in-memory evidence. Capacity
+bounds records, not principal-string bytes or allocator RSS.
 
 ### Mandatory authorization-data policy (RSK-D1D6BDC3)
 
@@ -367,11 +365,11 @@ KDC-checked tickets and same-realm tickets with an empty path are
 unaffected; since FU-SVC-10 a same-realm ticket with a nonempty unchecked
 path also needs the KDC check or an accepting policy.
 
-**Active Directory:** MS-KILE §3.1.5.4 does not set this flag, so cross-domain
-and forest-trust tickets require explicit policy; the secure default is unchanged.
-Use `Arc::new(service::TransitPolicy::direct("USER.REALM", "SERVICE.REALM"))`
-with either builder for a trusted direct endpoint pair (type 1, empty contents).
-For indirect tickets, `TransitPolicy::domain_x500_paths(client, service, paths)`
+**Active Directory:** MS-KILE §3.1.5.4 does not set this flag, so cross-domain and
+forest-trust tickets require explicit policy; rejection is the secure default. Use
+`Arc::new(service::TransitPolicy::direct("USER.REALM", "SERVICE.REALM"))` with
+either builder for a trusted direct endpoint pair (type 1, empty contents). For
+indirect tickets, `TransitPolicy::domain_x500_paths(client, service, paths)`
 accepts an allow-list of exact complete DOMAIN-X500-COMPRESS encoded byte paths,
 not individual realms. For example, `[b"TRUSTED.REALM".as_slice()]` trusts only
 that complete path; a path containing an extra untrusted realm is rejected.
@@ -426,8 +424,8 @@ The low-level `authenticator_checksum` helper returns a 24-byte prefix for every
 flag representation, not a complete delegation checksum. It no longer appends four
 zero bytes for a standalone delegation flag. A caller building delegation manually
 must append DlgOpt=1, a little-endian length and the encrypted KRB-CRED specified by
-RFC 4121 section 4.1.1. Acceptor framing validation is unchanged and does not import
-delegated credentials.
+RFC 4121 section 4.1.1. The acceptor does not import delegated credentials; its
+framing checks are described in the next section.
 
 ### Mandatory GSS authenticator fields (RSK-FAF64A85)
 
@@ -446,18 +444,18 @@ unknown flags and extensions, and does not import delegated credentials.
 
 ### SPNEGO acceptor negotiation (RSK-C4BE57A0)
 
-`AcceptedContext::selected_mechanism` records the first offered Kerberos OID,
-echoed as SPNEGO `supportedMech`. The additive `token_mechanism` field preserves
-the optimistic token's OID for the inner AP-REP `thisMech`. Both standard and
-Microsoft legacy OIDs identify the same mechanism, including raw Kerberos headers.
-An MS-KRB5-first offer with a standard Kerberos AP-REQ and no MIC is accepted,
-as sent by Windows SSPI. Its reply uses MS-KRB5 `supportedMech` and standard
-`thisMech`, matching MIT and MS-SPNG; equal offer/token OIDs are unchanged.
-Only a non-Kerberos first preference (such as NTLM) requires a valid RFC 4121 MIC.
-A supplied first-choice MIC still verifies. Handle `error::Spnego::MissingMechListMic`
-and `InvalidMechListMic`; unsupported mechanisms return `UnsupportedMechanism`.
-The unconstructed `error::Spnego::OptimisticMechanismMismatch` variant was removed
-before 0.3.0 release; it never existed in 0.2.2.
+`AcceptedContext::selected_mechanism` records the first offered Kerberos OID, echoed
+as SPNEGO `supportedMech`. The additive `token_mechanism` field preserves the
+optimistic token's OID for the inner AP-REP `thisMech`. Both standard and Microsoft
+legacy OIDs identify the same mechanism, including raw Kerberos headers. An
+MS-KRB5-first offer with a standard Kerberos AP-REQ and no MIC is accepted, as sent by
+Windows SSPI. Its reply uses MS-KRB5 `supportedMech` and standard `thisMech`, matching
+MIT and MS-SPNG; equal offer/token OIDs are unchanged. Only a non-Kerberos first
+preference (such as NTLM) requires a valid RFC 4121 MIC. A supplied first-choice MIC
+is verified. Handle `error::Spnego::MissingMechListMic` and `InvalidMechListMic`;
+unsupported mechanisms return `UnsupportedMechanism`. The unconstructed
+`error::Spnego::OptimisticMechanismMismatch` variant was removed before 0.3.0 release;
+it never existed in 0.2.2.
 
 The additive `AcceptedContext::mech_types_der` field retains the exact received
 list TLV when a MIC verified. AP-REP response helpers include a reciprocal MIC
@@ -474,10 +472,10 @@ increment it. The no-MIC first-choice AP-REP encoding is unchanged.
 Only RFC 4121 MIC tokens with AES session enctypes are supported for mechListMIC.
 RC4 (RFC 4757) and DES3 (RFC 1964) MIC formats fail closed as `InvalidMechListMic`.
 
-All `NegTokenResp` continuations still return `NegotiationRequiresState`: they
-lack the original offer and prior key/MIC phase. A peer needing a request-mic
-round trip must use a stateful implementation. The keyless extraction helpers
-`NegTokenInit::krb5_ap_req` and `Token::krb5_ap_req` retain
+All `NegTokenResp` continuations return `NegotiationRequiresState`: they lack
+the original offer and prior key/MIC phase. A peer needing a request-mic round
+trip must use a stateful implementation. The keyless extraction helpers
+`NegTokenInit::krb5_ap_req` and `Token::krb5_ap_req` return
 `MechListMicRequiresState` for supplied MICs; use `accept_sec_context_header`
 for cryptographic verification. Decoding alone never authenticates negotiation.
 
@@ -495,8 +493,8 @@ protected ticket/evidence identity mismatches return `DelegationPrincipalMismatc
 Password mutation failures after possible delivery return exactly one
 `Client::KpasswdOutcomeUnknown(Box<Client>)`, preserving the underlying cause.
 Pre-send encoding, discovery and connection failures retain their definite error
-classes and may be retried safely. Malformed replies remain unknown outcomes.
-It does not mean rejection or rollback: reconcile with a fresh login before
+classes and may be retried safely. Malformed replies are unknown outcomes. It
+does not mean rejection or rollback: reconcile with a fresh login before
 retrying. Dropping a mutation future returns no error at all; the caller must
 record unknown externally. Confirmed server rejection remains a normal result
 failure. Async Negotiate wrappers preserve this error and the same cancellation
@@ -1141,8 +1139,9 @@ matching empty and nonempty streams remain accepted.
 #### Configuration
 
 Address aliases (FU-CFG-R01): the first occurrence of either `no_addresses`
-or `noaddresses` wins. A final marker on either spelling closes both; an
-initial false value cannot be repaired by a later true alias.
+or `noaddresses` wins (v0.2.2: the last). A final marker on either spelling
+closes both; an initial false value cannot be repaired by a later true
+alias.
 
 Quoted values (FU-CFG-R02): v0.2.2 had no quote handling, so
 `default_realm = "EXAMPLE.COM"` kept the quotes in the value and a backslash
@@ -1194,19 +1193,18 @@ Permanent rejection now checks the decoded scalar before composition discards it
 
 Timestamp restriction diagnostics (FU-CFG-R07): the deferred package for
 `disable_encrypted_timestamp` is now `plan 2 WP-07` for runtime/serde admission,
-matching text parsing. Plugin `disable` and `enable_only` remain WP-16.
+matching text parsing. Plugin `disable` and `enable_only` are WP-16.
 
 Profile braces (FU-CFG-R08): `name =` followed by `{` has the same subsection
 meaning as `name = {` in every section, matching MIT's generic profile grammar.
-Unknown and deferred sections reach their normal diagnostics instead of a
-brace syntax error. Quoted empty strings remain scalars; the existing unquoted
-empty-scalar extension remains available outside mandatory subsection sections
-when no brace follows.
+Unknown and deferred sections reach their normal diagnostics. Quoted empty
+strings are scalars; the existing unquoted empty-scalar extension remains
+available outside mandatory subsection sections when no brace follows.
 
 Realm restriction values (FU-CFG-R09): `disable_encrypted_timestamp` accepts only
-`Value::Boolean(Toggle::Disabled)` or an absent entry. The enabled restriction
-remains unsupported; Text, List, Choice and Locations now return `InvalidBoolean`
-naming the relation at runtime admission and serde deserialization. Do not encode
+`Value::Boolean(Toggle::Disabled)` or an absent entry. The enabled restriction is
+unsupported; Text, List, Choice and Locations now return `InvalidBoolean` naming
+the relation at runtime admission and serde deserialization. Do not encode
 Boolean settings in the Text variant.
 
 Realm selectors (FU-CFG-R10): `Realm::relations` and programmatic
@@ -1220,8 +1218,8 @@ to a typed or programmatic map.
 Include ordering (FU-CFG-R11): an unquoted empty scalar before an `include`
 or `includedir` now wins over later values just like `""`. If the included
 value should win, remove the earlier empty assignment. The next parent
-structural line can still open a subsection after intervening includes;
-included files retain independent grammar state.
+structural line can open a subsection after intervening includes; included
+files keep independent grammar state.
 
 Include parsing (FU-CFG-R12): repeated includes rescan a comment tail only when resolving a pending scalar. This
 step changes no precedence, accepted syntax or include limit beyond the
@@ -1239,7 +1237,8 @@ KRB-ERROR UTF-8 causes (FU-API-R01): `KrbErrorCodec::InvalidString` now contains
 
 Kadmin causes (FU-API-R02): replace `Crypto { message }` matches with
 `Crypto(source)` and handle `Random(source)` separately. Both expose typed
-`Error::source()` chains; post-delivery unknown-outcome classification is unchanged.
+`Error::source()` chains; post-delivery unknown-outcome classification follows
+"Unknown password-mutation outcome" above.
 
 Client credential buffers (FU-CLI-R02): `BuiltAsReq::der`, `BuiltTgsReq::der`,
 `BuiltApReq::der`, `TgsFastRequestParts::ap_req_der` and `AsRepSession::ticket`
@@ -1360,7 +1359,8 @@ policy automatically. The key's enctype alone never grants legacy permission.
 Full-message kadmin errors (FU-TRN-R05): AP-REQ and AP-REP crypto/random failures
 now use `Kadmin::Crypto` and `Kadmin::Random`, with their original typed sources,
 rather than `Kadmin::Decode`. Update matches that previously treated encryption
-failure as malformed input; password delivery-outcome rules are unchanged.
+failure as malformed input; password delivery-outcome rules follow "Unknown
+password-mutation outcome" above.
 
 Configured transport admission (FU-TRN-R06): password and keytab configured
 AS-login helpers, including their TGT wrappers, now return the named
@@ -1380,13 +1380,13 @@ Checked derivation (FU-CRY-R02): `crypto::checked::Etype` snapshots the authoriz
 family's minimum. Counts below it now return `S2kIterationsTooLow` before PBKDF2.
 For trusted count-one vectors, construct a policy from `LibDefaults` with
 `with_min_s2k_iterations(Family::AesSha1, 1)` (or AesSha2), or use the explicitly
-policy-free raw primitive. The upper work limit still applies.
+policy-free raw primitive. The upper work limit applies.
 
 #### SPNEGO, HTTP, service and messages
 
 Request flags (FU-SPN-R18): set or clear `NegTokenInit` request flags with
-`set_req_flags(Some(bits))` or `set_req_flags(None)`; the field stays private
-and encoding still validates the BIT STRING.
+`set_req_flags(Some(bits))` or `set_req_flags(None)`; the field is private
+and encoding validates the BIT STRING.
 
 HTTP clone configuration now checks cache compatibility against the shared
 validator under its lock (FU-HTTP-R04). Handle the existing typed skew error
@@ -1430,16 +1430,16 @@ padding bits and a payload when the count is nonzero (FU-SPN-R08). Malformed
 values now return `Spnego::InvalidReqFlags` on encode and decode; `[0]` remains valid.
 
 Treat `with_ap_rep(false)` as an optional-reply preference (FU-SPN-R09). A valid
-initiator mechListMIC still receives a completion carrying a reciprocal MIC and
-the AP-REP that binds its sequence number. First-choice exchanges without a MIC
+initiator mechListMIC receives a completion carrying a reciprocal MIC and the
+AP-REP that binds its sequence number. First-choice exchanges without a MIC
 retain the no-reply behavior.
 
 Accepted-context reply policy (FU-SPN-R10): `ValidatedApReq.crypto_policy`
 retains the validator's policy. Its AP-REP builder and SPNEGO/HTTP response
 helpers reject excluded wrapping keys and server subkeys with a typed policy
 error before encoding or invoking a protected handler. Configure legacy opt-in
-and permitted membership on the validator; the default remains AES-only.
-Raw `ap_rep` codecs remain policy-free vector APIs.
+and permitted membership on the validator; the default is AES-only. Raw
+`ap_rep` codecs remain policy-free vector APIs.
 
 Token staging (FU-SPN-R11): token encoding and header parsing now erase their
 internal credential buffers, including nested DER allocations and error exits.
@@ -1447,10 +1447,10 @@ Header encoding avoids a separate base64 string. Public returned `Vec<u8>` and
 `String` signatures are unchanged; callers must still erase those returned
 credentials and their own copies after use.
 
-Reciprocal MIC policy (FU-SPN-R12): changing a validated context's initiator
-subkey does not bypass its retained policy. Supply permitted keys, or explicitly
-configure legacy permission and membership before use. An explicit acceptor
-subkey still takes precedence; completion verification also admits its selected key.
+Reciprocal MIC policy (FU-SPN-R12): changing a validated context's initiator subkey
+does not bypass its retained policy. Supply permitted keys, or explicitly configure
+legacy permission and membership before use. An explicit acceptor subkey takes
+precedence; completion verification also admits its selected key.
 
 Service reply verification (FU-SPN-R13): `ValidatedApReq::verify_ap_rep` rejects
 excluded wrapping keys and acceptor subkeys with a typed policy error. Retain
@@ -1629,11 +1629,11 @@ longer pass strict preflight; structural readiness still does not prove a live l
 
 AD preflight (FU-TST-R13): usable keytab entries must precede the zero-length
 terminator. Regenerate an override whose only key follows that terminator;
-negative-length deleted slots remain skippable, matching the Rust loader.
+negative-length deleted slots are skippable, matching the Rust loader.
 
 Parity evidence (FU-TST-R14): symbol claims must resolve to the declared module
 and actual impl owner. Comments, string contents and child-local same-named
-types cannot prove a parent method; explicit parent paths remain supported.
+types cannot prove a parent method; explicit parent paths are supported.
 
 Parity scopes (FU-TST-R15): declarations inside inline modules cannot serve as
 symbol evidence. Cite a supported out-of-line public API; private, restricted
@@ -1716,9 +1716,8 @@ and `InitiatorContextOptions`. Existing token constructors remain available for
 ## Earlier source-compatible signature changes
 
 `Tokio::{change_password, change_password_for, change_password_with_options,
-change_password_for_with_options}` first accepted a named generic
-`P: AsRef<[u8]>` instead of an `impl AsRef<[u8]>` argument. They now take a
-`client::Password` by value ("Owned passwords").
+change_password_for_with_options}` accepted an `impl AsRef<[u8]>` argument.
+They now take a `client::Password` by value ("Owned passwords").
 
 ## Signature changes
 
@@ -1768,8 +1767,8 @@ arguments using turbofish syntax.
 - `config::LibDefaults`' thirteen boolean option fields and their `with_*`
   parameters now use `config::Toggle::{Disabled, Enabled}`. Read an option with
   `is_enabled()`, or convert a boolean with `Toggle::from_bool` / `From<bool>`.
-  Both direct serde and gokrb5 JSON snapshots retain boolean representations;
-  missing `permitted_enctypes_explicit` still means disabled.
+  Both direct serde and gokrb5 JSON snapshots retain boolean representations; a
+  missing `permitted_enctypes_explicit` means disabled.
 - `config::Realm::realm` is now `name`. Serialized field names remain unchanged.
 - `client::{kpasswd::build_kpasswd_request, kpasswd::build_kpasswd_request_with_confounders}` borrow
   their `RequestOptions`; `service::ValidatedApReq::build_ap_rep_with_confounder`
