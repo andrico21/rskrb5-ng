@@ -2377,13 +2377,6 @@ impl Tokio {
         }
         let tgt = match self.cached_tgt_session_for_realm(&service.realm, clock()) {
             Some(tgt) => tgt,
-            None if service.realm != self.client.realm => match self
-                .renew_cached_tgt_session_for_realm(&service.realm, clock())
-                .await?
-            {
-                Some(tgt) => tgt,
-                None => self.ensure_tgt().await?,
-            },
             None => self.ensure_tgt().await?,
         };
         let result = self
@@ -2682,45 +2675,6 @@ impl Tokio {
     fn cached_tgt_session_for_realm(&self, realm: &str, now: SystemTime) -> Option<AsRepSession> {
         let tgt = self.tgt_sessions.get(realm)?;
         session_valid_at(tgt, now).then(|| tgt.clone())
-    }
-
-    /// Renew the cached TGT session for `realm` when it is renewable.
-    ///
-    /// Returns `Ok(None)` when no renewable session is cached or the renewal fails.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::Random`] when the request nonce cannot be generated and
-    /// [`Error::InvalidTgtSession`] when the renewed ticket is not a TGT.
-    // cancel-safe: the renewed session is cached only after the renewal exchange
-    // completes; dropping the future leaves the previous session in place.
-    async fn renew_cached_tgt_session_for_realm(
-        &mut self,
-        realm: &str,
-        now: SystemTime,
-    ) -> Result<Option<AsRepSession>, Error> {
-        let Some(tgt) = self.tgt_sessions.get(realm).cloned() else {
-            return Ok(None);
-        };
-        if !session_renewable_at(&tgt, now) {
-            return Ok(None);
-        }
-
-        let Ok(renewed) = self
-            .transport
-            .renew_tgt_with_config(&self.config, self.protocol, &tgt, self.tgs_req_options()?)
-            .await
-        else {
-            return Ok(None);
-        };
-        let renewed_realm = tgt_realm(&renewed).ok_or_else(|| Error::InvalidTgtSession {
-            service: renewed.service.name(),
-        })?;
-        if renewed_realm == self.client.realm {
-            self.tgt = Some(renewed.clone());
-        }
-        drop(self.tgt_sessions.insert(renewed_realm, renewed.clone()));
-        Ok(Some(renewed))
     }
 
     /// KDC endpoints discovered for the client realm, recording a discovery

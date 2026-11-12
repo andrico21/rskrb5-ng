@@ -303,12 +303,6 @@ mod tests {
             }), ("src/client/cache_insert.rs::tgt_session_at", ReplacementProof::DependencyContractReplacement {
                 test: "tokio_client_prefers_freshest_cached_tgt_session",
                 contract: "Caching keeps the fresher primary or referral TGT and drops the other; the dropped session's key erasure relies on its Drop contract, not an observed first-party wipe.",
-            }), ("src/client.rs::Tokio::renew_cached_tgt_session_for_realm", ReplacementProof::DependencyContractReplacement {
-                test: "cached_referral_renewal_replaces_realm_session",
-                contract: "Cached renewal replaces the referral TGT for its realm; old-key erasure relies on the replaced session's Drop contract, not an observed first-party wipe.",
-            }), ("src/client.rs::Tokio::renew_cached_tgt_session_for_realm", ReplacementProof::DependencyContractReplacement {
-                test: "cached_primary_renewal_replaces_primary_tgt",
-                contract: "Cached renewal in the client realm replaces the primary TGT and its realm entry; old-key erasure relies on the replaced sessions' Drop contract, not an observed first-party wipe.",
             })]).collect::<Vec<_>>();
         for (_, proof) in &proofs {
             let test = match proof {
