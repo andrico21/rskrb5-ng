@@ -61,6 +61,8 @@ mod mutation_values;
 #[path = "config/mutation_core.rs"]
 mod mutation_core;
 
+#[path = "config/unicode_whitespace_guard.rs"]
+mod unicode_whitespace_guard;
 #[path = "config/value_whitespace.rs"]
 mod value_whitespace;
 #[path = "config/value_whitespace_sites.rs"]
