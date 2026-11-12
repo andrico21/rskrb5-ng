@@ -1144,7 +1144,9 @@ initial false value cannot be repaired by a later true alias.
 
 Quoted values (FU-CFG-R02): spaces, tabs and newlines inside quotes are now
 literal content, including at the edges. Remove accidental quoted whitespace
-from credential paths; unquoted assignment whitespace continues to be ignored.
+from credential paths. Unquoted assignment padding continues to be ignored, but
+only ASCII whitespace (space, tab, CR, LF, VT, FF) counts as padding; Unicode
+space characters are now value data (FU-CFG-R23).
 
 Endpoint stars (FU-CFG-R03): `kdc = "host*"` denotes literal `host*`, not a
 final relation. Use `kdc* = host` to finalize. The existing unquoted value-final

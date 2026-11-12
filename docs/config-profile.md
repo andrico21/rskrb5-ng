@@ -84,6 +84,10 @@ quotes; Unicode space before `#` or `;` is value data.
 backslashes, newline, tab and backspace. Braces are structural only in a
 subsection assignment or closing-brace line, not arbitrary value text.
 
+Unquoted assignment padding is removed, but only ASCII whitespace (space, tab,
+CR, LF, VT, FF) counts as padding; Unicode space characters at the edges of a
+value are value data.
+
 ### Deliberate divergences and bounds
 
 - Missing explicitly named `KRB5_CONFIG` entries are errors; MIT skips them.

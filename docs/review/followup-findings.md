@@ -221,3 +221,4 @@ is a parity feature, not a defect>`.
 | critic:critics-0554a41/u5.md#U5-02 | FU-CFG-R26 | no |
 | critic:critics-0554a41/u5.md#U5-03 | FU-CFG-R27 | no |
 | critic:critics-0554a41/u5.md#U5-04 | FU-CFG-R28 | no |
+| critic:critics-0554a41/u6.md#U6-01 | FU-DOC-R20 | no |
