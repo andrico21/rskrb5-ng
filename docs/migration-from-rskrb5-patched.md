@@ -1096,7 +1096,9 @@ For replacement use the type's `set_*` method, or retain the result of its
 consuming builder. Session tickets and KDC error payloads take `Zeroizing<Vec<u8>>`;
 keys take their existing owning `EncryptionKey`. `KdcError::with_e_data` now
 takes `Option<Zeroizing<Vec<u8>>>`. `ReferralTgsResult::new` adopts its final
-session and referral vector. Borrowed getters never transfer erasure duties for
+session and referral vector; its fields are private (FU-CLI-R22): borrow them
+with `ticket()` and `referral_tgts()`, or take both owners with the consuming
+`into_parts()`, which returns `(TgsRepSession, Vec<AsRepSession>)`. Borrowed getters never transfer erasure duties for
 the retained owner; callers must erase any copies they make. Dependency-owned
 rasn `OctetString` fields remain the residual copies documented in the security
 policy, including when a complete ASN.1 message is replaced.

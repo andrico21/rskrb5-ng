@@ -509,6 +509,16 @@ Security fail-closed parsing and verification:
   password frames redact ciphertext in Debug (FU-TRN-R09).
 - AS/TGS/AP request options and explicit TGS request inputs redact credential
   payloads and confounders in compact and pretty Debug output (FU-CLI-R13).
+- `ReferralTgsResult` keeps its final ticket and referral TGTs private: read
+  them with `ticket()` and `referral_tgts()` or take them with the consuming
+  `into_parts()`; the public fields are gone (behaviour change). The secret
+  audit now treats session and client-credential owners as secrets, so a public
+  session field fails it (FU-CLI-R22).
+- Service-ticket acquisition decides from one clock reading and no longer
+  tries a TGS renewal of a cached realm TGT it has just found invalid; such a
+  renewal could only run when the clock crossed the ticket's validity boundary
+  between two readings, and it now falls through to primary-TGT acquisition
+  like every other invalid cached TGT (behaviour change, FU-CLI-R23).
 - Configured password discovery, raw forwarding and checked exchanges reject
   permanently prohibited configuration selectors before delivery (FU-TRN-R10).
 - S4U2Proxy places its explicit evidence ticket before option-provided tickets,

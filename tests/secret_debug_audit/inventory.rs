@@ -96,7 +96,7 @@ pub(super) fn inspect(root: &Path, directory: &Path) -> Result<Vec<Owner>, io::E
     Ok(owners)
 }
 
-/// Classify resolved byte storage, known credential owners and unconstrained generic storage.
+/// Classify resolved byte storage, known credential and session owners and unconstrained generic storage.
 pub(super) fn secret_field(name: &str, ty: &[String]) -> bool {
     let secret_name = [
         "key",
@@ -145,16 +145,9 @@ pub(super) fn secret_field(name: &str, ty: &[String]) -> bool {
                     | "Authenticator"
                     | "EncKrbCredPart"
                     | "EncKrbPrivPart"
+                    | "AsRepSession"
+                    | "TgsRepSession"
+                    | "TokioClientCredentials"
             )
         })
-}
-
-/// Retained session and credential owners: storage for the replacement audit by type alone.
-pub(super) fn session_storage(ty: &[String]) -> bool {
-    ty.iter().any(|word| {
-        matches!(
-            word.as_str(),
-            "AsRepSession" | "TgsRepSession" | "TokioClientCredentials"
-        )
-    })
 }
