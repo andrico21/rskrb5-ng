@@ -13,7 +13,7 @@ inputs are rejected. Its checkout, checksum command and pinned lychee action
 must run in order, with recursive offline fragment checking and `fail: true`.
 The schedule/dispatch-only advisory jobs do not exempt `docs-validate`.
 
-Package documentation with unmatched or escaped backticks no longer hides later
+Package documentation with unmatched or escaped backticks does not hide later
 relative links from the package gate (FU-CI-R05). Fix any newly reported target
 rather than relying on malformed code-span delimiters. Real equal-length code
 spans still suppress link syntax, including multiline spans within one block;
@@ -22,7 +22,7 @@ backslashes inside code spans are literal under CommonMark.
 When maintaining parity manifests, cite symbols enabled by at least one resolved
 Cargo feature closure (FU-TST-R20). The evidence lexer uses the same closure
 universe as `feature_closures.py list`, including feature implications; independent
-Boolean assignments such as `tower` without `http` no longer count as evidence.
+Boolean assignments such as `tower` without `http` do not count as evidence.
 
 Configured acceptors (`Validator`, `NegotiateLayer` and `NegotiateService`)
 retain permanent `Policy::RejectedFeature` causes from both whole-configuration
@@ -1223,9 +1223,9 @@ value should win, remove the earlier empty assignment. The next parent
 structural line can still open a subsection after intervening includes;
 included files retain independent grammar state.
 
-Include parsing (FU-CFG-R12): repeated includes no longer rescan a comment tail
-unless resolving a pending scalar. Precedence, accepted syntax and include
-limits are unchanged; no configuration migration is needed.
+Include parsing (FU-CFG-R12): repeated includes rescan a comment tail only when resolving a pending scalar. This
+step changes no precedence, accepted syntax or include limit beyond the
+changes listed in this chapter; no configuration migration is needed.
 
 Include depth (FU-CFG-R15): an `includedir` reached at depth 9 now returns
 `IncludeTooDeep` even when the directory is empty or holds only ignored files.
@@ -1448,7 +1448,7 @@ Header encoding avoids a separate base64 string. Public returned `Vec<u8>` and
 credentials and their own copies after use.
 
 Reciprocal MIC policy (FU-SPN-R12): changing a validated context's initiator
-subkey no longer bypasses its retained policy. Supply permitted keys, or explicitly
+subkey does not bypass its retained policy. Supply permitted keys, or explicitly
 configure legacy permission and membership before use. An explicit acceptor
 subkey still takes precedence; completion verification also admits its selected key.
 
@@ -1586,7 +1586,7 @@ in the success-dependent chain; shell wrappers that merely mention them fail.
 Workflow wiring (FU-GATE-R02): quoted YAML keys obey the same restrictions as
 plain keys, and `lint-gates` must have exactly one `steps` mapping with no
 duplicate step keys. Remove conditional or overriding execution settings;
-textually retaining a required command no longer satisfies these cases.
+textually retaining a required command does not satisfy these cases.
 
 Lint interpreter admission (FU-GATE-R03): workflow/job/step environment settings
 must use the gate allowlist (`PYTHONDONTWRITEBYTECODE=1`, and workflow-level
@@ -1596,7 +1596,7 @@ shell/default overrides and unapproved setup action inputs are rejected.
 Mutation evidence (FU-GATE-R04): each whole-crate campaign shard must retain
 one successful baseline and a nonempty `mutants.json` with the exact tested
 mutant names. Rerun filtered, baseline-free or incomplete shards; an end time
-and matching counts alone no longer certify completeness.
+and matching counts alone do not certify completeness.
 
 Workflow syntax (FU-GATE-R05): use plain identifier keys or unescaped quoted
 identifiers. Escaped keys, explicit complex keys, mapping aliases, anchors and
