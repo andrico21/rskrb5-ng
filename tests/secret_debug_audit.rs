@@ -108,6 +108,9 @@ mod attributes;
 #[path = "secret_debug_audit/replacement.rs"]
 mod replacement;
 
+#[path = "secret_debug_audit/replacement_certification.rs"]
+mod replacement_certification;
+
 #[cfg(all(test, feature = "messages"))]
 #[path = "secret_debug_audit/messages.rs"]
 mod messages;

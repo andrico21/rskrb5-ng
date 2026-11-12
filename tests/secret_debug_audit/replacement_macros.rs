@@ -118,6 +118,53 @@ mod tests {
         Ok(())
     }
 
+    /// Receiver delegation must preserve the replacement proof obligation.
+    #[test]
+    fn delegated_and_aliased_receivers_require_proof() -> Result<(), io::Error> {
+        for (receiver, body) in [
+            ("&mut self", "self.private_set(value);"),
+            ("&mut self", "let this = self; this.private_set(value);"),
+            ("&mut self", "let owner = self; owner.secret = value;"),
+            (
+                "self: core::pin::Pin<&mut Self>",
+                "self.get_mut().secret = value;",
+            ),
+        ] {
+            let source = format!(
+                "pub struct Owner {{ secret: Vec<u8> }}\nimpl Owner {{ fn private_set(&mut self, value: Vec<u8>) {{ self.secret = value; }} pub fn set({receiver}, value: Vec<u8>) {{ {body} }} }}"
+            );
+            match super::super::methods("src/probe.rs", &source) {
+                Ok(methods) => assert_eq!(
+                    methods
+                        .iter()
+                        .find(|method| method.identity.ends_with("::set"))
+                        .map(|method| method.fields.as_slice()),
+                    Some(["secret".to_owned()].as_slice()),
+                    "receiver mutation omitted: {body}"
+                ),
+                Err(error) => assert!(error.to_string().contains("src/probe.rs:2:")),
+            }
+        }
+        Ok(())
+    }
+
+    /// Unresolved or cyclic delegation cannot certify a receiver write set.
+    #[test]
+    fn delegation_requires_resolved_acyclic_edges() -> Result<(), io::Error> {
+        for source in [
+            "pub struct Owner { secret: Vec<u8> }\nimpl Owner { pub fn set(&mut self) { self.missing(); } }",
+            "pub struct Owner { secret: Vec<u8> }\nimpl Owner { pub fn set(&mut self) { self.other(); } fn other(&mut self) { self.set(); } }",
+            "pub struct Owner { secret: Vec<u8> }\nstruct Other; impl Other { fn missing(&mut self) {} } impl Owner { pub fn set(&mut self) { self.missing(); } }",
+        ] {
+            let result = super::super::methods("src/probe.rs", source);
+            let error = result
+                .err()
+                .ok_or_else(|| io::Error::other("unresolved or cyclic delegation admitted"))?;
+            assert!(error.to_string().contains("src/probe.rs:2:"));
+        }
+        Ok(())
+    }
+
     /// Physical receiver identities separate unrelated types and consuming moves.
     #[test]
     fn receiver_identity_and_moves_are_distinct() -> Result<(), io::Error> {
