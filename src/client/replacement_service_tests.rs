@@ -130,14 +130,20 @@ fn service_acquisition_replaces_expired_cached_session() -> Result<(), TestError
             EncryptionKey::new(18, vec![0x41; 32]), ticket::encode(&wire_ticket)?.into(),
             [0; 4], now, now.checked_add(Duration::from_hours(10)).ok_or("end time")?);
         let mut client = Tokio::from_tgt_session(config, KdcProtocol::Tcp, tgt);
+        let old_ticket = Ticket {
+            sname: principal_to_rasn(&service)?,
+            ..wire_ticket
+        };
         let old = AsRepSession::new(principal, service.clone(), EncryptionKey::new(18, vec![0x31; 32]),
-            vec![0x42; 16].into(), [0; 4], UNIX_EPOCH, UNIX_EPOCH);
+            ticket::encode(&old_ticket)?.into(), [0; 4], UNIX_EPOCH, UNIX_EPOCH);
         drop(client.service_tickets.insert(crate::client::service_cache_key(&service), old));
         let (issued, ()) = timeout(Duration::from_secs(10), async {
-            tokio::try_join!(async { client.get_service_ticket(service.clone()).await.map_err(TestError::from) }, answer_service(listener))
+            tokio::try_join!(async { client.get_service_ticket(service.clone()).await.map_err(|err| TestError::from(format!("service acquisition: {err} ({err:?})"))) }, answer_service(listener))
         }).await??;
         assert_eq!(issued.session_key().value().as_ref(), &[0x63; 32]);
-        let cached = client.cached_service_ticket(service).ok_or("replacement not cached")?;
+        let replacement = client.cached_service_ticket(service);
+        assert!(replacement.is_some(), "authenticated replacement was not cached");
+        let cached = replacement.ok_or("replacement not cached")?;
         assert_eq!(cached.session_key().value().as_ref(), &[0x63; 32]);
         assert_eq!(cached.ticket(), issued.ticket());
         Ok(())
