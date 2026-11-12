@@ -47,8 +47,8 @@ use framing::validate_tcp_length;
 use hickory_resolver::{
     TokioResolver,
     config::{ConnectionConfig, NameServerConfig, ResolverConfig},
-    net::runtime::TokioRuntimeProvider,
-    proto::rr::RData,
+    net::runtime,
+    proto::rr,
 };
 use tokio::{
     io::{AsyncReadExt as _, AsyncWriteExt as _},
@@ -2046,7 +2046,7 @@ impl Tokio {
         if lookup
             .answers()
             .iter()
-            .any(|record| matches!(&record.data, RData::SRV(srv) if srv.target.is_root()))
+            .any(|record| matches!(&record.data, rr::RData::SRV(srv) if srv.target.is_root()))
         {
             return Err(Error::DnsServiceUnavailable {
                 service: service.to_owned(),
@@ -2057,7 +2057,7 @@ impl Tokio {
             .answers()
             .iter()
             .filter_map(|record| {
-                if let RData::SRV(srv) = &record.data {
+                if let rr::RData::SRV(srv) = &record.data {
                     Some(srv)
                 } else {
                     None
@@ -2412,9 +2412,12 @@ fn dns_resolver(server: Option<(IpAddr, u16)>) -> Result<TokioResolver, Error> {
         let mut config = ResolverConfig::default();
         config.name_servers = vec![NameServerConfig::new(ip, true, vec![udp, tcp])];
 
-        return TokioResolver::builder_with_config(config, TokioRuntimeProvider::default())
-            .build()
-            .map_err(|source| Error::DnsResolverConfig(source.to_string()));
+        return TokioResolver::builder_with_config(
+            config,
+            runtime::TokioRuntimeProvider::default(),
+        )
+        .build()
+        .map_err(|source| Error::DnsResolverConfig(source.to_string()));
     }
 
     TokioResolver::builder_tokio()

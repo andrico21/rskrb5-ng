@@ -77,26 +77,18 @@ pub(super) fn krb_cred_info_to_ccache_credential(
             end_time: optional_kerberos_time_to_u32(info.end_time.as_ref())?,
             renew_till: optional_kerberos_time_to_u32(info.renew_till.as_ref())?,
         },
-        info.flags
-            .as_ref()
-            .map(ticket_flags_to_bytes)
-            .unwrap_or_default(),
+        info.flags.as_ref().map_or_default(ticket_flags_to_bytes),
         encode_ticket(ticket).map_err(ticket_error)?.into(),
     )
-    .with_addresses(
-        info.caddr
-            .as_ref()
-            .map(|addresses| {
-                addresses
-                    .iter()
-                    .map(|address| ccache::HostAddress {
-                        addr_type: address.addr_type,
-                        address: address.address.as_ref().to_vec(),
-                    })
-                    .collect()
+    .with_addresses(info.caddr.as_ref().map_or_default(|addresses| {
+        addresses
+            .iter()
+            .map(|address| ccache::HostAddress {
+                addr_type: address.addr_type,
+                address: address.address.as_ref().to_vec(),
             })
-            .unwrap_or_default(),
-    ))
+            .collect()
+    })))
 }
 
 /// Convert a ccache principal to a Kerberos principal name.

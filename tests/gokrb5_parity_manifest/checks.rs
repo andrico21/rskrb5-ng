@@ -122,10 +122,7 @@ fn area_statuses(table: &Table) -> Result<Vec<(String, String, String)>, TestErr
                     .unwrap_or_default()
                     .to_owned()
             };
-            let next = area
-                .get("next")
-                .map(ToString::to_string)
-                .unwrap_or_default();
+            let next = area.get("next").map_or_default(ToString::to_string);
             Ok((get("id"), get("status"), next))
         })
         .collect()

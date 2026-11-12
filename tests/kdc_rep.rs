@@ -291,7 +291,7 @@ mod tests {
         assert_eq!(rep.pvno, Integer::from(5_i32));
         assert_eq!(rep.msg_type, Integer::from(expected_msg_type));
         assert_eq!(
-            rep.padata.as_ref().map(Vec::len).unwrap_or_default(),
+            rep.padata.as_ref().map_or_default(Vec::len),
             expected_padata_count,
         );
         if let Some(padata) = &rep.padata {

@@ -159,13 +159,13 @@ mod tests {
 
             // Then: no cached credential or outbound authentication token is available.
             assert!(matches!(result, Err(Error::CacheClientMismatch)));
-            assert!(client.cached_service_ticket(service.clone()).is_none());
             assert_eq!(client.to_ccache()?, before);
             #[cfg(feature = "spnego")]
             assert!(matches!(
-                runtime()?.block_on(client.spnego_header(service)),
+                runtime()?.block_on(client.spnego_header(service.clone())),
                 Err(Error::NoClientCredentials)
             ));
+            assert!(client.cached_service_ticket(service).is_none());
         }
         Ok(())
     }

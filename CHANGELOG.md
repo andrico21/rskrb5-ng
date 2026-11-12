@@ -111,9 +111,15 @@ These are breaking; the migration guide maps each one.
 - `rust-version` is 1.99 (was 1.88).
 - Every direct dependency is on its latest major version: `base64` 0.23,
   `getrandom` 0.4, `rasn` and `rasn-kerberos` 0.29, `compcol` 0.7,
-  `picky-krb` 0.13 (optional, `evaluation`), dev `toml` 1.1, and `pbkdf2`
+  dev `picky-krb` 0.13, dev `toml` 1.1, and `pbkdf2`
   0.13 instead of the `=0.13.0-rc.10` pre-release pin. `proptest` is a new
   dev-dependency. No runtime dependency was added.
+- The `evaluation` feature now enables only `spnego` and `hex`: `picky-krb`,
+  `picky-asn1`, `picky-asn1-der` and `serde` serve only the evaluation test
+  targets, so they are dev-dependencies (`serde` stays an optional dependency
+  of the `serde` feature). Cargo 1.100's `unused_dependencies` lint, denied by
+  `build.warnings`, flagged them in the closures with `evaluation`
+  (FU-CI-R17).
 
 ### Behaviour changes
 

@@ -1468,7 +1468,7 @@ mod tests {
                     .renew_tgt(protocol, addr.as_str(), &tgt, tgs_options(protocol, 13)?)
                     .await?;
 
-                assert_login_session(&renewed.clone());
+                assert_login_session(&renewed);
                 assert_eq!(renewed.service(), &Principal::tgt_service(REALM));
                 assert_eq!(renewed.renew_till(), Some(original_renew_till));
                 assert!(renewed.end_time() <= original_renew_till);
@@ -1511,7 +1511,7 @@ mod tests {
                     .ok_or("renewable TGT has renew-till")?;
                 let renewed = client.renew_tgt().await?.clone();
 
-                assert_login_session(&renewed.clone());
+                assert_login_session(&renewed);
                 assert_eq!(renewed.service(), &Principal::tgt_service(REALM));
                 assert_eq!(renewed.renew_till(), Some(original_renew_till));
                 assert!(renewed.end_time() <= original_renew_till);
