@@ -223,3 +223,5 @@ is a parity feature, not a defect>`.
 | critic:critics-0554a41/u5.md#U5-04 | FU-CFG-R28 | no |
 | critic:critics-0554a41/u6.md#U6-01 | FU-DOC-R20 | no |
 | critic:critics-0554a41/u2.md#U2-01 | FU-TST-R56 | no |
+| executor:todo-70#referral-tgs-public-session-fields | FU-CLI-R22 | no |
+| executor:todo-70#unreachable-cached-tgt-renewal | FU-CLI-R23 | no |
