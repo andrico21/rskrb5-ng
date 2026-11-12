@@ -204,6 +204,7 @@ is a parity feature, not a defect>`.
 | critic:critics-62709b5/u2.md#U2-05 | FU-TST-R51 | no |
 | critic:critics-6b9d5f0/u2.md#U2-02 | FU-TST-R52 | no |
 | critic:critics-6b9d5f0/u2.md#U2-03 | FU-TST-R53 | no |
+| critic:critics-6b9d5f0/u2.md#U2-01 | FU-TST-R55 | no |
 | critic:critics-6b9d5f0/u2.md#U2-04 | FU-TST-R54 | no |
 | executor:todo-21#replay-quota-partial-expiry | FU-TST-R10 | no |
 | executor:todo-22#packaged-tests-include-excluded-fixture | FU-TST-R16 | no |

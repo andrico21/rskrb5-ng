@@ -106,14 +106,37 @@ mod tests {
             );
             drop(parse("src/probe.rs", &source)?);
             match super::super::methods("src/probe.rs", &source) {
-                Ok(methods) => assert!(
-                    methods
+                Ok(methods) => {
+                    let fields = methods
                         .iter()
-                        .any(|method| method.fields.contains(&"secret".to_owned())),
-                    "whole receiver mutation omitted: {body}: {methods:?}"
-                ),
+                        .find(|method| method.identity.ends_with("::set"))
+                        .map(|method| method.fields.as_slice())
+                        .ok_or_else(|| io::Error::other("probe method missing"))?;
+                    assert_eq!(
+                        fields,
+                        ["secret".to_owned()].as_slice(),
+                        "receiver mutation omitted: {body}"
+                    );
+                }
                 Err(error) => assert!(error.to_string().contains("src/probe.rs:2:")),
             }
+        }
+        Ok(())
+    }
+
+    /// Unresolved or cyclic delegation cannot certify a receiver write set.
+    #[test]
+    fn delegation_requires_resolved_acyclic_edges() -> Result<(), io::Error> {
+        for source in [
+            "pub struct Owner { secret: Vec<u8> }\nimpl Owner { pub fn set(&mut self) { self.missing(); } }",
+            "pub struct Owner { secret: Vec<u8> }\nimpl Owner { pub fn set(&mut self) { self.other(); } fn other(&mut self) { self.set(); } }",
+            "pub struct Owner { secret: Vec<u8> }\nstruct Other; impl Other { fn missing(&mut self) {} } impl Owner { pub fn set(&mut self) { self.missing(); } }",
+        ] {
+            let result = super::super::methods("src/probe.rs", source);
+            let error = result
+                .err()
+                .ok_or_else(|| io::Error::other("unresolved or cyclic delegation admitted"))?;
+            assert!(error.to_string().contains("src/probe.rs:2:"));
         }
         Ok(())
     }

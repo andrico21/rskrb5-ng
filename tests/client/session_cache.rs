@@ -1346,6 +1346,69 @@ mod tests {
         Ok(())
     }
 
+    /// Pins that renewing the primary-realm TGT replaces it and clears every cached service ticket.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_renews_primary_tgt_and_clears_service_cache() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let primary_tgt = current_tgt_session(10, 50)?;
+            let primary_service = primary_tgt.service().clone();
+            let primary_key = primary_tgt.session_key().clone();
+            let expected_client = primary_tgt.client().clone();
+            let mut service_ticket = sample_service_ticket_session(&primary_tgt)?;
+            align_ticket_service(&mut service_ticket)?;
+
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .context("bind local KDC listener")?;
+            let addr = listener.local_addr().context("local listener address")?;
+            let mut client = Tokio::from_tgt_session(
+                config_with_kdc_server(&addr.to_string())?,
+                KdcProtocol::Tcp,
+                primary_tgt,
+            );
+            client.cache_service_ticket(service_ticket)?;
+            assert_eq!(client.cached_service_ticket_count(), 1);
+
+            let task = tokio::spawn(async move {
+                let (request, mut socket) = read_tcp_kdc_request(&listener).await?;
+                let decoded: rasn_kerberos::TgsReq =
+                    der::decode(&request).context("TGS-REQ decodes")?;
+                let mut built = built_tgs_request_from_der(decoded, &request)?;
+                built.set_client(expected_client);
+                let response = synthetic_tgs_rep(&built, built.nonce(), &primary_key)?;
+                write_tcp_kdc_response(&mut socket, &response).await?;
+                Ok::<(), TestError>(())
+            });
+
+            let realm = client
+                .tgt_session()
+                .context("primary TGT")?
+                .client()
+                .realm
+                .clone();
+            let renewed = client
+                .renew_tgt_session_for_realm(&realm)
+                .await
+                .context("primary TGT renews explicitly")?;
+            task.await.context("KDC task succeeds")??;
+
+            assert_eq!(renewed.service(), &primary_service);
+            assert_eq!(
+                client.tgt_session(),
+                Some(&renewed),
+                "the renewed primary TGT replaces the cached one"
+            );
+            assert_eq!(
+                client.cached_service_ticket_count(),
+                0,
+                "renewal clears service tickets issued under the old TGT"
+            );
+            Ok::<(), TestError>(())
+        })?;
+        Ok(())
+    }
+
     /// Pins that the Tokio client exports, saves and reloads its ccache, by path and by name.
     #[cfg(feature = "tokio")]
     #[test]
