@@ -247,3 +247,6 @@ is a parity feature, not a defect>`.
 | critic:critics-b42671f/u6.md#U6-05 | FU-DOC-R31 | no |
 | executor:todo-78#unused-dependencies-1-100 | FU-CI-R17 | no |
 | executor:todo-78#clippy-1-100-lints | FU-CI-R18 | no |
+| executor:todo-83#intermediate-state-premises | FU-DOC-R32 | no |
+| executor:todo-83#gate-claims-without-baseline | FU-DOC-R33 | no |
+| executor:todo-83#false-baseline-explanations | FU-DOC-R34 | no |
