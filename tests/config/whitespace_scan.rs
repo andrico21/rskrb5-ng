@@ -2,7 +2,9 @@
 //!
 //! MIT parses profiles with C-locale `isspace`; the parser's predicate for it is
 //! `profile_syntax::tag_whitespace`. `str::trim` and its relatives also strip
-//! U+0085, U+00A0, U+2028 and other Unicode spaces. Every identifier token of
+//! U+0085, U+00A0, U+2028 and other Unicode spaces; the `*ascii*` variants are
+//! narrower but still not MIT's set (no vertical tab, form feed accepted), which
+//! is how `parse_ip_addresses` and `spake_preauth_groups` diverged. Every identifier token of
 //! `src/config.rs` and `src/config/**` is scanned, macro and attribute bodies
 //! included; a file that does not parse, a non-literal `include!` or a module or
 //! include target outside the scanned tree fails closed with `file:line`.
@@ -18,11 +20,17 @@ use std::{
 use proc_macro2::{Ident, TokenStream, TokenTree};
 use syn::visit::{self, Visit};
 
-/// Unicode-aware whitespace APIs, as method, path or function-pointer uses.
-const APIS: [&str; 7] = [
+/// Whitespace APIs whose set is not MIT's C-locale `isspace`, as method, path or
+/// function-pointer uses: the Unicode-aware ones and the ASCII variants.
+const APIS: [&str; 12] = [
+    "is_ascii_whitespace",
     "is_whitespace",
+    "split_ascii_whitespace",
     "split_whitespace",
     "trim",
+    "trim_ascii",
+    "trim_ascii_end",
+    "trim_ascii_start",
     "trim_end",
     "trim_left",
     "trim_right",

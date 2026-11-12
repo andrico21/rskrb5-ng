@@ -235,3 +235,5 @@ is a parity feature, not a defect>`.
 | critic:critics-e266c98/u6.md#U6-03 | FU-DOC-R23 | no |
 | critic:critics-e266c98/u6.md#U6-04 | FU-DOC-R24 | no |
 | critic:critics-e266c98/u6.md#U6-05 | FU-DOC-R22 | no |
+| critic:critics-3a88222/u5.md#U5-01 | FU-CFG-R32 | no |
+| critic:critics-3a88222/u6.md#U6-01 | FU-DOC-R25 | no |

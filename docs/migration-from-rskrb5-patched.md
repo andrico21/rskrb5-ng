@@ -1150,7 +1150,18 @@ from credential paths. Unquoted assignment padding continues to be ignored, but
 only ASCII whitespace (space, tab, CR, LF, VT, FF) counts as padding; Unicode
 space characters are now value data (FU-CFG-R23). For the same reason a
 Unicode space before an inline `#` or `;` no longer starts a comment
-(FU-CFG-R27); only ASCII whitespace does.
+(FU-CFG-R27); only ASCII whitespace does. Text after a closing quote other than
+ASCII whitespace is now an `InvalidLine`: v0.2.2 kept `"EXAMPLE.COM" extra`
+verbatim, MIT ignores the text after the quote, and this crate rejects it
+(FU-CFG-R31, `docs/config-profile.md`).
+
+Address lists (FU-CFG-R30, FU-DOC-R25): `extra_addresses` entries are split on
+commas and on C-locale ASCII whitespace (space, tab, CR, LF, VT, FF), like MIT.
+v0.2.2 split on commas only, so `1.2.3.4 5.6.7.8` was one unparsable part that
+was dropped silently; it now yields both addresses, and a malformed entry is an
+`InvalidAddress`. `spake_preauth_groups` separators are exactly MIT's
+`" \t\r\n,"`; form feed and vertical tab are token bytes and fail as unknown
+group names (FU-CFG-R32).
 
 Endpoint stars (FU-CFG-R03): `kdc = "host*"` denotes literal `host*`, not a
 final relation. Use `kdc* = host` to finalize. The existing unquoted value-final
