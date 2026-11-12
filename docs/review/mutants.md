@@ -49,6 +49,61 @@ timeout.
 
 ## Verification
 
+### In-diff check after critic round 12 (todo 71)
+
+Todo 69 changed `src/` after the todo 67 check (FU-CFG-R25..R28: the profile
+comment scan `profile_syntax::comments` uses the shared C-locale ASCII
+whitespace predicate, so a Unicode space before `#` or `;` stays value data).
+Todo 73 made the `ReferralTgsResult` fields private behind the `ticket`,
+`referral_tgts` and `into_parts` accessors, simplified the referral branch of
+`Tokio::get_service_ticket_with_clock` to `into_parts`, built the result in
+`Tokio::get_service_ticket_with_referral_trace_limit` with
+`ReferralTgsResult::new` and removed the unused
+`Tokio::renew_cached_tgt_session_for_realm` (FU-CLI-R22, FU-CLI-R23). Todo 70
+and the test edits of todo 73 (`src/client/replacement_service_tests.rs`,
+`src/client/tests/realm_mutations.rs`) build only under `cfg(test)`, so
+cargo-mutants generates no mutant in them. Todo 72 changed documentation only.
+
+- Diff: `git diff 0554a41 8fa8d5a -- src` (5 files: `src/client.rs`,
+  `src/client/transport.rs`, `src/config/profile_syntax.rs` and the 2 test
+  modules). `0554a41` is `main` after todo 67 and has the code that check
+  covered; `8fa8d5a` is `main` after todo 73.
+- The check ran locally as in todo 67: `cargo mutants --all-features
+  --no-shuffle --cap-lints=true --in-diff <diff> --shard k/5 -j 2
+  --copy-target=false` at `8fa8d5a`, cargo-mutants 27.1.0,
+  `CARGO_BUILD_WARNINGS=allow`, no debug info and an 8 GiB address-space cap.
+  The diff yields 9 mutants, run in 5 shards of at most 2. Each shard measured
+  its own baseline (47 s to 50 s build, 76 s to 78 s test), and cargo-mutants
+  set the timeout from it (382 s to 393 s).
+- `mutants_report.py --artifacts <the 5 shard outputs> --expect-shards 5
+  --register docs/review/mutants.md --campaign
+  8fa8d5ab058986c091efc7e5651ca0278c10f26e --enforce` prints `mutants:
+  caught=2 missed=0 timeout=0 unviable=7 success=0` and `0 problem(s)`.
+
+| Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 2 | 0 | 0 | 0 | 2 | 165 |
+| 1 | 2 | 0 | 0 | 0 | 2 | 169 |
+| 2 | 2 | 0 | 0 | 0 | 2 | 165 |
+| 3 | 2 | 1 | 0 | 0 | 1 | 189 |
+| 4 | 1 | 1 | 0 | 0 | 0 | 152 |
+
+No mutant survived, so the check adds no register row. The 2 caught mutants
+replace the result of `profile_syntax::comments` with `""` and `"xyzzy"`;
+they failed 31 and 38 tests, among them
+`legacy_request_preserves_explicit_policy`. The 7 unviable mutants do not
+compile, because `AsRepSession` (and with it its alias `TgsRepSession`) and
+`ReferralTgsResult` have no `Default`: they replace `ReferralTgsResult::ticket`,
+`ReferralTgsResult::into_parts`, the second `ReferralTgsResult::referral_tgts`
+mutant, `Tokio::get_service_ticket_with_clock` and
+`Tokio::get_service_ticket_with_referral_trace_limit` with default values. The
+first `ReferralTgsResult::referral_tgts` mutant, `Vec::leak(Vec::new())`, does
+not compile because the accessor is a `const fn` and `Vec::leak` is not. The
+simplified referral branch has no operator or match arm left for
+cargo-mutants to mutate. None of the changed files is pulled in with
+`include!`: `src/client/transport.rs` and `src/config/profile_syntax.rs` are
+modules, so cargo-mutants mutated them directly.
+
 ### In-diff check after critic round 11 (todo 67)
 
 Todo 64 changed `src/` after the todo 63 check (FU-CFG-R23, FU-CFG-R24:
