@@ -19,8 +19,12 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 - Preserve Unicode profile value and include/includedir path bytes with one
   C-locale padding predicate; distinguish scalar data from subsection syntax
   and keep exact included-source policy admission (FU-CFG-R23, FU-CFG-R24).
-- Treat only C-locale ASCII whitespace as an inline-comment boundary: a Unicode
-  space before `#` or `;` is now value data (behaviour change); add proofs for
+- Treat only C-locale ASCII whitespace as an inline-comment boundary. v0.2.2
+  cut a line at the first `#` or `;` anywhere, so `default_realm = A#B` was
+  `A`; a comment now starts only at line start or after C-locale whitespace
+  outside quotes, so `A#B` keeps every byte and `A #B` is still `A`. A Unicode
+  space before `#` or `;` is a special case of this change and is now value
+  data (behaviour change); add proofs for
   the remaining Unicode-padding decision sites and document two grammar
   divergences from MIT (FU-CFG-R25, FU-CFG-R26, FU-CFG-R27, FU-CFG-R28).
 - Accept only C-locale ASCII whitespace after a closing quote: a Unicode space
@@ -113,8 +117,10 @@ These are breaking; the migration guide maps each one.
 - Every direct dependency is on its latest major version: `base64` 0.23,
   `getrandom` 0.4, `rasn` and `rasn-kerberos` 0.29, `compcol` 0.7,
   dev `picky-krb` 0.13, dev `toml` 1.1, and `pbkdf2`
-  0.13 instead of the `=0.13.0-rc.10` pre-release pin. `proptest` is a new
-  dev-dependency. No runtime dependency was added.
+  0.13 instead of the `=0.13.0-rc.10` pre-release pin. `proptest`, `syn`
+  (default features off; `full`, `visit` and `parsing`) and `proc-macro2`
+  (default features off; `span-locations`) are new dev-dependencies. No runtime
+  dependency was added.
 - The `evaluation` feature now enables only `spnego` and `hex`: `picky-krb`,
   `picky-asn1`, `picky-asn1-der` and `serde` serve only the evaluation test
   targets, so they are dev-dependencies (`serde` stays an optional dependency
@@ -598,8 +604,8 @@ Security fail-closed parsing and verification:
 - A 1-3 byte keytab entry-size fragment is `Truncated`, not end of file
   (FU-FIL-04).
 - Opaque negative keytab enctype IDs serialize unchanged (FU-FIL-05).
-- `keytab::Entry::new` applies the 8-bit kvno fallback immediately and is no
-  longer `const`; serialization rejects a zero kvno with a nonzero kvno8
+- `keytab::Entry::new` applies the 8-bit kvno fallback immediately;
+  serialization rejects a zero kvno with a nonzero kvno8
   (FU-FIL-06).
 - ETYPE-INFO and ETYPE-INFO2 preauthentication hints reject any trailing DER
   value or garbage inside an otherwise valid KDC error (FU-CLI-R12).
@@ -809,8 +815,13 @@ Configuration:
   `Config::from_reader`, `from_string` and `from_path` (FU-CFG-09).
 - `no_addresses` and `noaddresses` now share first-occurrence precedence and
   final markers instead of overwriting by lexical spelling (FU-CFG-R01).
-- Quoted profile values preserve leading/trailing whitespace after escape
-  decoding, including credential names and appdefaults (FU-CFG-R02).
+- v0.2.2 had no quote handling: `default_realm = "EXAMPLE.COM"` kept the
+  quotes in the value and a backslash was literal text. The profile reader now
+  removes the quotes and decodes `\n`, `\t` and `\b`; any other escaped
+  character stands for itself, so `\"` and `\\` yield `"` and `\`
+  (behaviour change). Quoted profile values preserve leading/trailing
+  whitespace after escape decoding, including credential names and appdefaults
+  (FU-CFG-R02).
 - Quoted endpoint stars remain literal and no longer suppress subsequent
   endpoints; final markers are handled only by the profile parser (FU-CFG-R03).
 - Profile subsections accept MIT's next-line opening brace syntax. Empty
@@ -906,7 +917,7 @@ Client:
 - AS/TGS replies that break the requested times or grant unrequested flags
   fail with the new `ReplyTimeConstraint`/`ReplyFlagConstraint`;
   `AsReq`/`TgsReq` gain `clock_skew`, `BuiltAsReq`/`BuiltTgsReq` gain
-  `reply_clock`, and their constructors are no longer `const` (FU-CLI-12).
+  `reply_clock` (FU-CLI-12).
 - PREAUTH_FAILED exposes its ETYPE-INFO2 hints and cookies (FU-CLI-13).
 - Keytab preauthentication picks the first requested enctype the KDC offers
   and the keytab holds (FU-CLI-15).

@@ -240,5 +240,10 @@ is a parity feature, not a defect>`.
 | critic:critics-ab63499/u5.md#U5-01 | FU-DOC-R26 | no |
 | critic:critics-ab63499/u6.md#U6-01 | FU-DOC-R26 | no |
 | critic:critics-ab63499/u6.md#U6-02 | FU-DOC-R26 | no |
+| critic:critics-b42671f/u6.md#U6-01 | FU-DOC-R27 | no |
+| critic:critics-b42671f/u6.md#U6-02 | FU-DOC-R28 | no |
+| critic:critics-b42671f/u6.md#U6-03 | FU-DOC-R29 | no |
+| critic:critics-b42671f/u6.md#U6-04 | FU-DOC-R30 | no |
+| critic:critics-b42671f/u6.md#U6-05 | FU-DOC-R31 | no |
 | executor:todo-78#unused-dependencies-1-100 | FU-CI-R17 | no |
 | executor:todo-78#clippy-1-100-lints | FU-CI-R18 | no |

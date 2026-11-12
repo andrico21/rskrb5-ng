@@ -1004,7 +1004,7 @@ keep precedence and their existing UID-token behaviour.
 - AS/TGS replies that break the requested times or grant unrequested flags
   fail with `error::Client::ReplyTimeConstraint` or `ReplyFlagConstraint`.
   `AsReq`/`TgsReq` gain `clock_skew`, and `BuiltAsReq`/`BuiltTgsReq` gain
-  `reply_clock`; their `new` is no longer `const`.
+  `reply_clock`.
 - Explicit renewal of a ticket that is not renewable (or outside its renewal
   window) is `error::Client::TicketNotRenewable`.
 
@@ -1144,13 +1144,22 @@ Address aliases (FU-CFG-R01): the first occurrence of either `no_addresses`
 or `noaddresses` wins. A final marker on either spelling closes both; an
 initial false value cannot be repaired by a later true alias.
 
-Quoted values (FU-CFG-R02): spaces, tabs and newlines inside quotes are now
-literal content, including at the edges. Remove accidental quoted whitespace
+Quoted values (FU-CFG-R02): v0.2.2 had no quote handling, so
+`default_realm = "EXAMPLE.COM"` kept the quotes in the value and a backslash
+was literal text. The profile reader now removes the quotes and decodes `\n`,
+`\t` and `\b`; any other escaped character stands for itself, so `\"` and `\\`
+yield `"` and `\`. Drop any code that trimmed the quotes itself. Spaces, tabs
+and newlines inside quotes are now literal content, including at the edges. Remove accidental quoted whitespace
 from credential paths. Unquoted assignment padding continues to be ignored, but
 only ASCII whitespace (space, tab, CR, LF, VT, FF) counts as padding; Unicode
 space characters are now value data (FU-CFG-R23). For the same reason a
 Unicode space before an inline `#` or `;` no longer starts a comment
-(FU-CFG-R27); only ASCII whitespace does. Text after a closing quote other than
+(FU-CFG-R27); only ASCII whitespace does. This is a special case of a wider
+change: v0.2.2 cut every line at the first `#` or `;` anywhere
+(`default_realm = A#B` was `A`), whereas a comment now starts only at line
+start or after C-locale ASCII whitespace outside quotes, so `A#B` keeps every
+byte and `A #B` is `A` in both. Add whitespace before a trailing comment marker
+that has none. Text after a closing quote other than
 ASCII whitespace is now an `InvalidLine`: v0.2.2 kept `"EXAMPLE.COM" extra`
 verbatim, MIT ignores the text after the quote, and this crate rejects it
 (FU-CFG-R31, `docs/config-profile.md`).
@@ -1484,16 +1493,15 @@ Ccache payload ownership (FU-FIL-R05): `Credential.ticket`, `second_ticket` and
 and `AuthorizationDataEntry::new`; convert a moved vector with `.into()` and
 borrow with `.as_slice()`. Payload owners erase on drop, replacement and parse
 failure. `Credential` and `AuthorizationDataEntry` now implement Drop; borrow
-their fields or use `core::mem::take` rather than moving fields out. Construction
-is no longer const. Binary and serde byte encodings are unchanged.
+their fields or use `core::mem::take` rather than moving fields out. Binary and serde byte encodings are unchanged.
 Caller-owned serialized output and borrowed source buffers remain the caller's
 erasure responsibility.
 
 Key replacement (FU-FIL-R06): `keytab::EncryptionKey::value` and
 `ccache::EncryptionKey::value` now hold `keytab::key_bytes::Bytes`, which
 erases its allocation on replacement/drop and exposes only read-only bytes.
-Constructors accept an owned `Vec<u8>` or `Zeroizing<Vec<u8>>` without copying;
-they are no longer `const`. Replace vector mutation with a new owner. Any
+Constructors accept an owned `Vec<u8>` or `Zeroizing<Vec<u8>>` without copying.
+Replace vector mutation with a new owner. Any
 explicit `to_vec()` copy remains the caller's erasure responsibility.
 
 ```rust
@@ -1739,16 +1747,15 @@ The earlier pass added `#[must_use]` to these public APIs:
 
 The earlier pass also made these public APIs `const fn`:
 
-- `service::Validator::{with_now, with_max_clock_skew,
-  require_client_address, shared_replay_cache, replay_cache_mut}`;
-- `http::NegotiateLayer::{with_now, with_max_clock_skew, require_client_address,
-  with_ap_rep, with_reject_invalid}`;
+- `service::Validator::{with_now, require_client_address,
+  shared_replay_cache, replay_cache_mut}`;
+- `http::NegotiateLayer::{with_now, require_client_address, with_ap_rep,
+  with_reject_invalid}`;
 - `http::NegotiateService::{inner, inner_mut, with_ap_rep, with_reject_invalid}`.
 
 Since FU-SVC-09, `with_max_clock_skew` (on `service::Validator`,
 `http::NegotiateLayer` and `http::NegotiateService`) and
-`with_shared_replay_cache` return `Result` and are no longer `const fn`
-("Replay cache" under the follow-up changes).
+`with_shared_replay_cache` return `Result` ("Replay cache" under the follow-up changes).
 
 The four password-change methods listed above used a named generic `P` with a
 where-clause at that point; they now take `client::Password`. Each former argument-position `impl Trait` in this pass
@@ -2101,7 +2108,7 @@ kpasswd result helpers, `MicToken::verify`/`WrapToken::verify` and others).
 - `config::Toggle::is_enabled`: `pub const fn is_enabled(self) -> bool`.
 - `config::LibDefaults::with_allow_weak_crypto`: `pub const fn with_allow_weak_crypto(mut self, value: Toggle) -> Self`.
 - `config::LibDefaults::with_canonicalize`: `pub const fn with_canonicalize(mut self, value: Toggle) -> Self`.
-- `config::LibDefaults::with_dns_canonicalize_hostname`: `pub const fn with_dns_canonicalize_hostname(mut self, value: Toggle) -> Self`.
+- `config::LibDefaults::with_dns_canonicalize_hostname`: `pub fn with_dns_canonicalize_hostname(mut self, value: Toggle) -> Self`.
 - `config::LibDefaults::with_dns_lookup_kdc`: `pub const fn with_dns_lookup_kdc(mut self, value: Toggle) -> Self`.
 - `config::LibDefaults::with_dns_lookup_realm`: `pub const fn with_dns_lookup_realm(mut self, value: Toggle) -> Self`.
 - `config::LibDefaults::with_forwardable`: `pub const fn with_forwardable(mut self, value: Toggle) -> Self`.

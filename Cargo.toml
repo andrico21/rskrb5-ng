@@ -109,19 +109,22 @@ picky-asn1 = "0.10.1"
 picky-asn1-der = "0.5"
 picky-krb = "0.13"
 pretty_assertions = "1.4"
-proptest = "1.12"
 # Owner approved 2026-11-11: syn replaces the credential audit's handwritten scanner;
 # proc-macro2/span-locations supplies accurate file:line errors (option 1 approval).
 # Test-only edges reuse locked packages; no new package or runtime dependency.
 proc-macro2 = { version = "1.0.107", default-features = false, features = [
   "span-locations",
 ] }
+proptest = "1.12"
+serde = { version = "1", features = ["derive"] }
+# Owner approved 2026-11-11: syn replaces the credential audit's handwritten scanner;
+# proc-macro2/span-locations supplies accurate file:line errors (option 1 approval).
+# Test-only edges reuse locked packages; no new package or runtime dependency.
 syn = { version = "3.0.9", default-features = false, features = [
   "full",
   "visit",
   "parsing",
 ] }
-serde = { version = "1", features = ["derive"] }
 tokio = { version = "1.47", features = [
   "macros",
   "net",
