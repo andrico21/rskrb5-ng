@@ -112,18 +112,17 @@ mod tests {
     /// Negative control: non-literal includes, foreign module paths and bad syntax fail closed.
     #[test]
     fn unclassifiable_sources_fail_closed() {
-        let include = fixture("include!(concat!(\"a\", \".rs\"));\n", &[]);
-        let module = fixture("#[path = \"../other.rs\"]\nmod other;\n", &[]);
-        let broken = fixture("fn f( {\n", &[]);
-        for (failures, prefix) in [
-            (include, "fixture.rs:1: include or module path"),
-            (module, "fixture.rs:1: include or module path"),
-            (broken, "fixture.rs:1: unparseable source"),
+        for source in [
+            "include!(concat!(\"a\", \".rs\"));\n",
+            "#[path = \"../other.rs\"]\nmod other;\n",
         ] {
             assert!(
-                failures.len() == 1 && failures.iter().all(|failure| failure.starts_with(prefix)),
-                "{failures:?}"
+                matches!(fixture(source, &[]).as_slice(), [failure]
+                    if failure.starts_with("fixture.rs:1: include or module path")),
+                "{source:?}"
             );
         }
+        assert!(matches!(fixture("fn f( {\n", &[]).as_slice(), [failure]
+            if failure.starts_with("fixture.rs:1: unparseable source")));
     }
 }
