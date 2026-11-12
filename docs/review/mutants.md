@@ -73,7 +73,7 @@ cargo-mutants generates no mutant in them. Todo 72 changed documentation only.
   --copy-target=false` at `8fa8d5a`, cargo-mutants 27.1.0,
   `CARGO_BUILD_WARNINGS=allow`, no debug info and an 8 GiB address-space cap.
   The diff yields 9 mutants, run in 5 shards of at most 2. Each shard measured
-  its own baseline (47 s to 50 s build, 76 s to 78 s test), and cargo-mutants
+  its own baseline (47 s to 52 s build, 76 s to 78 s test), and cargo-mutants
   set the timeout from it (382 s to 393 s).
 - `mutants_report.py --artifacts <the 5 shard outputs> --expect-shards 5
   --register docs/review/mutants.md --campaign
