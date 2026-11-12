@@ -229,3 +229,9 @@ is a parity feature, not a defect>`.
 | critic:critics-e266c98/u5.md#U5-02 | FU-CFG-R30 | no |
 | critic:critics-e266c98/u5.md#U5-03 | FU-CFG-R31 | no |
 | critic:critics-e266c98/u2.md#U2-01 | FU-TST-R57 | no |
+| critic:critics-e266c98/u3.md#U3-01 | FU-DOC-R21 | no |
+| critic:critics-e266c98/u6.md#U6-01 | FU-DOC-R21 | no |
+| critic:critics-e266c98/u6.md#U6-02 | FU-CFG-R31 | no |
+| critic:critics-e266c98/u6.md#U6-03 | FU-DOC-R23 | no |
+| critic:critics-e266c98/u6.md#U6-04 | FU-DOC-R24 | no |
+| critic:critics-e266c98/u6.md#U6-05 | FU-DOC-R22 | no |

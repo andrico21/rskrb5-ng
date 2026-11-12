@@ -1148,7 +1148,9 @@ Quoted values (FU-CFG-R02): spaces, tabs and newlines inside quotes are now
 literal content, including at the edges. Remove accidental quoted whitespace
 from credential paths. Unquoted assignment padding continues to be ignored, but
 only ASCII whitespace (space, tab, CR, LF, VT, FF) counts as padding; Unicode
-space characters are now value data (FU-CFG-R23).
+space characters are now value data (FU-CFG-R23). For the same reason a
+Unicode space before an inline `#` or `;` no longer starts a comment
+(FU-CFG-R27); only ASCII whitespace does.
 
 Endpoint stars (FU-CFG-R03): `kdc = "host*"` denotes literal `host*`, not a
 final relation. Use `kdc* = host` to finalize. The existing unquoted value-final

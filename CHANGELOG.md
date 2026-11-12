@@ -518,8 +518,8 @@ Security fail-closed parsing and verification:
   `into_parts()`; the public fields are gone (behaviour change). The secret
   audit now treats session and client-credential owners as secrets, so a public
   session field fails it (FU-CLI-R22).
-- Service-ticket acquisition decides from one clock reading and no longer
-  tries a TGS renewal of a cached realm TGT it has just found invalid; such a
+- Service-ticket acquisition judges a cached realm TGT from one clock reading
+  and no longer tries a TGS renewal of one it has just found invalid; such a
   renewal could only run when the clock crossed the ticket's validity boundary
   between two readings, and it now falls through to primary-TGT acquisition
   like every other invalid cached TGT (behaviour change, FU-CLI-R23).
