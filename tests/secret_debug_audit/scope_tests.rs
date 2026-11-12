@@ -2,6 +2,9 @@
 
 use std::{env, fs, io, path::Path, process};
 
+#[path = "physical_paths.rs"]
+mod physical_paths;
+
 /// Physical private storage must not disappear behind a qualified type path.
 #[test]
 fn inventory_accounts_for_physical_private_storage() -> Result<(), io::Error> {
