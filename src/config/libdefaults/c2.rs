@@ -22,8 +22,9 @@ pub(crate) fn parse(defaults: &mut LibDefaults, line: &Line) -> Result<(), Error
             defaults.client_aware_channel_bindings = Toggle::from_bool(parse_boolean(value)?);
         }
         "spake_preauth_groups" => {
+            // MIT groups.c: strtok_r delimiters are exactly " \t\r\n,"; FF and VT stay token bytes.
             defaults.spake_preauth_groups = value
-                .split(|ch: char| ch == ',' || ch.is_ascii_whitespace())
+                .split(|ch: char| ch == ',' || matches!(ch, ' ' | '\t' | '\r' | '\n'))
                 .filter(|word| !word.is_empty())
                 .map(|word| {
                     ["edwards25519", "P-256", "P-384", "P-521"]

@@ -1,7 +1,9 @@
-//! Class guard: the profile grammar calls no Unicode-aware whitespace API unreviewed.
+//! Class guard: the profile grammar calls no non-C-locale whitespace API unreviewed.
 //!
 //! Each `trim`, `trim_start`, `trim_end`, `trim_left`, `trim_right`,
-//! `split_whitespace` or `is_whitespace` use in `src/config.rs` or `src/config/**`
+//! `split_whitespace`, `is_whitespace` or ASCII variant (`is_ascii_whitespace`,
+//! `split_ascii_whitespace`, `trim_ascii`, `trim_ascii_start`, `trim_ascii_end`)
+//! use in `src/config.rs` or `src/config/**`
 //! (including `include!`d files) must be listed in [`tests::ALLOWLIST`] with a
 //! reason; the profile grammar itself uses the C-locale `tag_whitespace` predicate.
 
@@ -97,6 +99,26 @@ mod tests {
             fixture(source, &[]),
             ["fixture.rs:2: `is_whitespace` in `g` has no reviewed allowlist entry"]
         );
+    }
+
+    /// Negative control: each ASCII-whitespace API (method, path or function pointer) fails.
+    #[test]
+    fn ascii_whitespace_apis_fail() {
+        for (body, api) in [
+            ("s.split(|ch: char| ch == ',' || ch.is_ascii_whitespace())", "is_ascii_whitespace"),
+            ("s.contains(u8::is_ascii_whitespace)", "is_ascii_whitespace"),
+            ("s.split_ascii_whitespace().next()", "split_ascii_whitespace"),
+            ("s.trim_ascii()", "trim_ascii"),
+            ("s.trim_ascii_start()", "trim_ascii_start"),
+            ("s.trim_ascii_end()", "trim_ascii_end"),
+        ] {
+            let source = format!("fn k(s: &str) {{\n    let _ = {body};\n}}\n");
+            assert_eq!(
+                fixture(&source, &[]),
+                [format!("fixture.rs:2: `{api}` in `k` has no reviewed allowlist entry")],
+                "{body}"
+            );
+        }
     }
 
     /// Negative control: macro bodies and method impls are scanned with their owner.

@@ -213,6 +213,29 @@ mod tests {
         Ok(())
     }
 
+    /// `spake_preauth_groups` splits on MIT's `" \t\r\n,"` only: form feed and vertical tab are
+    /// token bytes and fail as unknown group names (groups.c:181).
+    #[test]
+    fn spake_group_separators_use_mit_delimiters() -> Result<(), Box<dyn Error>> {
+        let expected = ["P-256", "P-384"];
+        for separator in [" ", "\t", "\r", ",", ", ", "\t,\r"] {
+            let config = Config::parse(&format!(
+                "[libdefaults]\nspake_preauth_groups = P-256{separator}P-384\n"
+            ))?;
+            assert_eq!(config.libdefaults.spake_preauth_groups, expected, "{separator:?}");
+        }
+        for space in ['\u{b}', '\u{c}'].into_iter().chain(UNICODE) {
+            let result = Config::parse(&format!(
+                "[libdefaults]\nspake_preauth_groups = P-256{space}P-384\n"
+            ));
+            assert!(
+                matches!(result, Err(Failure::InvalidLine { .. })),
+                "{space:?}: {result:?}"
+            );
+        }
+        Ok(())
+    }
+
     /// A closing quote may be followed only by C-locale whitespace; Unicode space is text.
     #[test]
     fn closing_quote_tail_uses_c_locale() -> Result<(), Box<dyn Error>> {
