@@ -49,6 +49,54 @@ timeout.
 
 ## Verification
 
+### In-diff check after the todo 74 fixes (todo 76)
+
+Todo 74 changed `src/` after the todo 71 check: `parse_ip_addresses` in
+`src/config.rs` splits address lists at `,` and the shared C-locale ASCII
+whitespace predicate `profile_syntax::tag_whitespace`, and the tail check of
+`profile_syntax::quoted` accepts only that whitespace after the closing quote.
+Its test fixture edit (`src/client/replacement_service_tests.rs`) builds only
+under `cfg(test)`, so cargo-mutants generates no mutant in it. Todo 75 changed
+documentation only.
+
+- Diff: `git diff e266c98 3e10586 -- src` (3 files: `src/config.rs`,
+  `src/config/profile_syntax.rs` and the test module). `e266c98` is `main`
+  after todo 71 and has the code that check covered; `3e10586` is `main` after
+  todo 75.
+- The check ran locally as in todo 71: `cargo mutants --all-features
+  --no-shuffle --cap-lints=true --in-diff <diff> --shard k/3 -j 2
+  --copy-target=false` at `3e10586`, cargo-mutants 27.1.0,
+  `CARGO_BUILD_WARNINGS=allow`, no debug info and an 8 GiB address-space cap.
+  The diff yields 6 mutants, run in 3 shards of 2. Each shard measured its own
+  baseline (52 s to 55 s build, 78 s to 79 s test), and cargo-mutants set the
+  timeout from it (393 s to 399 s).
+- `mutants_report.py --artifacts <the 3 shard outputs> --expect-shards 3
+  --register docs/review/mutants.md --campaign
+  3e105860fc41ce8a64d924df24943124e158380a --enforce` prints `mutants:
+  caught=5 missed=0 timeout=0 unviable=1 success=0` and `0 problem(s)`.
+
+| Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 2 | 1 | 0 | 0 | 1 | 188 |
+| 1 | 2 | 2 | 0 | 0 | 0 | 205 |
+| 2 | 2 | 2 | 0 | 0 | 0 | 210 |
+
+No mutant survived, so the check adds no register row. The caught mutants
+replace the result of `parse_ip_addresses` with `Ok(vec![])` (1 failing test,
+`every_libdefaults_boundary_is_reviewed`), replace `||` with `&&` (4 failing
+tests, among them `config_json_preserves_extra_addresses`) and `==` with `!=`
+(1 failing test) in its separator closure, and replace the result of
+`profile_syntax::quoted` with `Ok(String::new())` and `Ok("xyzzy".into())`
+(25 failing tests each, among them `legacy_request_preserves_explicit_policy`).
+The unviable mutant replaces the result of `parse_ip_addresses` with
+`Ok(vec![Default::default()])`, which does not compile because `IpAddr` has
+no `Default`. cargo-mutants does not mutate the call that replaced
+`is_ascii_whitespace` and `trim`, so the todo 74 tests and its mechanical
+guard protect the predicate choice. Neither changed file is pulled in with
+`include!`: `src/config.rs` is the crate-level module file and
+`src/config/profile_syntax.rs` is a module, so cargo-mutants mutated them
+directly.
+
 ### In-diff check after critic round 12 (todo 71)
 
 Todo 69 changed `src/` after the todo 67 check (FU-CFG-R25..R28: the profile
