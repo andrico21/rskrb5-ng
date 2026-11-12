@@ -186,7 +186,7 @@ mod tests {
             let config = Config::parse(&format!(
                 "[libdefaults]\npreferred_preauth_types = 17,{space},18\n"
             ))?;
-            assert_eq!(config.libdefaults.preferred_preauth_types, [17, 18]);
+            assert_eq!(config.libdefaults.preferred_preauth_types, [17_i32, 18_i32]);
         }
         Ok(())
     }

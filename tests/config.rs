@@ -69,6 +69,8 @@ mod value_whitespace;
 mod value_whitespace_sites;
 #[path = "config/whitespace.rs"]
 mod whitespace;
+#[path = "config/whitespace_scan.rs"]
+mod whitespace_scan;
 
 /// Configuration parsing, loading and realm resolution tests.
 #[cfg(test)]
