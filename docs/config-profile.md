@@ -78,7 +78,8 @@ contributes its own values. See
 and [prof_tree.c:208–249](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_tree.c#L208-L249).
 
 Comments begin with `#` or `;` after optional leading whitespace. The retained
-gokrb5 extension also recognizes them after whitespace outside quotes.
+gokrb5 extension also recognizes them after C-locale ASCII whitespace outside
+quotes; Unicode space before `#` or `;` is value data.
 `RULE:[2:$1;$2]` survives unchanged. Quoted values support escaped quotes,
 backslashes, newline, tab and backspace. Braces are structural only in a
 subsection assignment or closing-brace line, not arbitrary value text.
@@ -89,6 +90,11 @@ subsection assignment or closing-brace line, not arbitrary value text.
 - Include paths must be absolute; leading whitespace before a directive is
   accepted. No dynamic module code is loaded.
 - The unquoted value-suffix `value*` final form is retained as a gokrb5 extension.
+- `include` and `includedir` arguments lose ASCII padding at both ends; MIT
+  removes only leading blanks and a trailing CR or LF, so it keeps trailing
+  spaces and tabs in the file name.
+- A closing quote may be followed only by whitespace; MIT ignores everything
+  after the closing quote.
 - Total source bytes, including caller text and root files: **4 MiB**.
   Every filesystem read stops at remaining budget plus one byte.
 - Total files, including repeated reads and root files: **256**.

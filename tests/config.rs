@@ -63,6 +63,8 @@ mod mutation_core;
 
 #[path = "config/value_whitespace.rs"]
 mod value_whitespace;
+#[path = "config/value_whitespace_sites.rs"]
+mod value_whitespace_sites;
 #[path = "config/whitespace.rs"]
 mod whitespace;
 
