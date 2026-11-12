@@ -49,6 +49,73 @@ timeout.
 
 ## Verification
 
+### In-diff check after critic round 11 (todo 67)
+
+Todo 64 changed `src/` after the todo 63 check (FU-CFG-R23, FU-CFG-R24:
+unquoted value padding, the empty-value and subsection lookahead, the
+local-mapping classification, the typed value decoders and
+`include`/`includedir` arguments use the shared C-locale ASCII whitespace
+predicate of MIT `prof_parse.c`, so Unicode space characters stay value and
+path data). Todo 68 added a test module under
+`src/client/` (`replacement_service_tests.rs`, a module of
+`replacement_login_tests.rs`), which builds only under `cfg(test)`, so
+cargo-mutants generates no mutant in it. Todos 65 and 66 changed gate
+scripts and tests only.
+
+- Diff: `git diff 6b9d5f0 1ebf6fc -- src` (8 files: `src/config.rs`, 5 files
+  under `src/config/` and the 2 test modules). `6b9d5f0` is `main` after
+  todo 63 and has the code that check covered; `1ebf6fc` is `main` after
+  todo 68.
+- The check ran locally as in todo 63: `cargo mutants --all-features
+  --no-shuffle --cap-lints=true --in-diff <diff> --shard k/13 -j 2
+  --copy-target=false` at `1ebf6fc`, cargo-mutants 27.1.0,
+  `CARGO_BUILD_WARNINGS=allow`, no debug info and an 8 GiB address-space cap.
+  The diff yields 26 mutants, run in 13 shards of 2. Each shard measured its
+  own baseline (49 s to 81 s build, 79 s to 114 s test), and cargo-mutants
+  set the timeout from it (397 s to 574 s).
+- `mutants_report.py --artifacts <the 13 shard outputs> --expect-shards 13
+  --register docs/review/mutants.md --campaign
+  1ebf6fc09d2ab32aeea66066edbdee784d6d9cf7 --enforce` prints `mutants:
+  caught=25 missed=0 timeout=0 unviable=1 success=0` and `0 problem(s)`.
+
+| Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 2 | 2 | 0 | 0 | 0 | 284 |
+| 1 | 2 | 2 | 0 | 0 | 0 | 280 |
+| 2 | 2 | 2 | 0 | 0 | 0 | 297 |
+| 3 | 2 | 2 | 0 | 0 | 0 | 286 |
+| 4 | 2 | 1 | 0 | 0 | 1 | 259 |
+| 5 | 2 | 2 | 0 | 0 | 0 | 217 |
+| 6 | 2 | 2 | 0 | 0 | 0 | 211 |
+| 7 | 2 | 2 | 0 | 0 | 0 | 210 |
+| 8 | 2 | 2 | 0 | 0 | 0 | 204 |
+| 9 | 2 | 2 | 0 | 0 | 0 | 207 |
+| 10 | 2 | 2 | 0 | 0 | 0 | 208 |
+| 11 | 2 | 2 | 0 | 0 | 0 | 205 |
+| 12 | 2 | 2 | 0 | 0 | 0 | 203 |
+
+No mutant survived, so the check adds no register row. The mutants replace
+the changed `parse_boolean`, `parse_i32_list`, `IncludeDirective::parse`,
+`IncludeExpansion::expand`, `protocol::relation`,
+`State::local_mapping_assignment`, `State::line`, `State::content`,
+`section_decode::finish` and the `libdefaults` duration `parse` and `units`
+with constant results, delete the negations in `parse_i32_list` and
+`State::local_mapping_assignment`, and swap `&&` and `||` in
+`State::local_mapping_assignment`, `State::content` and
+`section_decode::finish`. The unviable mutant returns `Some(Default::default())`
+from `IncludeDirective::parse`, and `IncludeDirective` has no `Default`.
+
+One changed file is pulled in with `include!`: `src/config/sections.rs`
+(included by `src/config.rs`), whose `parse_assignment` therefore had no
+mutant in the in-diff run. It was checked as in todo 39, in a scratch copy
+with the file inlined into `src/config.rs` (`cargo mutants --all-features
+--no-shuffle --cap-lints=true --file src/config.rs --re parse_assignment
+--shard k/2 -j 2 --copy-target=false`). All 4 mutants, which replace the
+returned key and value with `""` and `"xyzzy"`, were caught; each failed 21
+tests, among them `legacy_request_preserves_explicit_policy`. The other
+changed files under `src/config/` are modules, so cargo-mutants mutated them
+directly.
+
 ### In-diff check after critic round 10 (todo 63)
 
 Todo 60 changed `src/` after the todo 59 check (FU-CFG-R21, FU-CFG-R22: the
