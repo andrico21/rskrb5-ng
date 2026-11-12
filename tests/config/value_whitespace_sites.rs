@@ -222,14 +222,24 @@ mod tests {
             let config = Config::parse(&format!(
                 "[libdefaults]\nspake_preauth_groups = P-256{separator}P-384\n"
             ))?;
-            assert_eq!(config.libdefaults.spake_preauth_groups, expected, "{separator:?}");
+            assert_eq!(
+                config.libdefaults.spake_preauth_groups, expected,
+                "{separator:?}"
+            );
         }
         for space in ['\u{b}', '\u{c}'].into_iter().chain(UNICODE) {
             let result = Config::parse(&format!(
                 "[libdefaults]\nspake_preauth_groups = P-256{space}P-384\n"
             ));
             assert!(
-                matches!(result, Err(Failure::InvalidLine { .. })),
+                matches!(
+                    result,
+                    Err(Failure::InvalidLine {
+                        section: _,
+                        line: _,
+                        text: _
+                    })
+                ),
                 "{space:?}: {result:?}"
             );
         }
