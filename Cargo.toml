@@ -38,10 +38,7 @@ name = "rskrb5_ng"
 
 [features]
 default = ["spnego", "tokio", "serde"]
-evaluation = [
-  "spnego",
-  "dep:hex",
-]
+evaluation = ["spnego", "dep:hex"]
 messages = ["dep:chrono", "dep:rasn", "dep:rasn-kerberos"]
 spnego = ["messages", "dep:base64"]
 http = ["spnego", "dep:http_types"]
