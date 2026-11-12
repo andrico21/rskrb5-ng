@@ -97,8 +97,8 @@ value are value data.
 - `include` and `includedir` arguments lose ASCII padding at both ends; MIT
   removes only leading blanks and a trailing CR or LF, so it keeps trailing
   spaces and tabs in the file name.
-- A closing quote may be followed only by whitespace; MIT ignores everything
-  after the closing quote.
+- A closing quote may be followed only by C-locale ASCII whitespace; MIT
+  ignores everything after the closing quote.
 - Total source bytes, including caller text and root files: **4 MiB**.
   Every filesystem read stops at remaining budget plus one byte.
 - Total files, including repeated reads and root files: **256**.

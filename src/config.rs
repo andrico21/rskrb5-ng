@@ -1935,7 +1935,7 @@ fn invalid_integer(value: &str, line: &Line, key: &str) -> Error {
 /// Returns a typed failure naming the malformed address token.
 fn parse_ip_addresses(value: &str) -> Result<Vec<IpAddr>, Error> {
     value
-        .split(|ch: char| ch == ',' || ch.is_ascii_whitespace())
+        .split(|ch: char| ch == ',' || profile_syntax::tag_whitespace(ch))
         .filter(|part| !part.is_empty())
         .map(|part| {
             part.parse()

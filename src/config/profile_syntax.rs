@@ -284,7 +284,7 @@ fn quoted(value: &str, line: &Line) -> Result<String, Error> {
         } else if ch == '"' {
             if rest
                 .get(index.saturating_add(1)..)
-                .is_some_and(|tail| tail.trim().is_empty())
+                .is_some_and(|tail| tail.chars().all(tag_whitespace))
             {
                 return Ok(result);
             }

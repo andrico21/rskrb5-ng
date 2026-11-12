@@ -23,6 +23,10 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
   space before `#` or `;` is now value data (behaviour change); add proofs for
   the remaining Unicode-padding decision sites and document two grammar
   divergences from MIT (FU-CFG-R25, FU-CFG-R26, FU-CFG-R27, FU-CFG-R28).
+- Accept only C-locale ASCII whitespace after a closing quote: a Unicode space
+  there is now an invalid line (behaviour change); split `extra_addresses` on
+  vertical tab like MIT; guard the profile grammar against unreviewed
+  Unicode-aware whitespace calls (FU-CFG-R29, FU-CFG-R30, FU-CFG-R31).
 - Collect package links with a hash-pinned CommonMark parser, preserving
   destination backticks, Unicode filenames and raw HTML attributes; reject
   unclassifiable destinations (FU-CI-R12, FU-CI-R13, FU-CI-R14).
