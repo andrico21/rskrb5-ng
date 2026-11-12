@@ -4,18 +4,23 @@ use std::io;
 
 use super::replacement::Method;
 
+/// Classifies one owner field as credential storage; other writes need no proof.
+pub(super) type Secret<'secret> = &'secret dyn Fn(&Method, &str) -> bool;
+
 pub(super) fn validate(
     method: &Method,
     methods: &[Method],
     proofs: &[(&str, &str)],
+    secret: Secret<'_>,
 ) -> Result<(), io::Error> {
-    check(method, methods, proofs, &mut Vec::new())
+    check(method, methods, proofs, secret, &mut Vec::new())
 }
 
 fn check(
     method: &Method,
     methods: &[Method],
     proofs: &[(&str, &str)],
+    secret: Secret<'_>,
     active: &mut Vec<String>,
 ) -> Result<(), io::Error> {
     let fail = |reason: &str| {
@@ -40,8 +45,17 @@ fn check(
     {
         return Ok(());
     }
-    if !method.direct.is_empty() {
-        return Err(fail("direct replacement requires its own proof"));
+    let direct = method
+        .direct
+        .iter()
+        .filter(|field| secret(method, field))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !direct.is_empty() {
+        return Err(fail(&format!(
+            "direct replacement of {} requires its own proof",
+            direct.join(", ")
+        )));
     }
     let expected = entries
         .iter()
@@ -71,7 +85,7 @@ fn check(
     }
     active.push(method.identity.clone());
     for callee in actual {
-        check(callee, methods, proofs, active)?;
+        check(callee, methods, proofs, secret, active)?;
     }
     drop(active.pop());
     Ok(())
@@ -88,6 +102,10 @@ mod tests {
     use std::io;
 
     use super::super::replacement;
+
+    fn secret(_: &replacement::Method, field: &str) -> bool {
+        field == "secret"
+    }
 
     /// Only a resolved, unchanged wrapper can inherit a registered callee's proof.
     #[test]
@@ -107,8 +125,8 @@ mod tests {
                 "delegates:src/probe.rs::Owner::write",
             ),
         ];
-        super::validate(wrapper, &methods, &proofs)?;
-        assert!(super::validate(wrapper, &methods, &proofs[1..]).is_err());
+        super::validate(wrapper, &methods, &proofs, &secret)?;
+        assert!(super::validate(wrapper, &methods, &proofs[1..], &secret).is_err());
         let changed = replacement::methods(
             "src/probe.rs",
             "pub struct Owner { secret: Vec<u8> }\nimpl Owner { fn write(&mut self) { self.secret.clear(); } pub fn wrap(&mut self) { self.secret = vec![]; self.write(); } }",
@@ -117,7 +135,7 @@ mod tests {
             .iter()
             .find(|method| method.identity.ends_with("::wrap"))
             .ok_or_else(|| io::Error::other("changed wrapper"))?;
-        assert!(super::validate(wrapper, &changed, &proofs).is_err());
+        assert!(super::validate(wrapper, &changed, &proofs, &secret).is_err());
         let changed_edge = replacement::methods(
             "src/probe.rs",
             "pub struct Owner { secret: Vec<u8> } impl Owner { fn write(&mut self) { self.secret.clear(); } fn other(&mut self) { self.secret.clear(); } pub fn wrap(&mut self) { self.other(); } }",
@@ -127,10 +145,19 @@ mod tests {
             .find(|method| method.identity.ends_with("::wrap"))
             .ok_or_else(|| io::Error::other("changed edge wrapper"))?;
         assert!(
-            super::validate(changed_wrapper, &changed_edge, &proofs)
+            super::validate(changed_wrapper, &changed_edge, &proofs, &secret)
                 .err()
                 .is_some()
         );
+        let local = replacement::methods(
+            "src/probe.rs",
+            "pub struct Owner { secret: Vec<u8>, counter: u8 }\nimpl Owner { fn write(&mut self) { self.secret.clear(); } pub fn wrap(&mut self) { self.counter = 1; self.write(); } }",
+        )?;
+        let counted = local
+            .iter()
+            .find(|method| method.identity.ends_with("::wrap"))
+            .ok_or_else(|| io::Error::other("counter wrapper"))?;
+        super::validate(counted, &local, &proofs, &secret)?;
         Ok(())
     }
 }

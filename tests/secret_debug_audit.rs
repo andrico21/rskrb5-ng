@@ -316,7 +316,15 @@ mod tests {
                                 *identity == method.identity && !reason.is_empty()
                             })
                         {
-                            if let Err(error) = super::replacement_certification::validate(method, &methods, &certificates) {
+                            if let Err(error) = super::replacement_certification::validate(method, &methods, &certificates, &|candidate, name| {
+                                owners.iter().filter(|declared| declared.identity == candidate.owner).any(|declared| {
+                                    declared.fields.iter().any(|(declared_field, _, declared_ty)| {
+                                        declared_field == name
+                                            && secret_field(declared_field, declared_ty)
+                                            && !super::nonsecret::contains(&declared.identity, declared_field)
+                                    })
+                                })
+                            }) {
                                 failures.push(format!("{} replaces {field}: {error}", method.identity));
                             }
                         }
