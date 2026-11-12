@@ -37,7 +37,10 @@ mod tests {
             Principal::user("TEST.GOKRB5", "alice"),
             alice_keytab(),
         );
-        assert_eq!(credential_source(&client)?, ("keytab".to_owned(), vec![18]));
+        assert_eq!(
+            credential_source(&client)?,
+            ("keytab".to_owned(), vec![18_i32])
+        );
         let replaced = client.with_password_credential(TESTUSER_PASSWORD);
         assert_eq!(
             credential_source(&replaced)?,
@@ -62,7 +65,7 @@ mod tests {
         let replaced = client.with_keytab_credential(alice_keytab());
         assert_eq!(
             credential_source(&replaced)?,
-            ("keytab".to_owned(), vec![18])
+            ("keytab".to_owned(), vec![18_i32])
         );
         Ok(())
     }

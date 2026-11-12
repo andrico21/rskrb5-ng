@@ -133,7 +133,7 @@ mod tests {
     extern crate alloc;
     use alloc::collections::BTreeSet;
     use core::cell::RefCell;
-    use std::{io, path::Path};
+    use std::{env, fs, io, path::Path, process};
 
     use super::inventory::{inspect, secret_field, secret_owners, session_storage};
 
@@ -390,11 +390,11 @@ mod tests {
     /// Session and credential owner fields are credential storage whatever their names.
     #[test]
     fn session_storage_replacements_require_proof() -> Result<(), io::Error> {
-        let root = std::env::temp_dir().join(format!("rskrb5-t70-sessions-{}", std::process::id()));
-        std::fs::create_dir_all(&root)?;
+        let root = env::temp_dir().join(format!("rskrb5-t70-sessions-{}", process::id()));
+        fs::create_dir_all(&root)?;
         let result = (|| {
-            std::fs::write(root.join("lib.rs"), "mod client;")?;
-            std::fs::write(
+            fs::write(root.join("lib.rs"), "mod client;")?;
+            fs::write(
                 root.join("client.rs"),
                 "use std::collections::BTreeMap;\npub struct AsRepSession { key: Vec<u8> }\npub enum TokioClientCredentials { Password(Vec<u8>) }\npub struct Tokio { tgt: Option<AsRepSession>, tgt_sessions: BTreeMap<String, AsRepSession>, credentials: Option<TokioClientCredentials> }\nimpl Tokio { pub fn probe_replace(&mut self) { self.tgt_sessions = BTreeMap::new(); self.tgt = None; self.credentials = None; } }",
             )?;
@@ -417,7 +417,7 @@ mod tests {
             );
             Ok(())
         })();
-        std::fs::remove_dir_all(&root)?;
+        fs::remove_dir_all(&root)?;
         result
     }
 
