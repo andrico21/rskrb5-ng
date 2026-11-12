@@ -61,12 +61,16 @@ mod mutation_values;
 #[path = "config/mutation_core.rs"]
 mod mutation_core;
 
+#[path = "config/unicode_whitespace_guard.rs"]
+mod unicode_whitespace_guard;
 #[path = "config/value_whitespace.rs"]
 mod value_whitespace;
 #[path = "config/value_whitespace_sites.rs"]
 mod value_whitespace_sites;
 #[path = "config/whitespace.rs"]
 mod whitespace;
+#[path = "config/whitespace_scan.rs"]
+mod whitespace_scan;
 
 /// Configuration parsing, loading and realm resolution tests.
 #[cfg(test)]
