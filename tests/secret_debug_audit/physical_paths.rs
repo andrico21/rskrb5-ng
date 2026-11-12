@@ -4,6 +4,7 @@ use std::{env, fs, io, process};
 
 use crate::inventory;
 
+/// Parent traversal must preserve private credential classification across physical files.
 #[test]
 fn repeated_super_paths_preserve_private_storage() -> Result<(), io::Error> {
     let root = env::temp_dir().join(format!("rskrb5-t66-paths-{}", process::id()));

@@ -5,6 +5,7 @@ use std::{env, fs, io, path::Path, process};
 #[path = "physical_paths.rs"]
 mod physical_paths;
 
+/// Hoisted block imports cannot authorize unclassified helper or derive expansions.
 #[test]
 fn block_imports_cannot_impersonate_helper_attributes() -> Result<(), io::Error> {
     for source in [
