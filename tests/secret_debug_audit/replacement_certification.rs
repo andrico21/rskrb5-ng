@@ -118,6 +118,19 @@ mod tests {
             .find(|method| method.identity.ends_with("::wrap"))
             .ok_or_else(|| io::Error::other("changed wrapper"))?;
         assert!(super::validate(wrapper, &changed, &proofs).is_err());
+        let changed_edge = replacement::methods(
+            "src/probe.rs",
+            "pub struct Owner { secret: Vec<u8> } impl Owner { fn write(&mut self) { self.secret.clear(); } fn other(&mut self) { self.secret.clear(); } pub fn wrap(&mut self) { self.other(); } }",
+        )?;
+        let changed_wrapper = changed_edge
+            .iter()
+            .find(|method| method.identity.ends_with("::wrap"))
+            .ok_or_else(|| io::Error::other("changed edge wrapper"))?;
+        assert!(
+            super::validate(changed_wrapper, &changed_edge, &proofs)
+                .err()
+                .is_some()
+        );
         Ok(())
     }
 }

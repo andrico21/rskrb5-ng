@@ -111,6 +111,9 @@ mod replacement;
 #[path = "secret_debug_audit/replacement_certification.rs"]
 mod replacement_certification;
 
+#[path = "secret_debug_audit/replacement_registry.rs"]
+mod replacement_registry;
+
 #[cfg(all(test, feature = "messages"))]
 #[path = "secret_debug_audit/messages.rs"]
 mod messages;
@@ -274,6 +277,9 @@ mod tests {
             .chain([("src/client.rs::Tokio::change_password_for_with_options", ReplacementProof::DependencyContractReplacement {
                 test: "confirmed_own_change_rotates_name_type_zero",
                 contract: "TokioClientCredentials::Password retains dependency-owned Zeroizing<Vec<u8>>: old-value erasure rests on zeroize's Drop contract, not an observed first-party wipe. The authenticated change followed by new-password login proves functional replacement.",
+            }), ("src/client.rs::Tokio::get_service_ticket_with_clock", ReplacementProof::DependencyContractReplacement {
+                test: "service_acquisition_replaces_expired_cached_session",
+                contract: "Public service acquisition replaces the retained session. Key erasure relies on its owning type's Drop contract; rasn ticket copies remain residuals. This own proof terminates the four-edge SPNEGO inheritance chain.",
             })]).collect::<Vec<_>>();
         for (_, proof) in &proofs {
             let test = match proof {
@@ -291,8 +297,14 @@ mod tests {
                 "missing replacement proof test {test}"
             );
         }
+        let certificates = proofs.iter().map(|(identity, proof)| {
+            let test = match proof {
+                ReplacementProof::LiveWipe(test) | ReplacementProof::DependencyContractReplacement { test, contract: _ } => *test,
+            };
+            (*identity, test)
+        }).chain(super::replacement_registry::DELEGATIONS.iter().copied()).collect::<Vec<_>>();
         let mut failures = Vec::new();
-        for method in methods {
+        for method in &methods {
             let replaced = super::replacement::replaced_fields(&method);
             if names.contains(&method.owner) && !replaced.is_empty() {
                 for owner in owners.iter().filter(|owner| owner.identity == method.owner) {
@@ -303,11 +315,10 @@ mod tests {
                             && !REPLACEMENT_EXCEPTIONS.iter().any(|(identity, reason)| {
                                 *identity == method.identity && !reason.is_empty()
                             })
-                            && !proofs
-                                .iter()
-                                .any(|(identity, _)| *identity == method.identity)
                         {
-                            failures.push(format!("{} replaces {field}", method.identity));
+                            if let Err(error) = super::replacement_certification::validate(method, &methods, &certificates) {
+                                failures.push(format!("{} replaces {field}: {error}", method.identity));
+                            }
                         }
                     }
                 }

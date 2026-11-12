@@ -25,6 +25,9 @@ use crate::{
     keytab::{EncryptionKey, key_bytes::EVENTS},
 };
 
+#[path = "replacement_service_tests.rs"]
+mod service;
+
 type TestError = Box<dyn Error + Send + Sync>;
 
 /// A bounded loopback AS peer supplies a real encrypted replacement session.
