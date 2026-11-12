@@ -217,3 +217,7 @@ is a parity feature, not a defect>`.
 | owner:rskrb5-ng-b07c837/verdict.md#ORA-07 | FU-CLI-R17 | no |
 | critic:critics-6b9d5f0/u6.md#U6-01 | FU-CI-R15 | no |
 | critic:critics-6b9d5f0/u6.md#U6-02 | FU-CI-R16 | no |
+| critic:critics-0554a41/u5.md#U5-01 | FU-CFG-R25 | no |
+| critic:critics-0554a41/u5.md#U5-02 | FU-CFG-R26 | no |
+| critic:critics-0554a41/u5.md#U5-03 | FU-CFG-R27 | no |
+| critic:critics-0554a41/u5.md#U5-04 | FU-CFG-R28 | no |

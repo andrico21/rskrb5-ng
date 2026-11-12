@@ -19,6 +19,10 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 - Preserve Unicode profile value and include/includedir path bytes with one
   C-locale padding predicate; distinguish scalar data from subsection syntax
   and keep exact included-source policy admission (FU-CFG-R23, FU-CFG-R24).
+- Treat only C-locale ASCII whitespace as an inline-comment boundary: a Unicode
+  space before `#` or `;` is now value data (behaviour change); add proofs for
+  the remaining Unicode-padding decision sites and document two grammar
+  divergences from MIT (FU-CFG-R25, FU-CFG-R26, FU-CFG-R27, FU-CFG-R28).
 - Collect package links with a hash-pinned CommonMark parser, preserving
   destination backticks, Unicode filenames and raw HTML attributes; reject
   unclassifiable destinations (FU-CI-R12, FU-CI-R13, FU-CI-R14).

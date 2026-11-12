@@ -305,7 +305,8 @@ fn invalid(line: &Line) -> Error {
     }
 }
 
-/// A comment starts outside quotes at line start or after whitespace.
+/// A comment starts outside quotes at line start or after C-locale whitespace.
+/// Unicode space is data, as everywhere else in the profile grammar.
 pub(super) fn comments(line: &str) -> &str {
     let mut quoted = false;
     let mut escaped = false;
@@ -322,7 +323,7 @@ pub(super) fn comments(line: &str) -> &str {
         } else {
             // Ordinary value characters do not change quote state.
         }
-        whitespace = ch.is_whitespace();
+        whitespace = tag_whitespace(ch);
     }
     line
 }
