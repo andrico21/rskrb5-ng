@@ -27,9 +27,10 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
   there is now an invalid line (behaviour change); split `extra_addresses` on
   vertical tab like MIT; guard the profile grammar against unreviewed
   Unicode-aware whitespace calls (FU-CFG-R29, FU-CFG-R30, FU-CFG-R31).
-- Split `spake_preauth_groups` on exactly MIT's `" \t\r\n,"`: a form feed or
-  vertical tab between group names is now an invalid line (behaviour change);
-  the guard also reports the ASCII whitespace variants (`is_ascii_whitespace`,
+- Split `spake_preauth_groups` on exactly MIT's `" \t\r\n,"`: a form feed
+  between group names is now an invalid line (behaviour change); a vertical tab
+  was already one (an unknown group name), and the key is new in 0.3.0; the
+  guard also reports the ASCII whitespace variants (`is_ascii_whitespace`,
   `trim_ascii*`, `split_ascii_whitespace`). Document in the migration guide that
   text after a closing quote is an invalid line where v0.2.2 kept it verbatim
   and that `extra_addresses` is split on commas and C-locale ASCII whitespace
