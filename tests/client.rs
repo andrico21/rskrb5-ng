@@ -116,6 +116,9 @@ mod review_checksums;
 #[path = "client/review_cookie.rs"]
 mod review_cookie;
 #[cfg(feature = "tokio")]
+#[path = "client/review_credential_replacement.rs"]
+mod review_credential_replacement;
+#[cfg(feature = "tokio")]
 #[path = "client/review_cross_realm_renewal.rs"]
 mod review_cross_realm_renewal;
 #[cfg(feature = "tokio")]

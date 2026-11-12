@@ -30,7 +30,7 @@ use crate::{
 /// A bounded TGS peer seals a fresh key under the actual request authenticator subkey.
 /// # Cancel safety
 /// Cancellation drops this fixture's socket; no shared state survives it.
-async fn answer_service(listener: TcpListener) -> Result<(), TestError> {
+pub(super) async fn answer_service(listener: TcpListener) -> Result<(), TestError> {
     let (mut socket, _) = listener.accept().await?;
     let length = usize::try_from(socket.read_u32().await?)?;
     let _bounded = u16::try_from(length)?;

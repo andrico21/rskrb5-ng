@@ -133,9 +133,9 @@ mod tests {
     extern crate alloc;
     use alloc::collections::BTreeSet;
     use core::cell::RefCell;
-    use std::{io, path::Path};
+    use std::{env, fs, io, path::Path, process};
 
-    use super::inventory::{inspect, secret_field, secret_owners};
+    use super::inventory::{inspect, secret_field, secret_owners, session_storage};
 
     std::thread_local! {
         static EXERCISED: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
@@ -269,7 +269,6 @@ mod tests {
     fn public_secret_replacements_are_audited() -> Result<(), io::Error> {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let owners = inspect(root, &root.join("src"))?;
-        let names = secret_owners(&owners);
         let methods = super::replacement::inspect(root, &root.join("src"))?;
         let mut tests = super::replacement::test_names(&root.join("src"))?;
         tests.extend(super::replacement::test_names(&root.join("tests"))?);
@@ -292,6 +291,24 @@ mod tests {
             }), ("src/client.rs::Tokio::renew_tgt_session_for_realm", ReplacementProof::DependencyContractReplacement {
                 test: "tokio_client_renews_primary_tgt_and_clears_service_cache",
                 contract: "Primary-realm renewal replaces the primary TGT and clears the service ticket cache; old-key erasure relies on the replaced sessions' Drop contract, not an observed first-party wipe.",
+            }), ("src/client.rs::Tokio::with_password_credential", ReplacementProof::DependencyContractReplacement {
+                test: "password_attachment_replaces_keytab_credential",
+                contract: "Attaching a password replaces the retained long-term credential; the old keytab's key erasure relies on its owners' Drop contract, not an observed first-party wipe.",
+            }), ("src/client.rs::Tokio::with_keytab_credential", ReplacementProof::DependencyContractReplacement {
+                test: "keytab_attachment_replaces_password_credential",
+                contract: "Attaching a keytab replaces the retained long-term credential; the old password's erasure relies on zeroize's Zeroizing<Vec<u8>> Drop contract, not an observed first-party wipe.",
+            }), ("src/client.rs::Tokio::remove_tgt_session_for_realm", ReplacementProof::DependencyContractReplacement {
+                test: "tokio_client_tracks_multiple_tgt_sessions",
+                contract: "Removal transfers the realm's session to the caller; for the client realm the duplicate primary owner is dropped, so its key erasure relies on the session's Drop contract, not an observed first-party wipe.",
+            }), ("src/client/cache_insert.rs::tgt_session_at", ReplacementProof::DependencyContractReplacement {
+                test: "tokio_client_prefers_freshest_cached_tgt_session",
+                contract: "Caching keeps the fresher primary or referral TGT and drops the other; the dropped session's key erasure relies on its Drop contract, not an observed first-party wipe.",
+            }), ("src/client.rs::Tokio::renew_cached_tgt_session_for_realm", ReplacementProof::DependencyContractReplacement {
+                test: "cached_referral_renewal_replaces_realm_session",
+                contract: "Cached renewal replaces the referral TGT for its realm; old-key erasure relies on the replaced session's Drop contract, not an observed first-party wipe.",
+            }), ("src/client.rs::Tokio::renew_cached_tgt_session_for_realm", ReplacementProof::DependencyContractReplacement {
+                test: "cached_primary_renewal_replaces_primary_tgt",
+                contract: "Cached renewal in the client realm replaces the primary TGT and its realm entry; old-key erasure relies on the replaced sessions' Drop contract, not an observed first-party wipe.",
             })]).collect::<Vec<_>>();
         for (_, proof) in &proofs {
             let test = match proof {
@@ -322,11 +339,27 @@ mod tests {
             })
             .chain(super::replacement_registry::DELEGATIONS.iter().copied())
             .collect::<Vec<_>>();
+        let failures = uncovered_replacements(&owners, &methods, &certificates);
+        assert!(
+            failures.is_empty(),
+            "uncovered replacement methods:\n{}",
+            failures.join("\n")
+        );
+        Ok(())
+    }
+
+    /// Replacements of credential storage that lack a proof, exception or certificate.
+    fn uncovered_replacements(
+        owners: &[super::inventory::Owner],
+        methods: &[super::replacement::Method],
+        certificates: &[(&str, &str)],
+    ) -> Vec<String> {
+        let names = secret_owners(owners);
         let secret = |candidate: &super::replacement::Method, name: &str| {
-            credential_storage(&owners, &candidate.owner, name)
+            credential_storage(owners, &candidate.owner, name)
         };
         let mut failures = Vec::new();
-        for method in &methods {
+        for method in methods {
             let replaced = super::replacement::replaced_fields(method);
             if !names.contains(&method.owner) || replaced.is_empty() {
                 continue;
@@ -334,15 +367,15 @@ mod tests {
             for owner in owners.iter().filter(|owner| owner.identity == method.owner) {
                 for (field, _, ty) in &owner.fields {
                     if replaced.contains(field)
-                        && secret_field(field, ty)
+                        && (secret_field(field, ty) || session_storage(ty))
                         && !super::nonsecret::contains(&owner.identity, field)
                         && !REPLACEMENT_EXCEPTIONS.iter().any(|(identity, reason)| {
                             *identity == method.identity && !reason.is_empty()
                         })
                         && let Err(error) = super::replacement_certification::validate(
                             method,
-                            &methods,
-                            &certificates,
+                            methods,
+                            certificates,
                             &secret,
                         )
                     {
@@ -351,12 +384,41 @@ mod tests {
                 }
             }
         }
-        assert!(
-            failures.is_empty(),
-            "uncovered replacement methods:\n{}",
-            failures.join("\n")
-        );
-        Ok(())
+        failures
+    }
+
+    /// Session and credential owner fields are credential storage whatever their names.
+    #[test]
+    fn session_storage_replacements_require_proof() -> Result<(), io::Error> {
+        let root = env::temp_dir().join(format!("rskrb5-t70-sessions-{}", process::id()));
+        fs::create_dir_all(&root)?;
+        let result = (|| {
+            fs::write(root.join("lib.rs"), "mod client;")?;
+            fs::write(
+                root.join("client.rs"),
+                "use std::collections::BTreeMap;\npub struct AsRepSession { key: Vec<u8> }\npub enum TokioClientCredentials { Password(Vec<u8>) }\npub struct Tokio { tgt: Option<AsRepSession>, tgt_sessions: BTreeMap<String, AsRepSession>, credentials: Option<TokioClientCredentials> }\nimpl Tokio { pub fn probe_replace(&mut self) { self.tgt_sessions = BTreeMap::new(); self.tgt = None; self.credentials = None; } }",
+            )?;
+            let owners = inspect(&root, &root)?;
+            let methods = super::replacement::inspect(&root, &root)?;
+            let failures = uncovered_replacements(&owners, &methods, &[]);
+            for field in ["tgt", "tgt_sessions", "credentials"] {
+                let expected = format!("client.rs::Tokio::probe_replace replaces {field}: ");
+                assert!(
+                    failures
+                        .iter()
+                        .any(|failure| failure.starts_with(&expected)),
+                    "{field} replacement admitted: {failures:?}"
+                );
+            }
+            let certified = [("client.rs::Tokio::probe_replace", "probe_test")];
+            assert_eq!(
+                uncovered_replacements(&owners, &methods, &certified),
+                Vec::<String>::new()
+            );
+            Ok(())
+        })();
+        fs::remove_dir_all(&root)?;
+        result
     }
 
     /// Whether `name` is credential storage of the declared owner `identity`.
@@ -367,7 +429,7 @@ mod tests {
             .any(|declared| {
                 declared.fields.iter().any(|(field, _, ty)| {
                     field == name
-                        && secret_field(field, ty)
+                        && (secret_field(field, ty) || session_storage(ty))
                         && !super::nonsecret::contains(&declared.identity, field)
                 })
             })

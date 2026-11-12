@@ -10,6 +10,14 @@ pub(super) const DELEGATIONS: &[(&str, &str)] = &[
         "delegates:src/client.rs::Tokio::renew_tgt_session_for_realm",
     ),
     (
+        "src/client.rs::Tokio::cache_tgt_session",
+        "delegates:src/client.rs::Tokio::cache_tgt_session_at",
+    ),
+    (
+        "src/client.rs::Tokio::cache_tgt_session_at",
+        "delegates:src/client/cache_insert.rs::tgt_session_at",
+    ),
+    (
         "src/client.rs::Tokio::refresh_tgt_if_needed",
         "delegates:src/client.rs::Tokio::ensure_tgt",
     ),
