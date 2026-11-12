@@ -49,6 +49,58 @@ timeout.
 
 ## Verification
 
+### In-diff check after todos 77 and 78 (todo 79)
+
+Todo 77 changed `spake_preauth_groups` in `src/config/libdefaults/c2.rs`: the
+list now splits at exactly `,`, space, tab, CR and LF, as MIT `groups.c` does.
+Todo 78 changed `src/krb_cred/conversion.rs`, where
+`krb_cred_info_to_ccache_credential` builds the ticket flags and the client
+addresses with `Option::map_or_default`, and only rewrote imports in
+`src/client/transport.rs` and `src/messages.rs`.
+
+- Diff: `git diff 3a88222 b7620d4 -- src` (4 files). `3a88222` is `main`
+  after todo 76 and has the code that check covered; `b7620d4` is `main` after
+  todo 78.
+- The check ran locally as in todo 76: `cargo mutants --all-features
+  --no-shuffle --cap-lints=true --in-diff <diff> --shard k/3 -j 2
+  --copy-target=false` at `b7620d4`, cargo-mutants 27.1.0, rustc 1.99.1,
+  `CARGO_BUILD_WARNINGS=allow`, no debug info and an 8 GiB address-space cap.
+  The diff yields 6 mutants, run in 3 shards of 2. Each shard measured its own
+  baseline (53 s to 56 s build, 80 s to 81 s test), and cargo-mutants set the
+  timeout from it (404 s to 406 s).
+- `mutants_report.py --artifacts <the 3 shard outputs> --expect-shards 3
+  --register docs/review/mutants.md --campaign
+  b7620d42ab581bef3b29762bcee59f90465cdd19 --enforce` prints `mutants:
+  caught=3 missed=0 timeout=0 unviable=3 success=0` and `0 problem(s)`.
+
+| Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 2 | 1 | 0 | 0 | 1 | 193 |
+| 1 | 2 | 0 | 0 | 0 | 2 | 174 |
+| 2 | 2 | 2 | 0 | 0 | 0 | 211 |
+
+No mutant survived, so the check adds no register row. The caught mutants
+replace the result of `Tokio::discover_srv_endpoints` with `Ok(vec![])` (5
+failing tests, among them `srv_target_failure_keeps_usable_peers`), replace
+the result of the `c2` `parse` with `Ok(())` (2 failing tests, among them
+`tightened_libdefaults_relation_refused_before_sections`) and delete its
+`spake_preauth_groups` match arm (4 failing tests, among them
+`malformed_values_fail_at_boundary`). The unviable mutants replace a result
+with `Default::default()` where the type has no `Default`: `KdcEndpoint` in
+`Tokio::discover_srv_endpoints`, the resolver in `dns_resolver` and
+`ccache::Credential` in `krb_cred_info_to_ccache_credential`.
+
+cargo-mutants does not mutate the two `map_or_default` closures or the split
+pattern, and the body of `ticket_flags_to_bytes` lies outside the diff. A
+supplementary run on that function (`-f src/krb_cred/conversion.rs --re
+ticket_flags_to_bytes`, outside the campaign) caught both mutants, `[0; 4]`
+and `[1; 4]`, with `converts_decrypted_krb_cred_to_ccache_credentials`; the
+`[0; 4]` mutant is also what an empty flags closure would return. A hand-made
+mutant that empties the address closure (`.take(0)` before `.collect()`)
+fails the same test. No changed file is pulled in with `include!`: `c2.rs`,
+`conversion.rs` and `transport.rs` are modules and `src/messages.rs` is a
+module file, so cargo-mutants mutated them directly.
+
 ### In-diff check after the todo 74 fixes (todo 76)
 
 Todo 74 changed `src/` after the todo 71 check: `parse_ip_addresses` in
