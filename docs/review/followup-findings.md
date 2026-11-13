@@ -315,3 +315,17 @@ is a parity feature, not a defect>`.
 | critic:critics-de4d4a3/u6d.md#U6D-06 | FU-DOC-R86 | no |
 | executor:todo-95#include-byte-budget | FU-DOC-R86 | no |
 | executor:todo-95#keytab-ccache-format-notes | FU-DOC-R87 | no |
+| critic:critics-d125580/u6a.md#U6A-02 | FU-DOC-R88 | no |
+| critic:critics-d125580/u5.md#U5-01 | FU-DOC-R89 | no |
+| critic:critics-d125580/u5.md#U5-02 | FU-DOC-R90 | no |
+| critic:critics-d125580/u6a.md#U6A-01 | FU-DOC-R91 | no |
+| critic:critics-d125580/u6b.md#U6B-01 | FU-DOC-R92 | no |
+| critic:critics-d125580/u6b.md#U6B-02 | FU-DOC-R93 | no |
+| critic:critics-d125580/u6b.md#U6B-03 | FU-DOC-R94 | no |
+| critic:critics-d125580/u6c.md#U6C-01 | FU-DOC-R95 | no |
+| critic:critics-d125580/u6c.md#U6C-02 | FU-DOC-R96 | no |
+| critic:critics-d125580/u6c.md#U6C-03 | FU-DOC-R97 | no |
+| critic:critics-d125580/u6c.md#U6C-04 | FU-DOC-R98 | no |
+| critic:critics-d125580/u6c.md#U6C-05 | FU-DOC-R99 | no |
+| critic:critics-d125580/u6d.md#U6D-01 | FU-DOC-R100 | no |
+| critic:critics-d125580/u6d.md#U6D-02 | FU-DOC-R101 | no |
