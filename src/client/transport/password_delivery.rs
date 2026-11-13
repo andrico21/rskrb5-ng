@@ -175,7 +175,7 @@ mod tests {
 
     use tokio::net::TcpListener;
 
-    use super::{Error, KdcEndpoint, KdcProtocol, Tokio, send_to_endpoints};
+    use super::{Error, KdcEndpoint, KdcProtocol, Tokio, io, is_udp_refusal, send_to_endpoints};
 
     /// Every pre-delivery failure identifies the endpoint that failed.
     #[tokio::test]
@@ -220,5 +220,48 @@ mod tests {
             other => return Err(format!("unexpected outcome: {other:?}").into()),
         }
         Ok(())
+    }
+
+    /// Only a refused or reset datagram is a definite refusal.
+    #[test]
+    fn udp_refusal_is_exactly_connection_refused_and_reset() {
+        // Given every I/O kind a UDP reply wait could surface.
+        let cases = [
+            (io::ErrorKind::ConnectionRefused, true),
+            (io::ErrorKind::ConnectionReset, true),
+            (io::ErrorKind::Other, false),
+            (io::ErrorKind::TimedOut, false),
+            (io::ErrorKind::BrokenPipe, false),
+            (io::ErrorKind::UnexpectedEof, false),
+            (io::ErrorKind::WouldBlock, false),
+            (io::ErrorKind::InvalidData, false),
+            (io::ErrorKind::ConnectionAborted, false),
+            (io::ErrorKind::NotConnected, false),
+        ];
+        for case in cases {
+            // When the predicate classifies the error.
+            // Then only refusal and reset keep the failure definite.
+            assert_eq!(
+                is_udp_refusal(&Error::Io(io::Error::from(case.0))),
+                case.1,
+                "{:?}",
+                case.0
+            );
+        }
+    }
+
+    /// A non-I/O failure never counts as a refusal, even one wrapping a refusal.
+    #[test]
+    fn udp_refusal_ignores_non_io_errors() {
+        // Given errors that are not a bare I/O failure.
+        // When the predicate classifies them.
+        // Then neither is a definite refusal.
+        assert!(!is_udp_refusal(&Error::UdpRequestTooLarge {
+            actual: 2,
+            limit: 1,
+        }));
+        assert!(!is_udp_refusal(&Error::KpasswdOutcomeUnknown(Box::new(
+            Error::Io(io::Error::from(io::ErrorKind::ConnectionRefused))
+        ))));
     }
 }
