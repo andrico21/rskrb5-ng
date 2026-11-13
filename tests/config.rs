@@ -49,6 +49,9 @@ mod diagnostics_e;
 #[path = "config/plugin_case.rs"]
 mod plugin_case;
 
+#[path = "config/section_error_lines.rs"]
+mod section_error_lines;
+
 #[path = "config/compatibility_e.rs"]
 mod compatibility_e;
 
