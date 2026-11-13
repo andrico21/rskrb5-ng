@@ -65,7 +65,9 @@ decoding does not activate the deferred mechanism consumers.
 
 Files in `KRB5_CONFIG` compose in platform path-list order (colon on Unix).
 A directory entry uses the same filter as `includedir`: ASCII alphanumerics,
-`-`, `_`, or a non-dot name ending `.conf`. Sorting is bytewise. Includes
+`-`, `_`, or a non-dot name ending `.conf`. Sorting is bytewise. An entry that
+is a directory (or a symlink to one) is skipped, as in MIT, and does not count
+against the include file limit. Includes
 execute at their directive site, even inside a subsection, with fresh syntax
 state and the shared profile tree; the parent resumes its original state.
 See [prof_parse.c:214–256](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L214-L256).
@@ -94,7 +96,8 @@ value are value data.
 ### Deliberate divergences and bounds
 
 - Missing explicitly named `KRB5_CONFIG` entries are errors; MIT skips them.
-- Include paths must be absolute; leading whitespace before a directive is
+- Include paths must be absolute (MIT resolves a relative one against the
+  working directory); leading whitespace before a directive is
   accepted. No dynamic module code is loaded.
 - The unquoted value-suffix `value*` final form is a gokrb5 extension. It applies
   to every relation except the rule-language `auth_to_local` and

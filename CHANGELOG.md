@@ -650,6 +650,16 @@ Security fail-closed parsing and verification:
   value or garbage inside an otherwise valid KDC error (FU-CLI-R12).
 - Version-one keytab serialization rejects nonzero principal name types with
   `UnrepresentableNameType` instead of silently losing them (FU-FIL-R03).
+- Version-one ccache serialization of a nonzero principal name type returns
+  `error::Ccache::UnrepresentableNameType`; v0.2.2 dropped the name type
+  silently, and FU-FIL-01 first refused it as `LengthOverflow` (FU-FIL-R07).
+- An `includedir` entry that is a directory, or a symlink to one, is skipped as
+  in MIT and does not count against the include file limit; v0.2.2 failed the
+  whole configuration with `IncludeFile` (`IsADirectory`) (FU-CFG-R33).
+- A top-level configuration file that is not UTF-8 text is
+  `error::Config::File` with kind `InvalidData`, like the other top-level read
+  failures; v0.2.2 returned `Io`. An included file that is not UTF-8 stays
+  `IncludeFile` (FU-CFG-R34).
 - The Axum example reports replay infrastructure faults as hardened 500 responses
   and retains typed causes in local response extensions (FU-HTTP-R05).
 - The Axum example owns its keytab and releases it on shutdown instead of
