@@ -76,8 +76,27 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 These are breaking; the migration guide maps each one.
 
-- Public structs and enums are `#[non_exhaustive]` and gain constructors or
-  `with_*` builders; struct literals no longer compile outside the crate.
+- Public structs and enums are `#[non_exhaustive]`; struct literals and struct
+  patterns without `..` no longer compile outside the crate. Most gain
+  constructors or `with_*` builders. Some types that the library only
+  returns (`pac::Sid`, `service::ValidatedApReq`, `spnego::AcceptedContext`,
+  `http::NegotiateHttpResponse` and the like) have no public constructor, so
+  v0.2.2 code that built them by literal has no replacement (FU-DOC-R60).
+- Request-option and result structs have only private fields: `AsReq`, `TgsReq`
+  and `ApReq` (v0.2.2: `AsReqOptions`, `TgsReqOptions`, `ApReqOptions`), the
+  `service::ApRepOptions`, and `kadmin::ChangePasswdData` (including its
+  `new_passwd`, formerly an `OctetString`) are read through same-name getters and
+  set through `with_*`, `set_*` or their constructor; `now` and `nonce` of
+  `TgsReq` are constructor arguments only (FU-DOC-R50, FU-DOC-R51, FU-DOC-R52).
+  `ccache::EncryptionKey` has private `etype` and `value` fields read through
+  `etype()` and `value()` (FU-DOC-R53).
+- `service::Validator`, `http::NegotiateLayer` and `http::NegotiateService` do
+  not implement `UnwindSafe` or `RefUnwindSafe` (v0.2.2 did): they carry an
+  `Arc<dyn TransitValidator>`. `pac::GroupMembership`, `pac::InfoBuffer` and
+  `ccache::CredentialTimes` implement `Copy` (FU-DOC-R58).
+- The Tower `Service::Future` of `http::NegotiateService` is the public
+  `http::NegotiateFuture<S::Future, ResBody, S::Error>`; v0.2.2 used
+  `Pin<Box<dyn Future<...>>>` (FU-DOC-R61).
 - The module-local error types move into the new `error` module
   (`client::Error` is `error::Client`, the crate-level `Error` is
   `error::Any`, and so on); the old paths are private.
@@ -86,8 +105,9 @@ These are breaking; the migration guide maps each one.
   `client::TokioClient` is `client::Tokio`), and items move to new public
   modules (`client::{kpasswd, negotiate, options, principal, transport}`,
   `spnego::oid`, `evaluation::data`). The crate-root re-exports `Principal`,
-  `TokioClient`, `NegotiateClient`, `BlockingNegotiateClient`, `Config` and
-  `ServiceValidator` keep their names.
+  `NegotiateClient`, `BlockingNegotiateClient` and `Config` as v0.2.2 did, and
+  add `TokioClient` and `ServiceValidator`, which v0.2.2 had only under their
+  module paths (FU-DOC-R62).
 - `config::LibDefaults` stores enctype names only:
   `default_tkt_enctype_ids`, `default_tgs_enctype_ids` and
   `permitted_enctype_ids` are methods that derive the ids; update the
@@ -103,7 +123,14 @@ These are breaking; the migration guide maps each one.
   structs, group arguments into parameter structs
   (`client::TgsRequestParts`, `kadmin::PasswordEncryption`) or become
   associated functions; argument-position `impl Trait` becomes a named
-  generic; many functions gain `#[must_use]` or become `const fn`.
+  generic with the same bound, except that the MIC and Wrap initiator
+  constructors (`MicToken::new_initiator`, `WrapToken::new_initiator`,
+  `new_initiator_sealed`, `new_initiator_sealed_with_confounder`) take
+  `P: Into<Zeroizing<Vec<u8>>>` instead of `impl Into<Vec<u8>>`, and
+  `client::principal::Principal::new` and `keytab::Principal::new` add a third
+  named parameter `P` after their existing `<I, S>`, so `new::<I, S>` no longer
+  compiles (FU-DOC-R55, FU-DOC-R56); many functions gain `#[must_use]` or
+  become `const fn`.
 - New error variants, among them `error::Client::{EnctypeNotRequested,
   EnctypeNotPermitted, KpasswdOutcomeUnknown, UdpResponseTooLarge,
   DnsServiceUnavailable}`, `error::Config::EnctypeNotPermitted`,
@@ -121,7 +148,10 @@ These are breaking; the migration guide maps each one.
 
 - `rust-version` is 1.99 (was 1.88).
 - Every direct dependency is on its latest major version: `base64` 0.23,
-  `getrandom` 0.4, `rasn` and `rasn-kerberos` 0.29, `compcol` 0.7,
+  `getrandom` 0.4, `rasn` and `rasn-kerberos` 0.29 (v0.2.2: 0.28.13; the derived
+  `encode_with_tag_and_constraints` and `decode_with_tag_and_constraints` of
+  `ChangePasswdData`, `EncryptedData`, `PaForUser`, `PaPacOptions` and
+  `PaReqEncPaRep` take `&Constraints`, FU-DOC-R54), `compcol` 0.7,
   dev `picky-krb` 0.13, dev `toml` 1.1, and `pbkdf2`
   0.13 instead of the `=0.13.0-rc.10` pre-release pin. `proptest`, `syn`
   (default features off; `full`, `visit` and `parsing`) and `proc-macro2`
@@ -521,8 +551,11 @@ Security fail-closed parsing and verification:
   password-encryption inputs and verified replies; keytab entries and ccache
   credentials; message payload wrappers; PAC containers and validation records;
   GSS tokens, initiator options/contexts; service validation/reply results; HTTP
-  response wrappers. The `with_*` and `set_*` methods replace
-  owned secrets with erasure, while ASN.1 dependency copies retain the documented
+  response wrappers. A getter borrows an owned field and returns a `Copy` field
+  by value. The `with_*` and `set_*` methods replace
+  owned secrets with erasure; types the library only returns (PAC containers,
+  `KrbErrorInfo`, `InitiatorContext`, `NegotiateHttpResponse`) have no public
+  constructor and few or no setters (FU-DOC-R59). ASN.1 dependency copies retain the documented
   residual-copy limitation. Metadata fields move to getters too because the
   strict profile prohibits partially public records (FU-CLI-R13, FU-TRN-R09,
   FU-PAC-R09).
@@ -649,8 +682,8 @@ Passwords and secret ownership:
   `NegotiateClient` and `BlockingNegotiateClient`, and
   `ChangePasswdData::new`/`for_target`. The password is erased on completion,
   error and cancellation (FU-CLI-07).
-- `ChangePasswdData::new_passwd` is a redacted zeroizing
-  `kadmin::password::Bytes`, and the request builders encode into zeroizing
+- `ChangePasswdData::new_passwd()` returns a redacted zeroizing
+  `&kadmin::password::Bytes` (v0.2.2: a public `OctetString` field), and the request builders encode into zeroizing
   buffers (FU-TRN-14).
 - MIC and Wrap payloads are owned as `Zeroizing<Vec<u8>>`, and their `Debug`
   is redacted (FU-SPN-01).
@@ -950,8 +983,9 @@ Client:
   (FU-API-05).
 - `KrbErrorCodec::InvalidString` retains `Utf8Error` as its source instead of
   a stringified cause (FU-API-R01).
-- Kadmin retains typed `Crypto` and `getrandom::Error` sources through separate
-  `Crypto` and `Random` tuple variants (FU-API-R02).
+- `error::Kadmin::Crypto` is `Crypto(error::Crypto)` and `Random(getrandom::Error)`
+  is a separate variant; v0.2.2 had the single `Crypto { message: String }` for
+  both (FU-API-R02, FU-DOC-R57).
 - Complete PA/TGS/AP authenticator builders reject fractional explicit seconds
   and microseconds above 999999 before encryption (`Client::Encode`, FU-CLI-R03).
 - Keytab diagnostics count only keys for the client's realm and ordered name

@@ -45,8 +45,15 @@ paths compiling and changes only the package. The features are the same
 default `spnego`, `tokio`, `serde`).
 
 `rskrb5-ng` needs Rust 1.99 or newer (`rust-version = "1.99"`; it was 1.88).
-It depends on `rasn` and `rasn-kerberos` 0.29; a caller that passes `rasn`
-values to or from this crate needs the same versions.
+It depends on `rasn` and `rasn-kerberos` 0.29 (v0.2.2: 0.28.13); a caller that
+passes `rasn` values to or from this crate needs the same versions. The bump
+also changes the derived `rasn::enc::Encode` and `rasn::de::Decode` methods that
+five of this crate's types expose (`kadmin::ChangePasswdData`,
+`messages::{EncryptedData, PaForUser, PaPacOptions, PaReqEncPaRep}`):
+`encode_with_tag_and_constraints` and `decode_with_tag_and_constraints` take
+`&Constraints` instead of `Constraints`. Callers of the plain `encode`/`decode`
+methods or of the crate's own DER helpers are unaffected; a direct caller of the
+`*_with_tag_and_constraints` methods passes a reference (FU-DOC-R54).
 
 ## New configuration keys
 
@@ -558,9 +565,10 @@ Result<Self, error::Kadmin>`. The other parameters and results are unchanged.
   the borrowed original.
 - `as_bytes()` borrows the bytes. `Password` has no `Clone` or `Display`, and
   its `Debug` is redacted.
-- `ChangePasswdData::new_passwd` is a redacted zeroizing
-  `kadmin::password::Bytes`, and the request builders encode the password
-  envelope directly into zeroizing buffers.
+- The `ChangePasswdData::new_passwd` field (v0.2.2: a public `OctetString`) is
+  private; `new_passwd()` returns a redacted zeroizing `&kadmin::password::Bytes`,
+  and the request builders encode the password
+  envelope directly into zeroizing buffers (FU-DOC-R52).
 
 The 0.2 call with a string literal no longer compiles:
 
@@ -1039,6 +1047,11 @@ fn insert(client: &mut Tokio, session: TgsRepSession) -> Result<(), Client> {
 - New variants: `error::Spnego::{InvalidFieldOrder, NonminimalLength}`,
   `error::Service::PacClientMismatch`, `error::Kadmin::UnauthenticatedRejection`
   and those named in the sections above.
+- `error::Kadmin::Crypto` is the tuple variant `Crypto(error::Crypto)` (v0.2.2:
+  `Crypto { message: String }`), and random-source failures, which v0.2.2 also
+  reported as `Crypto { message }`, are the new `Random(getrandom::Error)`.
+  Replace `Kadmin::Crypto { message }` patterns with `Kadmin::Crypto(source)`
+  and match `Kadmin::Random(source)` separately (FU-API-R02, FU-DOC-R57).
 
 ```rust
 # #[cfg(feature = "http")]
@@ -1079,14 +1092,22 @@ Request option diagnostics (FU-CLI-R13): `AsReq`, `TgsReq`, `ApReq`, and
 additional-ticket ciphertext, checksum bytes or confounders. Do not depend on
 Debug as a credential serialization format.
 
-Credential field privacy (FU-CLI-R13, FU-TRN-R09, FU-PAC-R09): replace direct
-field reads with same-name borrowed getters on client built AS/TGS/AP/FAST
+Credential field privacy (FU-CLI-R13, FU-TRN-R09, FU-PAC-R09, FU-DOC-R59):
+replace direct field reads with same-name getters on client built AS/TGS/AP/FAST
 requests, `AsRepSession`, `KdcError`, password frames/build results and
 `VerifiedKpasswdApRep`, keytab entries/keys and ccache credentials/authorization
 data, `EncryptedData`, `PaForUser`, `PaReqEncPaRep`, `KrbErrorInfo`, PAC containers,
 credential and validation records, GSS tokens, initiator options/contexts, service
 validation/reply types, and `NegotiateHttpResponse`. Metadata reads likewise use
-getters; constructors and `with_*` methods replace struct mutation.
+getters; constructors and `with_*` methods replace struct mutation. A getter
+borrows an owned field (`&[u8]`, `&EncryptionKey`, `Option<&T>`) and returns a `Copy`
+field (`u32`, `i32`, `SystemTime`, `Option<u32>`) by value. Types the library
+only returns (the PAC containers and validation records, `KrbErrorInfo`,
+`InitiatorContext`, `NegotiateHttpResponse`, `kadmin::Reply`) have no public
+constructor and, apart from the few `set_*` methods they list, no setter: v0.2.2
+code that built or edited them through public fields must obtain the value from
+the function that returns it (`parse`, `decode_der`, `from_rasn` or the
+`build_*` function) instead.
 `InitiatorContext` uses `ap_req_ref`, `ap_req_der_ref`, `header_ref`,
 `session_key_ref` and `initiator_subkey_ref` for its secret borrows. Other
 context metadata uses same-name getters.
@@ -1517,8 +1538,10 @@ their fields or use `core::mem::take` rather than moving fields out. Binary and 
 Caller-owned serialized output and borrowed source buffers remain the caller's
 erasure responsibility.
 
-Key replacement (FU-FIL-R06): `keytab::EncryptionKey::value` and
-`ccache::EncryptionKey::value` now hold `keytab::key_bytes::Bytes`, which
+Key replacement (FU-FIL-R06, FU-DOC-R53): `keytab::EncryptionKey` and
+`ccache::EncryptionKey` had public `etype: i32` and `value: Vec<u8>` fields in
+v0.2.2. Both fields are private on both types: read them with `etype()` and
+`value()`, which returns `&keytab::key_bytes::Bytes`. That type
 erases its allocation on replacement/drop and exposes only read-only bytes.
 Constructors accept an owned `Vec<u8>` or `Zeroizing<Vec<u8>>` without copying.
 Replace vector mutation with a new owner. Any
@@ -1664,7 +1687,22 @@ and public inline children are all conservatively excluded from this scanner.
 Public structs and enums are non-exhaustive. Construct values through their
 constructors or builders instead of struct literals. External enum matches
 must handle every known variant explicitly and include a final fallback for
-future variants. Matches within the library remain exhaustive.
+future variants. Matches within the library remain exhaustive. A struct pattern
+outside the crate needs a trailing `..`, and a unit struct such as
+`crypto::Rc4HmacEtype` is built with `new()` or `Default` (see the construction
+map). Some of these types have no public constructor at all, because the
+library only returns them: `ccache::ConfigEntry`, `ccache::CredentialMetadata`,
+`client::BuiltApReq`, `client::TgsFastRequestParts`,
+`client::kpasswd::{BuiltKpasswdRequest, VerifiedKpasswdApRep}`,
+`kadmin::BuiltChangePasswordRequest`, `keytab::EntryMetadata`,
+`messages::PrincipalNameInfo`, `http::NegotiateHttpResponse`,
+`service::{ValidatedApReq, VerifiedApRep}`, `spnego::AcceptedContext`, most PAC
+records (`pac::{Sid, SidAndAttributes, RpcUnicodeString, InfoBuffer,
+ClaimEntry, ClaimsArray, DomainGroupMembership, AdCredentials}` among them) and
+the `evaluation::data` report records. v0.2.2 code that built them with a struct
+literal (test data, for example) has no replacement constructor: obtain the
+value from the function that returns it, or, for a PAC record, from the wire
+bytes through `pac::Pac::parse` (FU-DOC-R60).
 
 External construction by struct literal is rejected, including struct update
 syntax:
@@ -1695,8 +1733,11 @@ assert_eq!(defaults.default_realm, "EXAMPLE.COM");
 ### Construction map
 
 All constructor arguments retain the corresponding public field's meaning.
-Builders consume and return the value; existing public fields remain readable
-and writable. `Option` builders accept the complete `Option<T>`, including
+Builders consume and return the value. Fields that stay public, such as those of
+`config::LibDefaults`, `config::Config` and `ccache::CredentialTimes`, remain
+readable and writable; the types named under "Credential field privacy" and in
+"Private fields of option and result types" below no longer have public fields.
+`Option` builders accept the complete `Option<T>`, including
 `None`, unless an existing method explicitly accepts the payload directly.
 
 | Type | Construction path |
@@ -1734,6 +1775,34 @@ construction paths for `AsReq`, `TgsReq`, `ApReq`,
 and `InitiatorContextOptions`. Existing token constructors remain available for
 `NegTokenInit`, `NegTokenResp`, and `Krb5MechToken`.
 
+### Private fields of option and result types (FU-DOC-R50, FU-DOC-R51, FU-DOC-R52)
+
+These public structs of v0.2.2 have only private fields in 0.3.0. Each field has
+a same-name getter; replace direct writes as follows.
+
+- `client::options::{AsReq, TgsReq, ApReq}` (v0.2.2: `AsReqOptions`,
+  `TgsReqOptions`, `ApReqOptions`): read `now()`, `ticket_lifetime()`,
+  `renew_lifetime()`, `nonce()`, `etypes()`, `kdc_option_bits()` and `padata()`;
+  `AsReq` adds `assume_preauthentication()` and `fast_negotiation()`, `TgsReq`
+  adds `additional_tickets()`, and `ApReq` has `ap_option_bits()`, `checksum()`,
+  `subkey()` and `sequence_number()`. `etypes()`, `padata()` and
+  `additional_tickets()` return slices where v0.2.2 had `Vec` fields, and
+  `checksum()` and `subkey()` return `Option<&T>`. Set the values with the
+  `with_*` builder of the same name (`with_etypes`, `with_padata`,
+  `with_kdc_option_bits`, `with_ticket_lifetime`, `with_renew_lifetime` and the
+  type-specific ones). `now` and `nonce` are arguments of `new` and
+  `from_libdefaults`, and only `AsReq` has `set_now` and `set_nonce`: build a
+  new `TgsReq` to change them.
+- `service::ApRepOptions`: read `subkey()`, `sequence_number()` and `kvno()`;
+  set them with `with_subkey`, `with_sequence_number` and `with_kvno` on the
+  value that `Default` returns.
+- `kadmin::ChangePasswdData`: read `targ_name()` and `targ_realm()` (both
+  `Option` borrows) and `new_passwd()`, which returns the redacted
+  `&kadmin::password::Bytes` where v0.2.2 had a public `OctetString`. Build the
+  value with `new` or `for_target`, and replace the password with
+  `set_new_passwd`.
+
+
 ## Password argument type
 
 `Tokio::{change_password, change_password_for, change_password_with_options,
@@ -1746,8 +1815,16 @@ They now take a `client::Password` by value ("Owned passwords").
 
 The lifetime parameter on `service::Validator`, `http::NegotiateLayer`,
 and `http::NegotiateService` is named `'keytab` instead of `'a`; the Tower
-`Service` implementation uses an anonymous lifetime. Lifetime semantics are
-unchanged. `http::{challenge_response, reject_response}` retain their generic
+`Service` implementation uses an anonymous lifetime. The lifetime names carry no
+caller impact. The Tower `Service::Future` of `http::NegotiateService` is a
+different type, though (FU-DOC-R61): v0.2.2 declared `type Future =
+Pin<Box<dyn Future<Output = Result<Response<ResBody>, TowerError<S::Error>>>>>`,
+which was never `Send`, and 0.3.0 declares `http::NegotiateFuture<S::Future,
+ResBody, S::Error>`, a concrete future that is `Send` when the inner future,
+body and error are. Code that names `<NegotiateService<_> as Service<_>>::Future`
+as the boxed type, or stores `call` results in a `Pin<Box<dyn Future>>` field
+without boxing them, must change; `Box::pin(service.call(request))` still
+produces the boxed form. `http::{challenge_response, reject_response}` retain their generic
 `B: Default` bound, now written in a where-clause.
 
 The earlier pass added `#[must_use]` to these public APIs:
@@ -1781,7 +1858,22 @@ The four password-change methods listed above took an `impl AsRef<[u8]>` argumen
 in v0.2.2 and now take `client::Password`. The other argument-position
 `impl Trait` parameters of this pass become independent named generics with the
 same bounds; ordinary calls keep type inference, and callers may now explicitly
-name these type arguments using turbofish syntax.
+name these type arguments using turbofish syntax. Two cases differ
+(FU-DOC-R55, FU-DOC-R56):
+
+- `client::principal::Principal::new` and `keytab::Principal::new` already had
+  the named parameters `<I, S>` next to their `impl Into<String>` realm. The
+  realm is now the third named parameter, `new<I, S, P>(realm: P, ...)`, so a
+  call that names the existing arguments, `Principal::new::<I, S>(...)`, no
+  longer compiles. Name all three (`new::<I, S, P>`) or let inference choose.
+- The payload of `spnego::MicToken::new_initiator` and of
+  `WrapToken::{new_initiator, new_initiator_sealed,
+  new_initiator_sealed_with_confounder}` changed bound as well:
+  `P: Into<Zeroizing<Vec<u8>>>` replaces `impl Into<Vec<u8>>`. Only `Vec<u8>`
+  and `Zeroizing<Vec<u8>>` satisfy it, so a `&[u8]`, `&str`, `String` or array
+  payload no longer compiles: turn it into a `Vec<u8>` first (`.to_vec()`,
+  `.into_bytes()`).
+  `with_payload` keeps `P: Into<Vec<u8>>`.
 
 ### API pass B call-site migration
 
@@ -1815,6 +1907,18 @@ name these type arguments using turbofish syntax.
 - Newly `#[must_use]` functions require callers to handle their results. Newly
   `const fn` functions work at runtime as before and may also be used in constant
   expressions. No runtime behavior or error text is changed.
+
+### Auto traits and `Copy` (FU-DOC-R58)
+
+`service::Validator`, `http::NegotiateLayer` and `http::NegotiateService`
+implemented `UnwindSafe` and `RefUnwindSafe` in v0.2.2 (the last one when its
+inner service `S` did) and implement neither in 0.3.0: each now carries an
+`Arc<dyn TransitValidator>` (the new transit-validator setting), and that trait
+has no unwind-safety bound. Code that passes a reference to one of them into
+`std::panic::catch_unwind` must wrap it in `std::panic::AssertUnwindSafe`.
+`pac::GroupMembership`, `pac::InfoBuffer` and `ccache::CredentialTimes`
+additionally implement `Copy`; this changes no call, but a caller's own blanket
+trait impl that overlaps `Copy` types can now conflict.
 
 ### Complete public function inventory for API pass B
 
@@ -2244,12 +2348,12 @@ kpasswd result helpers, `MicToken::verify`/`WrapToken::verify` and others).
 - `spnego::oid::validate_arcs`: `pub(super) const fn validate_arcs(arcs: &[u32]) -> Result<(), Error>`.
 - `spnego::MicToken::new`: `pub const fn new(flags: u8, snd_seq_num: u64) -> Self`.
 - `spnego::MicToken::with_payload`: `pub fn with_payload<P>(mut self, payload: P) -> Self where P: Into<Vec<u8>>,`.
-- `spnego::MicToken::new_initiator`: `pub fn new_initiator<P>(payload: P, key: &EncryptionKey) -> Result<Self, Error> where P: Into<Vec<u8>>,`.
+- `spnego::MicToken::new_initiator`: `pub fn new_initiator<P>(payload: P, key: &EncryptionKey) -> Result<Self, Error> where P: Into<Zeroizing<Vec<u8>>>,`.
 - `spnego::WrapToken::new`: `pub const fn new(flags: u8, snd_seq_num: u64) -> Self`.
 - `spnego::WrapToken::with_payload`: `pub fn with_payload<P>(mut self, payload: P) -> Self where P: Into<Vec<u8>>,`.
-- `spnego::WrapToken::new_initiator`: `pub fn new_initiator<P>(payload: P, key: &EncryptionKey) -> Result<Self, Error> where P: Into<Vec<u8>>,`.
-- `spnego::WrapToken::new_initiator_sealed`: `pub fn new_initiator_sealed<P>(payload: P, key: &EncryptionKey) -> Result<Self, Error> where P: Into<Vec<u8>>,`.
-- `spnego::WrapToken::new_initiator_sealed_with_confounder`: `pub fn new_initiator_sealed_with_confounder<P>( payload: P, key: &EncryptionKey, confounder: &[u8], ) -> Result<Self, Error> where P: Into<Vec<u8>>,`.
+- `spnego::WrapToken::new_initiator`: `pub fn new_initiator<P>(payload: P, key: &EncryptionKey) -> Result<Self, Error> where P: Into<Zeroizing<Vec<u8>>>,`.
+- `spnego::WrapToken::new_initiator_sealed`: `pub fn new_initiator_sealed<P>(payload: P, key: &EncryptionKey) -> Result<Self, Error> where P: Into<Zeroizing<Vec<u8>>>,`.
+- `spnego::WrapToken::new_initiator_sealed_with_confounder`: `pub fn new_initiator_sealed_with_confounder<P>( payload: P, key: &EncryptionKey, confounder: &[u8], ) -> Result<Self, Error> where P: Into<Zeroizing<Vec<u8>>>,`.
 - `spnego::WrapToken::is_sealed`: `pub const fn is_sealed(&self) -> bool`.
 - `spnego::NegTokenResp::reject`: `pub const fn reject() -> Self`.
 - `spnego::InitiatorContextOptions::with_context_flags`: `pub fn with_context_flags<P>(mut self, context_flags: P) -> Self where P: Into<Vec<u32>>,`.
@@ -2370,8 +2474,10 @@ texts and runtime behavior are unchanged.
 The newly public defining modules are `client::{kpasswd, negotiate, options,
 principal, transport}`, `spnego::oid`, and `evaluation::data`; `error` is new.
 The only public re-exports are the crate-root facade: `Principal`,
-`TokioClient`, `NegotiateClient`, `BlockingNegotiateClient`, `Config`, and
-`ServiceValidator`. These keep their familiar root names. References in the
+`NegotiateClient`, `BlockingNegotiateClient` and `Config`, which v0.2.2 also
+re-exported at the root, and `TokioClient` (`client::Tokio`) and
+`ServiceValidator` (`service::Validator`), which v0.2.2 had only under their
+module paths (FU-DOC-R62). References in the
 API dump normalize these aliases to their defining paths; duplicate alias
 expansions do not represent distinct items.
 
