@@ -15,6 +15,7 @@ mod tests {
     use core::{
         error,
         fmt::{Display, Write as _},
+        iter::once,
     };
     use std::{
         env::{VarError, temp_dir, var},
@@ -722,12 +723,12 @@ mod tests {
     }
 
     proptest! {
-        /// Every admitted synthetic keytab survives serialization and parsing.
+        /// Every storable synthetic keytab (nonempty realm, components and key) survives serialization and parsing.
         #[test]
         fn serialized_keytab_roundtrips(
-            realm in "[a-zA-Z.]{0,40}",
-            components in collection::vec("[a-zA-Z/]{0,40}", 0..8),
-            key in collection::vec(any::<u8>(), 0..128),
+            realm in "[a-zA-Z.]{1,40}",
+            components in collection::vec("[a-zA-Z/]{0,40}", 1..8),
+            key in collection::vec(any::<u8>(), 1..128),
             etype in i32::from(i16::MIN)..=i32::from(i16::MAX),
             timestamp in any::<u32>(),
             kvno in any::<u32>(),
@@ -781,6 +782,266 @@ mod tests {
                 ));
             }
         }
+        Ok(())
+    }
+
+    /// Appends a 16-bit field in the byte order of `version` (version 1 is host order).
+    fn put_i16(out: &mut Vec<u8>, version: u8, value: i16) {
+        out.extend_from_slice(&if version == 1 && cfg!(target_endian = "little") {
+            value.to_le_bytes()
+        } else {
+            value.to_be_bytes()
+        });
+    }
+
+    /// Appends a 32-bit field in the byte order of `version` (version 1 is host order).
+    fn put_i32(out: &mut Vec<u8>, version: u8, value: i32) {
+        out.extend_from_slice(&if version == 1 && cfg!(target_endian = "little") {
+            value.to_le_bytes()
+        } else {
+            value.to_be_bytes()
+        });
+    }
+
+    /// Appends one entry record of `version` for the given principal and key bytes.
+    fn push_raw_entry(
+        out: &mut Vec<u8>,
+        version: u8,
+        realm: &str,
+        components: &[&str],
+        key: &[u8],
+    ) {
+        let mut body = Vec::new();
+        let count = i16::try_from(components.len().saturating_add(usize::from(version == 1)))
+            .unwrap_or(i16::MAX);
+        put_i16(&mut body, version, count);
+        for text in once(&realm).chain(components) {
+            put_i16(
+                &mut body,
+                version,
+                i16::try_from(text.len()).unwrap_or(i16::MAX),
+            );
+            body.extend_from_slice(text.as_bytes());
+        }
+        if version != 1 {
+            put_i32(&mut body, version, 1);
+        }
+        put_i32(&mut body, version, 1_700_000_000);
+        body.push(3);
+        put_i16(&mut body, version, 18);
+        put_i16(
+            &mut body,
+            version,
+            i16::try_from(key.len()).unwrap_or(i16::MAX),
+        );
+        body.extend_from_slice(key);
+        put_i32(&mut body, version, 3);
+        put_i32(out, version, i32::try_from(body.len()).unwrap_or(i32::MAX));
+        out.extend_from_slice(&body);
+    }
+
+    /// Builds a keytab file of `version` holding the given records.
+    fn raw_keytab(version: u8, records: &[(&str, &[&str], &[u8])]) -> Vec<u8> {
+        let mut out = vec![5, version];
+        for &(realm, components, key) in records {
+            push_raw_entry(&mut out, version, realm, components, key);
+        }
+        out
+    }
+
+    /// An entry whose principal has no name components is malformed (MIT ends the table there).
+    #[test]
+    fn rejects_zero_component_entries() -> Result<(), TestError> {
+        for version in [1_u8, 2] {
+            // Given a file whose only entry has an empty component list.
+            let bytes = raw_keytab(version, &[("EXAMPLE.COM", &[], &[7; 16])]);
+            // When parsing it.
+            let error = Keytab::parse(&bytes)
+                .err()
+                .context("the file is rejected")?;
+            // Then it is rejected as an invalid principal name, not returned.
+            assert!(
+                matches!(error, Error::InvalidPrincipalName),
+                "version {version}: {error:?}"
+            );
+        }
+        Ok(())
+    }
+
+    /// An entry with a zero-length realm is malformed (MIT ends the table there).
+    #[test]
+    fn rejects_empty_realm_entries() -> Result<(), TestError> {
+        for version in [1_u8, 2] {
+            // Given a file whose only entry has an empty realm.
+            let bytes = raw_keytab(version, &[("", &["host", "a"], &[7; 16])]);
+            // When parsing it.
+            let error = Keytab::parse(&bytes)
+                .err()
+                .context("the file is rejected")?;
+            // Then it is rejected as an empty realm.
+            assert!(
+                matches!(error, Error::EmptyRealm),
+                "version {version}: {error:?}"
+            );
+        }
+        Ok(())
+    }
+
+    /// An entry with a zero-length key is malformed (MIT ends the table there).
+    #[test]
+    fn rejects_empty_key_entries() -> Result<(), TestError> {
+        for version in [1_u8, 2] {
+            // Given a file whose only entry has a zero-length key.
+            let bytes = raw_keytab(version, &[("EXAMPLE.COM", &["host", "a"], &[])]);
+            // When parsing it.
+            let error = Keytab::parse(&bytes)
+                .err()
+                .context("the file is rejected")?;
+            // Then it is rejected as an empty key.
+            assert!(
+                matches!(error, Error::EmptyKey),
+                "version {version}: {error:?}"
+            );
+        }
+        Ok(())
+    }
+
+    /// A malformed entry after a valid one fails the whole file instead of ending the table.
+    #[test]
+    fn malformed_entry_after_valid_entry_fails_the_file() -> Result<(), TestError> {
+        let valid: (&str, &[&str], &[u8]) = ("EXAMPLE.COM", &["host", "a"], &[7; 16]);
+        for version in [1_u8, 2] {
+            for (bad, expected) in [
+                (
+                    ("EXAMPLE.COM", &[][..], &[7_u8; 16][..]),
+                    "InvalidPrincipalName",
+                ),
+                (("", &["host", "a"][..], &[7; 16][..]), "EmptyRealm"),
+                (("EXAMPLE.COM", &["host", "a"][..], &[][..]), "EmptyKey"),
+            ] {
+                // Given a valid entry followed by a malformed one and another valid entry.
+                let bytes = raw_keytab(version, &[valid, bad, valid]);
+                // When parsing it.
+                let error = Keytab::parse(&bytes)
+                    .err()
+                    .context("the file is rejected, not cut after the first entry")?;
+                // Then the malformed entry is reported by its variant.
+                assert_eq!(format!("{error:?}"), expected, "version {version}");
+            }
+        }
+        Ok(())
+    }
+
+    /// Deleted-entry holes are still skipped and a zero size still ends the entry list.
+    #[test]
+    fn holes_and_zero_size_terminator_are_unchanged() -> Result<(), TestError> {
+        let valid: (&str, &[&str], &[u8]) = ("EXAMPLE.COM", &["host", "a"], &[7; 16]);
+        for version in [1_u8, 2] {
+            // Given a valid entry, a deleted-entry hole of four bytes, and a valid entry.
+            let mut holed = raw_keytab(version, &[valid]);
+            put_i32(&mut holed, version, -4);
+            holed.extend_from_slice(&[0; 4]);
+            push_raw_entry(&mut holed, version, valid.0, valid.1, valid.2);
+            // When parsing it, then both entries are returned.
+            assert_eq!(Keytab::parse(&holed)?.entries().len(), 2);
+            // Given a valid entry, the zero terminator and a malformed entry behind it.
+            let mut terminated = raw_keytab(version, &[valid]);
+            put_i32(&mut terminated, version, 0);
+            push_raw_entry(&mut terminated, version, "", &[], &[]);
+            // When parsing it, then the list ends at the terminator and the tail is not read.
+            assert_eq!(Keytab::parse(&terminated)?.entries().len(), 1);
+        }
+        Ok(())
+    }
+
+    /// The writer never emits a file the reader rejects: zero-length fields are refused on save.
+    #[test]
+    fn serialization_rejects_zero_length_fields() -> Result<(), TestError> {
+        let key = || EncryptionKey::new(18, vec![7_u8; 16]);
+        let entries = [
+            (Principal::new("", 1, ["a"]), key(), "EmptyRealm"),
+            (
+                Principal::new("EXAMPLE.COM", 1, Vec::<String>::new()),
+                key(),
+                "InvalidPrincipalName",
+            ),
+            (
+                Principal::new("EXAMPLE.COM", 1, ["a"]),
+                EncryptionKey::new(18, Vec::<u8>::new()),
+                "EmptyKey",
+            ),
+        ];
+        for version in [1_u8, 2] {
+            for (principal, entry_key, expected) in &entries {
+                // Given a keytab of this version holding an entry with a zero-length field.
+                let mut keytab = Keytab::parse(&raw_keytab(
+                    version,
+                    &[("EXAMPLE.COM", &["host"], &[7; 16])],
+                ))?;
+                let name_type = i32::from(version != 1);
+                keytab.entries_mut().push(Entry::new(
+                    Principal::new(
+                        principal.realm.clone(),
+                        name_type,
+                        principal.components.clone(),
+                    ),
+                    1,
+                    1,
+                    entry_key.clone(),
+                    1,
+                ));
+                // When saving it, then the save fails with the matching variant.
+                let result = keytab.to_bytes();
+                let actual = match &result {
+                    Err(Error::EmptyRealm) => "EmptyRealm",
+                    Err(Error::InvalidPrincipalName) => "InvalidPrincipalName",
+                    Err(Error::EmptyKey) => "EmptyKey",
+                    _ => "other",
+                };
+                assert_eq!(actual, *expected, "version {version}: {result:?}");
+            }
+        }
+        Ok(())
+    }
+
+    /// Password-derived entries refuse a principal the file format cannot store.
+    #[test]
+    fn password_entries_reject_unstorable_principals() -> Result<(), TestError> {
+        use zeroize::Zeroizing;
+        let now = UNIX_EPOCH;
+        let password = || Zeroizing::new(b"password".to_vec());
+        let mut keytab = Keytab::new();
+        // Given an empty realm, when adding the entry, then it fails and nothing is stored.
+        let empty_realm = keytab
+            .add_entry_from_password(Principal::new("", 1, ["alice"]), password(), now, 1, 17)
+            .err()
+            .context("an empty realm is refused")?;
+        assert!(matches!(empty_realm, Error::EmptyRealm), "{empty_realm:?}");
+        // Given no name components, when adding the entry, then it fails and nothing is stored.
+        let no_components = keytab
+            .add_entry_from_password(
+                Principal::new("EXAMPLE.COM", 1, Vec::<String>::new()),
+                password(),
+                now,
+                1,
+                17,
+            )
+            .err()
+            .context("a principal without name components is refused")?;
+        assert!(
+            matches!(no_components, Error::InvalidPrincipalName),
+            "{no_components:?}"
+        );
+        // Given an empty realm through the name-based helper, then the same refusal applies.
+        let empty_realm_name = keytab
+            .add_entry_from_password_name("alice", "", password(), now, 1, 17)
+            .err()
+            .context("an empty realm is refused by name")?;
+        assert!(
+            matches!(empty_realm_name, Error::EmptyRealm),
+            "{empty_realm_name:?}"
+        );
+        assert_eq!(keytab, Keytab::new());
         Ok(())
     }
 
