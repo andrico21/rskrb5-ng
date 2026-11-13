@@ -267,3 +267,16 @@ is a parity feature, not a defect>`.
 | executor:todo-88#config-profile-premises | FU-DOC-R42 | no |
 | executor:todo-88#existing-without-baseline | FU-DOC-R48 | no |
 | executor:todo-88#now-previous-without-baseline | FU-DOC-R49 | no |
+| executor:todo-91#u1-request-option-fields | FU-DOC-R50 | no |
+| executor:todo-91#u3-ap-rep-options-fields | FU-DOC-R51 | no |
+| executor:todo-91#u4-p2-change-passwd-data-fields | FU-DOC-R52 | no |
+| executor:todo-91#p1-ccache-key-fields | FU-DOC-R53 | no |
+| executor:todo-91#br-rasn-version-statement | FU-DOC-R54 | no |
+| executor:todo-91#p3-br-impl-turbofish | FU-DOC-R55 | no |
+| executor:todo-91#p4-mic-wrap-payload-bound | FU-DOC-R56 | no |
+| executor:todo-91#p5-kadmin-crypto-payload | FU-DOC-R57 | no |
+| executor:todo-91#u7-l1-auto-traits-copy | FU-DOC-R58 | no |
+| executor:todo-91#br-fields-wording | FU-DOC-R59 | no |
+| executor:todo-91#br-ne-constructors | FU-DOC-R60 | no |
+| executor:todo-91#br-lifetime-service-future | FU-DOC-R61 | no |
+| executor:todo-91#root-reexport-wording | FU-DOC-R62 | no |
