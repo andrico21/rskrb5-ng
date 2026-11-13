@@ -209,10 +209,17 @@ Kpasswd TCP retains RFC 3244's separate unsigned length rules.
 
 Password transport no longer retries after a send may have started. Such I/O
 failures, response errors and timeouts return `Client::KpasswdOutcomeUnknown`.
-Configured Auto chooses its initial protocol from `udp_preference_limit` and
-only fails over before possible delivery, so a closed UDP kpasswd port is not
-retried over TCP (v0.2.2 fell back to TCP after any UDP failure); direct-address
-Auto uses UDP once (v0.2.2: UDP, then TCP after a UDP failure). Do
+`KdcProtocol::Auto` for a password change tries TCP first and UDP only after
+a definite TCP failure (all TCP endpoints, then all UDP endpoints; for an
+explicit address TCP, then UDP), as MIT's `changepw.c` does, and
+`udp_preference_limit` does not apply to it. A refusal while the single UDP
+reply is awaited (`ConnectionRefused`, or `ConnectionReset` on Windows) is a
+definite endpoint failure, so a closed UDP kpasswd port moves on to the next
+endpoint and, when every endpoint failed, is reported as `KdcEndpointFailures`
+(for an explicit address, as the plain `Client::Io`) (v0.2.2: UDP first for a request within
+`udp_preference_limit`, a configured realm falling back to TCP after any UDP
+failure; an explicit address always UDP first, then TCP). If TCP fails after the
+request may have been delivered, UDP is never tried. Do
 not treat an unknown outcome as a failed mutation or blindly retry it. A
 password change also gives connection setup (TCP connect, or UDP socket bind and
 connect) and the send-and-reply phase a full `Tokio::with_timeout` each, so one
@@ -518,15 +525,18 @@ protected ticket/evidence identity mismatches return `DelegationPrincipalMismatc
 Password mutation failures after possible delivery return exactly one
 `Client::KpasswdOutcomeUnknown(Box<Client>)`, preserving the underlying cause.
 Pre-send encoding, discovery, TCP connection and UDP socket-setup failures
-retain their definite error classes and may be retried safely. Every failure
-after a UDP datagram was sent, including `Connection refused` (an ICMP
-port-unreachable reported while waiting for the reply), and malformed replies
-are unknown outcomes. It
+retain their definite error classes and may be retried safely, and so does a
+UDP refusal (`ConnectionRefused`, or `ConnectionReset` on Windows, which is the
+ICMP port-unreachable reported while the reply is awaited; FU-CLI-R24). Every
+other failure after a UDP datagram was sent, and malformed replies, are unknown
+outcomes. It
 does not mean rejection or rollback: reconcile with a fresh login before
 retrying. Dropping a mutation future returns no error at all; the caller must
 record unknown externally. Confirmed server rejection remains a normal result
 failure. Async Negotiate wrappers preserve this error and the same cancellation
-contract. Transport stops failover after possible delivery.
+contract. Transport stops failover after possible delivery, and `Auto` never
+sends UDP after a TCP request that may have been delivered (deliberately
+stricter than MIT's `changepw.c`, which then tries UDP).
 
 ### Password plaintext ownership (RSK-471362A3)
 

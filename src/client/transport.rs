@@ -110,9 +110,13 @@ pub enum KdcProtocol {
     Udp,
     /// RFC 4120 TCP transport with a four-byte big-endian length prefix.
     Tcp,
-    /// gokrb5-style transport preference using UDP/TCP fallback, except for
-    /// password changes, which never fail over once a request may have been
-    /// delivered.
+    /// gokrb5-style transport preference using UDP/TCP fallback for KDC
+    /// requests, ordered by `udp_preference_limit`. Password changes follow
+    /// MIT's `changepw.c` instead: TCP first (every endpoint), then UDP (one
+    /// datagram per endpoint, no retransmit) only after a definite TCP
+    /// failure, whatever `udp_preference_limit` says. They never fail over once
+    /// a request may have been delivered, so UDP is never tried after a TCP
+    /// request that may have been delivered.
     Auto,
 }
 
@@ -782,6 +786,13 @@ impl Tokio {
     /// Failover is permitted only before possible delivery. Later failures return
     /// [`Error::KpasswdOutcomeUnknown`] without resending the mutation.
     ///
+    /// With [`KdcProtocol::Auto`] every TCP endpoint is tried before any UDP
+    /// endpoint, as MIT's `changepw.c` does, and `udp_preference_limit` does not
+    /// apply. UDP is tried only after a definite TCP failure; a UDP refusal
+    /// (`ConnectionRefused`, or `ConnectionReset` where Windows reports an ICMP
+    /// port-unreachable that way) while the single reply is awaited is a
+    /// definite endpoint failure, not [`Error::KpasswdOutcomeUnknown`].
+    ///
     /// # Cancel safety
     ///
     /// NOT cancel-safe: this mutates credentials on the KDC. Dropping the future
@@ -846,6 +857,13 @@ impl Tokio {
     /// Returns an error when the request cannot be encoded, the errors of
     /// the password transport, and [`Error::KpasswdOutcomeUnknown`] wrapping
     /// [`Error::Kadmin`] when a delivered request receives a malformed reply.
+    ///
+    /// With [`KdcProtocol::Auto`] and an explicit address the request goes over
+    /// TCP first and over UDP (one datagram, no retransmit) only after a definite
+    /// TCP failure; an uncertain TCP outcome is returned and UDP is never
+    /// tried. A UDP refusal (`ConnectionRefused`, or `ConnectionReset` where
+    /// Windows reports an ICMP port-unreachable that way) while the reply is
+    /// awaited is the plain I/O error, not [`Error::KpasswdOutcomeUnknown`].
     ///
     /// # Cancel safety
     ///
@@ -2185,13 +2203,16 @@ impl Tokio {
         realm_auto::send(self, config, realm, request).await
     }
 
-    /// Send to a realm's kpasswd servers over the protocol
-    /// `udp_preference_limit` selects, retrying only before possible delivery.
+    /// Send to a realm's kpasswd servers over TCP, then over UDP.
+    ///
+    /// This is the MIT order: every TCP endpoint is tried before any UDP
+    /// endpoint, and `udp_preference_limit` does not apply. UDP is tried only
+    /// after TCP failed definitely; an uncertain TCP outcome stops the exchange.
     ///
     /// # Errors
     ///
-    /// Returns the errors of the retry over the second protocol, those of
-    /// [`Self::send_to_kpasswd_realm_explicit`].
+    /// Returns the errors of the retry over UDP, those of
+    /// [`Self::send_to_kpasswd_realm_explicit`], or the uncertain TCP outcome.
     ///
     /// # Cancel safety
     ///
@@ -2205,21 +2226,14 @@ impl Tokio {
         realm: &str,
         request: &[u8],
     ) -> Result<Vec<u8>, Error> {
-        let udp_first = auto_uses_udp_first(config, request.len());
-        let (first, second) = if udp_first {
-            (KdcProtocol::Udp, KdcProtocol::Tcp)
-        } else {
-            (KdcProtocol::Tcp, KdcProtocol::Udp)
-        };
-
         match self
-            .send_to_kpasswd_realm_explicit(config, first, realm, request)
+            .send_to_kpasswd_realm_explicit(config, KdcProtocol::Tcp, realm, request)
             .await
         {
             Ok(response) => Ok(response),
             Err(error @ Error::KpasswdOutcomeUnknown(_)) => Err(error),
             Err(_) => {
-                self.send_to_kpasswd_realm_explicit(config, second, realm, request)
+                self.send_to_kpasswd_realm_explicit(config, KdcProtocol::Udp, realm, request)
                     .await
             }
         }

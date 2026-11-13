@@ -317,6 +317,7 @@ is a parity feature, not a defect>`.
 | executor:todo-95#include-byte-budget | FU-DOC-R86 | no |
 | executor:todo-95#keytab-ccache-format-notes | FU-DOC-R87 | no |
 | critic:critics-d125580/u6a.md#U6A-02 | FU-DOC-R88 | no |
+| executor:todo-109#kpasswd-tcp-first | FU-CLI-R24 | no |
 | critic:critics-d125580/u5.md#U5-01 | FU-DOC-R89 | no |
 | critic:critics-d125580/u5.md#U5-02 | FU-DOC-R90 | no |
 | critic:critics-d125580/u6a.md#U6A-01 | FU-DOC-R91 | no |
