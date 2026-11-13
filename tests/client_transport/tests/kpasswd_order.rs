@@ -49,7 +49,8 @@ fn udp_responder(
     reply: impl AsRef<[u8]> + Send + 'static,
 ) -> JoinHandle<io::Result<(UdpSocket, usize)>> {
     tokio::spawn(async move {
-        let mut bytes = [0; 64];
+        // Larger than any request here: Windows fails a receive into a smaller buffer.
+        let mut bytes = [0; 2048];
         let (length, client) = bounded(
             Duration::from_secs(10),
             "password UDP datagram",
@@ -306,7 +307,7 @@ fn kpasswd_explicit_address_auto_falls_back_to_udp_after_tcp_refusal() -> Result
         assert!(shown(result)?.is_krb_error());
         let (peer, length) =
             bounded(Duration::from_secs(10), "UDP responder", responder).await???;
-        assert!(length > 0, "the datagram carried no request");
+        assert_eq!(length, request.encode()?.len());
         assert_no_datagram(&peer, "explicit UDP fallback retransmit").await;
         Ok(())
     })
