@@ -680,16 +680,17 @@ Security fail-closed parsing and verification:
   key of the wrong length is `GssChecksumMismatch`; v0.2.2 computed the
   checksum first and returned `Spnego::Crypto` (invalid key length) in both
   cases (FU-DOC-R105).
-- `NegTokenInit::krb5_ap_req` returns `Spnego::MissingMechListMic` when the
-  first offered mechanism is not Kerberos and no mechListMIC is supplied, where
-  v0.2.2 returned the AP-REQ of a later Kerberos entry. `Token::krb5_ap_req`
-  (v0.2.2: `SpnegoToken`) on a `NegTokenResp` returns
-  `Spnego::NegotiationRequiresState`, or `Spnego::UnsupportedMechanism` when
-  `supportedMech` is not Kerberos, where v0.2.2 returned the AP-REQ carried in
-  the response token. `NegTokenInit::krb5_ap_req` (and `Token::krb5_ap_req` on
-  an init token) returns the new `Spnego::MechListMicRequiresState` when the
-  token carries a mechListMIC, where v0.2.2 returned the AP-REQ; use
-  `accept_sec_context_header` to verify the MIC (FU-DOC-R104).
+- `NegTokenInit::krb5_ap_req` and `Token::krb5_ap_req` (v0.2.2: `SpnegoToken`)
+  apply checks that v0.2.2 did not apply, so an input that gave an AP-REQ can be
+  an error: `Spnego::MechListMicRequiresState` when the token carries a
+  mechListMIC (use `accept_sec_context_header` to verify it),
+  `Spnego::MissingMechListMic` when the first offered mechanism is not Kerberos
+  and no mechListMIC is supplied, `Spnego::NonminimalLength` for a DER length
+  in non-minimal form and `Spnego::InvalidOidEncoding` for an OID subidentifier
+  in non-minimal form or wider than 32 bits. `Token::krb5_ap_req` on a
+  `NegTokenResp` returns `Spnego::NegotiationRequiresState`
+  (`UnsupportedMechanism` when `supportedMech` is not Kerberos, as in v0.2.2),
+  where v0.2.2 returned the AP-REQ carried in the response token (FU-DOC-R104).
 - `Spnego::Client` keeps the typed `Box<Client>` cause instead of a string
   (FU-SPN-R03).
 - Mutual authentication requested through a combined context-flag mask needs a
@@ -1087,8 +1088,8 @@ Configuration:
   `Config::plugins`. A file that loaded before can fail: a `[capaths]` value
   list that mixes `.` with realm names or holds a whitespace token, and an
   `[appdefaults]` relation nested deeper than application, realm and key,
-  are `InvalidLine` (an empty deeper block loads); a `[plugins]` control that
-  disables the encrypted-timestamp mechanism is `NotYetEffective` in every mode
+  are `InvalidLine`; a `[plugins]` control that disables the
+  encrypted-timestamp mechanism is `NotYetEffective` in every mode
   (FU-DOC-R93).
 - `[plugins]` interface names and the control names `disable`, `enable_only` and
   `module` are matched case-sensitively, as MIT does (`strcmp` in the profile
@@ -1133,9 +1134,9 @@ Configuration:
   RSA PKINIT selectors, `kpasswd_unprotected` and a `kpasswd_protocol` or
   `kpasswd_version` such as `2`. A `krb4_*`, `v4_*`, `pkinit_*`,
   `flag_rsa_protocol`, `kpasswd_unprotected` or `kpasswd_cleartext` selector
-  loads when its value is empty or false (`0`, `no`, `off`, ...);
+  is not rejected when its value is false (`0`, `no`, `off`, ...);
   `pkinit_key_exchange` and `pkinit_kex` are rejected for `rsa`, `rsa-only`,
-  `key-transport` and `dh-less` and load for every other value;
+  `key-transport` and `dh-less`, not for `dh` or `ecdh`;
   `kpasswd_protocol` and `kpasswd_version` load only for `protected`, `rfc3244`
   or a supported version number, and an empty or false value is rejected for
   them. v0.2.2 ignored all of them in the sections it skipped, accepted

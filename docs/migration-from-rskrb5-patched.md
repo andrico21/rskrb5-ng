@@ -525,16 +525,16 @@ trip must use a stateful implementation. The keyless extraction helpers
 for cryptographic verification. Decoding alone never authenticates negotiation.
 
 `NegTokenInit::krb5_ap_req` and `Token::krb5_ap_req` (v0.2.2: `SpnegoToken`)
-return an error for these inputs, from which v0.2.2 returned an AP-REQ
-(FU-DOC-R104): a `NegTokenInit` that carries a mechListMIC, whichever mechanism
-comes first (`MechListMicRequiresState`); a `NegTokenInit` that carries no MIC
-and whose first offered mechanism is not Kerberos, where v0.2.2 returned the
-AP-REQ of a later Kerberos entry (`MissingMechListMic`); a `NegTokenInit` whose
-mechanism token has a DER length in non-minimal form (`NonminimalLength`); and,
-for `Token::krb5_ap_req` only, a `NegTokenResp` that selects Kerberos, where
-v0.2.2 returned the AP-REQ from its response token (`NegotiationRequiresState`;
-a `supportedMech` that is not Kerberos is `UnsupportedMechanism` in both
-versions).
+apply checks that v0.2.2 did not apply, so an input that gave an AP-REQ can be
+an error (FU-DOC-R104): a mechListMIC is refused whichever mechanism comes first
+(`MechListMicRequiresState`); without a MIC the first offered mechanism must be
+Kerberos, where v0.2.2 returned the AP-REQ of a later Kerberos entry
+(`MissingMechListMic`); a DER length in non-minimal form is refused
+(`NonminimalLength`), and so is an OID subidentifier in non-minimal form or
+wider than 32 bits (`InvalidOidEncoding`). `Token::krb5_ap_req` refuses a
+`NegTokenResp` (`NegotiationRequiresState`), where v0.2.2 returned the AP-REQ
+from its response token; a `supportedMech` that is not Kerberos is
+`UnsupportedMechanism` in both versions.
 
 ### S4U frontend keys (delegated-client-unbound-to-ticket-payload)
 
@@ -1037,8 +1037,9 @@ Configuration now follows MIT profile semantics; the details are in
   see [`config-profile.md`](config-profile.md)), and malformed content is
   rejected, so an existing file can stop loading: a `[capaths]` value list that
   mixes `.` with realm names or holds a whitespace token, and an `[appdefaults]`
-  relation nested deeper than application, realm and key (a four-name path such
-  as `a = { b = { c = { d = e } } }`), are `InvalidLine`; a `[plugins]` control
+  relation nested deeper than application, realm and key (`d = e` inside
+  `a = {`, `b = {` and `c = {` blocks, each opened on its own line), are
+  `InvalidLine`; a `[plugins]` control
   that would disable the encrypted-timestamp mechanism is `NotYetEffective` in
   every mode (FU-DOC-R93). Interface names and the control names `disable`,
   `enable_only` and `module` are case-sensitive, as in MIT (FU-CFG-R36):
@@ -1078,9 +1079,9 @@ Configuration now follows MIT profile semantics; the details are in
   `2` fail in `[login]`, `[appdefaults]`, `[logging]` and an unknown section as
   they do in `[libdefaults]` and `[realms]`. A `krb4_*`, `v4_*`, `pkinit_*`,
   `flag_rsa_protocol`, `kpasswd_unprotected` or `kpasswd_cleartext` selector
-  loads when its value is empty or false (`0`, `no`, `off`, ...);
+  is not rejected when its value is false (`0`, `no`, `off`, ...);
   `pkinit_key_exchange` and `pkinit_kex` are rejected for `rsa`, `rsa-only`,
-  `key-transport` and `dh-less` and load for every other value (`dh`, `ecdh`);
+  `key-transport` and `dh-less`, not for `dh` or `ecdh`;
   `kpasswd_protocol` and `kpasswd_version` load only for `protected`, `rfc3244`
   or a supported version number, and an empty or false value is rejected for
   them. v0.2.2 ignored these lines in the sections it skipped, accepted
@@ -1788,6 +1789,11 @@ the strength of RFC 4178 and MS-SPNG).
 rule (FU-DOC-R104). Encoding a token whose decoded `reqFlags` is not
 canonical fails with `Spnego::InvalidReqFlags`; clear it with
 `set_req_flags(None)` first.
+
+`NegTokenInit::decode`, `NegTokenResp::decode` and `Token::decode` return
+`Spnego::InvalidFieldOrder` for a SEQUENCE whose fields repeat or are not in
+increasing tag order, where v0.2.2 accepted it (FU-SPN-03); an omitted field is
+accepted.
 
 Treat `with_ap_rep(false)` as an optional-reply preference (FU-SPN-R09). A valid
 initiator mechListMIC receives a completion carrying a reciprocal MIC and the
