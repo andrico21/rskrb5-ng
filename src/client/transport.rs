@@ -110,7 +110,9 @@ pub enum KdcProtocol {
     Udp,
     /// RFC 4120 TCP transport with a four-byte big-endian length prefix.
     Tcp,
-    /// gokrb5-style transport preference using UDP/TCP fallback.
+    /// gokrb5-style transport preference using UDP/TCP fallback, except for
+    /// password changes, which never fail over once a request may have been
+    /// delivered.
     Auto,
 }
 
