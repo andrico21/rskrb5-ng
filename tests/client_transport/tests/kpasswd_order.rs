@@ -46,7 +46,7 @@ async fn assert_no_datagram(udp: &UdpSocket, what: &str) {
 /// Answer exactly one datagram and report how many bytes it carried.
 fn udp_responder(
     udp: UdpSocket,
-    reply: &'static [u8],
+    reply: impl AsRef<[u8]> + Send + 'static,
 ) -> JoinHandle<io::Result<(UdpSocket, usize)>> {
     tokio::spawn(async move {
         let mut bytes = [0; 64];
@@ -56,7 +56,7 @@ fn udp_responder(
             udp.recv_from(&mut bytes),
         )
         .await??;
-        let _: usize = udp.send_to(reply, client).await?;
+        let _: usize = udp.send_to(reply.as_ref(), client).await?;
         Ok((udp, length))
     })
 }
@@ -284,6 +284,30 @@ fn kpasswd_explicit_address_auto_uses_tcp_first() -> Result<(), TestError> {
         assert!(shown(result)?.is_krb_error());
         bounded(Duration::from_secs(10), "TCP peer", server).await???;
         assert_no_datagram(&udp, "explicit TCP success").await;
+        Ok(())
+    })
+}
+
+/// A refused TCP connection to an explicit address is definite, so one datagram goes over UDP.
+#[test]
+fn kpasswd_explicit_address_auto_falls_back_to_udp_after_tcp_refusal() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given a closed TCP port and a live UDP responder on the same address.
+        let (udp, listener) = bind_udp_and_tcp_pair().await?;
+        drop(listener);
+        let addr = udp.local_addr()?;
+        let request = KpasswdRequest::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)?;
+        let responder = udp_responder(udp, kpasswd_reply_frame(0, &response_too_big_error()?)?);
+        // When an Auto request goes to the explicit address.
+        let result = transport()
+            .exchange_kpasswd_request(KdcProtocol::Auto, addr, &request)
+            .await;
+        // Then UDP answers after a single datagram and no retransmit follows.
+        assert!(shown(result)?.is_krb_error());
+        let (peer, length) =
+            bounded(Duration::from_secs(10), "UDP responder", responder).await???;
+        assert!(length > 0, "the datagram carried no request");
+        assert_no_datagram(&peer, "explicit UDP fallback retransmit").await;
         Ok(())
     })
 }
