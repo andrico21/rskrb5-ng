@@ -288,6 +288,35 @@ fn kpasswd_explicit_address_auto_uses_tcp_first() -> Result<(), TestError> {
     })
 }
 
+/// An explicit-address Auto request never repeats a possibly delivered TCP request over UDP.
+#[test]
+fn kpasswd_explicit_address_auto_unknown_tcp_outcome_never_tries_udp() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given a TCP server that reads the request and drops the connection, and an observed UDP port.
+        let (udp, listener) = bind_udp_and_tcp_pair().await?;
+        let addr = udp.local_addr()?;
+        let request = KpasswdRequest::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)?;
+        let server = tokio::spawn(async move {
+            let (_request, socket) = read_tcp_request(&listener).await?;
+            drop(socket);
+            Ok::<_, io::Error>(())
+        });
+        // When an Auto request goes to the explicit address.
+        let result = transport()
+            .exchange_kpasswd_request(KdcProtocol::Auto, addr, &request)
+            .await;
+        // Then the outcome is unknown and the UDP socket received nothing.
+        assert!(
+            matches!(result, Err(ClientError::KpasswdOutcomeUnknown(_))),
+            "expected KpasswdOutcomeUnknown, got {}",
+            describe(&result)
+        );
+        bounded(Duration::from_secs(10), "TCP peer", server).await???;
+        assert_no_datagram(&udp, "explicit unknown TCP outcome").await;
+        Ok(())
+    })
+}
+
 /// The explicit-address Auto arm reports a definite failure when both protocols refuse.
 #[test]
 fn kpasswd_explicit_address_auto_both_refused_is_definite() -> Result<(), TestError> {
