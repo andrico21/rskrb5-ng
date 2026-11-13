@@ -63,14 +63,22 @@ decoding does not activate the deferred mechanism consumers.
 
 ## Sources, finals and syntax
 
-Files in `KRB5_CONFIG` compose in platform path-list order (colon on Unix).
-A directory entry uses the same filter as `includedir`: ASCII alphanumerics,
-`-`, `_`, or a non-dot name ending `.conf`. Sorting is bytewise. An entry that
-is a directory (or a symlink to one) is skipped, as in MIT, and does not count
-against the include file limit. Includes
-execute at their directive site, even inside a subsection, with fresh syntax
-state and the shared profile tree; the parent resumes its original state.
-See [prof_parse.c:214–256](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L214-L256).
+Files in `KRB5_CONFIG` compose in platform path-list order (colon on Unix). A
+directory entry uses the same filter as `includedir`: ASCII alphanumerics, `-`,
+`_`, or a non-dot name ending `.conf`. Sorting is bytewise. An entry that is a
+directory (or a symlink to one) is skipped, as in MIT, and does not count
+against the include file limit. The same filter applies to a directory passed to
+`Config::load` or `Config::load_paths` (v0.2.2: an `Io` error). Includes execute
+at their directive site, even inside a subsection (v0.2.2 ran a directive only
+outside a subsection), with fresh syntax state and the shared profile tree; the
+parent resumes its original state (v0.2.2 continued in the section where the
+included text ended). Every source, whether an included file or a file of a path
+list, starts outside every section, so a relation before its first section
+header is an `InvalidLine` (v0.2.2 read such lines into the section that was
+open at the `include` or at the end of the previous file; MIT ignores them). A
+file of a path list that another file of the list includes is read twice
+(v0.2.2: `IncludeCycle`). See
+[prof_parse.c:214–256](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L214-L256).
 
 `[section]*`, `subsection* = {`, `}*`, and `relation* = value` prevent later
 contributions to the marked scope, within the file and across files. Earlier
@@ -81,13 +89,14 @@ and [prof_tree.c:208–249](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/
 
 Comments begin with `#` or `;` after optional leading whitespace. The retained
 gokrb5 extension also recognizes them after C-locale ASCII whitespace outside
-quotes; Unicode space before `#` or `;` is value data.
-`RULE:[2:$1;$2]` survives unchanged. Quoted values support escaped quotes,
-backslashes, newline, tab and backspace. Braces are structural only in a
-subsection assignment or closing-brace line, not arbitrary value text. As in
-MIT ([prof_parse.c:177](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L177)),
-`{` opens a subsection only when it is the whole value, optionally followed by a
-comment after blanks: `{}`, `{ kdc = k }` and `{#` are plain values.
+quotes; Unicode space before `#` or `;` is value data. `RULE:[2:$1;$2]` survives
+unchanged. Quoted values support escaped quotes, backslashes, newline, tab and
+backspace. Braces are structural only in a subsection assignment or
+closing-brace line, not arbitrary value text. As in MIT
+([prof_parse.c:177](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L177)),
+`{` opens a subsection only when it is the whole value, blanks aside; unlike
+MIT, a comment after blanks is allowed too (`A = { # c` opens one; MIT reads the
+plain value `{ # c`). `{}`, `{ kdc = k }` and `{#` are plain values.
 
 Unquoted assignment padding is removed, but only ASCII whitespace (space, tab,
 CR, LF, VT, FF) counts as padding; Unicode space characters at the edges of a
@@ -95,12 +104,15 @@ value are value data.
 
 ### Deliberate divergences and bounds
 
-- Missing explicitly named `KRB5_CONFIG` entries are errors; MIT skips them.
-- Include paths must be absolute (MIT resolves a relative one against the
-  working directory); leading whitespace before a directive is
-  accepted. No dynamic module code is loaded.
-- The unquoted value-suffix `value*` final form is a gokrb5 extension. It applies
-  to every relation except the rule-language `auth_to_local` and
+- Missing or unreadable explicitly named `KRB5_CONFIG` entries are errors; MIT
+  skips them.
+- `include` and `includedir` paths must be absolute: a relative one is an
+  `IncludeFile` error of kind `InvalidInput`, before any file is opened. MIT
+  resolves a relative path against the working directory, and so did v0.2.2
+  (FU-DOC-R82). Leading whitespace before a directive is accepted. No dynamic
+  module code is loaded.
+- The unquoted value-suffix `value*` final form is a gokrb5 extension. It
+  applies to every relation except the rule-language `auth_to_local` and
   `pkinit_cert_match` values, and the `*` is dropped from the value. v0.2.2
   honoured it only in the `kdc`, `admin_server`, `master_kdc` and
   `kpasswd_server` lists and kept the `*` in other values, so
@@ -110,8 +122,8 @@ value are value data.
   line before the first line that starts with `[`
   ([prof_parse.c:326](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L326)),
   so it silently loses the first section of a file that starts with a BOM.
-  `tests/config/mutation_profile.rs` (`profile_syntax_rejects_malformed_components`)
-  pins the rejection.
+  `tests/config/mutation_profile.rs`
+  (`profile_syntax_rejects_malformed_components`) pins the rejection.
 - A relation with an empty name is an `InvalidLine`, including `* = A` once the
   final marker is removed. MIT rejects a line that starts with `=` but accepts
   `* = A` as an unmatchable node with an empty name
@@ -127,9 +139,15 @@ value are value data.
   spaces and tabs in the file name.
 - A closing quote may be followed only by C-locale ASCII whitespace; MIT
   ignores everything after the closing quote.
-- Total source bytes, including caller text and root files: **4 MiB**.
-  Every filesystem read stops at remaining budget plus one byte.
-- Total files, including repeated reads and root files: **256**.
+- A file with any byte that is not UTF-8 is refused as a whole, with kind
+  `InvalidData`: `File` for a top-level file, `IncludeFile` for an included file
+  and `Io` for `from_reader`; MIT reads bytes. v0.2.2 had the same restriction
+  (its top-level error was `Io`).
+- Total source bytes, including caller text and root files: **4 MiB** (v0.2.2: 1
+  MiB, counted over included files only, so a root of any size was read). Every
+  filesystem read stops at remaining budget plus one byte.
+- Total files, including repeated reads and root files: **256** (the v0.2.2
+  limit was 64 included files).
 - Include depth: **8 edges**, with root depth zero. Subsection nesting is also
   capped at eight to bound path allocations. Excess uses `IncludeTooDeep`.
 - Typed limits: `IncludeTooDeep`, `IncludeTooMany`, `IncludeTooLarge`.
@@ -222,8 +240,10 @@ constructor is required. The existing parity manifest has an area-level
 input with `IncludeTooLarge`, rejects invalid UTF-8 with `Config::Io` carrying
 `InvalidData`, and retains reader I/O causes. Successful bytes enter the same
 include-aware composition as `parse`. Root and included bytes share the 4 MiB
-budget; includes must be absolute, with the depth limit (8) and cycle check
-unchanged and a file limit of 256 (v0.2.2: 64).
+budget (v0.2.2: 1 MiB, counted over included files only); includes must be
+absolute (v0.2.2 resolved a relative path against the working directory), with
+the depth limit (8) and cycle check unchanged and a file limit of 256 (v0.2.2:
+64).
 
 `module MODULEPATH:RESIDUAL` and `module = ...` relations are rejected with
 `Config::UnsupportedDynamicModule` in Compatible and Strict modes. This also
@@ -250,7 +270,8 @@ profile values flow into literal-name/path handling without a second scan;
 whose substituted value itself contains `%{uid}`.
 
 The adapter reads only requested facts: Linux real/effective IDs from the
-procfs reader (`/proc/self/status`); `TMPDIR` (fallback `/tmp`) for non-Windows TEMP;
+procfs reader (`/proc/self/status`); `TMPDIR` (fallback `/tmp`) for non-Windows
+TEMP;
 Windows `TEMP` and `APPDATA`, with `USERCONFIG[DIR]` derived as
 `APPDATA\\MIT\\Kerberos5`. Invalid Unicode is an error. The Windows environment
 mapping is an explicit limitation, not a claim of native shell-folder lookup.
@@ -273,8 +294,9 @@ The first group of typed public `LibDefaults` fields covers the 22 values from
 `allow_des3` through `ignore_acceptor_hostname`; C2 completes the 43-relation
 catalogue. `hostname::Canonicalization` preserves
 `Never`, `Always`, and `Fallback`; boolean serde representations remain
-compatible, with the additional string `"fallback"`. The boolean `LibDefaults` builders take
-`Toggle`; convert a `bool` with `Toggle::from_bool`. New fields are `default_rcache_name`, `dns_uri_lookup`,
+compatible, with the additional string `"fallback"`. The boolean `LibDefaults`
+builders take `Toggle`; convert a `bool` with `Toggle::from_bool`. New fields
+are `default_rcache_name`, `dns_uri_lookup`,
 `enforce_ok_as_delegate`, and `err_fmt`.
 
 `src/config/libdefaults/relations.rs::RELATIONS` is the machine-readable source
@@ -298,8 +320,9 @@ No DNS canonicalization, TXT/URI discovery, GSS credential forwarding, acceptor
 name relaxation, error formatting, or cache-format selection is added. Those
 requests produce diagnostics: current behavior does not perform the requested
 relaxation. GSS context builders reject credential delegation. AS
-canonicalization is suppressed to preserve authenticated identity (v0.2.2 set the
-option on unarmored AS requests); TGS options still consume the flag. The table records that partial effectiveness
+canonicalization is suppressed to preserve authenticated identity (v0.2.2 set
+the option on unarmored AS requests); TGS options still consume the flag. The
+table records that partial effectiveness
 as WP-04, not as completed AS canonicalization.
 
 Existing consumers now apply `forwardable` to AS and TGS request bits; false
@@ -380,10 +403,11 @@ Zero/false values above are diagnostic; all explicitly selected deferred C2
 relations are errors in Strict mode. `rdns`, realm-domain probing, clock
 correction, shortname qualification, KCM and plugin settings cannot activate
 their missing behaviors. SPAKE group and preauth preference lists are not
-requirements to use a mechanism. `preferred_preauth_types` remains diagnostic
-for ordering; the draft-9 IDs 14/15 are removed from the default (v0.2.2:
-`[17, 16, 15, 14]`) and diagnosed individually. `permitted_enctypes` remains an effective WP-02
-cryptographic policy, not a deferred relation.
+requirements to use a mechanism. `preferred_preauth_types` is diagnostic for
+ordering (v0.2.2 had no diagnostics); the draft-9 IDs 14/15 are removed from the
+default (v0.2.2: `[17, 16, 15, 14]`) and diagnosed individually.
+`permitted_enctypes` remains an effective WP-02 cryptographic policy, not a
+deferred relation.
 
 `proxiable` now reaches both AS/TGS option consumers and the encoded AS request;
 false clears a conflicting raw option bit, as for C1 forwardable. Existing
@@ -397,14 +421,16 @@ uses the decimal signed-integer profile getter for `kdc_default_options` and
 bitmasks remain a documented extension. Signed values preserve their 32-bit
 bit pattern. `kdc_timesync` accepts signed integers like the implementation
 (nonzero means enabled), despite the documentation recommending 0 or 1.
-Profile scalar first-wins applies (v0.2.2: the last value won), rather than claiming the old
+Profile scalar first-wins applies (v0.2.2: the last value won), rather than
+claiming the old
 documentation's XOR wording describes the current getter.
 
 [sendto_kdc.c:474–494](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/sendto_kdc.c#L474-L494)
-defines effective Auto transport UDP preference: negative uses default 1465,
-large values cap at 32700, and request size equal to the limit uses UDP first.
-Explicit TCP/UDP still bypass Auto selection. Table-driven lib tests exercise
-this actual consumer, including limit 1 and cap boundaries.
+defines effective Auto transport UDP preference: negative uses default 1465
+(v0.2.2: never UDP first), large values cap at 32700 (v0.2.2: no cap), and
+request size equal to the limit uses UDP first (as in v0.2.2). Explicit TCP/UDP
+still bypass Auto selection. Table-driven lib tests exercise this actual
+consumer, including limit 1 and cap boundaries.
 
 Three old fixture tests used `noaddresses=false`: each now asserts its typed
 WP-04 error on the same original input, then checks its existing loading,
@@ -442,12 +468,14 @@ errors, not MIT's fallback-to-default behavior. The documented DH choices are
 accepted; MIT's additional numeric rounding/prefix parsing is not copied.
 
 Repeated endpoints, authorization rules, certificate rules, trust locations,
-identities and hostnames retain source order. Scalars select their first
-value. `primary_kdc` metadata takes precedence over the legacy master list;
-the primary retry consumer remains WP-10. Existing KDC and kpasswd endpoint
-consumers remain unchanged, including admin-server port-464 fallback.
-Endpoint strings preserve existing transport syntax; this does not add Unix
-socket or HTTPS proxy transport.
+identities and hostnames retain source order. Scalars select their first value.
+`primary_kdc` metadata takes precedence over the legacy master list; the primary
+retry consumer remains WP-10. KDC and kpasswd endpoint consumers keep their
+`host[:port]` syntax and the admin-server port-464 fallback, except that bare
+IPv6 literals keep their full address and an IPv6 `admin_server` yields
+`[addr]:464` (v0.2.2 cut `[::1]:749` to `[:464`; see CHANGELOG [0.3.0],
+"Transport, DNS, IPv6, SRV and kpasswd retry"). This does not add Unix socket or
+HTTPS proxy transport.
 
 `disable_encrypted_timestamp=true` errors in both modes with
 `NotYetEffective { relation: "disable_encrypted_timestamp", package:
@@ -466,7 +494,8 @@ MIT component discriminator. **Full regex/rule-language compilation and
 evaluation are not implemented** (WP-17/WP-06); no claim of complete semantic
 validation of those languages is made. Rule-valued relations preserve trailing
 `*` as regex syntax instead of treating it as the legacy value-final extension;
-MIT's `tag*` final marker remains supported.
+MIT's `tag*` final marker is supported (v0.2.2 treated `A*` as part of a realm
+name and ignored `key* = value`).
 
 ### Application, graph and plugin APIs
 

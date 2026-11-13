@@ -50,10 +50,13 @@ passes `rasn` values to or from this crate needs the same versions. The bump
 also changes the derived `rasn::enc::Encode` and `rasn::de::Decode` methods that
 five of this crate's types expose (`kadmin::ChangePasswdData`,
 `messages::{EncryptedData, PaForUser, PaPacOptions, PaReqEncPaRep}`):
-`encode_with_tag_and_constraints` and `decode_with_tag_and_constraints` take
-`&Constraints` instead of `Constraints`. Callers of the plain `encode`/`decode`
-methods or of the crate's own DER helpers are unaffected; a direct caller of the
-`*_with_tag_and_constraints` methods passes a reference (FU-DOC-R54).
+`encode_with_constraints`, `encode_with_constraints_and_identifier`,
+`encode_with_tag_and_constraints`, `decode_with_constraints` and
+`decode_with_tag_and_constraints` take `&Constraints` instead of `Constraints`.
+Callers of the plain `encode`/`decode` methods or of the crate's own DER helpers
+are unaffected; a direct caller of any `*_with_constraints*` or
+`*_with_tag_and_constraints` method passes a reference (FU-DOC-R54,
+FU-DOC-R74).
 
 ## New configuration keys
 
@@ -174,8 +177,8 @@ Policy is evaluated after all sections and includes.
 
 Credential-file saves sync the parent directory after rename on Unix. A sync
 failure is returned even though replacement has already completed; cleanup
-failure never masks the original write, rename or sync error. On Windows,
-supply a directory with an owner-only ACL (std does not expose ACL construction).
+failure never masks the original write, rename or sync error. On Windows, supply
+a directory with an owner-only ACL (std does not expose ACL construction).
 
 ### Environment-free configuration defaults
 
@@ -207,8 +210,14 @@ Kpasswd TCP retains RFC 3244's separate unsigned length rules.
 Password transport no longer retries after a send may have started. Such I/O
 failures, response errors and timeouts return `Client::KpasswdOutcomeUnknown`.
 Configured Auto chooses its initial protocol from `udp_preference_limit` and
-only fails over before possible delivery; direct-address Auto uses UDP once.
-Do not treat an unknown outcome as a failed mutation or blindly retry it.
+only fails over before possible delivery; direct-address Auto uses UDP once. Do
+not treat an unknown outcome as a failed mutation or blindly retry it. A
+password change also gives connection setup (TCP connect, or UDP socket bind and
+connect) and the send-and-reply phase a full `Tokio::with_timeout` each, so one
+attempt on one endpoint can take up to twice the configured timeout (v0.2.2: one
+timeout covered the whole attempt); only a timeout or failure in the second
+phase is `KpasswdOutcomeUnknown`; a timeout while connecting is
+`Client::TransportTimeout` (FU-DOC-R76).
 
 UDP response limits now reject oversized responses with the new
 `Client::UdpResponseTooLarge { limit }` variant instead of returning a prefix.
@@ -299,11 +308,12 @@ microseconds field remains valid. Generic DER codecs are unchanged.
 ### Strict Microseconds domain (RSK-985742B6)
 
 Service AP-REQ acceptance and `ValidatedApReq` AP-REP construction/verification
-now reject microseconds outside 0..=999999 using the new
-`Service::IntegerOutOfRange` error (`authenticator.cusec` or `ap-rep.cusec`).
-Values at or above one million are not normalized into additional seconds.
-Construction rechecks the mutable public `authenticator_cusec` field. Zero and
-999999 remain valid. Public signatures and error variants are unchanged.
+now reject microseconds outside 0..=999999 using `Service::IntegerOutOfRange`
+(v0.2.2 `service::Error::IntegerOutOfRange`, raised only for integers that do
+not fit `u32`; `authenticator.cusec` or `ap-rep.cusec`). Values at or above one
+million are not normalized into additional seconds. Construction rechecks the
+mutable public `authenticator_cusec` field. Zero and 999999 remain valid. Public
+signatures and error variants are unchanged.
 
 ### Bounded replay-cache lifecycle (RSK-7D80FA41)
 
@@ -333,7 +343,8 @@ that window. The
 bursts or replay refreshes need extra headroom. Full capacity returns
 `ReplayCacheCapacityExceeded`, never evicting live replay evidence.
 Admission expires records through an ordered expiry index (v0.2.2 expired
-nothing at admission; only an explicit `clear_older_than` scan did) (FU-SVC-04); each client principal is limited to a
+nothing at admission; only an explicit `clear_older_than` scan did) (FU-SVC-04);
+each client principal is limited to a
 share of the capacity ("Replay cache" under the follow-up changes).
 
 Explicit `clear`/`force_clear_older_than*` are administrative overrides that can erase
@@ -569,8 +580,8 @@ Result<Self, error::Kadmin>`. The other parameters and results are unchanged.
 - `as_bytes()` borrows the bytes. `Password` has no `Clone` or `Display`, and
   its `Debug` is redacted.
 - The `ChangePasswdData::new_passwd` field (v0.2.2: a public `OctetString`) is
-  private; `new_passwd()` returns a redacted zeroizing `&kadmin::password::Bytes`,
-  and the request builders encode the password
+  private; `new_passwd()` returns a redacted zeroizing
+  `&kadmin::password::Bytes`, and the request builders encode the password
   envelope directly into zeroizing buffers (FU-DOC-R52).
 
 The 0.2 call with a string literal no longer compiles:
@@ -891,7 +902,8 @@ drop(defaults);
   `error::Service::ReplayCacheCapacityExceeded { capacity }` with its share as
   `capacity`. Live evidence is never evicted.
 - Admission expires records through an ordered index (v0.2.2 expired nothing at
-  admission; only an explicit `clear_older_than` scan did) (FU-SVC-04, FU-SVC-05).
+  admission; only an explicit `clear_older_than` scan did) (FU-SVC-04,
+  FU-SVC-05).
 
 ```rust
 # #[cfg(feature = "messages")]
@@ -938,10 +950,11 @@ their `*_without_env` twins are gone. Named ambient discovery remains explicit:
 `k5login_authoritative` now defaults to true rather than false; its deferred
 local-login consumer still grants no authorization. Ticket and renewable
 lifetimes use checked MIT intervals: negative totals, overflow, malformed unit
-order and trailing garbage are rejected. Zero renewable lifetime disables renewal.
-Auto transport uses 1465 for a negative `udp_preference_limit`, caps values above
-32700, and selects UDP first when request size equals the limit. Explicit TCP or
-UDP bypasses this preference (FU-DOC-R10).
+order and trailing garbage are rejected. Zero renewable lifetime disables
+renewal. Auto transport uses 1465 for a negative `udp_preference_limit` (v0.2.2:
+never UDP first) and caps values above 32700 (v0.2.2: no cap); UDP first at a
+request size equal to the limit is as in v0.2.2. Explicit TCP or UDP bypasses
+this preference (FU-DOC-R10, FU-DOC-R75).
 
 Configuration now follows MIT profile semantics; the details are in
 [`config-profile.md`](config-profile.md) and the generated
@@ -954,9 +967,12 @@ Configuration now follows MIT profile semantics; the details are in
   stop later contributions to that scope, within a file and across files.
   Values of `auth_to_local` and `pkinit_cert_match` keep a trailing `*`.
   Application, realm and local-name scopes keep their case.
-- **Includes.** Ignored sections no longer share brace state with the rest
-  of the file; re-reading a completed source is not a cycle; the limits are
-  256 files and 4 MiB in total, root files included.
+- **Includes.** Ignored sections no longer share brace state with the rest of
+  the file; re-reading a completed source is not a cycle (as in v0.2.2); the
+  limits are 256 files (v0.2.2: 64) and 4 MiB in total (v0.2.2: 1 MiB, counted
+  over included files only), root files included. `include` and `includedir`
+  paths must now be absolute, see "Include paths" below (FU-DOC-R82,
+  FU-DOC-R86).
 - **Unknown input.** Unknown sections and relations are diagnostics in
   compatible mode and errors in strict mode. Recognized settings without a
   runtime effect produce `ConfigDiagnostic::NotYetEffective` in compatible mode
@@ -1103,9 +1119,9 @@ data, `EncryptedData`, `PaForUser`, `PaReqEncPaRep`, `KrbErrorInfo`, PAC contain
 credential and validation records, GSS tokens, initiator options/contexts, service
 validation/reply types, and `NegotiateHttpResponse`. Metadata reads likewise use
 getters; constructors and `with_*` methods replace struct mutation. A getter
-borrows an owned field (`&[u8]`, `&EncryptionKey`, `Option<&T>`) and returns a `Copy`
-field (`u32`, `i32`, `SystemTime`, `Option<u32>`) by value. Types the library
-only returns (the PAC containers and validation records, `KrbErrorInfo`,
+borrows an owned field (`&[u8]`, `&EncryptionKey`, `Option<&T>`) and returns a
+`Copy` field (`u32`, `i32`, `SystemTime`, `Option<u32>`) by value. Types the
+library only returns (the PAC containers and validation records, `KrbErrorInfo`,
 `InitiatorContext`, `NegotiateHttpResponse`, `kadmin::Reply`) have no public
 constructor and, apart from the few `set_*` methods they list, no setter: v0.2.2
 code that built or edited them through public fields must obtain the value from
@@ -1119,7 +1135,8 @@ For replacement use the type's `set_*` method, or retain the result of its
 consuming builder. Session tickets and KDC error payloads take `Zeroizing<Vec<u8>>`;
 keys take their existing owning `EncryptionKey`. `KdcError::e_data` is no longer
 a public field (v0.2.2: `pub e_data: Option<Vec<u8>>`); build with
-`with_e_data(Option<Zeroizing<Vec<u8>>>)` and read with `e_data()`. `ReferralTgsResult::new` adopts its final
+`with_e_data(Option<Zeroizing<Vec<u8>>>)` and read with `e_data()`.
+`ReferralTgsResult::new` adopts its final
 session and referral vector; its fields are private (FU-CLI-R22): borrow them
 with `ticket()` and `referral_tgts()`, or take both owners with the consuming
 `into_parts()`, which returns `(TgsRepSession, Vec<AsRepSession>)`. Borrowed getters never transfer erasure duties for
@@ -1171,8 +1188,8 @@ alias.
 
 Section structure (FU-DOC-R38): v0.2.2 selected a section from `[name]` while
 ignoring any text after `]`, trimmed the name, accepted `[]` and an unterminated
-`[name`, ignored relations and other text before the first section, and dropped a
-section that followed a byte order mark. The reader now rejects structure it
+`[name`, ignored relations and other text before the first section, and dropped
+a section that followed a byte order mark. The reader now rejects structure it
 used to ignore: `junk` or `default_realm = Y` before `[libdefaults]`,
 `[libdefaults] junk`, `[]`, `[libdefaults` and a BOM before the first header are
 each an `InvalidLine`. A padded `[ libdefaults ]` is no longer trimmed: it names
@@ -1188,28 +1205,29 @@ padded `[ libdefaults ]` followed by `default_realm = X` leaves `default_realm`
 empty (v0.2.2: `X`). A commented-out header leaves the relations below it
 without a section, so `#[libdefaults]` followed by `default_realm = X` is an
 `InvalidLine` (v0.2.2: `default_realm` stayed empty), and so is a file whose
-lines end in a bare CR, such as `[libdefaults]\r default_realm = X\r`
-(v0.2.2: `default_realm` stayed empty). MIT ignores every line before the first
-line that starts with `[` (`prof_parse.c:326`), so for a file that starts with a
-BOM MIT, like v0.2.2, ignores the BOM line and the whole body below it, and
-silently loses the first section. This crate rejects any non-comment content
-before the first header, the BOM line and a stray line such as
-`garbage line` included, which is a deliberate divergence from MIT pinned by
-`profile_syntax_rejects_malformed_components`
-(`tests/config/mutation_profile.rs:155-168`, where `default_realm = R` before
-any section must fail).
+lines end in a bare CR, such as `[libdefaults]\r default_realm = X\r` (v0.2.2:
+`default_realm` stayed empty). MIT ignores every line before the first line that
+starts with `[` (`prof_parse.c:326`), so for a file that starts with a BOM MIT,
+like v0.2.2, ignores the BOM line and the whole body below it, and silently
+loses the first section. This crate rejects any non-comment content before the
+first header, the BOM line and a stray line such as `garbage line` included,
+which is a deliberate divergence from MIT pinned by
+`profile_syntax_rejects_malformed_components` (in
+`tests/config/mutation_profile.rs`, where `default_realm = R` before any section
+must fail).
 
 Subsection syntax (FU-DOC-R64): as in MIT (`prof_parse.c:177`), a value opens a
-subsection only when `{` is the whole value, optionally followed by a comment
-that blanks separate from it. `{}`, `{ kdc = k }` and `{#` are plain values, so
-`[realms]` with `A = {}` or `A = { kdc = k }` defines no realm (v0.2.2: an empty
-realm `A`), and `A = {#` followed by `kdc = k` and `}` is an `InvalidLine`
+subsection only when `{` is the whole value, blanks aside. Unlike MIT, a comment
+that blanks separate from the brace is allowed too (`A = { # c`; MIT reads that
+line as the plain value `{ # c`). `{}`, `{ kdc = k }` and `{#` are plain values,
+so `[realms]` with `A = {}` or `A = { kdc = k }` defines no realm (v0.2.2: an
+empty realm `A`), and `A = {#` followed by `kdc = k` and `}` is an `InvalidLine`
 because the `}` has nothing to close (v0.2.2: realm `A` with the KDC `k`; MIT
 fails with `PROF_EXTRA_CBRACE`, `prof_parse.c:128`). `A = { # c` still opens the
 subsection. A closing brace may be followed only by blanks, a `*` or a comment
 that blanks separate from it: `} junk` is an `InvalidLine`. A relation name
-cannot contain blanks, so the realm line `A B = {` is an `InvalidLine`
-(v0.2.2: realm `A B`).
+cannot contain blanks, so the realm line `A B = {` is an `InvalidLine` (v0.2.2:
+realm `A B`).
 
 Unclosed braces (FU-DOC-R64): a subsection that is still open at the end of a
 file or at the next section header is an `InvalidRealmsSection`, in every
@@ -1313,9 +1331,9 @@ relation final for every relation, and the `*` is dropped from the value, so
 `default_realm = X*` and `default_realm = X *` are `X` and `forwardable = true*`
 is `true`. v0.2.2 honoured `value*` only in the `kdc`, `admin_server`,
 `master_kdc` and `kpasswd_server` lists; elsewhere it kept the `*`
-(`default_realm` was `X*`) and rejected `true*` as `InvalidBoolean`. The rule-language relations
-`auth_to_local` and `pkinit_cert_match` keep a trailing `*`. Quote the value to
-keep a literal star: `default_realm = "X*"` is `X*`.
+(`default_realm` was `X*`) and rejected `true*` as `InvalidBoolean`. The
+rule-language relations `auth_to_local` and `pkinit_cert_match` keep a trailing
+`*`. Quote the value to keep a literal star: `default_realm = "X*"` is `X*`.
 
 Subsections (FU-CFG-R04): in realms, appdefaults, plugins and capaths, an empty
 assignment now expects an opening brace on the next structural line. Use `""`
@@ -1357,25 +1375,64 @@ selector variants. Disabled controls remain accepted; certificate paths are
 not protocol selectors. Remove prohibited selections rather than moving them
 to a typed or programmatic map.
 
-Include ordering (FU-CFG-R11): an unquoted empty scalar before an `include`
-or `includedir` now wins over later values just like `""`. If the included
-value should win, remove the earlier empty assignment. The next parent
-structural line can open a subsection after intervening includes; included
-files keep independent grammar state.
+Include ordering (FU-CFG-R11): an unquoted empty scalar before an `include` or
+`includedir` now wins over later values just like `""`. If the included value
+should win, remove the earlier empty assignment. The next parent structural line
+can open a subsection after intervening includes; included files are parsed with
+their own grammar state (v0.2.2 spliced them into the parent's stream; see
+"Included sources" below).
 
-Include parsing (FU-CFG-R12): repeated includes rescan a comment tail only when resolving a pending scalar. This
-step changes no precedence, accepted syntax or include limit beyond the
-changes listed in this chapter; no configuration migration is needed.
+Include parsing (FU-CFG-R12): repeated includes rescan a comment tail only when
+resolving a pending scalar. This step itself changes no precedence, accepted
+syntax or include limit; the include changes of this chapter (the absolute path
+rule and the source rules below) do need a check of existing files.
 
 Include depth (FU-CFG-R15): an `includedir` reached at depth 9 now returns
 `IncludeTooDeep` even when the directory is empty or holds only ignored files.
 Keep include chains within eight levels.
 
-Include directories and non-UTF-8 files (FU-CFG-R33, FU-CFG-R34): an `includedir`
-entry that is a directory is skipped, as in MIT, instead of failing the whole
-configuration with `IncludeFile` (`IsADirectory`). A top-level file that is not
-UTF-8 text is `error::Config::File` with kind `InvalidData` (v0.2.2: `Io`); an
-included file that is not UTF-8 is still `IncludeFile`.
+Include directories and non-UTF-8 files (FU-CFG-R33, FU-CFG-R34): an
+`includedir` entry that is a directory is skipped, as in MIT, instead of failing
+the whole configuration with `IncludeFile` (`IsADirectory`). A top-level file
+that is not UTF-8 text is `error::Config::File` with kind `InvalidData` (v0.2.2:
+`Io`); an included file that is not UTF-8 is still `IncludeFile`.
+
+Include paths (FU-DOC-R82): the argument of `include` and `includedir` must be
+an absolute path. A relative argument returns `error::Config::IncludeFile` with
+kind `InvalidInput` ("include path must be absolute") before any file is opened,
+for `includedir` too. v0.2.2 resolved a relative argument against the process
+working directory, exactly as MIT does (`fopen` on the token), so
+`include conf.d/site.conf` loaded when the process ran in the right directory.
+The absolute-only rule is a deliberate divergence from MIT, recorded in
+`docs/config-profile.md` and `docs/gokrb5-parity.toml`. Make the argument
+absolute, for example `include /etc/krb5.conf.d/site.conf`.
+
+Included sources (FU-DOC-R83): every included file, and every file of a
+`KRB5_CONFIG` list or of `Config::load_paths`, is parsed as its own source that
+starts outside every section. A relation before its first section header is an
+`InvalidLine`; v0.2.2 spliced the text into one stream and read such lines into
+the section that was open at the `include` or at the end of the previous file,
+and MIT ignores them. Start the file with a section header or move the lines
+into the parent. After an `include` or `includedir` the including file continues
+in the section it was in before the directive (v0.2.2: in the section where the
+included text ended). An `include` or `includedir` line inside a brace
+subsection now runs at its position; v0.2.2 ran a directive only outside a
+subsection (`InvalidLine` in a `[realms]` subsection, not run in other
+sections).
+
+Path lists (FU-DOC-R83): a directory passed to `Config::load` or
+`Config::load_paths`, or listed in `KRB5_CONFIG`, is read like an `includedir`
+directory (v0.2.2: an `Io` error). A file of a list that another file of the
+same list includes is read twice (v0.2.2: `IncludeCycle`). A missing or
+unreadable entry of a list is still an error, as in v0.2.2, where MIT skips it;
+the variant is now `File` (v0.2.2: `Io`).
+
+Include limits (FU-DOC-R86): the include byte budget is 4 MiB (v0.2.2: 1 MiB)
+and the root counts against it. A root file or root text over 4 MiB, alone or
+with the files it includes, is `IncludeTooLarge`; v0.2.2 read a root of any size
+and counted only included files. The file limit is 256 (v0.2.2: 64). Any file
+with a byte that is not UTF-8 is refused as a whole, as in v0.2.2 (MIT reads
+bytes).
 
 #### Client, transport and kpasswd
 
@@ -1539,7 +1596,8 @@ and encoding validates the BIT STRING.
 HTTP clone configuration now checks cache compatibility against the shared
 validator under its lock (FU-HTTP-R04). Handle the typed skew error that
 `with_shared_replay_cache` returns ("Replay cache" above) even when that clone's
-original settings used a smaller window. Lowering a layer's window preserves the shared cache ceiling.
+original settings used a smaller window. Lowering a layer's window preserves the
+shared cache ceiling.
 
 The Axum example now distinguishes replay infrastructure failures from invalid
 credentials (FU-HTTP-R05): expect HTTP 500 and inspect `Arc<error::Http>` in local
@@ -1636,6 +1694,28 @@ in that format and now return `error::Keytab::UnrepresentableNameType`.
 Use version two to preserve the value, or explicitly choose name type zero.
 Version-one ccaches follow the same rule (FU-FIL-R07): the refusal is
 `error::Ccache::UnrepresentableNameType` (v0.2.2 dropped the value silently).
+
+Keytab file formats (FU-DOC-R87): the enctype of a keytab entry is a signed
+16-bit field, so serialization now accepts IDs -32768 to -1 (v0.2.2:
+`error::Keytab::LengthOverflow`) and rejects IDs 32768 to 65535 with
+`LengthOverflow` (v0.2.2 wrote them, and the parser reads them back as negative
+IDs). `Keytab::add_entry_from_password`, `_name` and `_ref` reject single-DES (1
+to 4, 8), RC4-EXP (24) and weak (5, 6) enctypes with `error::Keytab::Crypto`,
+where v0.2.2 returned `UnsupportedEtype`. A 1-3 byte fragment where the next
+entry size should start is `Truncated`; v0.2.2 and MIT (`fread` in
+`kt_file.c:918-920`) treat it as the end of the table, so a keytab cut short by
+a crashed writer must be repaired before it is read.
+
+Ccache file formats (FU-DOC-R87): `ccache::HeaderField::new` is fallible. It
+returns `InvalidHeaderField` for tag 1 with a value that is not 8 bytes and
+`LengthOverflow` for a value over 65535 bytes, where v0.2.2 accepted any struct
+literal and checked only when a version 4 cache was serialized. A version-1
+ccache whose principal component count is 0 or the minimum `i32` is still
+rejected, but 0.3 reports `LengthOverflow` and `NegativeLength` respectively
+where v0.2.2 reported `NegativeLength` and `LengthOverflow`. A `DIR:` collection
+whose `primary` file is a symlink, existing or dangling, fails with `Io` of kind
+`InvalidInput` when the name is resolved; v0.2.2 followed the link and created a
+dangling target.
 
 Ccache payload ownership (FU-FIL-R05): `Credential.ticket`, `second_ticket` and
 `AuthorizationDataEntry.data` are `Zeroizing<Vec<u8>>`. Pass zeroizing buffers to
@@ -1930,11 +2010,12 @@ different type, though (FU-DOC-R61): v0.2.2 declared `type Future =
 Pin<Box<dyn Future<Output = Result<Response<ResBody>, TowerError<S::Error>>>>>`,
 which was never `Send`, and 0.3.0 declares `http::NegotiateFuture<S::Future,
 ResBody, S::Error>`, a concrete future that is `Send` when the inner future,
-body and error are. Code that names `<NegotiateService<_> as Service<_>>::Future`
-as the boxed type, or stores `call` results in a `Pin<Box<dyn Future>>` field
-without boxing them, must change; `Box::pin(service.call(request))` still
-produces the boxed form. `http::{challenge_response, reject_response}` retain their generic
-`B: Default` bound, now written in a where-clause.
+body and error are. Code that names `<NegotiateService<_> as
+Service<_>>::Future` as the boxed type, or stores `call` results in a
+`Pin<Box<dyn Future>>` field without boxing them, must change;
+`Box::pin(service.call(request))` still produces the boxed form.
+`http::{challenge_response, reject_response}` retain their generic `B: Default`
+bound, now written in a where-clause.
 
 The earlier pass added `#[must_use]` to these public APIs:
 
@@ -1963,12 +2044,12 @@ Since FU-SVC-09, `with_max_clock_skew` (on `service::Validator`,
 `http::NegotiateLayer` and `http::NegotiateService`) and
 `with_shared_replay_cache` return `Result` ("Replay cache" under the follow-up changes).
 
-The four password-change methods listed above took an `impl AsRef<[u8]>` argument
-in v0.2.2 and now take `client::Password`. The other argument-position
+The four password-change methods listed above took an `impl AsRef<[u8]>`
+argument in v0.2.2 and now take `client::Password`. The other argument-position
 `impl Trait` parameters of this pass become independent named generics with the
 same bounds; ordinary calls keep type inference, and callers may now explicitly
-name these type arguments using turbofish syntax. Two cases differ
-(FU-DOC-R55, FU-DOC-R56):
+name these type arguments using turbofish syntax. Two cases differ (FU-DOC-R55,
+FU-DOC-R56):
 
 - `client::principal::Principal::new` and `keytab::Principal::new` already had
   the named parameters `<I, S>` next to their `impl Into<String>` realm. The
@@ -1992,10 +2073,11 @@ name these type arguments using turbofish syntax. Two cases differ
   `Toggle::from_bool` / `From<bool>`. The twelfth, `dns_canonicalize_hostname`
   (`bool` in v0.2.2, where the profile value `fallback` was an `InvalidBoolean`
   error), is the enum `config::hostname::Canonicalization` with `Never`,
-  `Always` and `Fallback`, so `if cfg.libdefaults.dns_canonicalize_hostname`
-  no longer compiles. Six new `Toggle` options join them: `allow_rc4`,
+  `Always` and `Fallback`, so `if cfg.libdefaults.dns_canonicalize_hostname` no
+  longer compiles. Six new `Toggle` options join them: `allow_rc4`,
   `allow_des3`, `dns_uri_lookup`, `enforce_ok_as_delegate`,
-  `client_aware_channel_bindings` and `permitted_enctypes_explicit` (FU-DOC-R39).
+  `client_aware_channel_bindings` and `permitted_enctypes_explicit`
+  (FU-DOC-R39).
   Both direct serde and gokrb5 JSON snapshots retain boolean representations; a
   missing `permitted_enctypes_explicit` means disabled.
 - `config::Realm::realm` is now `name`. Serialized field names remain unchanged.
@@ -2457,12 +2539,19 @@ kpasswd result helpers, `MicToken::verify`/`WrapToken::verify` and others).
 - `spnego::oid::validate_arcs`: `pub(super) const fn validate_arcs(arcs: &[u32]) -> Result<(), Error>`.
 - `spnego::MicToken::new`: `pub const fn new(flags: u8, snd_seq_num: u64) -> Self`.
 - `spnego::MicToken::with_payload`: `pub fn with_payload<P>(mut self, payload: P) -> Self where P: Into<Vec<u8>>,`.
-- `spnego::MicToken::new_initiator`: `pub fn new_initiator<P>(payload: P, key: &EncryptionKey) -> Result<Self, Error> where P: Into<Zeroizing<Vec<u8>>>,`.
+- `spnego::MicToken::new_initiator`: `pub fn new_initiator<P>(payload: P, key:
+  &EncryptionKey) -> Result<Self, Error> where P: Into<Zeroizing<Vec<u8>>>,`.
 - `spnego::WrapToken::new`: `pub const fn new(flags: u8, snd_seq_num: u64) -> Self`.
 - `spnego::WrapToken::with_payload`: `pub fn with_payload<P>(mut self, payload: P) -> Self where P: Into<Vec<u8>>,`.
-- `spnego::WrapToken::new_initiator`: `pub fn new_initiator<P>(payload: P, key: &EncryptionKey) -> Result<Self, Error> where P: Into<Zeroizing<Vec<u8>>>,`.
-- `spnego::WrapToken::new_initiator_sealed`: `pub fn new_initiator_sealed<P>(payload: P, key: &EncryptionKey) -> Result<Self, Error> where P: Into<Zeroizing<Vec<u8>>>,`.
-- `spnego::WrapToken::new_initiator_sealed_with_confounder`: `pub fn new_initiator_sealed_with_confounder<P>( payload: P, key: &EncryptionKey, confounder: &[u8], ) -> Result<Self, Error> where P: Into<Zeroizing<Vec<u8>>>,`.
+- `spnego::WrapToken::new_initiator`: `pub fn new_initiator<P>(payload: P, key:
+  &EncryptionKey) -> Result<Self, Error> where P: Into<Zeroizing<Vec<u8>>>,`.
+- `spnego::WrapToken::new_initiator_sealed`: `pub fn
+  new_initiator_sealed<P>(payload: P, key: &EncryptionKey) -> Result<Self,
+  Error> where P: Into<Zeroizing<Vec<u8>>>,`.
+- `spnego::WrapToken::new_initiator_sealed_with_confounder`: `pub fn
+  new_initiator_sealed_with_confounder<P>( payload: P, key: &EncryptionKey,
+  confounder: &[u8], ) -> Result<Self, Error> where P:
+  Into<Zeroizing<Vec<u8>>>,`.
 - `spnego::WrapToken::is_sealed`: `pub const fn is_sealed(&self) -> bool`.
 - `spnego::NegTokenResp::reject`: `pub const fn reject() -> Self`.
 - `spnego::InitiatorContextOptions::with_context_flags`: `pub fn with_context_flags<P>(mut self, context_flags: P) -> Self where P: Into<Vec<u32>>,`.
@@ -2580,13 +2669,15 @@ texts and runtime behavior are unchanged.
 | `kadmin::Error::MissingKrbError` | `error::Kadmin::MissingKrb` |
 | `Error::KrbError` | `error::Any::Krb` |
 
-The newly public defining modules are `client::{kpasswd, negotiate, options,
-principal, transport}`, `spnego::oid`, and `evaluation::data`; `error` is new.
-The only public re-exports are the crate-root facade: `Principal`,
-`NegotiateClient`, `BlockingNegotiateClient` and `Config`, which v0.2.2 also
-re-exported at the root, and `TokioClient` (`client::Tokio`) and
-`ServiceValidator` (`service::Validator`), which v0.2.2 had only under their
-module paths (FU-DOC-R62). References in the
+The newly public defining modules are
+`client::{kpasswd, negotiate, options, principal, transport}`, `configuration`,
+`cryptography`, `spnego::oid`, and `evaluation::data`; `error` is new. The
+public re-exports are the crate-root facade, `Principal`, `NegotiateClient`,
+`BlockingNegotiateClient` and `Config`, which v0.2.2 also re-exported at the
+root, and `TokioClient` (`client::Tokio`) and `ServiceValidator`
+(`service::Validator`), which v0.2.2 had only under their module paths, plus the
+module aliases `config` (for `configuration`) and `crypto` (for `cryptography`),
+which keep the v0.2.2 module paths (FU-DOC-R62, FU-DOC-R80). References in the
 API dump normalize these aliases to their defining paths; duplicate alias
 expansions do not represent distinct items.
 
@@ -2649,7 +2740,8 @@ by group:
   `keytab::Entry`, `client::PreauthKeyInfo`, `client::AsRepSession` and
   `client::KdcError` use the constructors in the construction map above;
   `ccache::CredentialTimes` starts from `Default`; `config::Realm` comes from
-  `Realm::new` or from parsing a `krb5.conf` snippet; `kadmin::ChangePasswordResult` comes from
+  `Realm::new` or from parsing a `krb5.conf` snippet;
+  `kadmin::ChangePasswordResult` comes from
   `ChangePasswordResult::parse`.
 - **`LibDefaults`** (`enctype.rs`): `default_tkt_enctype_ids` and
   `default_tgs_enctype_ids` are methods (`defaults.default_tkt_enctype_ids()`),
