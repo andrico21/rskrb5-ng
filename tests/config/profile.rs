@@ -312,6 +312,30 @@ mod tests {
         Ok(())
     }
 
+    /// An `includedir` entry whose metadata cannot be read is not skipped as a directory.
+    #[cfg(unix)]
+    #[test]
+    fn includedir_names_an_uninspectable_entry() -> Result<(), Box<dyn Error>> {
+        use std::os::unix::fs::symlink;
+        // Given a directory holding a symlink that points nowhere.
+        let dir = Fixture::new()?;
+        let listed = dir.path().join("d");
+        fs::create_dir_all(&listed)?;
+        let dangling = listed.join("gone.conf");
+        symlink(dir.path().join("missing"), &dangling)?;
+        // When expanding the directory.
+        let error = Config::parse(&format!("includedir {}\n", listed.display()))
+            .err()
+            .ok_or("dangling includedir entry accepted")?;
+        // Then reading the entry names the failure instead of skipping it.
+        assert!(
+            matches!(&error, ConfigError::IncludeFile { path, source }
+                if path == &dangling && source.kind() == io::ErrorKind::NotFound),
+            "{error:?}"
+        );
+        Ok(())
+    }
+
     /// A non-UTF-8 root file is a root-file error; an included one stays an include error.
     #[test]
     fn non_utf8_root_is_file_error_and_non_utf8_include_is_include_error()
