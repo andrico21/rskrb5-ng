@@ -14,12 +14,16 @@ mod tests {
         sync::atomic::{AtomicU64, Ordering},
     };
     use std::{
-        env, fs,
+        env, fs, io,
         path::{Path, PathBuf},
         process,
     };
 
-    use rskrb5_ng::{Config, config::ParseMode, error::Config as ConfigError};
+    use rskrb5_ng::{
+        Config,
+        config::{MAX_INCLUDE_FILES, ParseMode},
+        error::Config as ConfigError,
+    };
 
     /// Process-local sequence avoids clock-resolution assumptions.
     static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -250,6 +254,92 @@ mod tests {
         // Then the parent resumes libdefaults.
         assert_eq!(config.libdefaults.default_realm, "PARENT");
         assert_eq!(config.resolve_realm("host.example"), Some("CHILD"));
+        Ok(())
+    }
+
+    /// An `includedir` skips directory entries like MIT, whatever their names.
+    #[test]
+    fn includedir_skips_directory_entries() -> Result<(), Box<dyn Error>> {
+        // Given a directory holding a file, a directory named like a file, and a
+        // plain subdirectory, each with a profile inside.
+        let dir = Fixture::new()?;
+        let listed = dir.path().join("d");
+        fs::create_dir_all(listed.join("sub.conf"))?;
+        fs::create_dir_all(listed.join("sub"))?;
+        fs::write(
+            listed.join("a.conf"),
+            "[libdefaults]\n default_realm = FROM_A\n",
+        )?;
+        fs::write(
+            listed.join("sub.conf").join("x.conf"),
+            "[domain_realm]\n .nested = NESTED\n",
+        )?;
+        fs::write(
+            listed.join("sub").join("b.conf"),
+            "[domain_realm]\n .nested = NESTED\n",
+        )?;
+        let root = dir.path().join("krb5.conf");
+        fs::write(&root, format!("includedir {}\n", listed.display()))?;
+        // When loading the root file and parsing the same text.
+        let loaded = Config::load(&root)?;
+        let parsed = Config::parse(&fs::read_to_string(&root)?)?;
+        // Then the file is read and nothing below a subdirectory is.
+        for config in [loaded, parsed] {
+            assert_eq!(config.libdefaults.default_realm, "FROM_A");
+            assert_eq!(config.resolve_realm("host.nested"), None);
+        }
+        Ok(())
+    }
+
+    /// Skipped directory entries do not count against the include file cap.
+    #[test]
+    fn includedir_directories_do_not_count_as_files() -> Result<(), Box<dyn Error>> {
+        // Given as many directories named like profiles as the file cap allows,
+        // and one real profile.
+        let dir = Fixture::new()?;
+        let listed = dir.path().join("d");
+        for index in 0..MAX_INCLUDE_FILES {
+            fs::create_dir_all(listed.join(format!("{index:04}.conf")))?;
+        }
+        fs::write(
+            listed.join("real.conf"),
+            "[libdefaults]\n default_realm = REAL\n",
+        )?;
+        // When expanding the directory.
+        let config = Config::parse(&format!("includedir {}\n", listed.display()))?;
+        // Then only the file is counted against the cap.
+        assert_eq!(config.libdefaults.default_realm, "REAL");
+        Ok(())
+    }
+
+    /// A non-UTF-8 root file is a root-file error; an included one stays an include error.
+    #[test]
+    fn non_utf8_root_is_file_error_and_non_utf8_include_is_include_error()
+    -> Result<(), Box<dyn Error>> {
+        // Given a root file that is not UTF-8 and a root that includes one.
+        let dir = Fixture::new()?;
+        let root = dir.path().join("root.conf");
+        let child = dir.path().join("child.conf");
+        fs::write(&root, b"\xff")?;
+        fs::write(&child, b"\xff")?;
+        let parent = dir.path().join("parent.conf");
+        fs::write(&parent, format!("include {}\n", child.display()))?;
+        // When loading each of them.
+        let top = Config::load(&root).err().ok_or("non-UTF-8 root accepted")?;
+        let nested = Config::load(&parent)
+            .err()
+            .ok_or("non-UTF-8 include accepted")?;
+        // Then the root is `File` and the include is `IncludeFile`, both `InvalidData`.
+        assert!(
+            matches!(&top, ConfigError::File { path, source }
+                if path == &root && source.kind() == io::ErrorKind::InvalidData),
+            "{top:?}"
+        );
+        assert!(
+            matches!(&nested, ConfigError::IncludeFile { path, source }
+                if path == &child && source.kind() == io::ErrorKind::InvalidData),
+            "{nested:?}"
+        );
         Ok(())
     }
 

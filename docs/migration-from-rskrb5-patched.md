@@ -1371,6 +1371,12 @@ Include depth (FU-CFG-R15): an `includedir` reached at depth 9 now returns
 `IncludeTooDeep` even when the directory is empty or holds only ignored files.
 Keep include chains within eight levels.
 
+Include directories and non-UTF-8 files (FU-CFG-R33, FU-CFG-R34): an `includedir`
+entry that is a directory is skipped, as in MIT, instead of failing the whole
+configuration with `IncludeFile` (`IsADirectory`). A top-level file that is not
+UTF-8 text is `error::Config::File` with kind `InvalidData` (v0.2.2: `Io`); an
+included file that is not UTF-8 is still `IncludeFile`.
+
 #### Client, transport and kpasswd
 
 KRB-ERROR UTF-8 causes (FU-API-R01): `KrbErrorCodec::InvalidString` now contains
@@ -1628,6 +1634,8 @@ formatting. Use explicit borrowed fields only where needed; never log them.
 Version-one keytabs (FU-FIL-R03): nonzero principal name types cannot be saved
 in that format and now return `error::Keytab::UnrepresentableNameType`.
 Use version two to preserve the value, or explicitly choose name type zero.
+Version-one ccaches follow the same rule (FU-FIL-R07): the refusal is
+`error::Ccache::UnrepresentableNameType` (v0.2.2 dropped the value silently).
 
 Ccache payload ownership (FU-FIL-R05): `Credential.ticket`, `second_ticket` and
 `AuthorizationDataEntry.data` are `Zeroizing<Vec<u8>>`. Pass zeroizing buffers to

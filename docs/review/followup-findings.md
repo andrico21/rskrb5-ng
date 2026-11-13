@@ -290,3 +290,7 @@ is a parity feature, not a defect>`.
 | executor:todo-92#explicit-preauth-types | FU-DOC-R70 | no |
 | executor:todo-92#clockskew-interval | FU-DOC-R71 | no |
 | executor:todo-92#default-client-keytab | FU-DOC-R72 | no |
+| executor:todo-98#includedir-directory-entries | FU-CFG-R33 | no |
+| executor:todo-98#non-utf8-root-variant | FU-CFG-R34 | no |
+| executor:todo-98#include-rustdoc-relative-path | FU-DOC-R73 | no |
+| executor:todo-98#ccache-v1-name-type-variant | FU-FIL-R07 | no |
