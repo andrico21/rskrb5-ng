@@ -612,7 +612,7 @@ mod tests {
             match field {
                 0 => entry.principal_mut().realm = "r".repeat(0x8000),
                 1 => entry.principal_mut().components = vec!["c".repeat(0x8000)],
-                2 => entry.principal_mut().components = vec![String::new(); 0x8000],
+                2 => entry.principal_mut().components = vec!["c".to_owned(); 0x8000],
                 3 => {
                     let etype = entry.key().etype();
                     entry = entry.set_key(EncryptionKey::new(etype, vec![0; 0x8000]));
@@ -643,7 +643,7 @@ mod tests {
         // Given the largest accepted lengths, count and encryption type.
         let mut entry = synthetic_entry("user", 1, i32::from(i16::MAX), 100);
         entry.principal_mut().realm = "r".repeat(0x7fff);
-        entry.principal_mut().components = vec![String::new(); 0x7fff];
+        entry.principal_mut().components = vec!["c".to_owned(); 0x7fff];
         *entry
             .principal_mut()
             .components
@@ -668,7 +668,7 @@ mod tests {
         let mut keytab = Keytab::parse(&[5, 1])?;
         let mut entry = synthetic_entry("user", 1, 18, 100);
         entry.principal_mut().name_type = 0_i32;
-        entry.principal_mut().components = vec![String::new(); 0x7ffe];
+        entry.principal_mut().components = vec!["c".to_owned(); 0x7ffe];
         keytab.entries_mut().push(entry);
         assert_eq!(Keytab::parse(&keytab.to_bytes()?)?, keytab);
         keytab
@@ -677,7 +677,7 @@ mod tests {
             .context("entry")?
             .principal_mut()
             .components
-            .push(String::new());
+            .push("c".to_owned());
 
         // When the realm-inclusive count would exceed the accepted range.
         let result = keytab.to_bytes();
@@ -727,7 +727,7 @@ mod tests {
         #[test]
         fn serialized_keytab_roundtrips(
             realm in "[a-zA-Z.]{1,40}",
-            components in collection::vec("[a-zA-Z/]{0,40}", 1..8),
+            components in collection::vec("[a-zA-Z/]{1,40}", 1..8),
             key in collection::vec(any::<u8>(), 1..128),
             etype in i32::from(i16::MIN)..=i32::from(i16::MAX),
             timestamp in any::<u32>(),
@@ -868,6 +868,27 @@ mod tests {
         Ok(())
     }
 
+    /// An entry with a zero-length name component is malformed (MIT `kt_file.c:1003` ends the table there).
+    #[test]
+    fn rejects_empty_component_entries() -> Result<(), TestError> {
+        for version in [1_u8, 2] {
+            for components in [&["host", ""][..], &["", "host"][..], &[""][..]] {
+                // Given a file whose only entry has an empty name component.
+                let bytes = raw_keytab(version, &[("EXAMPLE.COM", components, &[7; 16])]);
+                // When parsing it.
+                let error = Keytab::parse(&bytes)
+                    .err()
+                    .context("the file is rejected")?;
+                // Then it is rejected as an invalid principal name, not returned.
+                assert!(
+                    matches!(error, Error::InvalidPrincipalName),
+                    "version {version}, {components:?}: {error:?}"
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// An entry with a zero-length realm is malformed (MIT ends the table there).
     #[test]
     fn rejects_empty_realm_entries() -> Result<(), TestError> {
@@ -916,6 +937,10 @@ mod tests {
                     ("EXAMPLE.COM", &[][..], &[7_u8; 16][..]),
                     "InvalidPrincipalName",
                 ),
+                (
+                    ("EXAMPLE.COM", &["host", ""][..], &[7_u8; 16][..]),
+                    "InvalidPrincipalName",
+                ),
                 (("", &["host", "a"][..], &[7; 16][..]), "EmptyRealm"),
                 (("EXAMPLE.COM", &["host", "a"][..], &[][..]), "EmptyKey"),
             ] {
@@ -962,6 +987,16 @@ mod tests {
             (Principal::new("", 1, ["a"]), key(), "EmptyRealm"),
             (
                 Principal::new("EXAMPLE.COM", 1, Vec::<String>::new()),
+                key(),
+                "InvalidPrincipalName",
+            ),
+            (
+                Principal::new("EXAMPLE.COM", 1, ["a", ""]),
+                key(),
+                "InvalidPrincipalName",
+            ),
+            (
+                Principal::new("EXAMPLE.COM", 1, ["", "a"]),
                 key(),
                 "InvalidPrincipalName",
             ),
@@ -1031,6 +1066,21 @@ mod tests {
         assert!(
             matches!(no_components, Error::InvalidPrincipalName),
             "{no_components:?}"
+        );
+        // Given an empty name component, when adding the entry, then it fails and nothing is stored.
+        let empty_component = keytab
+            .add_entry_from_password(
+                Principal::new("EXAMPLE.COM", 1, ["host", ""]),
+                password(),
+                now,
+                1,
+                17,
+            )
+            .err()
+            .context("an empty name component is refused")?;
+        assert!(
+            matches!(empty_component, Error::InvalidPrincipalName),
+            "{empty_component:?}"
         );
         // Given an empty realm through the name-based helper, then the same refusal applies.
         let empty_realm_name = keytab
