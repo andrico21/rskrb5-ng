@@ -150,8 +150,9 @@ recognises a refusal, replaced by `true`: the mutant only differs for an
 `io::Error` of another kind while the reply is awaited, which a loopback test
 cannot produce (the kernel reports only `ConnectionRefused` on a connected
 loopback UDP socket) and which needs a production seam to inject. It has a row
-below with status `open`: killing it takes a behaviour-preserving production
-change, which this check does not make, so the owner decides.
+below, first `open`: killing it took a behaviour-preserving production change,
+which todo 108 did not make. Todo 111 made it (see the end of this section)
+and the row is now `killed`.
 
 cargo-mutants mutates no call argument or match arm of the changed lines, so
 thirteen hand-made mutants ran the narrow test set of their file (outside the
@@ -170,6 +171,31 @@ mutant at its no-datagram assertion, passes on the real code, 20 of 20 runs).
 `ConnectionReset` removed from the refusal set survives on Linux, where the
 kernel never reports it for a loopback datagram; it is the Windows spelling of
 a port-unreachable, so only the Windows job can exercise it.
+
+#### Closing the open row (todo 111)
+
+Todo 111 extracted the guard of `send_udp` into the pure function
+`is_udp_refusal(&Error) -> bool` (same predicate: an `Error::Io` whose kind is
+`ConnectionRefused` or `ConnectionReset`; the call site is
+`Err(error) if is_udp_refusal(&error) => Err(error)`) and unit-tested it with
+`io::Error::from(kind)` for ten kinds (`udp_refusal_is_exactly_connection_refused_and_reset`)
+and for non-I/O errors (`udp_refusal_ignores_non_io_errors`). The refactor changes
+no behaviour: the 23 `kpasswd_` tests of `client_transport`, among them the
+todo 109 order tests and the todo 108 test above, pass unchanged. The
+in-diff re-run (`git diff 75dc6ca ef07910 -- src`, the same flags, 2 shards)
+generated 7 mutants and caught all 7 (0 missed, 0 timeout, 0 unviable):
+
+| Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 4 | 4 | 0 | 0 | 0 | 240 |
+| 1 | 3 | 3 | 0 | 0 | 0 | 225 |
+
+`send_udp` with `Ok(vec![])`, `Ok(vec![0])` and `Ok(vec![1])`, the guard
+`is_udp_refusal(&error)` replaced by `true` and by `false`, and `is_udp_refusal`
+with `true` and with `false` were all caught. The `ConnectionReset` hand mutant
+(removed from the predicate) now fails
+`udp_refusal_is_exactly_connection_refused_and_reset`, and so does a predicate
+that accepts every I/O error (the shape of the old survivor).
 
 ### In-diff check after todos 77 and 78 (todo 79)
 
@@ -1735,4 +1761,4 @@ minutes).
 | d7666e73b0ba46c093e74a69599c25506cd0582a | `src/ticket.rs:169:5: replace build_encoded -> Result<Vec<u8>, Error> with Ok(vec![0])` | src/ticket.rs | build_encoded | replace body with Ok(vec![0]) | missed | killed | `tests::encoded_ticket_decrypts_to_known_answer` |
 | d7666e73b0ba46c093e74a69599c25506cd0582a | `src/ticket.rs:169:5: replace build_encoded -> Result<Vec<u8>, Error> with Ok(vec![1])` | src/ticket.rs | build_encoded | replace body with Ok(vec![1]) | missed | killed | `tests::encoded_ticket_decrypts_to_known_answer` |
 | d7666e73b0ba46c093e74a69599c25506cd0582a | `src/ticket.rs:169:5: replace build_encoded -> Result<Vec<u8>, Error> with Ok(vec![])` | src/ticket.rs | build_encoded | replace body with Ok(vec![]) | missed | killed | `tests::encoded_ticket_decrypts_to_known_answer` |
-| 2a5cc8931388fca8956579b02b03ff3607b920c0 | `src/client/transport/password_delivery.rs:143:16: replace match guard matches!( error.kind(), io::ErrorKind::ConnectionRefused \| io::ErrorKind::ConnectionReset ) with true in send_udp` | src/client/transport/password_delivery.rs | send_udp | replace match guard with true | missed | open | Not killable by a loopback test: the guard differs only for a non-refusal `io::Error` while awaiting the reply, which loopback never yields; a test needs the guard extracted into a function (production change, owner decision, todo 108). |
+| 2a5cc8931388fca8956579b02b03ff3607b920c0 | `src/client/transport/password_delivery.rs:143:16: replace match guard matches!( error.kind(), io::ErrorKind::ConnectionRefused \| io::ErrorKind::ConnectionReset ) with true in send_udp` | src/client/transport/password_delivery.rs | send_udp | replace match guard with true | missed | killed | Todo 111 (task-111 evidence) extracted the guard into `is_udp_refusal` (src/client/transport/password_delivery.rs, same predicate, no behaviour change); the unit tests `udp_refusal_is_exactly_connection_refused_and_reset` (every `io::ErrorKind` of a reply wait) and `udp_refusal_ignores_non_io_errors` kill the predicate mutants and the hand mutants (`ConnectionReset` removed; every I/O error a refusal) without a socket; the in-diff re-run over the todo 111 diff caught all 7 mutants. |
