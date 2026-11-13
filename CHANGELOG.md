@@ -684,6 +684,17 @@ Security fail-closed parsing and verification:
   and MIT (`fread` in `kt_file.c:918-920`) treat it as the end of the table, so
   a keytab cut short by a crashed writer must be repaired before it is read
   (FU-FIL-04, FU-DOC-R87).
+- A keytab entry whose principal has no name components, whose realm is empty or
+  whose key has zero length is now rejected as malformed: `Keytab::parse` and
+  `Keytab::load` return `error::Keytab::InvalidPrincipalName`, the new
+  `error::Keytab::EmptyRealm` or the new `error::Keytab::EmptyKey` for the whole
+  file. v0.2.2 returned such entries, and MIT (`kt_file.c:949-950`, `:973-975`,
+  `:1065-1067`) treats them as the end of the table, hiding every later entry.
+  The writer refuses the same shapes so that no file this crate saves is
+  rejected on read: `Keytab::to_bytes` and `save*` return the same variants, and
+  `add_entry_from_password*` reject an empty realm or a principal without name
+  components before deriving a key (v0.2.2 stored them). Deleted-entry holes
+  and the zero-size end of the entry list are unchanged (FU-FIL-R08).
 - Opaque negative keytab enctype IDs serialize unchanged (v0.2.2:
   `LengthOverflow`). The enctype is a signed 16-bit field, so IDs 32768 to 65535
   now fail with `LengthOverflow` on serialization; v0.2.2 wrote them, and the
