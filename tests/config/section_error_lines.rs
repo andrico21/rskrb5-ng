@@ -12,7 +12,7 @@ mod tests {
     use rskrb5_ng::{config::Config, error::Config as Failure};
 
     /// Repeated relations paired with the line number and trimmed text of the offending value.
-    const CASES: [(&str, usize, &str); 7] = [
+    const CASES: [(&str, usize, &str); 11] = [
         (
             "[plugins]\nclpreauth = {\n  disable = a\n  disable = \"x y\"\n}\n",
             4,
@@ -40,6 +40,27 @@ mod tests {
         ),
         ("[capaths]\nA = {\n  B = C\n  B = .\n}\n", 4, "B = ."),
         ("[capaths]\nA = {\n  B = .\n  B = C\n}\n", 4, "B = C"),
+        // Two bad values: the first one is named, not the last.
+        (
+            "[plugins]\nclpreauth = {\n  disable = a\n  disable = \"x y\"\n  disable = \"\"\n}\n",
+            4,
+            "disable = x y",
+        ),
+        (
+            "[capaths]\nA = {\n  B = C\n  B = \"x y\"\n  B = \"\"\n}\n",
+            4,
+            "B = x y",
+        ),
+        (
+            "[capaths]\nA = {\n  B = C\n  B = .\n  B = .\n}\n",
+            4,
+            "B = .",
+        ),
+        (
+            "[capaths]\nA = {\n  B = .\n  B = C\n  B = D\n}\n",
+            4,
+            "B = C",
+        ),
     ];
 
     fn assert_offending(failure: &Failure, line: usize, text: &str, source: &str) {
