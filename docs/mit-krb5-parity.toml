@@ -1990,7 +1990,7 @@ test_names = [
   "tests/config/plugin_case.rs::reader_upper_module_is_unknown_relation",
 ]
 feature_flags = []
-security_divergence = ""
+security_divergence = "include and includedir arguments lose ASCII padding at both ends, where MIT removes only leading blanks and a trailing CR or LF and keeps trailing blanks in the file name (tests/config/value_whitespace.rs::include_arguments_accept_ascii_padding). A source with any byte that is not UTF-8 is refused whole, where MIT reads bytes (tests/config/profile.rs::non_utf8_root_is_file_error_and_non_utf8_include_is_include_error). Sources are bounded at 4 MiB in total, 256 files and include depth 8 (v0.2.2: 1 MiB, 64 files); MIT prof_parse.c has no such bound. Every source starts outside every section, so a relation before its first header is an InvalidLine where MIT ignores it (prof_parse.c:326). Relative include paths follow the working directory as in MIT (that divergence from MIT was removed by todo 105). See docs/config-profile.md, Deliberate divergences and bounds."
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 3
@@ -2013,7 +2013,7 @@ test_names = [
   "tests/config.rs::loads_config_path_list_in_order",
 ]
 feature_flags = []
-security_divergence = "A missing or unreadable KRB5_CONFIG entry is an error (MIT skips it). The value-suffix final marker is kept as a gokrb5 extension beside MIT's tag* and [section]* forms."
+security_divergence = "A missing or unreadable KRB5_CONFIG entry is an error (MIT skips it). The value-suffix final marker is kept as a gokrb5 extension beside MIT's tag* and [section]* forms. The profile reader is stricter than MIT in these cases, all listed in docs/config-profile.md (Deliberate divergences and bounds): section headers are case-insensitive (MIT compares them exactly); non-comment content before the first section header, a BOM line included, is an InvalidLine (MIT ignores every line before the first one that starts with [, prof_parse.c:326, and so loses the first section behind a BOM; tests/config/mutation_profile.rs::profile_syntax_rejects_malformed_components); a relation with an empty name such as * = A is an InvalidLine (MIT accepts it as an unmatchable empty-name node, prof_parse.c:152,203); an unclosed subsection at the end of a file is an InvalidRealmsSection in every section (MIT accepts it, prof_parse.c:418-436); a closing quote may be followed only by C-locale whitespace (MIT ignores the rest of the line; tests/config/value_whitespace_sites.rs::closing_quote_tail_uses_c_locale); a plugins disable or enable_only value that is empty or holds whitespace is an InvalidLine (MIT keeps it as one module name that matches nothing; tests/config/value_whitespace_sites.rs::capath_and_plugin_names_use_c_locale); every section is parsed and an enabled removed-protocol selector (krb4_*, v4_*, pkinit_win2k and the like) is a Policy::RejectedFeature in every section except domain_realm and the auth_to_local_names entries, which MIT's library does not read for it."
 disposition = "WP-01"
 closing_plan = 1
 closing_todo = 15
@@ -2183,7 +2183,7 @@ missing = "One-init negotiation/MIC and HTTP exist; stateful continuation fails 
 rust_symbols = []
 test_names = []
 feature_flags = []
-security_divergence = ""
+security_divergence = "NegTokenInit::decode accepts any reqFlags contents (empty, padded, oversized, non-DER-minimal) as long as the field wraps one BIT STRING TLV, because RFC 4178 4.2.1 and MS-SPNG 3.1.5.5 say the acceptor MUST ignore reqFlags (owner decision 2026-11-13, FU-SPN-R20). MIT 1.22.2 is stricter: get_req_flags (spnego_mech.c:3394-3403) fails the whole token with GSS_S_DEFECTIVE_TOKEN unless the field is exactly 03 02 01 xx, so this decode accepts tokens that MIT's acceptor rejects."
 disposition = "WP-12"
 closing_plan = 2
 closing_todo = 18

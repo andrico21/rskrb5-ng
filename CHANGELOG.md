@@ -89,8 +89,9 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
   tried, which MIT does not do. v0.2.2 went UDP first for a request of at most
   `udp_preference_limit` bytes (a configured realm; default 1465) and, with an
   explicit address, always UDP first, and it fell back to TCP after any UDP
-  error. A closed UDP kpasswd port is therefore no longer an unknown outcome
-  and is no longer the first thing tried.
+  error, even one that arrived after the datagram was sent. A closed UDP
+  kpasswd port is no longer the first thing tried, and in the UDP stage it is
+  a plain endpoint failure.
 
 These are breaking; the migration guide maps each one.
 
@@ -468,9 +469,12 @@ Transport, DNS, IPv6, SRV and kpasswd retry:
 - A password change gives connection setup (TCP connect, or UDP socket bind and
   connect) and the send-and-reply phase a full `Tokio::with_timeout` each, so
   one attempt on one endpoint can take up to twice the configured timeout
-  (v0.2.2: one timeout covered the whole attempt). Only a timeout or failure in
-  the second phase is `KpasswdOutcomeUnknown`; a timeout while connecting is
-  `Client::TransportTimeout` (FU-DOC-R76).
+  (v0.2.2: one timeout covered the whole attempt). `KdcProtocol::Auto` with an
+  explicit address resolves the name in a phase of its own first and may follow
+  a definite TCP failure with a UDP attempt, so it can take up to four times the
+  configured timeout (three when the TCP attempt ends after the connect). Only
+  a timeout or failure in the second phase is `KpasswdOutcomeUnknown`; a
+  timeout while connecting is `Client::TransportTimeout` (FU-DOC-R76).
 
 Config and enctype policy:
 
@@ -591,12 +595,18 @@ Release workflow, CI docs and fixture scripts:
   one that breaks the named-bit rule (a 300-byte zero value was serialised in
   v0.2.2). The field must still wrap one well-formed BIT STRING TLV (tag
   `0x03`, a definite DER length in minimal form that fits, nothing after it; a
-  long-form length that v0.2.2 accepted there is `NonminimalLength`, as
-  everywhere in SPNEGO DER); an empty, padded,
-  oversized or non-DER-minimal value is accepted, as RFC 4178 section 4.2.1 and
-  MS-SPNG 3.1.5.5 say the acceptor MUST ignore `reqFlags`. `req_flags()`
-  returns the bytes as received, and encoding such a token again fails with
-  `Spnego::InvalidReqFlags` instead of canonicalising them (FU-SPN-R20).
+  non-minimal long-form length that v0.2.2 accepted there (for example `81 02`
+  for a two-byte value) is `NonminimalLength`, as everywhere in SPNEGO DER,
+  and a minimal long form, which a value of 128 bytes or more needs, is
+  accepted); an empty, padded, oversized or non-DER-minimal value is accepted,
+  as RFC 4178 section 4.2.1 and MS-SPNG 3.1.5.5 say the acceptor MUST ignore
+  `reqFlags`. `req_flags()` returns the bytes as received, and encoding such a
+  token again fails with `Spnego::InvalidReqFlags` instead of canonicalising
+  them. MIT 1.22.2 is stricter: its `get_req_flags`
+  (`spnego_mech.c:3394-3403`) fails the whole token with
+  `GSS_S_DEFECTIVE_TOKEN` unless the field is exactly `03 02 01 xx`, so this
+  decode accepts tokens that MIT's acceptor rejects, a deliberate divergence
+  (FU-SPN-R20).
 
 - Local principals named `include` or `includedir` retain their scalar mapping
   values with ordinary assignment spacing and one WP-17 diagnostic; real include
@@ -665,16 +675,21 @@ Security fail-closed parsing and verification:
   `Spnego::Crypto` wrapping `Policy::RejectedFeature` for a key of enctype 1 to
   6, 8 or 24, where v0.2.2 returned `Spnego::UnsupportedEtype`. `verify` on a
   token that carries no checksum returns `Spnego::MissingGssChecksum` before it
-  looks at the key, and a token with a checksum and a key of the wrong length is
-  `GssChecksumMismatch`; v0.2.2 computed the checksum first and returned
-  `Spnego::Crypto` (invalid key length) in both cases (FU-DOC-R105).
+  uses the key material (a key whose enctype is refused or unknown still fails
+  first with `Crypto` or `UnsupportedEtype`), and a token with a checksum and a
+  key of the wrong length is `GssChecksumMismatch`; v0.2.2 computed the
+  checksum first and returned `Spnego::Crypto` (invalid key length) in both
+  cases (FU-DOC-R105).
 - `NegTokenInit::krb5_ap_req` returns `Spnego::MissingMechListMic` when the
   first offered mechanism is not Kerberos and no mechListMIC is supplied, where
   v0.2.2 returned the AP-REQ of a later Kerberos entry. `Token::krb5_ap_req`
   (v0.2.2: `SpnegoToken`) on a `NegTokenResp` returns
   `Spnego::NegotiationRequiresState`, or `Spnego::UnsupportedMechanism` when
   `supportedMech` is not Kerberos, where v0.2.2 returned the AP-REQ carried in
-  the response token (FU-DOC-R104).
+  the response token. `NegTokenInit::krb5_ap_req` (and `Token::krb5_ap_req` on
+  an init token) returns the new `Spnego::MechListMicRequiresState` when the
+  token carries a mechListMIC, where v0.2.2 returned the AP-REQ; use
+  `accept_sec_context_header` to verify the MIC (FU-DOC-R104).
 - `Spnego::Client` keeps the typed `Box<Client>` cause instead of a string
   (FU-SPN-R03).
 - Mutual authentication requested through a combined context-flag mask needs a
@@ -995,8 +1010,11 @@ Configuration:
 - Subsections follow MIT's rule that `{` opens one only as the whole value,
   blanks aside; unlike MIT, a comment after blanks is allowed too, so
   `A = { # c` opens one where MIT reads the plain value `{ # c`. `A = {}` and
-  `A = { kdc = k }` define no realm (v0.2.2: an empty realm `A`), `A = {#` is an
-  `InvalidLine` (v0.2.2: realm `A`), and so are `} junk` and `A B = {`. An
+  `A = { kdc = k }` define no realm (v0.2.2: an empty realm `A`). `A = {#` is a
+  plain value, so with `kdc = k` and `}` after it the `}` is an `InvalidLine`
+  (v0.2.2: realm `A`), and a bare `A = {#` or `A = {#}` now loads as an ignored
+  plain line (v0.2.2: `InvalidRealmsSection`); `} junk` and `A B = {` are an
+  `InvalidLine`. An
   unclosed subsection at the end of a file or before the next header is an
   `InvalidRealmsSection` in every section (v0.2.2 accepted it outside
   `[realms]`, where `default_realm = {` was the value `{`, and already returned
@@ -1070,21 +1088,27 @@ Configuration:
 - `[plugins]` interface names and the control names `disable`, `enable_only`
   and `module` are matched case-sensitively, as MIT does (`strcmp` in the
   profile library); v0.2.2 read nothing inside `[plugins]`. A wrongly cased
-  name is no longer folded: `CLPREAUTH = { disable = encrypted_timestamp }` is
-  an interface without a consumer, not the client preauthentication interface,
-  so it is no longer `NotYetEffective` (it is recorded as a diagnostic like any
-  other `disable` of an unused interface, and an error in strict mode);
-  `DISABLE = pkinit` or `MODULE = x:/y` under an interface is an unknown
-  relation (a diagnostic in compatible mode, `UnknownRelation` in strict mode),
-  so `MODULE` is not `UnsupportedDynamicModule`. The spelling `module` is still
+  name is not folded: `CLPREAUTH = { disable = encrypted_timestamp }` is an
+  interface without a consumer, not the client preauthentication interface, so
+  it is not `NotYetEffective` (it loads, as in v0.2.2; 0.3.0 records it as a
+  diagnostic like any other `disable` of an unused interface, and refuses it in
+  strict mode); `DISABLE = pkinit` or `MODULE = x:/y` under an interface is an
+  unknown relation (a diagnostic in compatible mode, `UnknownRelation` in
+  strict mode; v0.2.2 loaded both), so `MODULE` is not
+  `UnsupportedDynamicModule`. The spelling `module` is still
   refused in `[plugins]`, and in every other section `module` is refused in any
   case. Section headers stay case-insensitive, as in v0.2.2: `[Plugins]` is the
   plugins section, and `[Plugins]` with `clpreauth = { disable =
   encrypted_timestamp }` is still `NotYetEffective` (FU-CFG-R36).
 - v0.2.2 read relations only in `[libdefaults]`, `[realms]` and
   `[domain_realm]` and skipped every other section, so these inputs loaded and
-  are errors in both parse modes in 0.3.0. A line that is not a relation, brace
-  or comment is an `InvalidLine` in any other section, `[appdefaults]`,
+  are errors in both parse modes in 0.3.0. These sections use the same line
+  grammar as `[realms]`: a stray `}`, a name with a blank (`my app = {`) and an
+  unterminated double quote are an `InvalidLine`, and subsection nesting deeper
+  than eight levels is `IncludeTooDeep` (v0.2.2 had no limit); v0.2.2 loaded
+  all of them in a section it skipped. A line that is not a relation,
+  subsection opener, closing brace or comment is an `InvalidLine` in any other
+  section, `[appdefaults]`,
   `[logging]`, `[kdcdefaults]`, `[dbmodules]`, `[otp]` and `[pkinit_anchors]`
   included (`FILE:/x` under `[pkinit_anchors]`; MIT rejects a line without `=`
   too). A `[capaths]` realm value that is empty (`B = ""` or `B = *`) is an
@@ -1097,13 +1121,17 @@ Configuration:
   `UnsupportedDynamicModule` (`localauth = { module =
   sssd:/usr/lib64/sssd/modules/x.so }`) (FU-DOC-R102).
 - An enabled removed-protocol selector is a `Policy::RejectedFeature` in every
-  section but `[domain_realm]`, including `[login]` and `[appdefaults]`, which
+  section but `[domain_realm]` and the entries of a realm's
+  `auth_to_local_names`, including `[login]` and `[appdefaults]`, which
   MIT's library does not read for it: `krb4_convert = true`,
   `krb4_get_tickets = true` and any other `krb4_*` key, `v4_*` keys,
   `pkinit_win2k`, `pkinit_draft9`, the RSA PKINIT selectors,
   `kpasswd_unprotected` and a `kpasswd_protocol` or `kpasswd_version` such as
-  `2`. A disabled value (`false`, `0`, an empty value, `protected`, `rfc3244`,
-  `pkinit_key_exchange = dh`) loads. v0.2.2 ignored all of them in the sections
+  `2`. A `krb4_*`, `v4_*` or `pkinit_*` selector loads when its value is empty
+  or false (`0`, `no`, `off`, ...) or, for `pkinit_key_exchange`, `dh`;
+  `kpasswd_protocol` and `kpasswd_version` load only for `protected`,
+  `rfc3244` or a supported version number, and an empty or false value is
+  rejected for them. v0.2.2 ignored all of them in the sections
   it skipped, accepted `krb4_convert = true` and `pkinit_win2k = true` in
   `[libdefaults]` and `[realms]`, and answered every `v4_*` key there with
   `UnsupportedDirective`, even `v4_instance_resolve = false`. The path values
@@ -1160,9 +1188,10 @@ Configuration:
   local-login authorization remains deferred, so this grants no login. Ticket
   and renewable lifetimes use the checked MIT interval parser, rejecting
   negative totals, overflow, malformed unit order and trailing garbage. Auto
-  transport normalizes negative `udp_preference_limit` to 1465 (v0.2.2: never
-  UDP first) and caps values above 32700 (v0.2.2: no cap); a request size equal
-  to the limit sends UDP first, as in v0.2.2 (FU-DOC-R10, FU-DOC-R75).
+  transport for KDC requests normalizes negative `udp_preference_limit` to 1465
+  (v0.2.2: never UDP first) and caps values above 32700 (v0.2.2: no cap); a
+  request size equal to the limit sends UDP first, as in v0.2.2; password
+  changes ignore the limit (FU-DOC-R10, FU-DOC-R75).
 
 Service and replay cache:
 

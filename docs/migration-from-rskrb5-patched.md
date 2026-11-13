@@ -216,17 +216,20 @@ explicit address TCP, then UDP), as MIT's `changepw.c` does, and
 reply is awaited (`ConnectionRefused`, or `ConnectionReset` on Windows) is a
 definite endpoint failure, so a closed UDP kpasswd port moves on to the next
 endpoint and, when every endpoint failed, is reported as `KdcEndpointFailures`
-(for an explicit address, as the plain `Client::Io`) (v0.2.2: UDP first for a request within
-`udp_preference_limit`, a configured realm falling back to TCP after any UDP
-failure; an explicit address always UDP first, then TCP). If TCP fails after the
-request may have been delivered, UDP is never tried. Do
-not treat an unknown outcome as a failed mutation or blindly retry it. A
-password change also gives connection setup (TCP connect, or UDP socket bind and
-connect) and the send-and-reply phase a full `Tokio::with_timeout` each, so one
-attempt on one endpoint can take up to twice the configured timeout (v0.2.2: one
-timeout covered the whole attempt); only a timeout or failure in the second
-phase is `KpasswdOutcomeUnknown`; a timeout while connecting is
-`Client::TransportTimeout` (FU-DOC-R76).
+(for an explicit address, as the plain `Client::Io`) (v0.2.2: UDP first for a
+request within `udp_preference_limit`, a configured realm falling back to TCP
+after any UDP failure; an explicit address always UDP first, then TCP). If TCP
+fails after the request may have been delivered, UDP is never tried. Do not
+treat an unknown outcome as a failed mutation or blindly retry it. A password
+change also gives connection setup (TCP connect, or UDP socket bind and connect)
+and the send-and-reply phase a full `Tokio::with_timeout` each, so one attempt
+on one endpoint can take up to twice the configured timeout (v0.2.2: one timeout
+covered the whole attempt). `KdcProtocol::Auto` with an explicit address
+resolves the name in a phase of its own first and may follow a definite TCP
+failure with a UDP attempt, so it can take up to four times the configured
+timeout (three when the TCP attempt ends after the connect). Only a timeout or
+failure in the second phase is `KpasswdOutcomeUnknown`; a timeout while
+connecting is `Client::TransportTimeout` (FU-DOC-R76).
 
 UDP response limits now reject oversized responses with the new
 `Client::UdpResponseTooLarge { limit }` variant instead of returning a prefix.
@@ -284,23 +287,24 @@ decompressed-size correlation remains unchanged; no output is clamped.
 ### Bounded public PAC lookup
 
 `pac::find_pac_in_authorization_data` now rejects more than eight nested
-AD-IF-RELEVANT or AD-MANDATORY-FOR-KDC wrappers with `Pac::AuthorizationDataDepthLimit` and more than
-1 MiB of cumulative visited entry payloads with `Pac::AuthorizationDataByteLimit`
-(both in `error::Pac`). The inclusive byte budget is shared across siblings and
-counts nested payloads again at each decoded level, before decoding or PAC
-processing. Its signature is unchanged. It now also descends into
-AD-MANDATORY-FOR-KDC (type 8) wrappers, which v0.2.2 skipped, so a PAC inside
-one is returned and a PAC entry in one that does not parse is a `Pac` error (a
-v0.2.2 lookup skipped the wrapper and went on to a later PAC) (FU-SVC-11,
-FU-DOC-R94, FU-DOC-R106); the first PAC still ends the search.
-An authorization-data entry that lacks `ad-type` or `ad-data` or carries an
-extra field fails DER decoding (RFC 4120 section 5.2.6 has no extension marker):
-`rasn::der::decode::<AuthorizationData>` returns an error, and the lookup
-returns `Pac::DerDecode` for such an entry in a nested AD-IF-RELEVANT payload.
-rasn
-0.28.13 under v0.2.2 dropped the entry, so v0.2.2 returned the PAC found
-beside it, or none (FU-DOC-R106).
-Service acceptance imposes these limits independently while validating all restrictions.
+AD-IF-RELEVANT or AD-MANDATORY-FOR-KDC wrappers with
+`Pac::AuthorizationDataDepthLimit` and more than 1 MiB of cumulative visited
+entry payloads with `Pac::AuthorizationDataByteLimit` (both in `error::Pac`).
+The inclusive byte budget is shared across siblings and counts nested payloads
+again at each decoded level, before decoding or PAC processing. Its signature is
+unchanged. It now also descends into AD-MANDATORY-FOR-KDC (type 8) wrappers,
+which v0.2.2 skipped, so a PAC inside one is returned and a PAC entry in one
+that does not parse is a `Pac` error (a v0.2.2 lookup skipped the wrapper and
+went on to a later PAC) (FU-SVC-11, FU-DOC-R94, FU-DOC-R106); the first PAC
+still ends the search. An authorization-data entry that lacks `ad-type` or
+`ad-data` or carries an extra field fails DER decoding (RFC 4120 section 5.2.6
+has no extension marker): `rasn::der::decode::<AuthorizationData>` returns an
+error, and the lookup returns `Pac::DerDecode` for such an entry in a nested
+AD-IF-RELEVANT payload. rasn 0.28.13 under v0.2.2 dropped a malformed entry that
+was last in its list (or alone) and returned `DerDecode` (trailing data) when
+another entry followed it, so v0.2.2 returned the PAC found beside it, or none,
+or that `DerDecode` (FU-DOC-R106). Service acceptance imposes these limits
+independently while validating all restrictions.
 
 ### HTTP replay-cache scope and binding limits
 
@@ -520,12 +524,14 @@ trip must use a stateful implementation. The keyless extraction helpers
 `MechListMicRequiresState` for supplied MICs; use `accept_sec_context_header`
 for cryptographic verification. Decoding alone never authenticates negotiation.
 
-Both helpers return an error for two inputs from which v0.2.2 returned an
-AP-REQ (FU-DOC-R104). `NegTokenInit::krb5_ap_req` returns `MissingMechListMic`
-when the first offered mechanism is not Kerberos and no MIC is supplied, where
-v0.2.2 returned the AP-REQ of a later Kerberos entry. `Token::krb5_ap_req`
-(v0.2.2: `SpnegoToken`) on a `NegTokenResp` returns `NegotiationRequiresState`,
-or `UnsupportedMechanism` when `supportedMech` is not Kerberos, where v0.2.2
+Both helpers return an error for three inputs from which v0.2.2 returned an
+AP-REQ (FU-DOC-R104). A first-choice Kerberos `NegTokenInit` that carries a
+mechListMIC returns `MechListMicRequiresState` where v0.2.2 returned its
+AP-REQ. `NegTokenInit::krb5_ap_req` returns `MissingMechListMic` when the first
+offered mechanism is not Kerberos and no MIC is supplied, where v0.2.2 returned
+the AP-REQ of a later Kerberos entry. `Token::krb5_ap_req` (v0.2.2:
+`SpnegoToken`) on a `NegTokenResp` returns `NegotiationRequiresState`, or
+`UnsupportedMechanism` when `supportedMech` is not Kerberos, where v0.2.2
 returned the AP-REQ from the response token of a Kerberos `NegTokenResp`.
 
 ### S4U frontend keys (delegated-client-unbound-to-ticket-payload)
@@ -750,7 +756,7 @@ behaviour that skipped families, `DEFAULT` and `-name`:
 | Input | Before | Now |
 | --- | --- | --- |
 | unknown name (`typo-enctype`) | skipped | `error::Config::UnknownEnctype { token }` |
-| RC4/DES3 name without `allow_rc4`/`allow_des3` | skipped | `error::Config::DisabledEnctype { token }` |
+| RC4/DES3 name without `allow_rc4`/`allow_des3` | accepted for `rc4-hmac`, `arcfour-hmac` and `des3-cbc-sha1-kd` (v0.2.2 had no flag); skipped for `des3-hmac-sha1` and `des3-cbc-sha1` | `error::Config::DisabledEnctype { token }` |
 | single DES, RC4 export or another permanently refused name | skipped | `error::Config::RejectedEnctype { token, source }` |
 | Camellia | skipped | skipped with a `ConfigDiagnostic` in `ParseMode::Compatible`; `error::Config::UnsupportedSecureEnctype` in `ParseMode::Strict` |
 | `-name` | ignored | removes the entry; removing never needs permission |
@@ -845,15 +851,14 @@ through its crypto (or, for `error::Http`, SPNEGO) variant, so `?` works
 everywhere.
 
 `Pac::verify` and `Pac::verify_server_checksum` return `error::Pac::Crypto`
-with `Policy::RejectedFeature` (`SingleDes`, `WeakCrypto`, `Rc4Export`) for a key
-of enctype 1 to 6, 8 or 24, before the server checksum is examined (v0.2.2:
+with `Policy::RejectedFeature` (`SingleDes`, `WeakCrypto`, `Rc4Export`) for a
+key of enctype 1 to 6, 8 or 24, before the server checksum is examined (v0.2.2:
 `Ok(false)`, so `verify` returned `ServerChecksumVerificationFailed`, and
-`UnsupportedChecksumType` for an RC4 checksum). Code that
-treats `Ok(false)` as "not authentic" and every other error as an
-infrastructure failure must handle this case.
-`CredentialsInfo::decrypt_credential_data` does the same for such a key when the
-credential enctype matches it (v0.2.2: `UnsupportedEncryptionType`) (FU-DOC-R92,
-FU-DOC-R106).
+`UnsupportedChecksumType` for an RC4 checksum). Code that treats `Ok(false)` as
+"not authentic" and every other error as an infrastructure failure must handle
+this case. `CredentialsInfo::decrypt_credential_data` does the same for such a
+key when the credential enctype matches it (v0.2.2: `UnsupportedEncryptionType`)
+(FU-DOC-R92, FU-DOC-R106).
 
 ```rust
 # fn main() {
@@ -996,9 +1001,11 @@ their `*_without_env` twins are gone. Named ambient discovery remains explicit:
 local-login consumer still grants no authorization. Ticket and renewable
 lifetimes use checked MIT intervals: negative totals, overflow, malformed unit
 order and trailing garbage are rejected. Zero renewable lifetime disables
-renewal. Auto transport uses 1465 for a negative `udp_preference_limit` (v0.2.2:
-never UDP first) and caps values above 32700 (v0.2.2: no cap); UDP first at a
-request size equal to the limit is as in v0.2.2. Explicit TCP or UDP bypasses
+renewal. For KDC requests, Auto transport uses 1465 for a negative
+`udp_preference_limit` (v0.2.2: never UDP first) and caps values above 32700
+(v0.2.2: no cap); UDP first at a request size equal to the limit is as in
+v0.2.2; password changes ignore the limit (see "Explicit transport DNS
+configuration"). Explicit TCP or UDP bypasses
 this preference (FU-DOC-R10, FU-DOC-R75).
 
 Configuration now follows MIT profile semantics; the details are in
@@ -1028,13 +1035,16 @@ Configuration now follows MIT profile semantics; the details are in
   see [`config-profile.md`](config-profile.md)), and malformed content is
   rejected, so an existing file can stop loading: a `[capaths]` value list that
   mixes `.` with realm names or holds a whitespace token, and an `[appdefaults]`
-  subsection nested deeper than application, realm and key, are `InvalidLine`;
+  relation nested deeper than application, realm and key (a four-name path such
+  as `a = { b = { c = { d = e } } }`), are `InvalidLine`;
   a `[plugins]` control that would disable the encrypted-timestamp mechanism is
   `NotYetEffective` in every mode (FU-DOC-R93). Interface names and the control
   names `disable`, `enable_only` and `module` are case-sensitive, as in MIT
   (FU-CFG-R36): `CLPREAUTH = { disable = encrypted_timestamp }` is an interface
-  without a consumer, not the client preauthentication interface, so it is not
-  `NotYetEffective`, and `DISABLE = pkinit` or `MODULE = x:/y` under an
+  without a consumer, not the client preauthentication interface, so it no
+  longer fails closed as `NotYetEffective` in compatible mode (it is recorded as
+  a diagnostic like any other `disable` of an unused interface, and is an error
+  in strict mode), and `DISABLE = pkinit` or `MODULE = x:/y` under an
   interface is an unknown relation (a diagnostic in compatible mode,
   `UnknownRelation` in strict mode). Section headers stay case-insensitive, so
   `[Plugins]` is the plugins section.
@@ -1059,15 +1069,18 @@ Configuration now follows MIT profile semantics; the details are in
   sssd:/usr/lib64/sssd/modules/x.so }`), where a v0.2.2 file with that stanza
   loaded (FU-DOC-R102).
 - **Removed-protocol selectors.** An enabled selector of a removed protocol is
-  a `Policy::RejectedFeature` in every section but `[domain_realm]`, not only
-  where this crate reads it: `krb4_convert = true`, `krb4_get_tickets = true`
-  and any other `krb4_*` key, `v4_*` keys, `pkinit_win2k`, `pkinit_draft9`, the
-  RSA PKINIT selectors, `kpasswd_unprotected` and a `kpasswd_protocol` or
-  `kpasswd_version` such as `2` fail in `[login]`, `[appdefaults]`, `[logging]`
-  and an unknown section as they do in `[libdefaults]` and `[realms]`. A
-  disabled value loads (`false`, `0`, an empty value, `protected`, `rfc3244`,
-  `pkinit_key_exchange = dh`). v0.2.2 ignored these lines in the sections it
-  skipped, accepted `krb4_convert = true` and `pkinit_win2k = true` in
+  a `Policy::RejectedFeature` in every section but `[domain_realm]` and the
+  entries of a realm's `auth_to_local_names`, not only where this crate reads
+  it: `krb4_convert = true`, `krb4_get_tickets = true` and any other `krb4_*`
+  key, `v4_*` keys, `pkinit_win2k`, `pkinit_draft9`, the RSA PKINIT selectors,
+  `kpasswd_unprotected` and a `kpasswd_protocol` or `kpasswd_version` such as
+  `2` fail in `[login]`, `[appdefaults]`, `[logging]` and an unknown section as
+  they do in `[libdefaults]` and `[realms]`. A `krb4_*`, `v4_*` or `pkinit_*`
+  selector loads when its value is empty or false (`0`, `no`, `off`, ...) or,
+  for `pkinit_key_exchange`, `dh`; `kpasswd_protocol` and `kpasswd_version` load
+  only for `protected`, `rfc3244` or a supported version number, and an empty or
+  false value is rejected for them. v0.2.2 ignored these lines in the sections
+  it skipped, accepted `krb4_convert = true` and `pkinit_win2k = true` in
   `[libdefaults]` and `[realms]`, and answered every `v4_*` key there with
   `UnsupportedDirective`, `v4_instance_resolve = false` included (0.3.0 loads a
   disabled `v4_*` value). Neither MIT's library nor this crate reads `[login]`;
@@ -1078,20 +1091,20 @@ Configuration now follows MIT profile semantics; the details are in
   rejected too, where v0.2.2 loaded it in `[libdefaults]`. An empty
   `krb4_convert =` opens a pending subsection in `[appdefaults]`, `[realms]`,
   `[plugins]` and `[capaths]`, as in MIT, which rejects it in every section
-  unless a `{` line follows (`prof_parse.c:172-176,329-334`); the selector
-  check sees the pending brace first, so the error is `Policy`, not a structure
-  error. In `[libdefaults]` and `[login]` the empty value is the empty-scalar
-  extension and counts as disabled. Real files are affected: the
-  `kerberos-configs` 2.3 template of Debian (and Ubuntu 16.04) ends with
-  `[login]`, `krb4_convert = true` and `krb4_get_tickets = false` and sets
-  `krb4_config`, `krb4_realms`, `v4_instance_resolve` and `v4_name_convert` in
-  `[libdefaults]`; its 2.5 release (October 2016, Debian bug 741051) removed
-  the outdated entries, but an `/etc/krb5.conf` generated earlier keeps them. An
-  unmodified copy failed on v0.2.2 as well, with `UnsupportedDirective` from
-  `v4_name_convert`; a copy trimmed to the `[login]` stanza loaded there and is
-  rejected here. Delete the `[login]` stanza and the `krb4_config`,
-  `krb4_realms`, `v4_instance_resolve` and `v4_name_convert` lines
-  (FU-DOC-R103).
+  unless a `{` line follows (`prof_parse.c:172-176,329-334`); the selector check
+  sees the pending brace first, so the error is `Policy`, not a structure error.
+  In `[libdefaults]` and `[login]` the empty value is the empty-scalar extension
+  and counts as disabled. Real files are affected: the `kerberos-configs` 2.3
+  template of Debian (and Ubuntu 16.04) ends with `[login]`, `krb4_convert =
+  true` and `krb4_get_tickets = false` and sets `krb4_config`, `krb4_realms`,
+  `v4_instance_resolve` and `v4_name_convert` in `[libdefaults]`; its 2.5
+  release (October 2016, Debian bug 741051) removed the outdated entries, but an
+  `/etc/krb5.conf` generated earlier keeps them. An unmodified copy failed on
+  v0.2.2 as well, with `UnsupportedDirective` from `v4_instance_resolve` (the
+  first `v4_` key; `v4_name_convert` fails the same way); a copy trimmed to the
+  `[login]` stanza loaded there and is rejected here. Delete the `[login]`
+  stanza and the `krb4_config`, `krb4_realms`, `v4_instance_resolve` and
+  `v4_name_convert` lines (FU-DOC-R103).
 - **`module`.** `module` directives and relations fail with
   `error::Config::UnsupportedDynamicModule`; no code is loaded.
 - `forwardable` and `proxiable` set the request bits, `default_realm` is the
@@ -1759,8 +1772,14 @@ section 4.2.1 and MS-SPNG 3.1.5.5 say the acceptor MUST ignore `reqFlags`, so
 DER-minimal), keeps them as received in `req_flags()` and decodes the other
 fields as before. The field must still wrap one well-formed BIT STRING TLV (tag
 `0x03`, a definite DER length in minimal form that fits, nothing after it; a
-long-form length there is `NonminimalLength`, as everywhere in SPNEGO DER, where
-v0.2.2 accepted it). v0.2.2 accepted any bytes in both directions.
+non-minimal long-form length there (for example `81 02` for a two-byte value)
+is `NonminimalLength`, as everywhere in SPNEGO DER, where v0.2.2 accepted it; a
+minimal long form, which a value of 128 bytes or more needs, is accepted).
+v0.2.2 accepted any bytes in both directions. MIT 1.22.2 is stricter: its
+`get_req_flags` (`spnego_mech.c:3394-3403`) fails the whole token with
+`GSS_S_DEFECTIVE_TOKEN` unless the field is exactly `03 02 01 xx`, so this
+decode accepts tokens that MIT's acceptor rejects (a deliberate divergence, on
+the strength of RFC 4178 and MS-SPNG).
 `set_req_flags` stores a value as given and `encode` refuses one that breaks the
 rule (FU-DOC-R104). Encoding a token whose decoded `reqFlags` is not
 canonical fails with `Spnego::InvalidReqFlags`; clear it with
@@ -2670,7 +2689,7 @@ kpasswd result helpers, `MicToken::verify`/`WrapToken::verify` and others).
 - `krb_priv::EncKrbPrivPartOptions::with_sequence_number`: `pub const fn with_sequence_number(mut self, seq_number: u32) -> Self`.
 - `krb_priv::host_address`: `pub fn host_address<P>(addr_type: i32, address: P) -> rasn_kerberos::HostAddress where P: AsRef<[u8]>,`.
 - `krb_priv::build_enc_krb_priv_part`: `pub fn build_enc_krb_priv_part<P>( user_data: P, options: EncKrbPrivPartOptions, ) -> rasn_kerberos::EncKrbPrivPart where P: AsRef<[u8]>,`.
-- `krb_priv::build`: `pub fn build_krb_priv<P>( user_data: P, options: EncKrbPrivPartOptions, key: &EncryptionKey, kvno: Option<u32>, ) -> Result<rasn_kerberos::KrbPriv, Error> where P: AsRef<[u8]>,`.
+- `krb_priv::build`: `pub fn build<P>( user_data: P, options: EncKrbPrivPartOptions, key: &EncryptionKey, kvno: Option<u32>, ) -> Result<rasn_kerberos::KrbPriv, Error> where P: AsRef<[u8]>,`.
 - `krb_priv::build_krb_priv_with_confounder`: `pub fn build_krb_priv_with_confounder<P>( user_data: P, options: EncKrbPrivPartOptions, key: &EncryptionKey, kvno: Option<u32>, confounder: &[u8], ) -> Result<rasn_kerberos::KrbPriv, Error> where P: AsRef<[u8]>,`.
 - `pac::NtlmSupplementalCredential::has_lm_password`: `pub const fn has_lm_password(&self) -> bool`.
 - `pac::NtlmSupplementalCredential::has_nt_password`: `pub const fn has_nt_password(&self) -> bool`.

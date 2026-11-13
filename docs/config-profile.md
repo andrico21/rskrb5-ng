@@ -70,21 +70,21 @@ directory entry uses the same filter as `includedir`: ASCII alphanumerics, `-`,
 `_`, or a non-dot name ending `.conf`. Sorting is bytewise. An entry that is a
 directory (or a symlink to one) is skipped, as in MIT, and does not count
 against the include file limit (v0.2.2: `IncludeFile` for a directory,
-`IncludeCycle` for a symlink to a directory already being read). The same filter applies to a directory passed to
-`Config::load` or `Config::load_paths` (v0.2.2: an `Io` error); one that cannot
-be listed is `IncludeDir` (v0.2.2: `Io`). Includes execute
-at their directive site, even inside a subsection (v0.2.2 ran a directive only
-outside a subsection), with fresh syntax state and the shared profile tree; the
-parent resumes its original state (v0.2.2 continued in the section where the
-included text ended). A relative `include` or `includedir` path is used as
-written and resolved against the process working directory, as MIT does
-(`fopen` on the token) and v0.2.2 did, also inside an included file: it is not
-rebased on the including file's directory. Every source, whether an included file or a file of a path
-list, starts outside every section, so a relation before its first section
-header is an `InvalidLine` (v0.2.2 read such lines into the section that was
-open at the `include` or at the end of the previous file; MIT ignores them). A
-file of a path list that another file of the list includes is read twice
-(v0.2.2: `IncludeCycle`). See
+`IncludeCycle` for a symlink to a directory already being read). The same filter
+applies to a directory passed to `Config::load` or `Config::load_paths` (v0.2.2:
+an `Io` error); one that cannot be listed is `IncludeDir` (v0.2.2: `Io`).
+Includes execute at their directive site, even inside a subsection (v0.2.2 ran a
+directive only outside a subsection), with fresh syntax state and the shared
+profile tree; the parent resumes its original state (v0.2.2 continued in the
+section where the included text ended). A relative `include` or `includedir`
+path is used as written and resolved against the process working directory, as
+MIT does (`fopen` on the token) and v0.2.2 did, also inside an included file: it
+is not rebased on the including file's directory. Every source, whether an
+included file or a file of a path list, starts outside every section, so a
+relation before its first section header is an `InvalidLine` (v0.2.2 read such
+lines into the section that was open at the `include` or at the end of the
+previous file; MIT ignores them). A file of a path list that another file of the
+list includes is read twice (v0.2.2: `IncludeCycle`). See
 [prof_parse.c:214–256](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L214-L256).
 
 `[section]*`, `subsection* = {`, `}*`, and `relation* = value` prevent later
@@ -181,10 +181,14 @@ value are value data.
   relations can hide forbidden protocol selections. They cover every relation
   of every section except `[domain_realm]` and the `auth_to_local_names`
   entries, `[login]` and `[appdefaults]` included, although MIT's library reads
-  no `[login]` section (the removed `login.krb5` application did until MIT
-  1.6); an enabled `krb4_*` key counts whatever its value is (`krb4_config` and
-  `krb4_realms` are paths and are rejected as well), a disabled value
-  (`false`, `0`, empty, `protected`, `rfc3244`) loads. An empty value opens a
+  no `[login]` section (the removed `login.krb5` application read it through MIT
+  1.7, and its `krb4_*` keys through MIT 1.6); an enabled `krb4_*` key counts
+  whatever its value is (`krb4_config` and `krb4_realms` are paths and are
+  rejected as well). A `krb4_*`, `v4_*` or `pkinit_*` selector loads when its
+  value is empty or false (`0`, `no`, `off`, ...); `kpasswd_protocol` and
+  `kpasswd_version` load only for `protected`, `rfc3244` or a supported version
+  number (`kpasswd_protocol = false` or an empty value is rejected). An empty
+  value opens a
   pending subsection in `[realms]`, `[appdefaults]`, `[plugins]` and
   `[capaths]`, as in MIT, so `krb4_convert =` there is a `Policy` error where
   MIT reports a missing `{`; in `[libdefaults]` and `[login]` it is the
@@ -282,8 +286,9 @@ unchanged and a file limit of 256 (v0.2.2: 64).
 `Config::UnsupportedDynamicModule` in Compatible and Strict modes. This also
 applies in `[plugins]` (there only for the exact lowercase `module`: `MODULE` is
 an unknown relation, as MIT never reads it), nested or ignored sections,
-finalized/discarded scopes, and included sources. No dynamic code is loaded. These cover MIT-config-54/55
-refusal behavior, not the future WP-16 registered-provider implementation.
+finalized/discarded scopes, and included sources. No dynamic code is loaded.
+These cover MIT-config-54/55 refusal behavior, not the future WP-16
+registered-provider implementation.
 
 ## Effective default-name consumers (B2)
 
@@ -462,9 +467,11 @@ documentation's XOR wording describes the current getter.
 [sendto_kdc.c:474–494](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/sendto_kdc.c#L474-L494)
 defines effective Auto transport UDP preference: negative uses default 1465
 (v0.2.2: never UDP first), large values cap at 32700 (v0.2.2: no cap), and
-request size equal to the limit uses UDP first (as in v0.2.2). Explicit TCP/UDP
-still bypass Auto selection. Table-driven lib tests exercise this actual
-consumer, including limit 1 and cap boundaries.
+request size equal to the limit uses UDP first (as in v0.2.2). It governs KDC
+requests only: `Auto` for a password change is TCP first and ignores it
+(v0.2.2 applied it there too). Explicit TCP/UDP still bypass Auto selection.
+Table-driven lib tests exercise this actual consumer, including limit 1 and cap
+boundaries.
 
 Three old fixture tests used `noaddresses=false`: each now asserts its typed
 WP-04 error on the same original input, then checks its existing loading,
@@ -555,12 +562,13 @@ plugin registry or loading is introduced. Interface names and the control names
 (`prof_tree.c` compares with `strcmp`): `CLPREAUTH` is an interface without a
 consumer, and `DISABLE` or `MODULE` under an interface is an unknown relation.
 The `[plugins]` header itself is case-insensitive, like every section header.
-Controls that would disable the existing encrypted-timestamp mechanism (`clpreauth` disable encrypted_timestamp
-or enable_only excluding it) fail closed. Controls for unavailable mechanisms
-are diagnostic. `module` is `UnsupportedDynamicModule` in every mode.
-Server-only `[kdcdefaults]`, `[dbmodules]`, `[logging]` headers, including empty
-sections, construct `ConfigDiagnostic::ServerOnly` in production and error in
-Strict mode. No server configuration is acted upon.
+Controls that would disable the existing encrypted-timestamp mechanism
+(`clpreauth` disable encrypted_timestamp or enable_only excluding it) fail
+closed. Controls for unavailable mechanisms are diagnostic. `module` is
+`UnsupportedDynamicModule` in every mode. Server-only `[kdcdefaults]`,
+`[dbmodules]`, `[logging]` headers, including empty sections, construct
+`ConfigDiagnostic::ServerOnly` in production and error in Strict mode. No server
+configuration is acted upon.
 
 The `[domain_realm]` map keeps its exact, longest-suffix and dotted-apex rules;
 lookups now fold case and a bare tag covers its subdomains (v0.2.2 matched only
