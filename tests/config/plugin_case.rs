@@ -125,7 +125,7 @@ mod tests {
     fn upper_module_is_unknown_relation() -> Result<(), Box<dyn Error>> {
         let text = "[plugins]\nclpreauth = {\n MODULE = x:/never/load.so\n}\n";
         let config = Config::parse(text)?;
-        assert!(config.plugins.is_empty());
+        assert!(config.plugins.is_empty(), "{text}");
         assert!(
             config
                 .diagnostics()
@@ -145,7 +145,7 @@ mod tests {
     fn reader_upper_module_is_unknown_relation() -> Result<(), Box<dyn Error>> {
         let text = "[plugins]\nclpreauth = {\n MODULE = x:/never/load.so\n}\n";
         let config = Config::from_reader(text.as_bytes())?;
-        assert!(config.plugins.is_empty());
+        assert!(config.plugins.is_empty(), "{text}");
         assert!(
             config
                 .diagnostics()
