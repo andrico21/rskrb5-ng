@@ -106,6 +106,71 @@ equivalent because a dangling symlink then no longer reports
 real code. No changed file is pulled in with `include!`: `src/config.rs`
 itself is mutated, and the files it includes are not in the diff.
 
+### In-diff check after todos 105, 106, 109 and 110 (todo 108)
+
+Four source changes landed since the last check. Todo 105 made a relative
+`include` or `includedir` path legal (`IncludeExpansion::splice` no longer
+refuses it). Todo 106 made `Keytab` reject a zero-length key, principal
+component list or realm (`Principal::check_storable`,
+`EncryptionKey::check_storable`, called from the parser, the serializer and
+`add_entry_from_password`). Todo 109 made the kpasswd `Auto` order TCP first,
+then UDP only after a definite TCP failure, with a UDP refusal
+(`ConnectionRefused`, `ConnectionReset`) a plain endpoint failure
+(`send_to_kpasswd_realm_auto`, `password_delivery::send`, `send_tcp`,
+`send_udp`). Todo 110 made `NegTokenInit::decode` keep the `reqFlags` bytes as
+received and left the validation to `encode`.
+
+- Diff: `git diff 3c99c37 2a5cc89 -- src` (src/client/transport.rs,
+  src/client/transport/password_delivery.rs, src/config.rs, src/error.rs,
+  src/keytab.rs, src/spnego.rs, src/spnego/field_tests.rs; the KDC path call
+  sites of `auto_uses_udp_first` do not change). `3c99c37` is the `main` that
+  carried the previous check; `2a5cc89` is `main` after todo 110.
+- The check ran locally as in todo 99: `cargo mutants --all-features
+  --no-shuffle --cap-lints=true --in-diff <diff> --shard k/7 -j 2
+  --copy-target=false` at `2a5cc89`, cargo-mutants 27.1.0,
+  `CARGO_BUILD_WARNINGS=allow`, no debug info and an 8 GiB address-space cap.
+  The diff yields 28 mutants, run in 7 shards of 4. Each shard measured its
+  own baseline (49 s to 55 s build, 78 s to 82 s test), and cargo-mutants set
+  the timeout from it (392 s to 411 s).
+
+| Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 4 | 4 | 0 | 0 | 0 | 245 |
+| 1 | 4 | 3 | 0 | 0 | 1 | 293 |
+| 2 | 4 | 3 | 0 | 0 | 1 | 254 |
+| 3 | 4 | 4 | 0 | 0 | 0 | 257 |
+| 4 | 4 | 4 | 0 | 0 | 0 | 253 |
+| 5 | 4 | 4 | 0 | 0 | 0 | 253 |
+| 6 | 4 | 3 | 1 | 0 | 0 | 321 |
+
+The total is 25 caught, 1 missed, 0 timeout and 2 unviable (`Principal::parse`
+and `decode_neg_token_init` with `Ok(Default::default())`: neither return type
+implements `Default`). The survivor is the match guard of `send_udp` that
+recognises a refusal, replaced by `true`: the mutant only differs for an
+`io::Error` of another kind while the reply is awaited, which a loopback test
+cannot produce (the kernel reports only `ConnectionRefused` on a connected
+loopback UDP socket) and which needs a production seam to inject. It has a row
+below with status `open`: killing it takes a behaviour-preserving production
+change, which this check does not make, so the owner decides.
+
+cargo-mutants mutates no call argument or match arm of the changed lines, so
+thirteen hand-made mutants ran the narrow test set of their file (outside the
+campaign). Eleven were caught: dropping the `validate_req_flags` call at
+encode and validating again at decode (`req_flags_decoding_keeps_noncanonical_named_bits`),
+the realm `Auto` path falling through to UDP after an unknown TCP outcome
+(`kpasswd_auto_unknown_tcp_outcome_never_tries_udp`), UDP first in the realm
+and explicit-address `Auto` paths (`kpasswd_auto_tries_all_tcp_endpoints_before_udp`,
+`kpasswd_explicit_address_auto_uses_tcp_first`), each of the five
+`check_storable` calls removed in turn, and `ConnectionRefused` removed from
+the refusal set. Two survived. The explicit-address `Auto` arm that stops at
+an unknown TCP outcome was untested: the test
+`kpasswd_explicit_address_auto_unknown_tcp_outcome_never_tries_udp` in
+`tests/client_transport/tests/kpasswd_order.rs` kills it (it fails on the
+mutant at its no-datagram assertion, passes on the real code, 20 of 20 runs).
+`ConnectionReset` removed from the refusal set survives on Linux, where the
+kernel never reports it for a loopback datagram; it is the Windows spelling of
+a port-unreachable, so only the Windows job can exercise it.
+
 ### In-diff check after todos 77 and 78 (todo 79)
 
 Todo 77 changed `spake_preauth_groups` in `src/config/libdefaults/c2.rs`: the
@@ -1670,3 +1735,4 @@ minutes).
 | d7666e73b0ba46c093e74a69599c25506cd0582a | `src/ticket.rs:169:5: replace build_encoded -> Result<Vec<u8>, Error> with Ok(vec![0])` | src/ticket.rs | build_encoded | replace body with Ok(vec![0]) | missed | killed | `tests::encoded_ticket_decrypts_to_known_answer` |
 | d7666e73b0ba46c093e74a69599c25506cd0582a | `src/ticket.rs:169:5: replace build_encoded -> Result<Vec<u8>, Error> with Ok(vec![1])` | src/ticket.rs | build_encoded | replace body with Ok(vec![1]) | missed | killed | `tests::encoded_ticket_decrypts_to_known_answer` |
 | d7666e73b0ba46c093e74a69599c25506cd0582a | `src/ticket.rs:169:5: replace build_encoded -> Result<Vec<u8>, Error> with Ok(vec![])` | src/ticket.rs | build_encoded | replace body with Ok(vec![]) | missed | killed | `tests::encoded_ticket_decrypts_to_known_answer` |
+| 2a5cc8931388fca8956579b02b03ff3607b920c0 | `src/client/transport/password_delivery.rs:143:16: replace match guard matches!( error.kind(), io::ErrorKind::ConnectionRefused \| io::ErrorKind::ConnectionReset ) with true in send_udp` | src/client/transport/password_delivery.rs | send_udp | replace match guard with true | missed | open | Not killable by a loopback test: the guard differs only for a non-refusal `io::Error` while awaiting the reply, which loopback never yields; a test needs the guard extracted into a function (production change, owner decision, todo 108). |
