@@ -94,12 +94,13 @@ contributes its own values. See
 [prof_parse.c:92–210](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L92-L210)
 and [prof_tree.c:208–249](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_tree.c#L208-L249).
 
-Comments begin with `#` or `;` after optional leading whitespace. The retained
-gokrb5 extension also recognizes them after C-locale ASCII whitespace outside
-quotes; Unicode space before `#` or `;` is value data. `RULE:[2:$1;$2]` survives
-unchanged. Quoted values support escaped quotes, backslashes, newline, tab and
-backspace. Braces are structural only in a subsection assignment or
-closing-brace line, not arbitrary value text. As in MIT
+Comments begin with `#` or `;` after optional leading whitespace. The gokrb5
+extension also recognizes them after C-locale ASCII whitespace outside quotes;
+Unicode space before `#` or `;` is value data. `RULE:[2:$1;$2]` survives
+unchanged. v0.2.2 cut a line at the first `#` or `;` anywhere in it, so
+`default_realm = A#B` was `A`; it is `A#B` here. Quoted values support escaped
+quotes, backslashes, newline, tab and backspace. Braces are structural only in a
+subsection assignment or closing-brace line, not arbitrary value text. As in MIT
 ([prof_parse.c:177](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L177)),
 `{` opens a subsection only when it is the whole value, blanks aside; unlike
 MIT, a comment after blanks is allowed too (`A = { # c` opens one; MIT reads the
@@ -177,22 +178,24 @@ value are value data.
   a relation, brace or comment is an `InvalidLine` (MIT rejects a line without
   `=` too,
   [prof_parse.c:148–151](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L148-L151)).
-- Permanent protocol rejection checks run before discarded
-  relations can hide forbidden protocol selections. They cover every relation
-  of every section except `[domain_realm]` and the `auth_to_local_names`
-  entries, `[login]` and `[appdefaults]` included, although MIT's library reads
-  no `[login]` section (the removed `login.krb5` application read it through MIT
-  1.7, and its `krb4_*` keys through MIT 1.6); an enabled `krb4_*` key counts
-  whatever its value is (`krb4_config` and `krb4_realms` are paths and are
-  rejected as well). A `krb4_*`, `v4_*` or `pkinit_*` selector loads when its
-  value is empty or false (`0`, `no`, `off`, ...); `kpasswd_protocol` and
-  `kpasswd_version` load only for `protected`, `rfc3244` or a supported version
-  number (`kpasswd_protocol = false` or an empty value is rejected). An empty
-  value opens a
-  pending subsection in `[realms]`, `[appdefaults]`, `[plugins]` and
-  `[capaths]`, as in MIT, so `krb4_convert =` there is a `Policy` error where
-  MIT reports a missing `{`; in `[libdefaults]` and `[login]` it is the
-  empty-scalar extension and counts as disabled.
+- Permanent protocol rejection checks run before discarded relations can hide
+  forbidden protocol selections. They cover every relation of every section
+  except `[domain_realm]` and the `auth_to_local_names` entries, `[login]` and
+  `[appdefaults]` included, although MIT's library reads no `[login]` section
+  (the removed `login.krb5` application read it through MIT 1.7, and its
+  `krb4_*` keys through MIT 1.6); an enabled `krb4_*` key counts whatever its
+  value is (`krb4_config` and `krb4_realms` are paths and are rejected as well).
+  A `krb4_*`, `v4_*`, `pkinit_*`, `flag_rsa_protocol`, `kpasswd_unprotected` or
+  `kpasswd_cleartext` selector loads when its value is empty or false (`0`,
+  `no`, `off`, ...); `pkinit_key_exchange` and `pkinit_kex` are rejected for
+  `rsa`, `rsa-only`, `key-transport` and `dh-less` and load for every other
+  value; `kpasswd_protocol` and `kpasswd_version` load only for `protected`,
+  `rfc3244` or a supported version number (`kpasswd_protocol = false` or an
+  empty value is rejected). An empty value opens a pending subsection in
+  `[realms]`, `[appdefaults]`, `[plugins]` and `[capaths]`, as in MIT, so
+  `krb4_convert =` there is a `Policy` error where MIT reports a missing `{`; in
+  `[libdefaults]` and `[login]` it is the empty-scalar extension and counts as
+  disabled.
 
 ## Independent expected values
 
