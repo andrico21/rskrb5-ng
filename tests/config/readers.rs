@@ -104,18 +104,18 @@ mod tests {
         Ok(())
     }
 
-    /// Relative includes cannot acquire an implicit reader base directory.
+    /// A relative include in reader bytes is looked up, with no implicit base directory.
     #[test]
-    fn reader_rejects_relative_include() -> Result<(), Box<dyn Error>> {
-        // Given a relative include in caller-provided bytes.
+    fn reader_looks_up_relative_include() -> Result<(), Box<dyn Error>> {
+        // Given a relative include of a missing file in caller-provided bytes.
         let reader = &b"include relative.conf\n"[..];
         // When composing the source.
         let failure = Config::from_reader(reader)
             .err()
-            .ok_or("relative include accepted")?;
-        // Then the include boundary refuses it before filesystem access.
+            .ok_or("missing relative include accepted")?;
+        // Then the lookup reports the file as not found, not as an invalid path.
         assert!(
-            matches!(failure, Failure::IncludeFile { source, path: _ } if source.kind() == io::ErrorKind::InvalidInput)
+            matches!(failure, Failure::IncludeFile { source, path: _ } if source.kind() == io::ErrorKind::NotFound)
         );
         Ok(())
     }
