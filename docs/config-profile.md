@@ -111,6 +111,11 @@ value are value data.
 
 - Missing or unreadable explicitly named `KRB5_CONFIG` entries are errors; MIT
   skips them.
+- Section headers are case-insensitive (`[Realms]`, `[Plugins]`), as in v0.2.2;
+  MIT compares them exactly. Relation names are case-insensitive too, except in
+  `[appdefaults]`, `[capaths]`, `[plugins]` (interface and control names), the
+  realm names of `[realms]` and the `auth_to_local_names` entries, which keep
+  their case as MIT does.
 - Leading whitespace before a directive is accepted. No dynamic module code is
   loaded.
 - The unquoted value-suffix `value*` final form is a gokrb5 extension. It
@@ -249,8 +254,9 @@ unchanged and a file limit of 256 (v0.2.2: 64).
 
 `module MODULEPATH:RESIDUAL` and `module = ...` relations are rejected with
 `Config::UnsupportedDynamicModule` in Compatible and Strict modes. This also
-applies in `[plugins]`, nested or ignored sections, finalized/discarded scopes,
-and included sources. No dynamic code is loaded. These cover MIT-config-54/55
+applies in `[plugins]` (there only for the exact lowercase `module`: `MODULE` is
+an unknown relation, as MIT never reads it), nested or ignored sections,
+finalized/discarded scopes, and included sources. No dynamic code is loaded. These cover MIT-config-54/55
 refusal behavior, not the future WP-16 registered-provider implementation.
 
 ## Effective default-name consumers (B2)
@@ -518,8 +524,12 @@ The acceptor requires explicit caller transit policy for
 cross-realm acceptance; callers do not acquire that policy by parsing capaths.
 
 `Config::plugins` holds per-interface repeated disable/enable_only names. No
-plugin registry or loading is introduced. Controls that would disable the
-existing encrypted-timestamp mechanism (`clpreauth` disable encrypted_timestamp
+plugin registry or loading is introduced. Interface names and the control names
+`disable`, `enable_only` and `module` preserve case and match exactly, like MIT
+(`prof_tree.c` compares with `strcmp`): `CLPREAUTH` is an interface without a
+consumer, and `DISABLE` or `MODULE` under an interface is an unknown relation.
+The `[plugins]` header itself is case-insensitive, like every section header.
+Controls that would disable the existing encrypted-timestamp mechanism (`clpreauth` disable encrypted_timestamp
 or enable_only excluding it) fail closed. Controls for unavailable mechanisms
 are diagnostic. `module` is `UnsupportedDynamicModule` in every mode.
 Server-only `[kdcdefaults]`, `[dbmodules]`, `[logging]` headers, including empty

@@ -1011,7 +1011,14 @@ Configuration now follows MIT profile semantics; the details are in
   mixes `.` with realm names or holds a whitespace token, and an `[appdefaults]`
   subsection nested deeper than application, realm and key, are `InvalidLine`;
   a `[plugins]` control that would disable the encrypted-timestamp mechanism is
-  `NotYetEffective` in every mode (FU-DOC-R93).
+  `NotYetEffective` in every mode (FU-DOC-R93). Interface names and the control
+  names `disable`, `enable_only` and `module` are case-sensitive, as in MIT
+  (FU-CFG-R36): `CLPREAUTH = { disable = encrypted_timestamp }` is an interface
+  without a consumer, not the client preauthentication interface, so it is not
+  `NotYetEffective`, and `DISABLE = pkinit` or `MODULE = x:/y` under an
+  interface is an unknown relation (a diagnostic in compatible mode,
+  `UnknownRelation` in strict mode). Section headers stay case-insensitive, so
+  `[Plugins]` is the plugins section.
 - **`module`.** `module` directives and relations fail with
   `error::Config::UnsupportedDynamicModule`; no code is loaded.
 - `forwardable` and `proxiable` set the request bits, `default_realm` is the
