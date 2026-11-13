@@ -189,13 +189,12 @@ value are value data.
   `kpasswd_cleartext` selector is not rejected when its value is false (`0`,
   `no`, `off`, ...); `pkinit_key_exchange` and `pkinit_kex` are rejected for
   `rsa`, `rsa-only`, `key-transport` and `dh-less`, not for `dh` or `ecdh`;
-  `kpasswd_protocol` and `kpasswd_version` load only for `protected`,
-  `rfc3244` or a supported version number (`kpasswd_protocol = false` or an
-  empty value is rejected). An empty value opens a pending subsection in
-  `[realms]`, `[appdefaults]`, `[plugins]` and `[capaths]`, as in MIT, so
-  `krb4_convert =` there is a `Policy` error where MIT reports a missing `{`; in
-  `[libdefaults]` and `[login]` it is the empty-scalar extension and counts as
-  disabled.
+  `kpasswd_protocol` and `kpasswd_version` are rejected unless the value is
+  `protected`, `rfc3244` or a supported version number. An empty value opens a
+  pending subsection in `[realms]`, `[appdefaults]`, `[plugins]` and
+  `[capaths]`, as in MIT, so `krb4_convert =` there is a `Policy` error where
+  MIT reports a missing `{`; in `[libdefaults]` and `[login]` it is the
+  empty-scalar extension and counts as disabled.
 
 ## Independent expected values
 

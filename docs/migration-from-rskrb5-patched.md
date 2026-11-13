@@ -530,8 +530,8 @@ an error (FU-DOC-R104): a mechListMIC is refused whichever mechanism comes first
 (`MechListMicRequiresState`); without a MIC the first offered mechanism must be
 Kerberos, where v0.2.2 returned the AP-REQ of a later Kerberos entry
 (`MissingMechListMic`); a DER length in non-minimal form is refused
-(`NonminimalLength`), and so is an OID subidentifier in non-minimal form or
-wider than 32 bits (`InvalidOidEncoding`). `Token::krb5_ap_req` refuses a
+(`NonminimalLength`), and so is an OID subidentifier in non-minimal form or an
+arc wider than 32 bits (`InvalidOidEncoding`). `Token::krb5_ap_req` refuses a
 `NegTokenResp` (`NegotiationRequiresState`), where v0.2.2 returned the AP-REQ
 from its response token; a `supportedMech` that is not Kerberos is
 `UnsupportedMechanism` in both versions.
@@ -1082,12 +1082,12 @@ Configuration now follows MIT profile semantics; the details are in
   is not rejected when its value is false (`0`, `no`, `off`, ...);
   `pkinit_key_exchange` and `pkinit_kex` are rejected for `rsa`, `rsa-only`,
   `key-transport` and `dh-less`, not for `dh` or `ecdh`;
-  `kpasswd_protocol` and `kpasswd_version` load only for `protected`, `rfc3244`
-  or a supported version number, and an empty or false value is rejected for
-  them. v0.2.2 ignored these lines in the sections it skipped, accepted
-  `krb4_convert = true` and `pkinit_win2k = true` in `[libdefaults]` and
-  `[realms]`, and answered every `v4_*` key there with `UnsupportedDirective`,
-  `v4_instance_resolve = false` included (0.3.0 loads a disabled `v4_*` value).
+  `kpasswd_protocol` and `kpasswd_version` are rejected unless the value is
+  `protected`, `rfc3244` or a supported version number. v0.2.2 ignored these
+  lines in the sections it skipped, accepted `krb4_convert = true` and
+  `pkinit_win2k = true` in `[libdefaults]` and `[realms]`, and answered every
+  `v4_*` key there with `UnsupportedDirective`, `v4_instance_resolve = false`
+  included (0.3.0 loads a disabled `v4_*` value).
   Neither MIT's library nor this crate reads `[login]`; the removed `login.krb5`
   application read `krb4_convert` and `krb4_get_tickets` there until MIT 1.6.
   The path values `krb4_config` and `krb4_realms` are not selectors, but the
@@ -1790,10 +1790,9 @@ rule (FU-DOC-R104). Encoding a token whose decoded `reqFlags` is not
 canonical fails with `Spnego::InvalidReqFlags`; clear it with
 `set_req_flags(None)` first.
 
-`NegTokenInit::decode`, `NegTokenResp::decode` and `Token::decode` return
-`Spnego::InvalidFieldOrder` for a SEQUENCE whose fields repeat or are not in
-increasing tag order, where v0.2.2 accepted it (FU-SPN-03); an omitted field is
-accepted.
+`NegTokenInit::decode`, `NegTokenResp::decode`, `NegotiationToken::decode` and
+`Token::decode` return `Spnego::InvalidFieldOrder` for a SEQUENCE whose fields
+repeat or are not in increasing tag order (FU-SPN-03).
 
 Treat `with_ap_rep(false)` as an optional-reply preference (FU-SPN-R09). A valid
 initiator mechListMIC receives a completion carrying a reciprocal MIC and the

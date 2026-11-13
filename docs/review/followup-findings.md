@@ -390,3 +390,8 @@ is a parity feature, not a defect>`.
 | critic:critics-da18b02/u6b.md#U6B-03 | FU-DOC-R121 | no |
 | critic:critics-da18b02/u6d.md#U6D-01 | FU-DOC-R122 | no |
 | critic:critics-da18b02/u6d.md#U6D-02 | FU-DOC-R122 | no |
+| critic:critics-0f6e768/u6a.md#U6A-01 | FU-DOC-R123 | no |
+| critic:critics-0f6e768/u6a.md#U6A-02 | FU-DOC-R124 | no |
+| critic:critics-0f6e768/u6c.md#U6C-01 | FU-DOC-R125 | no |
+| critic:critics-0f6e768/u6c.md#U6C-02 | FU-DOC-R125 | no |
+| critic:critics-0f6e768/u6c.md#U6C-03 | FU-DOC-R125 | no |
