@@ -72,14 +72,25 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 - Kpasswd preserves definite pre-send errors and reports possible-delivery
   failures as `Client::KpasswdOutcomeUnknown` exactly once, including malformed
   replies; unknown outcomes are not retried (RSK-14E2755A). A failed or timed
-  out TCP connect, and a failure to bind or connect the UDP socket, is definite
-  and moves to the next endpoint. Every failure after a UDP datagram was sent
-  is unknown, including `Connection refused` (the ICMP port-unreachable that a
-  connected UDP socket reports while it waits for the reply), so a closed UDP
-  kpasswd port is not retried over TCP, where v0.2.2 fell back to TCP after any
-  UDP failure. With `KdcProtocol::Auto` and an explicit address,
-  `exchange_kpasswd_request` and the checked result helpers send over UDP once
-  (v0.2.2: UDP, then TCP after a UDP failure) (FU-DOC-R88).
+  out TCP connect, a failure to bind or connect the UDP socket, and a UDP
+  refusal (`ConnectionRefused`, or `ConnectionReset`, which Windows reports for
+  an ICMP port-unreachable, while the single reply is awaited) are definite and
+  move to the next endpoint; every other failure after a UDP datagram was sent
+  stays unknown (FU-CLI-R24).
+
+- Password changes with `KdcProtocol::Auto` try TCP first, then UDP, as MIT's
+  `changepw.c` does (FU-CLI-R24): all TCP endpoints before any UDP endpoint,
+  and for an explicit address (`exchange_kpasswd_request` and the checked
+  result helpers) TCP, then UDP. UDP is tried only after a definite TCP
+  failure, with one datagram per endpoint and no retransmit.
+  `udp_preference_limit` does not apply to password changes (MIT's `changepw.c`
+  never consults it); it still orders KDC requests. If a TCP request may
+  have been delivered, the result is `KpasswdOutcomeUnknown` and UDP is never
+  tried, which MIT does not do. v0.2.2 went UDP first for a request of at most
+  `udp_preference_limit` bytes (a configured realm; default 1465) and, with an
+  explicit address, always UDP first, and it fell back to TCP after any UDP
+  error. A closed UDP kpasswd port is therefore no longer an unknown outcome
+  and is no longer the first thing tried.
 
 These are breaking; the migration guide maps each one.
 
