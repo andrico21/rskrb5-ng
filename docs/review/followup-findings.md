@@ -335,3 +335,8 @@ is a parity feature, not a defect>`.
 | critic:critics-d125580/u6c.md#U6C-05 | FU-DOC-R99 | no |
 | critic:critics-d125580/u6d.md#U6D-01 | FU-DOC-R100 | no |
 | critic:critics-d125580/u6d.md#U6D-02 | FU-DOC-R101 | no |
+| executor:todo-103#other-sections | FU-DOC-R102 | no |
+| executor:todo-103#removed-protocol-selectors-every-section | FU-DOC-R103 | no |
+| executor:todo-103#spnego-ap-req-and-reqflags-framing | FU-DOC-R104 | no |
+| executor:todo-103#mic-wrap-enctype-policy-and-error-order | FU-DOC-R105 | no |
+| executor:todo-103#pac-authorization-data-decoding | FU-DOC-R106 | no |
