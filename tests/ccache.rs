@@ -1056,7 +1056,11 @@ mod tests {
             // When trying to serialize a value that would lose fields.
             let result = decoded.to_bytes();
             // Then reject instead of successfully writing a different object.
-            assert!(result.err().is_some());
+            if version == 1 {
+                assert!(matches!(result, Err(Error::UnrepresentableNameType(1_i32))));
+            } else {
+                assert!(result.err().is_some());
+            }
         }
         Ok(())
     }

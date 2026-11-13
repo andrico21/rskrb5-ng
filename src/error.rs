@@ -127,6 +127,9 @@ pub enum ApReq {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Ccache {
+    /// Version one has no field for a nonzero principal name type.
+    #[error("credential cache version one cannot represent principal name type {0}")]
+    UnrepresentableNameType(i32),
     /// A configured name could not be expanded from available facts.
     #[error("credential name expansion failed: {0}")]
     Expansion(#[from] ExpansionFailure),

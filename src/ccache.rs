@@ -359,8 +359,10 @@ impl CCache {
     ///
     /// Returns [`Error::LengthOverflow`] when a length, count or encryption
     /// type does not fit its on-disk field, [`Error::InvalidVersion`] for an
-    /// unsupported version, and [`Error::InvalidHeaderField`]
-    /// when a KDC offset header field is not eight bytes long.
+    /// unsupported version, [`Error::InvalidHeaderField`]
+    /// when a KDC offset header field is not eight bytes long, and
+    /// [`Error::UnrepresentableNameType`] for a version-one cache holding a
+    /// nonzero principal name type.
     #[inline]
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         validate_version(self.version)?;
@@ -965,11 +967,12 @@ impl Principal {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::LengthOverflow`] when the component count or a string
-    /// length does not fit an `i32`.
+    /// Returns [`Error::UnrepresentableNameType`] for a nonzero name type in
+    /// version 1, and [`Error::LengthOverflow`] when the component count or a
+    /// string length does not fit an `i32`.
     fn write_to(&self, out: &mut Vec<u8>, version: u8, endian: Endian) -> Result<(), Error> {
         if version == 1 && self.name_type != 0_i32 {
-            return Err(Error::LengthOverflow);
+            return Err(Error::UnrepresentableNameType(self.name_type));
         }
         if version != 1 {
             write_i32(out, self.name_type, endian);
