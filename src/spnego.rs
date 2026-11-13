@@ -320,10 +320,11 @@ impl MicToken {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::MissingGssPayload`] without a payload, [`Error::UnsupportedEtype`] for an
-    /// unknown key encryption type, [`Error::Crypto`] when the checksum computation fails,
-    /// [`Error::MissingGssChecksum`] when the token carries no checksum, and
-    /// [`Error::GssChecksumMismatch`] when the checksum does not match.
+    /// Returns [`Error::Crypto`] when the key's encryption type is refused by policy,
+    /// [`Error::MissingGssPayload`] without a payload, [`Error::UnsupportedEtype`] for an
+    /// unknown key encryption type, [`Error::MissingGssChecksum`] when the token carries no
+    /// checksum, and [`Error::GssChecksumMismatch`] when the checksum does not match or the key
+    /// or checksum has the wrong length.
     #[inline]
     pub fn verify(&self, key: &EncryptionKey, key_usage: u32) -> Result<(), Error> {
         selection::reject_enctype(key.etype())?;
@@ -774,10 +775,11 @@ impl WrapToken {
     /// # Errors
     ///
     /// For a sealed token, returns the errors of [`Self::decrypt_payload`]. For an unsealed token,
-    /// returns [`Error::MissingGssPayload`] without a payload, [`Error::UnsupportedEtype`] for an
-    /// unknown key encryption type, [`Error::Crypto`] when the checksum computation fails,
-    /// [`Error::MissingGssChecksum`] when the token carries no checksum, and
-    /// [`Error::GssChecksumMismatch`] when the checksum does not match.
+    /// returns [`Error::Crypto`] when the key's encryption type is refused by policy,
+    /// [`Error::MissingGssPayload`] without a payload, [`Error::UnsupportedEtype`] for an
+    /// unknown key encryption type, [`Error::MissingGssChecksum`] when the token carries no
+    /// checksum, and [`Error::GssChecksumMismatch`] when the checksum does not match or the key
+    /// or checksum has the wrong length.
     #[inline]
     pub fn verify(&self, key: &EncryptionKey, key_usage: u32) -> Result<(), Error> {
         if self.is_sealed() {
