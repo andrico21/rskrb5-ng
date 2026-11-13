@@ -49,6 +49,64 @@ timeout.
 
 ## Verification
 
+### In-diff check after todo 113 (todo 114)
+
+Todo 113 made the `[plugins]` interface and control names case-sensitive, like
+MIT's `strcmp`. The new `State::dynamic_module` in `src/config/profile_syntax.rs`
+says whether a word is the dynamic-module relation of the current section:
+under `[plugins]` only the exact spelling `module` is, in every other section
+`module` is refused in any case. Both places that refused `module`
+(`IncludeExpansion::expand` in `src/config.rs` and the tag path of
+`State::content`) call it, and `plugins` joined the sections whose relation
+tags keep their case.
+
+- Diff: `git diff 69f9259 586c039 -- src` (src/config.rs and
+  src/config/profile_syntax.rs). `69f9259` is the `main` that carried the
+  previous check; `586c039` is `main` after todo 113.
+- The check ran locally as in todo 108: `cargo mutants --all-features
+  --no-shuffle --cap-lints=true --in-diff <diff> --shard k/7 -j 2
+  --copy-target=false` at `586c039`, cargo-mutants 27.1.0,
+  `CARGO_BUILD_WARNINGS=allow`, no debug info and an 8 GiB address-space cap.
+  The diff yields 14 mutants, run in 7 shards of 2. The machine was shared with
+  another task, which stretched the full-suite baseline to 105 s to 135 s of
+  build plus 134 s to 193 s of test, more than a single local call could hold.
+  The shards therefore ran the narrow test set `-- --lib --test config --test
+  config_relative_include --test profile_include_order` (every test target that
+  reads a profile); a narrower set can only turn a caught mutant into a missed
+  one, so every outcome below is valid. Each shard measured its own baseline
+  (53 s to 143 s build, 2 s to 7 s test). An earlier full-suite run of the first
+  seven mutants (shard 0 of 2) also caught all seven.
+
+| Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 2 | 2 | 0 | 0 | 0 | 343 |
+| 1 | 2 | 2 | 0 | 0 | 0 | 311 |
+| 2 | 2 | 2 | 0 | 0 | 0 | 405 |
+| 3 | 2 | 2 | 0 | 0 | 0 | 295 |
+| 4 | 2 | 2 | 0 | 0 | 0 | 362 |
+| 5 | 2 | 2 | 0 | 0 | 0 | 207 |
+| 6 | 2 | 2 | 0 | 0 | 0 | 151 |
+
+The total is 14 caught, 0 missed, 0 timeout and 0 unviable, so this check adds
+no register row. `mutants_report.py --expect-shards 7 --register
+docs/review/mutants.md --campaign 586c039e63534f4c7f89e92bec9ed85cbff79364
+--enforce` prints `mutants: caught=14 missed=0 timeout=0 unviable=0` and
+`0 problem(s)` (exit 0, no `--allow-open`).
+
+cargo-mutants mutates no call argument or match arm of the changed lines
+beyond the guard and operators it listed, so six hand-made mutants ran
+`cargo test --all-features --test config plugin_case` in a scratch tree with its
+own target directory (the real tree passes 8 of 8 in another one). All six were
+caught by the existing tests in `tests/config/plugin_case.rs`; no test was added:
+the `plugins` arm compared with `eq_ignore_ascii_case` instead of `==`
+(`upper_module_is_unknown_relation`, `reader_upper_module_is_unknown_relation`),
+the other sections compared with `==` (`other_sections_unchanged`), `plugins`
+removed from the case-preserving match (four tests, among them
+`upper_interface_is_not_clpreauth` and `upper_control_is_unknown_relation`),
+`scopes.last()` instead of `scopes.first()` (the two module tests), and each of
+the two call sites (`expand`, the tag path) ignoring the scope (the two module
+tests).
+
 ### In-diff check after todo 98 (todo 99)
 
 Todo 98 changed three files. In `src/config.rs`, `read_include` reports a
