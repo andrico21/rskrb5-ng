@@ -524,15 +524,17 @@ trip must use a stateful implementation. The keyless extraction helpers
 `MechListMicRequiresState` for supplied MICs; use `accept_sec_context_header`
 for cryptographic verification. Decoding alone never authenticates negotiation.
 
-Both helpers return an error for three inputs from which v0.2.2 returned an
-AP-REQ (FU-DOC-R104). A first-choice Kerberos `NegTokenInit` that carries a
-mechListMIC returns `MechListMicRequiresState` where v0.2.2 returned its
-AP-REQ. `NegTokenInit::krb5_ap_req` returns `MissingMechListMic` when the first
-offered mechanism is not Kerberos and no MIC is supplied, where v0.2.2 returned
-the AP-REQ of a later Kerberos entry. `Token::krb5_ap_req` (v0.2.2:
-`SpnegoToken`) on a `NegTokenResp` returns `NegotiationRequiresState`, or
-`UnsupportedMechanism` when `supportedMech` is not Kerberos, where v0.2.2
-returned the AP-REQ from the response token of a Kerberos `NegTokenResp`.
+`NegTokenInit::krb5_ap_req` and `Token::krb5_ap_req` (v0.2.2: `SpnegoToken`)
+return an error for these inputs, from which v0.2.2 returned an AP-REQ
+(FU-DOC-R104): a `NegTokenInit` that carries a mechListMIC, whichever mechanism
+comes first (`MechListMicRequiresState`); a `NegTokenInit` that carries no MIC
+and whose first offered mechanism is not Kerberos, where v0.2.2 returned the
+AP-REQ of a later Kerberos entry (`MissingMechListMic`); a `NegTokenInit` whose
+mechanism token has a DER length in non-minimal form (`NonminimalLength`); and,
+for `Token::krb5_ap_req` only, a `NegTokenResp` that selects Kerberos, where
+v0.2.2 returned the AP-REQ from its response token (`NegotiationRequiresState`;
+a `supportedMech` that is not Kerberos is `UnsupportedMechanism` in both
+versions).
 
 ### S4U frontend keys (delegated-client-unbound-to-ticket-payload)
 
@@ -756,7 +758,7 @@ behaviour that skipped families, `DEFAULT` and `-name`:
 | Input | Before | Now |
 | --- | --- | --- |
 | unknown name (`typo-enctype`) | skipped | `error::Config::UnknownEnctype { token }` |
-| RC4/DES3 name without `allow_rc4`/`allow_des3` | accepted for `rc4-hmac`, `arcfour-hmac` and `des3-cbc-sha1-kd` (v0.2.2 had no flag); skipped for `des3-hmac-sha1` and `des3-cbc-sha1` | `error::Config::DisabledEnctype { token }` |
+| RC4/DES3 name without `allow_rc4`/`allow_des3` | accepted for `rc4-hmac`, `arcfour-hmac`, `arcfour-hmac-md5` and `des3-cbc-sha1-kd` (v0.2.2 had no flag); skipped for `des3-hmac-sha1` and `des3-cbc-sha1` | `error::Config::DisabledEnctype { token }` |
 | single DES, RC4 export or another permanently refused name | skipped | `error::Config::RejectedEnctype { token, source }` |
 | Camellia | skipped | skipped with a `ConfigDiagnostic` in `ParseMode::Compatible`; `error::Config::UnsupportedSecureEnctype` in `ParseMode::Strict` |
 | `-name` | ignored | removes the entry; removing never needs permission |
@@ -1036,18 +1038,17 @@ Configuration now follows MIT profile semantics; the details are in
   rejected, so an existing file can stop loading: a `[capaths]` value list that
   mixes `.` with realm names or holds a whitespace token, and an `[appdefaults]`
   relation nested deeper than application, realm and key (a four-name path such
-  as `a = { b = { c = { d = e } } }`), are `InvalidLine`;
-  a `[plugins]` control that would disable the encrypted-timestamp mechanism is
-  `NotYetEffective` in every mode (FU-DOC-R93). Interface names and the control
-  names `disable`, `enable_only` and `module` are case-sensitive, as in MIT
-  (FU-CFG-R36): `CLPREAUTH = { disable = encrypted_timestamp }` is an interface
-  without a consumer, not the client preauthentication interface, so it no
-  longer fails closed as `NotYetEffective` in compatible mode (it is recorded as
-  a diagnostic like any other `disable` of an unused interface, and is an error
-  in strict mode), and `DISABLE = pkinit` or `MODULE = x:/y` under an
-  interface is an unknown relation (a diagnostic in compatible mode,
-  `UnknownRelation` in strict mode). Section headers stay case-insensitive, so
-  `[Plugins]` is the plugins section.
+  as `a = { b = { c = { d = e } } }`), are `InvalidLine`; a `[plugins]` control
+  that would disable the encrypted-timestamp mechanism is `NotYetEffective` in
+  every mode (FU-DOC-R93). Interface names and the control names `disable`,
+  `enable_only` and `module` are case-sensitive, as in MIT (FU-CFG-R36):
+  `CLPREAUTH = { disable = encrypted_timestamp }` is an interface without a
+  consumer, not the client preauthentication interface, so in compatible mode it
+  loads and is recorded as a `NotYetEffective` diagnostic (v0.2.2 read nothing
+  in `[plugins]`), while in strict mode it is an error, and `DISABLE = pkinit`
+  or `MODULE = x:/y` under an interface is an unknown relation (a diagnostic in
+  compatible mode, `UnknownRelation` in strict mode). Section headers stay
+  case-insensitive, so `[Plugins]` is the plugins section.
 - **Other sections.** v0.2.2 read relations only in `[libdefaults]`, `[realms]`
   and `[domain_realm]` and skipped every other section, so a file could hold
   any text in `[logging]`, `[kdcdefaults]`, `[dbmodules]`, `[otp]`,
@@ -1068,35 +1069,38 @@ Configuration now follows MIT profile semantics; the details are in
   or any other section is `UnsupportedDynamicModule` (`localauth = { module =
   sssd:/usr/lib64/sssd/modules/x.so }`), where a v0.2.2 file with that stanza
   loaded (FU-DOC-R102).
-- **Removed-protocol selectors.** An enabled selector of a removed protocol is
-  a `Policy::RejectedFeature` in every section but `[domain_realm]` and the
+- **Removed-protocol selectors.** An enabled selector of a removed protocol is a
+  `Policy::RejectedFeature` in every section but `[domain_realm]` and the
   entries of a realm's `auth_to_local_names`, not only where this crate reads
   it: `krb4_convert = true`, `krb4_get_tickets = true` and any other `krb4_*`
   key, `v4_*` keys, `pkinit_win2k`, `pkinit_draft9`, the RSA PKINIT selectors,
   `kpasswd_unprotected` and a `kpasswd_protocol` or `kpasswd_version` such as
   `2` fail in `[login]`, `[appdefaults]`, `[logging]` and an unknown section as
-  they do in `[libdefaults]` and `[realms]`. A `krb4_*`, `v4_*` or `pkinit_*`
-  selector loads when its value is empty or false (`0`, `no`, `off`, ...) or,
-  for `pkinit_key_exchange`, `dh`; `kpasswd_protocol` and `kpasswd_version` load
-  only for `protected`, `rfc3244` or a supported version number, and an empty or
-  false value is rejected for them. v0.2.2 ignored these lines in the sections
-  it skipped, accepted `krb4_convert = true` and `pkinit_win2k = true` in
-  `[libdefaults]` and `[realms]`, and answered every `v4_*` key there with
-  `UnsupportedDirective`, `v4_instance_resolve = false` included (0.3.0 loads a
-  disabled `v4_*` value). Neither MIT's library nor this crate reads `[login]`;
-  the removed `login.krb5` application read `krb4_convert` and
-  `krb4_get_tickets` there until MIT 1.6. The path values `krb4_config` and
-  `krb4_realms` are not selectors, but the check treats every `krb4_*` value
-  that is not empty or false as enabled, so `krb4_config = /etc/krb.conf` is
-  rejected too, where v0.2.2 loaded it in `[libdefaults]`. An empty
-  `krb4_convert =` opens a pending subsection in `[appdefaults]`, `[realms]`,
-  `[plugins]` and `[capaths]`, as in MIT, which rejects it in every section
-  unless a `{` line follows (`prof_parse.c:172-176,329-334`); the selector check
-  sees the pending brace first, so the error is `Policy`, not a structure error.
-  In `[libdefaults]` and `[login]` the empty value is the empty-scalar extension
-  and counts as disabled. Real files are affected: the `kerberos-configs` 2.3
-  template of Debian (and Ubuntu 16.04) ends with `[login]`, `krb4_convert =
-  true` and `krb4_get_tickets = false` and sets `krb4_config`, `krb4_realms`,
+  they do in `[libdefaults]` and `[realms]`. A `krb4_*`, `v4_*`, `pkinit_*`,
+  `flag_rsa_protocol`, `kpasswd_unprotected` or `kpasswd_cleartext` selector
+  loads when its value is empty or false (`0`, `no`, `off`, ...);
+  `pkinit_key_exchange` and `pkinit_kex` are rejected for `rsa`, `rsa-only`,
+  `key-transport` and `dh-less` and load for every other value (`dh`, `ecdh`);
+  `kpasswd_protocol` and `kpasswd_version` load only for `protected`, `rfc3244`
+  or a supported version number, and an empty or false value is rejected for
+  them. v0.2.2 ignored these lines in the sections it skipped, accepted
+  `krb4_convert = true` and `pkinit_win2k = true` in `[libdefaults]` and
+  `[realms]`, and answered every `v4_*` key there with `UnsupportedDirective`,
+  `v4_instance_resolve = false` included (0.3.0 loads a disabled `v4_*` value).
+  Neither MIT's library nor this crate reads `[login]`; the removed `login.krb5`
+  application read `krb4_convert` and `krb4_get_tickets` there until MIT 1.6.
+  The path values `krb4_config` and `krb4_realms` are not selectors, but the
+  check treats every `krb4_*` value that is not empty or false as enabled, so
+  `krb4_config = /etc/krb.conf` is rejected too, where v0.2.2 loaded it in
+  `[libdefaults]`. An empty `krb4_convert =` opens a pending subsection in
+  `[appdefaults]`, `[realms]`, `[plugins]` and `[capaths]`, as in MIT, which
+  rejects it in every section unless a `{` line follows
+  (`prof_parse.c:172-176,329-334`); the selector check sees the pending brace
+  first, so the error is `Policy`, not a structure error. In `[libdefaults]` and
+  `[login]` the empty value is the empty-scalar extension and counts as
+  disabled. Real files are affected: the `kerberos-configs` 2.3 template of
+  Debian (and Ubuntu 16.04) ends with `[login]`, `krb4_convert = true` and
+  `krb4_get_tickets = false` and sets `krb4_config`, `krb4_realms`,
   `v4_instance_resolve` and `v4_name_convert` in `[libdefaults]`; its 2.5
   release (October 2016, Debian bug 741051) removed the outdated entries, but an
   `/etc/krb5.conf` generated earlier keeps them. An unmodified copy failed on
@@ -1865,7 +1869,8 @@ ends the table at such an entry (`kt_file.c:949-950`, `:973-975`, `:1003`,
 `:1065-1067`), so every later entry is invisible to MIT; this crate refuses to
 read the file rather than lose entries. `Keytab::to_bytes`, `save`, `save_name`,
 `save_to_env` and `add_entry_from_password*` refuse the same shapes (v0.2.2
-wrote them), so a file this crate saves is always readable. A keytab that holds
+wrote them; its `add_entry_from_password_name` already refused an empty name or
+component), so a file this crate saves is always readable. A keytab that holds
 such an entry (for example one written by hand or by another tool) must be
 repaired before it is read. Holes left by deleted entries and the zero-size end
 of the entry list are unchanged.

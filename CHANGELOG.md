@@ -745,10 +745,12 @@ Security fail-closed parsing and verification:
   `:973-975`, `:1003`, `:1065-1067`) treats them as the end of the table, hiding
   every later entry. The writer refuses the same shapes so that no file this
   crate saves is rejected on read: `Keytab::to_bytes` and `save*` return the
-  same variants, and `add_entry_from_password*` reject an empty realm, an empty
-  name component or a principal without name components before deriving a key
-  (v0.2.2 stored them). Deleted-entry holes and the zero-size end of the entry
-  list are unchanged (FU-FIL-R08, FU-FIL-R09).
+  same variants. `add_entry_from_password` and `add_entry_from_password_ref`
+  reject an empty realm, an empty name component or a principal without name
+  components before deriving a key, and `add_entry_from_password_name` rejects
+  an empty realm (v0.2.2 stored such entries, except that `_name` already
+  refused an empty name or component). Deleted-entry holes and the zero-size end
+  of the entry list are unchanged (FU-FIL-R08, FU-FIL-R09).
 - Opaque negative keytab enctype IDs serialize unchanged (v0.2.2:
   `LengthOverflow`). The enctype is a signed 16-bit field, so IDs 32768 to 65535
   now fail with `LengthOverflow` on serialization; v0.2.2 wrote them, and the
@@ -1084,24 +1086,25 @@ Configuration:
   now parsed into `Config::applications`, `Config::capaths` and
   `Config::plugins`. A file that loaded before can fail: a `[capaths]` value
   list that mixes `.` with realm names or holds a whitespace token, and an
-  `[appdefaults]` subsection nested deeper than application, realm and key,
-  are `InvalidLine`; a `[plugins]` control that disables the encrypted-timestamp
-  mechanism is `NotYetEffective` in every mode (FU-DOC-R93).
-- `[plugins]` interface names and the control names `disable`, `enable_only`
-  and `module` are matched case-sensitively, as MIT does (`strcmp` in the
-  profile library); v0.2.2 read nothing inside `[plugins]`. A wrongly cased
-  name is not folded: `CLPREAUTH = { disable = encrypted_timestamp }` is an
-  interface without a consumer, not the client preauthentication interface, so
-  it is not `NotYetEffective` (it loads, as in v0.2.2; 0.3.0 records it as a
-  diagnostic like any other `disable` of an unused interface, and refuses it in
-  strict mode); `DISABLE = pkinit` or `MODULE = x:/y` under an interface is an
-  unknown relation (a diagnostic in compatible mode, `UnknownRelation` in
-  strict mode; v0.2.2 loaded both), so `MODULE` is not
-  `UnsupportedDynamicModule`. The spelling `module` is still
-  refused in `[plugins]`, and in every other section `module` is refused in any
-  case. Section headers stay case-insensitive, as in v0.2.2: `[Plugins]` is the
-  plugins section, and `[Plugins]` with `clpreauth = { disable =
-  encrypted_timestamp }` is still `NotYetEffective` (FU-CFG-R36).
+  `[appdefaults]` relation nested deeper than application, realm and key,
+  are `InvalidLine` (an empty deeper block loads); a `[plugins]` control that
+  disables the encrypted-timestamp mechanism is `NotYetEffective` in every mode
+  (FU-DOC-R93).
+- `[plugins]` interface names and the control names `disable`, `enable_only` and
+  `module` are matched case-sensitively, as MIT does (`strcmp` in the profile
+  library); v0.2.2 read nothing inside `[plugins]`. A wrongly cased name is not
+  folded: `CLPREAUTH = { disable = encrypted_timestamp }` is an interface
+  without a consumer, not the client preauthentication interface, so compatible
+  mode loads it, as v0.2.2 did, and records a `NotYetEffective` diagnostic for
+  its `disable` relation, while strict mode fails with `NotYetEffective`;
+  `DISABLE = pkinit` or `MODULE = x:/y` under an interface is an unknown
+  relation (a diagnostic in compatible mode, `UnknownRelation` in strict mode;
+  v0.2.2 loaded both), so `MODULE` is not `UnsupportedDynamicModule`. The
+  spelling `module` is refused in `[plugins]` (v0.2.2 loaded it), and in every
+  other section `module` is refused in any case. Section headers stay
+  case-insensitive, as in v0.2.2: `[Plugins]` is the plugins section, and
+  `[Plugins]` with `clpreauth = { disable = encrypted_timestamp }` is
+  `NotYetEffective` (v0.2.2 loaded it) (FU-CFG-R36).
 - v0.2.2 read relations only in `[libdefaults]`, `[realms]` and
   `[domain_realm]` and skipped every other section, so these inputs loaded and
   are errors in both parse modes in 0.3.0. These sections use the same line
@@ -1124,31 +1127,33 @@ Configuration:
   sssd:/usr/lib64/sssd/modules/x.so }`) (FU-DOC-R102).
 - An enabled removed-protocol selector is a `Policy::RejectedFeature` in every
   section but `[domain_realm]` and the entries of a realm's
-  `auth_to_local_names`, including `[login]` and `[appdefaults]`, which
-  MIT's library does not read for it: `krb4_convert = true`,
-  `krb4_get_tickets = true` and any other `krb4_*` key, `v4_*` keys,
-  `pkinit_win2k`, `pkinit_draft9`, the RSA PKINIT selectors,
-  `kpasswd_unprotected` and a `kpasswd_protocol` or `kpasswd_version` such as
-  `2`. A `krb4_*`, `v4_*` or `pkinit_*` selector loads when its value is empty
-  or false (`0`, `no`, `off`, ...) or, for `pkinit_key_exchange`, `dh`;
-  `kpasswd_protocol` and `kpasswd_version` load only for `protected`,
-  `rfc3244` or a supported version number, and an empty or false value is
-  rejected for them. v0.2.2 ignored all of them in the sections
-  it skipped, accepted `krb4_convert = true` and `pkinit_win2k = true` in
-  `[libdefaults]` and `[realms]`, and answered every `v4_*` key there with
-  `UnsupportedDirective`, even `v4_instance_resolve = false`. The path values
-  `krb4_config` and `krb4_realms` count as enabled whenever they are not empty
-  or false, so `krb4_config = /etc/krb.conf` is rejected too (v0.2.2 loaded
-  it). An empty `krb4_convert =` opens a pending subsection in `[appdefaults]`,
-  `[realms]`, `[plugins]` and `[capaths]`, where MIT rejects the line without a
-  following `{` in every section, and here it is a `Policy` error rather than a
-  structure error; in `[libdefaults]` and `[login]` it is the empty-scalar
-  extension and counts as disabled. Delete the `[login]` stanza and those keys:
-  the `krb5.conf` template of Debian `kerberos-configs` 2.3 and Ubuntu 16.04
-  ends with `[login] krb4_convert = true` and sets `krb4_config`, `krb4_realms`,
+  `auth_to_local_names`, including `[login]` and `[appdefaults]`, which MIT's
+  library does not read for it: `krb4_convert = true`, `krb4_get_tickets = true`
+  and any other `krb4_*` key, `v4_*` keys, `pkinit_win2k`, `pkinit_draft9`, the
+  RSA PKINIT selectors, `kpasswd_unprotected` and a `kpasswd_protocol` or
+  `kpasswd_version` such as `2`. A `krb4_*`, `v4_*`, `pkinit_*`,
+  `flag_rsa_protocol`, `kpasswd_unprotected` or `kpasswd_cleartext` selector
+  loads when its value is empty or false (`0`, `no`, `off`, ...);
+  `pkinit_key_exchange` and `pkinit_kex` are rejected for `rsa`, `rsa-only`,
+  `key-transport` and `dh-less` and load for every other value;
+  `kpasswd_protocol` and `kpasswd_version` load only for `protected`, `rfc3244`
+  or a supported version number, and an empty or false value is rejected for
+  them. v0.2.2 ignored all of them in the sections it skipped, accepted
+  `krb4_convert = true` and `pkinit_win2k = true` in `[libdefaults]` and
+  `[realms]`, and answered every `v4_*` key there with `UnsupportedDirective`,
+  even `v4_instance_resolve = false`. The path values `krb4_config` and
+  `krb4_realms` count as enabled whenever they are not empty or false, so
+  `krb4_config = /etc/krb.conf` is rejected too (v0.2.2 loaded it). An empty
+  `krb4_convert =` opens a pending subsection in `[appdefaults]`, `[realms]`,
+  `[plugins]` and `[capaths]`, where MIT rejects the line without a following
+  `{` in every section, and here it is a `Policy` error rather than a structure
+  error; in `[libdefaults]` and `[login]` it is the empty-scalar extension and
+  counts as disabled. Delete the `[login]` stanza and those keys: the
+  `krb5.conf` template of Debian `kerberos-configs` 2.3 and Ubuntu 16.04 ends
+  with `[login] krb4_convert = true` and sets `krb4_config`, `krb4_realms`,
   `v4_instance_resolve` and `v4_name_convert` in `[libdefaults]`; an unmodified
-  copy failed on v0.2.2 as well (`UnsupportedDirective`), and a copy cut down
-  to the `[login]` stanza loaded there and fails here (FU-DOC-R103).
+  copy failed on v0.2.2 as well (`UnsupportedDirective`), and a copy cut down to
+  the `[login]` stanza loaded there and fails here (FU-DOC-R103).
 - `no_addresses` and `noaddresses` now share first-occurrence precedence and
   final markers (the last occurrence of either won in v0.2.2) (FU-CFG-R01).
 - v0.2.2 had no quote handling: `default_realm = "EXAMPLE.COM"` kept the
