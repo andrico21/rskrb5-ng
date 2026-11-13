@@ -139,18 +139,27 @@ where
         .await
         .map_err(|error| Error::KpasswdOutcomeUnknown(Box::new(error)))?;
     match reply {
-        Err(Error::Io(error))
-            if matches!(
-                error.kind(),
-                io::ErrorKind::ConnectionRefused | io::ErrorKind::ConnectionReset
-            ) =>
-        {
-            Err(Error::Io(error))
-        }
+        Err(error) if is_udp_refusal(&error) => Err(error),
         other => other
             .and_then(non_empty_kdc_response)
             .map_err(|error| Error::KpasswdOutcomeUnknown(Box::new(error))),
     }
+}
+
+/// Whether a failed UDP reply wait is a definite refusal of the datagram.
+///
+/// Only an I/O error of kind `ConnectionRefused` or `ConnectionReset` proves
+/// that the request was not accepted; every other failure after the datagram
+/// was sent leaves the outcome unknown.
+fn is_udp_refusal(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::Io(io_error)
+            if matches!(
+                io_error.kind(),
+                io::ErrorKind::ConnectionRefused | io::ErrorKind::ConnectionReset
+            )
+    )
 }
 
 /// Endpoint attribution before any request can be delivered.
