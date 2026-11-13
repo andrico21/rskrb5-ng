@@ -290,7 +290,16 @@ AD-IF-RELEVANT or AD-MANDATORY-FOR-KDC wrappers with `Pac::AuthorizationDataDept
 counts nested payloads again at each decoded level, before decoding or PAC
 processing. Its signature is unchanged. It now also descends into
 AD-MANDATORY-FOR-KDC (type 8) wrappers, which v0.2.2 skipped, so a PAC inside
-one is returned (FU-SVC-11, FU-DOC-R94); the first PAC still ends the search.
+one is returned and a PAC entry in one that does not parse is a `Pac` error (a
+v0.2.2 lookup skipped the wrapper and went on to a later PAC) (FU-SVC-11,
+FU-DOC-R94, FU-DOC-R106); the first PAC still ends the search.
+An authorization-data entry that lacks `ad-type` or `ad-data` or carries an
+extra field fails DER decoding (RFC 4120 section 5.2.6 has no extension marker):
+`rasn::der::decode::<AuthorizationData>` returns an error, and the lookup
+returns `Pac::DerDecode` for such an entry in a nested AD-IF-RELEVANT payload.
+rasn
+0.28.13 under v0.2.2 dropped the entry, so v0.2.2 returned the PAC found
+beside it, or none (FU-DOC-R106).
 Service acceptance imposes these limits independently while validating all restrictions.
 
 ### HTTP replay-cache scope and binding limits
@@ -510,6 +519,14 @@ trip must use a stateful implementation. The keyless extraction helpers
 `NegTokenInit::krb5_ap_req` and `Token::krb5_ap_req` return
 `MechListMicRequiresState` for supplied MICs; use `accept_sec_context_header`
 for cryptographic verification. Decoding alone never authenticates negotiation.
+
+Both helpers return an error for two inputs from which v0.2.2 returned an
+AP-REQ (FU-DOC-R104). `NegTokenInit::krb5_ap_req` returns `MissingMechListMic`
+when the first offered mechanism is not Kerberos and no MIC is supplied, where
+v0.2.2 returned the AP-REQ of a later Kerberos entry. `Token::krb5_ap_req`
+(v0.2.2: `SpnegoToken`) on a `NegTokenResp` returns `NegotiationRequiresState`,
+or `UnsupportedMechanism` when `supportedMech` is not Kerberos, where v0.2.2
+returned the AP-REQ from the response token of a Kerberos `NegTokenResp`.
 
 ### S4U frontend keys (delegated-client-unbound-to-ticket-payload)
 
@@ -830,11 +847,13 @@ everywhere.
 `Pac::verify` and `Pac::verify_server_checksum` return `error::Pac::Crypto`
 with `Policy::RejectedFeature` (`SingleDes`, `WeakCrypto`, `Rc4Export`) for a key
 of enctype 1 to 6, 8 or 24, before the server checksum is examined (v0.2.2:
-`Ok(false)`, so `verify` returned `ServerChecksumVerificationFailed`). Code that
+`Ok(false)`, so `verify` returned `ServerChecksumVerificationFailed`, and
+`UnsupportedChecksumType` for an RC4 checksum). Code that
 treats `Ok(false)` as "not authentic" and every other error as an
 infrastructure failure must handle this case.
 `CredentialsInfo::decrypt_credential_data` does the same for such a key when the
-credential enctype matches it (v0.2.2: `UnsupportedEncryptionType`) (FU-DOC-R92).
+credential enctype matches it (v0.2.2: `UnsupportedEncryptionType`) (FU-DOC-R92,
+FU-DOC-R106).
 
 ```rust
 # fn main() {
@@ -1019,6 +1038,60 @@ Configuration now follows MIT profile semantics; the details are in
   interface is an unknown relation (a diagnostic in compatible mode,
   `UnknownRelation` in strict mode). Section headers stay case-insensitive, so
   `[Plugins]` is the plugins section.
+- **Other sections.** v0.2.2 read relations only in `[libdefaults]`, `[realms]`
+  and `[domain_realm]` and skipped every other section, so a file could hold
+  any text in `[logging]`, `[kdcdefaults]`, `[dbmodules]`, `[otp]`,
+  `[pkinit_anchors]` or an unknown section. These sections are parsed with the
+  same line grammar, and in both parse modes a line there that is not a
+  relation, brace or comment, such as `FILE:/x` under `[pkinit_anchors]`, is an
+  `InvalidLine` (MIT rejects a line without `=` too: `prof_parse.c:148-151`).
+  Three more inputs that loaded fail. A `[capaths]` realm value that is empty
+  (`B = ""`, or `B = *`, whose final marker leaves an empty token) is an
+  `InvalidLine`, like one that holds whitespace. A `[plugins]` `disable` or
+  `enable_only` value that is empty or holds ASCII whitespace (`disable = "a
+  b"`, `disable = pkinit encrypted_timestamp`, `disable = ""`) is an
+  `InvalidLine`: MIT compares each value with `strcmp` as one module name
+  (`plugin.c:179-186`), loads the file and disables nothing for such a value, so
+  this crate refuses what looks like a list instead of ignoring it silently.
+  Write one module name per `disable` or `enable_only` line; a comma form such
+  as `disable = a,b` is one name, as in MIT. A `module` relation in `[plugins]`
+  or any other section is `UnsupportedDynamicModule` (`localauth = { module =
+  sssd:/usr/lib64/sssd/modules/x.so }`), where a v0.2.2 file with that stanza
+  loaded (FU-DOC-R102).
+- **Removed-protocol selectors.** An enabled selector of a removed protocol is
+  a `Policy::RejectedFeature` in every section but `[domain_realm]`, not only
+  where this crate reads it: `krb4_convert = true`, `krb4_get_tickets = true`
+  and any other `krb4_*` key, `v4_*` keys, `pkinit_win2k`, `pkinit_draft9`, the
+  RSA PKINIT selectors, `kpasswd_unprotected` and a `kpasswd_protocol` or
+  `kpasswd_version` such as `2` fail in `[login]`, `[appdefaults]`, `[logging]`
+  and an unknown section as they do in `[libdefaults]` and `[realms]`. A
+  disabled value loads (`false`, `0`, an empty value, `protected`, `rfc3244`,
+  `pkinit_key_exchange = dh`). v0.2.2 ignored these lines in the sections it
+  skipped, accepted `krb4_convert = true` and `pkinit_win2k = true` in
+  `[libdefaults]` and `[realms]`, and answered every `v4_*` key there with
+  `UnsupportedDirective`, `v4_instance_resolve = false` included (0.3.0 loads a
+  disabled `v4_*` value). Neither MIT's library nor this crate reads `[login]`;
+  the removed `login.krb5` application read `krb4_convert` and
+  `krb4_get_tickets` there until MIT 1.6. The path values `krb4_config` and
+  `krb4_realms` are not selectors, but the check treats every `krb4_*` value
+  that is not empty or false as enabled, so `krb4_config = /etc/krb.conf` is
+  rejected too, where v0.2.2 loaded it in `[libdefaults]`. An empty
+  `krb4_convert =` opens a pending subsection in `[appdefaults]`, `[realms]`,
+  `[plugins]` and `[capaths]`, as in MIT, which rejects it in every section
+  unless a `{` line follows (`prof_parse.c:172-176,329-334`); the selector
+  check sees the pending brace first, so the error is `Policy`, not a structure
+  error. In `[libdefaults]` and `[login]` the empty value is the empty-scalar
+  extension and counts as disabled. Real files are affected: the
+  `kerberos-configs` 2.3 template of Debian (and Ubuntu 16.04) ends with
+  `[login]`, `krb4_convert = true` and `krb4_get_tickets = false` and sets
+  `krb4_config`, `krb4_realms`, `v4_instance_resolve` and `v4_name_convert` in
+  `[libdefaults]`; its 2.5 release (October 2016, Debian bug 741051) removed
+  the outdated entries, but an `/etc/krb5.conf` generated earlier keeps them. An
+  unmodified copy failed on v0.2.2 as well, with `UnsupportedDirective` from
+  `v4_name_convert`; a copy trimmed to the `[login]` stanza loaded there and is
+  rejected here. Delete the `[login]` stanza and the `krb4_config`,
+  `krb4_realms`, `v4_instance_resolve` and `v4_name_convert` lines
+  (FU-DOC-R103).
 - **`module`.** `module` directives and relations fail with
   `error::Config::UnsupportedDynamicModule`; no code is loaded.
 - `forwardable` and `proxiable` set the request bits, `default_realm` is the
@@ -1102,7 +1175,14 @@ fn insert(client: &mut Tokio, session: TgsRepSession) -> Result<(), Client> {
 - `spnego::MicToken::verify` and `WrapToken::verify` return
   `Result<(), error::Spnego>` instead of `Result<bool, _>`, which was never
   `Ok(false)`: replace `assert!(token.verify(key, usage)?)` with
-  `token.verify(key, usage)?`.
+  `token.verify(key, usage)?`. The error order changed too (FU-DOC-R105): a
+  token without a checksum is `MissingGssChecksum` before the key is looked at,
+  a token with a checksum and a key of the wrong length is
+  `GssChecksumMismatch`, and a key of enctype 1 to 6, 8 or 24 is
+  `Spnego::Crypto` wrapping `Policy::RejectedFeature`, also from
+  `set_checksum` and `WrapToken::encrypt_payload_with_confounder`; v0.2.2
+  returned `Spnego::Crypto` (invalid key length) for the first two and
+  `UnsupportedEtype` for the third.
 - New variants: `error::Spnego::{InvalidFieldOrder, NonminimalLength}`,
   `error::Service::PacClientMismatch`, `error::Kadmin::UnauthenticatedRejection`
   and those named in the sections above.
@@ -1678,8 +1758,11 @@ section 4.2.1 and MS-SPNG 3.1.5.5 say the acceptor MUST ignore `reqFlags`, so
 `NegTokenInit::decode` accepts any contents (empty, padded, oversized, not
 DER-minimal), keeps them as received in `req_flags()` and decodes the other
 fields as before. The field must still wrap one well-formed BIT STRING TLV (tag
-`0x03`, a definite DER length that fits, nothing after it). v0.2.2 accepted any
-bytes in both directions. Encoding a token whose decoded `reqFlags` is not
+`0x03`, a definite DER length in minimal form that fits, nothing after it; a
+long-form length there is `NonminimalLength`, as everywhere in SPNEGO DER, where
+v0.2.2 accepted it). v0.2.2 accepted any bytes in both directions.
+`set_req_flags` stores a value as given and `encode` refuses one that breaks the
+rule (FU-DOC-R104). Encoding a token whose decoded `reqFlags` is not
 canonical fails with `Spnego::InvalidReqFlags`; clear it with
 `set_req_flags(None)` first.
 

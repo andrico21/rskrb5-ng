@@ -34,7 +34,9 @@ returns only the first value for scalar lookup;
 [155–194](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_get.c#L155-L194)
 collects all values for multi-valued lookup. Boolean and integer getters use
 the scalar lookup. A whitespace/comma-separated list inside one value is **not**
-a multi-valued profile relation.
+a multi-valued profile relation. This crate refuses a `[plugins]` `disable` or
+`enable_only` value that is empty or holds ASCII whitespace instead of keeping
+it as one name (see the divergence list).
 
 The table below groups representative lookups; the generated catalogue lists
 every typed relation and its current consumer or deferred classification.
@@ -161,8 +163,32 @@ value are value data.
   Canonical active-chain cycles use `IncludeCycle`; re-reading a completed
   source is not a cycle. An unclosed subsection is an error in every section,
   unknown ones included, and always reports `InvalidRealmsSection`.
+- A `[plugins]` `disable` or `enable_only` value that is empty or holds ASCII
+  whitespace (`"a b"`, `""`) is an `InvalidLine`; MIT compares each value with
+  `strcmp` as one module name
+  ([plugin.c:179–186](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/krb/plugin.c#L179-L186)),
+  loads the file and disables nothing for such a value. A comma form is one
+  name, as in MIT. `capath_and_plugin_names_use_c_locale` in
+  `tests/config/value_whitespace_sites.rs` pins the rule; the `[capaths]` realm
+  tokens follow it, and a token emptied by a final marker (`B = *`) is an
+  `InvalidLine` as well. v0.2.2 skipped both sections.
+- v0.2.2 read relations only in `[libdefaults]`, `[realms]` and
+  `[domain_realm]`; every other section is parsed, so a line there that is not
+  a relation, brace or comment is an `InvalidLine` (MIT rejects a line without
+  `=` too,
+  [prof_parse.c:148–151](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L148-L151)).
 - Permanent protocol rejection checks run before discarded
-  relations can hide forbidden protocol selections.
+  relations can hide forbidden protocol selections. They cover every relation
+  of every section except `[domain_realm]` and the `auth_to_local_names`
+  entries, `[login]` and `[appdefaults]` included, although MIT's library reads
+  no `[login]` section (the removed `login.krb5` application did until MIT
+  1.6); an enabled `krb4_*` key counts whatever its value is (`krb4_config` and
+  `krb4_realms` are paths and are rejected as well), a disabled value
+  (`false`, `0`, empty, `protected`, `rfc3244`) loads. An empty value opens a
+  pending subsection in `[realms]`, `[appdefaults]`, `[plugins]` and
+  `[capaths]`, as in MIT, so `krb4_convert =` there is a `Policy` error where
+  MIT reports a missing `{`; in `[libdefaults]` and `[login]` it is the
+  empty-scalar extension and counts as disabled.
 
 ## Independent expected values
 

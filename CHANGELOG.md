@@ -381,13 +381,21 @@ PAC and NDR:
 - `Pac::verify` and `Pac::verify_server_checksum` return `error::Pac::Crypto`
   with `Policy::RejectedFeature` (`SingleDes`, `WeakCrypto`, `Rc4Export`) for a
   key of enctype 1 to 6, 8 or 24, before the checksum is examined (v0.2.2
-  returned `Ok(false)`, so `verify` gave `ServerChecksumVerificationFailed`).
+  returned `Ok(false)`, so `verify` gave `ServerChecksumVerificationFailed`, and
+  `UnsupportedChecksumType` for an RC4 checksum).
   `CredentialsInfo::decrypt_credential_data` does the same for such a key when
   the credential enctype matches it (v0.2.2: `UnsupportedEncryptionType`)
-  (FU-DOC-R92).
+  (FU-DOC-R92, FU-DOC-R106).
 - `pac::find_pac_in_authorization_data` also descends into AD-MANDATORY-FOR-KDC
-  (type 8) wrappers, which v0.2.2 skipped, so a PAC inside one is returned; the
-  first PAC still ends the search (FU-DOC-R94).
+  (type 8) wrappers, which v0.2.2 skipped, so a PAC inside one is returned and a
+  PAC entry in one that does not parse is a `Pac` error (v0.2.2 went on to a
+  later PAC); the first PAC still ends the search (FU-DOC-R94, FU-DOC-R106).
+- An authorization-data entry that lacks `ad-type` or `ad-data` or carries an
+  extra field fails DER decoding: `rasn::der::decode::<AuthorizationData>`
+  returns an error, and `pac::find_pac_in_authorization_data` returns
+  `Pac::DerDecode` for such an entry in a nested AD-IF-RELEVANT payload. rasn
+  0.28.13 under v0.2.2 dropped the entry, so v0.2.2 returned the PAC found
+  beside it, or none (FU-DOC-R106).
 
 Client AS/TGS exchanges, renewal and caches:
 
@@ -579,8 +587,12 @@ Release workflow, CI docs and fixture scripts:
 - `NegTokenInit::decode` keeps the `reqFlags` BIT STRING contents as received
   and no longer rejects the token for them; only encoding validates them
   (`Spnego::InvalidReqFlags`). v0.2.2 accepted any `reqFlags` bytes on decode
-  and on encode. The field must still wrap one well-formed BIT STRING TLV (tag
-  `0x03`, a definite DER length that fits, nothing after it); an empty, padded,
+  and on encode. `set_req_flags` stores a value as given and `encode` refuses
+  one that breaks the named-bit rule (a 300-byte zero value was serialised in
+  v0.2.2). The field must still wrap one well-formed BIT STRING TLV (tag
+  `0x03`, a definite DER length in minimal form that fits, nothing after it; a
+  long-form length that v0.2.2 accepted there is `NonminimalLength`, as
+  everywhere in SPNEGO DER); an empty, padded,
   oversized or non-DER-minimal value is accepted, as RFC 4178 section 4.2.1 and
   MS-SPNG 3.1.5.5 say the acceptor MUST ignore `reqFlags`. `req_flags()`
   returns the bytes as received, and encoding such a token again fails with
@@ -648,6 +660,21 @@ Security fail-closed parsing and verification:
   encryption fails (FU-SPN-R02).
 - `MicToken::verify` and `WrapToken::verify` return `Result<(), Spnego>`
   instead of a `bool` that was never `false` (FU-SPN-R04).
+- `MicToken::set_checksum`, `MicToken::verify`, `WrapToken::set_checksum`,
+  `WrapToken::verify` and `WrapToken::encrypt_payload_with_confounder` fail with
+  `Spnego::Crypto` wrapping `Policy::RejectedFeature` for a key of enctype 1 to
+  6, 8 or 24, where v0.2.2 returned `Spnego::UnsupportedEtype`. `verify` on a
+  token that carries no checksum returns `Spnego::MissingGssChecksum` before it
+  looks at the key, and a token with a checksum and a key of the wrong length is
+  `GssChecksumMismatch`; v0.2.2 computed the checksum first and returned
+  `Spnego::Crypto` (invalid key length) in both cases (FU-DOC-R105).
+- `NegTokenInit::krb5_ap_req` returns `Spnego::MissingMechListMic` when the
+  first offered mechanism is not Kerberos and no mechListMIC is supplied, where
+  v0.2.2 returned the AP-REQ of a later Kerberos entry. `Token::krb5_ap_req`
+  (v0.2.2: `SpnegoToken`) on a `NegTokenResp` returns
+  `Spnego::NegotiationRequiresState`, or `Spnego::UnsupportedMechanism` when
+  `supportedMech` is not Kerberos, where v0.2.2 returned the AP-REQ carried in
+  the response token (FU-DOC-R104).
 - `Spnego::Client` keeps the typed `Box<Client>` cause instead of a string
   (FU-SPN-R03).
 - Mutual authentication requested through a combined context-flag mask needs a
@@ -1054,6 +1081,44 @@ Configuration:
   case. Section headers stay case-insensitive, as in v0.2.2: `[Plugins]` is the
   plugins section, and `[Plugins]` with `clpreauth = { disable =
   encrypted_timestamp }` is still `NotYetEffective` (FU-CFG-R36).
+- v0.2.2 read relations only in `[libdefaults]`, `[realms]` and
+  `[domain_realm]` and skipped every other section, so these inputs loaded and
+  are errors in both parse modes in 0.3.0. A line that is not a relation, brace
+  or comment is an `InvalidLine` in any other section, `[appdefaults]`,
+  `[logging]`, `[kdcdefaults]`, `[dbmodules]`, `[otp]` and `[pkinit_anchors]`
+  included (`FILE:/x` under `[pkinit_anchors]`; MIT rejects a line without `=`
+  too). A `[capaths]` realm value that is empty (`B = ""` or `B = *`) is an
+  `InvalidLine`, like one that holds whitespace. A `[plugins]` `disable` or
+  `enable_only` value that is empty or holds ASCII whitespace (`disable = "a
+  b"`, `disable = pkinit encrypted_timestamp`, `disable = ""`) is an
+  `InvalidLine`, where MIT keeps it as one module name that matches nothing and
+  loads the file; a comma form such as `disable = a,b` is one name, as in MIT.
+  A `module` relation in `[plugins]` or any other section is
+  `UnsupportedDynamicModule` (`localauth = { module =
+  sssd:/usr/lib64/sssd/modules/x.so }`) (FU-DOC-R102).
+- An enabled removed-protocol selector is a `Policy::RejectedFeature` in every
+  section but `[domain_realm]`, including `[login]` and `[appdefaults]`, which
+  MIT's library does not read for it: `krb4_convert = true`,
+  `krb4_get_tickets = true` and any other `krb4_*` key, `v4_*` keys,
+  `pkinit_win2k`, `pkinit_draft9`, the RSA PKINIT selectors,
+  `kpasswd_unprotected` and a `kpasswd_protocol` or `kpasswd_version` such as
+  `2`. A disabled value (`false`, `0`, an empty value, `protected`, `rfc3244`,
+  `pkinit_key_exchange = dh`) loads. v0.2.2 ignored all of them in the sections
+  it skipped, accepted `krb4_convert = true` and `pkinit_win2k = true` in
+  `[libdefaults]` and `[realms]`, and answered every `v4_*` key there with
+  `UnsupportedDirective`, even `v4_instance_resolve = false`. The path values
+  `krb4_config` and `krb4_realms` count as enabled whenever they are not empty
+  or false, so `krb4_config = /etc/krb.conf` is rejected too (v0.2.2 loaded
+  it). An empty `krb4_convert =` opens a pending subsection in `[appdefaults]`,
+  `[realms]`, `[plugins]` and `[capaths]`, where MIT rejects the line without a
+  following `{` in every section, and here it is a `Policy` error rather than a
+  structure error; in `[libdefaults]` and `[login]` it is the empty-scalar
+  extension and counts as disabled. Delete the `[login]` stanza and those keys:
+  the `krb5.conf` template of Debian `kerberos-configs` 2.3 and Ubuntu 16.04
+  ends with `[login] krb4_convert = true` and sets `krb4_config`, `krb4_realms`,
+  `v4_instance_resolve` and `v4_name_convert` in `[libdefaults]`; an unmodified
+  copy failed on v0.2.2 as well (`UnsupportedDirective`), and a copy cut down
+  to the `[login]` stanza loaded there and fails here (FU-DOC-R103).
 - `no_addresses` and `noaddresses` now share first-occurrence precedence and
   final markers (the last occurrence of either won in v0.2.2) (FU-CFG-R01).
 - v0.2.2 had no quote handling: `default_realm = "EXAMPLE.COM"` kept the
