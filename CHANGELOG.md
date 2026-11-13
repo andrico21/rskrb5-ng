@@ -838,11 +838,59 @@ Configuration:
   a BOM before the first header). A padded `[ libdefaults ]` is no longer
   trimmed: it names a different, unknown section (a diagnostic in
   `ParseMode::Compatible`, an error in `ParseMode::Strict`) (FU-DOC-R38).
+  After `]` a header takes blanks, one `*` directly after the bracket and a
+  comment after blanks, so `[libdefaults] *` and `[libdefaults]#c` are an
+  `InvalidLine` (v0.2.2 accepted them), as is a file with bare CR line ends
+  (`[libdefaults]\r default_realm = X\r`, v0.2.2: `default_realm` empty). MIT
+  also ignores lines before the first header, so it too loses the first section
+  behind a BOM without a message; this crate rejects that content instead
+  (FU-DOC-R63).
+- Subsections follow MIT's rule that `{` opens one only as the whole value
+  (optionally followed by a comment after blanks): `A = {}` and
+  `A = { kdc = k }` define no realm (v0.2.2: an empty realm `A`), `A = {#` is
+  an `InvalidLine` (v0.2.2: realm `A`), and so are `} junk` and `A B = {`. An
+  unclosed subsection at the end of a file or before the next header is an
+  `InvalidRealmsSection` in every section (v0.2.2: accepted, `default_realm = {`
+  was the value `{`); MIT accepts it at the end of a file. A `}` at the end of
+  a value line is text, so `kdc = k }` leaves the realm open (v0.2.2 closed
+  it). Unknown sections are parsed: `[foo]` followed by `not a relation` is an
+  `InvalidLine` (v0.2.2 skipped the section). A plain `A = x` line in
+  `[realms]` is ignored (v0.2.2: `InvalidRealmsSection`), and a brace
+  subsection in `[libdefaults]` or `[domain_realm]` is accepted and sets
+  nothing (v0.2.2: `InvalidLine`) (FU-DOC-R64).
+- A relation with an empty name (` = X`, `* = A`, a realm line ` = {`) is an
+  `InvalidLine`; v0.2.2 ignored ` = X`, stored `*` as a literal
+  `[domain_realm]` key and created a realm with an empty name for ` = {`. MIT
+  accepts `* = A` as a node with an empty name; this crate rejects it because
+  its data model cannot represent one (FU-DOC-R65).
+- A realm defined twice merges its `kdc` lists in file order, within one
+  `[realms]` section and across two. v0.2.2 kept two entries within a section
+  (`Config::realm` returned the first) and let a later section replace the
+  realms of an earlier one (FU-DOC-R66).
+- A trailing `*` on an unquoted value marks any relation final and is dropped
+  from the value: `default_realm = X*` is `X` and `forwardable = true*` is
+  `true`. v0.2.2 honoured `value*` only in the `kdc`, `admin_server`,
+  `master_kdc` and `kpasswd_server` lists (`default_realm` was `X*`,
+  `forwardable = true*` was `InvalidBoolean`); `auth_to_local` and
+  `pkinit_cert_match` keep a trailing `*` (FU-DOC-R67).
+- A value that opens a double quote and never closes it is an `InvalidLine`
+  (v0.2.2 kept the quote: `default_realm = "X` was `"X`) (FU-DOC-R68).
+- `kdc_default_options` is a signed 32-bit decimal, or hex after `0x` or `0X`:
+  `-1`, `2147483647` and `0X1F` are accepted and `abc`, `1e3` and `0b11` are an
+  `InvalidInteger`. v0.2.2 read bare text as hex digits (`010` was 16, `abc`
+  was 0xabc) and rejected `-1`, `2147483647` and `0X1F` (FU-DOC-R69).
+- `clockskew` uses the checked MIT interval parser of the ticket and renewable
+  lifetimes: `1h1h`, `1 d`, `+300`, `1m1h` and values of 2^31 seconds or more
+  are an `InvalidDuration` (v0.2.2 accepted them), while a signed component
+  after the first is accepted when the total is nonnegative (`1h-1m` is 3540 s;
+  v0.2.2: `InvalidDuration`) (FU-DOC-R71).
 - `LibDefaults::preferred_preauth_types` defaults to `[17, 16]` (v0.2.2:
   `[17, 16, 15, 14]`; the draft-9 PKINIT IDs 14 and 15 are permanently
-  rejected). Boolean relations also accept `on`, `off` and `nil` like MIT; v0.2.2
-  accepted only `1`, `t`, `true`, `y`, `yes` and `0`, `f`, `false`, `n`, `no`,
-  and reported `InvalidBoolean` for any other spelling (FU-DOC-R40).
+  rejected, so an explicit value drops them: `preferred_preauth_types = 14` is
+  `[]`, v0.2.2: `[14]`). Boolean relations also accept `on`, `off` and `nil`
+  like MIT; v0.2.2 accepted only `1`, `t`, `true`, `y`, `yes` and `0`, `f`,
+  `false`, `n`, `no`, and reported `InvalidBoolean` for any other spelling
+  (FU-DOC-R40, FU-DOC-R70).
 - The first value of a repeated scalar wins (it was the last), across files,
   includes, lists and `[domain_realm]`. `forwardable` and `proxiable` set the
   request bits, `default_realm` is the host fallback, a bare
