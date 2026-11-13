@@ -1301,7 +1301,7 @@ impl NegState {
 pub struct NegTokenInit {
     /// Offered mechanism OIDs.
     mech_types: Vec<ObjectIdentifier>,
-    /// Optional DER BIT STRING contents, including the unused-bit count byte.
+    /// Optional BIT STRING contents, including the unused-bit count byte, exactly as decoded or set.
     req_flags: Option<Vec<u8>>,
     /// Optional mechanism token bytes.
     mech_token: Option<Zeroizing<Vec<u8>>>,
@@ -1311,6 +1311,9 @@ pub struct NegTokenInit {
 
 impl NegTokenInit {
     /// Replace or clear request flags; canonical `ContextFlags` validation occurs during encoding.
+    ///
+    /// [`NegTokenInit::encode`] fails with [`Error::InvalidReqFlags`] for a value that is not a
+    /// canonical named-bit DER BIT STRING of at most 32 bits.
     #[inline]
     pub fn set_req_flags(&mut self, value: Option<Vec<u8>>) {
         self.req_flags = value;
@@ -1332,7 +1335,11 @@ impl NegTokenInit {
     pub fn mech_types(&self) -> &[ObjectIdentifier] {
         &self.mech_types
     }
-    /// Borrow request flags.
+    /// Borrow request flags exactly as set or received.
+    ///
+    /// [`NegTokenInit::decode`] keeps the BIT STRING contents as received without validating them
+    /// (RFC 4178 section 4.2.1: the acceptor MUST ignore `reqFlags`), so a decoded value can be
+    /// non-canonical; [`NegTokenInit::encode`] rejects such a value with [`Error::InvalidReqFlags`].
     #[inline]
     #[must_use]
     pub fn req_flags(&self) -> Option<&[u8]> {
@@ -1387,8 +1394,10 @@ impl NegTokenInit {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::MissingMechTypes`] when no mechanism is offered and [`Error::InvalidOid`]
-    /// for an invalid mechanism OID.
+    /// Returns [`Error::MissingMechTypes`] when no mechanism is offered, [`Error::InvalidOid`]
+    /// for an invalid mechanism OID, and [`Error::InvalidReqFlags`] when the request flags are not
+    /// a canonical named-bit DER BIT STRING of at most 32 bits. Encoding is strict even for a value
+    /// that [`NegTokenInit::decode`] accepted; it never canonicalises the bytes.
     #[inline]
     pub fn encode(&self) -> Result<Vec<u8>, Error> {
         if self.mech_types.is_empty() {
@@ -1456,6 +1465,10 @@ impl NegTokenInit {
     ///
     /// Returns the errors of [`NegotiationToken::decode`], and [`Error::WrongNegotiationToken`]
     /// when the token is a `NegTokenResp`.
+    ///
+    /// The optional `reqFlags` field must still wrap one well-formed BIT STRING TLV (tag `0x03`, a
+    /// definite DER length that fits, nothing after it), but its contents are kept as received and
+    /// never validated: the acceptor MUST ignore `reqFlags` (RFC 4178 section 4.2.1).
     #[inline]
     pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
         match NegotiationToken::decode(bytes)? {
@@ -2717,7 +2730,9 @@ fn rotate_left(bytes: &[u8], count: usize) -> Vec<u8> {
 
 use crate::error::Spnego as Error;
 
-/// Enforce RFC 4178 section 4.2.1 `ContextFlags` size and named-bit DER at both boundaries.
+/// Enforce RFC 4178 section 4.2.1 `ContextFlags` size and named-bit DER on the encode side.
+///
+/// Decoding does not call this: the acceptor MUST ignore `reqFlags`, so received bytes are kept as is.
 ///
 /// # Errors
 /// Returns `InvalidReqFlags` for invalid padding, more than 32 bits or trailing zero bits.
@@ -2891,7 +2906,7 @@ fn decode_negotiation_choice(choice: Tlv<'_>) -> Result<NegotiationToken, Error>
 /// [`Error::IndefiniteLength`], [`Error::LengthExceedsInput`], [`Error::TrailingData`]) for
 /// malformed input, [`Error::UnexpectedTag`] for an unknown field, [`Error::InvalidOidEncoding`] or
 /// [`Error::InvalidOid`] for a malformed mechanism OID, and [`Error::MissingMechTypes`] when the
-/// mechanism list is absent or empty.
+/// mechanism list is absent or empty. The `reqFlags` BIT STRING contents are not validated.
 fn decode_neg_token_init(bytes: &[u8]) -> Result<NegTokenInit, Error> {
     let sequence = read_single_tlv(bytes, TAG_SEQUENCE)?;
     let mut fields = DerReader::new(sequence.value());
@@ -2948,9 +2963,6 @@ fn decode_neg_token_init(bytes: &[u8]) -> Result<NegTokenInit, Error> {
         }
     }
 
-    if let Some(flags) = &req_flags {
-        validate_req_flags(flags)?;
-    }
     let mech_types = offered_mechs
         .filter(|oids| !oids.is_empty())
         .ok_or(Error::MissingMechTypes)?;

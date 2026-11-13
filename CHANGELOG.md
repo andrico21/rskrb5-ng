@@ -573,8 +573,18 @@ Release workflow, CI docs and fixture scripts:
   request flags; encoding validates the BIT STRING (FU-SPN-R18).
 
 - SPNEGO request flags reject more than 32 significant bits and nonminimal
-  named-bit DER at encoding and decoding; canonical empty and valid sets retain
-  their exact bytes (FU-SPN-R19).
+  named-bit DER at encoding; canonical empty and valid sets retain their exact
+  bytes (FU-SPN-R19). Decoding does not apply this rule (FU-SPN-R20).
+
+- `NegTokenInit::decode` keeps the `reqFlags` BIT STRING contents as received
+  and no longer rejects the token for them; only encoding validates them
+  (`Spnego::InvalidReqFlags`). v0.2.2 accepted any `reqFlags` bytes on decode
+  and on encode. The field must still wrap one well-formed BIT STRING TLV (tag
+  `0x03`, a definite DER length that fits, nothing after it); an empty, padded,
+  oversized or non-DER-minimal value is accepted, as RFC 4178 section 4.2.1 and
+  MS-SPNG 3.1.5.5 say the acceptor MUST ignore `reqFlags`. `req_flags()`
+  returns the bytes as received, and encoding such a token again fails with
+  `Spnego::InvalidReqFlags` instead of canonicalising them (FU-SPN-R20).
 
 - Local principals named `include` or `includedir` retain their scalar mapping
   values with ordinary assignment spacing and one WP-17 diagnostic; real include
@@ -769,8 +779,9 @@ Security fail-closed parsing and verification:
 - PAC NDR arrays validate aligned descriptor/element extent before reserving
   from peer counts, preventing large allocations for truncated inputs
   (FU-PAC-R05).
-- SPNEGO reqFlags encode/decode rejects malformed DER BIT STRING contents with
-  the new `Spnego::InvalidReqFlags` error (FU-SPN-R08).
+- SPNEGO reqFlags encoding rejects malformed DER BIT STRING contents with the
+  new `Spnego::InvalidReqFlags` error (FU-SPN-R08); decoding keeps the received
+  bytes (FU-SPN-R20).
 - `with_ap_rep(false)` no longer suppresses mandatory SPNEGO completion: a
   supplied valid mechListMIC receives its reciprocal MIC and AP-REP (FU-SPN-R09).
 - PAC UTF-16 strings decode directly from the byte slice, bounding the

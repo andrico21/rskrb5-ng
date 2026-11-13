@@ -2046,7 +2046,9 @@ pub enum Spnego {
     /// Known SPNEGO fields were repeated or appeared out of sequence.
     #[error("duplicate or reordered SPNEGO field")]
     InvalidFieldOrder,
-    /// SPNEGO reqFlags has invalid DER BIT STRING contents.
+    /// SPNEGO reqFlags to encode is not a canonical named-bit DER BIT STRING of at most 32 bits.
+    ///
+    /// Only encoding returns this; decoding keeps received `reqFlags` bytes unvalidated.
     #[error("invalid SPNEGO reqFlags BIT STRING")]
     InvalidReqFlags,
     /// DER length exceeds the remaining input.

@@ -2,7 +2,19 @@
 
 use super::{Error, NegTokenInit, NegTokenResp, der::encode_tlv};
 
-/// Both codec boundaries enforce BIT STRING unused-bit and padding rules.
+/// A `NegTokenInit` whose `[1]` field wraps `reqflags_tlv` (already framed), with the other fields set.
+fn init_with_req_flags_tlv(reqflags_tlv: &[u8]) -> Vec<u8> {
+    let fields = [
+        vec![0xa0, 5, 0x30, 3, 6, 1, 0x2a],
+        encode_tlv(0xa1, reqflags_tlv),
+        encode_tlv(0xa2, &encode_tlv(4, b"mech-token")),
+        encode_tlv(0xa3, &encode_tlv(4, b"mech-mic")),
+    ]
+    .concat();
+    encode_tlv(0xa0, &encode_tlv(0x30, &fields))
+}
+
+/// Encoding enforces BIT STRING unused-bit and padding rules; decoding keeps the bytes as received.
 #[test]
 fn req_flags_reject_malformed_bit_strings() -> Result<(), Error> {
     for (contents, valid) in [
@@ -13,16 +25,8 @@ fn req_flags_reject_malformed_bit_strings() -> Result<(), Error> {
         (vec![0], true),
         (vec![7, 0x80], true),
     ] {
-        let fields = [
-            vec![0xa0, 5, 0x30, 3, 6, 1, 0x2a],
-            encode_tlv(0xa1, &encode_tlv(3, &contents)),
-        ]
-        .concat();
-        let decoded = NegTokenInit::decode(&encode_tlv(0xa0, &encode_tlv(0x30, &fields)));
-        assert_eq!(decoded.is_ok(), valid);
-        if valid {
-            drop(decoded?);
-        }
+        let decoded = NegTokenInit::decode(&init_with_req_flags_tlv(&encode_tlv(3, &contents)))?;
+        assert_eq!(decoded.req_flags(), Some(contents.as_slice()));
         let mut token = NegTokenInit::krb5(vec![1]);
         token.set_req_flags(Some(contents));
         assert_eq!(token.encode().is_ok(), valid);
@@ -50,30 +54,48 @@ fn req_flags_encoding_rejects_noncanonical_named_bits() -> Result<(), Error> {
     (outcomes == [true; 5]).ok_or(Error::InvalidReqFlags)
 }
 
-/// Independently framed input enforces the same `ContextFlags` size and DER rules.
+/// Decoding keeps non-canonical and oversized `reqFlags` bytes (RFC 4178 4.2.1: ignored by the acceptor).
+///
+/// The other fields are unchanged, and re-encoding such a value returns the strict encode error.
 #[test]
-fn req_flags_decoding_rejects_noncanonical_named_bits() -> Result<(), Error> {
-    let outcomes: Vec<bool> = [
+fn req_flags_decoding_keeps_noncanonical_named_bits() -> Result<(), Error> {
+    for contents in [
         vec![7, 0, 0, 0, 0, 0x80],
         vec![0, 0x80],
         vec![1, 0x80],
+        vec![1, 0x04],
+        vec![1, 0x00],
         vec![0, 0],
+        vec![7, 0x02],
         vec![7, 0x80, 0],
-    ]
-    .into_iter()
-    .map(|contents| {
-        let fields = [
-            vec![0xa0, 5, 0x30, 3, 6, 1, 0x2a],
-            encode_tlv(0xa1, &encode_tlv(3, &contents)),
-        ]
-        .concat();
-        matches!(
-            NegTokenInit::decode(&encode_tlv(0xa0, &encode_tlv(0x30, &fields))),
-            Err(Error::InvalidReqFlags)
-        )
-    })
-    .collect();
-    (outcomes == [true; 5]).ok_or(Error::InvalidReqFlags)
+    ] {
+        let decoded = NegTokenInit::decode(&init_with_req_flags_tlv(&encode_tlv(3, &contents)))?;
+        assert_eq!(decoded.req_flags(), Some(contents.as_slice()));
+        assert_eq!(decoded.mech_types().len(), 1);
+        assert_eq!(decoded.mech_token(), Some(b"mech-token".as_slice()));
+        assert_eq!(decoded.mech_list_mic(), Some(b"mech-mic".as_slice()));
+        assert!(matches!(decoded.encode(), Err(Error::InvalidReqFlags)));
+    }
+    Ok(())
+}
+
+/// Decoding still requires the `[1]` field to wrap exactly one well-formed BIT STRING TLV.
+#[test]
+fn req_flags_decoding_requires_bit_string_framing() -> Result<(), Error> {
+    for reqflags_tlv in [
+        vec![3, 5, 0, 0x80],
+        vec![3, 2, 0, 0x80, 0],
+        vec![4, 2, 0, 0x80],
+        vec![0x23, 2, 0, 0x80],
+        vec![3, 0x80],
+        vec![],
+    ] {
+        NegTokenInit::decode(&init_with_req_flags_tlv(&reqflags_tlv))
+            .err()
+            .ok_or(Error::InvalidReqFlags)
+            .map(drop)?;
+    }
+    Ok(())
 }
 
 /// Canonical empty, one-bit, seven-bit and 32-bit sets retain their exact bytes.
