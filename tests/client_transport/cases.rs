@@ -52,6 +52,7 @@ mod tests {
     mod dns;
     /// Real-key kpasswd request and response fixtures.
     mod kpasswd_context;
+    mod kpasswd_order;
     /// Checked password result regressions.
     mod password_results;
     /// Unsigned outcomes through both public checked helpers.
@@ -129,7 +130,7 @@ mod tests {
         })
     }
 
-    /// Auto password exchanges never resend a delivered UDP mutation over TCP.
+    /// An explicit UDP password exchange never resends a delivered mutation over TCP.
     #[test]
     fn kpasswd_udp_timeout_does_not_retry_tcp() -> Result<(), TestError> {
         runtime()?.block_on(async {
@@ -153,7 +154,7 @@ mod tests {
                     &tcp,
                     transport.send_to_kpasswd_realm(
                         &config,
-                        KdcProtocol::Auto,
+                        KdcProtocol::Udp,
                         "TEST.GOKRB5",
                         b"mutation",
                     ),
@@ -1075,32 +1076,33 @@ mod tests {
         })
     }
 
-    /// Pins that an Auto kpasswd send goes straight to TCP under `udp_preference_limit = 1`.
+    /// Pins that an Auto kpasswd send goes to TCP whatever `udp_preference_limit` says.
     #[test]
-    fn tokio_transport_auto_kpasswd_honors_tcp_only_udp_preference_limit() -> Result<(), TestError>
-    {
+    fn tokio_transport_auto_kpasswd_ignores_udp_preference_limit() -> Result<(), TestError> {
         runtime()?.block_on(async {
-            let listener = TcpListener::bind("127.0.0.1:0").await?;
-            let addr = listener.local_addr()?;
-            let config = config_with_kpasswd_servers([addr.to_string()], 1)?;
-            let task = tokio::spawn(async move {
-                let (request, mut socket) = read_tcp_request(&listener).await?;
-                assert_eq!(request, b"auto-kpasswd-req");
-                write_tcp_response(&mut socket, b"auto-kpasswd-tcp-rep").await
-            });
+            for limit in [1_i32, 1465_i32] {
+                let listener = TcpListener::bind("127.0.0.1:0").await?;
+                let addr = listener.local_addr()?;
+                let config = config_with_kpasswd_servers([addr.to_string()], limit)?;
+                let task = tokio::spawn(async move {
+                    let (request, mut socket) = read_tcp_request(&listener).await?;
+                    assert_eq!(request, b"auto-kpasswd-req");
+                    write_tcp_response(&mut socket, b"auto-kpasswd-tcp-rep").await
+                });
 
-            let response = Tokio::new()
-                .with_timeout(Duration::from_secs(2))
-                .send_to_kpasswd_realm(
-                    &config,
-                    KdcProtocol::Auto,
-                    "TEST.GOKRB5",
-                    b"auto-kpasswd-req",
-                )
-                .await?;
+                let response = Tokio::new()
+                    .with_timeout(Duration::from_secs(2))
+                    .send_to_kpasswd_realm(
+                        &config,
+                        KdcProtocol::Auto,
+                        "TEST.GOKRB5",
+                        b"auto-kpasswd-req",
+                    )
+                    .await?;
 
-            bounded(Duration::from_secs(10), "Auto password peer task", task).await???;
-            assert_eq!(response, b"auto-kpasswd-tcp-rep");
+                bounded(Duration::from_secs(10), "Auto password peer task", task).await???;
+                assert_eq!(response, b"auto-kpasswd-tcp-rep");
+            }
             Ok::<_, TestError>(())
         })
     }
