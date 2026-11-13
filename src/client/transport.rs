@@ -2185,13 +2185,16 @@ impl Tokio {
         realm_auto::send(self, config, realm, request).await
     }
 
-    /// Send to a realm's kpasswd servers over the protocol
-    /// `udp_preference_limit` selects, retrying only before possible delivery.
+    /// Send to a realm's kpasswd servers over TCP, then over UDP.
+    ///
+    /// This is the MIT order: every TCP endpoint is tried before any UDP
+    /// endpoint, and `udp_preference_limit` does not apply. UDP is tried only
+    /// after TCP failed definitely; an uncertain TCP outcome stops the exchange.
     ///
     /// # Errors
     ///
-    /// Returns the errors of the retry over the second protocol, those of
-    /// [`Self::send_to_kpasswd_realm_explicit`].
+    /// Returns the errors of the retry over UDP, those of
+    /// [`Self::send_to_kpasswd_realm_explicit`], or the uncertain TCP outcome.
     ///
     /// # Cancel safety
     ///
@@ -2205,21 +2208,14 @@ impl Tokio {
         realm: &str,
         request: &[u8],
     ) -> Result<Vec<u8>, Error> {
-        let udp_first = auto_uses_udp_first(config, request.len());
-        let (first, second) = if udp_first {
-            (KdcProtocol::Udp, KdcProtocol::Tcp)
-        } else {
-            (KdcProtocol::Tcp, KdcProtocol::Udp)
-        };
-
         match self
-            .send_to_kpasswd_realm_explicit(config, first, realm, request)
+            .send_to_kpasswd_realm_explicit(config, KdcProtocol::Tcp, realm, request)
             .await
         {
             Ok(response) => Ok(response),
             Err(error @ Error::KpasswdOutcomeUnknown(_)) => Err(error),
             Err(_) => {
-                self.send_to_kpasswd_realm_explicit(config, second, realm, request)
+                self.send_to_kpasswd_realm_explicit(config, KdcProtocol::Udp, realm, request)
                     .await
             }
         }
