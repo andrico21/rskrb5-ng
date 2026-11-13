@@ -171,7 +171,10 @@ impl Keytab {
     /// The borrowed input remains the caller's erasure responsibility.
     ///
     /// Entries with a negative length are holes left by deleted entries and
-    /// are skipped; a zero length ends the entry list.
+    /// are skipped; a zero length ends the entry list. An entry whose
+    /// principal has no name components or an empty realm, or whose key has
+    /// zero length, is malformed and fails the whole parse; MIT ends the table
+    /// at such an entry.
     ///
     /// # Errors
     ///
@@ -179,8 +182,10 @@ impl Keytab {
     /// [`Error::InvalidFirstByte`] and [`Error::InvalidVersion`] for a bad
     /// file prefix, [`Error::Truncated`], [`Error::NegativeLength`] and
     /// [`Error::LengthOverflow`] for lengths and counts that do not fit the
-    /// input, and [`Error::InvalidString`] for a principal string that is not
-    /// UTF-8.
+    /// input, [`Error::InvalidString`] for a principal string that is not
+    /// UTF-8, [`Error::InvalidPrincipalName`] for an entry without name
+    /// components, [`Error::EmptyRealm`] for an empty realm and
+    /// [`Error::EmptyKey`] for a zero-length key.
     #[inline]
     pub fn parse(bytes: &[u8]) -> Result<Self, Error> {
         let [first_byte, version, ..] = *bytes else {
@@ -233,6 +238,7 @@ impl Keytab {
                     .to_vec()
                     .into(),
             };
+            key.check_storable()?;
 
             let mut kvno = if entry_bytes.len().saturating_sub(entry_offset) >= 4 {
                 read_u32(entry_bytes, &mut entry_offset, endian)?
@@ -333,7 +339,10 @@ impl Keytab {
     ///
     /// Returns [`Error::LengthOverflow`] when a component count, string or key
     /// length exceeds `i16::MAX`, an encryption type does not fit an `i16`,
-    /// or an entry does not fit an `i32` length.
+    /// or an entry does not fit an `i32` length. An entry without name
+    /// components ([`Error::InvalidPrincipalName`]), with an empty realm
+    /// ([`Error::EmptyRealm`]) or with a zero-length key ([`Error::EmptyKey`])
+    /// is refused, because [`Keytab::parse`] rejects such a file.
     #[inline]
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         let endian = Endian::for_version(self.version);
@@ -363,6 +372,7 @@ impl Keytab {
             if entry.kvno == 0 && entry.kvno8 != 0 {
                 return Err(Error::LengthOverflow);
             }
+            entry.key().check_storable()?;
             let mut body = file_name::SecretBytes::new(Vec::with_capacity(body_length));
             entry.principal.write_to(&mut body, self.version, endian)?;
             write_u32(&mut body, entry.timestamp, endian);
@@ -440,6 +450,9 @@ impl Keytab {
     /// does not implement, [`Error::Crypto`] when key derivation fails, and
     /// [`Error::TimestampBeforeUnixEpoch`] or [`Error::TimestampOverflow`]
     /// when `timestamp` does not fit the file's unsigned 32-bit seconds.
+    /// A principal without name components ([`Error::InvalidPrincipalName`])
+    /// or with an empty realm ([`Error::EmptyRealm`]) is refused before any
+    /// key is derived, because the file format cannot store it.
     #[inline]
     pub fn add_entry_from_password(
         &mut self,
@@ -450,6 +463,7 @@ impl Keytab {
         etype: i32,
     ) -> Result<(), Error> {
         let owned = password::Owner(password);
+        principal.check_storable()?;
         let etype_impl = selection::enctype(etype)?.ok_or(Error::UnsupportedEtype(etype))?;
         let salt = principal.default_password_salt();
         let seconds = system_time_to_u32_seconds(timestamp)?;
@@ -823,7 +837,8 @@ impl Principal {
     ///
     /// Returns [`Error::Truncated`], [`Error::NegativeLength`] or
     /// [`Error::LengthOverflow`] when a count or length does not fit the
-    /// input, and [`Error::InvalidString`] for a string that is not UTF-8.
+    /// input, [`Error::InvalidString`] for a string that is not UTF-8, and any
+    /// error of [`Principal::check_storable`].
     fn parse(bytes: &[u8], offset: &mut usize, version: u8, endian: Endian) -> Result<Self, Error> {
         let mut raw_count = read_i16(bytes, offset, endian)?;
         if version == 1 {
@@ -846,11 +861,29 @@ impl Principal {
             read_i32(bytes, offset, endian)?
         };
 
-        Ok(Self {
+        let principal = Self {
             realm,
             components,
             name_type,
-        })
+        };
+        principal.check_storable()?;
+        Ok(principal)
+    }
+
+    /// Refuse a principal that MIT would treat as the end of the table.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidPrincipalName`] when there are no name
+    /// components and [`Error::EmptyRealm`] when the realm is empty.
+    const fn check_storable(&self) -> Result<(), Error> {
+        if self.components.is_empty() {
+            return Err(Error::InvalidPrincipalName);
+        }
+        if self.realm.is_empty() {
+            return Err(Error::EmptyRealm);
+        }
+        Ok(())
     }
 
     /// Append the principal to `out` in the encoding of `version`.
@@ -858,8 +891,10 @@ impl Principal {
     /// # Errors
     ///
     /// Returns [`Error::LengthOverflow`] when the component count or a string
-    /// length exceeds `i16::MAX`.
+    /// length exceeds `i16::MAX`, and any error of
+    /// [`Principal::check_storable`].
     fn write_to(&self, out: &mut Vec<u8>, version: u8, endian: Endian) -> Result<(), Error> {
+        self.check_storable()?;
         (version != 1 || self.name_type == 0_i32)
             .ok_or(Error::UnrepresentableNameType(self.name_type))?;
         let component_count = if version == 1 {
@@ -918,6 +953,18 @@ impl EncryptionKey {
             etype,
             value: value.into(),
         }
+    }
+
+    /// Refuse a zero-length key, which MIT treats as the end of the table.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::EmptyKey`] when the key has no bytes.
+    fn check_storable(&self) -> Result<(), Error> {
+        if self.value.is_empty() {
+            return Err(Error::EmptyKey);
+        }
+        Ok(())
     }
 
     /// Borrow the raw key bytes.

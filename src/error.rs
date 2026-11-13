@@ -1195,9 +1195,18 @@ pub enum Keytab {
         /// Keytab type prefix before the first colon.
         keytab_type: String,
     },
-    /// A principal name was empty or contained empty components.
+    /// A principal name was empty or contained empty components. A keytab
+    /// entry whose principal has no name components is also reported here.
     #[error("invalid keytab principal name")]
     InvalidPrincipalName,
+    /// A keytab entry has a principal with an empty realm. MIT treats such an
+    /// entry as the end of the table; this crate rejects it as malformed.
+    #[error("keytab principal has an empty realm")]
+    EmptyRealm,
+    /// A keytab entry has a key of zero length. MIT treats such an entry as
+    /// the end of the table; this crate rejects it as malformed.
+    #[error("keytab entry has an empty key")]
+    EmptyKey,
     /// Input is too short to contain the keytab header.
     #[error("keytab is too short: {actual} bytes")]
     TooShort {
