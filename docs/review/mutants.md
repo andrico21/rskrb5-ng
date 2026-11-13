@@ -49,6 +49,92 @@ timeout.
 
 ## Verification
 
+### In-diff check after todo 115 (todo 116)
+
+Todo 115 rejected a zero-length name component of a keytab principal (a new
+check in `Principal::check_storable`, called from the parser, the serializer
+and the constructors), made the error of a bad repeated `[plugins]`
+or `[capaths]` value carry the offending line (`unusable_name_line` and the
+mixing search in `section_decode::finish`), and reworded one `error.rs` doc.
+
+- Diff: `git diff 1937845 1b0ac04 -- src` (src/keytab.rs,
+  src/config/section_decode.rs, src/error.rs). `1937845` is the `main` before
+  todo 115 (it contains the todo 114 merge `d6d75ae`); `1b0ac04` is `main` after
+  todo 115.
+- The check ran locally as in todo 114 but with the full test suite: `cargo
+  mutants --all-features --no-shuffle --cap-lints=true --in-diff <diff> --shard
+  k/3 -j 2 --copy-target=false` at `1b0ac04`, cargo-mutants 27.1.0,
+  `CARGO_BUILD_WARNINGS=allow`, no debug info and an 8 GiB address-space cap.
+  The machine was idle, so no narrowing was needed. The diff yields 9 mutants,
+  run in 3 shards of 3. Each shard measured its own baseline (64 s to 70 s
+  build, 80 s to 86 s test), and cargo-mutants set the timeout from it (404 s to
+  435 s).
+
+| Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 3 | 3 | 0 | 0 | 0 | 275 |
+| 1 | 3 | 3 | 0 | 0 | 0 | 280 |
+| 2 | 3 | 2 | 0 | 0 | 1 | 260 |
+
+The total is 8 caught, 0 missed, 0 timeout and 1 unviable
+(`unusable_name_line` with `Some(Box::leak(Box::new(Default::default())))`:
+`Line` does not implement `Default`), so this check adds no register row. The
+mutants were `check_storable` with `Ok(())`, `finish` with `Ok(())`, the four
+operators of the `finish` arms (`==` and `!=` at lines 90, 93 and 97) and
+`unusable_name_line` with `None` and with `||` replaced by `&&`.
+`mutants_report.py --expect-shards 3 --register docs/review/mutants.md
+--campaign 1b0ac04cfd1d8331e6202f6018da1fcf3ac63cf8 --enforce` prints
+`mutants: caught=8 missed=0 timeout=0 unviable=1` and `0 problem(s)` (exit 0,
+no `--allow-open`).
+
+cargo-mutants mutates no call, no iterator adapter and no argument order of the
+changed lines, so thirteen hand-made mutants ran the narrow test set of their
+file in a scratch tree with its own target directory (`--test keytab --test
+file_mutations`, or `--test config`; the real tree passes both). Ten were caught:
+`any(String::is_empty)` replaced by `all` (four keytab tests, among them
+`rejects_empty_component_entries`), each of the three `check_storable` calls
+(constructor, `write_to`, `add_entry_from_password`) removed in turn
+(`rejects_empty_component_entries`, `serialization_rejects_zero_length_fields`,
+`password_entries_reject_unstorable_principals`), the mixing rule `!=
+first_is_direct` turned into `==`, `first_is_direct` taken from the last value,
+the mixing line replaced by the first line, the empty-name and the
+tag-whitespace halves of `unusable_name_line` dropped one at a time, and the
+`lines` of `unusable_name_line` shifted by one
+(`section_error_lines::tests::parse_reports_the_offending_value_line` and its
+reader twin, and the neighbours that assert a line).
+
+Three survived the narrow set and the full suite (`cargo test --all-features
+--no-fail-fast`), so they were missed, and none is equivalent: the component
+check moved before the realm check (an empty realm together with an empty
+component then reports `InvalidPrincipalName` instead of `EmptyRealm`, which
+contradicts the documented MIT order), `unusable_name_line` returning the last
+bad value instead of the first (`find` replaced by `rfind`), and the mixing
+search returning the last mixing value instead of the first. All three were
+untested because every case had one bad value. Todo 116 added tests and no
+production change: `unstorable_principal_checks_run_in_mit_order` in
+`tests/keytab.rs` (an empty realm with an empty component, for v1 and v2
+parsing and for `add_entry_from_password`) and four cases in
+`tests/config/section_error_lines.rs` with two bad or two mixing values (the
+first one must be named). Each fails on its mutant (the keytab test on the
+swapped order; `parse_reports_the_offending_value_line` and
+`reader_reports_the_offending_value_line` on each `rfind`) and passes on the
+real tree, built in separate target directories. Their final status is
+`killed`; the register table keeps only the missed cargo-mutants mutants, so
+these hand mutants have no row.
+
+Three mutants of the round-20 findings were run against the current tests, and
+all fail a test. U5-01, the two `dynamic_module` call sites: at `expand`
+(`src/config.rs`) ignoring the scope fails `upper_module_is_unknown_relation`
+and `reader_upper_module_is_unknown_relation`, always `true` fails all eight
+`plugin_case` tests, always `false` fails `other_sections_unchanged`; at
+`State::content` (`src/config/profile_syntax.rs`) ignoring the scope fails the
+same two tests, always accepting fails `other_sections_unchanged` and always
+refusing fails all eight. U3-01, the explicit-address `Auto` fallback of
+`password_delivery::send` (the `Err(_) => send_udp(...)` arm returning the TCP
+error instead): fails
+`kpasswd_explicit_address_auto_falls_back_to_udp_after_tcp_refusal`, which
+passes on the real tree (24 of 24 `kpasswd_` tests).
+
 ### In-diff check after todo 113 (todo 114)
 
 Todo 113 made the `[plugins]` interface and control names case-sensitive, like
