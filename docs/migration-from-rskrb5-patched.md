@@ -1739,6 +1739,20 @@ entry size should start is `Truncated`; v0.2.2 and MIT (`fread` in
 `kt_file.c:918-920`) treat it as the end of the table, so a keytab cut short by
 a crashed writer must be repaired before it is read.
 
+Zero-length keytab fields (FU-FIL-R08): an entry with no principal name
+components, an empty realm or a zero-length key is malformed. `Keytab::parse`,
+`load` and `load_name` fail for the whole file with
+`error::Keytab::InvalidPrincipalName`, `EmptyRealm` (new) or `EmptyKey` (new);
+v0.2.2 returned the entry. MIT ends the table at such an entry
+(`kt_file.c:949-950`, `:973-975`, `:1065-1067`), so every later entry is
+invisible to MIT; this crate refuses to read the file rather than lose entries.
+`Keytab::to_bytes`, `save`, `save_name`, `save_to_env` and
+`add_entry_from_password*` refuse the same shapes (v0.2.2 wrote them), so a file
+this crate saves is always readable. A keytab that holds such an entry (for
+example one written by hand or by another tool) must be repaired before it is
+read. Holes left by deleted entries and the zero-size end of the entry list are
+unchanged.
+
 Ccache file formats (FU-DOC-R87): `ccache::HeaderField::new` is fallible. It
 returns `InvalidHeaderField` for tag 1 with a value that is not 8 bytes and
 `LengthOverflow` for a value over 65535 bytes, where v0.2.2 accepted any struct

@@ -911,9 +911,12 @@ test_names = [
   "tests/keytab.rs::saves_and_loads_keytab_file",
   "tests/keytab.rs::finds_matching_key_by_principal_kvno_and_etype",
   "tests/keytab.rs::generates_gokrb5_user_keytab_entries_from_password",
+  "tests/keytab.rs::rejects_zero_component_entries",
+  "tests/keytab.rs::rejects_empty_realm_entries",
+  "tests/keytab.rs::rejects_empty_key_entries",
 ]
 feature_flags = []
-security_divergence = "Saved keytabs are private to the owner and symlinked destinations are rejected."
+security_divergence = "Saved keytabs are private to the owner and symlinked destinations are rejected. An entry with no principal name components, an empty realm or a zero-length key ends the table in MIT (`kt_file.c:949-950`, `:973-975`, `:1065-1067`); this crate rejects it as malformed (`InvalidPrincipalName`, `EmptyRealm`, `EmptyKey`) on read and refuses to write it, so the entries after it are never silently dropped."
 disposition = "ALREADY"
 contributors = []
 
