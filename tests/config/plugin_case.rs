@@ -19,15 +19,21 @@ mod tests {
     #[test]
     fn upper_interface_is_not_clpreauth() -> Result<(), Box<dyn Error>> {
         // Given MIT-ignored spellings of the client preauthentication interface.
-        for text in [
-            "[plugins]\nCLPREAUTH = {\n disable = encrypted_timestamp\n}\n",
-            "[plugins]\nClPreAuth = {\n enable_only = pkinit\n}\n",
+        for (interface, text) in [
+            (
+                "CLPREAUTH",
+                "[plugins]\nCLPREAUTH = {\n disable = encrypted_timestamp\n}\n",
+            ),
+            (
+                "ClPreAuth",
+                "[plugins]\nClPreAuth = {\n enable_only = pkinit\n}\n",
+            ),
         ] {
             // When the profile is parsed.
             let config = Config::parse(text)?;
             // Then no client restriction applies and the name is stored as written.
             assert!(config.plugins.get("clpreauth").is_none(), "{text}");
-            assert_eq!(config.plugins.len(), 1, "{text}");
+            assert!(config.plugins.contains_key(interface), "{text}");
         }
         Ok(())
     }
