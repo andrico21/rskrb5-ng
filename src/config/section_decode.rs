@@ -81,16 +81,21 @@ pub(super) fn finish(
             }
             [section, client, server] if section == "capaths" => {
                 let realms = strings(lines)?;
-                if realms.iter().any(|name| {
-                    name.is_empty() || name.contains(super::profile_syntax::tag_whitespace)
-                }) {
-                    return Err(invalid(first));
+                if let Some(line) = unusable_name_line(lines, &realms) {
+                    return Err(invalid(line));
                 }
                 let route = if realms.iter().all(|name| name == ".") {
                     Route::Direct
                 } else {
                     if realms.iter().any(|name| name == ".") {
-                        return Err(invalid(first));
+                        // The first value decides the route kind; the first value of the
+                        // other kind is the one that mixes them.
+                        let first_is_direct = realms.first().is_some_and(|name| name == ".");
+                        let mixing = lines
+                            .iter()
+                            .zip(&realms)
+                            .find(|&(_, name)| (name == ".") != first_is_direct);
+                        return Err(invalid(mixing.map_or(first, |(line, _)| line)));
                     }
                     Route::Via(realms)
                 };
@@ -118,10 +123,8 @@ pub(super) fn finish(
                 if section == "plugins" && matches!(key.as_str(), "disable" | "enable_only") =>
             {
                 let names = strings(lines)?;
-                if names.iter().any(|name| {
-                    name.is_empty() || name.contains(super::profile_syntax::tag_whitespace)
-                }) {
-                    return Err(invalid(first));
+                if let Some(line) = unusable_name_line(lines, &names) {
+                    return Err(invalid(line));
                 }
                 if interface == "clpreauth"
                     && ((key == "disable"
@@ -179,6 +182,15 @@ fn strings(lines: &[Line]) -> Result<Vec<String>, Error> {
         .iter()
         .map(|line| parse_assignment(line, "profile").map(|(_, value)| value.to_owned()))
         .collect()
+}
+
+/// The line of the first value that is empty or contains tag whitespace.
+fn unusable_name_line<'source>(lines: &'source [Line], values: &[String]) -> Option<&'source Line> {
+    lines
+        .iter()
+        .zip(values)
+        .find(|&(_, name)| name.is_empty() || name.contains(super::profile_syntax::tag_whitespace))
+        .map(|(line, _)| line)
 }
 
 /// Typed invalid profile shape, carrying the original source line.

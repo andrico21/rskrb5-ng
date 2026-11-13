@@ -1196,7 +1196,8 @@ pub enum Keytab {
         keytab_type: String,
     },
     /// A principal name was empty or contained empty components. A keytab
-    /// entry whose principal has no name components is also reported here.
+    /// entry whose principal has no name components or an empty name component
+    /// is also reported here.
     #[error("invalid keytab principal name")]
     InvalidPrincipalName,
     /// A keytab entry has a principal with an empty realm. MIT treats such an

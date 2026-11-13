@@ -198,11 +198,26 @@ mod tests {
             "[libdefaults]\nMODULE = /never/load.so\n",
             "[realms]\nR = {\nMODULE = /never/load.so\n}\n",
             "[unknown]\nModule = /never/load.so\n",
+            // No spaces around `=` and no `=` at all: each spelling reaches a different guard.
+            "[libdefaults]\nMODULE=/never/load.so\n",
+            "[libdefaults]\nMODULE=\n",
+            "[unknown]\nModule=/never/load.so\n",
+            "[libdefaults]\nMODULE foo\n",
+            "[libdefaults]\nModule\n",
+            "[realms]\nR = {\nMODULE foo\n}\n",
         ] {
             let failure = Config::parse(text).err().ok_or("dynamic module accepted")?;
             assert!(
                 matches!(failure, Failure::UnsupportedDynamicModule),
                 "{text}"
+            );
+            // The reader runs the same include pre-scan and the same relation guard.
+            let read_failure = Config::from_reader(text.as_bytes())
+                .err()
+                .ok_or("dynamic module accepted by the reader")?;
+            assert!(
+                matches!(read_failure, Failure::UnsupportedDynamicModule),
+                "reader: {text}"
             );
         }
         Ok(())

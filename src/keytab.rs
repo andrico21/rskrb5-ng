@@ -184,8 +184,8 @@ impl Keytab {
     /// [`Error::LengthOverflow`] for lengths and counts that do not fit the
     /// input, [`Error::InvalidString`] for a principal string that is not
     /// UTF-8, [`Error::InvalidPrincipalName`] for an entry without name
-    /// components, [`Error::EmptyRealm`] for an empty realm and
-    /// [`Error::EmptyKey`] for a zero-length key.
+    /// components or with an empty name component, [`Error::EmptyRealm`] for
+    /// an empty realm and [`Error::EmptyKey`] for a zero-length key.
     #[inline]
     pub fn parse(bytes: &[u8]) -> Result<Self, Error> {
         let [first_byte, version, ..] = *bytes else {
@@ -340,7 +340,8 @@ impl Keytab {
     /// Returns [`Error::LengthOverflow`] when a component count, string or key
     /// length exceeds `i16::MAX`, an encryption type does not fit an `i16`,
     /// or an entry does not fit an `i32` length. An entry without name
-    /// components ([`Error::InvalidPrincipalName`]), with an empty realm
+    /// components or with an empty name component
+    /// ([`Error::InvalidPrincipalName`]), with an empty realm
     /// ([`Error::EmptyRealm`]) or with a zero-length key ([`Error::EmptyKey`])
     /// is refused, because [`Keytab::parse`] rejects such a file.
     #[inline]
@@ -450,9 +451,10 @@ impl Keytab {
     /// does not implement, [`Error::Crypto`] when key derivation fails, and
     /// [`Error::TimestampBeforeUnixEpoch`] or [`Error::TimestampOverflow`]
     /// when `timestamp` does not fit the file's unsigned 32-bit seconds.
-    /// A principal without name components ([`Error::InvalidPrincipalName`])
-    /// or with an empty realm ([`Error::EmptyRealm`]) is refused before any
-    /// key is derived, because the file format cannot store it.
+    /// A principal without name components or with an empty name component
+    /// ([`Error::InvalidPrincipalName`]) or with an empty realm
+    /// ([`Error::EmptyRealm`]) is refused before any key is derived, because
+    /// the file format cannot store it.
     #[inline]
     pub fn add_entry_from_password(
         &mut self,
@@ -874,14 +876,20 @@ impl Principal {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidPrincipalName`] when there are no name
-    /// components and [`Error::EmptyRealm`] when the realm is empty.
-    const fn check_storable(&self) -> Result<(), Error> {
+    /// Returns [`Error::EmptyRealm`] when the realm is empty and
+    /// [`Error::InvalidPrincipalName`] when there are no name components or a
+    /// component is empty. MIT checks the count, the realm and then each
+    /// component length in that order, so an empty realm wins over an empty
+    /// component.
+    fn check_storable(&self) -> Result<(), Error> {
         if self.components.is_empty() {
             return Err(Error::InvalidPrincipalName);
         }
         if self.realm.is_empty() {
             return Err(Error::EmptyRealm);
+        }
+        if self.components.iter().any(String::is_empty) {
+            return Err(Error::InvalidPrincipalName);
         }
         Ok(())
     }
