@@ -180,8 +180,11 @@ supply a directory with an owner-only ACL (std does not expose ACL construction)
 ### Environment-free configuration defaults
 
 `LibDefaults::new`, `Config::new` and parsing no longer read `UID` or `HOME`.
-The client-keytab default retains `/usr/local/var/krb5/user/%{euid}/client.keytab`
-for identity expansion when used, and `k5login_directory` defaults to empty.
+The client-keytab default is the template
+`/usr/local/var/krb5/user/%{euid}/client.keytab`, expanded when the name is used
+(v0.2.2 filled in the `UID` environment variable when the value was built, so
+an unset variable gave `/usr/local/var/krb5/user/0/client.keytab`), and
+`k5login_directory` defaults to empty (FU-DOC-R72).
 Use the new `LibDefaults::from_env()` only when HOME discovery is intended.
 The `*_without_env` twins were removed ("Removed configuration twins"). Remaining
 configuration/credential discovery entry points document `# Ambient input`.
@@ -1177,12 +1180,99 @@ a different, unknown section (a diagnostic in `ParseMode::Compatible`, an error
 in `ParseMode::Strict`). Remove stray text and any BOM from files that relied on
 the old behaviour.
 
-Preauthentication types and boolean spellings (FU-DOC-R40):
+Header grammar (FU-DOC-R63): after the closing `]` a header may carry blanks, a
+final marker `*` directly after the bracket and a comment separated from it by
+blanks. `[libdefaults]*` and `[libdefaults] # c` are headers; `[libdefaults] *`
+and `[libdefaults]#c` are an `InvalidLine`, where v0.2.2 accepted all four. A
+padded `[ libdefaults ]` followed by `default_realm = X` leaves `default_realm`
+empty (v0.2.2: `X`). A commented-out header leaves the relations below it
+without a section, so `#[libdefaults]` followed by `default_realm = X` is an
+`InvalidLine` (v0.2.2: `default_realm` stayed empty), and so is a file whose
+lines end in a bare CR, such as `[libdefaults]\r default_realm = X\r`
+(v0.2.2: `default_realm` stayed empty). MIT ignores every line before the first
+line that starts with `[` (`prof_parse.c:326`), so for a file that starts with a
+BOM MIT, like v0.2.2, ignores the BOM line and the whole body below it, and
+silently loses the first section. This crate rejects any non-comment content
+before the first header, the BOM line and a stray line such as
+`garbage line` included, which is a deliberate divergence from MIT pinned by
+`profile_syntax_rejects_malformed_components`
+(`tests/config/mutation_profile.rs:155-168`, where `default_realm = R` before
+any section must fail).
+
+Subsection syntax (FU-DOC-R64): as in MIT (`prof_parse.c:177`), a value opens a
+subsection only when `{` is the whole value, optionally followed by a comment
+that blanks separate from it. `{}`, `{ kdc = k }` and `{#` are plain values, so
+`[realms]` with `A = {}` or `A = { kdc = k }` defines no realm (v0.2.2: an empty
+realm `A`), and `A = {#` followed by `kdc = k` and `}` is an `InvalidLine`
+because the `}` has nothing to close (v0.2.2: realm `A` with the KDC `k`; MIT
+fails with `PROF_EXTRA_CBRACE`, `prof_parse.c:128`). `A = { # c` still opens the
+subsection. A closing brace may be followed only by blanks, a `*` or a comment
+that blanks separate from it: `} junk` is an `InvalidLine`. A relation name
+cannot contain blanks, so the realm line `A B = {` is an `InvalidLine`
+(v0.2.2: realm `A B`).
+
+Unclosed braces (FU-DOC-R64): a subsection that is still open at the end of a
+file or at the next section header is an `InvalidRealmsSection`, in every
+section including unknown ones; the variant name does not name the section.
+`[libdefaults]` with `default_realm = {` at the end of the file is that error
+(v0.2.2: the value `{`). A `}` at the end of a value line is value text and
+closes nothing: v0.2.2 counted braces anywhere on a `[realms]` line, so
+`kdc = k }` closed the realm and the KDC became `k }`, while this crate keeps
+the subsection open and fails. MIT accepts an unclosed `x = {` at the end of a
+file (`profile_parse_file`, `prof_parse.c:418-436`, never checks the group
+level); this crate rejects it, a deliberate divergence (FU-CFG-09). Nesting
+deeper than eight levels is an `IncludeTooDeep` error; v0.2.2 had no limit.
+
+Lines the old reader skipped (FU-DOC-R64): v0.2.2 read nothing inside an unknown
+section, so `[foo]` followed by `not a relation` and then `[libdefaults]` loaded
+normally; the unknown section is parsed as well, and a line that is not a
+relation, brace or comment is an `InvalidLine`. A plain `A = kdc.example` or
+`A = x` line in `[realms]`, even after a realm block, is ignored, where v0.2.2
+failed with `InvalidRealmsSection` (section names are case-insensitive, so
+`[Realms]` follows the same rule). A brace subsection in
+`[libdefaults]` or `[domain_realm]` (`sub = {` over several lines) is accepted
+and sets nothing, where v0.2.2 failed with `InvalidLine` on the closing `}`.
+
+Empty relation names (FU-DOC-R65): a relation with an empty name is an
+`InvalidLine`: ` = X`, `* = A` (the final marker leaves an empty name) and a
+realm line ` = {`. v0.2.2 ignored ` = X` in `[libdefaults]`, stored the literal
+key `*` for `* = A` in `[domain_realm]` and created a realm with an empty name
+for ` = {`. MIT rejects ` = X` (a line that starts with `=`,
+`prof_parse.c:152`) but accepts `* = A`: it strips the `*` and stores a node
+with an empty name that nothing matches (`prof_parse.c:203`). This crate rejects
+every empty name, a deliberate rule stricter than MIT because its data model
+cannot represent one (todo 92 decision).
+
+Repeated realms (FU-DOC-R66): a realm defined twice merges. In one `[realms]`
+section `A = {` with `kdc = k1` followed by a second `A = {` with `kdc = k2`
+gives one realm with the KDCs `k1` and `k2`; v0.2.2 kept two entries and
+`Config::realm("A")` returned the first one, `k1`. A realm in two `[realms]`
+sections merges likewise (`a`, then `b`); v0.2.2 let the later section replace
+the earlier one, so only `b` survived and a realm named only in the earlier
+section was lost.
+
+Preauthentication types and boolean spellings (FU-DOC-R40, FU-DOC-R70):
 `LibDefaults::preferred_preauth_types` defaults to `[17, 16]` (v0.2.2:
 `[17, 16, 15, 14]`); 14 and 15 are the draft-9 PKINIT IDs, which are permanently
-rejected. Boolean relations also accept `on`, `off` and `nil` like MIT; v0.2.2
-accepted only `1`, `t`, `true`, `y`, `yes` and `0`, `f`, `false`, `n`, `no`
-(case-insensitively) and reported `InvalidBoolean` for any other spelling.
+rejected, so an explicit value drops them too: `preferred_preauth_types = 14`
+is `[]` (v0.2.2: `[14]`) and `17,14,15,16` is `[17, 16]` (v0.2.2:
+`[17, 14, 15, 16]`). Boolean relations also accept `on`, `off` and `nil` like
+MIT, in any letter case; v0.2.2 accepted only `1`, `t`, `true`, `y`, `yes` and
+`0`, `f`, `false`, `n`, `no` (case-insensitively) and reported `InvalidBoolean`
+for any other spelling, so `forwardable = on` failed there.
+
+Numeric and interval values (FU-DOC-R69, FU-DOC-R71): `kdc_default_options` is a
+signed 32-bit decimal integer, or hexadecimal with a `0x` or `0X` prefix, and
+keeps the 32-bit pattern. `010` is 10 (v0.2.2: 0x10, 16), `-1` is every bit set
+(v0.2.2: `InvalidInteger`), `2147483647` and `0X1F` are accepted (v0.2.2:
+`InvalidInteger`), and `abc`, `1e3` and `0b11` are an `InvalidInteger` (v0.2.2
+read bare text as hex digits, so `abc` was 0xabc). `clockskew` uses the same
+checked MIT interval parser as `ticket_lifetime` and `renew_lifetime`, where
+v0.2.2 used a lenient reader for all three: `clockskew = 1h1h` (v0.2.2: 7200 s),
+`1 d` (86400 s), `+300`, `1m1h` (3660 s) and `99999999999` are an
+`InvalidDuration`, as is any value of 2^31 seconds or more. As in MIT's
+`x-deltat.y`, a component after the first may carry a sign when the total is
+nonnegative, so `1h-1m` is 3540 s (v0.2.2: `InvalidDuration`).
 
 Quoted values (FU-CFG-R02): v0.2.2 had no quote handling, so
 `default_realm = "EXAMPLE.COM"` kept the quotes in the value and a backslash
@@ -1202,7 +1292,9 @@ byte and `A #B` is `A` in both. Add whitespace before a trailing comment marker
 that has none. Text after a closing quote other than
 ASCII whitespace is now an `InvalidLine`: v0.2.2 kept `"EXAMPLE.COM" extra`
 verbatim, MIT ignores the text after the quote, and this crate rejects it
-(FU-CFG-R31, `docs/config-profile.md`).
+(FU-CFG-R31, `docs/config-profile.md`). A value that opens a double quote and
+never closes it is an `InvalidLine` (FU-DOC-R68): `default_realm = "X` was the
+value `"X` in v0.2.2.
 
 Address lists (FU-CFG-R30, FU-DOC-R25): `extra_addresses` entries are split on
 commas and on C-locale ASCII whitespace (space, tab, CR, LF, VT, FF), like MIT.
@@ -1213,8 +1305,17 @@ was dropped silently; it now yields both addresses, and a malformed entry is an
 group names (FU-CFG-R32).
 
 Endpoint stars (FU-CFG-R03): `kdc = "host*"` denotes literal `host*`, not a
-final relation. Use `kdc* = host` to finalize. The existing unquoted value-final
-extension remains supported.
+final relation. Use `kdc* = host` to finalize. An unquoted `kdc = host*` also
+finalizes, as it did in v0.2.2; see the next paragraph for other relations.
+
+Value-final star (FU-DOC-R67): a trailing `*` on an unquoted value marks the
+relation final for every relation, and the `*` is dropped from the value, so
+`default_realm = X*` and `default_realm = X *` are `X` and `forwardable = true*`
+is `true`. v0.2.2 honoured `value*` only in the `kdc`, `admin_server`,
+`master_kdc` and `kpasswd_server` lists; elsewhere it kept the `*`
+(`default_realm` was `X*`) and rejected `true*` as `InvalidBoolean`. The rule-language relations
+`auth_to_local` and `pkinit_cert_match` keep a trailing `*`. Quote the value to
+keep a literal star: `default_realm = "X*"` is `X*`.
 
 Subsections (FU-CFG-R04): in realms, appdefaults, plugins and capaths, an empty
 assignment now expects an opening brace on the next structural line. Use `""`

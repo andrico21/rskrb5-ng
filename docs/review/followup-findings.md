@@ -280,3 +280,13 @@ is a parity feature, not a defect>`.
 | executor:todo-91#br-ne-constructors | FU-DOC-R60 | no |
 | executor:todo-91#br-lifetime-service-future | FU-DOC-R61 | no |
 | executor:todo-91#root-reexport-wording | FU-DOC-R62 | no |
+| executor:todo-92#pre-section-structure | FU-DOC-R63 | no |
+| executor:todo-92#subsection-grammar | FU-DOC-R64 | no |
+| executor:todo-92#empty-relation-name | FU-DOC-R65 | no |
+| executor:todo-92#repeated-realm | FU-DOC-R66 | no |
+| executor:todo-92#value-final-star | FU-DOC-R67 | no |
+| executor:todo-92#unterminated-quote | FU-DOC-R68 | no |
+| executor:todo-92#kdc-default-options | FU-DOC-R69 | no |
+| executor:todo-92#explicit-preauth-types | FU-DOC-R70 | no |
+| executor:todo-92#clockskew-interval | FU-DOC-R71 | no |
+| executor:todo-92#default-client-keytab | FU-DOC-R72 | no |

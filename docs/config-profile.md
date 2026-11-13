@@ -82,7 +82,10 @@ gokrb5 extension also recognizes them after C-locale ASCII whitespace outside
 quotes; Unicode space before `#` or `;` is value data.
 `RULE:[2:$1;$2]` survives unchanged. Quoted values support escaped quotes,
 backslashes, newline, tab and backspace. Braces are structural only in a
-subsection assignment or closing-brace line, not arbitrary value text.
+subsection assignment or closing-brace line, not arbitrary value text. As in
+MIT ([prof_parse.c:177](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L177)),
+`{` opens a subsection only when it is the whole value, optionally followed by a
+comment after blanks: `{}`, `{ kdc = k }` and `{#` are plain values.
 
 Unquoted assignment padding is removed, but only ASCII whitespace (space, tab,
 CR, LF, VT, FF) counts as padding; Unicode space characters at the edges of a
@@ -93,9 +96,29 @@ value are value data.
 - Missing explicitly named `KRB5_CONFIG` entries are errors; MIT skips them.
 - Include paths must be absolute; leading whitespace before a directive is
   accepted. No dynamic module code is loaded.
-- The unquoted value-suffix `value*` final form is retained as a gokrb5 extension
-  (v0.2.2 honoured it only in the `kdc`, `admin_server`, `master_kdc` and
-  `kpasswd_server` lists and kept the `*` in other values).
+- The unquoted value-suffix `value*` final form is a gokrb5 extension. It applies
+  to every relation except the rule-language `auth_to_local` and
+  `pkinit_cert_match` values, and the `*` is dropped from the value. v0.2.2
+  honoured it only in the `kdc`, `admin_server`, `master_kdc` and
+  `kpasswd_server` lists and kept the `*` in other values, so
+  `default_realm = X*` was `X*` there and is `X` here.
+- Non-comment content before the first section header, a BOM line and a stray
+  line such as `garbage line` included, is an `InvalidLine`. MIT ignores every
+  line before the first line that starts with `[`
+  ([prof_parse.c:326](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L326)),
+  so it silently loses the first section of a file that starts with a BOM.
+  `tests/config/mutation_profile.rs` (`profile_syntax_rejects_malformed_components`)
+  pins the rejection.
+- A relation with an empty name is an `InvalidLine`, including `* = A` once the
+  final marker is removed. MIT rejects a line that starts with `=` but accepts
+  `* = A` as an unmatchable node with an empty name
+  ([prof_parse.c:152](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L152),
+  [203](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L203));
+  this crate's data model cannot represent an empty name.
+- An unclosed subsection at the end of a file is an `InvalidRealmsSection` in
+  every section; MIT accepts it because `profile_parse_file` never checks the
+  group level
+  ([prof_parse.c:418–436](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L418-L436)).
 - `include` and `includedir` arguments lose ASCII padding at both ends; MIT
   removes only leading blanks and a trailing CR or LF, so it keeps trailing
   spaces and tabs in the file name.
@@ -108,7 +131,8 @@ value are value data.
   capped at eight to bound path allocations. Excess uses `IncludeTooDeep`.
 - Typed limits: `IncludeTooDeep`, `IncludeTooMany`, `IncludeTooLarge`.
   Canonical active-chain cycles use `IncludeCycle`; re-reading a completed
-  source is not a cycle. Unknown-section unbalanced braces are errors.
+  source is not a cycle. An unclosed subsection is an error in every section,
+  unknown ones included, and always reports `InvalidRealmsSection`.
 - Permanent protocol rejection checks run before discarded
   relations can hide forbidden protocol selections.
 
