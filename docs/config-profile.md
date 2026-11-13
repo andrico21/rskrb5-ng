@@ -177,7 +177,7 @@ value are value data.
   `[domain_realm]`; every other section is parsed, so a line there that is not
   a relation, brace or comment is an `InvalidLine` (MIT rejects a line without
   `=` too,
-  [prof_parse.c:148–151](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L148-L151)).
+  [prof_parse.c:150–151](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L150-L151)).
 - Permanent protocol rejection checks run before discarded relations can hide
   forbidden protocol selections. They cover every relation of every section
   except `[domain_realm]` and the `auth_to_local_names` entries, `[login]` and
@@ -186,10 +186,10 @@ value are value data.
   `krb4_*` keys through MIT 1.6); an enabled `krb4_*` key counts whatever its
   value is (`krb4_config` and `krb4_realms` are paths and are rejected as well).
   A `krb4_*`, `v4_*`, `pkinit_*`, `flag_rsa_protocol`, `kpasswd_unprotected` or
-  `kpasswd_cleartext` selector loads when its value is empty or false (`0`,
+  `kpasswd_cleartext` selector is not rejected when its value is false (`0`,
   `no`, `off`, ...); `pkinit_key_exchange` and `pkinit_kex` are rejected for
-  `rsa`, `rsa-only`, `key-transport` and `dh-less` and load for every other
-  value; `kpasswd_protocol` and `kpasswd_version` load only for `protected`,
+  `rsa`, `rsa-only`, `key-transport` and `dh-less`, not for `dh` or `ecdh`;
+  `kpasswd_protocol` and `kpasswd_version` load only for `protected`,
   `rfc3244` or a supported version number (`kpasswd_protocol = false` or an
   empty value is rejected). An empty value opens a pending subsection in
   `[realms]`, `[appdefaults]`, `[plugins]` and `[capaths]`, as in MIT, so

@@ -383,3 +383,10 @@ is a parity feature, not a defect>`.
 | critic:critics-10d991d/u6d.md#U6D-01 | FU-DOC-R118 | no |
 | critic:critics-10d991d/u6d.md#U6D-02 | FU-DOC-R118 | no |
 | critic:critics-10d991d/u6d.md#U6D-03 | FU-DOC-R117 | no |
+| critic:critics-da18b02/u6a.md#U6A-01 | FU-DOC-R120 | no |
+| critic:critics-da18b02/u6a.md#U6A-02 | FU-DOC-R120 | no |
+| critic:critics-da18b02/u6b.md#U6B-01 | FU-DOC-R119 | no |
+| critic:critics-da18b02/u6b.md#U6B-02 | FU-DOC-R120 | no |
+| critic:critics-da18b02/u6b.md#U6B-03 | FU-DOC-R121 | no |
+| critic:critics-da18b02/u6d.md#U6D-01 | FU-DOC-R122 | no |
+| critic:critics-da18b02/u6d.md#U6D-02 | FU-DOC-R122 | no |
