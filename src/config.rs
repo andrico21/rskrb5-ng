@@ -367,9 +367,11 @@ impl Config {
 
     /// Parse a `krb5.conf` string.
     ///
-    /// A line beginning with `include <absolute-file>` or
-    /// `includedir <absolute-dir>` loads independent sources at the directive
-    /// site, then resumes the parent's section and nesting state. Directory
+    /// A line beginning with `include <file>` or `includedir <dir>` loads
+    /// independent sources at the directive site, then resumes the parent's
+    /// section and nesting state. A relative path is resolved against the
+    /// process's working directory, as MIT does and 0.2.2 did, not against the
+    /// including file. Directory
     /// entries use MIT's eligibility filter and bytewise order. Loading is bounded by
     /// [`MAX_INCLUDE_DEPTH`], [`MAX_INCLUDE_FILES`] and [`MAX_INCLUDE_BYTES`], and
     /// a cycle, an unreadable file or directory, or a bound that is passed is a
@@ -422,6 +424,10 @@ impl Config {
     }
 
     /// Parse a reader, including buffered readers, through profile composition.
+    ///
+    /// A reader has no base directory of its own: a relative `include` or
+    /// `includedir` path in its bytes is resolved against the process's working
+    /// directory, as in [`Config::parse`].
     ///
     /// # Errors
     /// Returns typed I/O, UTF-8, size and include-composition failures.
@@ -2124,18 +2130,6 @@ impl IncludeExpansion {
     /// Returns the [`Self::include_file`] or [`Self::include_dir`] error for
     /// the directive's target.
     fn splice(&mut self, directive: IncludeDirective<'_>, depth: usize) -> Result<(), Error> {
-        let argument = match directive {
-            IncludeDirective::File(value) | IncludeDirective::Directory(value) => value,
-        };
-        if !Path::new(argument).is_absolute() {
-            return Err(Error::IncludeFile {
-                path: PathBuf::from(argument),
-                source: io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "include path must be absolute",
-                ),
-            });
-        }
         let next_depth = depth.saturating_add(1);
         match directive {
             IncludeDirective::File(value) => self.include_file(Path::new(value), next_depth),
@@ -2145,13 +2139,11 @@ impl IncludeExpansion {
 
     /// One `include`: read the file and expand its own directives in turn.
     ///
-    /// The path of an `include` directive must be absolute: [`Self::splice`]
-    /// refuses a relative one before this is reached, a deliberate divergence
-    /// from MIT, which `fopen`s the token and so resolves a relative path
-    /// against the process's working directory. An absolute path is used exactly
-    /// as the configuration spells it - no rebasing on the including file's
-    /// directory. A top-level path handed to [`Config::load_paths`] is opened as
-    /// given.
+    /// A path is used exactly as the configuration spells it, which is what MIT
+    /// does (`fopen` on the token): a relative path is resolved against the
+    /// process's working directory, also inside an included file, with no
+    /// rebasing on the including file's directory. A top-level path handed to
+    /// [`Config::load_paths`] is opened as given.
     ///
     /// # Errors
     ///
@@ -2258,12 +2250,10 @@ impl IncludeExpansion {
     /// symlink while it is being read is [`Error::IncludeCycle`] naming the
     /// path the configuration spelled, rather than a chain that only runs out of
     /// depth; an entry that is a symlink to a directory being read is skipped
-    /// with the other directory entries, not a cycle. The path of an
-    /// `includedir` directive must be absolute ([`Self::splice`] refuses a
-    /// relative one, a deliberate divergence from
-    /// MIT, which resolves it against the process's working directory) and is
-    /// used exactly as the configuration spells it. A top-level directory handed
-    /// to [`Config::load_paths`] is opened as given.
+    /// with the other directory entries, not a cycle. The path is used exactly
+    /// as the configuration spells it, as an `include` path is: a relative path
+    /// is resolved against the process's working directory, as MIT does. A
+    /// top-level directory handed to [`Config::load_paths`] is opened as given.
     ///
     /// # Errors
     ///

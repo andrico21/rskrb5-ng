@@ -1976,10 +1976,11 @@ rust_symbols = []
 test_names = [
   "tests/config/profile.rs::includes_resume_parent_state",
   "tests/config/readers.rs::reader_composes_absolute_includes",
+  "tests/config_relative_include.rs::relative_includes_follow_the_working_directory",
   "tests/config/readers.rs::dynamic_modules_fail_in_every_mode",
 ]
 feature_flags = []
-security_divergence = "include and includedir paths must be absolute: a relative path is IncludeFile (InvalidInput), where MIT resolves it against the working directory (FU-DOC-R82)."
+security_divergence = ""
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 3

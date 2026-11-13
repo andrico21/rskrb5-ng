@@ -74,7 +74,10 @@ be listed is `IncludeDir` (v0.2.2: `Io`). Includes execute
 at their directive site, even inside a subsection (v0.2.2 ran a directive only
 outside a subsection), with fresh syntax state and the shared profile tree; the
 parent resumes its original state (v0.2.2 continued in the section where the
-included text ended). Every source, whether an included file or a file of a path
+included text ended). A relative `include` or `includedir` path is used as
+written and resolved against the process working directory, as MIT does
+(`fopen` on the token) and v0.2.2 did, also inside an included file: it is not
+rebased on the including file's directory. Every source, whether an included file or a file of a path
 list, starts outside every section, so a relation before its first section
 header is an `InvalidLine` (v0.2.2 read such lines into the section that was
 open at the `include` or at the end of the previous file; MIT ignores them). A
@@ -108,11 +111,8 @@ value are value data.
 
 - Missing or unreadable explicitly named `KRB5_CONFIG` entries are errors; MIT
   skips them.
-- `include` and `includedir` paths must be absolute: a relative one is an
-  `IncludeFile` error of kind `InvalidInput`, before any file is opened. MIT
-  resolves a relative path against the working directory, and so did v0.2.2
-  (FU-DOC-R82). Leading whitespace before a directive is accepted. No dynamic
-  module code is loaded.
+- Leading whitespace before a directive is accepted. No dynamic module code is
+  loaded.
 - The unquoted value-suffix `value*` final form is a gokrb5 extension. It
   applies to every relation except the rule-language `auth_to_local` and
   `pkinit_cert_match` values, and the `*` is dropped from the value. v0.2.2
@@ -242,10 +242,10 @@ constructor is required. The existing parity manifest has an area-level
 input with `IncludeTooLarge`, rejects invalid UTF-8 with `Config::Io` carrying
 `InvalidData`, and retains reader I/O causes. Successful bytes enter the same
 include-aware composition as `parse`. Root and included bytes share the 4 MiB
-budget (v0.2.2: 1 MiB, counted over included files only); includes must be
-absolute (v0.2.2 resolved a relative path against the working directory), with
-the depth limit (8) and cycle check unchanged and a file limit of 256 (v0.2.2:
-64).
+budget (v0.2.2: 1 MiB, counted over included files only); a relative include
+path resolves against the process working directory, as in v0.2.2 (a reader has
+no base directory of its own), with the depth limit (8) and cycle check
+unchanged and a file limit of 256 (v0.2.2: 64).
 
 `module MODULEPATH:RESIDUAL` and `module = ...` relations are rejected with
 `Config::UnsupportedDynamicModule` in Compatible and Strict modes. This also

@@ -986,9 +986,7 @@ Configuration now follows MIT profile semantics; the details are in
 - **Includes.** Ignored sections no longer share brace state with the rest of
   the file; re-reading a completed source is not a cycle (as in v0.2.2); the
   limits are 256 files (v0.2.2: 64) and 4 MiB in total (v0.2.2: 1 MiB, counted
-  over included files only), root files included. `include` and `includedir`
-  paths must now be absolute, see "Include paths" below (FU-DOC-R82,
-  FU-DOC-R86).
+  over included files only), root files included (FU-DOC-R86).
 - **Unknown input.** Unknown sections and relations are diagnostics in
   compatible mode and errors in strict mode. Recognized settings without a
   runtime effect produce `ConfigDiagnostic::NotYetEffective` in compatible mode
@@ -1409,8 +1407,8 @@ their own grammar state (v0.2.2 spliced them into the parent's stream; see
 
 Include parsing (FU-CFG-R12): repeated includes rescan a comment tail only when
 resolving a pending scalar. This step itself changes no precedence, accepted
-syntax or include limit; the include changes of this chapter (the absolute path
-rule and the source rules below) do need a check of existing files.
+syntax or include limit; the include changes of this chapter (the source rules
+below) do need a check of existing files.
 
 Include depth (FU-CFG-R15): an `includedir` reached at depth 9 now returns
 `IncludeTooDeep` even when the directory is empty or holds only ignored files.
@@ -1423,16 +1421,6 @@ points to a directory already being read, `IncludeCycle`). An `includedir`
 directive that names such a directory is still `IncludeCycle`. A top-level file
 that is not UTF-8 text is `error::Config::File` with kind `InvalidData` (v0.2.2:
 `Io`); an included file that is not UTF-8 is still `IncludeFile`.
-
-Include paths (FU-DOC-R82): the argument of `include` and `includedir` must be
-an absolute path. A relative argument returns `error::Config::IncludeFile` with
-kind `InvalidInput` ("include path must be absolute") before any file is opened,
-for `includedir` too. v0.2.2 resolved a relative argument against the process
-working directory, exactly as MIT does (`fopen` on the token), so
-`include conf.d/site.conf` loaded when the process ran in the right directory.
-The absolute-only rule is a deliberate divergence from MIT, recorded in
-`docs/config-profile.md` and `docs/gokrb5-parity.toml`. Make the argument
-absolute, for example `include /etc/krb5.conf.d/site.conf`.
 
 Included sources (FU-DOC-R83): every included file, and every file of a
 `KRB5_CONFIG` list or of `Config::load_paths`, is parsed as its own source that

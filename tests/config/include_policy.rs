@@ -64,7 +64,7 @@ mod tests {
         Ok(())
     }
 
-    /// Quoted and relative include arguments remain directives with typed path errors.
+    /// Quoted and relative include arguments remain directives with typed `NotFound` errors.
     #[test]
     fn include_arguments_remain_directives() -> Result<(), Box<dyn Error>> {
         let absolute = env::temp_dir().join("t52-policy");
@@ -83,7 +83,8 @@ mod tests {
                             .ok_or_else(|| format!("directive accepted: {text}"))?;
                         assert!(
                             matches!(&failure, Failure::IncludeFile { path: actual, source }
-                                if actual == Path::new(&path) && source.kind() == io::ErrorKind::InvalidInput),
+                                | Failure::IncludeDir { path: actual, source }
+                                if actual == Path::new(&path) && source.kind() == io::ErrorKind::NotFound),
                             "directive lost its path error: {text}: {failure:?}"
                         );
                     }

@@ -206,20 +206,28 @@ mod tests {
         Ok(())
     }
 
-    /// Relative include paths are rejected before filesystem lookup.
+    /// A relative include path is looked up, not rejected: a miss is `NotFound`.
     #[test]
-    fn include_paths_must_be_absolute() -> Result<(), Box<dyn Error>> {
-        // Given directives that would depend on process cwd.
-        for directive in ["include relative.conf", "includedir relative"] {
-            // When parsing the directive.
-            let failure = Config::parse(directive)
-                .err()
-                .ok_or("relative include accepted")?;
-            // Then the typed I/O error identifies invalid input, not a missing file.
-            assert!(
-                matches!(failure, ConfigError::IncludeFile { source, path: _ } if source.kind() == ErrorKind::InvalidInput)
-            );
-        }
+    fn missing_relative_include_paths_are_not_found() -> Result<(), Box<dyn Error>> {
+        // Given relative directives whose targets do not exist under the working directory.
+        // When parsing the directives.
+        let file = Config::parse("include relative.conf")
+            .err()
+            .ok_or("missing relative include accepted")?;
+        let directory = Config::parse("includedir relative")
+            .err()
+            .ok_or("missing relative includedir accepted")?;
+        // Then each typed I/O error says the target was not found, as in v0.2.2.
+        assert!(
+            matches!(&file, ConfigError::IncludeFile { source, path }
+                if source.kind() == ErrorKind::NotFound && path == "relative.conf"),
+            "{file:?}"
+        );
+        assert!(
+            matches!(&directory, ConfigError::IncludeDir { source, path }
+                if source.kind() == ErrorKind::NotFound && path == "relative"),
+            "{directory:?}"
+        );
         Ok(())
     }
 

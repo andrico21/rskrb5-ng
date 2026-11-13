@@ -712,12 +712,6 @@ Security fail-closed parsing and verification:
   `error::Config::File` with kind `InvalidData`, like the other top-level read
   failures; v0.2.2 returned `Io`. An included file that is not UTF-8 stays
   `IncludeFile` (FU-CFG-R34).
-- `include` and `includedir` arguments must be absolute paths. A relative
-  argument returns `error::Config::IncludeFile` with kind `InvalidInput`
-  ("include path must be absolute") before any file is opened, for `includedir`
-  too; v0.2.2 resolved it against the process working directory, as MIT does.
-  The absolute-only rule is a deliberate divergence from MIT recorded in
-  `docs/config-profile.md`; make the argument absolute (FU-DOC-R82).
 - Every included file, and every file of a `KRB5_CONFIG` list or
   `Config::load_paths`, is parsed as its own source that starts outside every
   section: a relation before its first section header is an `InvalidLine`

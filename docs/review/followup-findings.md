@@ -292,6 +292,7 @@ is a parity feature, not a defect>`.
 | executor:todo-92#default-client-keytab | FU-DOC-R72 | no |
 | executor:todo-98#includedir-directory-entries | FU-CFG-R33 | no |
 | executor:todo-98#non-utf8-root-variant | FU-CFG-R34 | no |
+| executor:todo-105#relative-include-cwd | FU-CFG-R35 | no |
 | executor:todo-98#include-rustdoc-relative-path | FU-DOC-R73 | no |
 | executor:todo-98#ccache-v1-name-type-variant | FU-FIL-R07 | no |
 | critic:critics-de4d4a3/u6b.md#U6B-01 | FU-DOC-R74 | no |

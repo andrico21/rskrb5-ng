@@ -147,7 +147,7 @@ mod tests {
                 let leading = format!("{space}{}", root.display());
                 if !matches!(
                     Config::parse(&format!("{directive} {leading}\n")),
-                    Err(Failure::IncludeFile { path, source: _ }) if path.to_str() == Some(leading.as_str())
+                    Err(Failure::IncludeFile { path, source: _ } | Failure::IncludeDir { path, source: _ }) if path.to_str() == Some(leading.as_str())
                 ) {
                     missed.push(format!("{directive}/{space:?}: leading argument changed"));
                 }
