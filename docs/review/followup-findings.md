@@ -289,3 +289,4 @@ is a parity feature, not a defect>`.
 | executor:todo-92#kdc-default-options | FU-DOC-R69 | no |
 | executor:todo-92#explicit-preauth-types | FU-DOC-R70 | no |
 | executor:todo-92#clockskew-interval | FU-DOC-R71 | no |
+| executor:todo-92#default-client-keytab | FU-DOC-R72 | no |

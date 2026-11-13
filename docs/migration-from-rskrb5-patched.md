@@ -180,8 +180,11 @@ supply a directory with an owner-only ACL (std does not expose ACL construction)
 ### Environment-free configuration defaults
 
 `LibDefaults::new`, `Config::new` and parsing no longer read `UID` or `HOME`.
-The client-keytab default retains `/usr/local/var/krb5/user/%{euid}/client.keytab`
-for identity expansion when used, and `k5login_directory` defaults to empty.
+The client-keytab default is the template
+`/usr/local/var/krb5/user/%{euid}/client.keytab`, expanded when the name is used
+(v0.2.2 filled in the `UID` environment variable when the value was built, so
+an unset variable gave `/usr/local/var/krb5/user/0/client.keytab`), and
+`k5login_directory` defaults to empty (FU-DOC-R72).
 Use the new `LibDefaults::from_env()` only when HOME discovery is intended.
 The `*_without_env` twins were removed ("Removed configuration twins"). Remaining
 configuration/credential discovery entry points document `# Ambient input`.

@@ -441,9 +441,11 @@ Config and enctype policy:
   is refused permanently (RSK-5ECE9681, run-2 lead
   `DEFAULT_ENCTYPES/deprecated-rc4-default`, upstream issue #3).
 - `LibDefaults::new()` reads no environment; `LibDefaults::from_env()` reads
-  `HOME`. The default client keytab keeps the `%{euid}` template and
+  `HOME`. The default client keytab is the template
+  `/usr/local/var/krb5/user/%{euid}/client.keytab` (v0.2.2 built it from the
+  `UID` environment variable, so an unset variable gave `user/0`) and
   `k5login_directory` defaults to empty (upstream issue #10, project rule
-  (13)).
+  (13), FU-DOC-R72).
 
 Ccache, keytab and credential files:
 
