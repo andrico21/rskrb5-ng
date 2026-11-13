@@ -71,8 +71,15 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 - Kpasswd preserves definite pre-send errors and reports possible-delivery
   failures as `Client::KpasswdOutcomeUnknown` exactly once, including malformed
-  replies. Connection refusal is safely retryable; unknown outcomes are not
-  (RSK-14E2755A).
+  replies; unknown outcomes are not retried (RSK-14E2755A). A failed or timed
+  out TCP connect, and a failure to bind or connect the UDP socket, is definite
+  and moves to the next endpoint. Every failure after a UDP datagram was sent
+  is unknown, including `Connection refused` (the ICMP port-unreachable that a
+  connected UDP socket reports while it waits for the reply), so a closed UDP
+  kpasswd port is not retried over TCP, where v0.2.2 fell back to TCP after any
+  UDP failure. With `KdcProtocol::Auto` and an explicit address,
+  `exchange_kpasswd_request` and the checked result helpers send over UDP once
+  (v0.2.2: UDP, then TCP after a UDP failure) (FU-DOC-R88).
 
 These are breaking; the migration guide maps each one.
 
@@ -360,6 +367,16 @@ PAC and NDR:
   (RSK-6A286805).
 - SID summaries deduplicate with a set and keep first-seen order
   (RSK-D33671B2).
+- `Pac::verify` and `Pac::verify_server_checksum` return `error::Pac::Crypto`
+  with `Policy::RejectedFeature` (`SingleDes`, `WeakCrypto`, `Rc4Export`) for a
+  key of enctype 1 to 6, 8 or 24, before the checksum is examined (v0.2.2
+  returned `Ok(false)`, so `verify` gave `ServerChecksumVerificationFailed`).
+  `CredentialsInfo::decrypt_credential_data` does the same for such a key when
+  the credential enctype matches it (v0.2.2: `UnsupportedEncryptionType`)
+  (FU-DOC-R92).
+- `pac::find_pac_in_authorization_data` also descends into AD-MANDATORY-FOR-KDC
+  (type 8) wrappers, which v0.2.2 skipped, so a PAC inside one is returned; the
+  first PAC still ends the search (FU-DOC-R94).
 
 Client AS/TGS exchanges, renewal and caches:
 
@@ -676,7 +693,8 @@ Security fail-closed parsing and verification:
   (FU-DOC-R87).
 - A `DIR:` collection whose `primary` file is a symlink, existing or dangling,
   fails with `Io` of kind `InvalidInput` when the name is resolved; v0.2.2
-  followed the link and created a dangling target (FU-DOC-R87).
+  followed the link: it read an existing target and created the target of a
+  dangling link (FU-DOC-R87, FU-DOC-R95).
 - ETYPE-INFO and ETYPE-INFO2 preauthentication hints reject any trailing DER
   value or garbage inside an otherwise valid KDC error (FU-CLI-R12).
 - Version-one keytab serialization rejects nonzero principal name types with
@@ -686,7 +704,10 @@ Security fail-closed parsing and verification:
   silently, and FU-FIL-01 first refused it as `LengthOverflow` (FU-FIL-R07).
 - An `includedir` entry that is a directory, or a symlink to one, is skipped as
   in MIT and does not count against the include file limit; v0.2.2 failed the
-  whole configuration with `IncludeFile` (`IsADirectory`) (FU-CFG-R33).
+  whole configuration with `IncludeFile` (`IsADirectory`), or with
+  `IncludeCycle` for an entry that points to a directory already being read
+  (FU-CFG-R33, FU-DOC-R89). An `includedir` directive that names such a
+  directory is still `IncludeCycle`.
 - A top-level configuration file that is not UTF-8 text is
   `error::Config::File` with kind `InvalidData`, like the other top-level read
   failures; v0.2.2 returned `Io`. An included file that is not UTF-8 stays
@@ -917,7 +938,7 @@ Configuration:
   `default_realm` empty). MIT also ignores lines before the first header, so it
   too loses the first section behind a BOM without a message; this crate rejects
   that content instead (FU-DOC-R63).
-- - Subsections follow MIT's rule that `{` opens one only as the whole value,
+- Subsections follow MIT's rule that `{` opens one only as the whole value,
   blanks aside; unlike MIT, a comment after blanks is allowed too, so
   `A = { # c` opens one where MIT reads the plain value `{ # c`. `A = {}` and
   `A = { kdc = k }` define no realm (v0.2.2: an empty realm `A`), `A = {#` is an
@@ -985,6 +1006,13 @@ Configuration:
   `UnsupportedDynamicModule`, and default-name templates are expanded once when
   a name is resolved, failing on unavailable facts. New `Config::from_reader`,
   `from_string` and `from_path` (FU-CFG-09).
+- `[appdefaults]`, `[capaths]` and `[plugins]` were skipped by v0.2.2 and are
+  now parsed into `Config::applications`, `Config::capaths` and
+  `Config::plugins`. A file that loaded before can fail: a `[capaths]` value
+  list that mixes `.` with realm names or holds a whitespace token, and an
+  `[appdefaults]` subsection nested deeper than application, realm and key,
+  are `InvalidLine`; a `[plugins]` control that disables the encrypted-timestamp
+  mechanism is `NotYetEffective` in every mode (FU-DOC-R93).
 - `no_addresses` and `noaddresses` now share first-occurrence precedence and
   final markers (the last occurrence of either won in v0.2.2) (FU-CFG-R01).
 - v0.2.2 had no quote handling: `default_realm = "EXAMPLE.COM"` kept the

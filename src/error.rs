@@ -750,7 +750,8 @@ pub enum Config {
         /// Why it could not be used.
         source: io::Error,
     },
-    /// An `includedir` directive named a directory that could not be listed.
+    /// An `includedir` directive, or a directory handed to
+    /// `Config::load_paths`, named a directory that could not be listed.
     #[error("includedir {path} could not be listed: {source}")]
     IncludeDir {
         /// The directory the directive named.

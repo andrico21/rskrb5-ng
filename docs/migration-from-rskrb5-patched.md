@@ -210,7 +210,9 @@ Kpasswd TCP retains RFC 3244's separate unsigned length rules.
 Password transport no longer retries after a send may have started. Such I/O
 failures, response errors and timeouts return `Client::KpasswdOutcomeUnknown`.
 Configured Auto chooses its initial protocol from `udp_preference_limit` and
-only fails over before possible delivery; direct-address Auto uses UDP once. Do
+only fails over before possible delivery, so a closed UDP kpasswd port is not
+retried over TCP (v0.2.2 fell back to TCP after any UDP failure); direct-address
+Auto uses UDP once (v0.2.2: UDP, then TCP after a UDP failure). Do
 not treat an unknown outcome as a failed mutation or blindly retry it. A
 password change also gives connection setup (TCP connect, or UDP socket bind and
 connect) and the send-and-reply phase a full `Tokio::with_timeout` each, so one
@@ -275,12 +277,14 @@ decompressed-size correlation remains unchanged; no output is clamped.
 ### Bounded public PAC lookup
 
 `pac::find_pac_in_authorization_data` now rejects more than eight nested
-AD-IF-RELEVANT wrappers with `Pac::AuthorizationDataDepthLimit` and more than
+AD-IF-RELEVANT or AD-MANDATORY-FOR-KDC wrappers with `Pac::AuthorizationDataDepthLimit` and more than
 1 MiB of cumulative visited entry payloads with `Pac::AuthorizationDataByteLimit`
 (both in `error::Pac`). The inclusive byte budget is shared across siblings and
 counts nested payloads again at each decoded level, before decoding or PAC
-processing. Its signature and first-PAC behavior are unchanged. Service acceptance
-imposes these limits independently while validating all restrictions.
+processing. Its signature is unchanged. It now also descends into
+AD-MANDATORY-FOR-KDC (type 8) wrappers, which v0.2.2 skipped, so a PAC inside
+one is returned (FU-SVC-11, FU-DOC-R94); the first PAC still ends the search.
+Service acceptance imposes these limits independently while validating all restrictions.
 
 ### HTTP replay-cache scope and binding limits
 
@@ -367,7 +371,7 @@ are not treated as KDC-authenticated authorization evidence.
 Policy traversal is limited to eight wrappers and 1,048,576 cumulative payload
 bytes (including decoded nested payloads), returning `AuthorizationDataLimit`.
 Malformed known wrappers return the existing `Service::Decode` classification.
-These service-only bounds do not change the standalone PAC extraction API.
+These service-only bounds do not change the standalone PAC extraction limits.
 
 ### Explicit unchecked cross-realm transit policy (RSK-3E3C2278)
 
@@ -513,8 +517,11 @@ protected ticket/evidence identity mismatches return `DelegationPrincipalMismatc
 
 Password mutation failures after possible delivery return exactly one
 `Client::KpasswdOutcomeUnknown(Box<Client>)`, preserving the underlying cause.
-Pre-send encoding, discovery and connection failures retain their definite error
-classes and may be retried safely. Malformed replies are unknown outcomes. It
+Pre-send encoding, discovery, TCP connection and UDP socket-setup failures
+retain their definite error classes and may be retried safely. Every failure
+after a UDP datagram was sent, including `Connection refused` (an ICMP
+port-unreachable reported while waiting for the reply), and malformed replies
+are unknown outcomes. It
 does not mean rejection or rollback: reconcile with a fresh login before
 retrying. Dropping a mutation future returns no error at all; the caller must
 record unknown externally. Confirmed server rejection remains a normal result
@@ -810,6 +817,15 @@ source: match the enums, not the text. `error::Any`, `error::Config`,
 through its crypto (or, for `error::Http`, SPNEGO) variant, so `?` works
 everywhere.
 
+`Pac::verify` and `Pac::verify_server_checksum` return `error::Pac::Crypto`
+with `Policy::RejectedFeature` (`SingleDes`, `WeakCrypto`, `Rc4Export`) for a key
+of enctype 1 to 6, 8 or 24, before the server checksum is examined (v0.2.2:
+`Ok(false)`, so `verify` returned `ServerChecksumVerificationFailed`). Code that
+treats `Ok(false)` as "not authentic" and every other error as an
+infrastructure failure must handle this case.
+`CredentialsInfo::decrypt_credential_data` does the same for such a key when the
+credential enctype matches it (v0.2.2: `UnsupportedEncryptionType`) (FU-DOC-R92).
+
 ```rust
 # fn main() {
 use rskrb5_ng::error::{Any, Policy, RejectedFeature, RejectionReason};
@@ -979,6 +995,15 @@ Configuration now follows MIT profile semantics; the details are in
   when they do not request tighter security. Unsupported tightening values fail
   with `error::Config::NotYetEffective` in both modes. Strict mode rejects every
   diagnostic; the [relation catalogue](config-relations.md) identifies each case.
+- **`[appdefaults]`, `[capaths]`, `[plugins]`.** v0.2.2 skipped these sections.
+  They are now parsed into `Config::applications`, `Config::capaths` and
+  `Config::plugins` (read with `appdefault`, `appdefault_boolean` and `capath`;
+  see [`config-profile.md`](config-profile.md)), and malformed content is
+  rejected, so an existing file can stop loading: a `[capaths]` value list that
+  mixes `.` with realm names or holds a whitespace token, and an `[appdefaults]`
+  subsection nested deeper than application, realm and key, are `InvalidLine`;
+  a `[plugins]` control that would disable the encrypted-timestamp mechanism is
+  `NotYetEffective` in every mode (FU-DOC-R93).
 - **`module`.** `module` directives and relations fail with
   `error::Config::UnsupportedDynamicModule`; no code is loaded.
 - `forwardable` and `proxiable` set the request bits, `default_realm` is the
@@ -1393,7 +1418,9 @@ Keep include chains within eight levels.
 
 Include directories and non-UTF-8 files (FU-CFG-R33, FU-CFG-R34): an
 `includedir` entry that is a directory is skipped, as in MIT, instead of failing
-the whole configuration with `IncludeFile` (`IsADirectory`). A top-level file
+the whole configuration with `IncludeFile` (`IsADirectory`; for an entry that
+points to a directory already being read, `IncludeCycle`). An `includedir`
+directive that names such a directory is still `IncludeCycle`. A top-level file
 that is not UTF-8 text is `error::Config::File` with kind `InvalidData` (v0.2.2:
 `Io`); an included file that is not UTF-8 is still `IncludeFile`.
 
@@ -1425,7 +1452,8 @@ Path lists (FU-DOC-R83): a directory passed to `Config::load` or
 directory (v0.2.2: an `Io` error). A file of a list that another file of the
 same list includes is read twice (v0.2.2: `IncludeCycle`). A missing or
 unreadable entry of a list is still an error, as in v0.2.2, where MIT skips it;
-the variant is now `File` (v0.2.2: `Io`).
+the variant is now `File` (v0.2.2: `Io`). A directory of the list that cannot
+be listed is `IncludeDir` (v0.2.2: `Io`), not `File` (FU-DOC-R90).
 
 Include limits (FU-DOC-R86): the include byte budget is 4 MiB (v0.2.2: 1 MiB)
 and the root counts against it. A root file or root text over 4 MiB, alone or
@@ -1479,7 +1507,7 @@ request's offered list. `process_as_rep` and its exchange callers now return
 session-key type was offered. This restriction does not apply to TGS wrapping.
 
 Explicit AP checksums (FU-CLI-R08): `client::build_ap_req_with_confounder`
-rejects checksum IDs 1 through 10 and 14 through
+rejects checksum IDs 1 through 10 and 14 with
 `Client::Crypto(Crypto::Policy(Policy::RejectedFeature { .. }))`, identifying
 `RejectedFeature::UnauthenticatedChecksum`. Select a supported keyed checksum
 or the protocol's GSS checksum instead. No unkeyed fallback is performed.
@@ -1618,22 +1646,29 @@ for AES and RC4, and accept only fewer than eight zero padding bytes for DES3.
 Previously accepted authenticated surplus bytes now return the family's Decode
 error. Remove application-added padding; let the encryption profile supply it.
 
-Retained SPNEGO credentials now use `zeroize::Zeroizing`: `Krb5MechToken.message`,
-`NegTokenInit.{mech_token, mech_list_mic}`, `NegTokenResp.{response_token,
-mech_list_mic}`, and `InitiatorContext.{ap_req_der, header}` (FU-SPN-R05).
-For direct field assignment, convert owned vectors with `.into()`; borrow bytes
-with `.as_slice()` and headers with `.as_str()`. Token and pending response
-diagnostics show metadata and lengths, never credential contents. Plain vectors
-and strings returned by encoding/header convenience APIs still require caller
-erasure after use.
+Retained SPNEGO credentials now use `zeroize::Zeroizing`:
+`Krb5MechToken.message`, `NegTokenInit.{mech_token, mech_list_mic}`,
+`NegTokenResp.{response_token, mech_list_mic}`, and
+`InitiatorContext.{ap_req_der, header}` (FU-SPN-R05). These fields are private
+in 0.3.0 (see the field-privacy rules above). Replace a value with
+`set_message`, `set_mech_token`, `set_mech_list_mic` or `set_response_token`,
+converting an owned vector with `.into()`, or build the token with
+`Krb5MechToken::new` or `NegTokenResp::with_response_token`. Read with the
+same-name getters, or with `ap_req_der_ref()` and `header_ref()`, which return a
+plain slice and `&str`; `InitiatorContext` has no setter (FU-DOC-R98). Token and
+pending response diagnostics show metadata and lengths, never credential
+contents. Plain vectors and strings returned by encoding/header convenience APIs
+still require caller erasure after use.
 
 Consuming GSS constructors erase adopted plaintext even when key selection fails
 (FU-SPN-R07). No call-site change is required; passing a zeroizing owner remains
 the preferred way to retain erasure responsibility across the call boundary.
 
 SPNEGO reqFlags contents must include an unused-bit count from 0 to 7, with zero
-padding bits and a payload when the count is nonzero (FU-SPN-R08). Malformed
-values now return `Spnego::InvalidReqFlags` on encode and decode; `[0]` remains valid.
+padding bits and a payload when the count is nonzero (FU-SPN-R08), at most 32
+significant bits, and no trailing zero bits beyond the unused-bit count
+(FU-SPN-R19, FU-DOC-R99). Malformed values now return `Spnego::InvalidReqFlags`
+on encode and decode; `[0]` remains valid.
 
 Treat `with_ap_rep(false)` as an optional-reply preference (FU-SPN-R09). A valid
 initiator mechListMIC receives a completion carrying a reciprocal MIC and the
@@ -1714,8 +1749,8 @@ ccache whose principal component count is 0 or the minimum `i32` is still
 rejected, but 0.3 reports `LengthOverflow` and `NegativeLength` respectively
 where v0.2.2 reported `NegativeLength` and `LengthOverflow`. A `DIR:` collection
 whose `primary` file is a symlink, existing or dangling, fails with `Io` of kind
-`InvalidInput` when the name is resolved; v0.2.2 followed the link and created a
-dangling target.
+`InvalidInput` when the name is resolved; v0.2.2 followed the link: it read an
+existing target and created the target of a dangling link (FU-DOC-R95).
 
 Ccache payload ownership (FU-FIL-R05): `Credential.ticket`, `second_ticket` and
 `AuthorizationDataEntry.data` are `Zeroizing<Vec<u8>>`. Pass zeroizing buffers to
@@ -2208,7 +2243,6 @@ kpasswd result helpers, `MicToken::verify`/`WrapToken::verify` and others).
 - `config::Toggle::from_bool`.
 - `config::Toggle::is_enabled`.
 - `config::LibDefaults::new`.
-- `config::parse_supported_enctype_ids`.
 - `crypto::AesSha1Etype::from_etype_id`.
 - `crypto::AesSha1Etype::etype_id`.
 - `crypto::AesSha1Etype::checksum_type_id`.
@@ -2536,7 +2570,6 @@ kpasswd result helpers, `MicToken::verify`/`WrapToken::verify` and others).
 - `pac::FileTime::ticks`: `pub const fn ticks(self) -> u64`.
 - `service::ValidatedApReq::build_ap_rep_with_confounder`: `pub fn build_ap_rep_with_confounder( &self, confounder: &[u8], options: &ApRepOptions, ) -> Result<Vec<u8>, Error>`.
 - `service::Validator<'static>::from_keytab_name`: `pub fn from_keytab_name<P>(keytab_name: P) -> Result<Self, Error> where P: AsRef<str>,`.
-- `spnego::oid::validate_arcs`: `pub(super) const fn validate_arcs(arcs: &[u32]) -> Result<(), Error>`.
 - `spnego::MicToken::new`: `pub const fn new(flags: u8, snd_seq_num: u64) -> Self`.
 - `spnego::MicToken::with_payload`: `pub fn with_payload<P>(mut self, payload: P) -> Self where P: Into<Vec<u8>>,`.
 - `spnego::MicToken::new_initiator`: `pub fn new_initiator<P>(payload: P, key:

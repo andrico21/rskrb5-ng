@@ -67,8 +67,10 @@ Files in `KRB5_CONFIG` compose in platform path-list order (colon on Unix). A
 directory entry uses the same filter as `includedir`: ASCII alphanumerics, `-`,
 `_`, or a non-dot name ending `.conf`. Sorting is bytewise. An entry that is a
 directory (or a symlink to one) is skipped, as in MIT, and does not count
-against the include file limit. The same filter applies to a directory passed to
-`Config::load` or `Config::load_paths` (v0.2.2: an `Io` error). Includes execute
+against the include file limit (v0.2.2: `IncludeFile` for a directory,
+`IncludeCycle` for a symlink to a directory already being read). The same filter applies to a directory passed to
+`Config::load` or `Config::load_paths` (v0.2.2: an `Io` error); one that cannot
+be listed is `IncludeDir` (v0.2.2: `Io`). Includes execute
 at their directive site, even inside a subsection (v0.2.2 ran a directive only
 outside a subsection), with fresh syntax state and the shared profile tree; the
 parent resumes its original state (v0.2.2 continued in the section where the

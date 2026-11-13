@@ -295,8 +295,9 @@ impl Config {
     /// # Errors
     ///
     /// Returns [`Error::EmptyConfigPathList`] when the list names no non-empty
-    /// path, [`Error::File`] when a named file cannot be resolved or read, and
-    /// the [`Config::parse`] errors for each independent source.
+    /// path, [`Error::File`] when a named file cannot be resolved or read,
+    /// [`Error::IncludeDir`] when a named directory cannot be listed, and the
+    /// [`Config::parse`] errors for each independent source.
     #[inline]
     pub fn load_paths<I, P>(paths: I) -> Result<Self, Error>
     where
@@ -2254,11 +2255,12 @@ impl IncludeExpansion {
     ///
     /// The directory's canonical path joins the open chain for as long as its
     /// files are being expanded, so a directory that is reached again through a
-    /// symlink while it is being read - and an entry that is one of the
-    /// directories already being read - is [`Error::IncludeCycle`] naming the
+    /// symlink while it is being read is [`Error::IncludeCycle`] naming the
     /// path the configuration spelled, rather than a chain that only runs out of
-    /// depth. The path of an `includedir` directive must be absolute
-    /// ([`Self::splice`] refuses a relative one, a deliberate divergence from
+    /// depth; an entry that is a symlink to a directory being read is skipped
+    /// with the other directory entries, not a cycle. The path of an
+    /// `includedir` directive must be absolute ([`Self::splice`] refuses a
+    /// relative one, a deliberate divergence from
     /// MIT, which resolves it against the process's working directory) and is
     /// used exactly as the configuration spells it. A top-level directory handed
     /// to [`Config::load_paths`] is opened as given.
