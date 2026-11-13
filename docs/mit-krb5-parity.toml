@@ -916,7 +916,7 @@ test_names = [
   "tests/keytab.rs::rejects_empty_key_entries",
 ]
 feature_flags = []
-security_divergence = "Saved keytabs are private to the owner and symlinked destinations are rejected. An entry with no principal name components, an empty realm or a zero-length key ends the table in MIT (`kt_file.c:949-950`, `:973-975`, `:1065-1067`); this crate rejects it as malformed (`InvalidPrincipalName`, `EmptyRealm`, `EmptyKey`) on read and refuses to write it, so the entries after it are never silently dropped."
+security_divergence = "Saved keytabs are private to the owner and symlinked destinations are rejected. An entry with no principal name components, a zero-length name component, an empty realm or a zero-length key ends the table in MIT (`kt_file.c:949-950`, `:973-975`, `:1003`, `:1065-1067`); this crate rejects it as malformed (`InvalidPrincipalName`, `EmptyRealm`, `EmptyKey`) on read and refuses to write it, so the entries after it are never silently dropped."
 disposition = "ALREADY"
 contributors = []
 

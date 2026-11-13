@@ -369,3 +369,7 @@ is a parity feature, not a defect>`.
 | critic:critics-d6d75ae/u6c.md#U6C-02 | FU-DOC-R113 | no |
 | critic:critics-d6d75ae/u6b.md#U6B-05 | FU-DOC-R114 | no |
 | critic:critics-d6d75ae/u6d.md#U6D-08 | FU-DOC-R114 | no |
+| critic:critics-d6d75ae/u5.md#U5-01 | FU-TST-R58 | no |
+| critic:critics-d6d75ae/u5.md#U5-02 | FU-FIL-R09 | no |
+| critic:critics-d6d75ae/u3.md#U3-01 | FU-TST-R59 | no |
+| critic:critics-d6d75ae/u6d.md#U6D-02 | FU-CFG-R37 | no |
