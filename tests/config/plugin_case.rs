@@ -32,7 +32,7 @@ mod tests {
             // When the profile is parsed.
             let config = Config::parse(text)?;
             // Then no client restriction applies and the name is stored as written.
-            assert!(config.plugins.get("clpreauth").is_none(), "{text}");
+            assert!(!config.plugins.contains_key("clpreauth"), "{text}");
             assert!(config.plugins.contains_key(interface), "{text}");
         }
         Ok(())
@@ -51,7 +51,7 @@ mod tests {
                     failure,
                     Failure::NotYetEffective {
                         relation: "disable",
-                        ..
+                        package: _
                     }
                 ),
                 "{interface}: {failure:?}"
@@ -75,7 +75,7 @@ mod tests {
                     failure,
                     Failure::NotYetEffective {
                         relation: "disable",
-                        ..
+                        package: _
                     }
                 ),
                 "{failure:?}"
@@ -113,7 +113,7 @@ mod tests {
                 .err()
                 .ok_or("strict accepted an unknown control")?;
             assert!(
-                matches!(failure, Failure::UnknownRelation { .. }),
+                matches!(failure, Failure::UnknownRelation { path: _ }),
                 "{text}: {failure:?}"
             );
         }
@@ -150,7 +150,7 @@ mod tests {
             config
                 .diagnostics()
                 .iter()
-                .any(|item| matches!(item, ConfigDiagnostic::UnknownRelation { .. }))
+                .any(|item| matches!(item, ConfigDiagnostic::UnknownRelation { path: _ }))
         );
         // The exact spelling is still a refused dynamic module.
         let failure = Config::from_reader(text.to_ascii_lowercase().as_bytes())
@@ -174,7 +174,7 @@ mod tests {
                     failure,
                     Failure::NotYetEffective {
                         relation: "disable",
-                        ..
+                        package: _
                     }
                 ),
                 "{header}: {failure:?}"
