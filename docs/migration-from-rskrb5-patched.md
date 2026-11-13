@@ -1665,8 +1665,16 @@ the preferred way to retain erasure responsibility across the call boundary.
 SPNEGO reqFlags contents must include an unused-bit count from 0 to 7, with zero
 padding bits and a payload when the count is nonzero (FU-SPN-R08), at most 32
 significant bits, and no trailing zero bits beyond the unused-bit count
-(FU-SPN-R19, FU-DOC-R99). Malformed values now return `Spnego::InvalidReqFlags`
-on encode and decode; `[0]` remains valid.
+(FU-SPN-R19, FU-DOC-R99). Malformed values return `Spnego::InvalidReqFlags` on
+encode only; `[0]` remains valid. Decode is lenient (FU-SPN-R20): RFC 4178
+section 4.2.1 and MS-SPNG 3.1.5.5 say the acceptor MUST ignore `reqFlags`, so
+`NegTokenInit::decode` accepts any contents (empty, padded, oversized, not
+DER-minimal), keeps them as received in `req_flags()` and decodes the other
+fields as before. The field must still wrap one well-formed BIT STRING TLV (tag
+`0x03`, a definite DER length that fits, nothing after it). v0.2.2 accepted any
+bytes in both directions. Encoding a token whose decoded `reqFlags` is not
+canonical fails with `Spnego::InvalidReqFlags`; clear it with
+`set_req_flags(None)` first.
 
 Treat `with_ap_rep(false)` as an optional-reply preference (FU-SPN-R09). A valid
 initiator mechListMIC receives a completion carrying a reciprocal MIC and the
