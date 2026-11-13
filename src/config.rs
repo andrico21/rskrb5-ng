@@ -2144,14 +2144,19 @@ impl IncludeExpansion {
 
     /// One `include`: read the file and expand its own directives in turn.
     ///
-    /// A path is used exactly as the configuration spells it, which is what MIT
-    /// does (`fopen` on the token, relative to the process's working directory
-    /// when it is relative) - no rebasing on the including file's directory.
+    /// The path of an `include` directive must be absolute: [`Self::splice`]
+    /// refuses a relative one before this is reached, a deliberate divergence
+    /// from MIT, which `fopen`s the token and so resolves a relative path
+    /// against the process's working directory. An absolute path is used exactly
+    /// as the configuration spells it - no rebasing on the including file's
+    /// directory. A top-level path handed to [`Config::load_paths`] is opened as
+    /// given.
     ///
     /// # Errors
     ///
     /// Returns [`Error::IncludeTooDeep`] past [`MAX_INCLUDE_DEPTH`],
-    /// [`Error::IncludeFile`] for a file that cannot be resolved or read,
+    /// [`Error::IncludeFile`] for an included file that cannot be resolved or
+    /// read, [`Error::File`] for a top-level file that cannot,
     /// [`Error::IncludeCycle`] for a file already being expanded, the
     /// [`Self::read_include`] limit errors, and the errors of its own
     /// directives.
@@ -2187,8 +2192,8 @@ impl IncludeExpansion {
     ///
     /// Returns [`Error::IncludeTooMany`] past [`MAX_INCLUDE_FILES`],
     /// [`Error::IncludeTooLarge`] past [`MAX_INCLUDE_BYTES`], and
-    /// [`Error::IncludeFile`] for a file that cannot be opened or read, or that
-    /// is not UTF-8 text.
+    /// [`Error::IncludeFile`] for an included file that cannot be opened or
+    /// read, or that is not UTF-8 text ([`Error::File`] for a top-level file).
     fn read_include(&mut self, path: &Path, depth: usize) -> Result<String, Error> {
         use std::fs::File;
 
@@ -2220,12 +2225,15 @@ impl IncludeExpansion {
                 limit: MAX_INCLUDE_BYTES,
             });
         }
-        let content = String::from_utf8(bytes).map_err(|error| Error::IncludeFile {
-            path: path.to_path_buf(),
-            source: io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("not UTF-8 text: {error}"),
-            ),
+        let content = String::from_utf8(bytes).map_err(|error| {
+            profile_file_error(
+                path,
+                depth,
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("not UTF-8 text: {error}"),
+                ),
+            )
         })?;
         self.files = count;
         // Saturating: the byte check above keeps the total within
@@ -2236,6 +2244,10 @@ impl IncludeExpansion {
 
     /// One `includedir`: every accepted name, in alphanumeric order.
     ///
+    /// An entry that is a directory - or a symlink to one - is skipped, as MIT
+    /// does (it opens the name with `fopen` and reads nothing from a directory),
+    /// so it is neither read nor counted against the file cap.
+    ///
     /// The file cap is enforced while the directory is scanned, so a directory
     /// with more accepted names than the budget allows is refused before any
     /// name is sorted or any file is read.
@@ -2245,8 +2257,11 @@ impl IncludeExpansion {
     /// symlink while it is being read - and an entry that is one of the
     /// directories already being read - is [`Error::IncludeCycle`] naming the
     /// path the configuration spelled, rather than a chain that only runs out of
-    /// depth. The path is used exactly as the configuration spells it, as an
-    /// `include` path is (`fopen` on the token, MIT's own rule).
+    /// depth. The path of an `includedir` directive must be absolute
+    /// ([`Self::splice`] refuses a relative one, a deliberate divergence from
+    /// MIT, which resolves it against the process's working directory) and is
+    /// used exactly as the configuration spells it. A top-level directory handed
+    /// to [`Config::load_paths`] is opened as given.
     ///
     /// # Errors
     ///
@@ -2284,7 +2299,11 @@ impl IncludeExpansion {
             // not UTF-8 is included too; the path used to open a file is always
             // the one the directory entry carries.
             let name = entry.file_name();
-            if includedir_name_is_valid(name.as_encoded_bytes()) {
+            // A name that cannot be inspected is kept, so that reading it names
+            // the failure instead of skipping it.
+            if includedir_name_is_valid(name.as_encoded_bytes())
+                && !fs::metadata(dir.join(&name)).is_ok_and(|metadata| metadata.is_dir())
+            {
                 // Saturating: `MAX_INCLUDE_FILES` refuses long before
                 // `usize::MAX`.
                 let count = self.files.saturating_add(names.len()).saturating_add(1);
