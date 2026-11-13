@@ -373,3 +373,13 @@ is a parity feature, not a defect>`.
 | critic:critics-d6d75ae/u5.md#U5-02 | FU-FIL-R09 | no |
 | critic:critics-d6d75ae/u3.md#U3-01 | FU-TST-R59 | no |
 | critic:critics-d6d75ae/u6d.md#U6D-02 | FU-CFG-R37 | no |
+| critic:critics-10d991d/u6a.md#U6A-01 | FU-DOC-R116 | no |
+| critic:critics-10d991d/u6a.md#U6A-02 | FU-DOC-R115 | no |
+| critic:critics-10d991d/u6a.md#U6A-03 | FU-DOC-R115 | no |
+| critic:critics-10d991d/u6b.md#U6B-01 | FU-DOC-R117 | no |
+| critic:critics-10d991d/u6b.md#U6B-02 | FU-DOC-R117 | no |
+| critic:critics-10d991d/u6b.md#U6B-03 | FU-DOC-R116 | no |
+| critic:critics-10d991d/u6b.md#U6B-04 | FU-DOC-R115 | no |
+| critic:critics-10d991d/u6d.md#U6D-01 | FU-DOC-R118 | no |
+| critic:critics-10d991d/u6d.md#U6D-02 | FU-DOC-R118 | no |
+| critic:critics-10d991d/u6d.md#U6D-03 | FU-DOC-R117 | no |

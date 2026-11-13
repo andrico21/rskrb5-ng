@@ -90,8 +90,8 @@ no `--allow-open`).
 cargo-mutants mutates no call, no iterator adapter and no argument order of the
 changed lines, so thirteen hand-made mutants ran the narrow test set of their
 file in a scratch tree with its own target directory (`--test keytab --test
-file_mutations`, or `--test config`; the real tree passes both). Ten were caught:
-`any(String::is_empty)` replaced by `all` (four keytab tests, among them
+file_mutations`, or `--test config`; the real tree passes both). Ten were
+caught: `any(String::is_empty)` replaced by `all` (four keytab tests, among them
 `rejects_empty_component_entries`), each of the three `check_storable` calls
 (constructor, `write_to`, `add_entry_from_password`) removed in turn
 (`rejects_empty_component_entries`, `serialization_rejects_zero_length_fields`,
