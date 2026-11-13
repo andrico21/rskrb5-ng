@@ -687,7 +687,7 @@ Security fail-closed parsing and verification:
   `Spnego::MissingMechListMic` when the first offered mechanism is not Kerberos
   and no mechListMIC is supplied, `Spnego::NonminimalLength` for a DER length
   in non-minimal form and `Spnego::InvalidOidEncoding` for an OID subidentifier
-  in non-minimal form or wider than 32 bits. `Token::krb5_ap_req` on a
+  in non-minimal form or an arc wider than 32 bits. `Token::krb5_ap_req` on a
   `NegTokenResp` returns `Spnego::NegotiationRequiresState`
   (`UnsupportedMechanism` when `supportedMech` is not Kerberos, as in v0.2.2),
   where v0.2.2 returned the AP-REQ carried in the response token (FU-DOC-R104).
@@ -1137,12 +1137,12 @@ Configuration:
   is not rejected when its value is false (`0`, `no`, `off`, ...);
   `pkinit_key_exchange` and `pkinit_kex` are rejected for `rsa`, `rsa-only`,
   `key-transport` and `dh-less`, not for `dh` or `ecdh`;
-  `kpasswd_protocol` and `kpasswd_version` load only for `protected`, `rfc3244`
-  or a supported version number, and an empty or false value is rejected for
-  them. v0.2.2 ignored all of them in the sections it skipped, accepted
-  `krb4_convert = true` and `pkinit_win2k = true` in `[libdefaults]` and
-  `[realms]`, and answered every `v4_*` key there with `UnsupportedDirective`,
-  even `v4_instance_resolve = false`. The path values `krb4_config` and
+  `kpasswd_protocol` and `kpasswd_version` are rejected unless the value is
+  `protected`, `rfc3244` or a supported version number. v0.2.2 ignored all of
+  them in the sections it skipped, accepted `krb4_convert = true` and
+  `pkinit_win2k = true` in `[libdefaults]` and `[realms]`, and answered every
+  `v4_*` key there with `UnsupportedDirective`, even
+  `v4_instance_resolve = false`. The path values `krb4_config` and
   `krb4_realms` count as enabled whenever they are not empty or false, so
   `krb4_config = /etc/krb.conf` is rejected too (v0.2.2 loaded it). An empty
   `krb4_convert =` opens a pending subsection in `[appdefaults]`, `[realms]`,
