@@ -1979,7 +1979,7 @@ test_names = [
   "tests/config/readers.rs::dynamic_modules_fail_in_every_mode",
 ]
 feature_flags = []
-security_divergence = ""
+security_divergence = "include and includedir paths must be absolute: a relative path is IncludeFile (InvalidInput), where MIT resolves it against the working directory (FU-DOC-R82)."
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 3
@@ -2002,7 +2002,7 @@ test_names = [
   "tests/config.rs::loads_config_path_list_in_order",
 ]
 feature_flags = []
-security_divergence = "A missing KRB5_CONFIG entry is an error (MIT skips it). The value-suffix final marker is kept as a gokrb5 extension beside MIT's tag* and [section]* forms."
+security_divergence = "A missing or unreadable KRB5_CONFIG entry is an error (MIT skips it). The value-suffix final marker is kept as a gokrb5 extension beside MIT's tag* and [section]* forms."
 disposition = "WP-01"
 closing_plan = 1
 closing_todo = 15
