@@ -908,6 +908,38 @@ mod tests {
         Ok(())
     }
 
+    /// MIT checks the component count, then the realm, then each component length: the first failure names the error.
+    #[test]
+    fn unstorable_principal_checks_run_in_mit_order() -> Result<(), TestError> {
+        use zeroize::Zeroizing;
+        for version in [1_u8, 2] {
+            // Given an empty realm together with an empty name component, when parsing it.
+            let bytes = raw_keytab(version, &[("", &["host", ""], &[7; 16])]);
+            let error = Keytab::parse(&bytes)
+                .err()
+                .context("the file is rejected")?;
+            // Then the realm error wins over the component error.
+            assert!(
+                matches!(error, Error::EmptyRealm),
+                "version {version}: {error:?}"
+            );
+        }
+        let password = || Zeroizing::new(b"password".to_vec());
+        // Given the same principal, when adding a password entry, then the realm error wins as well.
+        let error = Keytab::new()
+            .add_entry_from_password(
+                Principal::new("", 1, ["host", ""]),
+                password(),
+                UNIX_EPOCH,
+                1,
+                17,
+            )
+            .err()
+            .context("the principal is refused")?;
+        assert!(matches!(error, Error::EmptyRealm), "{error:?}");
+        Ok(())
+    }
+
     /// An entry with a zero-length key is malformed (MIT ends the table there).
     #[test]
     fn rejects_empty_key_entries() -> Result<(), TestError> {
