@@ -114,7 +114,12 @@ mod tests {
             let expected = ConfigDiagnostic::UnknownRelation {
                 path: vec![
                     section.to_owned(),
-                    if section == "realms" { "R" } else { "r" }.to_owned(),
+                    if matches!(section, "realms" | "plugins") {
+                        "R"
+                    } else {
+                        "r"
+                    }
+                    .to_owned(),
                     child.to_owned(),
                 ],
             };
