@@ -48,9 +48,13 @@ pub(super) async fn send_to_endpoints(
 
 /// Send one password mutation with separate preparation and delivery budgets.
 ///
-/// Each phase gets the full configured timeout, allowing twice that duration
-/// in total. Preparation failure is definite; send/reply expiry is unknown.
-/// [`KdcProtocol::Auto`] tries TCP, then UDP only after a definite TCP failure.
+/// Each phase gets the full configured timeout, so one TCP or UDP attempt takes
+/// at most twice that duration. Preparation failure is definite; send/reply
+/// expiry is unknown. [`KdcProtocol::Auto`] tries TCP, then UDP only after a
+/// definite TCP failure. It resolves the address in a phase of its own first,
+/// so it can take up to four times the timeout: resolution, TCP connect, UDP
+/// socket setup, UDP send and reply. A TCP failure after the connect is unknown
+/// and ends the call after at most three.
 ///
 /// # Errors
 /// Returns preparation errors before a send, or `KpasswdOutcomeUnknown` afterward.

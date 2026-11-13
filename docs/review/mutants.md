@@ -43,8 +43,8 @@ current campaign carries that outcome.
 | unviable | 1178 |
 | total | 5079 |
 
-These are the outcomes CI recorded. The register has 682 rows: 619 `killed`,
-59 `equivalent` and 4 `hang`; 568 were opened by a missed mutant and 114 by a
+These are the outcomes CI recorded. The register has 683 rows: 620 `killed`,
+59 `equivalent` and 4 `hang`; 569 were opened by a missed mutant and 114 by a
 timeout.
 
 ## Verification
@@ -52,13 +52,13 @@ timeout.
 ### In-diff check after todo 113 (todo 114)
 
 Todo 113 made the `[plugins]` interface and control names case-sensitive, like
-MIT's `strcmp`. The new `State::dynamic_module` in `src/config/profile_syntax.rs`
-says whether a word is the dynamic-module relation of the current section:
-under `[plugins]` only the exact spelling `module` is, in every other section
-`module` is refused in any case. Both places that refused `module`
-(`IncludeExpansion::expand` in `src/config.rs` and the tag path of
-`State::content`) call it, and `plugins` joined the sections whose relation
-tags keep their case.
+MIT's `strcmp`. The new `State::dynamic_module` in
+`src/config/profile_syntax.rs` says whether a word is the dynamic-module
+relation of the current section: under `[plugins]` only the exact spelling
+`module` is, in every other section `module` is refused in any case. Both places
+that refused `module` (`IncludeExpansion::expand` in `src/config.rs` and the tag
+path of `State::content`) call it, and `plugins` joined the sections whose
+relation tags keep their case.
 
 - Diff: `git diff 69f9259 586c039 -- src` (src/config.rs and
   src/config/profile_syntax.rs). `69f9259` is the `main` that carried the
@@ -71,11 +71,13 @@ tags keep their case.
   another task, which stretched the full-suite baseline to 105 s to 135 s of
   build plus 134 s to 193 s of test, more than a single local call could hold.
   The shards therefore ran the narrow test set `-- --lib --test config --test
-  config_relative_include --test profile_include_order` (every test target that
-  reads a profile); a narrower set can only turn a caught mutant into a missed
-  one, so every outcome below is valid. Each shard measured its own baseline
-  (53 s to 143 s build, 2 s to 7 s test). An earlier full-suite run of the first
-  seven mutants (shard 0 of 2) also caught all seven.
+  config_relative_include --test profile_include_order` (the targets that
+  exercise profile parsing and `[plugins]` directly; the other targets that
+  parse a profile, among them `policy` and `realm_selectors`, were not run); a
+  narrower set can only turn a caught mutant into a missed one, so every outcome
+  below is valid. Each shard measured its own baseline (53 s to 143 s build, 2 s
+  to 7 s test). An earlier full-suite run of the first seven mutants (shard 0 of
+  2) also caught all seven.
 
 | Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -97,8 +99,8 @@ cargo-mutants mutates no call argument or match arm of the changed lines
 beyond the guard and operators it listed, so six hand-made mutants ran
 `cargo test --all-features --test config plugin_case` in a scratch tree with its
 own target directory (the real tree passes 8 of 8 in another one). All six were
-caught by the existing tests in `tests/config/plugin_case.rs`; no test was added:
-the `plugins` arm compared with `eq_ignore_ascii_case` instead of `==`
+caught by the existing tests in `tests/config/plugin_case.rs`; no test was
+added: the `plugins` arm compared with `eq_ignore_ascii_case` instead of `==`
 (`upper_module_is_unknown_relation`, `reader_upper_module_is_unknown_relation`),
 the other sections compared with `==` (`other_sections_unchanged`), `plugins`
 removed from the case-preserving match (four tests, among them
@@ -215,20 +217,22 @@ and the row is now `killed`.
 cargo-mutants mutates no call argument or match arm of the changed lines, so
 thirteen hand-made mutants ran the narrow test set of their file (outside the
 campaign). Eleven were caught: dropping the `validate_req_flags` call at
-encode and validating again at decode (`req_flags_decoding_keeps_noncanonical_named_bits`),
-the realm `Auto` path falling through to UDP after an unknown TCP outcome
-(`kpasswd_auto_unknown_tcp_outcome_never_tries_udp`), UDP first in the realm
-and explicit-address `Auto` paths (`kpasswd_auto_tries_all_tcp_endpoints_before_udp`,
+encode and validating again at decode
+(`req_flags_decoding_keeps_noncanonical_named_bits`), the realm `Auto` path
+falling through to UDP after an unknown TCP outcome
+(`kpasswd_auto_unknown_tcp_outcome_never_tries_udp`), UDP first in the realm and
+explicit-address `Auto` paths
+(`kpasswd_auto_tries_all_tcp_endpoints_before_udp`,
 `kpasswd_explicit_address_auto_uses_tcp_first`), each of the five
-`check_storable` calls removed in turn, and `ConnectionRefused` removed from
-the refusal set. Two survived. The explicit-address `Auto` arm that stops at
-an unknown TCP outcome was untested: the test
+`check_storable` calls removed in turn, and `ConnectionRefused` removed from the
+refusal set. Two survived. The explicit-address `Auto` arm that stops at an
+unknown TCP outcome was untested: the test
 `kpasswd_explicit_address_auto_unknown_tcp_outcome_never_tries_udp` in
-`tests/client_transport/tests/kpasswd_order.rs` kills it (it fails on the
-mutant at its no-datagram assertion, passes on the real code, 20 of 20 runs).
+`tests/client_transport/tests/kpasswd_order.rs` kills it (it fails on the mutant
+at its no-datagram assertion, passes on the real code, 20 of 20 runs).
 `ConnectionReset` removed from the refusal set survives on Linux, where the
-kernel never reports it for a loopback datagram; it is the Windows spelling of
-a port-unreachable, so only the Windows job can exercise it.
+kernel never reports it for a loopback datagram; it is the Windows spelling of a
+port-unreachable, so only the Windows job can exercise it.
 
 #### Closing the open row (todo 111)
 
@@ -236,12 +240,13 @@ Todo 111 extracted the guard of `send_udp` into the pure function
 `is_udp_refusal(&Error) -> bool` (same predicate: an `Error::Io` whose kind is
 `ConnectionRefused` or `ConnectionReset`; the call site is
 `Err(error) if is_udp_refusal(&error) => Err(error)`) and unit-tested it with
-`io::Error::from(kind)` for ten kinds (`udp_refusal_is_exactly_connection_refused_and_reset`)
-and for non-I/O errors (`udp_refusal_ignores_non_io_errors`). The refactor changes
-no behaviour: the 23 `kpasswd_` tests of `client_transport`, among them the
-todo 109 order tests and the todo 108 test above, pass unchanged. The
-in-diff re-run (`git diff 75dc6ca ef07910 -- src`, the same flags, 2 shards)
-generated 7 mutants and caught all 7 (0 missed, 0 timeout, 0 unviable):
+`io::Error::from(kind)` for ten kinds
+(`udp_refusal_is_exactly_connection_refused_and_reset`) and for non-I/O errors
+(`udp_refusal_ignores_non_io_errors`). The refactor changes no behaviour: the 23
+`kpasswd_` tests of `client_transport`, among them the todo 109 order tests and
+the todo 108 test above, pass unchanged. The in-diff re-run (`git diff 75dc6ca
+ef07910 -- src`, the same flags, 2 shards) generated 7 mutants and caught all 7
+(0 missed, 0 timeout, 0 unviable):
 
 | Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -1069,7 +1074,7 @@ minutes).
 | `src/client/reply_constraints.rs` | 11 | 0 | 11 | 7 | 4 | 0 |
 | `src/client/time.rs` | 1 | 0 | 1 | 0 | 1 | 0 |
 | `src/client/transport.rs` | 11 | 52 | 63 | 62 | 1 | 0 |
-| `src/client/transport/password_delivery.rs` | 2 | 4 | 6 | 6 | 0 | 0 |
+| `src/client/transport/password_delivery.rs` | 3 | 4 | 7 | 7 | 0 | 0 |
 | `src/client/transport/password_dns.rs` | 1 | 0 | 1 | 1 | 0 | 0 |
 | `src/client/transport/realm_auto.rs` | 4 | 6 | 10 | 10 | 0 | 0 |
 | `src/client/transport/srv_targets.rs` | 1 | 0 | 1 | 1 | 0 | 0 |
@@ -1131,7 +1136,7 @@ minutes).
 | `src/spnego/oid.rs` | 3 | 0 | 3 | 3 | 0 | 0 |
 | `src/spnego/token_debug.rs` | 7 | 0 | 7 | 7 | 0 | 0 |
 | `src/ticket.rs` | 3 | 0 | 3 | 3 | 0 | 0 |
-| total | 568 | 114 | 682 | 619 | 59 | 4 |
+| total | 569 | 114 | 683 | 620 | 59 | 4 |
 
 ## Register
 
