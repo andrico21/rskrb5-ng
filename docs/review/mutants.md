@@ -49,6 +49,63 @@ timeout.
 
 ## Verification
 
+### In-diff check after todo 98 (todo 99)
+
+Todo 98 changed three files. In `src/config.rs`, `read_include` reports a
+non-UTF-8 file through `profile_file_error` (a top-level file is
+`Error::File`, an included one `Error::IncludeFile`) and `include_dir` skips
+an entry that is a directory, or a symlink to one, with
+`!fs::metadata(..).is_ok_and(|metadata| metadata.is_dir())`. In
+`src/ccache.rs`, `Principal::write_to` returns the new
+`Error::UnrepresentableNameType` for a nonzero name type in version 1, which
+`src/error.rs` declares; the rest of the diff is documentation.
+
+- Diff: `git diff de4d4a3 acdefc5 -- src` (3 files). `de4d4a3` is the
+  `main` that carried the previous check; `acdefc5` is `main` after todo 98.
+- The check ran locally as in todo 79: `cargo mutants --all-features
+  --no-shuffle --cap-lints=true --in-diff <diff> --shard k/5 -j 2
+  --copy-target=false` at `acdefc5`, cargo-mutants 27.1.0, rustc 1.99.1,
+  `CARGO_BUILD_WARNINGS=allow`, no debug info and an 8 GiB address-space cap.
+  The diff yields 9 mutants, run in 5 shards of 2, 2, 2, 2 and 1. Each shard
+  measured its own baseline (49 s to 51 s build, 75 s to 76 s test), and
+  cargo-mutants set the timeout from it (379 s to 383 s).
+- `mutants_report.py --artifacts <the 5 shard outputs> --expect-shards 5
+  --register docs/review/mutants.md --campaign
+  acdefc5d86b51d55390c596f1807dc0323862c71 --enforce` prints `mutants:
+  caught=9 missed=0 timeout=0 unviable=0 success=0` and `0 problem(s)`.
+
+| Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 2 | 2 | 0 | 0 | 0 | 197 |
+| 1 | 2 | 2 | 0 | 0 | 0 | 194 |
+| 2 | 2 | 2 | 0 | 0 | 0 | 191 |
+| 3 | 2 | 2 | 0 | 0 | 0 | 190 |
+| 4 | 1 | 1 | 0 | 0 | 0 | 154 |
+
+No mutant survived, so the check adds no register row. The four mutants in
+`Principal::write_to` (`Ok(())`, `&&` to `||`, `==` to `!=`, `!=` to `==`)
+are caught by 4, 4, 4 and 2 failing tests, the last among them
+`legacy_ccaches_reject_unrepresentable_fields`. The two `read_include`
+mutants (`Ok(String::new())`, `Ok("xyzzy".into())`) are caught by 16 and 17
+failing tests, the `include_dir` mutants (`Ok(())`, `&&` to `||`, delete `!`)
+by 6, 1 and 5, among them `a_symlinked_includedir_cycle_is_named` and
+`includedir_filters_names_like_mit_and_sorts_alphanumerically`.
+
+cargo-mutants does not mutate the closure of `is_ok_and`, the `depth` argument
+of `profile_file_error` or the payload of the new error, so five hand-made
+mutants ran `cargo test --all-features --test config --test ccache` (outside
+the campaign). Four were caught: `metadata.is_dir()` replaced by `false`
+(`includedir_skips_directory_entries`), `depth` replaced by `0` and by `1`
+(`non_utf8_root_is_file_error_and_non_utf8_include_is_include_error`) and the
+payload replaced by `0` (`legacy_ccaches_reject_unrepresentable_fields`).
+One survived: skipping an entry whose metadata cannot be read (the condition
+`fs::metadata(..).is_ok_and(|metadata| !metadata.is_dir())`), which is not
+equivalent because a dangling symlink then no longer reports
+`Error::IncludeFile`. The test `includedir_names_an_uninspectable_entry` in
+`tests/config/profile.rs` kills it: it fails on that mutant and passes on the
+real code. No changed file is pulled in with `include!`: `src/config.rs`
+itself is mutated, and the files it includes are not in the diff.
+
 ### In-diff check after todos 77 and 78 (todo 79)
 
 Todo 77 changed `spake_preauth_groups` in `src/config/libdefaults/c2.rs`: the
