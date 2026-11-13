@@ -245,6 +245,16 @@ is a parity feature, not a defect>`.
 | critic:critics-b42671f/u6.md#U6-03 | FU-DOC-R29 | no |
 | critic:critics-b42671f/u6.md#U6-04 | FU-DOC-R30 | no |
 | critic:critics-b42671f/u6.md#U6-05 | FU-DOC-R31 | no |
+| critic:critics-de75790/u6a.md#U6A-01 | FU-DOC-R38 | no |
+| critic:critics-de75790/u6a.md#U6A-02 | FU-DOC-R39 | no |
+| critic:critics-de75790/u6a.md#U6A-03 | FU-DOC-R40 | no |
+| critic:critics-de75790/u6a.md#U6A-04 | FU-DOC-R41 | no |
+| critic:critics-de75790/u6a.md#U6A-05 | FU-DOC-R42 | no |
+| critic:critics-de75790/u6b.md#U6B-01 | FU-DOC-R43 | no |
+| critic:critics-de75790/u6b.md#U6B-02 | FU-DOC-R44 | no |
+| critic:critics-de75790/u6c.md#U6C-01 | FU-DOC-R45 | no |
+| critic:critics-de75790/u6c.md#U6C-02 | FU-DOC-R46 | no |
+| critic:critics-de75790/u6c.md#U6C-03 | FU-DOC-R47 | no |
 | executor:todo-78#unused-dependencies-1-100 | FU-CI-R17 | no |
 | executor:todo-78#clippy-1-100-lints | FU-CI-R18 | no |
 | executor:todo-83#intermediate-state-premises | FU-DOC-R32 | no |
@@ -253,3 +263,7 @@ is a parity feature, not a defect>`.
 | executor:todo-85#mirrored-premises | FU-DOC-R35 | no |
 | executor:todo-85#intermediate-state-remain-claims | FU-DOC-R36 | no |
 | executor:todo-85#gate-contrast-clauses | FU-DOC-R37 | no |
+| executor:todo-88#gate-sentences-without-baseline | FU-DOC-R41 | no |
+| executor:todo-88#config-profile-premises | FU-DOC-R42 | no |
+| executor:todo-88#existing-without-baseline | FU-DOC-R48 | no |
+| executor:todo-88#now-previous-without-baseline | FU-DOC-R49 | no |

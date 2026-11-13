@@ -91,9 +91,14 @@ These are breaking; the migration guide maps each one.
 - `config::LibDefaults` stores enctype names only:
   `default_tkt_enctype_ids`, `default_tgs_enctype_ids` and
   `permitted_enctype_ids` are methods that derive the ids; update the
-  `*_enctypes` name lists directly or through `with_*_enctypes` builders. Its
-  thirteen boolean options use `config::Toggle`, and the new `allow_rc4` and
-  `allow_des3` options join them.
+  `*_enctypes` name lists directly or through `with_*_enctypes` builders. Eleven
+  of its twelve v0.2.2 boolean options use `config::Toggle`; the twelfth,
+  `dns_canonicalize_hostname`, is the enum `config::hostname::Canonicalization`
+  (`Never`, `Always`, `Fallback`), so `if cfg.libdefaults.dns_canonicalize_hostname`
+  no longer compiles and the profile value `fallback`, which v0.2.2 rejected as
+  `InvalidBoolean`, is valid. Six new `Toggle` options join them: `allow_rc4`,
+  `allow_des3`, `dns_uri_lookup`, `enforce_ok_as_delegate`,
+  `client_aware_channel_bindings` and `permitted_enctypes_explicit` (FU-DOC-R39).
 - `config::Realm::realm` is `name`. Several functions borrow their option
   structs, group arguments into parameter structs
   (`client::TgsRequestParts`, `kadmin::PasswordEncryption`) or become
@@ -266,8 +271,8 @@ Service acceptor and HTTP layer:
   records. A replay refreshes the matched replay key and authenticator digest
   together without accepting it, and both expire together, so a rewritten-sname
   replay cannot keep a digest alive past its key record.
-  The default retention is 900 seconds; capacity planning needs 1.5 times the
-  previous two-skew window. Caches fail closed when full (RSK-7D80FA41, run-2
+  The default retention is 900 seconds, three times the default skew; size
+  capacity for peak admissions over that window. Caches fail closed when full (RSK-7D80FA41, run-2
   lead `ReplayCache:indefinite-entry-retention`).
 - Ticket and authenticator authorization data are validated before success:
   unknown critical elements and unsupported AD-KDCIssued or AD-AND-OR are
@@ -493,7 +498,7 @@ Release workflow, CI docs and fixture scripts:
   invalid configurations are `InvalidConfiguration` (FU-SPN-R17).
 
 - New `spnego::NegTokenInit::set_req_flags(Option<Vec<u8>>)` sets or clears
-  request flags; encoding keeps the existing BIT STRING validation (FU-SPN-R18).
+  request flags; encoding validates the BIT STRING (FU-SPN-R18).
 
 - SPNEGO request flags reject more than 32 significant bits and nonminimal
   named-bit DER at encoding and decoding; canonical empty and valid sets retain
@@ -516,7 +521,7 @@ Security fail-closed parsing and verification:
   password-encryption inputs and verified replies; keytab entries and ccache
   credentials; message payload wrappers; PAC containers and validation records;
   GSS tokens, initiator options/contexts; service validation/reply results; HTTP
-  response wrappers. Existing `with_*` methods and new `set_*` methods replace
+  response wrappers. The `with_*` and `set_*` methods replace
   owned secrets with erasure, while ASN.1 dependency copies retain the documented
   residual-copy limitation. Metadata fields move to getters too because the
   strict profile prohibits partially public records (FU-CLI-R13, FU-TRN-R09,
@@ -792,6 +797,19 @@ Configuration:
 - `Config::new_without_env`, `Config::parse_without_env` and
   `LibDefaults::new_without_env` are removed; use `new` and `parse`
   (FU-CFG-02).
+- The profile reader rejects structure the v0.2.2 reader ignored. v0.2.2 selected a section from `[name]` while ignoring any text
+  after `]`, trimmed the name, accepted `[]` and an unterminated `[name`,
+  ignored relations and other text before the first section, and dropped a
+  section behind a byte order mark. Each of those is now an `InvalidLine`
+  (`junk` before `[libdefaults]`, `[libdefaults] junk`, `[]`, `[libdefaults`,
+  a BOM before the first header). A padded `[ libdefaults ]` is no longer
+  trimmed: it names a different, unknown section (a diagnostic in
+  `ParseMode::Compatible`, an error in `ParseMode::Strict`) (FU-DOC-R38).
+- `LibDefaults::preferred_preauth_types` defaults to `[17, 16]` (v0.2.2:
+  `[17, 16, 15, 14]`; the draft-9 PKINIT IDs 14 and 15 are permanently
+  rejected). Boolean relations also accept `on`, `off` and `nil` like MIT; v0.2.2
+  accepted only `1`, `t`, `true`, `y`, `yes` and `0`, `f`, `false`, `n`, `no`,
+  and reported `InvalidBoolean` for any other spelling (FU-DOC-R40).
 - The first value of a repeated scalar wins (it was the last), across files,
   includes, lists and `[domain_realm]`. `forwardable` and `proxiable` set the
   request bits, `default_realm` is the host fallback, a bare
@@ -858,8 +876,9 @@ Service and replay cache:
 
 - `clear_older_than[_at]` is renamed `force_clear_older_than[_at]`, and the
   new `prune_expired[_at]` removes only expired records (FU-SVC-03).
-- Admission expires records through an ordered index instead of scanning the
-  live digest table (FU-SVC-04); bulk expiry removes only expired pairs
+- Admission expires records through an ordered index (v0.2.2 expired nothing
+  at admission and pruned only through the explicit `clear_older_than[_at]`
+  scan) (FU-SVC-04); bulk expiry removes only expired pairs
   (FU-SVC-05); debug builds check the index invariants (FU-SVC-06).
 - `with_max_clock_skew` and `with_shared_replay_cache` on `Validator`,
   `NegotiateLayer` and `NegotiateService` return `Result`; an explicit cache
@@ -1023,11 +1042,11 @@ Gates, tests and CI:
   (FU-TST-07) and bounds its TCP probe (FU-TST-10).
 - Release tag discovery fails on invalid commit IDs or Git failures instead of
   reporting a successful non-release invocation (FU-CI-R01).
-- Package-link validation now scans multiline Markdown destinations and tokenizes
+- Package-link validation scans multiline Markdown destinations and tokenizes
   HTML attributes, including unquoted `href` and `src` values (FU-CI-R03).
 - Package-link validation scans reference destinations on the following line,
   including angle-wrapped targets and escaped labels (FU-CI-R04).
-- Workflow wiring validation now requires executed gate commands, rejecting
+- Workflow wiring validation requires executed gate commands, rejecting
   printed, commented, conditional or failure-swallowing substitutes (FU-GATE-R01).
 - Workflow wiring rejects quoted execution-control keys and duplicate gate step
   mappings (FU-GATE-R02).
@@ -1086,7 +1105,7 @@ Gates, tests and CI:
   `#[path]` attributes (including inline modules and `cfg_attr`), so they cannot
   compile source outside the gate inventory (FU-GATE-R14).
 - `feature_closures.py check-ci` rejects `runner` keys, string or array, in
-  every Cargo `[target.*]` table, besides the existing rustflags overrides
+  every Cargo `[target.*]` table, besides the rustflags overrides
   (FU-GATE-R15).
 - `changelog_rows.py` fails when a fixed follow-up register row that records a
   behaviour change is not named in this changelog (FU-DOC-R19).
