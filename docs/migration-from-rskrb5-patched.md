@@ -167,8 +167,8 @@ Policy is evaluated after all sections and includes.
 
 Credential-file saves sync the parent directory after rename on Unix. A sync
 failure is returned even though replacement has already completed; cleanup
-failure never masks the original write, rename or sync error. Windows keeps
-the existing caller-provided owner-only directory ACL requirement.
+failure never masks the original write, rename or sync error. On Windows,
+supply a directory with an owner-only ACL (std does not expose ACL construction).
 
 ### Environment-free configuration defaults
 
@@ -261,7 +261,7 @@ AD-IF-RELEVANT wrappers with `Pac::AuthorizationDataDepthLimit` and more than
 (both in `error::Pac`). The inclusive byte budget is shared across siblings and
 counts nested payloads again at each decoded level, before decoding or PAC
 processing. Its signature and first-PAC behavior are unchanged. Service acceptance
-already imposed these limits independently while validating all restrictions.
+imposes these limits independently while validating all restrictions.
 
 ### HTTP replay-cache scope and binding limits
 
@@ -289,7 +289,7 @@ microseconds field remains valid. Generic DER codecs are unchanged.
 ### Strict Microseconds domain (RSK-985742B6)
 
 Service AP-REQ acceptance and `ValidatedApReq` AP-REP construction/verification
-now reject microseconds outside 0..=999999 using the existing
+now reject microseconds outside 0..=999999 using the new
 `Service::IntegerOutOfRange` error (`authenticator.cusec` or `ap-rep.cusec`).
 Values at or above one million are not normalized into additional seconds.
 Construction rechecks the mutable public `authenticator_cusec` field. Zero and
@@ -318,12 +318,12 @@ one last-seen time: a replay matching either refreshes both, and pruning removes
 them together, so the digest index never holds more records than the key index.
 Neither index expires a record within three skew windows of its latest sighting.
 At the default skew this is 900 seconds; size capacity for peak admissions over
-that window (1.5 times the previous 600-second retention estimate). The
+that window. The
 65,536-record default holds about 72 new records/second sustained before
 bursts or replay refreshes need extra headroom. Full capacity returns
 `ReplayCacheCapacityExceeded`, never evicting live replay evidence.
-Admission expires records through an ordered expiry index and no longer
-scans the live digest table (FU-SVC-04); each client principal is limited to a
+Admission expires records through an ordered expiry index (v0.2.2 expired
+nothing at admission; only an explicit `clear_older_than` scan did) (FU-SVC-04); each client principal is limited to a
 share of the capacity ("Replay cache" under the follow-up changes).
 
 Explicit `clear`/`force_clear_older_than*` are administrative overrides that can erase
@@ -621,7 +621,7 @@ async fn rotate(
 from `build_kpasswd_request` and the `RequestOptions` it was built with,
 instead of a raw `kadmin::Request` and a reply key:
 
-| 0.3 before the follow-up review | Now |
+| v0.2.2 | Now |
 | --- | --- |
 | `exchange_kpasswd_result(protocol, addr, &kadmin::Request, &EncryptionKey)` | `exchange_kpasswd_result(protocol, addr, &BuiltKpasswdRequest, &RequestOptions)` |
 | `exchange_kpasswd_result_with_config(config, protocol, realm, &kadmin::Request, &EncryptionKey)` | `exchange_kpasswd_result_with_config(config, protocol, realm, &BuiltKpasswdRequest, &RequestOptions)` |
@@ -879,8 +879,8 @@ drop(defaults);
   `ReplayCache::with_principal_capacity(usize)`. A principal over its share gets
   `error::Service::ReplayCacheCapacityExceeded { capacity }` with its share as
   `capacity`. Live evidence is never evicted.
-- Admission expires records through an ordered index instead of scanning the
-  digest table (FU-SVC-04, FU-SVC-05).
+- Admission expires records through an ordered index (v0.2.2 expired nothing at
+  admission; only an explicit `clear_older_than` scan did) (FU-SVC-04, FU-SVC-05).
 
 ```rust
 # #[cfg(feature = "messages")]
@@ -986,7 +986,8 @@ from the profile are expanded once, when a name is resolved, through
 A token whose fact is unavailable (for example `%{username}`, a Windows SID
 or an installation directory) is an error; there is no fallback to another
 name. The `KRB5CCNAME`/`KRB5_KTNAME`/`KRB5_CLIENT_KTNAME` environment values
-keep precedence and their existing UID-token behaviour.
+keep precedence; their `%{uid}` and `%{euid}` tokens follow "Credential filename
+identity tokens".
 
 ### Client changes (FU-CLI-01, FU-CLI-06, FU-CLI-12, FU-CLI-16, FU-CLI-17)
 
@@ -1085,15 +1086,16 @@ requests, `AsRepSession`, `KdcError`, password frames/build results and
 data, `EncryptedData`, `PaForUser`, `PaReqEncPaRep`, `KrbErrorInfo`, PAC containers,
 credential and validation records, GSS tokens, initiator options/contexts, service
 validation/reply types, and `NegotiateHttpResponse`. Metadata reads likewise use
-getters; constructors and existing `with_*` methods replace struct mutation.
+getters; constructors and `with_*` methods replace struct mutation.
 `InitiatorContext` uses `ap_req_ref`, `ap_req_der_ref`, `header_ref`,
 `session_key_ref` and `initiator_subkey_ref` for its secret borrows. Other
 context metadata uses same-name getters.
 
 For replacement use the type's `set_*` method, or retain the result of its
 consuming builder. Session tickets and KDC error payloads take `Zeroizing<Vec<u8>>`;
-keys take their existing owning `EncryptionKey`. `KdcError::with_e_data` now
-takes `Option<Zeroizing<Vec<u8>>>`. `ReferralTgsResult::new` adopts its final
+keys take their existing owning `EncryptionKey`. `KdcError::e_data` is no longer
+a public field (v0.2.2: `pub e_data: Option<Vec<u8>>`); build with
+`with_e_data(Option<Zeroizing<Vec<u8>>>)` and read with `e_data()`. `ReferralTgsResult::new` adopts its final
 session and referral vector; its fields are private (FU-CLI-R22): borrow them
 with `ticket()` and `referral_tgts()`, or take both owners with the consuming
 `into_parts()`, which returns `(TgsRepSession, Vec<AsRepSession>)`. Borrowed getters never transfer erasure duties for
@@ -1143,6 +1145,24 @@ or `noaddresses` wins (v0.2.2: the last). A final marker on either spelling
 closes both; an initial false value cannot be repaired by a later true
 alias.
 
+Section structure (FU-DOC-R38): v0.2.2 selected a section from `[name]` while
+ignoring any text after `]`, trimmed the name, accepted `[]` and an unterminated
+`[name`, ignored relations and other text before the first section, and dropped a
+section that followed a byte order mark. The reader now rejects structure it
+used to ignore: `junk` or `default_realm = Y` before `[libdefaults]`,
+`[libdefaults] junk`, `[]`, `[libdefaults` and a BOM before the first header are
+each an `InvalidLine`. A padded `[ libdefaults ]` is no longer trimmed: it names
+a different, unknown section (a diagnostic in `ParseMode::Compatible`, an error
+in `ParseMode::Strict`). Remove stray text and any BOM from files that relied on
+the old behaviour.
+
+Preauthentication types and boolean spellings (FU-DOC-R40):
+`LibDefaults::preferred_preauth_types` defaults to `[17, 16]` (v0.2.2:
+`[17, 16, 15, 14]`); 14 and 15 are the draft-9 PKINIT IDs, which are permanently
+rejected. Boolean relations also accept `on`, `off` and `nil` like MIT; v0.2.2
+accepted only `1`, `t`, `true`, `y`, `yes` and `0`, `f`, `false`, `n`, `no`
+(case-insensitively) and reported `InvalidBoolean` for any other spelling.
+
 Quoted values (FU-CFG-R02): v0.2.2 had no quote handling, so
 `default_realm = "EXAMPLE.COM"` kept the quotes in the value and a backslash
 was literal text. The profile reader now removes the quotes and decodes `\n`,
@@ -1189,11 +1209,11 @@ retain an invalid-policy error for the eventual build.
 
 Discarded selectors (FU-CFG-R06): quoting or escaping a forbidden RSA, draft-9,
 v4 or unprotected-password selector cannot hide it in an ignored profile scope.
-Permanent rejection now checks the decoded scalar before composition discards it.
+Permanent rejection checks the decoded scalar before composition discards it.
 
 Timestamp restriction diagnostics (FU-CFG-R07): the deferred package for
-`disable_encrypted_timestamp` is now `plan 2 WP-07` for runtime/serde admission,
-matching text parsing. Plugin `disable` and `enable_only` are WP-16.
+`disable_encrypted_timestamp` is `plan 2 WP-07` for runtime/serde admission, as
+for text parsing. Plugin `disable` and `enable_only` are WP-16.
 
 Profile braces (FU-CFG-R08): `name =` followed by `{` has the same subsection
 meaning as `name = {` in every section, matching MIT's generic profile grammar.
@@ -1203,13 +1223,13 @@ available outside mandatory subsection sections when no brace follows.
 
 Realm restriction values (FU-CFG-R09): `disable_encrypted_timestamp` accepts only
 `Value::Boolean(Toggle::Disabled)` or an absent entry. The enabled restriction is
-unsupported; Text, List, Choice and Locations now return `InvalidBoolean` naming
+unsupported; Text, List, Choice and Locations return `InvalidBoolean` naming
 the relation at runtime admission and serde deserialization. Do not encode
 Boolean settings in the Text variant.
 
 Realm selectors (FU-CFG-R10): `Realm::relations` and programmatic
 `protocol_relations` are checked before configured discovery. Enabling removed
-protocols now returns the same `Policy::RejectedFeature` as text parsing;
+protocols returns the same `Policy::RejectedFeature` as text parsing;
 typed serde uses its native error envelope. Lists and locations are invalid
 selector variants. Disabled controls remain accepted; certificate paths are
 not protocol selectors. Remove prohibited selections rather than moving them
@@ -1389,9 +1409,9 @@ Request flags (FU-SPN-R18): set or clear `NegTokenInit` request flags with
 and encoding validates the BIT STRING.
 
 HTTP clone configuration now checks cache compatibility against the shared
-validator under its lock (FU-HTTP-R04). Handle the existing typed skew error
-from `with_shared_replay_cache` even when that clone's original settings used
-a smaller window. Lowering a layer's window preserves the shared cache ceiling.
+validator under its lock (FU-HTTP-R04). Handle the typed skew error that
+`with_shared_replay_cache` returns ("Replay cache" above) even when that clone's
+original settings used a smaller window. Lowering a layer's window preserves the shared cache ceiling.
 
 The Axum example now distinguishes replay infrastructure failures from invalid
 credentials (FU-HTTP-R05): expect HTTP 500 and inspect `Arc<error::Http>` in local
@@ -1572,10 +1592,10 @@ objects and Git lookup failures now exit nonzero; only verified untagged commits
 produce the successful no-dispatch result.
 
 Package links (FU-CI-R03): multiline Markdown destinations and unquoted HTML
-`href`/`src` attributes now participate in package-membership validation.
+`href`/`src` attributes participate in package-membership validation.
 Correct missing/excluded local destinations or use an existing repository URL.
 
-Reference links (FU-CI-R04): multiline Markdown reference definitions now receive
+Reference links (FU-CI-R04): multiline Markdown reference definitions receive
 the same package-membership checks as inline links. Fix missing or excluded
 destinations even when the destination follows the definition label on a new line.
 
@@ -1613,7 +1633,7 @@ point, because they require development scripts and other excluded evidence.
 
 Local lint hook (FU-GATE-R08): retain system language, `pass_filenames = false`,
 the pre-push/manual stages and the documented source-file pattern. Global file
-filters and unsupported hook applicability settings now fail wiring admission.
+filters and unsupported hook applicability settings fail wiring admission.
 
 Mutation campaigns (FU-GATE-R09): provide a positive shard count and disjoint
 inventories. Mutant outcomes must be caught, missed, timed out or unviable;
@@ -1695,14 +1715,15 @@ and writable. `Option` builders accept the complete `Option<T>`, including
 | `client::KdcError` | `new(stime, susec, error_code, service)`; `with_ctime`, `with_cusec`, `with_text`, `with_client`, `with_e_data`, `with_method_data`, `with_preauth_key_info` |
 | `client::PrunedSessions` | Existing `Default`; `with_primary_tgt`, `with_tgt_sessions`, `with_service_tickets` |
 | `config::LibDefaults` | `Default` and `new` are environment-free (`new_without_env` was removed); use `from_env()` explicitly for HOME discovery. Use `with_<field>` for public fields, or the derived ID methods described above. |
-| `config::Config`, `config::Realm` | Existing constructors or config parsing; modify public fields after construction |
+| `config::Config` | Existing `new`/`Default` or config parsing; modify public fields after construction |
+| `config::Realm` | `Realm::new(realm) -> Result` (new; rejects an empty name; v0.2.2 had no public constructor) or config parsing; modify public fields after construction |
 | `service::ApRepOptions` | Existing `Default`; `with_subkey`, `with_sequence_number`, `with_kvno` |
 | `messages::EncryptedData` | `new(etype, cipher)`; `with_kvno` |
 | `messages::PaReqEncPaRep` | `new(checksum_type, checksum)` |
 | `pac::ClaimsInfo` | `new(metadata, claims_set)` |
 | `pac::GroupMembership` | `new(relative_id, attributes)` |
-| `spnego::MicToken` | Existing `new(flags, snd_seq_num)` or `Default`; `with_flags`, `with_snd_seq_num`, existing `with_payload`, `with_checksum` |
-| `spnego::WrapToken` | Existing `new(flags, snd_seq_num)` or `Default`; `with_flags`, `with_ec`, `with_rrc`, `with_snd_seq_num`, existing `with_payload`, `with_checksum`, `with_encrypted_body` |
+| `spnego::MicToken` | `new(flags, snd_seq_num)` (also in v0.2.2) or `Default`; `with_flags`, `with_snd_seq_num`, `with_checksum` and `with_payload` (also in v0.2.2) |
+| `spnego::WrapToken` | `new(flags, snd_seq_num)` (also in v0.2.2) or `Default`; `with_flags`, `with_ec`, `with_rrc`, `with_snd_seq_num`, `with_checksum`, `with_encrypted_body` and `with_payload` (also in v0.2.2) |
 | `crypto::Rc4HmacEtype`, `crypto::Des3CbcSha1KdEtype` | `new()` or `Default` instead of bare unit-struct values |
 | `kadmin::ChangePasswordResult` | Existing `parse(bytes)`; results are decoded, not synthesized |
 | Other decoded message, PAC, metadata, and context views | Existing decode/parse/build operations; no literal construction |
@@ -1713,7 +1734,7 @@ construction paths for `AsReq`, `TgsReq`, `ApReq`,
 and `InitiatorContextOptions`. Existing token constructors remain available for
 `NegTokenInit`, `NegTokenResp`, and `Krb5MechToken`.
 
-## Earlier source-compatible signature changes
+## Password argument type
 
 `Tokio::{change_password, change_password_for, change_password_with_options,
 change_password_for_with_options}` accepted an `impl AsRef<[u8]>` argument.
@@ -1756,17 +1777,24 @@ Since FU-SVC-09, `with_max_clock_skew` (on `service::Validator`,
 `http::NegotiateLayer` and `http::NegotiateService`) and
 `with_shared_replay_cache` return `Result` ("Replay cache" under the follow-up changes).
 
-The four password-change methods listed above used a named generic `P` with a
-where-clause at that point; they now take `client::Password`. Each former argument-position `impl Trait` in this pass
-likewise becomes an independent named generic with the same bounds; ordinary
-calls keep type inference, and callers may now explicitly name these type
-arguments using turbofish syntax.
+The four password-change methods listed above took an `impl AsRef<[u8]>` argument
+in v0.2.2 and now take `client::Password`. The other argument-position
+`impl Trait` parameters of this pass become independent named generics with the
+same bounds; ordinary calls keep type inference, and callers may now explicitly
+name these type arguments using turbofish syntax.
 
 ### API pass B call-site migration
 
-- `config::LibDefaults`' thirteen boolean option fields and their `with_*`
-  parameters now use `config::Toggle::{Disabled, Enabled}`. Read an option with
-  `is_enabled()`, or convert a boolean with `Toggle::from_bool` / `From<bool>`.
+- Eleven of the twelve boolean option fields of `config::LibDefaults` in v0.2.2
+  now use `config::Toggle::{Disabled, Enabled}`, and the new `with_*` builders
+  take a `Toggle`. Read an option with `is_enabled()`, or convert a boolean with
+  `Toggle::from_bool` / `From<bool>`. The twelfth, `dns_canonicalize_hostname`
+  (`bool` in v0.2.2, where the profile value `fallback` was an `InvalidBoolean`
+  error), is the enum `config::hostname::Canonicalization` with `Never`,
+  `Always` and `Fallback`, so `if cfg.libdefaults.dns_canonicalize_hostname`
+  no longer compiles. Six new `Toggle` options join them: `allow_rc4`,
+  `allow_des3`, `dns_uri_lookup`, `enforce_ok_as_delegate`,
+  `client_aware_channel_bindings` and `permitted_enctypes_explicit` (FU-DOC-R39).
   Both direct serde and gokrb5 JSON snapshots retain boolean representations; a
   missing `permitted_enctypes_explicit` means disabled.
 - `config::Realm::realm` is now `name`. Serialized field names remain unchanged.
@@ -2406,7 +2434,7 @@ by group:
   `keytab::Entry`, `client::PreauthKeyInfo`, `client::AsRepSession` and
   `client::KdcError` use the constructors in the construction map above;
   `ccache::CredentialTimes` starts from `Default`; `config::Realm` comes from
-  parsing a `krb5.conf` snippet; `kadmin::ChangePasswordResult` comes from
+  `Realm::new` or from parsing a `krb5.conf` snippet; `kadmin::ChangePasswordResult` comes from
   `ChangePasswordResult::parse`.
 - **`LibDefaults`** (`enctype.rs`): `default_tkt_enctype_ids` and
   `default_tgs_enctype_ids` are methods (`defaults.default_tkt_enctype_ids()`),

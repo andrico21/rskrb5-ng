@@ -93,7 +93,9 @@ value are value data.
 - Missing explicitly named `KRB5_CONFIG` entries are errors; MIT skips them.
 - Include paths must be absolute; leading whitespace before a directive is
   accepted. No dynamic module code is loaded.
-- The unquoted value-suffix `value*` final form is retained as a gokrb5 extension.
+- The unquoted value-suffix `value*` final form is retained as a gokrb5 extension
+  (v0.2.2 honoured it only in the `kdc`, `admin_server`, `master_kdc` and
+  `kpasswd_server` lists and kept the `*` in other values).
 - `include` and `includedir` arguments lose ASCII padding at both ends; MIT
   removes only leading blanks and a trailing CR or LF, so it keeps trailing
   spaces and tabs in the file name.
@@ -107,7 +109,7 @@ value are value data.
 - Typed limits: `IncludeTooDeep`, `IncludeTooMany`, `IncludeTooLarge`.
   Canonical active-chain cycles use `IncludeCycle`; re-reading a completed
   source is not a cycle. Unknown-section unbalanced braces are errors.
-- Existing permanent protocol rejection checks still run before discarded
+- Permanent protocol rejection checks run before discarded
   relations can hide forbidden protocol selections.
 
 ## Independent expected values
@@ -120,7 +122,7 @@ that sample and the scalar/list getters cited above. Port 88 is the crate's
 existing endpoint normalization. This is a source-derived differential fixture,
 not a claim that a live MIT process was executed.
 
-The existing `resolve_realm_applies_bare_domain_tags_to_subdomains` fixture is
+The `resolve_realm_applies_bare_domain_tags_to_subdomains` fixture is
 MIT's three-tag example at
 [krb5_conf.rst:585–603](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/doc/admin/conf_files/krb5_conf.rst#L585-L603):
 `crash.mit.edu` and hosts below `.dev.mit.edu` map to `TEST.ATHENA.MIT.EDU`,
@@ -172,7 +174,7 @@ unknown tokens and bare `%{`, remain literal and are never recursively expanded.
 Caller facts retain their path separators, rather than MIT Windows' final slash
 conversion. The result is resolved data: use literal-path APIs (`Keytab::load`,
 `CCache::load`) after handling any store prefix, not token-expanding name APIs.
-The name loaders retain their Linux procfs UID/eUID behavior and use the
+The name loaders read the Linux procfs UID/eUID and use the
 consumer integration described below.
 
 `tests/config/expansion.rs` covers each token, platform identity policy,
@@ -193,7 +195,8 @@ constructor is required. The existing parity manifest has an area-level
 input with `IncludeTooLarge`, rejects invalid UTF-8 with `Config::Io` carrying
 `InvalidData`, and retains reader I/O causes. Successful bytes enter the same
 include-aware composition as `parse`. Root and included bytes share the 4 MiB
-budget; includes must be absolute, with unchanged depth/file/cycle checks.
+budget; includes must be absolute, with the depth limit (8) and cycle check
+unchanged and a file limit of 256 (v0.2.2: 64).
 
 `module MODULEPATH:RESIDUAL` and `module = ...` relations are rejected with
 `Config::UnsupportedDynamicModule` in Compatible and Strict modes. This also
@@ -211,22 +214,23 @@ built by the credential-discovery adapter, outside profile parsing:
 - Tokio configured/default client keytab.
 - Service validator and HTTP layer/service configured/default server keytab.
 
-The name environment variables retain precedence. Their explicit values keep
-the existing UID-token behavior, not new profile-template semantics. Expanded
+The name environment variables retain precedence. Their explicit values use the
+UID-token expansion of the migration guide ("Credential filename identity
+tokens"), not profile-template semantics. Expanded
 profile values flow into literal-name/path handling without a second scan;
 `DIR:` saves retain primary-file publication. The child-process regression
 `ambient_templates_are_expanded_once` loads real credentials from a directory
 whose substituted value itself contains `%{uid}`.
 
 The adapter reads only requested facts: Linux real/effective IDs from the
-existing procfs reader; `TMPDIR` (fallback `/tmp`) for non-Windows TEMP;
+procfs reader (`/proc/self/status`); `TMPDIR` (fallback `/tmp`) for non-Windows TEMP;
 Windows `TEMP` and `APPDATA`, with `USERCONFIG[DIR]` derived as
 `APPDATA\\MIT\\Kerberos5`. Invalid Unicode is an error. The Windows environment
 mapping is an explicit limitation, not a claim of native shell-folder lookup.
 The three new environment reads are pinned by exact path/owner in
 `ambient_guard`; transitive public consumers document them and literal-input
 alternatives. Configured-name loaders avoid the name-override environment but
-are no longer environment-free when their templates request these facts.
+are not environment-free when their templates request these facts.
 
 All three default-name relations have consumers. Ambient effective-username,
 Windows SID and installation-directory discovery is unavailable under the
@@ -242,8 +246,8 @@ The first group of typed public `LibDefaults` fields covers the 22 values from
 `allow_des3` through `ignore_acceptor_hostname`; C2 completes the 43-relation
 catalogue. `hostname::Canonicalization` preserves
 `Never`, `Always`, and `Fallback`; boolean serde representations remain
-compatible, with the additional string `"fallback"`. Existing boolean builders
-remain available. New fields are `default_rcache_name`, `dns_uri_lookup`,
+compatible, with the additional string `"fallback"`. The boolean `LibDefaults` builders take
+`Toggle`; convert a `bool` with `Toggle::from_bool`. New fields are `default_rcache_name`, `dns_uri_lookup`,
 `enforce_ok_as_delegate`, and `err_fmt`.
 
 `src/config/libdefaults/relations.rs::RELATIONS` is the machine-readable source
@@ -255,7 +259,7 @@ first value. The generated catalogue is checked by the delivered step-F checker.
 
 The production classifier reads the same table after complete decoding and
 enctype resolution. `Config::diagnostics()` exposes its `NotYetEffective`
-diagnostics alongside existing enctype diagnostics. Strict mode rejects every
+diagnostics alongside enctype diagnostics. Strict mode rejects every
 selected deferred C1 relation. Compatible mode rejects explicit replay-store
 names other than `none:` (persistent/cross-process protection is unavailable,
 WP-20), and nonempty `extra_addresses` with `noaddresses=false` (address-bound
@@ -266,23 +270,23 @@ Absent deferred relations do not generate a diagnostic or activate a feature.
 No DNS canonicalization, TXT/URI discovery, GSS credential forwarding, acceptor
 name relaxation, error formatting, or cache-format selection is added. Those
 requests produce diagnostics: current behavior does not perform the requested
-relaxation. GSS context builders already reject credential delegation. AS
-canonicalization remains suppressed to preserve authenticated identity; TGS
-options still consume the flag. The table records that partial effectiveness
+relaxation. GSS context builders reject credential delegation. AS
+canonicalization is suppressed to preserve authenticated identity (v0.2.2 set the
+option on unarmored AS requests); TGS options still consume the flag. The table records that partial effectiveness
 as WP-04, not as completed AS canonicalization.
 
 Existing consumers now apply `forwardable` to AS and TGS request bits; false
 clears a conflicting raw KDC-options bit. `Config::realm_for_host` selects a
 domain mapping before `default_realm`, and the high-level service-realm lookup
 uses it before its existing client-realm fallback. Explicit service realms
-retain precedence. Clockskew continues into reply-validation and acceptor
-options; enctype expressions and default-name loaders retain WP-02/B2 consumers.
+retain precedence. Clockskew reaches reply-validation and acceptor
+options; enctype expressions and default-name loaders have WP-02/B2 consumers.
 
 ### MIT references and deliberate grammar differences
 
 - [1.22 krb5.conf relation defaults](https://web.mit.edu/kerberos/krb5-1.22/doc/admin/conf_files/krb5_conf.html#libdefaults).
   Build-time `DEFCCNAME`, `DEFCKTNAME`, `DEFKTNAME` are not universal paths.
-  This crate retains its B2 defaults. DNS KDC lookup defaults false here rather
+  This crate uses its B2 defaults. DNS KDC lookup defaults false here rather
   than MIT's true in DNS-enabled builds; URI discovery defaults false here
   because it is unavailable. Replay-name storage is unset here, not a claim
   that MIT's `dfl:` backend exists.
@@ -303,16 +307,16 @@ options; enctype expressions and default-name loaders retain WP-02/B2 consumers.
   address lists accept commas and ASCII whitespace. This crate deliberately
   rejects malformed address tokens instead of silently narrowing the list.
 
-Parse diagnostics remain excluded from serde, as before. The existing serde
-round-trip regression now compares all serialized fields and explicitly pins
-that diagnostic exclusion. The malformed-address regression retains the same
-bad input but changes partial acceptance to `InvalidAddress`; a valid uppercase
-fixture preserves the original case-folding and address-order assertions.
+Parse diagnostics are excluded from serde. The serde round-trip regression
+compares all serialized fields and explicitly pins that diagnostic exclusion.
+The malformed-address regression expects `InvalidAddress` for a bad token
+(v0.2.2 dropped it silently); a valid uppercase fixture keeps the case-folding
+and address-order assertions of the v0.2.2 test.
 
 <a id="relations-c2"></a>
 ## C2: complete 43-relation libdefaults catalogue
 
-`RELATIONS` now has **43 rows**, with the same six columns and the same
+`RELATIONS` has **43 rows**, with six columns and one
 production classifier. `relations_match_todo_15_item_2` compares its ordered
 names and count with an independent literal checklist copied from todo 15
 item 2. `tests/config/relations_c2.rs` provides one named table-driven test
@@ -323,7 +327,7 @@ MIT defaults and relation types are sourced from the pinned
 [1.22.2 krb5.conf documentation, lines 274–420](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/doc/admin/conf_files/krb5_conf.rst#L274-L420).
 The table records each default explicitly. `k5login_authoritative` now defaults
 true, matching MIT. No local-login authorization exists yet, so neither value
-grants login; k5login directory/authority remain diagnostic (WP-17).
+grants login; k5login directory/authority are diagnostic (WP-17).
 
 New typed public fields preserve KCM service/socket names, the inert plugin
 directory template, optional shortname suffix, total request duration, SPAKE
@@ -350,8 +354,8 @@ relations are errors in Strict mode. `rdns`, realm-domain probing, clock
 correction, shortname qualification, KCM and plugin settings cannot activate
 their missing behaviors. SPAKE group and preauth preference lists are not
 requirements to use a mechanism. `preferred_preauth_types` remains diagnostic
-for ordering; existing todo-14 removal of draft-9 IDs 14/15 and their individual
-diagnostics is preserved. `permitted_enctypes` remains an effective WP-02
+for ordering; the draft-9 IDs 14/15 are removed from the default (v0.2.2:
+`[17, 16, 15, 14]`) and diagnosed individually. `permitted_enctypes` remains an effective WP-02
 cryptographic policy, not a deferred relation.
 
 `proxiable` now reaches both AS/TGS option consumers and the encoded AS request;
@@ -366,7 +370,7 @@ uses the decimal signed-integer profile getter for `kdc_default_options` and
 bitmasks remain a documented extension. Signed values preserve their 32-bit
 bit pattern. `kdc_timesync` accepts signed integers like the implementation
 (nonzero means enabled), despite the documentation recommending 0 or 1.
-Profile scalar first-wins remains unchanged, rather than claiming the old
+Profile scalar first-wins applies (v0.2.2: the last value won), rather than claiming the old
 documentation's XOR wording describes the current getter.
 
 [sendto_kdc.c:474–494](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/sendto_kdc.c#L474-L494)
@@ -387,7 +391,7 @@ follow-up register records the behavior changes and their proofs.
 `REALM_RELATIONS` has **28 rows**: all 13 relations in the krb5.conf realms
 section, nine client PKINIT relations, four additional KDC PKINIT names shared
 by realm profiles, and two retained draft-9 rejection names. Each row has the
-same six columns as `RELATIONS` (still 43 rows). `SECTION_RELATIONS` has six
+same six columns as `RELATIONS` (43 rows). `SECTION_RELATIONS` has six
 rows: domain_realm, capaths, appdefaults, disable, enable_only, module.
 `realm_and_section_catalogues_are_complete` verifies the exact independent
 name lists. Every row has a named table-driven test.
@@ -452,7 +456,7 @@ it does not add an undocumented fifth lookup in `[realms]`.
 Mixed direct/intermediate values and empty/whitespace-containing realm tokens
 are rejected. Case, repetitions and profile finals are preserved. The graph
 is diagnostic WP-11 metadata, **not** active routing or transited validation.
-Existing acceptor behavior still requires explicit caller transit policy for
+The acceptor requires explicit caller transit policy for
 cross-realm acceptance; callers do not acquire that policy by parsing capaths.
 
 `Config::plugins` holds per-interface repeated disable/enable_only names. No
@@ -464,8 +468,10 @@ Server-only `[kdcdefaults]`, `[dbmodules]`, `[logging]` headers, including empty
 sections, construct `ConfigDiagnostic::ServerOnly` in production and error in
 Strict mode. No server configuration is acted upon.
 
-Existing `[domain_realm]` map and exact/longest-suffix/dotted-apex rules are
-unchanged. `auth_to_local_names` mapping keys now preserve principal case.
+The `[domain_realm]` map keeps its exact, longest-suffix and dotted-apex rules;
+lookups now fold case and a bare tag covers its subdomains (v0.2.2 matched only
+the exact name and `.suffix` tags). `auth_to_local_names` mapping keys preserve
+principal case.
 Application paths serialize as ordered path/value pairs so nonempty hierarchical
 keys remain valid JSON. D adds no implicit ambient reads or plan-2 mechanism.
 The generic PKINIT libdefaults/realm-subsection override hierarchy is not added
@@ -495,7 +501,7 @@ them, while Strict rejects them.
 ### Review of all three tables
 
 All **43 libdefaults + 28 realm + 6 section rows** were reviewed. Effective
-consumers and permanent protocol rejections retain their tests/classification.
+consumers and permanent protocol rejections have their tests/classification.
 `classification_e` iterates every deferred production-table row and requires
 an independently supplied boundary case: **25 libdefaults, 21 realm, 3 section
 rows**. It parses real profiles, not just classification predicates.
@@ -535,7 +541,7 @@ is stricter. Malformed values are not manufactured “tightening” examples.
 | LIBDIR | typed Unavailable error | No known installation prefix; never search another credential location. |
 | BINDIR | typed Unavailable error | No known installation prefix; never invent a path. |
 | SBINDIR | typed Unavailable error | No known installation prefix; never invent a path. |
-| uid/euid outside Linux | typed Unavailable error | Existing platform policy; do not implicitly equate UID and SID. |
+| uid/euid outside Linux | typed Unavailable error | Platform policy; do not implicitly equate UID and SID. |
 
 These are errors in both modes **at effective credential-name resolution**,
 not parse-time ambient discovery. Parsing retains templates; callers may
