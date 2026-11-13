@@ -46,6 +46,9 @@ mod section_composition_d;
 #[path = "config/diagnostics_e.rs"]
 mod diagnostics_e;
 
+#[path = "config/plugin_case.rs"]
+mod plugin_case;
+
 #[path = "config/compatibility_e.rs"]
 mod compatibility_e;
 

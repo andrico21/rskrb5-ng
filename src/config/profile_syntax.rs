@@ -40,6 +40,19 @@ impl State {
         local_mapping(&path) && !matches!(raw.trim_matches(tag_whitespace), "" | "{")
     }
 
+    /// Whether `word` is the dynamic-module relation of the current section.
+    ///
+    /// MIT compares `[plugins]` control names with `strcmp`, so only the exact
+    /// spelling `module` is that relation there; a differently cased name is an
+    /// unknown relation, like the other plugin control names. Every other
+    /// section refuses the relation in any case.
+    pub(super) fn dynamic_module(&self, word: &str) -> bool {
+        match self.scopes.first() {
+            Some(scope) if scope.name == "plugins" => word == "module",
+            _ => word.eq_ignore_ascii_case("module"),
+        }
+    }
+
     /// Whether include ordering needs a suffix lookahead to resolve an empty scalar.
     pub(super) const fn needs_include_lookahead(&self) -> bool {
         self.pending_scalar.is_some()
@@ -135,14 +148,14 @@ impl State {
         let (raw_tag, raw) = text.split_once('=').ok_or_else(|| invalid(line))?;
         (!self.scopes.is_empty()).ok_or_else(|| invalid(line))?;
         let (tag, tag_final) = marker(relation_tag(raw_tag).ok_or_else(|| invalid(line))?);
-        (!tag.eq_ignore_ascii_case("module") || self.local_mapping_assignment(text))
+        (!self.dynamic_module(tag) || self.local_mapping_assignment(text))
             .ok_or(Error::UnsupportedDynamicModule)?;
         (!tag.is_empty()).ok_or_else(|| invalid(line))?;
         let section = self.scopes.first().map_or("", |scope| scope.name.as_str());
         let key = if section == "libdefaults" && tag.eq_ignore_ascii_case("no_addresses") {
             "noaddresses".to_owned()
         } else if (self.scopes.len() == 1 && section == "realms")
-            || matches!(section, "capaths" | "appdefaults")
+            || matches!(section, "capaths" | "appdefaults" | "plugins")
             || self
                 .scopes
                 .last()

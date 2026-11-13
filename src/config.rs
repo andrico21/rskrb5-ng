@@ -2087,7 +2087,7 @@ impl IncludeExpansion {
             if cleaned
                 .split(profile_syntax::tag_whitespace)
                 .next()
-                .is_some_and(|word| word.eq_ignore_ascii_case("module"))
+                .is_some_and(|word| state.dynamic_module(word))
                 && !state.local_mapping_assignment(cleaned)
             {
                 return Err(Error::UnsupportedDynamicModule);

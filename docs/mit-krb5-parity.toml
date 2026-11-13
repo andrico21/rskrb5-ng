@@ -1959,9 +1959,14 @@ test_names = [
   "tests/config/section_composition_d.rs::disable",
   "tests/config/section_composition_d.rs::enable_only",
   "tests/config/section_composition_d.rs::restrictive_preauth_plugins",
+  "tests/config/plugin_case.rs::upper_interface_is_not_clpreauth",
+  "tests/config/plugin_case.rs::upper_interface_strict_matches_other_interfaces",
+  "tests/config/plugin_case.rs::lower_interface_still_fails_closed",
+  "tests/config/plugin_case.rs::upper_control_is_unknown_relation",
+  "tests/config/plugin_case.rs::mixed_case_header_is_plugins_section",
 ]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Interface and control names are case-sensitive, as in MIT; the section header is case-insensitive (MIT matches it exactly)."
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 3
@@ -1981,6 +1986,8 @@ test_names = [
   "tests/config/readers.rs::reader_composes_absolute_includes",
   "tests/config_relative_include.rs::relative_includes_follow_the_working_directory",
   "tests/config/readers.rs::dynamic_modules_fail_in_every_mode",
+  "tests/config/plugin_case.rs::upper_module_is_unknown_relation",
+  "tests/config/plugin_case.rs::reader_upper_module_is_unknown_relation",
 ]
 feature_flags = []
 security_divergence = ""

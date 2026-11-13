@@ -1040,6 +1040,20 @@ Configuration:
   `[appdefaults]` subsection nested deeper than application, realm and key,
   are `InvalidLine`; a `[plugins]` control that disables the encrypted-timestamp
   mechanism is `NotYetEffective` in every mode (FU-DOC-R93).
+- `[plugins]` interface names and the control names `disable`, `enable_only`
+  and `module` are matched case-sensitively, as MIT does (`strcmp` in the
+  profile library); v0.2.2 read nothing inside `[plugins]`. A wrongly cased
+  name is no longer folded: `CLPREAUTH = { disable = encrypted_timestamp }` is
+  an interface without a consumer, not the client preauthentication interface,
+  so it is no longer `NotYetEffective` (it is recorded as a diagnostic like any
+  other `disable` of an unused interface, and an error in strict mode);
+  `DISABLE = pkinit` or `MODULE = x:/y` under an interface is an unknown
+  relation (a diagnostic in compatible mode, `UnknownRelation` in strict mode),
+  so `MODULE` is not `UnsupportedDynamicModule`. The spelling `module` is still
+  refused in `[plugins]`, and in every other section `module` is refused in any
+  case. Section headers stay case-insensitive, as in v0.2.2: `[Plugins]` is the
+  plugins section, and `[Plugins]` with `clpreauth = { disable =
+  encrypted_timestamp }` is still `NotYetEffective` (FU-CFG-R36).
 - `no_addresses` and `noaddresses` now share first-occurrence precedence and
   final markers (the last occurrence of either won in v0.2.2) (FU-CFG-R01).
 - v0.2.2 had no quote handling: `default_realm = "EXAMPLE.COM"` kept the
