@@ -33,21 +33,29 @@ pub(super) fn padata(policy: &CryptoPolicy, data: &[rasn_kerberos::PaData]) -> R
                     super::decode("PA-ENC-TIMESTAMP", &entry.value)?;
                 policy.check_use(encrypted.etype, Use::ReplyKey)?;
             }
+            // A client does not send enctype hints; the KDC and the peer do.
+            11_i32 | 19_i32 | 23_i32 | 165_i32 => {
+                return Err(Error::Encode {
+                    target: "PA-DATA",
+                    message: format!(
+                        "outgoing PA type {} is a peer-only enctype hint",
+                        entry.r#type
+                    ),
+                });
+            }
             // These credential mechanisms have no checked envelope implementation.
             // Reject rather than transmit opaque nested encryption (including FAST).
             5..=9
-            | 11..=13
+            | 12..=13
             | 16..=17
-            | 19_i32
-            | 22..=23
+            | 22_i32
             | 30..=31
             | 41_i32
             | 130_i32
             | 134..=136
             | 138_i32
             | 141..=148
-            | 151..=153
-            | 165_i32 => {
+            | 151..=153 => {
                 return Err(Error::Encode {
                     target: "PA-DATA",
                     message: format!(

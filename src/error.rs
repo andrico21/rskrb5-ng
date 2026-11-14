@@ -354,7 +354,8 @@ pub enum Client {
     /// The AS-REP did not include the encrypted padata required by FAST negotiation.
     #[error("KDC did not respond appropriately to FAST negotiation")]
     InvalidFastNegotiationResponse,
-    /// The AS-REP FAST negotiation checksum used an unsupported checksum type.
+    /// The FAST negotiation checksum of an AS-REP or TGS-REP used a checksum
+    /// type other than the one its reply key requires (RFC 6806 section 11).
     #[error("unsupported Kerberos checksum type: {0}")]
     UnsupportedChecksumType(i32),
     /// The AS-REP FAST negotiation checksum was invalid.

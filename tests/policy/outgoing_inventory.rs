@@ -209,7 +209,8 @@ fn outgoing_encryption_inventory_is_guarded() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Unsupported credential PA envelopes cannot bypass admission as opaque informational data.
+/// Unsupported credential PA envelopes cannot bypass admission as opaque informational data, and
+/// the refusal names the class (credential mechanism or peer-only enctype hint).
 #[test]
 fn outgoing_unsupported_credential_padata_is_rejected() -> Result<(), Box<dyn Error>> {
     let kinds: [i32; 33] = [
@@ -240,16 +241,19 @@ fn outgoing_unsupported_credential_padata_is_rejected() -> Result<(), Box<dyn Er
                 &EncryptionKey::new(17, vec![0; 16]),
             ),
         ] {
-            assert!(
-                matches!(
-                    result,
-                    Err(ClientError::Encode {
-                        target: "PA-DATA",
-                        message: _
-                    })
-                ),
-                "unsupported PA type {kind} admitted"
-            );
+            let expected = if matches!(kind, 11_i32 | 19_i32 | 23_i32 | 165_i32) {
+                format!("outgoing PA type {kind} is a peer-only enctype hint")
+            } else {
+                format!("unsupported credential preauthentication type {kind}")
+            };
+            let actual = match &result {
+                Err(ClientError::Encode {
+                    target: "PA-DATA",
+                    message: text,
+                }) => Some(text.as_str()),
+                _ => None,
+            };
+            assert_eq!(actual, Some(expected.as_str()), "PA type {kind}");
         }
         assert_eq!(transport.0, 0);
     }

@@ -1301,13 +1301,16 @@ mod harness {
         confounder_hex: &str,
     ) -> Result<Vec<u8>, TestError> {
         let etype =
-            AesSha1Etype::from_etype_id(key.etype()).context("AES-SHA1 etype is supported")?;
+            KerberosEtype::from_etype_id(key.etype()).context("reply key etype is supported")?;
+        let confounder = decode_hex(confounder_hex)?;
         etype
             .encrypt_message_with_confounder(
                 key.value(),
                 plaintext,
                 usage,
-                &decode_hex(confounder_hex)?,
+                confounder
+                    .get(..etype.confounder_len())
+                    .context("confounder is long enough")?,
             )
             .context("message encrypts")
     }
