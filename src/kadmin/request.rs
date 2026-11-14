@@ -11,6 +11,7 @@ use crate::{
     crypto::selection,
     error::{Policy, RejectedFeature, RejectionReason},
     keytab::EncryptionKey,
+    messages::secret_der::SecretDer,
 };
 
 impl ChangePasswdMessageOptions {
@@ -110,6 +111,9 @@ impl Request {
 
     /// Encode a password-change request frame.
     ///
+    /// The AP-REQ and KRB-PRIV encodings built on the way are erased before this
+    /// returns; the returned frame is the caller's to erase.
+    ///
     /// # Errors
     ///
     /// Returns the encode errors of either message,
@@ -125,8 +129,11 @@ impl Request {
             .into());
         }
         selection::reject_enctype(self.krb_priv.enc_part.etype)?;
-        let ap_req = ap_req::encode(&self.ap_req).map_err(ap_req_error)?;
-        let krb_priv = encode_krb_priv(&self.krb_priv)?;
+        let ap_req = SecretDer::new(
+            ap_req::encode(&self.ap_req).map_err(ap_req_error)?,
+            "kpasswd ap-req",
+        );
+        let krb_priv = SecretDer::new(encode_krb_priv(&self.krb_priv)?, "kpasswd krb-priv");
         let Ok(ap_req_length) = u16::try_from(ap_req.len()) else {
             return Err(Error::ApReqTooLarge {
                 actual: ap_req.len(),
