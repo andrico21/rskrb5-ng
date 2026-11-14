@@ -15,7 +15,7 @@ use rskrb5_ng::{
         section_values::{Plugins, Value},
     },
     crypto::CryptoPolicy,
-    error::{Policy, RejectedFeature},
+    error::{Http, Policy, RejectedFeature},
     http::{NegotiateLayer, NegotiateService},
     service::Validator,
     spnego::{self, Krb5MechToken, NegTokenInit, Token},
@@ -259,5 +259,44 @@ fn http_builders_propagate_legacy_permission() -> Result<(), Box<dyn Error>> {
             .status(),
         StatusCode::OK
     );
+    Ok(())
+}
+
+/// HTTP acceptor constructors read the permitted list only: AES request lists are not an acceptor input.
+#[test]
+fn http_acceptors_ignore_client_request_lists() -> Result<(), Box<dyn Error>> {
+    // Given a permitted list narrower than the default AES request lists and a keytab
+    // name that fails at the keytab step.
+    for (permitted, legacy) in [
+        ("rc4-hmac", Toggle::Enabled),
+        ("aes128-cts-hmac-sha1-96", Toggle::Disabled),
+    ] {
+        let mut config = Config::new();
+        config.libdefaults.allow_rc4 = legacy;
+        config.libdefaults.permitted_enctypes = vec![permitted.to_owned()];
+        config.libdefaults.default_keytab_name =
+            "unsupported:acceptors-skip-request-lists".to_owned();
+        // When the configured constructors run, then admission reaches the keytab step.
+        for admission in [
+            NegotiateLayer::from_default_keytab_name(&config).err(),
+            NegotiateService::from_default_keytab_name(Accepted, &config).err(),
+        ] {
+            let error = admission.ok_or("unsupported keytab name admitted")?;
+            assert!(
+                matches!(error, Http::Keytab(_)),
+                "{permitted}: HTTP acceptor stopped before the keytab: {error:?}"
+            );
+        }
+        // The environment-first constructors may read KRB5_KTNAME; they must not carry a policy cause.
+        for error in [
+            NegotiateLayer::from_default_keytab(&config).err(),
+            NegotiateService::from_default_keytab(Accepted, &config).err(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            assert!(policy_cause(&error).is_none(), "{permitted}: {error:?}");
+        }
+    }
     Ok(())
 }

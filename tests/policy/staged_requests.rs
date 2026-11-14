@@ -47,12 +47,18 @@ fn staged_mixed_requests_reject_excluded_aes() -> Result<(), Box<dyn Error>> {
             "default_tkt_enctypes" => defaults.default_tkt_enctypes = names,
             _ => defaults.default_tgs_enctypes = names,
         }
-        let failure = CryptoPolicy::from_libdefaults(&defaults)
-            .err()
-            .ok_or("mixed excluded request admitted")?;
+        let failure = match key {
+            "default_tkt_enctypes" => {
+                AsReq::from_libdefaults(SystemTime::UNIX_EPOCH, 42, &defaults).err()
+            }
+            _ => TgsReq::from_libdefaults(SystemTime::UNIX_EPOCH, 42, &defaults).err(),
+        }
+        .ok_or("mixed excluded request admitted")?;
         assert!(
-            matches!(failure, error::Config::EnctypeNotPermitted { key: actual, enctype } if actual == key && enctype == "aes256-cts-hmac-sha1-96")
+            matches!(failure, error::Client::Config(error::Config::EnctypeNotPermitted { key: actual, enctype }) if actual == key && enctype == "aes256-cts-hmac-sha1-96")
         );
+        // The permitted list alone admits an acceptor snapshot.
+        drop(CryptoPolicy::from_libdefaults(&defaults)?);
     }
     Ok(())
 }
@@ -67,12 +73,6 @@ fn staged_requests_preserve_disabled_token() -> Result<(), Box<dyn Error>> {
             "default_tkt_enctypes" => defaults.default_tkt_enctypes = names,
             _ => defaults.default_tgs_enctypes = names,
         }
-        let failure = CryptoPolicy::from_libdefaults(&defaults)
-            .err()
-            .ok_or("disabled request admitted")?;
-        assert!(
-            matches!(failure, error::Config::DisabledEnctype { token } if token == "+RC4-HMAC")
-        );
         for option_error in [
             AsReq::from_libdefaults(SystemTime::UNIX_EPOCH, 42, &defaults)
                 .err()
@@ -206,5 +206,32 @@ fn staged_client_accepts_allowed_policy() -> Result<(), Box<dyn Error>> {
     );
     kerberos.cache_service_ticket(session(18, 18)?)?;
     assert_eq!(kerberos.cached_service_ticket_count(), 1);
+    Ok(())
+}
+
+/// The configured client keeps the named request-list cause on every staged key.
+#[test]
+fn staged_client_rejects_mixed_lists_by_name() -> Result<(), Box<dyn Error>> {
+    for key in ["default_tkt_enctypes", "default_tgs_enctypes"] {
+        let mut config = Config::parse("[libdefaults]\npermitted_enctypes = aes128-cts")?;
+        let names = vec!["aes128-cts".to_owned(), "aes256-cts".to_owned()];
+        match key {
+            "default_tkt_enctypes" => config.libdefaults.default_tkt_enctypes = names,
+            _ => config.libdefaults.default_tgs_enctypes = names,
+        }
+        let mut kerberos = Tokio::with_keytab(
+            config,
+            KdcProtocol::Tcp,
+            Principal::user("EXAMPLE.COM", "alice"),
+            Keytab::new(),
+        );
+        let failure = kerberos
+            .cache_service_ticket(session(17, 17)?)
+            .err()
+            .ok_or("mixed client list admitted")?;
+        assert!(
+            matches!(failure, error::Client::Config(error::Config::EnctypeNotPermitted { key: actual, enctype }) if actual == key && enctype == "aes256-cts-hmac-sha1-96")
+        );
+    }
     Ok(())
 }

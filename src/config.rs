@@ -733,6 +733,10 @@ pub struct LibDefaults {
     /// seeded default list is SHA2-first AES `[20, 19, 18, 17]`.
     /// Explicit request lists outside an explicit permitted list are rejected.
     /// `CryptoPolicy` always enforces permitted membership, regardless of this flag.
+    /// A snapshot built by `CryptoPolicy::from_libdefaults`, and so every acceptor,
+    /// reads the permitted list only. Client request construction also rejects
+    /// request lists outside the permitted list, set programmatically or parsed,
+    /// by name ([`Error::EnctypeNotPermitted`]), regardless of this flag.
     ///
     /// The flag round-trips through serde. Serialized `LibDefaults` that lack
     /// this field deserialize it as `false`.

@@ -4,8 +4,9 @@ use std::time::SystemTime;
 use rasn::der;
 use rskrb5_ng::{
     Config, ap_rep, ap_req,
+    config::Toggle,
     crypto::{CryptoPolicy, KerberosEtype, Use},
-    error::Policy,
+    error::{Policy, Service},
     keytab::{EncryptionKey, Entry, Keytab, Principal},
     service::Validator,
     spnego::{self, InitiatorContextOptions},
@@ -241,5 +242,39 @@ fn initiator_rejects_excluded_ap_rep_subkey() -> Result<(), Box<dyn Error>> {
             .etype(),
         17_i32
     );
+    Ok(())
+}
+
+/// Acceptor admission reads the permitted list only: AES request lists are not an acceptor input.
+#[test]
+fn acceptor_admission_ignores_client_request_lists() -> Result<(), Box<dyn Error>> {
+    // Given a permitted list narrower than the default AES request lists, with the
+    // legacy opt-in where the list needs it, and a keytab name that fails at the keytab step.
+    for (permitted, legacy) in [
+        ("rc4-hmac", Toggle::Enabled),
+        ("aes128-cts-hmac-sha1-96", Toggle::Disabled),
+    ] {
+        let mut config = Config::new();
+        config.libdefaults.allow_rc4 = legacy;
+        config.libdefaults.permitted_enctypes = vec![permitted.to_owned()];
+        config.libdefaults.default_keytab_name =
+            "unsupported:acceptors-skip-request-lists".to_owned();
+        // When the configured acceptor constructors run.
+        let named = Validator::from_default_keytab_name(&config)
+            .err()
+            .ok_or("unsupported keytab name admitted")?;
+        // Then admission reached the keytab step instead of failing on the request lists.
+        assert!(
+            matches!(named, Service::Keytab(_)),
+            "{permitted}: acceptor admission stopped before the keytab: {named:?}"
+        );
+        // The environment-first constructor may read KRB5_KTNAME; it must not carry a policy cause.
+        if let Err(environment) = Validator::from_default_keytab(&config) {
+            assert!(
+                policy_cause(&environment).is_none(),
+                "{permitted}: {environment:?}"
+            );
+        }
+    }
     Ok(())
 }

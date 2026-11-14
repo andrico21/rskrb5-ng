@@ -196,8 +196,6 @@ mod tests {
     fn policy_conversion_retains_configured_permission() -> Result<(), TestError> {
         let mut defaults = LibDefaults::new();
         defaults.permitted_enctypes = vec!["aes128-cts-hmac-sha1-96".to_owned()];
-        defaults.default_tkt_enctypes = defaults.permitted_enctypes.clone();
-        defaults.default_tgs_enctypes = defaults.permitted_enctypes.clone();
         let policy = CryptoPolicy::try_from(&defaults)?;
         assert!(
             policy.check_use(20, Use::ReplyKey).is_err(),

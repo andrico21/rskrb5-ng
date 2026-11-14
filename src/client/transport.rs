@@ -70,7 +70,6 @@ use super::{
 use crate::{
     client::kpasswd::{BuiltKpasswdRequest, RequestOptions},
     config::{Config, restrictions},
-    crypto::CryptoPolicy,
     error::Config as ConfigError,
     kadmin,
     keytab::{EncryptionKey, Keytab},
@@ -1004,7 +1003,7 @@ impl Tokio {
         options: &RequestOptions,
     ) -> Result<kadmin::ChangePasswordResult, Error> {
         restrictions::config(config)?;
-        let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)?;
+        let policy = super::crypto_policy::configured_requests(&config.libdefaults)?;
         password_result::outgoing(request, &policy)?;
         let reply = self
             .exchange_kpasswd_request_with_config(config, protocol, realm, request.request())

@@ -67,7 +67,9 @@ permissions and parse mode and rejected by name if any entry is outside the
 permitted set; no intersection silently removes entries. Parsed implicit
 request defaults continue to inherit the permitted list. Programmatic callers
 setting a narrower permitted list must also set compatible request lists
-(FU-CLI-R18). Client admission preserves permanent `Policy::RejectedFeature`
+before they build a request; acceptor constructors and
+`CryptoPolicy::from_libdefaults` read the permitted list only (FU-CLI-R18,
+FU-CLI-R33). Client admission preserves permanent `Policy::RejectedFeature`
 causes through `Error::source`, and ordinary configuration failures retain
 their named `error::Config` cause (FU-CLI-R19).
 

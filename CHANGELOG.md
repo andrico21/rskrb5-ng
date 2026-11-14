@@ -1014,8 +1014,10 @@ Crypto policy:
   types stay opaque (FU-CLI-R20).
 - `client::options::AsReq::from_libdefaults` and `TgsReq::from_libdefaults`
   now return `Result<Self, error::Client>`. Staged request lists that name an
-  enctype outside the permitted set are rejected by name; parsed implicit
-  defaults inherit the permitted list (FU-CLI-R18).
+  enctype outside the permitted set are rejected by name, and so are the
+  configured Tokio client paths; `CryptoPolicy::from_libdefaults` and the
+  acceptor constructors read the permitted list only. Parsed implicit defaults
+  inherit the permitted list (FU-CLI-R18, FU-CLI-R33).
 - Client and request-option admission keeps permanent
   `Policy::RejectedFeature` causes (for example `SingleDes`, `WeakCrypto`,
   `UnauthenticatedChecksum`) through `Error::source`, and other configuration

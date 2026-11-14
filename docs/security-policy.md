@@ -15,6 +15,10 @@ legacy permission to requests, reply keys, session and ticket keys, cached and
 imported credentials, acceptors and checked low-level APIs. Rebuild the snapshot
 after changing configuration. Public configuration fields are staging values,
 not evidence that a selection is authorized. Invalid staging values fail closed.
+The snapshot, and so every acceptor, does not read `default_tkt_enctypes` or
+`default_tgs_enctypes`: MIT reads those two keys only on the client side. Client request construction (`AsReq::from_libdefaults`,
+`TgsReq::from_libdefaults`, the configured Tokio client) rejects a request list
+outside the permitted list with `error::Config::EnctypeNotPermitted`.
 
 The implemented secure `DEFAULT` is AES-SHA2 then AES-SHA1: IDs
 **[20, 19, 18, 17]**. DES3 and RC4 are never inserted by `DEFAULT`, even when
