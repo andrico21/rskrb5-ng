@@ -420,6 +420,8 @@ is a parity feature, not a defect>`.
 | critic:critics-efadae8/u2.md#U2-02 | FU-CLI-R26 | no |
 | critic:critics-efadae8/u2.md#U2-03 | FU-CLI-R27 | no |
 | critic:critics-efadae8/u2.md#U2-04 | FU-CLI-R28 | no |
+| critic:critics-efadae8/u3.md#U3-01 | FU-CLI-R29 | no |
+| critic:critics-efadae8/u3.md#U3-02 | FU-CLI-R30 | no |
 | critic:critics-efadae8/u6.md#U6-02 | FU-GATE-R22 | no |
 | critic:critics-efadae8/u6.md#U6-03 | FU-DOC-R143 | no |
 | critic:critics-efadae8/oracle.md#ORA-03 | FU-TRN-R13 | no |

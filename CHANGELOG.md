@@ -82,7 +82,13 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
   `changepw.c` does (FU-CLI-R24): all TCP endpoints before any UDP endpoint,
   and for an explicit address (`exchange_kpasswd_request` and the checked
   result helpers) TCP, then UDP. UDP is tried only after a definite TCP
-  failure, with one datagram per endpoint and no retransmit.
+  failure, with one datagram per endpoint and no retransmit. With DNS the
+  servers are discovered once for both protocols, as in `changepw.c`
+  (FU-CLI-R29): `_kpasswd._udp` and `_kpasswd._tcp` form one list, a root SRV
+  target in either stops the exchange, and the `_kerberos-adm._tcp` hosts
+  (port 464, both protocols) are used only when that list is empty; v0.2.2
+  discovered separately for each protocol it tried. Explicit `Tcp` and `Udp`
+  still discover for their own protocol.
   `udp_preference_limit` does not apply to password changes (MIT's `changepw.c`
   never consults it); it still orders KDC requests. If a TCP request may
   have been delivered, the result is `KpasswdOutcomeUnknown` and UDP is never

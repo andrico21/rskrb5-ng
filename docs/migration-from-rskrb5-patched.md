@@ -212,7 +212,12 @@ failures, response errors and timeouts return `Client::KpasswdOutcomeUnknown`.
 `KdcProtocol::Auto` for a password change tries TCP first and UDP only after
 a definite TCP failure (all TCP endpoints, then all UDP endpoints; for an
 explicit address TCP, then UDP), as MIT's `changepw.c` does, and
-`udp_preference_limit` does not apply to it. A refusal while the single UDP
+`udp_preference_limit` does not apply to it. With DNS the servers are
+discovered once for both protocols (`_kpasswd._udp` and `_kpasswd._tcp` in one
+list, a root SRV target in either stops the exchange, `_kerberos-adm._tcp`
+hosts at port 464 only when that list is empty; FU-CLI-R29; v0.2.2 discovered
+separately for each protocol it tried); explicit `Tcp` and `Udp` discover for
+their own protocol. A refusal while the single UDP
 reply is awaited (`ConnectionRefused`, or `ConnectionReset` on Windows) is a
 definite endpoint failure, so a closed UDP kpasswd port moves on to the next
 endpoint and, when every endpoint failed, is reported as `KdcEndpointFailures`
