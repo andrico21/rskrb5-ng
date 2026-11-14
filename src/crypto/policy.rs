@@ -99,6 +99,11 @@ impl Policy {
     ///
     /// # Errors
     /// Rejects weak crypto and invalid, disabled, forbidden or empty permitted lists.
+    /// The request lists `default_tkt_enctypes` and `default_tgs_enctypes` are not read
+    /// here, so an acceptor depends on the permitted list only; client request
+    /// construction (`AsReq::from_libdefaults`, `TgsReq::from_libdefaults` and the
+    /// configured Tokio client) checks them against it and fails with
+    /// [`error::Config::EnctypeNotPermitted`].
     #[inline]
     pub fn from_libdefaults(defaults: &LibDefaults) -> Result<Self, error::Config> {
         restrictions::defaults(defaults)?;
@@ -108,7 +113,6 @@ impl Policy {
         }
         super::selection::reject_checksum(defaults.safe_checksum_type)?;
         let resolved = defaults.resolve_names(&defaults.permitted_enctypes)?;
-        defaults.validate_request_enctypes(&resolved)?;
         Ok(Self {
             minima: defaults.min_s2k_iterations,
             permitted: resolved.enctypes().to_vec(),

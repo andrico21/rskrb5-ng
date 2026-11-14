@@ -9,9 +9,9 @@ use zeroize::Zeroizing;
 use super::{AsRepSession, Error, ticket_error};
 use crate::{
     ap_req,
-    config::{LibDefaults, restrictions},
+    config::{EnctypeDefaults as _, LibDefaults, restrictions},
     crypto::{CryptoPolicy, Use, selection},
-    error::Policy,
+    error::{Config as ConfigError, Policy},
     keytab::EncryptionKey,
     ticket,
 };
@@ -80,11 +80,20 @@ pub(super) fn padata(policy: &CryptoPolicy, data: &[rasn_kerberos::PaData]) -> R
     Ok(())
 }
 
+/// Build the snapshot and check both request lists against its permitted list.
+/// # Errors
+/// Returns the snapshot errors, then named configuration errors for the request lists.
+pub(super) fn configured_requests(defaults: &LibDefaults) -> Result<CryptoPolicy, ConfigError> {
+    let policy = CryptoPolicy::from_libdefaults(defaults)?;
+    defaults.validate_request_enctypes()?;
+    Ok(policy)
+}
+
 /// Resolve public defaults without allowing invalid input to become unrestricted.
 /// # Errors
 /// Returns typed policy rejection for invalid configuration.
 pub(super) fn configured(defaults: &LibDefaults) -> Result<CryptoPolicy, Error> {
-    CryptoPolicy::from_libdefaults(defaults).map_err(|error| {
+    configured_requests(defaults).map_err(|error| {
         match restrictions::configuration_policy(&error) {
             Policy::InvalidConfiguration => Error::from(error),
             policy @ (Policy::UnknownEnctype { etype: _ }

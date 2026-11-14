@@ -172,6 +172,35 @@ fn checked_password_policy_rejects_before_endpoint_resolution() -> Result<(), Te
     })
 }
 
+/// The configured password result path keeps the named request-list cause before any I/O.
+#[test]
+fn configured_password_result_rejects_mixed_request_lists_by_name() -> Result<(), TestError> {
+    use rskrb5_ng::error::Config as ConfigError;
+    runtime()?.block_on(async {
+        let (built, options) = kpasswd_context::request()?;
+        let mut config = Config::parse("[libdefaults]\npermitted_enctypes = aes128-cts")?;
+        config.libdefaults.default_tkt_enctypes =
+            vec!["aes128-cts".to_owned(), "aes256-cts".to_owned()];
+        let result = Tokio::new()
+            .exchange_kpasswd_result_with_config(
+                &config,
+                KdcProtocol::Tcp,
+                "NO-SUCH-REALM",
+                &built,
+                &options,
+            )
+            .await;
+        assert!(matches!(
+            result,
+            Err(ClientError::Config(ConfigError::EnctypeNotPermitted {
+                key: "default_tkt_enctypes",
+                enctype: _
+            }))
+        ));
+        Ok(())
+    })
+}
+
 /// A generic resolver input does not need the obsolete Clone bound.
 #[test]
 fn password_address_bound_is_resolver_only() -> Result<(), TestError> {
