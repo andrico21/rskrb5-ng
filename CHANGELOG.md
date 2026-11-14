@@ -731,7 +731,7 @@ Security fail-closed parsing and verification:
   unless `with_response_hardening(false)` (FU-HTTP-04).
 - `NegotiateFuture` is a public concrete future that is `Send` when the inner
   future, body and error are (FU-HTTP-06).
-- `NegotiateService` maps replay-cache, keytab I/O and poisoned-validator
+- `NegotiateService` maps replay-cache and poisoned-validator
   faults to an opaque hardened 500 with the cause as an `Arc<Http>` response
   extension; authentication failures stay 401 (FU-HTTP-R02).
 - `NegotiateService` is `Clone`; clones share the validator and replay state

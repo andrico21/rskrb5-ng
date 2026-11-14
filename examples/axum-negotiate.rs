@@ -17,9 +17,7 @@ use axum::{
     routing::get,
 };
 use rskrb5_ng::{
-    error::{
-        Http as HttpError, Keytab as KeytabError, Service as ServiceError, Spnego as SpnegoError,
-    },
+    error::{Http as HttpError, Service as ServiceError, Spnego as SpnegoError},
     http as krb_http,
     keytab::Keytab,
     service::{ApRepOptions, Validator},
@@ -108,13 +106,8 @@ async fn negotiate(
                     &source,
                     SpnegoError::Service(
                         ServiceError::ReplayCachePoisoned
-                            | ServiceError::ReplayCacheSkewExceeded {
-                                maximum: _,
-                                requested: _
-                            }
                             | ServiceError::ReplayCacheClockRollback
                             | ServiceError::ReplayCacheCapacityExceeded { capacity: _ }
-                            | ServiceError::Keytab(KeytabError::Io(_))
                     )
                 ) {
                     let mut response = Response::new(Body::empty());
