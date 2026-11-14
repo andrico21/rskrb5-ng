@@ -3613,15 +3613,15 @@ where
 #[non_exhaustive]
 pub struct TgsRequestParts<'request> {
     /// The ticket request options.
-    pub options: TgsReq,
+    options: TgsReq,
     /// The authenticator timestamp.
-    pub timestamp: SystemTime,
+    timestamp: SystemTime,
     /// The authenticator microseconds.
-    pub cusec: u32,
+    cusec: u32,
     /// The encryption confounder.
-    pub confounder: &'request [u8],
+    confounder: &'request [u8],
     /// The authenticator subkey.
-    pub subkey: &'request EncryptionKey,
+    subkey: &'request EncryptionKey,
 }
 
 impl fmt::Debug for TgsRequestParts<'_> {
@@ -3668,6 +3668,63 @@ impl<'request> TgsRequestParts<'request> {
         self.timestamp = timestamp;
         self.cusec = cusec;
         self
+    }
+
+    /// Borrows the ticket request options.
+    #[must_use]
+    #[inline]
+    pub const fn options(&self) -> &TgsReq {
+        &self.options
+    }
+
+    /// Returns the authenticator timestamp.
+    #[must_use]
+    #[inline]
+    pub const fn timestamp(&self) -> SystemTime {
+        self.timestamp
+    }
+
+    /// Returns the authenticator microseconds.
+    #[must_use]
+    #[inline]
+    pub const fn cusec(&self) -> u32 {
+        self.cusec
+    }
+
+    /// Borrows the encryption confounder.
+    #[must_use]
+    #[inline]
+    pub const fn confounder(&self) -> &'request [u8] {
+        self.confounder
+    }
+
+    /// Borrows the authenticator subkey.
+    #[must_use]
+    #[inline]
+    pub const fn subkey(&self) -> &'request EncryptionKey {
+        self.subkey
+    }
+
+    /// Transfers the request options, timestamp, microseconds, confounder and subkey to the caller.
+    #[must_use]
+    #[inline]
+    pub fn into_parts(
+        self,
+    ) -> (
+        TgsReq,
+        SystemTime,
+        u32,
+        &'request [u8],
+        &'request EncryptionKey,
+    ) {
+        let Self {
+            options,
+            timestamp,
+            cusec,
+            confounder,
+            subkey,
+        } = self;
+        (options, timestamp, cusec, confounder, subkey)
     }
 }
 

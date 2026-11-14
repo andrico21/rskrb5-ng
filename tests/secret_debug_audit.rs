@@ -297,6 +297,9 @@ mod tests {
             }), ("src/client.rs::Tokio::with_keytab_credential", ReplacementProof::DependencyContractReplacement {
                 test: "keytab_attachment_replaces_password_credential",
                 contract: "Attaching a keytab replaces the retained long-term credential; the old password's erasure relies on zeroize's Zeroizing<Vec<u8>> Drop contract, not an observed first-party wipe.",
+            }), ("src/client/options.rs::TgsReq::with_delegation_keytab", ReplacementProof::DependencyContractReplacement {
+                test: "delegation_keytab_attachment_replaces_the_previous_keytab",
+                contract: "Attaching a delegation keytab replaces the retained one; the old keytab's key erasure relies on its owners' Drop contract (EncryptionKey is ZeroizeOnDrop), not an observed first-party wipe.",
             }), ("src/client.rs::Tokio::remove_tgt_session_for_realm", ReplacementProof::DependencyContractReplacement {
                 test: "tokio_client_tracks_multiple_tgt_sessions",
                 contract: "Removal transfers the realm's session to the caller; for the client realm the duplicate primary owner is dropped, so its key erasure relies on the session's Drop contract, not an observed first-party wipe.",
@@ -415,6 +418,65 @@ mod tests {
         result
     }
 
+    /// A keytab-bearing request owner replaces retained long-term keys like any other credential owner.
+    #[test]
+    fn keytab_replacements_require_proof() -> Result<(), io::Error> {
+        let root = env::temp_dir().join(format!("rskrb5-t139-keytab-{}", process::id()));
+        fs::create_dir_all(&root)?;
+        let result = (|| {
+            fs::write(root.join("lib.rs"), "mod client;")?;
+            fs::write(
+                root.join("client.rs"),
+                "pub struct EncryptionKey { value: Vec<u8> }\npub struct Keytab { entries: Vec<EncryptionKey> }\npub struct TgsReq { delegation_keytab: Option<Keytab> }\nimpl TgsReq { pub fn with_delegation_keytab(mut self, keytab: Keytab) -> Self { self.delegation_keytab = Some(keytab); self } }",
+            )?;
+            let owners = inspect(&root, &root)?;
+            let methods = super::replacement::inspect(&root, &root)?;
+            let failures = uncovered_replacements(&owners, &methods, &[]);
+            let expected = "client.rs::TgsReq::with_delegation_keytab replaces delegation_keytab: ";
+            assert!(
+                failures.iter().any(|failure| failure.starts_with(expected)),
+                "keytab replacement admitted: {failures:?}"
+            );
+            let certified = [("client.rs::TgsReq::with_delegation_keytab", "probe_test")];
+            assert_eq!(
+                uncovered_replacements(&owners, &methods, &certified),
+                Vec::<String>::new()
+            );
+            Ok(())
+        })();
+        fs::remove_dir_all(&root)?;
+        result
+    }
+
+    /// A built request that retains a dependency-owned rasn AS-REQ or TGS-REQ replaces credential storage.
+    #[test]
+    fn request_message_replacements_require_proof() -> Result<(), io::Error> {
+        let root = env::temp_dir().join(format!("rskrb5-t139-message-{}", process::id()));
+        fs::create_dir_all(&root)?;
+        let result = (|| {
+            fs::write(root.join("lib.rs"), "mod client;")?;
+            fs::write(
+                root.join("client.rs"),
+                "use rasn_kerberos::{AsReq, TgsReq};\npub struct BuiltAsReq { message: AsReq }\nimpl BuiltAsReq { pub fn set_message(&mut self, value: AsReq) { self.message = value; } }\npub struct BuiltTgsReq { message: TgsReq }\nimpl BuiltTgsReq { pub fn set_message(&mut self, value: TgsReq) { self.message = value; } }",
+            )?;
+            let owners = inspect(&root, &root)?;
+            let methods = super::replacement::inspect(&root, &root)?;
+            let failures = uncovered_replacements(&owners, &methods, &[]);
+            for owner in ["BuiltAsReq", "BuiltTgsReq"] {
+                let expected = format!("client.rs::{owner}::set_message replaces message: ");
+                assert!(
+                    failures
+                        .iter()
+                        .any(|failure| failure.starts_with(&expected)),
+                    "{owner} replacement admitted: {failures:?}"
+                );
+            }
+            Ok(())
+        })();
+        fs::remove_dir_all(&root)?;
+        result
+    }
+
     /// Whether `name` is credential storage of the declared owner `identity`.
     fn credential_storage(owners: &[super::inventory::Owner], identity: &str, name: &str) -> bool {
         owners
@@ -442,6 +504,14 @@ mod tests {
         (
             "src/client.rs::BuiltApReq::set_message",
             "Dependency-owned rasn OctetString residual; no mutable byte API, documented in security-policy residual copies.",
+        ),
+        (
+            "src/client.rs::BuiltAsReq::set_message",
+            "Dependency-owned rasn AS-REQ residual (its PA-DATA values); no mutable byte API, documented in security-policy residual copies.",
+        ),
+        (
+            "src/client.rs::BuiltTgsReq::set_message",
+            "Dependency-owned rasn TGS-REQ residual (its PA-DATA values, including the PA-TGS-REQ AP-REQ); no mutable byte API, documented in security-policy residual copies.",
         ),
         (
             "src/client.rs::KdcError::set_method_data",

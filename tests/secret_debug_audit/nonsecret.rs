@@ -84,6 +84,11 @@ pub(super) const FIELDS: &[(&str, &str, &str)] = &[
     ),
     (
         "src/error.rs::Service",
+        "Keytab.0",
+        "error::Keytab is the keytab parse and lookup error: names, offsets and counts, no key bytes.",
+    ),
+    (
+        "src/error.rs::Service",
         "ClientPrincipalMismatch.ticket",
         "Ticket client principal name, not encoded ticket bytes.",
     ),

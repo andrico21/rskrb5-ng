@@ -43,12 +43,22 @@ pub(super) fn padata(policy: &CryptoPolicy, data: &[rasn_kerberos::PaData]) -> R
                     ),
                 });
             }
+            // PA-GET-FROM-TYPED-DATA (RFC 4120, deprecated by RFC 6113) only embeds an element of
+            // the other encoding: it is no credential mechanism, and its contents would bypass admission.
+            22_i32 => {
+                return Err(Error::Encode {
+                    target: "PA-DATA",
+                    message: format!(
+                        "outgoing PA type {} embeds data that cannot be policy-checked",
+                        entry.r#type
+                    ),
+                });
+            }
             // These credential mechanisms have no checked envelope implementation.
             // Reject rather than transmit opaque nested encryption (including FAST).
             5..=9
             | 12..=13
             | 16..=17
-            | 22_i32
             | 30..=31
             | 41_i32
             | 130_i32
