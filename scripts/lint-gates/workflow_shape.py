@@ -107,7 +107,9 @@ def setup(lines: list[Line], fields: Mapping, job: str) -> None:
         elif action != "actions/checkout":
             raise RuntimeError("docs-validate needs checkout or lychee action")
     elif action == "dtolnay/rust-toolchain" and channel in {"stable", "master"}:
-        allowed = {"components": "clippy"}
+        # The lint-gates job also reads Cargo's lints page (completeness_check.py).
+        stable_gates = job == "lint-gates" and channel == "stable"
+        allowed = {"components": "clippy, rust-docs" if stable_gates else "clippy"}
         if channel == "master" and job == "lint-gates":
             allowed["toolchain"] = "nightly-2026-10-03"
     elif action == "Swatinem/rust-cache" and job == "closures":

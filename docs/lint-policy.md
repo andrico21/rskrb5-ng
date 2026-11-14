@@ -23,7 +23,7 @@ builds, lints and tests clean, and so does Windows.
   the gate (`msrv`, `fuzz-build`, `fuzz`, `mutants`).
 - [`rustfmt.toml`](../rustfmt.toml) is run with `nightly-2026-10-03`.
 - The fuzz crate (`fuzz/Cargo.toml`) is a separate workspace without lint
-  tables; `fuzz_lint.py` applies the root profile to it as command-line flags.
+  tables; `fuzz_lint.py` applies the root rustc and Clippy tables to it as command-line flags. Cargo's own `[lints.cargo]` table is read from a manifest, not from flags, and the fuzz crate declares none: its bin names are snake_case (`non_kebab_case_bins`).
 - On top of the core: the
   [Kerberos overlay](https://github.com/andrico21/rskrb5-ng/blob/main/docs/rust-guidelines/overlays/domains/kerberos-credential-protocols.md),
   the [HTTP services overlay](https://github.com/andrico21/rskrb5-ng/blob/main/docs/rust-guidelines/overlays/domains/http-services.md)
@@ -81,8 +81,8 @@ in the `lint-gates` job of [`ci.yml`](https://github.com/andrico21/rskrb5-ng/blo
 | `allow_gate.py --enforce` | no `allow` attribute anywhere, including nested `cfg_attr` lists and inner attributes |
 | `exception_gate.py --enforce` | every `expect` is one of the six sanctioned forms above on a matching item; `lint-migration:`, `invariant:` and any other reason fail |
 | (both gates) | fail closed on spelling the lexer cannot see through: `#`, `!` and `[` are read as separate tokens, so `# [allow(..)]` is still an attribute; a macro metavariable in or as an attribute (`#[$m]`, `#$t`), an `allow(..)`/`expect(..)` token tree passed to a macro, an attribute that does not start with a path, and `include!` or `#[path]` of anything but a relative `.rs` path without `..` are all reported |
-| `profile_eq.py --clippy-toml` | `[lints]` equals the vendored core profile; `clippy.toml` equals the core sample apart from the two append-only keys |
-| `completeness_check.py` | the profile is complete for the current stable: the rustc and `restriction` lints missing from `Cargo.toml` are exactly the documented exclusions |
+| `profile_eq.py --clippy-toml` | `[lints]` (the rustc, rustdoc, Clippy and Cargo tables) equals the vendored core profile; `clippy.toml` equals the core sample apart from the two append-only keys |
+| `completeness_check.py` | the profile is complete for the current stable: the rustc, Clippy `restriction` and Cargo `restriction` lints missing from `Cargo.toml` are exactly the documented exclusions (the Cargo leg reads the `rust-docs` page of the stable toolchain) |
 | `facade_gate.py --enforce` | no `pub use` (or `pub(..) use`) outside the crate-root scope of `src/lib.rs`, cfg-disabled code included |
 | `prose_gate.py --enforce` | the core's non-lint rules on every item of the whole tree (`--paths <globs>` narrows a local run; `facade_gate.py --paths` works the same way, and an empty selection selects nothing) |
 | `feature_closures.py run` | every feature closure: `cargo clippy --all-targets <args> -- -D warnings`, then `cargo test <args>` |
@@ -93,7 +93,7 @@ in the `lint-gates` job of [`ci.yml`](https://github.com/andrico21/rskrb5-ng/blo
 | `scripts/check-error-constructions.py` | every public variant of the error enums in `src/error.rs` and `src/error/` has a construction expression outside its enum definition (patterns, strings and comments do not count); an enum body the scanner cannot read fails closed |
 | `scripts/check-config-relations.py` and `--self-test` | literal Rust tables generate the packaged relation document exactly (CRLF-safe); all 43 libdefaults and 28 pinned realm names match independent inventories, all 77 rows name existing tests; malformed/duplicate/opaque tables, missing tests and documentation drift fail closed |
 | `package_links.py --enforce` and `--self-test` | every relative Markdown link (inline, image, reference definition, autolink, HTML `href`/`src`; CRLF-safe, code skipped) in a file of `cargo package --list --allow-dirty` resolves to a packaged file or a directory holding one, and its fragment to a heading or anchor of a packaged Markdown target; files the package excludes are linked as `https://github.com/andrico21/rskrb5-ng/blob/main/...` (or `tree/main/...`), which must exist in the checkout; other schemes, root-absolute paths and paths leaving the package fail |
-| `overlay_facts.py --enforce` and `--self-test` | the vendored project overlay's mutation shard count and the register row FU-CI-04 equal the `ci.yml` mutants matrix, `--shard` and `--expect-shards`; the overlay names every variable of `READERS` in `tests/ambient_guard.rs` and states its reader function and inventory entry counts |
+| `overlay_facts.py --enforce` and `--self-test` | every number and list the vendored project overlay states is recomputed: the mutation shard count and the register row FU-CI-04 equal the `ci.yml` mutants matrix, `--shard` and `--expect-shards`; the overlay names every variable of `READERS` in `tests/ambient_guard.rs` and states its reader function and inventory entry counts; its `# Ambient input` section count, `NOT cancel-safe` sentence count, fuzz target file and `[[bin]]` counts (each file that is no bin is named), the blocking and advisory CI job lists of project rule 8 and the scripts of the `lint-gates` job are those of the tree |
 | `changelog_rows.py --enforce` | every `fixed` row of the follow-up register [`review/followup-6586b7a.md`](https://github.com/andrico21/rskrb5-ng/blob/main/docs/review/followup-6586b7a.md) whose "Behaviour change" cell does not begin with the word `none` is named, as a whole token, in `CHANGELOG.md` |
 | `gate_hygiene.py --enforce` | the gate scripts carry no dead work: every `argparse` option is read, and every module-level helper is used outside a `self_test` |
 
