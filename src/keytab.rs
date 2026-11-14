@@ -150,6 +150,10 @@ impl Keytab {
     /// and `WRFILE:path`. Collection and platform stores such as `DIR:`,
     /// `KEYRING:`, and `MEMORY:` are rejected explicitly.
     ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::DefaultKeytabName`] when `KRB5_KTNAME` is unset or not
@@ -298,6 +302,10 @@ impl Keytab {
     #[inline]
     /// # Ambient input
     /// Reads `KRB5_KTNAME`; use [`Keytab::save_name`] for an explicit name.
+    ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
     pub fn save_to_env(&self) -> Result<(), Error> {
         let name = env::var(KRB5_KTNAME_ENV).map_err(Error::DefaultKeytabName)?;
         self.save_name(name)
@@ -595,6 +603,9 @@ impl Keytab {
 /// # Ambient input
 /// Reads `KRB5_KTNAME` before the caller's configured fallback.
 ///
+/// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+/// ignores the same variables (`secure_getenv`); such programs must use the explicit constructors.
+///
 /// # Errors
 ///
 /// Returns [`Error::DefaultKeytabName`] when `KRB5_KTNAME` is set but not
@@ -613,6 +624,9 @@ pub(crate) fn default_keytab_name(defaults: &LibDefaults) -> Result<Keytab, Erro
 /// # Ambient input
 /// Reads `TMPDIR`, `TEMP`, `APPDATA` and process identity through the default
 /// resolver. Use `Keytab::load` with an explicit path to avoid discovery.
+///
+/// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+/// ignores the same variables (`secure_getenv`); such programs must use the explicit constructors.
 ///
 /// # Errors
 /// Returns typed expansion, store and file errors.

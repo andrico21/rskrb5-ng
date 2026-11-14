@@ -1138,8 +1138,9 @@ Configuration now follows MIT profile semantics; the details are in
   `[appdefaults]`, `[realms]`, `[plugins]` and `[capaths]`, as in MIT, which
   rejects it in every section unless a `{` line follows
   (`prof_parse.c:172-176,329-334`); the selector check sees the pending brace
-  first, so the error is `Policy`, not a structure error. In `[libdefaults]`
-  and, in Compatible mode, `[login]` the empty value counts as disabled. Real
+  first, so the error is `Policy`, not a structure error. In `[libdefaults]`,
+  and in Compatible mode in `[logging]`, `[kdcdefaults]`, `[dbmodules]` and an
+  unknown section such as `[login]`, the empty value counts as disabled. Real
   files are affected: the `kerberos-configs` 2.3 template of Debian (and Ubuntu
   16.04) ends with `[login]`, `krb4_convert = true` and
   `krb4_get_tickets = false` and sets `krb4_config`, `krb4_realms`,
@@ -1519,9 +1520,9 @@ rule-language relations `auth_to_local` and `pkinit_cert_match` keep a trailing
 
 Subsections (FU-CFG-R04): in realms, appdefaults, plugins and capaths, an empty
 assignment now expects an opening brace on the next structural line. Use `""`
-for an explicitly empty scalar in realms and appdefaults. In libdefaults and
-domain_realm an empty assignment with no brace after it is an empty value, and
-the relation's own value rules apply to it, see `docs/config-profile.md`.
+for an explicitly empty scalar in realms and appdefaults. In every other section
+an empty assignment with no brace after it is an empty value, and the
+relation's own value rules apply to it, see `docs/config-profile.md`.
 
 Restrictive settings (FU-CFG-R05): serde and programmatic configurations now
 receive the same refusal for unsupported restrictions as profile input. Runtime

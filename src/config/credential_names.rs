@@ -19,6 +19,9 @@ mod tests;
 /// procfs identities when requested. Use `parameters::expand` with an explicit
 /// context, then literal-path `load`/`save`, to avoid discovery.
 ///
+/// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+/// ignores the same variables (`secure_getenv`); such programs must use the explicit constructors.
+///
 /// # Errors
 /// Returns typed missing-fact, invalid-environment and template failures.
 pub(crate) fn resolve_credential_template(

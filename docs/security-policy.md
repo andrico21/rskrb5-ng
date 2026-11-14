@@ -205,6 +205,19 @@ rasn password copies; generic ASN.1 codecs still have the residuals above.
 Closing a dependency residual requires a documented dependency erasure contract
 or an ownership-preserving replacement, not just wrapping the first input copy.
 
+## Set-uid and set-gid processes
+
+The functions with an `# Ambient input` rustdoc section read `KRB5_CONFIG`,
+`KRB5CCNAME`, `KRB5_KTNAME`, `KRB5_CLIENT_KTNAME`, `TMPDIR` and `HOME` (and
+`TEMP` and `APPDATA` on Windows) in set-uid and set-gid processes too. MIT
+1.22.2 reads them through `secure_getenv`, which returns nothing there, so in
+such a process the invoking user chooses the configuration, credential cache
+and keytab that this crate trusts. A program that runs with an elevated
+identity must use the explicit constructors (`Config::load_paths`,
+`CCache::load_name`, `Keytab::load_name`, a literal name) and not the ambient
+readers. `docs/config-profile.md` (Deliberate divergences and bounds) lists the
+MIT sources.
+
 <a id="windows-api-ccache"></a>
 ## Windows API credential cache
 
