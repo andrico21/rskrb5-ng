@@ -39,8 +39,10 @@ kinds. The sources are `src`, `tests`, `examples`, `benches` and
 `fuzz/fuzz_targets` plus everything the checkout's Cargo manifests compile:
 build scripts and targets with a custom `path`
 ([`source_set.py`](https://github.com/andrico21/rskrb5-ng/blob/main/scripts/lint-gates/source_set.py)); a target outside
-the checkout, an out-of-line `mod` in a file scanned on its own, or an empty
-source set fails every gate. A lint path is read the way rustc reads it, so
+the checkout, an empty source set, or a file scanned on its own (a target
+directly in a package directory, such as `build.rs`) that has an out-of-line
+`mod`, `include!`, `#[path]`, an opaque macro expansion or an opaque attribute
+expansion fails every gate. A lint path is read the way rustc reads it, so
 `clippy :: r#unwrap_used` is `clippy::unwrap_used`, and an argument that is
 not a lint path is reported, never dropped:
 
@@ -92,6 +94,7 @@ in the `lint-gates` job of [`ci.yml`](https://github.com/andrico21/rskrb5-ng/blo
 | `scripts/check-config-relations.py` and `--self-test` | literal Rust tables generate the packaged relation document exactly (CRLF-safe); all 43 libdefaults and 28 pinned realm names match independent inventories, all 77 rows name existing tests; malformed/duplicate/opaque tables, missing tests and documentation drift fail closed |
 | `package_links.py --enforce` and `--self-test` | every relative Markdown link (inline, image, reference definition, autolink, HTML `href`/`src`; CRLF-safe, code skipped) in a file of `cargo package --list --allow-dirty` resolves to a packaged file or a directory holding one, and its fragment to a heading or anchor of a packaged Markdown target; files the package excludes are linked as `https://github.com/andrico21/rskrb5-ng/blob/main/...` (or `tree/main/...`), which must exist in the checkout; other schemes, root-absolute paths and paths leaving the package fail |
 | `overlay_facts.py --enforce` and `--self-test` | the vendored project overlay's mutation shard count and the register row FU-CI-04 equal the `ci.yml` mutants matrix, `--shard` and `--expect-shards`; the overlay names every variable of `READERS` in `tests/ambient_guard.rs` and states its reader function and inventory entry counts |
+| `changelog_rows.py --enforce` | every `fixed` row of the follow-up register [`review/followup-6586b7a.md`](https://github.com/andrico21/rskrb5-ng/blob/main/docs/review/followup-6586b7a.md) whose "Behaviour change" cell does not begin with the word `none` is named, as a whole token, in `CHANGELOG.md` |
 | `gate_hygiene.py --enforce` | the gate scripts carry no dead work: every `argparse` option is read, and every module-level helper is used outside a `self_test` |
 
 Workflow execution admission is a strict, dependency-free YAML subset. The

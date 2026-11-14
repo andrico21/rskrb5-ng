@@ -116,10 +116,13 @@ cargo run --no-default-features --features evaluation --bin rskrb5-ng-compat-rep
 
 ## Local checks
 
-These are the commands CI runs; [`docs/lint-policy.md`](docs/lint-policy.md)
-explains the lint profile and each gate.
+These are the core commands CI runs; the `lint-gates` job of
+[`ci.yml`](https://github.com/andrico21/rskrb5-ng/blob/main/.github/workflows/ci.yml)
+runs further gates. [`docs/lint-policy.md`](docs/lint-policy.md) explains the
+lint profile and each gate.
 
 ```sh
+python3 -m pip install --require-hashes -r scripts/lint-gates/requirements.txt   # once: the CommonMark gates import markdown_it
 cargo +nightly-2026-10-03 fmt --all -- --check
 python3 scripts/lint-gates/feature_closures.py run   # clippy -D warnings and tests, every feature closure
 cargo test --all-features

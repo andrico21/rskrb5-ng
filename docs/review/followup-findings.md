@@ -418,3 +418,4 @@ is a parity feature, not a defect>`.
 | critic:critics-efadae8/u1.md#U1-05 | FU-SPN-R22 | no |
 | critic:critics-efadae8/u1.md#U1-06 | FU-DOC-R142 | no |
 | critic:critics-efadae8/u6.md#U6-02 | FU-GATE-R22 | no |
+| critic:critics-efadae8/u6.md#U6-03 | FU-DOC-R143 | no |
