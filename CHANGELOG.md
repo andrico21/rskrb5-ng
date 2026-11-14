@@ -682,20 +682,28 @@ Security fail-closed parsing and verification:
   cases (FU-DOC-R105).
 - `NegTokenInit::krb5_ap_req` and `Token::krb5_ap_req` (v0.2.2: `SpnegoToken`)
   apply checks that v0.2.2 did not apply, so an input that gave an AP-REQ can be
-  an error. The decoders (`Token::decode`, `NegotiationToken::decode`,
-  `NegTokenInit::decode`, `NegTokenResp::decode` and `Krb5MechToken::decode`,
-  which the helpers call on the mechanism token) refuse some DER lengths, OID
-  encodings, SPNEGO field orders and `negState` values that v0.2.2 decoded (see
-  the entries on SPNEGO field order, DER lengths, and OID arcs and state values
-  above), so an input with one of them is an error from decoding. After
-  decoding, the helpers add their own checks: `Spnego::MechListMicRequiresState`
-  when the token carries a mechListMIC (use `accept_sec_context_header` to
-  verify it) and `Spnego::MissingMechListMic` when the first offered mechanism
-  is not Kerberos and no mechListMIC is supplied. `Token::krb5_ap_req` on a
-  `NegTokenResp` returns `Spnego::NegotiationRequiresState`
-  (`UnsupportedMechanism` when `supportedMech` is not Kerberos, as in v0.2.2),
-  where v0.2.2 returned the AP-REQ carried in the response token (FU-DOC-R104,
-  FU-DOC-R126).
+  an error (FU-DOC-R104, FU-DOC-R126, FU-DOC-R127). Seven `Spnego` errors are
+  new for an input that v0.2.2 decoded or took an AP-REQ from:
+  `NonminimalLength` (a DER length in non-minimal form), `InvalidOidEncoding`
+  (an OID arc from the third on, with a redundant leading `0x80` octet or wider
+  than 32 bits), `InvalidFieldOrder` (known `NegTokenInit` or `NegTokenResp`
+  fields that repeat or are out of increasing tag order), `InvalidInteger` (a
+  `negState` INTEGER with a redundant leading zero octet or a value wider than
+  32 bits), `MechListMicRequiresState` (a mechListMIC in the token),
+  `MissingMechListMic` (the first offered mechanism is not Kerberos, a later one
+  is, and no mechListMIC is supplied) and `NegotiationRequiresState` (a
+  `NegTokenResp`). The first four are returned by `Token::decode`,
+  `NegotiationToken::decode`, `NegTokenInit::decode`, `NegTokenResp::decode`,
+  `spnego::parse_negotiate_header` and `accept_sec_context_header`;
+  `Krb5MechToken::decode` returns the first two.
+  `InitiatorContext::verify_ap_rep_response_header` returns the errors of
+  `parse_negotiate_header` and `Krb5MechToken::decode`.
+  `NegTokenInit::krb5_ap_req` returns the first two (from its call of
+  `Krb5MechToken::decode`), `MechListMicRequiresState` and `MissingMechListMic`;
+  `Token::krb5_ap_req` returns the same and `NegotiationRequiresState`
+  (`UnsupportedMechanism` when `supportedMech` is not Kerberos);
+  `accept_sec_context_header` also returns `MissingMechListMic` and
+  `NegotiationRequiresState`.
 - `Spnego::Client` keeps the typed `Box<Client>` cause instead of a string
   (FU-SPN-R03).
 - Mutual authentication requested through a combined context-flag mask needs a
