@@ -17,6 +17,7 @@ pub(crate) trait EnctypeDefaults {
     /// Validate staged request names against the permitted list.
     /// # Errors
     /// Returns named expression or request-membership errors without narrowing.
+    #[cfg(feature = "messages")]
     fn validate_request_enctypes(&self) -> Result<(), Error>;
     /// Legacy accessor returns no usable IDs for invalid public mutation.
     fn effective_enctype_ids(&self, names: &[String]) -> Vec<i32>;
@@ -133,6 +134,7 @@ impl EnctypeDefaults for LibDefaults {
         )
     }
 
+    #[cfg(feature = "messages")]
     fn validate_request_enctypes(&self) -> Result<(), Error> {
         let permitted = self.resolve_names(&self.permitted_enctypes)?;
         let ticket = self.resolve_names(&self.default_tkt_enctypes)?;
