@@ -532,8 +532,8 @@ for an input that v0.2.2 decoded or took an AP-REQ from: `NonminimalLength` (a
 DER length in non-minimal form), `InvalidOidEncoding` (an OID arc from the third
 on, with a redundant leading `0x80` octet or wider than 32 bits),
 `InvalidFieldOrder` (known `NegTokenInit` or `NegTokenResp` fields that repeat
-or are out of increasing tag order), `InvalidInteger` (a `negState` INTEGER with
-a redundant leading zero octet or a value wider than 32 bits),
+or are out of increasing tag order), `InvalidInteger` (a `negState` ENUMERATED
+with a redundant leading zero octet or a value wider than 32 bits),
 `MechListMicRequiresState` (a mechListMIC in the token), `MissingMechListMic`
 (the first offered mechanism is not Kerberos, a later one is, and no mechListMIC
 is supplied) and `NegotiationRequiresState` (a `NegTokenResp`). The first four
@@ -541,7 +541,10 @@ are returned by `Token::decode`, `NegotiationToken::decode`,
 `NegTokenInit::decode`, `NegTokenResp::decode`, `spnego::parse_negotiate_header`
 and `accept_sec_context_header`; `Krb5MechToken::decode` returns the first two.
 `InitiatorContext::verify_ap_rep_response_header` returns the errors of
-`parse_negotiate_header` and `Krb5MechToken::decode`.
+`parse_negotiate_header` and `Krb5MechToken::decode`, and
+`NegotiationRequiresState` unless `negState` is accept-completed and a
+`supportedMech` is present (`UnsupportedMechanism` when `supportedMech` was not
+offered).
 `NegTokenInit::krb5_ap_req` returns the first two (from its call of
 `Krb5MechToken::decode`), `MechListMicRequiresState` and `MissingMechListMic`;
 `Token::krb5_ap_req` returns the same and `NegotiationRequiresState`
