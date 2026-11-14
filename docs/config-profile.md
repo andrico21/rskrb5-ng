@@ -193,8 +193,8 @@ value are value data.
   `protected`, `rfc3244` or a supported version number. An empty value opens a
   pending subsection in `[realms]`, `[appdefaults]`, `[plugins]` and
   `[capaths]`, as in MIT, so `krb4_convert =` there is a `Policy` error where
-  MIT reports a missing `{`; in `[libdefaults]` and `[login]` it is the
-  empty-scalar extension and counts as disabled.
+  MIT reports a missing `{`; in `[libdefaults]` and, in Compatible mode,
+  `[login]` the empty value counts as disabled.
 
 ## Independent expected values
 

@@ -700,10 +700,11 @@ Security fail-closed parsing and verification:
   `parse_negotiate_header` and `Krb5MechToken::decode`, and
   `NegotiationRequiresState` unless `negState` is accept-completed and a
   `supportedMech` is present (`UnsupportedMechanism` when `supportedMech` was
-  not offered). A response with a mechListMIC also needs an AP-REP response
-  token (`MissingApRep` when it is absent or not an AP-REP) and a MIC that
-  verifies against the offer, the acceptor sequence and the context key
-  (`InvalidMechListMic`); v0.2.2 did not read the MIC.
+  not offered). A response with a mechListMIC also has the MIC verified: an
+  absent response token is `MissingApRep` (`MissingMechToken` without a MIC),
+  and the MIC must verify against the offer, the acceptor sequence and the
+  context key (`InvalidMechListMic`); v0.2.2 decoded the MIC but never
+  verified it.
   `NegTokenInit::krb5_ap_req` returns the first two (from its call of
   `Krb5MechToken::decode`), `MechListMicRequiresState` and `MissingMechListMic`;
   `Token::krb5_ap_req` returns the same and `NegotiationRequiresState`
@@ -1167,7 +1168,7 @@ Configuration:
   `krb4_convert =` opens a pending subsection in `[appdefaults]`, `[realms]`,
   `[plugins]` and `[capaths]`, where MIT rejects the line without a following
   `{` in every section, and here it is a `Policy` error rather than a structure
-  error; in `[libdefaults]` and `[login]` it is the empty-scalar extension and
+  error; in `[libdefaults]` and, in Compatible mode, `[login]` the empty value
   counts as disabled. Delete the `[login]` stanza and those keys: the
   `krb5.conf` template of Debian `kerberos-configs` 2.3 and Ubuntu 16.04 ends
   with `[login] krb4_convert = true` and sets `krb4_config`, `krb4_realms`,
@@ -1185,8 +1186,10 @@ Configuration:
   (FU-CFG-R02).
 - Quoted endpoint stars remain literal and do not suppress subsequent
   endpoints; final markers are handled only by the profile parser (FU-CFG-R03).
-- Profile subsections accept MIT's next-line opening brace syntax. Empty
-  libdefaults/domain_realm scalar extensions remain supported (FU-CFG-R04).
+- Profile subsections accept MIT's next-line opening brace syntax. In
+  libdefaults and domain_realm an empty assignment with no brace after it is
+  an empty value, and the relation's own value rules apply to it, see
+  `docs/config-profile.md` (FU-CFG-R04).
 - Unsupported restrictive settings now fail closed through serde and runtime
   configuration admission, not only text parsing: address inclusion, total
   deadlines, mandatory AP verification, channel-binding signaling, persistent

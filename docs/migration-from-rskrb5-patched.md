@@ -544,10 +544,10 @@ and `accept_sec_context_header`; `Krb5MechToken::decode` returns the first two.
 `parse_negotiate_header` and `Krb5MechToken::decode`, and
 `NegotiationRequiresState` unless `negState` is accept-completed and a
 `supportedMech` is present (`UnsupportedMechanism` when `supportedMech` was not
-offered). A response with a mechListMIC also needs an AP-REP response token
-(`MissingApRep` when it is absent or not an AP-REP) and a MIC that verifies
-against the offer, the acceptor sequence and the context key
-(`InvalidMechListMic`); v0.2.2 did not read the MIC.
+offered). A response with a mechListMIC also has the MIC verified: an absent
+response token is `MissingApRep` (`MissingMechToken` without a MIC), and the
+MIC must verify against the offer, the acceptor sequence and the context key
+(`InvalidMechListMic`); v0.2.2 decoded the MIC but never verified it.
 `NegTokenInit::krb5_ap_req` returns the first two (from its call of
 `Krb5MechToken::decode`), `MechListMicRequiresState` and `MissingMechListMic`;
 `Token::krb5_ap_req` returns the same and `NegotiationRequiresState`
@@ -1116,10 +1116,10 @@ Configuration now follows MIT profile semantics; the details are in
   `[appdefaults]`, `[realms]`, `[plugins]` and `[capaths]`, as in MIT, which
   rejects it in every section unless a `{` line follows
   (`prof_parse.c:172-176,329-334`); the selector check sees the pending brace
-  first, so the error is `Policy`, not a structure error. In `[libdefaults]` and
-  `[login]` the empty value is the empty-scalar extension and counts as
-  disabled. Real files are affected: the `kerberos-configs` 2.3 template of
-  Debian (and Ubuntu 16.04) ends with `[login]`, `krb4_convert = true` and
+  first, so the error is `Policy`, not a structure error. In `[libdefaults]`
+  and, in Compatible mode, `[login]` the empty value counts as disabled. Real
+  files are affected: the `kerberos-configs` 2.3 template of Debian (and Ubuntu
+  16.04) ends with `[login]`, `krb4_convert = true` and
   `krb4_get_tickets = false` and sets `krb4_config`, `krb4_realms`,
   `v4_instance_resolve` and `v4_name_convert` in `[libdefaults]`; its 2.5
   release (October 2016, Debian bug 741051) removed the outdated entries, but an
@@ -1494,8 +1494,9 @@ rule-language relations `auth_to_local` and `pkinit_cert_match` keep a trailing
 
 Subsections (FU-CFG-R04): in realms, appdefaults, plugins and capaths, an empty
 assignment now expects an opening brace on the next structural line. Use `""`
-for an explicitly empty scalar there. Empty libdefaults/domain_realm values
-retain the crate's existing scalar extension.
+for an explicitly empty scalar in realms and appdefaults. In libdefaults and
+domain_realm an empty assignment with no brace after it is an empty value, and
+the relation's own value rules apply to it, see `docs/config-profile.md`.
 
 Restrictive settings (FU-CFG-R05): serde and programmatic configurations now
 receive the same refusal for unsupported restrictions as profile input. Runtime
@@ -1514,9 +1515,7 @@ for text parsing. Plugin `disable` and `enable_only` are WP-16.
 
 Profile braces (FU-CFG-R08): `name =` followed by `{` has the same subsection
 meaning as `name = {` in every section, matching MIT's generic profile grammar.
-In Strict mode both forms give the same result in every section. Quoted empty
-strings are scalars; the existing unquoted empty-scalar extension remains
-available outside mandatory subsection sections when no brace follows.
+In Strict mode both forms give the same result in every section.
 
 Realm restriction values (FU-CFG-R09): `disable_encrypted_timestamp` accepts only
 `Value::Boolean(Toggle::Disabled)` or an absent entry. The enabled restriction is
