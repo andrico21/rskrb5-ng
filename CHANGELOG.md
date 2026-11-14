@@ -210,7 +210,8 @@ These are breaking; the migration guide maps each one.
 - Checked AS/TGS exchanges authorize encrypted request-body authorization data
   under the effective crypto policy before transport, preserving typed causes.
   Known unsupported credential PA envelopes (including FAST, encrypted challenge
-  and PKINIT) and outgoing peer-only enctype hints are rejected (FU-CLI-R21).
+  and PKINIT), outgoing peer-only enctype hints and the embedding wrapper
+  PA-GET-FROM-TYPED-DATA (type 22) are rejected (FU-CLI-R21, FU-CLI-R32).
 
 - Ccache parsing bounds every record count (principal components, addresses,
   authorization data) against the remaining input before reserving memory, so
@@ -662,6 +663,13 @@ Security fail-closed parsing and verification:
   `into_parts()`; the public fields are gone (behaviour change). The secret
   audit treats session and client-credential owners as secrets, so a public
   session field fails it (FU-CLI-R22).
+- `client::TgsRequestParts` has only private fields: read them with `options()`,
+  `timestamp()`, `cusec()`, `confounder()` and `subkey()` or take them with the
+  consuming `into_parts()`. The secret
+  audit classifies `Keytab` and the `AsReq`/`TgsReq` types as credential
+  storage, so a public field of those types fails it and every public
+  replacement of one needs a proof or a reviewed exception (FU-CLI-R31,
+  FU-TST-R60).
 - Service-ticket acquisition judges a cached realm TGT from one clock reading
   and no longer tries a TGS renewal of one it has just found invalid (v0.2.2
   renewed any cached TGT whose `renew_till` had not passed); it now falls through to primary-TGT acquisition

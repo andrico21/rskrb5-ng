@@ -117,6 +117,38 @@ mod tests {
         Ok(())
     }
 
+    /// Attaching a delegation keytab replaces the one already retained.
+    #[test]
+    fn delegation_keytab_attachment_replaces_the_previous_keytab() -> Result<(), TestError> {
+        let replacement = delegation_keytab()?;
+        let options = TgsReq::new(timestamp(1_893_553_452)?, 42)
+            .with_delegation_keytab(Keytab::new())
+            .with_delegation_keytab(replacement.clone());
+        assert_eq!(options.delegation_keytab(), Some(&replacement));
+        Ok(())
+    }
+    /// The private fields of the explicit TGS request inputs are read and taken back unchanged.
+    #[test]
+    fn tgs_request_parts_return_configured_components() -> Result<(), TestError> {
+        let options = TgsReq::new(timestamp(1_893_553_452)?, 42);
+        let subkey = EncryptionKey::new(18, vec![0x22; 32]);
+        let confounder = [0x11_u8; 16];
+        let at = timestamp(1_893_553_500)?;
+        let parts = rskrb5_ng::client::TgsRequestParts::new(options.clone(), &confounder, &subkey)
+            .with_timestamp(at, 7);
+        assert_eq!(parts.options().nonce(), options.nonce());
+        assert_eq!(parts.timestamp(), at);
+        assert_eq!(parts.cusec(), 7);
+        assert_eq!(parts.confounder(), confounder);
+        assert_eq!(parts.subkey(), &subkey);
+        let (taken, taken_at, cusec, taken_confounder, taken_subkey) = parts.into_parts();
+        assert_eq!(taken.nonce(), options.nonce());
+        assert_eq!(taken_at, at);
+        assert_eq!(cusec, 7);
+        assert_eq!(taken_confounder, confounder);
+        assert_eq!(taken_subkey, &subkey);
+        Ok(())
+    }
     /// AS, TGS and AP-REQ options return every configured component.
     #[test]
     fn request_options_return_configured_components() -> Result<(), TestError> {

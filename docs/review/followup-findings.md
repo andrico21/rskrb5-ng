@@ -425,3 +425,6 @@ is a parity feature, not a defect>`.
 | critic:critics-efadae8/u6.md#U6-02 | FU-GATE-R22 | no |
 | critic:critics-efadae8/u6.md#U6-03 | FU-DOC-R143 | no |
 | critic:critics-efadae8/oracle.md#ORA-03 | FU-TRN-R13 | no |
+| critic:critics-efadae8/u2.md#U2-01 | FU-TST-R60 | no |
+| executor:todo-139#tgs-request-parts-options-private | FU-CLI-R31 | no |
+| executor:todo-139#pa-type-22-message | FU-CLI-R32 | no |
