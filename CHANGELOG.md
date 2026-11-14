@@ -688,8 +688,8 @@ Security fail-closed parsing and verification:
   (an OID arc from the third on, with a redundant leading `0x80` octet or wider
   than 32 bits), `InvalidFieldOrder` (known `NegTokenInit` or `NegTokenResp`
   fields that repeat or are out of increasing tag order), `InvalidInteger` (a
-  `negState` INTEGER with a redundant leading zero octet or a value wider than
-  32 bits), `MechListMicRequiresState` (a mechListMIC in the token),
+  `negState` ENUMERATED with a redundant leading zero octet or a value wider
+  than 32 bits), `MechListMicRequiresState` (a mechListMIC in the token),
   `MissingMechListMic` (the first offered mechanism is not Kerberos, a later one
   is, and no mechListMIC is supplied) and `NegotiationRequiresState` (a
   `NegTokenResp`). The first four are returned by `Token::decode`,
@@ -697,7 +697,10 @@ Security fail-closed parsing and verification:
   `spnego::parse_negotiate_header` and `accept_sec_context_header`;
   `Krb5MechToken::decode` returns the first two.
   `InitiatorContext::verify_ap_rep_response_header` returns the errors of
-  `parse_negotiate_header` and `Krb5MechToken::decode`.
+  `parse_negotiate_header` and `Krb5MechToken::decode`, and
+  `NegotiationRequiresState` unless `negState` is accept-completed and a
+  `supportedMech` is present (`UnsupportedMechanism` when `supportedMech` was
+  not offered).
   `NegTokenInit::krb5_ap_req` returns the first two (from its call of
   `Krb5MechToken::decode`), `MechListMicRequiresState` and `MissingMechListMic`;
   `Token::krb5_ap_req` returns the same and `NegotiationRequiresState`
@@ -1189,9 +1192,10 @@ Configuration:
   or unknown profile scopes can discard them (FU-CFG-R06).
 - Runtime/serde timestamp-restriction errors now identify preauthentication
   work package WP-07, matching text parsing (FU-CFG-R07).
-- Next-line profile subsection braces now work in every section, including
-  unknown and server-only sections; existing empty scalar extensions remain
-  supported when no opening brace follows (FU-CFG-R08).
+- Next-line profile subsection braces work in every section, including unknown
+  and server-only sections (FU-CFG-R08). In realms, appdefaults, plugins and
+  capaths an empty assignment expects an opening brace on the next structural
+  line (FU-CFG-R04).
 - Programmatic and serde realm timestamp restrictions reject every non-Boolean
   value with a named invalid-policy error (FU-CFG-R09).
 - Programmatic and typed-serde realm protocol selectors now receive the same

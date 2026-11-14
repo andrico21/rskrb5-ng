@@ -399,3 +399,7 @@ is a parity feature, not a defect>`.
 | critic:critics-b52961c/u6x.md#U6X-01 | FU-DOC-R127 | no |
 | critic:critics-b52961c/u6x.md#U6X-02 | FU-DOC-R127 | no |
 | critic:critics-b52961c/u6y.md#U6Y-01 | FU-DOC-R128 | no |
+| critic:critics-e2f3700/u6x.md#U6X-01 | FU-DOC-R129 | no |
+| critic:critics-e2f3700/u6x.md#U6X-02 | FU-DOC-R130 | no |
+| critic:critics-e2f3700/u6x.md#U6X-03 | FU-DOC-R131 | no |
+| critic:critics-e2f3700/u6y.md#U6Y-01 | FU-DOC-R132 | no |
