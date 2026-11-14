@@ -1,11 +1,12 @@
 //! TCP request frame ownership regressions.
 
-use core::error::Error;
+use core::{error::Error, time::Duration};
 
 use tokio::{
     io::{AsyncReadExt as _, AsyncWriteExt as _},
-    net::TcpListener,
+    net::{TcpListener, TcpStream},
     sync::oneshot,
+    time::timeout,
 };
 
 use super::ERASED;
@@ -28,6 +29,15 @@ const MARK: usize = 4;
 /// Larger than any loopback socket buffering, so a peer that stops reading stalls the write.
 const STALLING_REQUEST: usize = 1 << 26;
 
+/// How long a peer waits for the transport under test to connect.
+const CONNECT_WAIT: Duration = Duration::from_secs(10);
+
+/// Accept the connection of the transport under test, or fail when it never connects.
+async fn accept_connection(listener: &TcpListener) -> Result<TcpStream, TestError> {
+    let (stream, _) = timeout(CONNECT_WAIT, listener.accept()).await??;
+    Ok(stream)
+}
+
 /// A completed exchange erases the framed request, record mark included.
 #[tokio::test]
 async fn framed_request_is_erased_after_success() -> Result<(), TestError> {
@@ -36,7 +46,7 @@ async fn framed_request_is_erased_after_success() -> Result<(), TestError> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = listener.local_addr()?;
     let peer = async {
-        let (mut stream, _) = listener.accept().await?;
+        let mut stream = accept_connection(&listener).await?;
         let mut received = vec![0; request.len().saturating_add(MARK)];
         let _: usize = stream.read_exact(&mut received).await?;
         stream.write_all(&[0, 0, 0, 3]).await?;
@@ -68,7 +78,7 @@ async fn framed_request_is_erased_after_io_failure() -> Result<(), TestError> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = listener.local_addr()?;
     let peer = async {
-        let (stream, _) = listener.accept().await?;
+        let stream = accept_connection(&listener).await?;
         drop(stream);
         Ok::<_, TestError>(())
     };
@@ -145,7 +155,7 @@ async fn kpasswd_request_frames_are_erased_after_failure() -> Result<(), TestErr
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let address = listener.local_addr()?;
         let peer = async {
-            let (mut stream, _) = listener.accept().await?;
+            let mut stream = accept_connection(&listener).await?;
             let mut received = vec![0; length.saturating_add(MARK)];
             let _: usize = stream.read_exact(&mut received).await?;
             Ok::<_, TestError>(())
