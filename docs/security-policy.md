@@ -143,6 +143,12 @@ different constructions. **No blanket MIT removal release is claimed**:
 profiles, while [MIT advisory 2010-007](https://web.mit.edu/kerberos/advisories/MITKRB5-SA-2010-007.txt)
 documents specific checksum-acceptance fixes, not removal of all hash primitives.
 
+The RFC 6806 request-integrity checksum of a KDC reply is accepted only with the
+checksum type that the reply key's encryption type requires. The reply key is
+checked as `Use::ReplyKey` first, so the policy decides the profile. MIT accepts
+more combinations (`verify_key` compares encryption providers, and HMAC-MD5 has
+none): a deliberate, stricter divergence.
+
 <a id="unprotected-password-change"></a>
 ## Unprotected password change
 

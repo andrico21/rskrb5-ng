@@ -1183,6 +1183,10 @@ identity tokens".
   `reply_clock`.
 - Explicit renewal of a ticket that is not renewable (or outside its renewal
   window) is `error::Client::TicketNotRenewable`.
+- The PA-REQ-ENC-PA-REP checksum of an AS or TGS reply must have the type that
+  the reply key's encryption type requires (RFC 6806 section 11); another type
+  is `error::Client::UnsupportedChecksumType`. v0.2.2 accepted any implemented
+  checksum type in an AS reply and did not check TGS replies (FU-CLI-R26).
 
 ```rust
 # #[cfg(feature = "tokio")]

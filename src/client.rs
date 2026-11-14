@@ -236,6 +236,8 @@ impl BuiltAsReq {
         self.crypto_policy = value;
     }
     /// Replace the dependency-owned wire message; ASN.1 residual copies are not erased.
+    /// The request DER is not rebuilt: a checked exchange then fails with
+    /// [`Error::Encode`] unless the message still encodes to it.
     #[inline]
     pub fn set_message(&mut self, value: rasn_kerberos::AsReq) {
         self.message = value;
@@ -383,6 +385,8 @@ impl BuiltTgsReq {
         &self.message
     }
     /// Replace a dependency-owned wire message; ASN.1 residual copies remain.
+    /// The request DER is not rebuilt: a checked exchange then fails with
+    /// [`Error::Encode`] unless the message still encodes to it.
     #[inline]
     pub fn set_message(&mut self, value: rasn_kerberos::TgsReq) {
         self.message = value;
@@ -3951,7 +3955,13 @@ pub fn build_ticket_renewal_req_with_confounder(
 /// Send an AS-REQ through a transport and process the returned AS-REP.
 /// # Errors
 ///
-/// Returns the transport's error, and the errors of [`process_as_rep`].
+/// Before the transport is used, returns [`Error::Encode`] when the request DER
+/// does not encode the message it carries or a PA-DATA entry is an unsupported
+/// credential mechanism or a peer-only enctype hint, [`Error::Decode`] when a
+/// PA-DATA value does not decode, and [`Error::Crypto`] carrying the typed
+/// policy refusal when the crypto policy does not permit an encryption type
+/// that the request or the reply key uses. Then returns the transport's error,
+/// and the errors of [`process_as_rep`].
 #[inline]
 pub fn exchange_as_req<T>(
     transport: &mut T,
@@ -3970,7 +3980,13 @@ where
 /// Send a TGS-REQ through a transport and process the returned TGS-REP.
 /// # Errors
 ///
-/// Returns the transport's error, and the errors of [`process_tgs_rep`].
+/// Before the transport is used, returns [`Error::Encode`] when the request DER
+/// does not encode the message it carries or a PA-DATA entry is an unsupported
+/// credential mechanism or a peer-only enctype hint, [`Error::Decode`] when a
+/// PA-DATA value does not decode, and [`Error::Crypto`] carrying the typed
+/// policy refusal when the crypto policy does not permit an encryption type
+/// that the request or the reply key uses. Then returns the transport's error,
+/// and the errors of [`process_tgs_rep`].
 #[inline]
 pub fn exchange_tgs_req<T>(
     transport: &mut T,
@@ -4278,15 +4294,17 @@ pub fn process_as_rep(
 /// Verify negotiated AS/TGS request integrity (RFC 6806 section 11).
 ///
 /// The check runs only when the request carried PA-REQ-ENC-PA-REP and the reply
-/// sets the `enc-pa-rep` ticket flag.
+/// sets the `enc-pa-rep` ticket flag. The checksum type must be the one the
+/// reply key's encryption type requires (RFC 6806 section 11).
 ///
 /// # Errors
 ///
 /// Returns [`Error::InvalidFastNegotiationResponse`] when the encrypted padata
-/// is missing or incomplete, [`Error::UnsupportedChecksumType`] for an unknown
-/// checksum type, [`Error::FastNegotiationChecksumMismatch`] when the checksum
-/// does not match the request, and [`Error::Message`] when the checksum does not
-/// decode.
+/// is missing or incomplete, [`Error::UnsupportedChecksumType`] for a checksum
+/// type other than the reply key's own, [`Error::Crypto`] for an unkeyed or
+/// weak checksum type, [`Error::FastNegotiationChecksumMismatch`] when the
+/// checksum does not match the request, and [`Error::Message`] when the
+/// checksum does not decode.
 fn validate_reply_encrypted_padata(
     request: (&[u8], Option<&[rasn_kerberos::PaData]>),
     enc_part: &rasn_kerberos::EncKdcRepPart,
@@ -4309,8 +4327,12 @@ fn validate_reply_encrypted_padata(
         .find(|padata| padata.r#type == PA_REQ_ENC_PA_REP)
         .ok_or(Error::InvalidFastNegotiationResponse)?;
     let checksum = messages::PaReqEncPaRep::decode_der(pa_req_enc_pa_rep.value.as_ref())?;
-    let etype = selection::checksum(checksum.checksum_type())?
-        .ok_or_else(|| Error::UnsupportedChecksumType(checksum.checksum_type()))?;
+    selection::reject_checksum(checksum.checksum_type())?;
+    let etype = KerberosEtype::from_etype_id(reply_key.etype())
+        .ok_or_else(|| Error::UnsupportedEtype(reply_key.etype()))?;
+    if checksum.checksum_type() != etype.checksum_type_id() {
+        return Err(Error::UnsupportedChecksumType(checksum.checksum_type()));
+    }
     if !etype.verify_checksum(
         reply_key.value(),
         request.0,

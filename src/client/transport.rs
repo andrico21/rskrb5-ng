@@ -1003,6 +1003,13 @@ impl Tokio {
     ///
     /// # Errors
     ///
+    /// Before any I/O it returns [`Error::Encode`] when the request DER does not
+    /// encode the message it carries or a PA-DATA entry is an unsupported
+    /// credential mechanism or a peer-only enctype hint, [`Error::Decode`] when
+    /// a PA-DATA value does not decode, and [`Error::Crypto`] carrying the typed
+    /// policy refusal when the crypto policy does not permit an encryption type
+    /// that the request or the reply key uses.
+    ///
     /// Returns the errors of [`Self::send`], [`Error::Kdc`] when the KDC answers
     /// with a KRB-ERROR, and an error when the AS-REP cannot be decoded,
     /// decrypted with `reply_key` or matched to `request`.
@@ -1037,6 +1044,13 @@ impl Tokio {
     /// Send an AS-REQ through a config-discovered KDC and process the AS-REP.
     ///
     /// # Errors
+    ///
+    /// Before any I/O it returns [`Error::Encode`] when the request DER does not
+    /// encode the message it carries or a PA-DATA entry is an unsupported
+    /// credential mechanism or a peer-only enctype hint, [`Error::Decode`] when
+    /// a PA-DATA value does not decode, and [`Error::Crypto`] carrying the typed
+    /// policy refusal when the crypto policy does not permit an encryption type
+    /// that the request or the reply key uses.
     ///
     /// Returns the errors of [`Self::send_to_realm`], [`Error::Kdc`] when the KDC
     /// answers with a KRB-ERROR, an error when the AS-REP cannot be decoded,
@@ -1081,6 +1095,13 @@ impl Tokio {
     ///
     /// # Errors
     ///
+    /// Before any I/O it returns [`Error::Encode`] when the request DER does not
+    /// encode the message it carries or a PA-DATA entry is an unsupported
+    /// credential mechanism or a peer-only enctype hint, [`Error::Decode`] when
+    /// a PA-DATA value does not decode, and [`Error::Crypto`] carrying the typed
+    /// policy refusal when the crypto policy does not permit an encryption type
+    /// that the request or the reply key uses.
+    ///
     /// Returns the errors of [`Self::send`], [`Error::Kdc`] when the KDC answers
     /// with a KRB-ERROR, and an error when the TGS-REP cannot be decoded,
     /// decrypted with `tgs_session_key` or matched to `request`.
@@ -1115,6 +1136,13 @@ impl Tokio {
     /// Send a TGS-REQ through a config-discovered KDC and process the TGS-REP.
     ///
     /// # Errors
+    ///
+    /// Before any I/O it returns [`Error::Encode`] when the request DER does not
+    /// encode the message it carries or a PA-DATA entry is an unsupported
+    /// credential mechanism or a peer-only enctype hint, [`Error::Decode`] when
+    /// a PA-DATA value does not decode, and [`Error::Crypto`] carrying the typed
+    /// policy refusal when the crypto policy does not permit an encryption type
+    /// that the request or the reply key uses.
     ///
     /// Returns the errors of [`Self::send_to_realm`], [`Error::Kdc`] when the KDC
     /// answers with a KRB-ERROR, an error when the TGS-REP cannot be decoded,
