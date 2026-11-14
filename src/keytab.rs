@@ -19,6 +19,15 @@ use zeroize::Zeroizing;
 
 /// Password ownership retained through derivation and every early error.
 mod password;
+/// Capacity observations for the principal component count.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod reservation_tests;
 
 #[cfg(feature = "messages")]
 use crate::config::{LibDefaults, credential_names, parameters::DefaultName};
@@ -140,6 +149,10 @@ impl Keytab {
     /// Only file-backed keytab names are supported: bare paths, `FILE:path`,
     /// and `WRFILE:path`. Collection and platform stores such as `DIR:`,
     /// `KEYRING:`, and `MEMORY:` are rejected explicitly.
+    ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
     ///
     /// # Errors
     ///
@@ -289,6 +302,10 @@ impl Keytab {
     #[inline]
     /// # Ambient input
     /// Reads `KRB5_KTNAME`; use [`Keytab::save_name`] for an explicit name.
+    ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
     pub fn save_to_env(&self) -> Result<(), Error> {
         let name = env::var(KRB5_KTNAME_ENV).map_err(Error::DefaultKeytabName)?;
         self.save_name(name)
@@ -586,6 +603,9 @@ impl Keytab {
 /// # Ambient input
 /// Reads `KRB5_KTNAME` before the caller's configured fallback.
 ///
+/// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+/// ignores the same variables (`secure_getenv`); such programs must use the explicit constructors.
+///
 /// # Errors
 ///
 /// Returns [`Error::DefaultKeytabName`] when `KRB5_KTNAME` is set but not
@@ -604,6 +624,9 @@ pub(crate) fn default_keytab_name(defaults: &LibDefaults) -> Result<Keytab, Erro
 /// # Ambient input
 /// Reads `TMPDIR`, `TEMP`, `APPDATA` and process identity through the default
 /// resolver. Use `Keytab::load` with an explicit path to avoid discovery.
+///
+/// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+/// ignores the same variables (`secure_getenv`); such programs must use the explicit constructors.
 ///
 /// # Errors
 /// Returns typed expansion, store and file errors.
@@ -852,7 +875,12 @@ impl Principal {
         };
 
         let realm = read_counted_string(bytes, offset, endian)?;
-        let mut components = Vec::with_capacity(component_count);
+        // Each component is at least a two-byte counted string; bound the
+        // count against the remaining input before reserving capacity.
+        let capacity = component_count.min(bytes.len().saturating_sub(*offset).div_euclid(2));
+        #[cfg(test)]
+        reservation_tests::record(capacity);
+        let mut components = Vec::with_capacity(capacity);
         for _ in 0..component_count {
             components.push(read_counted_string(bytes, offset, endian)?);
         }

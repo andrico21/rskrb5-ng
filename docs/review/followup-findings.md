@@ -430,3 +430,10 @@ is a parity feature, not a defect>`.
 | executor:todo-139#pa-type-22-message | FU-CLI-R32 | no |
 | critic:critics-efadae8/u4.md#U4-01 | FU-CLI-R33 | no |
 | executor:todo-143#section-header-case-sensitivity | FU-CFG-R38 | no |
+| critic:critics-efadae8/u5.md#U5-06 | FU-FIL-R10 | no |
+| critic:critics-efadae8/u5.md#U5-01 | FU-DOC-R144 | no |
+| critic:critics-efadae8/u5.md#U5-02 | FU-CFG-R39 | no |
+| critic:critics-efadae8/u5.md#U5-03 | FU-CFG-R40 | no |
+| critic:critics-efadae8/u5.md#U5-04 | FU-CFG-R41 | no |
+| critic:critics-efadae8/u5.md#U5-05 | FU-CFG-R42 | no |
+| critic:critics-efadae8/u6.md#U6-04 | FU-CFG-R43 | no |

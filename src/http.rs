@@ -1297,6 +1297,10 @@ impl NegotiateLayer<'static> {
     /// [`Self::new`] keeps the gokrb5-compatible 300 s default.
     /// Enctype permission is taken from the same configuration, including legacy opt-ins.
     ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::Keytab`] when the configured name is not a file keytab
@@ -1327,6 +1331,10 @@ impl NegotiateLayer<'static> {
     /// `[libdefaults] clockskew` becomes the acceptance window.
     /// Enctype permission is taken from the same configuration, including legacy opt-ins.
     ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::Keytab`] when the selected name is not a file keytab
@@ -1346,6 +1354,10 @@ impl NegotiateLayer<'static> {
     /// # Ambient input
     /// Reads `KRB5_KTNAME`; unset or non-Unicode values are errors. Use
     /// [`Self::from_keytab_name`] for an explicit keytab name.
+    ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
     ///
     /// # Errors
     ///
@@ -1601,6 +1613,10 @@ impl<S> NegotiateService<'static, S> {
     /// Expands templates using `TMPDIR`, `TEMP`, `APPDATA` and process identity.
     /// Use `from_keytab_name` with a literal name to avoid this discovery.
     ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::Keytab`] when the configured name is not a file keytab
@@ -1620,6 +1636,10 @@ impl<S> NegotiateService<'static, S> {
     /// `KRB5_KTNAME` takes precedence when set. Otherwise this falls back to
     /// `config.libdefaults.default_keytab_name`.
     ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::Keytab`] when the selected name is not a file keytab
@@ -1634,6 +1654,10 @@ impl<S> NegotiateService<'static, S> {
     /// # Ambient input
     /// Reads `KRB5_KTNAME`; unset or non-Unicode values are errors. Use
     /// [`Self::from_keytab_name`] for an explicit keytab name.
+    ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
     ///
     /// # Errors
     ///

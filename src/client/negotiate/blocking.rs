@@ -90,6 +90,10 @@ impl BlockingClient {
     /// process identity is read for identity tokens. An invalid `KRB5CCNAME` is an
     /// error. Use [`Self::from_ccache_name`] for an explicit cache name.
     ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
+    ///
     /// # Errors
     ///
     /// Returns an error when `KRB5CCNAME` is set but not valid Unicode, when no
@@ -106,6 +110,10 @@ impl BlockingClient {
     /// # Ambient input
     /// Reads `KRB5CCNAME`; unset or non-Unicode values are errors. Use
     /// [`Self::from_ccache_name`] for an explicit cache name.
+    ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
     ///
     /// # Errors
     ///

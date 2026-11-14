@@ -710,7 +710,7 @@ pub enum Config {
     /// The requested realm has no configured password-change servers.
     #[error("realm has no configured kpasswd servers: {0}")]
     NoKpasswdServer(String),
-    /// Include nesting reached past [`crate::config::MAX_INCLUDE_DEPTH`].
+    /// Include or subsection nesting reached past [`crate::config::MAX_INCLUDE_DEPTH`].
     #[error("include nesting reached depth {depth}, past the limit of {limit}")]
     IncludeTooDeep {
         /// The depth the parser reached.

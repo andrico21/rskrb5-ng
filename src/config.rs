@@ -107,8 +107,8 @@ const DEFAULT_ENCTYPES: &[&str] = &[
 /// The default `preferred_preauth_types`, most preferred first.
 const DEFAULT_PREAUTH_TYPES: &[i32] = &[17, 16];
 
-/// The deepest `include` nesting a configuration may reach before parsing fails
-/// with [`Error::IncludeTooDeep`].
+/// The deepest `include` or subsection nesting a configuration may reach before
+/// parsing fails with [`Error::IncludeTooDeep`].
 ///
 /// MIT's parser recurses without a bound; this one is a deliberate divergence so
 /// a pathological configuration cannot nest without limit.
@@ -231,6 +231,10 @@ impl Config {
     /// # Ambient input
     /// Reads `KRB5_CONFIG`; use [`Config::load_paths`] for explicit paths.
     ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::DefaultConfigName`] when `KRB5_CONFIG` is unset, and
@@ -249,6 +253,10 @@ impl Config {
     /// # Ambient input
     /// Reads `KRB5_CONFIG` and discovers platform files; use [`Config::load`]
     /// or [`Config::parse`] to choose the source explicitly.
+    ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
     ///
     /// # Errors
     ///
@@ -272,6 +280,10 @@ impl Config {
     /// # Ambient input
     /// Reads `KRB5_CONFIG` and discovers platform files before using the fallback.
     /// Use [`Config::parse`] to use only caller-supplied text.
+    ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
     ///
     /// # Errors
     ///
@@ -1077,6 +1089,10 @@ impl LibDefaults {
     /// Reads `HOME` for `k5login_directory`; unset/non-Unicode means empty.
     /// The keytab identity template never reads `UID`.
     /// Use [`Self::new`] and set `k5login_directory` explicitly to avoid discovery.
+    ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
     #[inline]
     #[must_use]
     pub fn from_env() -> Self {
@@ -1982,8 +1998,9 @@ impl<'line> IncludeDirective<'line> {
     /// `krb5.conf` documentation places them ("at the beginning of a line") and
     /// where `prof_parse.c:282-291` tests for them. MIT requires the keyword at
     /// column 0; leading whitespace is accepted here too, because a line this
-    /// parser does not recognize at the top level is skipped silently, and a
-    /// directive must never be ignored silently.
+    /// parser does not recognize at the top level is an `InvalidLine`, and an
+    /// indented directive inside a section would otherwise be a relation
+    /// without `=`.
     fn parse(line: &'line str) -> Option<Self> {
         // `includedir` first: `include` is a prefix of it.
         if let Some(rest) = line.strip_prefix("includedir")

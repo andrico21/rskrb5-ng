@@ -181,6 +181,10 @@ impl CCache {
     /// names. Platform stores such as `KCM:`, `KEYRING:`, and `API:` are
     /// rejected explicitly.
     ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::DefaultCacheName`] when `KRB5CCNAME` is unset or not
@@ -231,6 +235,10 @@ impl CCache {
     ///
     /// # Ambient input
     /// Reads `KRB5CCNAME`; use [`CCache::save_name`] for an explicit name.
+    ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
     ///
     /// # Errors
     ///

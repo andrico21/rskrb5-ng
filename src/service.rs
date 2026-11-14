@@ -1134,6 +1134,10 @@ impl Validator<'static> {
     /// [`Self::new`] keeps the gokrb5-compatible 300 s default.
     /// The configured permitted list and legacy flags become the runtime policy.
     ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::Keytab`] when the configured name is not a file keytab
@@ -1164,6 +1168,10 @@ impl Validator<'static> {
     /// `[libdefaults] clockskew` becomes the acceptance window.
     /// The configured permitted list and legacy flags also apply to acceptance.
     ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::Keytab`] when the selected name is not a file keytab
@@ -1183,6 +1191,10 @@ impl Validator<'static> {
     /// # Ambient input
     /// Reads `KRB5_KTNAME`; unset or non-Unicode values are errors. Use
     /// [`Self::from_keytab_name`] for an explicit keytab name.
+    ///
+    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
+    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
+    /// constructors.
     ///
     /// # Errors
     ///

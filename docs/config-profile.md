@@ -113,7 +113,20 @@ value are value data.
 ### Deliberate divergences and bounds
 
 - Missing or unreadable explicitly named `KRB5_CONFIG` entries are errors; MIT
-  skips them.
+  skips them. A leading `~/` in an entry is not expanded: the entry is used as
+  written, relative to the working directory, where MIT replaces it with the
+  home directory
+  ([prof_file.c:188–207](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_file.c#L188-L207)).
+- The environment variables that the functions with an `# Ambient input`
+  rustdoc section read (`KRB5_CONFIG`, `KRB5CCNAME`, `KRB5_KTNAME`,
+  `KRB5_CLIENT_KTNAME`, `TMPDIR`, `HOME`, and `TEMP` and `APPDATA` on Windows)
+  are read in set-uid and set-gid processes too. MIT 1.22.2 reads them through
+  `secure_getenv` and so ignores them there
+  ([init_os_ctx.c:300](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/init_os_ctx.c#L300),
+  [ccdefname.c:303](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/ccdefname.c#L303),
+  [ktdefname.c:45,66](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/ktdefname.c#L45-L66)).
+  Such programs must use the explicit constructors (`Config::load_paths`,
+  `CCache::load_name`, `Keytab::load_name`, a literal name).
 - Section headers and relation names are case-sensitive, as in MIT
   ([prof_tree.c:588,615](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_tree.c#L588-L615)
   compare them with `strcmp`); v0.2.2 folded the `[libdefaults]`, `[realms]` and
@@ -145,6 +158,21 @@ value are value data.
   ([prof_parse.c:152](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L152),
   [203](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L203));
   this crate's data model cannot represent an empty name.
+- An empty assignment (`name =`) with no `{` on the next structural line is an
+  empty value in `[libdefaults]`, `[domain_realm]`, `[logging]`,
+  `[kdcdefaults]`, `[dbmodules]` and an unknown section, in Compatible and
+  Strict mode alike (Strict still refuses the server-only and unknown
+  sections); the result is the one of `name = ""`. Two consequences:
+  `[libdefaults] default_realm =` sets an empty default realm, and
+  `[domain_realm] .example.test =` maps that domain to the empty realm, so
+  `Config::resolve_realm` and `Config::realm_for_host` return `Some("")` for
+  the hosts under it. MIT rejects `name =` when a line other than `{` follows,
+  in every section (`PROF_MISSING_OBRACE`,
+  [prof_parse.c:174–176](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L174-L176),
+  [331–334](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_parse.c#L331-L334)).
+  In `[realms]`, `[appdefaults]`, `[plugins]` and `[capaths]` the crate rejects
+  it too, as an `InvalidLine` or, at the end of a file, an
+  `InvalidRealmsSection`.
 - An unclosed subsection at the end of a file is an `InvalidRealmsSection` in
   every section; MIT accepts it because `profile_parse_file` never checks the
   group level
@@ -198,8 +226,10 @@ value are value data.
   `protected`, `rfc3244` or a supported version number. An empty value opens a
   pending subsection in `[realms]`, `[appdefaults]`, `[plugins]` and
   `[capaths]`, as in MIT, so `krb4_convert =` there is a `Policy` error where
-  MIT reports a missing `{`; in `[libdefaults]` and, in Compatible mode,
-  `[login]` the empty value counts as disabled.
+  MIT reports a missing `{`. In `[libdefaults]` the empty value counts as
+  disabled; so it does in `[logging]`, `[kdcdefaults]`, `[dbmodules]` and, for
+  example, `[login]` in Compatible mode (Strict refuses those sections whatever
+  their relations). `[domain_realm]` has no selector check.
 
 ## Independent expected values
 

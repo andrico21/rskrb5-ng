@@ -1206,8 +1206,9 @@ Configuration:
   `krb4_convert =` opens a pending subsection in `[appdefaults]`, `[realms]`,
   `[plugins]` and `[capaths]`, where MIT rejects the line without a following
   `{` in every section, and here it is a `Policy` error rather than a structure
-  error; in `[libdefaults]` and, in Compatible mode, `[login]` the empty value
-  counts as disabled. Delete the `[login]` stanza and those keys: the
+  error; in `[libdefaults]`, and in Compatible mode in `[logging]`,
+  `[kdcdefaults]`, `[dbmodules]` and an unknown section such as `[login]`, the
+  empty value counts as disabled. Delete the `[login]` stanza and those keys: the
   `krb5.conf` template of Debian `kerberos-configs` 2.3 and Ubuntu 16.04 ends
   with `[login] krb4_convert = true` and sets `krb4_config`, `krb4_realms`,
   `v4_instance_resolve` and `v4_name_convert` in `[libdefaults]`; an unmodified
@@ -1225,9 +1226,9 @@ Configuration:
 - Quoted endpoint stars remain literal and do not suppress subsequent
   endpoints; final markers are handled only by the profile parser (FU-CFG-R03).
 - Profile subsections accept MIT's next-line opening brace syntax. In
-  libdefaults and domain_realm an empty assignment with no brace after it is
-  an empty value, and the relation's own value rules apply to it, see
-  `docs/config-profile.md` (FU-CFG-R04).
+  every section except realms, appdefaults, plugins and capaths an empty
+  assignment with no brace after it is an empty value, and the relation's own
+  value rules apply to it, see `docs/config-profile.md` (FU-CFG-R04).
 - Unsupported restrictive settings now fail closed through serde and runtime
   configuration admission, not only text parsing: address inclusion, total
   deadlines, mandatory AP verification, channel-binding signaling, persistent
