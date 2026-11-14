@@ -1,6 +1,8 @@
 //! Replay-cache regressions: the digest-indexed purge against the earlier
 //! key-scanning purge, and the purge's key-index work.
 
+#[cfg(feature = "tower")]
+use core::error::Error as StdError;
 use core::{cell::Cell, num::TryFromIntError, time::Duration};
 use std::{
     collections::HashMap,
@@ -188,6 +190,113 @@ fn checked_attachment_keeps_shared_cache() -> Result<(), Error> {
         validator.shared_replay_cache().is_some(),
         "checked attachment retains shared state"
     );
+    Ok(())
+}
+
+/// A shared cache poisoned after the service was built is an internal fault of the
+/// Tower service: an opaque hardened 500 that keeps the typed cause, not a 401.
+#[cfg(feature = "tower")]
+#[test]
+fn poisoned_shared_cache_returns_500() -> Result<(), Box<dyn StdError>> {
+    use alloc::sync::Arc;
+    use core::{
+        convert::Infallible,
+        future::{Ready, ready},
+        task::{Context, Poll},
+    };
+
+    use http_types::{Request, Response, StatusCode};
+    use tokio::runtime::Builder;
+    use tower_layer::Layer as _;
+    use tower_service::Service;
+
+    use crate::{
+        ap_req,
+        error::{Http, Service as ServiceError, Spnego},
+        http::{NegotiateLayer, set_authorization_header},
+        keytab::{EncryptionKey, Entry, Principal as KeytabPrincipal},
+        spnego::{self, Krb5MechToken, NegTokenInit, Token},
+    };
+
+    /// An inner service that answers 200 if it is reached.
+    #[derive(Clone)]
+    struct Reached;
+    impl Service<Request<()>> for Reached {
+        type Response = Response<()>;
+        type Error = Infallible;
+        type Future = Ready<Result<Response<()>, Infallible>>;
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Infallible>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, _req: Request<()>) -> Self::Future {
+            ready(Ok(Response::new(())))
+        }
+    }
+
+    let mut keytab = Keytab::new();
+    keytab.entries_mut().push(Entry::new(
+        KeytabPrincipal::new(
+            "TEST.GOKRB5",
+            1,
+            vec!["HTTP".to_owned(), "host.test.gokrb5".to_owned()],
+        ),
+        0,
+        1,
+        EncryptionKey::new(
+            18,
+            hex::decode("9cad00bbc72d703258e911dc18e6d5487cf737bf67fd111f0c2463ad6033bf51")?,
+        ),
+        1,
+    ));
+    let original = ap_req::decode(include_bytes!("../../tests/fixtures/valid_ap_req.der"))?;
+    let session = EncryptionKey::new(
+        18,
+        hex::decode("8845cbaccbf11cb9f467fd577ba51c70d73de6554980a05395bf319e18bdda07")?,
+    );
+    let mut authenticator = ap_req::decrypt_ap_req_authenticator(&original, &session, 11)?;
+    authenticator.cksum = Some(rasn_kerberos::Checksum {
+        r#type: 0x8003,
+        checksum: spnego::authenticator_checksum(&[]).into(),
+    });
+    authenticator.seq_number = Some(42);
+    let message = ap_req::build_ap_req_with_confounder(
+        original.ticket,
+        original.ap_options,
+        &authenticator,
+        &session,
+        11,
+        None,
+        &[0; 16],
+    )?;
+    let header = spnego::negotiate_header(&Token::Init(NegTokenInit::krb5(
+        Krb5MechToken::ap_req(ap_req::encode(&message)?).encode()?,
+    )))?;
+    let cache = super::SharedReplayCache::new();
+    let mut service = NegotiateLayer::new(&keytab)
+        .with_now(
+            UNIX_EPOCH
+                .checked_add(Duration::from_secs(1_893_553_447))
+                .ok_or("clock")?,
+        )
+        .with_shared_replay_cache(cache.clone())?
+        .layer(Reached);
+    let poisoned = catch_unwind(move || -> Result<(), ()> {
+        let _guard = cache.inner.lock().map_err(|_poisoned| ())?;
+        resume_unwind(Box::new("poisoned fixture"))
+    });
+    assert!(poisoned.is_err(), "fixture poisons the shared lock");
+    let mut request = Request::new(());
+    set_authorization_header(&mut request, &header)?;
+    let response = Builder::new_current_thread()
+        .build()?
+        .block_on(service.call(request))?;
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(matches!(
+        response.extensions().get::<Arc<Http>>().map(AsRef::as_ref),
+        Some(Http::Spnego(Spnego::Service(
+            ServiceError::ReplayCachePoisoned
+        )))
+    ));
     Ok(())
 }
 
