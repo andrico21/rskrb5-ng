@@ -2199,9 +2199,18 @@ impl InitiatorContext {
     /// # Errors
     ///
     /// Returns the errors of [`parse_negotiate_header`], [`Error::WrongNegotiationToken`] for a
-    /// `NegTokenInit`, [`Error::MissingMechToken`] without a response token, the errors of
+    /// `NegTokenInit`, [`Error::NegotiationRequiresState`] unless `negState` is accept-completed
+    /// and a `supportedMech` is present, [`Error::UnsupportedMechanism`] when `supportedMech` was
+    /// not offered, [`Error::MissingMechToken`] without a response token, the errors of
     /// [`Krb5MechToken::decode`], [`Error::MissingApRep`] when the response token is not an AP-REP,
     /// and the errors of [`Self::verify_ap_rep`].
+    ///
+    /// A response with a `mechListMIC` also has the MIC verified, after the response token has been
+    /// decoded and verified as above: an absent response token is [`Error::MissingApRep`] (not
+    /// [`Error::MissingMechToken`]), the MIC must verify against the offer, the acceptor sequence
+    /// and the context key ([`Error::InvalidMechListMic`]), [`Error::Crypto`] is returned when the
+    /// crypto policy does not permit the encryption type of the MIC key, and the errors of
+    /// re-encoding the retained offer are returned.
     #[inline]
     pub fn verify_ap_rep_response_header(&self, header: &str) -> Result<VerifiedApRep, Error> {
         let token = parse_negotiate_header(header)?;
