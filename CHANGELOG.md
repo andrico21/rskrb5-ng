@@ -731,7 +731,7 @@ Security fail-closed parsing and verification:
   unless `with_response_hardening(false)` (FU-HTTP-04).
 - `NegotiateFuture` is a public concrete future that is `Send` when the inner
   future, body and error are (FU-HTTP-06).
-- `NegotiateService` maps replay-cache, keytab I/O and poisoned-validator
+- `NegotiateService` maps replay-cache and poisoned-validator
   faults to an opaque hardened 500 with the cause as an `Arc<Http>` response
   extension; authentication failures stay 401 (FU-HTTP-R02).
 - `NegotiateService` is `Clone`; clones share the validator and replay state
@@ -966,9 +966,8 @@ Crypto policy:
 - Validated AP contexts retain their effective `crypto_policy`; AP-REP builders
   reject wrapping keys and outgoing subkeys outside it before producing a reply
   or calling the protected Tower handler (FU-SPN-R10).
-- Reciprocal MIC signing and completion verification recheck the selected key
-  against the retained context policy, including initiator-subkey fallbacks
-  (FU-SPN-R12).
+- Reciprocal MIC signing rechecks the selected key against the retained context
+  policy, including initiator-subkey fallbacks (FU-SPN-R12).
 - The service AP-REP verifier enforces retained policy on both wrapping key IDs
   and the authenticated acceptor subkey (FU-SPN-R13).
 - Random AP-REP headers and configured HTTP keytab constructors return typed

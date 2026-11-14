@@ -2142,8 +2142,10 @@ impl InitiatorContext {
     /// Validate completion metadata against the retained offer.
     ///
     /// # Errors
-    /// Returns a typed error for unfinished negotiation, unoffered mechanisms,
-    /// or a MIC exchange this one-shot initiator cannot complete.
+    /// Returns [`Error::NegotiationRequiresState`] unless `negState` is accept-completed and a
+    /// `supportedMech` is present, [`Error::UnsupportedMechanism`] when `supportedMech` was not
+    /// offered, and, for a response with a `mechListMIC`, the errors listed for
+    /// [`Self::verify_ap_rep_response_header`] for that MIC.
     pub(crate) fn validate_completion(&self, response: &NegTokenResp) -> Result<(), Error> {
         match response.neg_state {
             Some(NegState::AcceptCompleted) => {}
@@ -2184,7 +2186,6 @@ impl InitiatorContext {
             } else {
                 self.initiator_subkey.as_ref().unwrap_or(&self.session_key)
             };
-            self.crypto_policy.check_use(key.etype(), Use::SessionKey)?;
             let encoded = Scratch::new(self.spnego_token.encode()?, "completion-offer");
             let list = negotiation::received_mech_types(&encoded)?;
             mic.with_payload(list)
@@ -2208,9 +2209,8 @@ impl InitiatorContext {
     /// A response with a `mechListMIC` also has the MIC verified, after the response token has been
     /// decoded and verified as above: an absent response token is [`Error::MissingApRep`] (not
     /// [`Error::MissingMechToken`]), the MIC must verify against the offer, the acceptor sequence
-    /// and the context key ([`Error::InvalidMechListMic`]), [`Error::Crypto`] is returned when the
-    /// crypto policy does not permit the encryption type of the MIC key, and the errors of
-    /// re-encoding the retained offer are returned.
+    /// and the context key ([`Error::InvalidMechListMic`]), and the errors of re-encoding the
+    /// retained offer are returned.
     #[inline]
     pub fn verify_ap_rep_response_header(&self, header: &str) -> Result<VerifiedApRep, Error> {
         let token = parse_negotiate_header(header)?;
@@ -2238,9 +2238,10 @@ impl InitiatorContext {
     ///
     /// Returns [`Error::Decode`], [`Error::InvalidMessage`], [`Error::UnsupportedEtype`],
     /// [`Error::ApRepKeyEtypeMismatch`] or [`Error::Crypto`] when the AP-REP cannot be decoded or
-    /// decrypted with the session key, [`Error::TimeOverflow`] or [`Error::IntegerOutOfRange`] when
-    /// its timestamp cannot be represented, and [`Error::ApRepTimestampMismatch`] when it does not
-    /// echo the authenticator timestamp.
+    /// decrypted with the session key, [`Error::Crypto`] also when the crypto policy refuses the
+    /// AP-REP encryption type or the acceptor subkey, [`Error::TimeOverflow`] or
+    /// [`Error::IntegerOutOfRange`] when its timestamp cannot be represented, and
+    /// [`Error::ApRepTimestampMismatch`] when it does not echo the authenticator timestamp.
     #[inline]
     pub fn verify_ap_rep(&self, bytes: &[u8]) -> Result<VerifiedApRep, Error> {
         self.crypto_policy

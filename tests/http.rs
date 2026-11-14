@@ -72,9 +72,10 @@ mod tests {
         error::{Http as HttpError, Spnego as SpnegoError},
         http as krb_http,
         keytab::{EncryptionKey, Keytab},
-        service::{ApRepOptions, Validator},
+        service::{ApRepOptions, Validator, VerifiedApRep},
         spnego::{
-            self, AcceptedContext, InitiatorContextOptions, Krb5MechToken, NegTokenInit, Token,
+            self, AcceptedContext, InitiatorContextOptions, Krb5MechToken, MicToken, NegTokenInit,
+            Token,
         },
     };
     #[cfg(feature = "tokio")]
@@ -213,10 +214,7 @@ mod tests {
     #[cfg(feature = "tower")]
     #[test]
     fn ap_rep_disabled_completes_required_mic() -> Result<(), TestError> {
-        use rskrb5_ng::{
-            crypto::AesSha1Etype,
-            spnego::{MicToken, oid::ObjectIdentifier},
-        };
+        use rskrb5_ng::{crypto::AesSha1Etype, spnego::oid::ObjectIdentifier};
         let Token::Init(mut init) =
             spnego::parse_negotiate_header(initiator_context()?.header_ref())?
         else {
@@ -347,64 +345,109 @@ mod tests {
         Ok(())
     }
 
-    /// Runtime replay exhaustion is an opaque internal fault, not credential rejection.
+    /// Runtime replay-cache faults are opaque internal faults, not credential rejection.
     #[cfg(feature = "tower")]
     #[test]
-    fn runtime_replay_capacity_fault_returns_500() -> Result<(), TestError> {
+    fn runtime_replay_faults_return_500() -> Result<(), TestError> {
         use alloc::sync::Arc;
 
+        /// One fault: the shared cache, the time its first admission is
+        /// recorded (if any), the service's clock and the expected cause.
+        struct Fault {
+            label: &'static str,
+            cache: SharedReplayCache,
+            admitted_at: Option<SystemTime>,
+            serve_at: SystemTime,
+            expected: fn(&ServiceError) -> bool,
+        }
         let keytab = keytab()?;
-        let cache =
-            SharedReplayCache::from_cache(ReplayCache::with_limits(Duration::from_mins(5), 0));
-        let mut service = krb_http::NegotiateLayer::new(&keytab)
-            .with_now(timestamp(1_893_553_447)?)
-            .with_shared_replay_cache(cache)?
-            .layer(PanicService);
-        for (header, expected) in [
-            (
-                valid_authorization_header()?,
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ),
-            ("Negotiate invalid".to_owned(), StatusCode::UNAUTHORIZED),
-        ] {
-            let mut request = Request::new(());
-            krb_http::set_authorization_header(&mut request, &header)?;
-            // PanicService returns an error if called: a response proves zero inner calls.
-            let response = run_ready(service.call(request))??;
-            assert_eq!(response.status(), expected);
-            let cause = response.extensions().get::<Arc<HttpError>>();
-            if expected == StatusCode::INTERNAL_SERVER_ERROR {
-                assert!(matches!(
-                    cause.map(AsRef::as_ref),
-                    Some(HttpError::Spnego(SpnegoError::Service(
+        for fault in [
+            Fault {
+                label: "capacity",
+                cache: SharedReplayCache::from_cache(ReplayCache::with_limits(
+                    Duration::from_mins(5),
+                    0,
+                )),
+                admitted_at: None,
+                serve_at: timestamp(1_893_553_447)?,
+                expected: |cause| {
+                    matches!(
+                        cause,
                         ServiceError::ReplayCacheCapacityExceeded { capacity: 0 }
-                    )))
-                ));
-            } else {
-                assert!(cause.is_none());
+                    )
+                },
+            },
+            // The clock steps back by more than the skew after an admission
+            // that was itself inside the skew window.
+            Fault {
+                label: "clock rollback",
+                cache: SharedReplayCache::new(),
+                admitted_at: Some(timestamp(1_893_553_647)?),
+                serve_at: timestamp(1_893_553_247)?,
+                expected: |cause| matches!(cause, ServiceError::ReplayCacheClockRollback),
+            },
+        ] {
+            if let Some(admitted_at) = fault.admitted_at {
+                let mut validator = Validator::new(&keytab)
+                    .with_now(admitted_at)
+                    .with_shared_replay_cache(fault.cache.clone())?;
+                let mut first = Request::new(());
+                krb_http::set_authorization_header(&mut first, &valid_authorization_header()?)?;
+                drop(krb_http::accept_request(&mut validator, &mut first)?);
             }
-            assert!(
-                response.body().is_empty(),
-                "fault body must not expose internal details"
-            );
-            for name in [
-                "strict-transport-security",
-                "x-content-type-options",
-                "x-frame-options",
-                "content-security-policy",
-                "referrer-policy",
-                "permissions-policy",
-                "cross-origin-embedder-policy",
-                "cross-origin-opener-policy",
-                "cross-origin-resource-policy",
-                "cache-control",
-                "x-dns-prefetch-control",
-                "x-permitted-cross-domain-policies",
+            let mut service = krb_http::NegotiateLayer::new(&keytab)
+                .with_now(fault.serve_at)
+                .with_shared_replay_cache(fault.cache)?
+                .layer(PanicService);
+            for (header, expected) in [
+                (
+                    valid_authorization_header()?,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                ),
+                ("Negotiate invalid".to_owned(), StatusCode::UNAUTHORIZED),
             ] {
-                assert!(response.headers().contains_key(name), "missing {name}");
+                let mut request = Request::new(());
+                krb_http::set_authorization_header(&mut request, &header)?;
+                // PanicService returns an error if called: a response proves zero inner calls.
+                let response = run_ready(service.call(request))??;
+                assert_eq!(response.status(), expected, "{}", fault.label);
+                let cause = response.extensions().get::<Arc<HttpError>>();
+                if expected == StatusCode::INTERNAL_SERVER_ERROR {
+                    assert!(
+                        matches!(
+                            cause.map(AsRef::as_ref),
+                            Some(HttpError::Spnego(SpnegoError::Service(source)))
+                                if (fault.expected)(source)
+                        ),
+                        "{}: unexpected cause {cause:?}",
+                        fault.label
+                    );
+                } else {
+                    assert!(cause.is_none());
+                }
+                assert!(
+                    response.body().is_empty(),
+                    "fault body must not expose internal details"
+                );
+                for name in [
+                    "strict-transport-security",
+                    "x-content-type-options",
+                    "x-frame-options",
+                    "content-security-policy",
+                    "referrer-policy",
+                    "permissions-policy",
+                    "cross-origin-embedder-policy",
+                    "cross-origin-opener-policy",
+                    "cross-origin-resource-policy",
+                    "cache-control",
+                    "x-dns-prefetch-control",
+                    "x-permitted-cross-domain-policies",
+                ] {
+                    assert!(response.headers().contains_key(name), "missing {name}");
+                }
+                assert!(!response.headers().contains_key("server"));
+                assert!(!response.headers().contains_key("x-powered-by"));
             }
-            assert!(!response.headers().contains_key("server"));
-            assert!(!response.headers().contains_key("x-powered-by"));
         }
         Ok(())
     }
@@ -604,7 +647,6 @@ mod tests {
                 context.verify_ap_rep_response_header(&header),
                 Err(SpnegoError::NegotiationRequiresState
                     | SpnegoError::UnsupportedMechanism(_)
-                    | SpnegoError::MechListMicRequiresState
                     | SpnegoError::InvalidMechListMic)
             ));
             assert!(matches!(
@@ -659,6 +701,168 @@ mod tests {
                 ));
             }
         }
+        Ok(())
+    }
+
+    /// A genuine accept-completed response with a reciprocal MIC, and the context it answers.
+    struct Completion {
+        context: spnego::InitiatorContext,
+        response: spnego::NegTokenResp,
+        /// The mechanism list the MIC covers.
+        list: Vec<u8>,
+        /// The acceptor sequence number the MIC carries.
+        sequence: u64,
+    }
+
+    impl Completion {
+        fn new() -> Result<Self, TestError> {
+            let context = initiator_context()?;
+            let keytab = keytab()?;
+            let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+            let mut accepted =
+                spnego::accept_sec_context_header(&mut validator, context.header_ref())?;
+            let list = decode_hex("300b06092a864886f712010202")?;
+            accepted.mech_types_der = Some(list.clone());
+            let header = accepted.ap_rep_response_header_with_confounder(
+                &decode_hex(AP_REP_CONFOUNDER)?,
+                &ApRepOptions::default().with_sequence_number(Some(77)),
+            )?;
+            let Token::Resp(response) = spnego::parse_negotiate_header(&header)? else {
+                return Err("response expected".into());
+            };
+            let sequence =
+                MicToken::decode(response.mech_list_mic().context("MIC")?, true)?.snd_seq_num();
+            let completion = Self {
+                context,
+                response,
+                list,
+                sequence,
+            };
+            verify_ok(&completion.verify(&completion.response))?;
+            Ok(completion)
+        }
+
+        /// Verifies `response` as the completion of this context.
+        fn verify(&self, response: &spnego::NegTokenResp) -> Result<VerifiedApRep, SpnegoError> {
+            self.context
+                .verify_ap_rep_response_header(&spnego::negotiate_header(&Token::Resp(
+                    response.clone(),
+                ))?)
+        }
+
+        /// The response with its MIC replaced by one signed with `flags` under the context key.
+        ///
+        /// The plain acceptor flag yields a MIC that verifies, so a refusal of any other
+        /// flag value is a refusal of that flag alone.
+        fn resigned(&self, flags: u8) -> Result<spnego::NegTokenResp, TestError> {
+            let mut mic = MicToken::new(flags, self.sequence).with_payload(self.list.clone());
+            mic.set_checksum(
+                &EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?),
+                spnego::GSSAPI_ACCEPTOR_SIGN_USAGE,
+            )?;
+            let mut response = self.response.clone();
+            response.set_mech_list_mic(Some(mic.encode()?.into()));
+            Ok(response)
+        }
+
+        /// The response with `token` in the response token slot.
+        fn with_response_token(&self, token: Option<Vec<u8>>) -> spnego::NegTokenResp {
+            let mut response = self.response.clone();
+            response.set_response_token(token.map(Into::into));
+            response
+        }
+    }
+
+    /// Turns the verification outcome into a test error.
+    fn verify_ok(outcome: &Result<VerifiedApRep, SpnegoError>) -> Result<(), TestError> {
+        outcome
+            .as_ref()
+            .map(|_verified| ())
+            .map_err(|error| format!("completion rejected: {error}").into())
+    }
+
+    /// An AP-REQ in the response token slot is not an AP-REP.
+    fn ap_req_response_token() -> Result<Vec<u8>, TestError> {
+        Krb5MechToken::ap_req(gss_ap_req_fixture()?)
+            .encode()
+            .context("KRB5 AP-REQ token encodes")
+    }
+
+    /// A MIC with no response token to verify is a missing AP-REP, not a missing mech token.
+    #[test]
+    fn completion_mic_without_response_token_is_missing_ap_rep() -> Result<(), TestError> {
+        let completion = Completion::new()?;
+        assert!(matches!(
+            completion.verify(&completion.with_response_token(None)),
+            Err(SpnegoError::MissingApRep)
+        ));
+        Ok(())
+    }
+
+    /// Without a MIC, an absent response token is a missing mech token.
+    #[test]
+    fn completion_without_mic_or_response_token_is_missing_mech_token() -> Result<(), TestError> {
+        let completion = Completion::new()?;
+        let mut response = completion.with_response_token(None);
+        response.set_mech_list_mic(None);
+        assert!(matches!(
+            completion.verify(&response),
+            Err(SpnegoError::MissingMechToken)
+        ));
+        Ok(())
+    }
+
+    /// A MIC does not excuse a response token that is not an AP-REP.
+    #[test]
+    fn completion_mic_with_non_ap_rep_token_is_missing_ap_rep() -> Result<(), TestError> {
+        let completion = Completion::new()?;
+        let response = completion.with_response_token(Some(ap_req_response_token()?));
+        assert!(matches!(
+            completion.verify(&response),
+            Err(SpnegoError::MissingApRep)
+        ));
+        Ok(())
+    }
+
+    /// Without a MIC, a response token that is not an AP-REP is a missing AP-REP.
+    #[test]
+    fn completion_without_mic_non_ap_rep_token_is_missing_ap_rep() -> Result<(), TestError> {
+        let completion = Completion::new()?;
+        let mut response = completion.with_response_token(Some(ap_req_response_token()?));
+        response.set_mech_list_mic(None);
+        assert!(matches!(
+            completion.verify(&response),
+            Err(SpnegoError::MissingApRep)
+        ));
+        Ok(())
+    }
+
+    /// A correctly signed MIC with the SEALED flag is refused.
+    #[test]
+    fn completion_rejects_sealed_mic() -> Result<(), TestError> {
+        let completion = Completion::new()?;
+        let plain = completion.resigned(spnego::GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR)?;
+        verify_ok(&completion.verify(&plain))?;
+        let sealed = completion
+            .resigned(spnego::GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR | spnego::GSS_TOKEN_FLAG_SEALED)?;
+        assert!(matches!(
+            completion.verify(&sealed),
+            Err(SpnegoError::InvalidMechListMic)
+        ));
+        Ok(())
+    }
+
+    /// The acceptor-subkey flag needs a subkey in the AP-REP, even for a correctly signed MIC.
+    #[test]
+    fn completion_rejects_acceptor_subkey_flag_without_subkey() -> Result<(), TestError> {
+        let completion = Completion::new()?;
+        let flagged = completion.resigned(
+            spnego::GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR | spnego::GSS_TOKEN_FLAG_ACCEPTOR_SUBKEY,
+        )?;
+        assert!(matches!(
+            completion.verify(&flagged),
+            Err(SpnegoError::InvalidMechListMic)
+        ));
         Ok(())
     }
 

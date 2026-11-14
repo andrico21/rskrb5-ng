@@ -49,7 +49,7 @@ pub type Result<T> = CoreResult<T, Error>;
 
 use crate::error::Http as Error;
 #[cfg(feature = "tower")]
-use crate::error::{Keytab as KeytabError, Service as ServiceError, Spnego as SpnegoError};
+use crate::error::{Service as ServiceError, Spnego as SpnegoError};
 
 /// Tower Negotiate middleware error.
 #[cfg(feature = "tower")]
@@ -1687,13 +1687,8 @@ where
                     &source,
                     SpnegoError::Service(
                         ServiceError::ReplayCachePoisoned
-                            | ServiceError::ReplayCacheSkewExceeded {
-                                maximum: _,
-                                requested: _
-                            }
                             | ServiceError::ReplayCacheClockRollback
                             | ServiceError::ReplayCacheCapacityExceeded { capacity: _ }
-                            | ServiceError::Keytab(KeytabError::Io(_))
                     )
                 ) {
                     let mut response = Response::new(ResBody::default());
