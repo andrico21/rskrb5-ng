@@ -396,3 +396,6 @@ is a parity feature, not a defect>`.
 | critic:critics-0f6e768/u6c.md#U6C-02 | FU-DOC-R125 | no |
 | critic:critics-0f6e768/u6c.md#U6C-03 | FU-DOC-R125 | no |
 | critic:critics-fcc1395/u6b.md#U6B-01 | FU-DOC-R126 | no |
+| critic:critics-b52961c/u6x.md#U6X-01 | FU-DOC-R127 | no |
+| critic:critics-b52961c/u6x.md#U6X-02 | FU-DOC-R127 | no |
+| critic:critics-b52961c/u6y.md#U6Y-01 | FU-DOC-R128 | no |
