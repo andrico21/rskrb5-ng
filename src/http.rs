@@ -688,8 +688,10 @@ pub fn www_authenticate_negotiate_header<B>(response: &Response<B>) -> Result<&s
 /// # Errors
 ///
 /// Returns the errors of [`www_authenticate_negotiate_header`], and
-/// [`Error::Spnego`] when the token is malformed or its AP-REP fails
-/// verification.
+/// [`Error::Spnego`] with the errors of
+/// [`spnego::InitiatorContext::verify_ap_rep_response_header`] when the token
+/// is malformed, the negotiation is incomplete, a mechanism was not offered, a
+/// mechListMIC does not verify or its AP-REP fails verification.
 #[inline]
 pub fn verify_ap_rep_response<B>(
     context: &spnego::InitiatorContext,

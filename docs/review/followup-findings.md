@@ -408,3 +408,4 @@ is a parity feature, not a defect>`.
 | critic:critics-c9f551c/u6x.md#U6X-03 | FU-DOC-R135 | no |
 | critic:critics-e4ce316/u6x.md#U6X-01 | FU-DOC-R136 | no |
 | critic:critics-e4ce316/u6x.md#U6X-02 | FU-DOC-R137 | no |
+| executor:todo-134#verify-ap-rep-rustdoc | FU-DOC-R138 | no |
