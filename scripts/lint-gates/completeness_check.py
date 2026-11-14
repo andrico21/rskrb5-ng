@@ -4,7 +4,7 @@
 # dependencies = []
 # ///
 # How to run: python3 scripts/lint-gates/completeness_check.py --self-test
-"""Compare discovered rustc/restriction omissions with their own exclusion rows."""
+"""Compare discovered rustc, Clippy and Cargo omissions with their exclusion rows."""
 
 from __future__ import annotations
 
@@ -34,11 +34,27 @@ def omissions(help_text: str, namespace: str) -> set[str]:
     }
 
 
+def cargo_omissions(page: str) -> set[str]:
+    """The Cargo lints outside the groups that the profile denies (the `restriction` ones)."""
+    covered = {"correctness", "style", "suspicious", "complexity", "perf", "pedantic"}
+    found = set()
+    for name, body in re.findall(
+        r'<h2 id="([a-z0-9_]+)".*?</h2>(.*?)(?=<h2 |</main>)', page, re.DOTALL
+    ):
+        group = re.search(r"Group: <code[^>]*>([a-z]+)<", body)
+        if group is not None and group[1] not in covered:
+            found.add(name)
+    return found
+
+
+TABLES = {"rustc": "rust", "restriction": "clippy", "Cargo restriction": "cargo"}
+
+
 def compare(core: str, profile: dict, discovered: dict[str, set[str]]) -> list[str]:
     errors = []
-    for kind, table in (("rustc", "rust"), ("restriction", "clippy")):
+    for kind, table in TABLES.items():
         excluded = {
-            m[1].removeprefix("clippy::")
+            m[1].removeprefix("clippy::").removeprefix("cargo::")
             for m in re.finditer(r"(?m)^\|\s*`([^`]+)`\s*\|\s*" + kind + r"\s*\|", core)
         }
         missing = discovered[kind] - profile.get(table, {}).keys()
@@ -73,6 +89,7 @@ def self_test() -> int:
             " clippy::restriction clippy::conflict, clippy::unwrap-used\n",
             "restriction",
         ),
+        "Cargo restriction": set(),
     }
     assert compare(core, profile, discovered) == []
     lowered = {"rust": profile["rust"], "clippy": {"redundant_pub_crate": "allow"}}
@@ -80,7 +97,28 @@ def self_test() -> int:
     crossed = core.replace("| rustc |", "| restriction |")
     assert any("nightly_only" in e for e in compare(crossed, profile, discovered))
     assert compare(core, {"clippy": {"unwrap_used": "allow"}}, discovered)
-    print("completeness_check self-test: ok (missing lint, namespaces, sole allow)")
+    page = "".join(
+        f'<h2 id="{name}"><a>{name}</a></h2><p>Group: <code class="x">{group}</code></p>'
+        for name, group in (
+            ("manual_readme", "pedantic"),
+            ("non_kebab_case_bins", "pedantic"),
+            ("non_snake_case_packages", "restriction"),
+        )
+    )
+    assert cargo_omissions(page + "</main>") == {"non_snake_case_packages"}
+    cargo_core = core + "| `cargo::non_snake_case_packages` | Cargo restriction | pair |\n"
+    cargo_profile = {**profile, "cargo": {"manual_readme": "deny"}}
+    cargo_found = {**discovered, "Cargo restriction": {"non_snake_case_packages"}}
+    assert compare(cargo_core, cargo_profile, cargo_found) == []
+    assert any(
+        "undocumented omission non_snake_case_packages" in e
+        for e in compare(core, cargo_profile, cargo_found)
+    )
+    assert any(
+        "stale exclusion" in e
+        for e in compare(cargo_core, cargo_profile, {**discovered, "Cargo restriction": set()})
+    )
+    print("completeness_check self-test: ok (missing lint, namespaces, sole allow, Cargo leg)")
     return 0
 
 
@@ -103,6 +141,17 @@ def main(argv: list[str] | None = None) -> int:
             discovered[kind] = omissions(result.stdout, kind)
             if not discovered[kind]:
                 raise RuntimeError(f"empty {kind} discovery")
+        sysroot = subprocess.run(
+            ["rustup", "run", "stable", "rustc", "--print", "sysroot"],
+            cwd=args.root,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        page = Path(sysroot, "share/doc/rust/html/cargo/reference/lints.html")
+        discovered["Cargo restriction"] = cargo_omissions(page.read_text())
+        if not discovered["Cargo restriction"]:
+            raise RuntimeError("empty Cargo discovery (the rust-docs component is needed)")
         profile = tomllib.loads((args.root / "Cargo.toml").read_text()).get("lints", {})
         errors = compare((args.root / common.CORE_REL).read_text(), profile, discovered)
     except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
@@ -113,9 +162,7 @@ def main(argv: list[str] | None = None) -> int:
         else "\n".join(
             f"{kind}: {name}"
             for kind, names in discovered.items()
-            for name in sorted(
-                names - profile.get("rust" if kind == "rustc" else "clippy", {}).keys()
-            )
+            for name in sorted(names - profile.get(TABLES[kind], {}).keys())
         )
     )
     return int(bool(errors))

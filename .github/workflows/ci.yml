@@ -477,7 +477,8 @@ jobs:
           components: clippy
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          components: clippy
+          # rust-docs: the Cargo leg of completeness_check.py reads its lints page.
+          components: clippy, rust-docs
       - name: Install hash-pinned CommonMark gate dependencies
         run: python3 -m pip install --require-hashes -r scripts/lint-gates/requirements.txt
       - name: Run every lint gate self-test

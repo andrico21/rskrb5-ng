@@ -24,6 +24,9 @@ def lint_flags(manifest: dict) -> list[str]:
     entries = [
         (namespace, name, value if isinstance(value, dict) else {"level": value})
         for namespace, table in manifest["lints"].items()
+        # Cargo reads its own lints from a manifest; `cargo::` is no lint tool of
+        # rustc, and the fuzz crate declares none (its bin names are snake_case).
+        if namespace != "cargo"
         for name, value in table.items()
     ]
     entries.sort(key=lambda entry: entry[2].get("priority", 0))
@@ -45,7 +48,8 @@ def self_test() -> int:
                     "unwrap_used": "deny",
                     "all": {"level": "deny", "priority": -1},
                     "todo": "deny",
-                }
+                },
+                "cargo": {"pedantic": {"level": "deny", "priority": -1}},
             }
         }
     )
@@ -57,7 +61,7 @@ def self_test() -> int:
         "-D",
         "clippy::todo",
     ]
-    print("fuzz_lint self-test: ok (groups first, individual file order)")
+    print("fuzz_lint self-test: ok (groups first, individual file order, no Cargo table)")
     return 0
 
 
