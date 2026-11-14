@@ -7,7 +7,7 @@
 """Hold the changelog to the follow-up register's behaviour changes.
 
 Every `fixed` row of `docs/review/followup-6586b7a.md` whose "Behaviour
-change" cell does not begin with `none` must name its register ID in
+change" cell does not begin with the word `none` must name its register ID in
 `CHANGELOG.md`, so an observable change cannot ship without a release-record
 entry. Only the ID is matched (as a whole token): the wording is free.
 """
@@ -27,6 +27,7 @@ ROOT: Final = Path(__file__).resolve().parents[2]
 REGISTER: Final = "docs/review/followup-6586b7a.md"
 CHANGELOG: Final = "CHANGELOG.md"
 ROW_ID: Final = re.compile(r"FU-[A-Z]+-R?\d+")
+NONE_WORD: Final = re.compile(r"none(?![a-z])", re.IGNORECASE)
 
 
 def changed_rows(register: str) -> list[str]:
@@ -43,7 +44,7 @@ def changed_rows(register: str) -> list[str]:
             or (values[3] == "fixed" and values[5] == "-")
         ):
             raise RegisterSchemaError(f"{REGISTER}: uninterpretable FU row: {line}")
-        if values[3] == "fixed" and not values[5].lower().startswith("none"):
+        if values[3] == "fixed" and NONE_WORD.match(values[5]) is None:
             rows.append(values[0])
     return rows
 
@@ -75,14 +76,17 @@ def self_test() -> int:
             ("FU-CLI-R1", "fixed", "Constructor returns Result."),
             ("FU-CLI-R15", "fixed", "DER must match."),
             ("FU-DOC-R2", "fixed", "none; documentation only"),
+            ("FU-DOC-R4", "fixed", "NONE: tooling only"),
+            ("FU-CLI-R16", "fixed", "Nonempty input is rejected."),
             ("FU-GATE-R3", "dismissed", "Would have changed a gate."),
         )
     )
     cases = (
-        ("- Constructors (FU-CLI-R1).\n- DER (FU-CLI-R15).\n", []),
-        ("- DER (FU-CLI-R15).\n", ["FU-CLI-R1"]),
-        ("- Constructors (FU-CLI-R1, FU-CLI-R15-x).\n", ["FU-CLI-R15"]),
-        ("", ["FU-CLI-R1", "FU-CLI-R15"]),
+        ("- Constructors (FU-CLI-R1).\n- DER (FU-CLI-R15).\n- Input (FU-CLI-R16).\n", []),
+        ("- DER (FU-CLI-R15).\n- Input (FU-CLI-R16).\n", ["FU-CLI-R1"]),
+        ("- Constructors (FU-CLI-R1, FU-CLI-R15-x, FU-CLI-R16).\n", ["FU-CLI-R15"]),
+        ("- Constructors (FU-CLI-R1).\n- DER (FU-CLI-R15).\n", ["FU-CLI-R16"]),
+        ("", ["FU-CLI-R1", "FU-CLI-R15", "FU-CLI-R16"]),
     )
     with TemporaryDirectory() as directory:
         root = Path(directory)
