@@ -235,3 +235,32 @@ fn staged_client_rejects_mixed_lists_by_name() -> Result<(), Box<dyn Error>> {
     }
     Ok(())
 }
+
+/// A mutated request list is rejected when a client builds a request, not after use.
+#[test]
+fn client_admission_rejects_mutated_request_selection() -> Result<(), Box<dyn Error>> {
+    // Given request lists bypassing the text parser and permitted-list setter.
+    for field in ["ticket", "service"] {
+        let mut defaults = LibDefaults::new();
+        match field {
+            "ticket" => defaults.default_tkt_enctypes = vec!["des-cbc-md5".to_owned()],
+            _ => defaults.default_tgs_enctypes = vec!["rc4-hmac-exp".to_owned()],
+        }
+        // When a client builds either request from this configuration.
+        for admission in [
+            AsReq::from_libdefaults(SystemTime::UNIX_EPOCH, 42, &defaults).err(),
+            TgsReq::from_libdefaults(SystemTime::UNIX_EPOCH, 42, &defaults).err(),
+        ] {
+            let failure = admission.ok_or("D2 request survived client admission")?;
+            // Then the selection retains its typed rejection.
+            assert!(matches!(
+                policy_cause(&failure),
+                Some(Policy::RejectedFeature {
+                    feature: _,
+                    reason: _
+                })
+            ));
+        }
+    }
+    Ok(())
+}

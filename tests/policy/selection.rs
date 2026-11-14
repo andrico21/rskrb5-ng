@@ -2,14 +2,11 @@ use core::error::Error;
 use std::time::SystemTime;
 
 use rskrb5_ng::{
-    client::options::{AsReq, TgsReq},
     config::{Config, LibDefaults},
     crypto::{CryptoPolicy, KerberosEtype, selection},
     error::{Config as ConfigError, Policy, RejectedFeature},
     keytab::{Keytab, Principal},
 };
-
-use super::client::policy_cause;
 
 /// Numeric dispatch distinguishes permanently forbidden IDs from unknown capabilities.
 #[test]
@@ -185,9 +182,9 @@ fn serde_config_cannot_select_d2() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// A mutated request list is rejected when a client builds a request, not after use.
+/// The snapshot reads the permitted list only, so a mutated request list does not reach it.
 #[test]
-fn policy_snapshot_rejects_mutated_request_selection() -> Result<(), Box<dyn Error>> {
+fn policy_snapshot_ignores_mutated_request_lists() -> Result<(), Box<dyn Error>> {
     // Given request lists bypassing the text parser and permitted-list setter.
     for field in ["ticket", "service"] {
         let mut defaults = LibDefaults::new();
@@ -195,22 +192,7 @@ fn policy_snapshot_rejects_mutated_request_selection() -> Result<(), Box<dyn Err
             "ticket" => defaults.default_tkt_enctypes = vec!["des-cbc-md5".to_owned()],
             _ => defaults.default_tgs_enctypes = vec!["rc4-hmac-exp".to_owned()],
         }
-        // When a client builds either request from this configuration.
-        for admission in [
-            AsReq::from_libdefaults(SystemTime::UNIX_EPOCH, 42, &defaults).err(),
-            TgsReq::from_libdefaults(SystemTime::UNIX_EPOCH, 42, &defaults).err(),
-        ] {
-            let failure = admission.ok_or("D2 request survived client admission")?;
-            // Then the selection retains its typed rejection.
-            assert!(matches!(
-                policy_cause(&failure),
-                Some(Policy::RejectedFeature {
-                    feature: _,
-                    reason: _
-                })
-            ));
-        }
-        // The acceptor snapshot reads the permitted list only.
+        // When an application builds the acceptor-side snapshot, then it is admitted.
         drop(CryptoPolicy::from_libdefaults(&defaults)?);
     }
     Ok(())
