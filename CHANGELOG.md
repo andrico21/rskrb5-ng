@@ -966,9 +966,8 @@ Crypto policy:
 - Validated AP contexts retain their effective `crypto_policy`; AP-REP builders
   reject wrapping keys and outgoing subkeys outside it before producing a reply
   or calling the protected Tower handler (FU-SPN-R10).
-- Reciprocal MIC signing and completion verification recheck the selected key
-  against the retained context policy, including initiator-subkey fallbacks
-  (FU-SPN-R12).
+- Reciprocal MIC signing rechecks the selected key against the retained context
+  policy, including initiator-subkey fallbacks (FU-SPN-R12).
 - The service AP-REP verifier enforces retained policy on both wrapping key IDs
   and the authenticated acceptor subkey (FU-SPN-R13).
 - Random AP-REP headers and configured HTTP keytab constructors return typed

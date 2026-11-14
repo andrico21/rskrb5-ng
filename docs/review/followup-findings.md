@@ -411,3 +411,9 @@ is a parity feature, not a defect>`.
 | executor:todo-134#verify-ap-rep-rustdoc | FU-DOC-R138 | no |
 | critic:critics-efadae8/oracle.md#ORA-01 | FU-DOC-R139 | no |
 | critic:critics-efadae8/u6.md#U6-01 | FU-DOC-R139 | no |
+| critic:critics-efadae8/u1.md#U1-01 | FU-SPN-R21 | no |
+| critic:critics-efadae8/u1.md#U1-02 | FU-HTTP-R09 | no |
+| critic:critics-efadae8/u1.md#U1-03 | FU-DOC-R140 | no |
+| critic:critics-efadae8/u1.md#U1-04 | FU-DOC-R141 | no |
+| critic:critics-efadae8/u1.md#U1-05 | FU-SPN-R22 | no |
+| critic:critics-efadae8/u1.md#U1-06 | FU-DOC-R142 | no |

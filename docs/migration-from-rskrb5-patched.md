@@ -1833,7 +1833,7 @@ credentials and their own copies after use.
 Reciprocal MIC policy (FU-SPN-R12): changing a validated context's initiator subkey
 does not bypass its retained policy. Supply permitted keys, or explicitly configure
 legacy permission and membership before use. An explicit acceptor subkey takes
-precedence; completion verification also admits its selected key.
+precedence.
 
 Service reply verification (FU-SPN-R13): `ValidatedApReq::verify_ap_rep` rejects
 excluded wrapping keys and acceptor subkeys with a typed policy error. Retain
