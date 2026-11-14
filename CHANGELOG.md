@@ -174,7 +174,7 @@ These are breaking; the migration guide maps each one.
 
 ### Dependencies and toolchain
 
-- `rust-version` is 1.99 (was 1.88).
+- `rust-version` is 1.100 (was 1.88; FU-CI-R19).
 - Every direct dependency is on its latest major version: `base64` 0.23,
   `getrandom` 0.4, `rasn` and `rasn-kerberos` 0.29 (v0.2.2: 0.28.13; the
   derived `encode_with_constraints`, `encode_with_constraints_and_identifier`,
@@ -1542,7 +1542,7 @@ Documentation:
   and the tests in each of the 36 feature closures (`closures`, held equal to
   `feature_closures.py list`), clippy on Windows, library-only feature sets,
   the README commands, the test suite on Linux, macOS and Windows, i686,
-  rustdoc on stable and nightly, MSRV 1.99.0, `cargo semver-checks` once a
+  rustdoc on stable and nightly, MSRV 1.100.0, `cargo semver-checks` once a
   published `rskrb5-ng` baseline exists, a publish dry run, a path-dependency
   consumer build, `cargo deny`, `cargo audit`, `cargo vet`, `cargo machete`,
   `taplo`, an offline link check with the guideline checksums, the lint gates,

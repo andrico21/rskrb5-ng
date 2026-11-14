@@ -2,11 +2,10 @@
 name = "rskrb5-ng"
 version = "0.3.0"
 edition = "2024"
-rust-version = "1.99"
+rust-version = "1.100"
 license = "Apache-2.0"
 description = "Pure-Rust Kerberos 5 client and service library: keytabs, credential caches, AS/TGS and kpasswd exchanges, PAC parsing and HTTP Negotiate (SPNEGO)"
 repository = "https://github.com/andrico21/rskrb5-ng"
-readme = "README.md"
 keywords = ["kerberos", "krb5", "spnego", "gssapi", "authentication"]
 categories = ["authentication", "cryptography", "network-programming"]
 exclude = [
@@ -466,3 +465,11 @@ wildcard_enum_match_arm = "deny"
 # Contradiction override: rustc `unreachable_pub` (denied above) and nursery's
 # `redundant_pub_crate` give opposite advice on `pub(crate)`; rustc's wins.
 redundant_pub_crate = "allow"
+
+[lints.cargo]
+# Cargo's own lints (Cargo 1.100+). `default` = correctness, style and suspicious.
+default = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+# `restriction`: one side of each mutually exclusive pair (the snake_case side is excluded)
+non_kebab_case_features = "deny"
+non_kebab_case_packages = "deny"
