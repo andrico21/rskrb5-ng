@@ -1,7 +1,7 @@
 # Rust Development Guidelines: DOs and DON'Ts
 
 **Universal core.** This is the single source of truth for every Rust project. It tracks
-**stable Rust through 1.99** (2026-10-01).
+**stable Rust through 1.100** (2026-11-12).
 
 Domain- and project-specific rules live in overlays (`overlays/`). Read this core first, then
 every overlay your project's pointer file names, in the order given. Precedence and the
@@ -292,6 +292,32 @@ impl TryFrom<&str> for Port {
     }
 }
 ```
+
+### DO: Spell an impossible error as `!` and destructure it irrefutably (Rust 1.100+)
+
+Rust 1.100 stabilized the never type: `!` can be named anywhere, and
+`core::convert::Infallible` is now an alias of `!`. A `Result<T, !>` has no `Err` case, so it
+destructures with a plain `let`, including in a `const fn`. That removes the last excuse for an
+`unwrap()` on an infallible result (`unwrap_used` is denied anyway).
+
+```rust
+// BAD: a panic path for an error that cannot exist
+let value = res.unwrap();
+// BAD: noise that the type system no longer needs
+let value = match res { Ok(value) => value, Err(never) => match never {} };
+
+// GOOD
+fn infallible_unwrap(res: Result<u32, !>) -> u32 {
+    let Ok(value) = res;
+    value
+}
+```
+
+- New code writes `!` (`Result<T, !>`, `type Error = !;`). Existing `Infallible` stays: it is
+  the same type, so there is nothing to migrate, and naming `!` needs `rust-version >= 1.100`.
+- Rust 1.100 also changed the never-type fallback from `()` to `!` in editions 2015-2021. Edition
+  2024 already had it, so first-party code (edition 2024, Section 12) is unaffected. A
+  dependency on an older edition that breaks is fixed by updating it.
 
 ### DO: Use `bool::try_from(n)` for strict 0/1 wire fields (Rust 1.95+)
 
@@ -639,7 +665,7 @@ review.
 The destructuring technique above deliberately *ignores* fields (`timestamp: _`).
 That is fine on its own, but it becomes a correctness hazard the moment the
 same type also **derives** an ordering or equality trait, because the derive
-compares **every** field. Rust 1.98 made two changes that turn this
+compares **every** field. Rust 1.98 made two changes, and Rust 1.100 a third, that turn this
 previously-latent inconsistency into observable behaviour change:
 
 - [Rust 1.98 implements a fast path for `derive(PartialOrd)` when `Ord` is also
@@ -652,6 +678,11 @@ previously-latent inconsistency into observable behaviour change:
   [structural equality](https://doc.rust-lang.org/reference/patterns.html#constant-patterns),
   rejecting matches on constants where a manual `PartialEq` disagrees with an
   existing `derive(PartialEq)` impl.
+- [Rust 1.100 changed which `Ord` methods `Iterator::{min,max}(_by_key)`
+  call](https://github.com/rust-lang/rust/pull/160203). The release notes: this "cannot change
+  behaviour ... for types correctly following the `Ord` rules, but may impact types with
+  inconsistent trait implementations." A hand-written `Ord::min`/`max` that disagrees with
+  `cmp` now changes what these iterator methods return.
 
 ```rust
 // BAD: manual PartialEq ignores `timestamp`, but the derives order by it.
@@ -1267,6 +1298,51 @@ let _guard = acquire_lock(&resource);
 // even if this function returns early or panics
 ```
 
+### `core::mem::DropGuard` for One-Off Cleanup and Rollback (Rust 1.100+)
+
+For a single "undo this on every early exit" there is no need for a hand-written guard type
+or a `scopeguard` dependency (one crate fewer to audit). `DropGuard` wraps a value, derefs to
+it, and runs a closure on the value when dropped. `DropGuard::dismiss` returns the value
+without running the closure. It lives in `core`, so `no_std` code can use it too.
+
+```rust
+use core::mem::DropGuard;
+use core::num::ParseIntError;
+
+/// Parses every string in `inputs` and appends it to `out`.
+///
+/// # Errors
+///
+/// Returns the first parse error. `out` is then exactly as it was before the call.
+#[inline]
+pub fn parse_all(out: &mut Vec<u32>, inputs: &[&str]) -> Result<(), ParseIntError> {
+    let original_len = out.len();
+    let mut staged = DropGuard::new(out, move |rollback| rollback.truncate(original_len));
+    for input in inputs {
+        staged.push(input.parse()?); // an error drops `staged`, which rolls back
+    }
+    let _: &mut Vec<u32> = DropGuard::dismiss(staged); // success: keep the pushes
+    Ok(())
+}
+```
+
+The example in the 1.100 announcement fails this guide's profile (`shadow_reuse`,
+`unused_results`, `min_ident_chars`); the version above passes it.
+
+- **Bind the guard.** `DropGuard::new(..);` and `let _ = DropGuard::new(..);` drop it at once.
+  The profile catches both (`unused_must_use`; `let_underscore_must_use`,
+  `let_underscore_drop`). An always-run guard is `let _cleanup = DropGuard::new((), |()| ..);`.
+- **A rollback guard needs `DropGuard::dismiss` on every success path.** Otherwise success
+  rolls back too. `dismiss` is an associated function; never use `mem::forget` instead (denied
+  by `mem_forget`, and it leaks the closure's captures).
+- **It is not a guarantee.** The closure does not run under `panic = "abort"`, after
+  `process::exit` or `mem::forget`. A closure that panics while the thread is already
+  unwinding aborts the process.
+- **In async code it restores synchronous state only.** It runs when a future is cancelled,
+  which is useful, but the closure cannot `.await`. Async resources still get explicit
+  commit/rollback/close on every path (Section 5).
+- Import it as `core::mem::DropGuard` (`std_instead_of_core`).
+
 ### Strategy Pattern via Traits or Closures
 
 Use traits for polymorphic behavior. Closures work for lightweight strategies.
@@ -1447,10 +1523,14 @@ CARGO_BUILD_WARNINGS=deny  cargo check --workspace --keep-going
 RUSTFLAGS="-D warnings" cargo build
 ```
 
-Caveat: `build.warnings` gates rustc's `warnings` lint group only. The
-`linker_messages` lint (Rust 1.97+, see Section 9) is deliberately **not**
-in that group, so neither `build.warnings = "deny"` nor `RUSTFLAGS="-D warnings"`
-affects it - escalate it separately if you want linker output to fail CI.
+Caveat: `build.warnings` gates rustc's `warnings` lint group and, since Cargo 1.100, Cargo's
+own `cargo::*` lint warnings (Section 9). On a 1.100 upgrade, a manifest with an unused
+dependency, an unused `[workspace.dependencies]` entry or an unused `[workspace.package]` field
+therefore fails the build before any profile change. Other Cargo diagnostics (such as
+`unused manifest key`) stay warnings. The `linker_messages` lint (Rust 1.97+, see Section 9) is
+deliberately **not** in rustc's `warnings` group, so neither `build.warnings = "deny"` nor
+`RUSTFLAGS="-D warnings"` affects it - escalate it separately if you want linker output to fail
+CI.
 
 ### Blanket Impls in Public APIs (Semver Hazard)
 
@@ -1553,9 +1633,11 @@ callers.
   - every rustc lint group and allow-by-default lint;
   - every rustdoc lint;
   - the Clippy groups `all`, `pedantic`, `nursery` and `cargo`;
-  - every Clippy `restriction` lint that stable Rust 1.99 provides.
+  - every Clippy `restriction` lint that stable Rust 1.100 provides;
+  - every Cargo lint (Cargo 1.100+): the groups `default` and `pedantic`, plus one side of
+    each mutually exclusive `restriction` pair.
 
-  In numbers: 12 rustc lint groups and 61 individual rustc lints, rustdoc `all`, 4 Clippy groups and 120 of 135 `restriction` lints at `deny`, plus `unsafe_code = "forbid"`. 25 lints are excluded and one contradiction is overridden, each with its reason below.
+  In numbers: 12 rustc lint groups and 61 individual rustc lints, rustdoc `all`, 4 Clippy groups and 120 of 135 `restriction` lints, 2 Cargo groups and 2 of 4 Cargo `restriction` lints at `deny`, plus `unsafe_code = "forbid"`. 27 lints are excluded and one contradiction is overridden, each with its reason below.
 - **A lint is left out only for a stated reason.** It must be (a) unstable (nightly-only),
   (b) one half of a mutually exclusive pair (Clippy ships several; one side is chosen),
   (c) in contradiction with a rule of this guide, or (d) documented by its own authors as
@@ -1577,6 +1659,10 @@ callers.
   - `allow_attributes` checks only outer `#[allow]`, so an inner `#![allow(..)]` passes it
     unseen. Never write one: use `#![expect(lint, reason = "...")]`, and keep
     `grep -rn --include='*.rs' '#!\[allow(' <your source dirs>` empty in CI.
+- **Cargo lints have no local exception.** A manifest has no `#[expect]`, and a member with
+  `[lints] workspace = true` cannot override a single lint. An unsatisfiable Cargo lint is a
+  core change (an exclusion row), never a member opt-out. The two documented false positives
+  of `unused_dependencies` have code-level fixes ([Satisfying the profile](#satisfying-the-profile)).
 - **Warnings are errors everywhere.** Commit `build.warnings = "deny"` in
   `.cargo/config.toml` (Section 7) and keep `-D warnings` on the CI clippy and rustdoc lines
   (Section 12).
@@ -1800,6 +1886,14 @@ wildcard_enum_match_arm = "deny"
 # Contradiction override: rustc `unreachable_pub` (denied above) and nursery's
 # `redundant_pub_crate` give opposite advice on `pub(crate)`; rustc's wins.
 redundant_pub_crate = "allow"
+
+[workspace.lints.cargo]
+# Cargo's own lints (Cargo 1.100+). `default` = correctness, style and suspicious.
+default = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+# `restriction`: one side of each mutually exclusive pair (the snake_case side is excluded)
+non_kebab_case_features = "deny"
+non_kebab_case_packages = "deny"
 ```
 
 Every member crate inherits it:
@@ -1809,10 +1903,19 @@ Every member crate inherits it:
 workspace = true
 ```
 
-A single-package repository uses the same three tables as `[lints.rust]`,
-`[lints.rustdoc]` and `[lints.clippy]`.
+A single-package repository uses the same four tables as `[lints.rust]`,
+`[lints.rustdoc]`, `[lints.clippy]` and `[lints.cargo]`.
 
-**Verified** on stable 1.99.0:
+Cargo 1.99 and older do not know `[lints.cargo]`: they print
+`warning: Cargo.toml: unused manifest key lints.cargo` once per manifest and exit 0, even
+under `build.warnings = "deny"`. A pinned or MSRV toolchain is therefore unaffected, and
+unprotected, until it reaches 1.100.
+
+`missing_lints_inheritance` is satisfied by an **empty** `[lints]` table, so it does not
+prove that a member inherits the profile. Keep a CI check that every member manifest has
+`workspace = true` under `[lints]`.
+
+**Verified** on stable 1.100.0:
 - The profile produces no unknown-lint or unstable-lint warnings. This matters because
   the `unknown_lints` warning ignores `-D warnings`, so a nightly-only name would silently
   do nothing.
@@ -1858,14 +1961,14 @@ doc-valid-idents = [".."]             # ".." keeps Clippy's defaults; append pro
 
 | Lint | Kind | Reason |
 |------|------|--------|
-| `deprecated_llvm_intrinsic` | rustc | unstable on Rust 1.99 (nightly-only); stable rustc reports it as an unknown lint |
-| `implicit_provenance_casts` | rustc | unstable on Rust 1.99 (nightly-only); stable rustc reports it as an unknown lint |
-| `multiple_supertrait_upcastable` | rustc | unstable on Rust 1.99 (nightly-only); stable rustc reports it as an unknown lint |
-| `must_not_suspend` | rustc | unstable on Rust 1.99 (nightly-only); stable rustc reports it as an unknown lint |
-| `non_exhaustive_omitted_patterns` | rustc | unstable on Rust 1.99 (nightly-only); stable rustc reports it as an unknown lint |
-| `resolving_to_items_shadowing_supertrait_items` | rustc | unstable on Rust 1.99 (nightly-only); stable rustc reports it as an unknown lint |
-| `shadowing_supertrait_items` | rustc | unstable on Rust 1.99 (nightly-only); stable rustc reports it as an unknown lint |
-| `unqualified_local_imports` | rustc | unstable on Rust 1.99 (nightly-only); stable rustc reports it as an unknown lint |
+| `deprecated_llvm_intrinsic` | rustc | unstable on Rust 1.100 (nightly-only); stable rustc reports it as an unknown lint |
+| `implicit_provenance_casts` | rustc | unstable on Rust 1.100 (nightly-only); stable rustc reports it as an unknown lint |
+| `multiple_supertrait_upcastable` | rustc | unstable on Rust 1.100 (nightly-only); stable rustc reports it as an unknown lint |
+| `must_not_suspend` | rustc | unstable on Rust 1.100 (nightly-only); stable rustc reports it as an unknown lint |
+| `non_exhaustive_omitted_patterns` | rustc | unstable on Rust 1.100 (nightly-only); stable rustc reports it as an unknown lint |
+| `resolving_to_items_shadowing_supertrait_items` | rustc | unstable on Rust 1.100 (nightly-only); stable rustc reports it as an unknown lint |
+| `shadowing_supertrait_items` | rustc | unstable on Rust 1.100 (nightly-only); stable rustc reports it as an unknown lint |
+| `unqualified_local_imports` | rustc | unstable on Rust 1.100 (nightly-only); stable rustc reports it as an unknown lint |
 | `linker_info` | rustc | informational by design; the actionable lint is `linker_messages` (denied below) |
 | `unused_crate_dependencies` | rustc | per-compilation-unit false positives in multi-target packages; use `cargo machete` (and Cargo 1.100's `cargo::unused_dependencies`) |
 | `clippy::arbitrary_source_item_ordering` | restriction | it demands alphabetical enum variants; reordering changes implicit discriminants and derived `Ord` |
@@ -1884,6 +1987,8 @@ doc-valid-idents = [".."]             # ".." keeps Clippy's defaults; append pro
 | `clippy::single_call_fn` | restriction | contradicts `too_many_lines`/`cognitive_complexity` decomposition (helpers called once) |
 | `clippy::unneeded_field_pattern` | restriction | contradicts exhaustive destructuring (Section 3) and `rest_pattern_accessible_field` |
 | `clippy::redundant_pub_crate` | nursery, set to `allow` | contradicts rustc `unreachable_pub` (denied): opposite advice on `pub(crate)` |
+| `cargo::non_snake_case_features` | Cargo restriction | mutually exclusive with `non_kebab_case_features` (chosen: kebab-case, matching the package names) |
+| `cargo::non_snake_case_packages` | Cargo restriction | mutually exclusive with `non_kebab_case_packages` (chosen: kebab-case, as every project already is) |
 
 **Per-item use of an excluded lint is encouraged where its intent applies.** Opt in with
 `#[deny(lint, reason = "...")]`, never with `#[expect]`. An `expect` of a lint that the
@@ -1913,7 +2018,22 @@ rustup run stable clippy-driver -W help \
 grep -oE '^[a-z0-9_]+' Cargo.toml | sort -u > /tmp/manifest-lints.txt
 comm -23 /tmp/rustc-allow.txt /tmp/manifest-lints.txt
 comm -23 /tmp/clippy-restriction.txt /tmp/manifest-lints.txt
+# Cargo has no `-W help`; read its lint list from the rust-docs component. Print every
+# Cargo lint outside the groups the profile denies, so a future group cannot slip through.
+python3 - <<'EOF' | sort > /tmp/cargo-ungrouped.txt
+import re, subprocess
+root = subprocess.check_output(["rustc", "--print", "sysroot"], text=True).strip()
+html = open(root + "/share/doc/rust/html/cargo/reference/lints.html").read()
+covered = {"correctness", "style", "suspicious", "complexity", "perf", "pedantic"}
+for name, body in re.findall(r'<h2 id="([a-z0-9_]+)".*?</h2>(.*?)(?=<h2 |</main>)', html, re.S):
+    group = re.search(r'Group: <code[^>]*>([a-z]+)<', body)
+    if group and group.group(1) not in covered:
+        print(name)
+EOF
+comm -23 /tmp/cargo-ungrouped.txt /tmp/manifest-lints.txt
 ```
+
+The Cargo leg needs the `rust-docs` component (part of rustup's default profile).
 
 ### Satisfying the profile
 
@@ -1949,6 +2069,12 @@ The patterns below come up immediately. All were exercised against the profile.
     #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
     mod tests { /* ... */ }
     ```
+  - A library's unit-test harness is a binary, so `dead_code_pub_in_binary` reports every
+    `pub` item the unit tests do not use (Rust 1.99 and 1.100). Where that happens, put one
+    `#![cfg_attr(test, expect(dead_code_pub_in_binary, reason = "public API: unused inside the unit-test harness"))]`
+    in `src/lib.rs`. **WATCH:** Cargo 1.101 (2026-12-24, cargo#17608) stops this false
+    positive, and the expectation then fails as unfulfilled. Delete it in the commit that sets
+    `rust-version = "1.101"`, after a check on beta.
 - **Binaries:**
   - A binary with no unit tests sets `test = false` in its `[[bin]]` table.
   - `main` returns `ExitCode` or `Result` (`exit` denies `process::exit`).
@@ -1996,6 +2122,21 @@ The patterns below come up immediately. All were exercised against the profile.
 - **Duplicated dependencies** fail both `multiple_crate_versions` and cargo-deny's
   `multiple-versions = "deny"`. Prefer `cargo update` / aligning versions. What is truly
   unavoidable goes into `allowed-duplicate-crates` and `[bans] skip`, with reasons.
+- **Manifests (Cargo lints, Cargo 1.100+):**
+  - `unused_dependencies` reports a dependency that no target uses. Two legitimate cases
+    have code-level fixes, both verified under the full profile and with `cargo machete`:
+    - a dependency declared only to turn on a feature of a transitive dependency: add
+      `use <dep> as _;` to the crate root, with a comment naming the feature it turns on;
+    - a dependency declared only to raise or pin a transitive dependency's version: move it
+      to `[target.'cfg(false)'.dependencies]` (Cargo's documented fix). It still pins the
+      lockfile, but it turns on no features.
+  - `manual_readme`: drop a `readme = "README.md"` that Cargo would infer.
+  - `non_kebab_case_features`: an optional dependency named `serde_json` creates an implicit
+    feature of that name and trips the lint. Write `serde-json = ["dep:serde_json"]`.
+    "Private" feature names such as `_internal` or `__private` trip it too; use an
+    `internal-` or `unstable-` prefix. Renaming a published feature is a breaking change.
+  - `non_kebab_case_bins` applies to every `[[bin]]`, including cargo-fuzz targets in a
+    member that inherits the profile.
 
 ### Lint rationale by area
 
@@ -2352,6 +2493,62 @@ assert!(secret_label.is_empty(), "secret label should be empty");
   - `float_cmp_const` now sees inside `assert_eq!`.
   - `unnecessary_safety_comment` now handles compound assignments.
 
+#### Clippy 1.100 new lints and behaviour changes
+
+Clippy 1.100 added two lints, both inside `clippy::all`: `option_zip_none` (suspicious:
+`.zip(None)` is always `None`) and `needless_nonzero_get` (complexity: `nz.get().leading_zeros()`
+is `nz.leading_zeros()`, and `x / nz.get()` is `x / nz`). Follow both.
+
+Changes that fail existing builds under the profile (observed on real workspaces):
+
+- **`map_unwrap_or` (pedantic) now flags `map(f).unwrap_or_default()`** and asks for
+  `map_or_default(f)` (`Option` and `Result`; stable since 1.98).
+- **`integer_division_remainder_used` (restriction) now also flags `/=` and `%=`, and no
+  longer lints inside macro expansions.** An `#[expect]` that was placed for a macro's
+  expansion (for example `tokio::select!`) is now unfulfilled and fails the build. Delete it.
+- More findings from broadened lints: `used_underscore_binding`, `needless_bool` (the
+  early-return guard form), `redundant_clone` (clones inside loop bodies), `unnecessary_fold`
+  (a fold over an `Option`), `unnecessary_map_or` (now suggests `is_ok` / `is_err`) and
+  `unnecessary_self_imports` (nested imports).
+
+A toolchain bump can fulfil or un-fulfil an existing `#[expect]`. Besides the macro change
+above, `used_underscore_items` now honours `expect` on the item's definition, `let_and_return`
+stopped producing spurious unfulfilled expectations, and rustc no longer reports
+`#[expect(dead_code)]` inside an already-dead parent as unfulfilled. When an expectation turns
+unfulfilled after a bump, delete it; never convert it into something else.
+
+Smaller changes:
+- `cargo_common_metadata` no longer requires `package.readme`; Cargo's `manual_readme` took
+  that over (see the Cargo table above).
+- `allow-unwrap-in-tests` now covers integration tests too. The `clippy.toml` sample keeps it
+  `false`, so nothing changes.
+- `doc_markdown` now accepts `WebAuthn` by default.
+
+**WATCH: `clippy::all` is now called `clippy::default`.** Clippy 1.100 soft-renamed the group
+([rust-clippy#14689](https://github.com/rust-lang/rust-clippy/pull/14689); not in
+`CHANGELOG.md`). `-W help` lists only `clippy::default`, and `all` still works unchanged. Keep
+`all` in the profile: on Clippy 1.99 and older, `clippy::default` is an unknown lint. That
+`unknown_lints` warning ignores `-D warnings` and the manifest's `unknown_lints = "deny"`, so
+without `build.warnings = "deny"` the whole default group would silently switch off. Switch
+when no CI leg runs Clippy older than 1.100, or when Clippy starts warning about `all`.
+
+#### Rust 1.100 lint changes
+
+The profile needs no new entries for 1.100: no allow-by-default rustc lint and no
+`restriction` lint was added. Lints that change what the profile denies:
+
+- `ambiguous_glob_imported_traits` fires in more cases. It sits in `future_incompatible`,
+  which the profile denies, so new hits fail the build.
+- `repeated_reprs` (warn-by-default; repeated hints in `#[repr(..)]`) is part of `unused` and is
+  therefore denied.
+- `rustdoc::invalid_markdown_table` (an unescaped `|` inside a table row of a doc comment) is
+  part of `rustdoc::all` and is therefore denied. Escape the pipe as `\|`.
+- `dependency_on_unit_never_type_fallback` no longer exists. Naming it anywhere now trips
+  `renamed_and_removed_lints` (denied); delete it.
+- New deny-by-default lints for code that uses `unsafe` or targets soft-float platforms
+  (`aligned_fields_in_packed`, `x86_softfloat_sse`; `aarch64_softfloat_neon` went from warn to
+  deny): see `overlays/domains/unsafe-ffi.md`.
+
 #### Crate-level safety lints
 
 These Rust-level lints enforce safety invariants at the crate boundary.
@@ -2582,6 +2779,29 @@ let value = match raw.strip_circumfix("\"", "\"") {
 };
 ```
 
+### DON'T: Use `trim_prefix` / `trim_suffix` where the affix is required (Rust 1.100+)
+
+Rust 1.100 stabilized `str::trim_prefix`, `str::trim_suffix`, `[T]::trim_prefix`,
+`[T]::trim_suffix` and `Path::trim_prefix`. Unlike `strip_*`, they return the input
+**unchanged** when the affix is absent. They replace `s.strip_prefix(p).unwrap_or(s)`, where
+the affix is optional. They are never a validation step.
+
+```rust
+// BAD: a value without the mandatory version tag is accepted as if it had one
+let payload = token.trim_prefix("v1:");
+
+// GOOD: absence of the affix is an error
+let payload = token.strip_prefix("v1:").ok_or(TokenError::UnknownVersion)?;
+
+// GOOD: the affix is genuinely optional
+let name = file_name.trim_suffix(".tmp");
+```
+
+`Path::strip_prefix` is not a path-confinement check either. It compares components, so
+`Path::new("/srv/data/../../etc/passwd").strip_prefix("/srv/data")` returns
+`Ok("../../etc/passwd")`. After stripping, reject every component that is not
+`Component::Normal`, or canonicalize and open the file through a directory handle.
+
 ### DO: Decode UTF-16 with explicit endianness at boundaries (Rust 1.98+)
 
 Rust 1.98 stabilized `String::from_utf16le`, `from_utf16le_lossy`,
@@ -2689,6 +2909,11 @@ Rules:
   skipped, so the deallocation may never reach the allocator. When `dealloc`
   is called, the allocator may overwrite the bytes, but it cannot rely on
   reading initialized contents.
+- The same holds for the custom allocators Rust 1.100 stabilized (`Vec::new_in`,
+  `Box::new_in`): an arena or bump allocator keeps "freed" memory alive until the arena
+  itself is dropped, so secret material in it outlives its owner. Keep zeroization on the
+  value. Adopt a custom allocator only with profiling evidence; implementing one needs
+  `unsafe` (`overlays/domains/unsafe-ffi.md`).
 
 ```rust
 use secrecy::{ExposeSecret, Secret};
@@ -2735,7 +2960,7 @@ impl DbConfig {
 
 A bare `cargo deny check` with no configuration is better than nothing,
 but a `deny.toml` makes policies explicit and enforceable. These are the strictest settings
-that parse on cargo-deny 0.19 (verified with 0.19.6):
+that parse on cargo-deny 0.19 (verified with 0.19.6 and 0.19.9):
 
 ```toml
 # deny.toml - workspace root
@@ -2812,7 +3037,7 @@ step with `allowed-duplicate-crates` in `clippy.toml` (Section 9).
 actually looked at this code?"
 
 ```bash
-cargo install cargo-vet
+cargo install cargo-vet@<pinned version> --locked   # a gate tool: pinned (Section 12)
 cargo vet init              # First time: create vet config
 cargo vet                   # Check: are all deps vetted?
 cargo vet certify <crate>   # Record: "I reviewed this crate"
@@ -2841,35 +3066,65 @@ ignore = ["RUSTSEC-2023-0071"]
 Keep `deny.toml` and `.cargo/audit.toml` in sync - they are read by different
 tools and an advisory suppressed in one will still fail the other in CI.
 
-### WATCH: publish-age-aware resolution (`-Zmin-publish-age`, nightly)
+### DO: Hold new dependency versions back with a publish-age cooldown (Cargo 1.100+)
 
 A meaningful share of supply-chain attacks are *fresh* releases of an otherwise
 reputable crate published from a compromised maintainer account, and caught
 within days. Neither `cargo audit` (needs an advisory to exist) nor `cargo vet`
-(needs a human review) reacts quickly to that window.
+(needs a human review) reacts quickly to that window. Cargo 1.100 stabilized
+publish-age-aware resolution ("dependency cooldowns"): the resolver ignores versions
+published more recently than a configured age, unless they are already in `Cargo.lock`.
 
-Cargo 1.98 added an **unstable** feature that does:
-[`-Zmin-publish-age`](https://github.com/rust-lang/cargo/pull/17012) makes the
-resolver skip versions published more recently than a configured age.
+Commit it in the repository's `.cargo/config.toml`, next to `build.warnings`. That is the
+only place that covers every developer, CI job and in-repo tool. The repository file
+overrides `$CARGO_HOME/config.toml`, so a developer who wants a longer delay sets
+`CARGO_REGISTRY_GLOBAL_MIN_PUBLISH_AGE` instead.
 
 ```toml
-# nightly only - do NOT depend on this in CI yet
+# .cargo/config.toml
 [registry]
-global-min-publish-age = "14 days"
+global-min-publish-age = "3 days"   # "N seconds|minutes|hours|days|weeks|months"; "0" disables
 
 [resolver]
-incompatible-publish-age = "deny"   # ignore too-new versions unless already in Cargo.lock
+incompatible-publish-age = "deny"   # the default; written out so a reviewer sees it
 ```
 
-Not usable on stable and therefore **not** a current requirement. Track it for
-stabilization; a 7-14 day quarantine is a cheap, high-leverage control for a
-crate handling auth and credentials.
+`cargo update` then reports what it held back
+(`Adding cc v1.11.0 (available: v1.18.0, published 3 hours ago)`), and the
+`Locking ... as of min-publish-age` line shows that the cooldown is active.
+`registries.<name>.min-publish-age` overrides the value for one registry.
 
-**Update (Cargo 1.99 changelog page):** stabilization is merged for **Cargo 1.100**,
-scheduled for 2026-11-12, as `registry.global-min-publish-age`. Keep this a WATCH
-item until 1.100 ships, then re-verify the stable key names against the 1.100
-documentation before promoting it to a DO - the nightly snippet above may not
-match the stabilized surface.
+**Emergency path: a RUSTSEC fix younger than the cooldown.** Do all of this in one commit:
+1. `CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow cargo update <crate> --precise <version>`.
+2. Raise the floor so the next plain `cargo update` does not downgrade it again: the
+   version requirement for a direct dependency, or a `[target.'cfg(false)'.dependencies]`
+   pin for a transitive one (Section 9, "Satisfying the profile").
+3. Review the `Cargo.lock` diff. `allow` also admits fresh versions of the crate's own
+   dependencies.
+
+Until the new version is older than the cooldown, a plain `cargo update` fails with "version
+... is too new". That is expected.
+
+Limits:
+- **Anything already in `Cargo.lock` is trusted.** `--locked` does not re-check publish
+  age. A lockfile written under `allow`, by an older Cargo or by an update bot passes CI
+  unchecked. Review lockfile diffs like code, and give update bots at least the same delay
+  (Dependabot `cooldown`, Renovate `minimumReleaseAge`).
+- Versions without a `pubtime` in the registry index are never held back. A mirror or
+  replaced source that lacks the field gives no protection, silently.
+- `cargo install` ignores the cooldown. Install tools at pinned versions (Section 12).
+- Cargo 1.99 and older ignore the key (with the warning `ignoring
+  registry.global-min-publish-age without -Zmin-publish-age`). A project pinned to such a
+  toolchain resolves its lockfile with `cargo +stable update`; the pinned toolchain only
+  reads the lockfile.
+- A cooldown narrows one attack window. It does not replace `cargo audit`, `cargo deny` or
+  `cargo vet`.
+
+**WATCH: Git dependencies fetched through the git CLI.** Cargo 1.100 reports that
+`http.cainfo`, `http.proxy` and `net.ssh.known-hosts` are **not** forwarded to git when
+`net.git-fetch-with-cli = true`, and Cargo 1.101 makes the git CLI the default fetcher. Those
+settings then have to live in the git configuration. Low impact while `deny.toml` keeps
+`allow-git = []`.
 
 ### DO: Implement proper logging and monitoring
 
@@ -2900,6 +3155,7 @@ Use this when reviewing code:
 - [ ] Errors propagated with `?`, not swallowed or panicked
 - [ ] `TryFrom` used when conversion can fail (not `From` with hidden fallbacks)
 - [ ] Guard clauses use `bool::ok_or` / `ok_or_else` rather than four-line `if ... return Err` blocks (Rust 1.98+)
+- [ ] Impossible errors spelled `!` in new code and destructured with `let Ok(v) = res;`, never `unwrap()`ed (Rust 1.100+)
 
 **Type Safety**
 - [ ] Newtypes used for domain concepts (IDs, amounts, durations)
@@ -2907,7 +3163,7 @@ Use this when reviewing code:
 - [ ] `match` arms are exhaustive - no wildcard `_` catch-all on owned enums
 - [ ] Struct fields private with validated constructors (for library types)
 - [ ] `#[must_use]` on types/functions where ignoring the result is a bug
-- [ ] Comparison traits are all-manual or all-derived - never a manual `PartialEq` alongside a derived `Ord`/`PartialOrd` (Rust 1.98+ can expose the inconsistency)
+- [ ] Comparison traits are all-manual or all-derived - never a manual `PartialEq` alongside a derived `Ord`/`PartialOrd` (Rust 1.98+ can expose the inconsistency; 1.100's `Iterator::{min,max}` too)
 - [ ] Types with a manual `PartialEq` are not used in constant patterns (rejected on Rust 1.98+)
 - [ ] `#[repr(transparent)]` not applied over `#[non_exhaustive]`, `repr(C)`, or private-field types (Rust 1.98+ rejects these)
 - [ ] Non-zero domain values parsed via `NonZero::from_str_radix` rather than parse-then-`NonZero::new` (Rust 1.98+)
@@ -2931,6 +3187,7 @@ Use this when reviewing code:
 - [ ] No `std::sync::Mutex` held across `.await` points
 - [ ] Every async fn that may run inside `select!` / `timeout` / an executor's abort primitive carries a `// cancel-safe:` or `// NOT cancel-safe:` doc comment with reasoning
 - [ ] Drop impls of async resources (transactions, pooled connections, guards) audited; explicit cleanup on every path, never relied on Drop alone
+- [ ] One-off rollback uses a bound `core::mem::DropGuard` with `DropGuard::dismiss` on every success path; never a `let _ =` guard, never `mem::forget` (Rust 1.100+)
 - [ ] No `Box::new([0; N])` for large `N` - use `vec![0; N].into_boxed_slice()` (especially on small stacks)
 
 **Defensive**
@@ -2957,10 +3214,11 @@ Use this when reviewing code:
 - [ ] `cargo audit` and `cargo deny` run in CI
 - [ ] Auth attempts and RBAC denials logged with structured tracing
 - [ ] Delimiter-wrapped input (quoted header values, bracketed IPv6) stripped with `strip_circumfix`, not chained `strip_prefix`/`strip_suffix` (Rust 1.98+)
+- [ ] `trim_prefix` / `trim_suffix` only where the affix is optional; a required affix uses `strip_*` with an error path; `Path::strip_prefix` never serves as a confinement check (Rust 1.100+)
 - [ ] UTF-16 boundary decoding uses the endian-explicit, non-`_lossy` `String::from_utf16{le,be}` (Rust 1.98+); `_lossy` reserved for display
 - [ ] Every `cargo audit` / `cargo deny` ignore entry documents the advisory, why it does not apply, and upstream fix status
 - [ ] File timestamps set via `File::set_times` on a handle you created/validated; path-based `fs::set_times` only in directories no other principal can write; `fs::set_times_nofollow` only when the link itself is meant - it does not make an untrusted path safe (Rust 1.99+)
-- [ ] Zeroization attached to the secret values (`Secret` / `Zeroizing`), never delegated to a custom `#[global_allocator]`
+- [ ] Zeroization attached to the secret values (`Secret` / `Zeroizing`), never delegated to a custom `#[global_allocator]` or arena allocator (`Vec::new_in`, Rust 1.100+)
 - [ ] Lossy UTF-8 only for display/logging: owned bytes use `String::from_utf8_lossy_owned`; where malformation matters, `String::from_utf8` + `into_utf8_lossy` records it (Rust 1.99+)
 - [ ] `deny.toml` matches Section 10 (parses on current cargo-deny; `multiple-versions = "deny"`; git deps pinned to `rev`)
 
@@ -2972,14 +3230,17 @@ Use this when reviewing code:
 - [ ] Prefer `Atomic*::update` / `try_update` over hand-rolled `compare_exchange` loops (Rust 1.95+)
 - [ ] Prefer `Vec::push_mut` / `VecDeque::push_{front,back}_mut` / `LinkedList::push_{front,back}_mut` over `push` + `last_mut().unwrap()` (Rust 1.95+)
 - [ ] `linker_messages` (Rust 1.97+) denied by the profile; benign platform output silenced at the linker, never by lowering the lint (it is NOT in the `warnings` group)
-- [ ] No unsafe *attributes* (`#[unsafe(no_mangle)]`, `#[unsafe(link_section)]`, `#[unsafe(export_name)]`, `#[unsafe(naked)]`) under `unsafe_code = "forbid"` - Rust 1.98+ now flags these; firmware crates needing them must use `deny` + justified `#[allow]`
+- [ ] No unsafe *attributes* (`#[unsafe(no_mangle)]`, `#[unsafe(link_section)]`, `#[unsafe(export_name)]`, `#[unsafe(naked)]`) under `unsafe_code = "forbid"` - Rust 1.98+ now flags these; firmware crates needing them must load `overlays/domains/unsafe-ffi.md` and use `deny` + a per-item `#[expect(unsafe_code, reason = "...")]`
 - [ ] Bounded `VecDeque` windows trimmed with `retain_back(n)` (Rust 1.99+), not `drain(..len - n)`
 
 **Supply Chain**
 - [ ] `deny.toml` configured with license allowlist, banned crates, source restrictions
 - [ ] `cargo vet` tracking crate review status
 - [ ] No dependencies from unknown registries or arbitrary git repos
-- [ ] All dependency versions are latest stable
+- [ ] All dependency versions are the latest past the cooldown (what `cargo add` / `cargo update` select)
+- [ ] `.cargo/config.toml` commits `[registry] global-min-publish-age = "3 days"` and `[resolver] incompatible-publish-age = "deny"`; update bots carry at least the same delay; lockfile diffs reviewed (Cargo 1.100+)
+- [ ] A RUSTSEC fix newer than the cooldown taken with `CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow cargo update <crate> --precise <ver>` plus a raised floor and a reviewed `Cargo.lock` diff, in one commit
+- [ ] Gate tools (cargo-deny, cargo-audit, cargo-vet) installed in CI at pinned versions
 - [ ] `Cargo.lock` committed for binary crates
 
 **Testing**
@@ -2987,7 +3248,7 @@ Use this when reviewing code:
 - [ ] Mutation testing confirms tests catch real bugs (not just coverage theater)
 - [ ] Test tiers documented: unit (autonomous) vs integration (mocked) vs e2e (live)
 - [ ] No deleted or skipped tests to make the build pass
-- [ ] No assertions on `{:?}` output as a stable format - 1.98 escapes more characters, 1.99 stopped escaping U+FF9E/U+FF9F (re-check audit-log / redaction tests on every toolchain bump)
+- [ ] No assertions on `{:?}` output as a stable format - 1.98 escapes more characters, 1.99 stopped escaping U+FF9E/U+FF9F, 1.100 changed `str::escape_debug()` (re-check audit-log / redaction tests on every toolchain bump)
 - [ ] Guards/locks inside `assert_eq!` / `assert_ne!` bound to a `let` rather than created inline (Rust 1.98+ changed macro temporary scope)
 
 **Tooling**
@@ -2998,18 +3259,23 @@ Use this when reviewing code:
 - [ ] `cargo semver-checks` in CI for library crates
 - [ ] `rustfmt.toml` with `imports_granularity` and `group_imports` configured
 - [ ] `cargo miri` run (nightly job) against pure-Rust modules with `unsafe`; HAL/FFI-touching crates exempted with a note; crates on `unsafe_code = "forbid"` legitimately have no Miri job
-- [ ] `[lints.clippy]` group entries carry `priority = -1` so per-lint overrides do not conflict
+- [ ] `[lints.clippy]` and `[lints.cargo]` group entries carry `priority = -1` so per-lint overrides do not conflict
 - [ ] `clippy.toml` matches Section 9 (levels live in `Cargo.toml`, configuration lives here)
 - [ ] Deprecated `string_to_string` and `from_iter_instead_of_collect` removed from `[lints.clippy]` (both no longer exist)
 - [ ] `unused_async_trait_impl` (Clippy 1.98 `pedantic`) handled per-impl via `#[expect(..., reason = ...)]` where a foreign trait mandates the async signature - never silenced crate-wide
 - [ ] One-time `cargo fmt --all` committed separately after adopting `cfg_select!` (Rust 1.98 rustfmt now formats modules declared inside it)
-- [ ] Workspace `Cargo.toml` carries the Section 9 lint profile unchanged; every member has `[lints] workspace = true`; no group-level allows
+- [ ] Workspace `Cargo.toml` carries the Section 9 lint profile unchanged, all four tables (`rust`, `rustdoc`, `clippy`, `cargo`); every member has `[lints] workspace = true` (checked in CI, since an empty `[lints]` satisfies `missing_lints_inheritance`); no group-level allows
 - [ ] Every local exception is `#[expect(lint, reason = "...")]` on the narrowest item (`#[allow]` is denied)
-- [ ] Section 9 completeness check run after the last toolchain bump; it prints exactly the documented exclusions
+- [ ] Section 9 completeness check (rustc, Clippy and Cargo legs) run after the last toolchain bump; it prints exactly the documented exclusions
 - [ ] `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features` and `cargo machete` in CI
 - [ ] `unneeded_field_pattern` removed from manifests; `unnecessary_rest_pattern` and `rest_pattern_accessible_field` enforced via the profile (neither lint sees `Self { .. }`)
 - [ ] Clippy 1.99 `assert_is_empty` (pedantic) handled by giving emptiness assertions a message - value in the message only when it is safe to print; never the `[] as [T; 0]` rewrite (`trivial_casts`)
 - [ ] `[lints]` entries use `snake_case` lint names (Cargo 1.99 deprecates hyphens)
+- [ ] `map(f).unwrap_or_default()` rewritten as `map_or_default(f)`; `#[expect]`s that a toolchain bump left unfulfilled (e.g. `integer_division_remainder_used` placed for a macro expansion, Clippy 1.100) deleted, not converted
+- [ ] No manifest or `#[expect]` names the removed `dependency_on_unit_never_type_fallback` (Rust 1.100)
+- [ ] Manifests clean under Cargo 1.100 lints: no unused dependencies or `[workspace.*]` entries, no inferable `readme`, kebab-case bins and features; feature-activation deps carry `use <dep> as _;`, version pins live under `[target.'cfg(false)'.dependencies]`
+- [ ] Rust versions quoted in YAML (`"1.100"`; unquoted it is the float 1.1)
+- [ ] Library crates whose unit tests leave a `pub` item unused carry the `dead_code_pub_in_binary` `cfg_attr(test, expect(..))` from Section 9, deleted again with the move to `rust-version = "1.101"`
 - [ ] `[profile.debug]` only with `rust-version >= 1.99`; inherited `default-features = false` only in edition-2024 members with `rust-version >= 1.99` (hard errors on older Cargo; ignored with a warning outside edition 2024)
 
 ---
@@ -3034,6 +3300,15 @@ cargo machete                                       # Unused dependencies
   `cfg(not(feature = "..."))`, and in a workspace one member can turn another's features
   on. So also lint and test each library crate alone at its default features:
   `cargo clippy -p <library> --all-targets -- -D warnings` and `cargo test -p <library>`.
+- **Pin the gate tools.** Install cargo-deny, cargo-audit and cargo-vet at exact versions,
+  e.g. `cargo install cargo-deny@0.19.9 --locked`. `cargo install` ignores the dependency
+  cooldown (Section 10), and these tools decide whether a merge is allowed. Bump the pins
+  deliberately, as a stated exception to the Version Policy's "latest". The other tools stay
+  unpinned. (`--locked` is the default from Cargo 1.100; keep it for older Cargo.)
+- **`cargo machete` stays.** Cargo 1.100's `cargo::unused_dependencies` (Section 9) checks
+  `[dependencies]` and `[build-dependencies]` only when every target that may use them is
+  built (the `--all-targets` clippy line above). It never checks `[dev-dependencies]`, and a
+  partial build (`-p x --lib`) skips it.
 - **Vendored crates.** If the repository vendors third-party crates as path dependencies
   (`vendor/`), run machete on the first-party crates only, e.g. `cargo machete crates`.
   The vendored trees are upstream code and outside the profile.
@@ -3041,7 +3316,8 @@ cargo machete                                       # Unused dependencies
 **Rust 1.97+:** the `-D warnings` on the clippy line denies warnings only for
 the targets clippy compiles. To deny **rustc** warnings across the whole
 workspace in a cache-friendly, toggleable way, prefer Cargo's stabilized
-`build.warnings` config (Section 7) over `RUSTFLAGS="-D warnings"`:
+`build.warnings` config (Section 7) over `RUSTFLAGS="-D warnings"`. Since Cargo 1.100 it
+also gates Cargo's own lint warnings, which `RUSTFLAGS` never reaches:
 
 ```bash
 CARGO_BUILD_WARNINGS=deny cargo check --workspace --all-features --keep-going
@@ -3113,6 +3389,41 @@ remains current. Two footnotes:
   block is now an error, and `#[doc(cfg(...))]` no longer hides doctests from
   running. Run `cargo test --doc` on library crates as part of the upgrade.
 
+**Cargo 1.100:** three stabilizations and two default changes.
+
+- **Cargo lints** (`[lints.cargo]`): now part of the Section 9 profile. Under the committed
+  `build.warnings = "deny"`, Cargo's warn-level lints fail the build on upgrade even before
+  the table is adopted (Section 7).
+- **Dependency cooldowns** (`registry.global-min-publish-age`): Section 10.
+- **New build-directory layout.** Intermediate artifacts moved; the layout is not a stable
+  interface. Scripts and tests that reach into `target/<profile>/deps` or
+  `target/<profile>/build/<pkg>-<hash>/out`, or derive paths from `current_exe()` or the
+  ancestors of `OUT_DIR`, break. Use Cargo's JSON messages, `env!("CARGO_BIN_EXE_<name>")` in
+  integration tests, or `OUT_DIR` itself. Re-run coverage and mutation jobs after the bump.
+- **`cargo install` uses the lockfile packaged in the `.crate`** by default; `--locked` is a
+  no-op on 1.100. It still ignores the cooldown: pin the gate tools (Required CI Tools above).
+- **Versions with three digits.** YAML reads an unquoted `toolchain: 1.100` as the float `1.1`.
+  Quote every Rust version in workflow files, and compare versions numerically in scripts
+  (`"1.100" < "1.99"` as strings).
+
+**Rust 1.100 upgrade notes** (things that can newly fail; no configuration needed):
+
+- Lint changes that the profile turns into errors (`ambiguous_glob_imported_traits`,
+  `repeated_reprs`, `rustdoc::invalid_markdown_table`, the removed
+  `dependency_on_unit_never_type_fallback`) and the Clippy 1.100 changes: Section 9.
+- Closures now capture variables used in `if let` more precisely, which can cause new borrow
+  errors. The orphan check now uses the next trait solver, so coherence can newly reject an
+  impl. Dyn-compatibility is checked in more places. Some `Box` impls were generalized over
+  allocators, which can cause new type-inference errors. let-else now respects `macro_rules!`
+  `expr` metavariable grouping.
+- `Infallible` is an alias of `!`, and the never-type fallback changed in editions before 2024
+  (Section 2).
+- `std::io` maps `ENOTSUP` to `ErrorKind::Unsupported`. On Linux nothing changes
+  (`ENOTSUP == EOPNOTSUPP`, already `Unsupported`); on platforms where the two differ, code
+  that matched `ENOTSUP` as another kind must be updated.
+- `Iterator::{min,max}(_by_key)` (Section 3) and `str::escape_debug()` (Section 13) changed
+  observable results for some inputs.
+
 ### Recommended CI Tools
 
 These tools SHOULD run in CI. Warnings are informational, not blocking.
@@ -3160,8 +3471,10 @@ HAL-bound crates: `overlays/domains/embedded-no-std.md`.
 ### Version Policy
 
 Always use the latest stable Rust toolchain. Crate dependencies must
-target the latest stable version - check with `cargo search <crate> --limit 1`
-before adding or updating. Run version checks regularly (at least monthly).
+target the latest version that has passed the dependency cooldown (Section 10): the version
+`cargo add` / `cargo update` selects. `cargo search` ignores the cooldown, so it is no longer
+the check. Run version checks regularly (at least monthly). The exceptions are the pinned
+gate tools (Required CI Tools above).
 No `rust-toolchain.toml` pin; CI uses whatever `stable` resolves to.
 
 ---
@@ -3253,6 +3566,13 @@ Rust 1.99 changed the escaping again, in the other direction: U+FF9E and U+FF9F
 releases changed `Debug` string output; treat every toolchain bump as a
 potential snapshot break.
 
+Rust 1.100 changed `str::escape_debug()` rather than `{:?}`: it now escapes grapheme
+extenders everywhere, not only at the start of the string
+([PR #158303](https://github.com/rust-lang/rust/pull/158303)). `"e\u{301}".escape_debug()`
+was `é` on 1.99 and is `e\u{301}` on 1.100; `format!("{:?}", "e\u{301}")` is
+`"e\u{301}"` on both. Log sanitizers built on `escape_debug()`, and tests that snapshot their
+output, change with it.
+
 ### DO: Re-check borrows inside `assert_eq!` / `assert_ne!` on upgrade (Rust 1.98+)
 
 [Rust 1.98 added a temporary scope to `assert_eq!` and
@@ -3295,9 +3615,35 @@ tests they can run autonomously vs which require human-assisted setup.
 
 ## References
 
+- [Rust 1.100.0 release notes](https://github.com/rust-lang/rust/releases/tag/1.100.0)
+  and [announcement](https://blog.rust-lang.org/2026/11/12/Rust-1.100.0/) - basis for
+  the "(Rust 1.100+)" annotations. **This document tracks stable Rust through 1.100.**
+  The 1.100 items reflected in this core are:
+  - *Lint profile:* the Cargo lint table and its two exclusions, the Cargo leg of the
+    completeness check, the `unused_dependencies` fixes and naming traps, the
+    `dead_code_pub_in_binary` test-harness expectation (Section 9); `build.warnings` now
+    gating Cargo lints (Section 7).
+  - *Supply chain:* dependency cooldowns promoted from WATCH to DO, the emergency path, the
+    lockfile bypass, the git-CLI WATCH; the allocator note on zeroization (Section 10);
+    pinned gate tools and the cooldown-aware Version Policy (Section 12).
+  - *New APIs adopted as idioms:* the never type (Section 2); `core::mem::DropGuard`
+    (Section 6); `trim_prefix` / `trim_suffix` limits (Section 10).
+  - *Behaviour changes:* `Iterator::{min,max}` and inconsistent `Ord` (Section 3);
+    `str::escape_debug()` (Section 13); the Cargo 1.100 and Rust 1.100 upgrade notes
+    (Section 12).
+  - *Unsafe and FFI* (`overlays/domains/unsafe-ffi.md`): implementing `Allocator`,
+    `conjure_zst`, `UnsafeCell` accessors, `drop_in_place` lints, `aligned_fields_in_packed`,
+    `extern "custom"`.
+- [Clippy 1.100 changelog](https://github.com/rust-lang/rust-clippy/blob/master/CHANGELOG.md#rust-1100)
+  and [rust-clippy#14689](https://github.com/rust-lang/rust-clippy/pull/14689) (the
+  `clippy::all` -> `clippy::default` soft rename, missing from the changelog) - Section 9.
+- [Cargo 1.100 changelog](https://doc.rust-lang.org/nightly/cargo/CHANGELOG.html#cargo-1100-2026-11-12),
+  the [Cargo lints reference](https://doc.rust-lang.org/stable/cargo/reference/lints.html)
+  and the [publish-age configuration](https://doc.rust-lang.org/stable/cargo/reference/config.html#registryglobal-min-publish-age) -
+  Sections 9, 10 and 12.
 - [Rust 1.99.0 release notes](https://github.com/rust-lang/rust/releases/tag/1.99.0)
   and [announcement](https://blog.rust-lang.org/2026/10/01/Rust-1.99.0/) - basis for
-  the "(Rust 1.99+)" annotations. **This document tracks stable Rust through 1.99.**
+  the "(Rust 1.99+)" annotations.
   For 1.99, prefer the GitHub release over doc.rust-lang.org/stable/releases.html.
   The latter is an older revision: it says static PIE was enabled for "gnu and musl"
   targets (the PR covers gnu only), and it omits the union-pattern compatibility note.
@@ -3326,9 +3672,9 @@ tests they can run autonomously vs which require human-assisted setup.
 - [Cargo 1.99 changelog](https://doc.rust-lang.org/nightly/cargo/CHANGELOG.html#cargo-199-2026-10-01) -
   the `debug` profile, incremental off under `CI`, the edition-2024 `default-features`
   override, and hyphenated `[lints]` names deprecated (Section 12).
-- Lint inventory for the Section 9 profile: `rustc -W help` and
-  `rustup run stable clippy-driver -W help` on 1.99.0. The completeness check is in
-  Section 9.
+- Lint inventory for the Section 9 profile: `rustc -W help`,
+  `rustup run stable clippy-driver -W help` and the rust-docs Cargo lint reference on 1.100.0.
+  The completeness check is in Section 9.
 - [cargo-deny #611](https://github.com/EmbarkStudios/cargo-deny/pull/611) and cargo-deny
   0.19.6 - the `deny.toml` schema used in Section 10.
 - [Rust 1.98.0 release notes](https://doc.rust-lang.org/stable/releases.html#version-1980-2026-08-20)
