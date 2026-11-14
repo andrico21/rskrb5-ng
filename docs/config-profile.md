@@ -48,7 +48,7 @@ every typed relation and its current consumer or deferred classification.
 | libdefaults | default_tgs_enctypes, default_tkt_enctypes, permitted_enctypes, extra_addresses, preferred_preauth_types | Delimited list inside a single value; first relation |
 | realms / realm | kdc, kpasswd_server, master_kdc, admin_server | Repeated list; accumulate in source order |
 | realms / realm | default_domain | Single; first value (legacy parse-only field) |
-| domain_realm | each mapping key | Single; first value; existing DNS case folding retained |
+| domain_realm | each mapping key | Single; first value; the host name is folded to lower case, a key with an upper-case letter is an unknown relation |
 
 `admin_server` is multi-valued for **libkrb5 location and kpasswd fallback**:
 [locate_kdc.c:273–296,538–576](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/locate_kdc.c#L273-L296),
@@ -114,11 +114,16 @@ value are value data.
 
 - Missing or unreadable explicitly named `KRB5_CONFIG` entries are errors; MIT
   skips them.
-- Section headers are case-insensitive (`[Realms]`, `[Plugins]`), as in v0.2.2;
-  MIT compares them exactly. Relation names are case-insensitive too, except in
-  `[appdefaults]`, `[capaths]`, `[plugins]` (interface and control names), the
-  realm names of `[realms]` and the `auth_to_local_names` entries, which keep
-  their case as MIT does.
+- Section headers and relation names are case-sensitive, as in MIT
+  ([prof_tree.c:588,615](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_tree.c#L588-L615)
+  compare them with `strcmp`); v0.2.2 folded the `[libdefaults]`, `[realms]` and
+  `[domain_realm]` names. A wrongly cased header (`[Realms]`, `[Plugins]`) is an
+  unknown section and a wrongly cased relation an unknown relation, named as
+  written: a diagnostic in compatible mode, an error in strict mode. A
+  `[domain_realm]` key with an upper-case letter is an unknown relation, since
+  MIT folds the host name before it compares. The divergence: an enabled
+  removed-protocol selector and a `module` relation outside `[plugins]` are
+  refused whatever their case, where MIT ignores a name it does not know.
 - Leading whitespace before a directive is accepted. No dynamic module code is
   loaded.
 - The unquoted value-suffix `value*` final form is a gokrb5 extension. It
@@ -401,8 +406,8 @@ options; enctype expressions and default-name loaders have WP-02/B2 consumers.
 Parse diagnostics are excluded from serde. The serde round-trip regression
 compares all serialized fields and explicitly pins that diagnostic exclusion.
 The malformed-address regression expects `InvalidAddress` for a bad token
-(v0.2.2 dropped it silently); a valid uppercase fixture keeps the case-folding
-and address-order assertions of the v0.2.2 test.
+(v0.2.2 dropped it silently); a valid fixture keeps the address-order assertions
+of the v0.2.2 test, with lower-case names.
 
 <a id="relations-c2"></a>
 ## C2: complete 43-relation libdefaults catalogue
@@ -563,7 +568,7 @@ plugin registry or loading is introduced. Interface names and the control names
 `disable`, `enable_only` and `module` preserve case and match exactly, like MIT
 (`prof_tree.c` compares with `strcmp`): `CLPREAUTH` is an interface without a
 consumer, and `DISABLE` or `MODULE` under an interface is an unknown relation.
-The `[plugins]` header itself is case-insensitive, like every section header.
+The `[plugins]` header is case-sensitive too: `[Plugins]` is an unknown section.
 Controls that would disable the existing encrypted-timestamp mechanism
 (`clpreauth` disable encrypted_timestamp or enable_only excluding it) fail
 closed. Controls for unavailable mechanisms are diagnostic. `module` is
@@ -573,7 +578,8 @@ closed. Controls for unavailable mechanisms are diagnostic. `module` is
 configuration is acted upon.
 
 The `[domain_realm]` map keeps its exact, longest-suffix and dotted-apex rules;
-lookups now fold case and a bare tag covers its subdomains (v0.2.2 matched only
+lookups now fold the host name's case (a key with an upper-case letter never
+matches, as in MIT) and a bare tag covers its subdomains (v0.2.2 matched only
 the exact name and `.suffix` tags). `auth_to_local_names` mapping keys preserve
 principal case.
 Application paths serialize as ordered path/value pairs so nonempty hierarchical

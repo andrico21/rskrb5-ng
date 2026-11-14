@@ -429,3 +429,4 @@ is a parity feature, not a defect>`.
 | executor:todo-139#tgs-request-parts-options-private | FU-CLI-R31 | no |
 | executor:todo-139#pa-type-22-message | FU-CLI-R32 | no |
 | critic:critics-efadae8/u4.md#U4-01 | FU-CLI-R33 | no |
+| executor:todo-143#section-header-case-sensitivity | FU-CFG-R38 | no |
