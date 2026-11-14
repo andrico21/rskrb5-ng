@@ -2290,6 +2290,9 @@ FU-DOC-R56):
   `TgsRequestParts::new(options, confounder, subkey).with_timestamp(timestamp, cusec)`.
   The constructor defaults to `options.now` and zero microseconds; pass the same
   explicit timestamp and microseconds as before to reproduce an existing request.
+  `TgsRequestParts` has only private fields: read them with `options()`,
+  `timestamp()`, `cusec()`, `confounder()` and `subkey()` or take them with the
+  consuming `into_parts()` (FU-CLI-R31).
 - `kadmin::build_change_password_message_with_confounders` groups its final three
   encryption inputs into `PasswordEncryption::new(reply_key, ap_req_confounder,
   krb_priv_confounder)`; their order and meaning are unchanged.

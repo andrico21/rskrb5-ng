@@ -64,14 +64,16 @@ fields; builders check locally selected keys before encryption.
 
 The checked PA boundary rejects known unsupported credential mechanisms with
 `error::Client::Encode` targeting `PA-DATA`: legacy Unix-time/hardware/SAM,
-SESAME/DCE, modern PKINIT, embedded PA/extra TGT, X509 S4U, authentication sets,
+SESAME/DCE, modern PKINIT, extra TGT, X509 S4U, authentication sets,
 FAST armor, encrypted challenge, OTP, EPAK, PKINIT key exchange, PKU2U, SPAKE,
 OAuth2 and passkey mechanisms. Outgoing peer-only enctype hints (11/19/23/165)
-are rejected too; incoming capability parsing is unchanged. Draft-9 retains
-its permanent typed policy cause. Cookies, ordinary informational PA data and
-unknown extension IDs remain opaque; unknown payloads are not a supported
-credential mechanism or a promise of nested policy enforcement. Implementing
-a new credential PA type requires extending admission and its inventory tests.
+and the embedding wrapper PA-GET-FROM-TYPED-DATA (22), whose nested data the
+policy cannot check, are rejected too; incoming capability parsing is
+unchanged. Draft-9 retains its permanent typed policy cause. Cookies,
+ordinary informational PA data and unknown extension IDs remain opaque; unknown
+payloads are not a supported credential mechanism or a promise of nested policy
+enforcement. Implementing a new credential PA type requires extending admission
+and its inventory tests.
 
 <a id="single-des"></a>
 ## Single DES
