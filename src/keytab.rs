@@ -19,6 +19,15 @@ use zeroize::Zeroizing;
 
 /// Password ownership retained through derivation and every early error.
 mod password;
+/// Capacity observations for the principal component count.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod reservation_tests;
 
 #[cfg(feature = "messages")]
 use crate::config::{LibDefaults, credential_names, parameters::DefaultName};
@@ -852,7 +861,12 @@ impl Principal {
         };
 
         let realm = read_counted_string(bytes, offset, endian)?;
-        let mut components = Vec::with_capacity(component_count);
+        // Each component is at least a two-byte counted string; bound the
+        // count against the remaining input before reserving capacity.
+        let capacity = component_count.min(bytes.len().saturating_sub(*offset).div_euclid(2));
+        #[cfg(test)]
+        reservation_tests::record(capacity);
+        let mut components = Vec::with_capacity(capacity);
         for _ in 0..component_count {
             components.push(read_counted_string(bytes, offset, endian)?);
         }
