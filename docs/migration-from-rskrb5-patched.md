@@ -44,7 +44,7 @@ paths compiling and changes only the package. The features are the same
 (`messages`, `spnego`, `tokio`, `http`, `tower`, `serde`, `evaluation`;
 default `spnego`, `tokio`, `serde`).
 
-`rskrb5-ng` needs Rust 1.100 or newer (`rust-version = "1.100"`; it was 1.88).
+`rskrb5-ng` needs Rust 1.99 or newer (`rust-version = "1.99"`; it was 1.88).
 It depends on `rasn` and `rasn-kerberos` 0.29 (v0.2.2: 0.28.13); a caller that
 passes `rasn` values to or from this crate needs the same versions. The bump
 also changes the derived `rasn::enc::Encode` and `rasn::de::Decode` methods that
@@ -2934,7 +2934,7 @@ by group:
 - **Manifest.** `rskrb5 = { version = "0.3", package = "rskrb5-ng",
   default-features = false, features = ["tokio"] }` with a new vendored tree
   (and `VENDORING.md` updated to match), `rasn` and `rasn-kerberos` 0.29, and
-  a Rust 1.100 toolchain. Keeping the `rskrb5` key leaves the `rskrb5::`
+  a Rust 1.99 toolchain. Keeping the `rskrb5` key leaves the `rskrb5::`
   paths in place.
 - **Error types** (`error.rs`, `narration.rs` and others): `client::Error`,
   `config::Error` and `crypto::Error` are `error::Client`, `error::Config`

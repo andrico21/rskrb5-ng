@@ -16,7 +16,7 @@ name: CI
 # Toolchains (core Section 12 Version Policy). Rust jobs run on floating
 # `stable` (never pinned, no `rust-toolchain.toml`). The dated
 # `nightly-2026-10-03` is used only for rustfmt, rustdoc and the fuzz crate
-# (`fuzz_lint.py`, `fuzz-build`, `fuzz`); `1.100.0` only for the MSRV build.
+# (`fuzz_lint.py`, `fuzz-build`, `fuzz`); `1.99.0` only for the MSRV build.
 #
 # Lint gates. There is no baseline: the tree passes the profile outright.
 # `allow_gate.py` rejects any `allow`; `exception_gate.py` admits only the six
@@ -305,7 +305,7 @@ jobs:
   msrv:
     name: msrv
     runs-on: ubuntu-latest
-    # Proves compile compatibility with `rust-version = "1.100"`, not lint
+    # Proves compile compatibility with `rust-version = "1.99"`, not lint
     # cleanliness (lints are enforced on stable by `closures`).
     # `--cap-lints=warn` and CARGO_BUILD_WARNINGS=allow neutralise the profile
     # and the committed `build.warnings = "deny"` on the older compiler.
@@ -316,10 +316,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
-          toolchain: 1.100.0
+          toolchain: 1.99.0
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: rustc +1.100.0 --version && cargo +1.100.0 --version
-      - run: cargo +1.100.0 build --all-features --locked
+      - run: rustc +1.99.0 --version && cargo +1.99.0 --version
+      - run: cargo +1.99.0 build --all-features --locked
 
   semver-checks:
     name: semver-checks
@@ -477,8 +477,7 @@ jobs:
           components: clippy
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          # rust-docs: the Cargo leg of completeness_check.py reads its lints page.
-          components: clippy, rust-docs
+          components: clippy
       - name: Install hash-pinned CommonMark gate dependencies
         run: python3 -m pip install --require-hashes -r scripts/lint-gates/requirements.txt
       - name: Run every lint gate self-test
