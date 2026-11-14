@@ -2,7 +2,7 @@
 name = "rskrb5-ng"
 version = "0.3.0"
 edition = "2024"
-rust-version = "1.99"
+rust-version = "1.100"
 license = "Apache-2.0"
 description = "Pure-Rust Kerberos 5 client and service library: keytabs, credential caches, AS/TGS and kpasswd exchanges, PAC parsing and HTTP Negotiate (SPNEGO)"
 repository = "https://github.com/andrico21/rskrb5-ng"
