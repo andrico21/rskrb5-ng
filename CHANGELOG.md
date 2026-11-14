@@ -1143,10 +1143,27 @@ Configuration:
   relation (a diagnostic in compatible mode, `UnknownRelation` in strict mode;
   v0.2.2 loaded both), so `MODULE` is not `UnsupportedDynamicModule`. The
   spelling `module` is refused in `[plugins]` (v0.2.2 loaded it), and in every
-  other section `module` is refused in any case. Section headers stay
-  case-insensitive, as in v0.2.2: `[Plugins]` is the plugins section, and
-  `[Plugins]` with `clpreauth = { disable = encrypted_timestamp }` is
-  `NotYetEffective` (v0.2.2 loaded it) (FU-CFG-R36).
+  other section `module` is refused in any case. The section header is
+  case-sensitive too (next bullet), so `[Plugins]` is an unknown section
+  (FU-CFG-R36).
+- Section headers and relation names are matched case-sensitively, as MIT does
+  (`strcmp` in the profile library; MIT 1.22.1 ignores `[LIBDEFAULTS]` and
+  `DEFAULT_CCACHE_NAME`). v0.2.2 folded the `[libdefaults]`, `[realms]` and
+  `[domain_realm]` headers, the relation names in them and the `[domain_realm]`
+  keys to lower case, so `[LIBDEFAULTS] default_realm = X` and
+  `[libdefaults] DEFAULT_REALM = X` set the default realm. Now a header that is
+  not exactly a known name is an unknown section and a wrongly cased relation is
+  an unknown relation: nothing in it applies, compatible mode records
+  `ConfigDiagnostic::UnknownSection` or `UnknownRelation` naming it as written,
+  and strict mode fails with `error::Config::UnknownSection` or
+  `UnknownRelation`. A `[domain_realm]` key with an upper-case letter maps
+  nothing and is an unknown relation, because MIT folds the host name and never
+  matches it; host names in lookups are still folded. `[Logging]`,
+  `[KDCDEFAULTS]` and `[DBMODULES]` are unknown sections, not `ServerOnly`, and
+  so are `[AppDefaults]`, `[CAPATHS]` and `[Plugins]` (v0.2.2 skipped these
+  sections whatever their case). An enabled removed-protocol selector and a
+  `module` relation outside `[plugins]` are refused whatever their case
+  (FU-CFG-R38).
 - v0.2.2 read relations only in `[libdefaults]`, `[realms]` and
   `[domain_realm]` and skipped every other section, so these inputs loaded and
   are errors in both parse modes in 0.3.0. These sections use the same line

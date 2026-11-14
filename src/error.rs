@@ -574,7 +574,7 @@ pub enum Config {
     /// Strict parsing rejects unrecognized sections.
     #[error("unknown configuration section: {section}")]
     UnknownSection {
-        /// Section name.
+        /// Section name as written in the profile.
         section: String,
     },
     /// Strict parsing rejects unrecognized relation paths.

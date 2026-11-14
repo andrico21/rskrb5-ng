@@ -8,7 +8,7 @@ use super::{
 };
 
 /// Supported section names, including inert server-only configuration.
-const SECTIONS: [&str; 8] = [
+pub(super) const SECTIONS: [&str; 8] = [
     "libdefaults",
     "realms",
     "domain_realm",
@@ -68,7 +68,7 @@ fn known(path: &[String]) -> bool {
             REALM_RELATIONS.iter().any(|row| row.0 == key) || super::protocol::recognized(key)
         }
         [section, _, map, _] if section == "realms" && map == "auth_to_local_names" => true,
-        [section, _] if section == "domain_realm" => true,
+        [section, key] if section == "domain_realm" => domain_key_matchable(key),
         [section, _, _] if section == "capaths" => true,
         [section, rest @ ..] if section == "appdefaults" => (1..=3).contains(&rest.len()),
         [section, _, key] if section == "plugins" => {
@@ -76,6 +76,12 @@ fn known(path: &[String]) -> bool {
         }
         _ => false,
     }
+}
+
+/// MIT folds the host before its `strcmp` lookup (hostrealm.c:300-305), so a
+/// `[domain_realm]` key with an upper-case letter never matches.
+pub(super) fn domain_key_matchable(key: &str) -> bool {
+    !key.bytes().any(|byte| byte.is_ascii_uppercase())
 }
 
 /// Report empty unknown subsections, which have no leaf relation to inspect.

@@ -160,36 +160,20 @@ mod tests {
         Ok(())
     }
 
-    /// The header stays case-insensitive: `[Plugins]` is the plugins section.
-    #[test]
-    fn mixed_case_header_is_plugins_section() -> Result<(), Box<dyn Error>> {
-        for header in ["[Plugins]", "[PLUGINS]"] {
-            let failure = Config::parse(&format!(
-                "{header}\nclpreauth = {{\n disable = encrypted_timestamp\n}}\n"
-            ))
-            .err()
-            .ok_or("header case hid the restriction")?;
-            assert!(
-                matches!(
-                    failure,
-                    Failure::NotYetEffective {
-                        relation: "disable",
-                        package: _
-                    }
-                ),
-                "{header}: {failure:?}"
-            );
-        }
-        Ok(())
-    }
-
-    /// The other sections keep their key case rules, and `module` stays refused there in any case.
+    /// The other sections match names exactly too, and `module` stays refused there in any case.
     #[test]
     fn other_sections_unchanged() -> Result<(), Box<dyn Error>> {
-        let folded =
+        let exact =
+            Config::parse("[libdefaults]\n clockskew = 77\n[realms]\n R = {\n kdc = h\n }\n")?;
+        assert_eq!(exact.libdefaults.clockskew.as_secs(), 77);
+        assert_eq!(exact.realm("R").ok_or("realm")?.kdc, ["h:88"]);
+        let cased =
             Config::parse("[libdefaults]\n CLOCKSKEW = 77\n[realms]\n R = {\n KDC = h\n }\n")?;
-        assert_eq!(folded.libdefaults.clockskew.as_secs(), 77);
-        assert_eq!(folded.realm("R").ok_or("realm")?.kdc, ["h:88"]);
+        assert_eq!(
+            cased.libdefaults.clockskew,
+            Config::parse("")?.libdefaults.clockskew
+        );
+        assert_eq!(cased.realm("R").ok_or("realm")?.kdc, Vec::<String>::new());
         let kept =
             Config::parse("[appdefaults]\n Option = value\n[capaths]\n A = {\n B = C\n }\n")?;
         assert_eq!(kept.appdefault("x", "y", "Option"), Some("value"));

@@ -49,6 +49,9 @@ mod diagnostics_e;
 #[path = "config/plugin_case.rs"]
 mod plugin_case;
 
+#[path = "config/name_case.rs"]
+mod name_case;
+
 #[path = "config/section_error_lines.rs"]
 mod section_error_lines;
 
@@ -1189,19 +1192,18 @@ mod tests {
 
     /// Malformed address input fails rather than silently narrowing the list.
     #[test]
-    fn libdefaults_keys_are_case_insensitive_and_extra_addresses_are_comma_separated()
-    -> Result<(), TestError> {
+    fn libdefaults_extra_addresses_are_comma_separated() -> Result<(), TestError> {
         let result = Config::parse(
             "
 [libdefaults]
- DEFAULT_REALM = TEST.GOKRB5
- EXTRA_ADDRESSES = 127.0.0.1, 127.0.0.2, not-an-ip
- FORWARDABLE = TRUE
+ default_realm = TEST.GOKRB5
+ extra_addresses = 127.0.0.1, 127.0.0.2, not-an-ip
+ forwardable = TRUE
 ",
         );
         assert!(matches!(result, Err(Error::InvalidAddress(value)) if value == "not-an-ip"));
         let valid = Config::parse(
-            "[libdefaults]\n DEFAULT_REALM = TEST.GOKRB5\n EXTRA_ADDRESSES = 127.0.0.1, 127.0.0.2\n FORWARDABLE = TRUE\n",
+            "[libdefaults]\n default_realm = TEST.GOKRB5\n extra_addresses = 127.0.0.1, 127.0.0.2\n forwardable = TRUE\n",
         )?;
         assert_eq!(valid.libdefaults.default_realm, "TEST.GOKRB5");
         assert!(valid.libdefaults.forwardable.is_enabled());

@@ -130,7 +130,8 @@ describes each one.
 - `des3-cbc-sha1` and `des3-hmac-sha1` mean enctype 16.
 - An unsigned kpasswd success is `error::Kadmin::UnauthenticatedSuccess`.
 - Host-based service principals carry a lower-cased host, and
-  `[domain_realm]` lookups fold case and apply bare tags to subdomains.
+  `[domain_realm]` lookups fold the host name's case and apply bare tags to
+  subdomains.
 - `[libdefaults] clockskew` reaches the `Config`-driven acceptors.
 - TGT refresh, auto-renewal pacing and AS recovery follow the renewal series
   in `CHANGELOG.md`.
@@ -1074,8 +1075,22 @@ Configuration now follows MIT profile semantics; the details are in
   loads and is recorded as a `NotYetEffective` diagnostic (v0.2.2 read nothing
   in `[plugins]`), while in strict mode it is an error, and `DISABLE = pkinit`
   or `MODULE = x:/y` under an interface is an unknown relation (a diagnostic in
-  compatible mode, `UnknownRelation` in strict mode). Section headers stay
-  case-insensitive, so `[Plugins]` is the plugins section.
+  compatible mode, `UnknownRelation` in strict mode). The section header is
+  case-sensitive too, so `[Plugins]` is an unknown section.
+- **Name case (FU-CFG-R38).** Section headers and relation names are
+  case-sensitive, as in MIT. v0.2.2 folded the `[libdefaults]`, `[realms]` and
+  `[domain_realm]` headers, their relation names and the `[domain_realm]` keys,
+  so `[LIBDEFAULTS] default_realm = X` or `DEFAULT_REALM = X` set the default
+  realm; now such a header is an unknown section and such a relation an unknown
+  relation (`ConfigDiagnostic::UnknownSection` or `UnknownRelation` naming it as
+  written in compatible mode, `error::Config::UnknownSection` or
+  `UnknownRelation` in strict mode), and nothing in it applies. Spell headers
+  and documented relation names as krb5.conf(5) does, in lower case. A
+  `[domain_realm]` key with an upper-case letter maps nothing (MIT folds the
+  host name before it compares) and is an unknown relation. `[Logging]`,
+  `[KDCDEFAULTS]` and `[DBMODULES]` are unknown sections rather than
+  `ServerOnly`. An enabled removed-protocol selector and a `module` relation
+  outside `[plugins]` are refused whatever their case.
 - **Other sections.** v0.2.2 read relations only in `[libdefaults]`, `[realms]`
   and `[domain_realm]` and skipped every other section, so a file could hold
   any text in `[logging]`, `[kdcdefaults]`, `[dbmodules]`, `[otp]`,
@@ -1414,8 +1429,7 @@ section, so `[foo]` followed by `not a relation` and then `[libdefaults]` loaded
 normally; the unknown section is parsed as well, and a line that is not a
 relation, brace or comment is an `InvalidLine`. A plain `A = kdc.example` or
 `A = x` line in `[realms]`, even after a realm block, is ignored, where v0.2.2
-failed with `InvalidRealmsSection` (section names are case-insensitive, so
-`[Realms]` follows the same rule). A brace subsection in
+failed with `InvalidRealmsSection`. A brace subsection in
 `[libdefaults]` or `[domain_realm]` (`sub = {` over several lines) is accepted
 and sets nothing, where v0.2.2 failed with `InvalidLine` on the closing `}`.
 
