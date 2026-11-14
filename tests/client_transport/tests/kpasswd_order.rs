@@ -5,17 +5,17 @@ use tokio::task::JoinHandle;
 use super::*;
 
 /// Request bytes of every exchange in this module.
-const REQUEST: &[u8] = b"mutation";
+pub(super) const REQUEST: &[u8] = b"mutation";
 
 /// Render a transport result for assertion messages (`Debug` redacts the error).
-fn describe<T>(result: &Result<T, ClientError>) -> String {
+pub(super) fn describe<T>(result: &Result<T, ClientError>) -> String {
     result
         .as_ref()
         .map_or_else(ToString::to_string, |_| "Ok".to_owned())
 }
 
 /// Convert a transport error into a displayable test error.
-fn shown<T>(result: Result<T, ClientError>) -> Result<T, TestError> {
+pub(super) fn shown<T>(result: Result<T, ClientError>) -> Result<T, TestError> {
     result.map_err(|error| error.to_string().into())
 }
 
@@ -25,7 +25,7 @@ fn transport() -> Tokio {
 }
 
 /// A UDP socket and a TCP listener whose shared loopback port is then closed for both.
-async fn closed_port() -> Result<String, TestError> {
+pub(super) async fn closed_port() -> Result<String, TestError> {
     let (udp, listener) = bind_udp_and_tcp_pair().await?;
     let addr = udp.local_addr()?.to_string();
     drop((udp, listener));
@@ -33,7 +33,7 @@ async fn closed_port() -> Result<String, TestError> {
 }
 
 /// Assert that no datagram reaches `udp` shortly after the exchange completed.
-async fn assert_no_datagram(udp: &UdpSocket, what: &str) {
+pub(super) async fn assert_no_datagram(udp: &UdpSocket, what: &str) {
     let mut datagram = [0; 64];
     assert!(
         timeout(Duration::from_millis(50), udp.recv(&mut datagram))
@@ -44,7 +44,7 @@ async fn assert_no_datagram(udp: &UdpSocket, what: &str) {
 }
 
 /// Answer exactly one datagram and report how many bytes it carried.
-fn udp_responder(
+pub(super) fn udp_responder(
     udp: UdpSocket,
     reply: impl AsRef<[u8]> + Send + 'static,
 ) -> JoinHandle<io::Result<(UdpSocket, usize)>> {

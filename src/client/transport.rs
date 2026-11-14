@@ -27,6 +27,8 @@ pub fn kdc_tcp_record_length(header: [u8; 4], max: usize) -> Result<usize, Error
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod dns_literal_tests;
+/// MIT-shaped password transport for `KdcProtocol::Auto`.
+mod password_auto;
 /// Single-delivery password mutation transport.
 mod password_delivery;
 /// Configured password endpoint selection.
@@ -113,9 +115,10 @@ pub enum KdcProtocol {
     Tcp,
     /// gokrb5-style transport preference using UDP/TCP fallback for KDC
     /// requests, ordered by `udp_preference_limit`. Password changes follow
-    /// MIT's `changepw.c` instead: TCP first (every endpoint), then UDP (one
-    /// datagram per endpoint, no retransmit) only after a definite TCP
-    /// failure, whatever `udp_preference_limit` says. They never fail over once
+    /// MIT's `changepw.c` instead: one discovery for both protocols, then TCP
+    /// first (every endpoint), then UDP (one datagram per endpoint, no
+    /// retransmit) only after a definite TCP failure, whatever
+    /// `udp_preference_limit` says. They never fail over once
     /// a request may have been delivered, so UDP is never tried after a TCP
     /// request that may have been delivered.
     Auto,
@@ -236,6 +239,9 @@ impl Tokio {
     ///
     /// Password mutations deliberately use separate preparation and send/reply
     /// budgets, each of this duration, so one attempt can take up to twice it.
+    /// With [`KdcProtocol::Auto`] and an explicit address the name is also
+    /// resolved under a budget of its own and a definite TCP failure can be
+    /// followed by a UDP attempt, so a call can take up to four times it.
     #[inline]
     pub const fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -379,8 +385,9 @@ impl Tokio {
     /// [`Self::with_transport_timeout`] together with the exchanges they intend
     /// to perform, so one logical request keeps one timeout budget.
     /// Password mutation is the exception: connection preparation and the
-    /// send/reply phase each receive the full timeout. Total elapsed time can
-    /// reach twice the configured timeout; post-send expiry is outcome-unknown.
+    /// send/reply phase each receive the full timeout, so one attempt can take
+    /// up to twice it; `password_delivery::send` states the bound for a whole
+    /// call. Post-send expiry is outcome-unknown.
     ///
     /// # Errors
     ///
@@ -643,7 +650,9 @@ impl Tokio {
     ///
     /// Configured `[realms]` kpasswd servers are preferred. DNS SRV lookup is
     /// attempted only when no password-change servers are configured and
-    /// `dns_lookup_kdc = true`.
+    /// `dns_lookup_kdc = true`. It discovers for the one `protocol` given;
+    /// [`Self::send_to_kpasswd_realm`] with [`KdcProtocol::Auto`] discovers once
+    /// for both protocols instead.
     ///
     /// # Errors
     ///
@@ -793,9 +802,13 @@ impl Tokio {
     /// Failover is permitted only before possible delivery. Later failures return
     /// [`Error::KpasswdOutcomeUnknown`] without resending the mutation.
     ///
-    /// With [`KdcProtocol::Auto`] every TCP endpoint is tried before any UDP
-    /// endpoint, as MIT's `changepw.c` does, and `udp_preference_limit` does not
-    /// apply. UDP is tried only after a definite TCP failure; a UDP refusal
+    /// With [`KdcProtocol::Auto`] the servers are discovered once for both
+    /// protocols, as MIT's `changepw.c` does: `_kpasswd._udp` and
+    /// `_kpasswd._tcp` form one list, a root SRV target in either stops the
+    /// exchange, and the `_kerberos-adm._tcp` hosts (port 464, both protocols)
+    /// are used only when that list is empty. Every TCP endpoint is then tried
+    /// before any UDP endpoint, and `udp_preference_limit` does not apply. UDP
+    /// is tried only after a definite TCP failure; a UDP refusal
     /// (`ConnectionRefused`, or `ConnectionReset` where Windows reports an ICMP
     /// port-unreachable that way) while the single reply is awaited is a
     /// definite endpoint failure, not [`Error::KpasswdOutcomeUnknown`].
@@ -2040,7 +2053,9 @@ impl Tokio {
     /// Discover kpasswd endpoints through `_kpasswd` DNS SRV records, falling
     /// back to `_kerberos-adm._tcp` on ordinary lookup failure or no records.
     ///
-    /// A root SRV target means service unavailable and stops discovery without fallback.
+    /// A root SRV target means service unavailable and stops discovery without
+    /// fallback. This discovers for one protocol; `KdcProtocol::Auto` of
+    /// [`Self::send_to_kpasswd_realm`] uses `password_dns::discover_auto` instead.
     ///
     /// # Errors
     ///
@@ -2238,16 +2253,18 @@ impl Tokio {
         realm_auto::send(self, config, realm, request).await
     }
 
-    /// Send to a realm's kpasswd servers over TCP, then over UDP.
+    /// Send to a realm's kpasswd servers over TCP, then over UDP, after one discovery.
     ///
-    /// This is the MIT order: every TCP endpoint is tried before any UDP
-    /// endpoint, and `udp_preference_limit` does not apply. UDP is tried only
+    /// This is the MIT shape of `changepw.c`: discovery runs once and builds one
+    /// list of TCP and UDP entries; every TCP entry is tried before any UDP
+    /// entry, and `udp_preference_limit` does not apply. UDP is tried only
     /// after TCP failed definitely; an uncertain TCP outcome stops the exchange.
     ///
     /// # Errors
     ///
-    /// Returns the errors of the retry over UDP, those of
-    /// [`Self::send_to_kpasswd_realm_explicit`], or the uncertain TCP outcome.
+    /// Returns the discovery errors of [`Self::discover_kpasswd_servers`] (a root
+    /// SRV target in either `_kpasswd` record set stops everything), the
+    /// uncertain TCP outcome, or the endpoint failures of the last pass that ran.
     ///
     /// # Cancel safety
     ///
@@ -2261,17 +2278,7 @@ impl Tokio {
         realm: &str,
         request: &[u8],
     ) -> Result<Vec<u8>, Error> {
-        match self
-            .send_to_kpasswd_realm_explicit(config, KdcProtocol::Tcp, realm, request)
-            .await
-        {
-            Ok(response) => Ok(response),
-            Err(error @ Error::KpasswdOutcomeUnknown(_)) => Err(error),
-            Err(_) => {
-                self.send_to_kpasswd_realm_explicit(config, KdcProtocol::Udp, realm, request)
-                    .await
-            }
-        }
+        password_auto::send(self, config, realm, request).await
     }
 
     /// Run `operation` under the transport timeout.
