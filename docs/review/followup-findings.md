@@ -395,3 +395,4 @@ is a parity feature, not a defect>`.
 | critic:critics-0f6e768/u6c.md#U6C-01 | FU-DOC-R125 | no |
 | critic:critics-0f6e768/u6c.md#U6C-02 | FU-DOC-R125 | no |
 | critic:critics-0f6e768/u6c.md#U6C-03 | FU-DOC-R125 | no |
+| critic:critics-fcc1395/u6b.md#U6B-01 | FU-DOC-R126 | no |

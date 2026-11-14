@@ -526,14 +526,19 @@ for cryptographic verification. Decoding alone never authenticates negotiation.
 
 `NegTokenInit::krb5_ap_req` and `Token::krb5_ap_req` (v0.2.2: `SpnegoToken`)
 apply checks that v0.2.2 did not apply, so an input that gave an AP-REQ can be
-an error (FU-DOC-R104): a mechListMIC is refused whichever mechanism comes first
-(`MechListMicRequiresState`); without a MIC the first offered mechanism must be
-Kerberos, where v0.2.2 returned the AP-REQ of a later Kerberos entry
-(`MissingMechListMic`); a DER length in non-minimal form is refused
-(`NonminimalLength`), and so is an OID subidentifier in non-minimal form or an
-arc wider than 32 bits (`InvalidOidEncoding`). `Token::krb5_ap_req` refuses a
-`NegTokenResp` (`NegotiationRequiresState`), where v0.2.2 returned the AP-REQ
-from its response token; a `supportedMech` that is not Kerberos is
+an error (FU-DOC-R104, FU-DOC-R126). The decoders (`Token::decode`,
+`NegotiationToken::decode`, `NegTokenInit::decode`, `NegTokenResp::decode` and
+`Krb5MechToken::decode`, which the helpers call on the mechanism token) refuse
+some DER lengths, OID encodings, SPNEGO field orders and `negState` values that
+v0.2.2 decoded, so an input with one of them is an error from decoding; the
+field-order rule is in the decoder paragraph under "SPNEGO, HTTP, service and
+messages" below. After decoding, the helpers add their own checks: a
+mechListMIC is refused whichever mechanism comes first
+(`MechListMicRequiresState`), and without a MIC the first offered mechanism
+must be Kerberos, where v0.2.2 returned the AP-REQ of a later Kerberos entry
+(`MissingMechListMic`). `Token::krb5_ap_req` refuses a `NegTokenResp`
+(`NegotiationRequiresState`), where v0.2.2 returned the AP-REQ from its
+response token; a `supportedMech` that is not Kerberos is
 `UnsupportedMechanism` in both versions.
 
 ### S4U frontend keys (delegated-client-unbound-to-ticket-payload)

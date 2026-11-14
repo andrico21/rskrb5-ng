@@ -682,15 +682,20 @@ Security fail-closed parsing and verification:
   cases (FU-DOC-R105).
 - `NegTokenInit::krb5_ap_req` and `Token::krb5_ap_req` (v0.2.2: `SpnegoToken`)
   apply checks that v0.2.2 did not apply, so an input that gave an AP-REQ can be
-  an error: `Spnego::MechListMicRequiresState` when the token carries a
-  mechListMIC (use `accept_sec_context_header` to verify it),
-  `Spnego::MissingMechListMic` when the first offered mechanism is not Kerberos
-  and no mechListMIC is supplied, `Spnego::NonminimalLength` for a DER length
-  in non-minimal form and `Spnego::InvalidOidEncoding` for an OID subidentifier
-  in non-minimal form or an arc wider than 32 bits. `Token::krb5_ap_req` on a
+  an error. The decoders (`Token::decode`, `NegotiationToken::decode`,
+  `NegTokenInit::decode`, `NegTokenResp::decode` and `Krb5MechToken::decode`,
+  which the helpers call on the mechanism token) refuse some DER lengths, OID
+  encodings, SPNEGO field orders and `negState` values that v0.2.2 decoded (see
+  the entries on SPNEGO field order, DER lengths, and OID arcs and state values
+  above), so an input with one of them is an error from decoding. After
+  decoding, the helpers add their own checks: `Spnego::MechListMicRequiresState`
+  when the token carries a mechListMIC (use `accept_sec_context_header` to
+  verify it) and `Spnego::MissingMechListMic` when the first offered mechanism
+  is not Kerberos and no mechListMIC is supplied. `Token::krb5_ap_req` on a
   `NegTokenResp` returns `Spnego::NegotiationRequiresState`
   (`UnsupportedMechanism` when `supportedMech` is not Kerberos, as in v0.2.2),
-  where v0.2.2 returned the AP-REQ carried in the response token (FU-DOC-R104).
+  where v0.2.2 returned the AP-REQ carried in the response token (FU-DOC-R104,
+  FU-DOC-R126).
 - `Spnego::Client` keeps the typed `Box<Client>` cause instead of a string
   (FU-SPN-R03).
 - Mutual authentication requested through a combined context-flag mask needs a
