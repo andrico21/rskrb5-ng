@@ -410,6 +410,12 @@ Client AS/TGS exchanges, renewal and caches:
   (RFC 6806 §11) (RSK-2099CE19).
 - TGS replies are checked for the negotiated request checksum (RFC 6806 §11)
   (RSK-BC016031).
+- The PA-REQ-ENC-PA-REP checksum of an AS or TGS reply must have the type that
+  the reply key's encryption type requires (RFC 6806 §11); another type,
+  including an implemented one such as HMAC-MD5 (-138) under an AES key, is
+  `error::Client::UnsupportedChecksumType`. v0.2.2 verified an AS reply's
+  checksum under any implemented type and did not check TGS replies
+  (FU-CLI-R26).
 - An explicit login always replaces the primary TGT and clears dependent
   service tickets (RSK-F526D18D).
 - Tickets with the INVALID flag are not used and not renewed in place of
