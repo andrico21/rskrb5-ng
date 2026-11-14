@@ -74,7 +74,7 @@ impl Profile {
                     "libdefaults" => config
                         .libdefaults
                         .parse_lines(slice::from_ref(first), &mut enctypes)?,
-                    "domain_realm" => {
+                    "domain_realm" if super::unknown::domain_key_matchable(key) => {
                         let (_, value) = super::parse_assignment(first, "domain_realm")?;
                         drop(config.domain_realm.insert(key.clone(), value.to_owned()));
                     }

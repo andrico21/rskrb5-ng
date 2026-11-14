@@ -86,7 +86,7 @@ mod tests {
             ),
             (
                 "[realms]\n R = {\n other = {\n Alice = local\n }\n }",
-                vec!["realms", "R", "other", "alice"],
+                vec!["realms", "R", "other", "Alice"],
                 true,
             ),
         ] {
@@ -230,11 +230,12 @@ mod tests {
         Ok(())
     }
 
-    /// Ordinary realm relations retain lowercased keys without lowercasing realm names.
+    /// Realm relation keys match exactly, like realm names.
     #[test]
-    fn realm_relation_keys_are_case_insensitive() -> Result<(), Box<dyn Error>> {
-        let config =
-            Config::parse("[realms]\n Mixed = {\n KDC = host\n }\n[domain_realm]\n host = Mixed")?;
+    fn realm_relation_keys_are_case_sensitive() -> Result<(), Box<dyn Error>> {
+        let config = Config::parse(
+            "[realms]\n Mixed = {\n KDC = other\n kdc = host\n }\n[domain_realm]\n host = Mixed",
+        )?;
         assert_eq!(
             config.realm("Mixed").ok_or("realm missing")?.kdc,
             vec!["host:88"]

@@ -14,14 +14,15 @@ pub enum ParseMode {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Diagnostic {
-    /// An unrecognized top-level profile section.
+    /// An unrecognized top-level profile section; names match case-sensitively.
     UnknownSection {
-        /// Canonical section name.
+        /// Section name as written in the profile.
         section: String,
     },
-    /// An unrecognized relation or subsection under a supported section.
+    /// An unrecognized relation or subsection under a supported section,
+    /// including a wrongly cased known name.
     UnknownRelation {
-        /// Full selected profile path, retaining case-sensitive components.
+        /// Full selected profile path, as written in the profile.
         path: Vec<String>,
     },
     /// A server-only section is recognized but not applied by this client library.

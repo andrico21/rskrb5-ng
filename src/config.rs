@@ -60,6 +60,10 @@ pub mod hostname;
 /// C1 relation parsing and classification.
 #[path = "config/libdefaults.rs"]
 mod libdefaults;
+/// Wrong-case twins of every catalogued section and relation name.
+#[cfg(test)]
+#[path = "config/name_case_tests.rs"]
+mod name_case_tests;
 /// Documented realm relation inventory.
 #[path = "config/realm_relations.rs"]
 mod realm_relations;
@@ -515,8 +519,9 @@ impl Config {
 
     /// Resolve a DNS name to a Kerberos realm using `[domain_realm]`.
     ///
-    /// DNS names compare case-insensitively (RFC 4120 section 6.1) while realm
-    /// values stay case-sensitive, and mapping keys are stored lower-cased.
+    /// The host name is folded to lower case (RFC 4120 section 6.1, MIT
+    /// `hostrealm.c`) while realm values stay case-sensitive; a profile key
+    /// with an upper-case letter is never stored, as MIT never matches it.
     /// Lookup order: the exact hostname first, then the most specific suffix,
     /// where a leading-dot tag covers subdomains only and a bare tag covers the
     /// domain and its subdomains (MIT `krb5.conf(5)`); within one level the
@@ -1153,9 +1158,7 @@ impl LibDefaults {
         enctypes: &mut EnctypeParseState,
     ) -> Result<(), Error> {
         for line in lines {
-            let (raw_key, value) = parse_assignment(line, "libdefaults")?;
-            let lowered = raw_key.to_ascii_lowercase();
-            let key = lowered.as_str();
+            let (key, value) = parse_assignment(line, "libdefaults")?;
             protocol::relation(key, value)?;
 
             match key {
@@ -1331,9 +1334,7 @@ impl Realm {
         let mut realm = Self::new(name.to_owned())?;
 
         for line in lines {
-            let (raw_key, value) = parse_assignment(line, "realms")?;
-            let lowered = raw_key.to_ascii_lowercase();
-            let key = lowered.as_str();
+            let (key, value) = parse_assignment(line, "realms")?;
             protocol::relation(key, value)?;
 
             match key {

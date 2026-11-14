@@ -125,7 +125,7 @@ impl State {
             let tail = suffix.strip_prefix('*').unwrap_or(suffix);
             (!raw_name.is_empty() && tail.chars().all(tag_whitespace))
                 .ok_or_else(|| invalid(line))?;
-            let name = raw_name.to_ascii_lowercase();
+            let name = raw_name.to_owned();
             let discarded = profile.closed(slice::from_ref(&name));
             if !discarded {
                 profile.scope(slice::from_ref(&name));
@@ -152,19 +152,13 @@ impl State {
             .ok_or(Error::UnsupportedDynamicModule)?;
         (!tag.is_empty()).ok_or_else(|| invalid(line))?;
         let section = self.scopes.first().map_or("", |scope| scope.name.as_str());
-        let key = if section == "libdefaults" && tag.eq_ignore_ascii_case("no_addresses") {
-            "noaddresses".to_owned()
-        } else if (self.scopes.len() == 1 && section == "realms")
-            || matches!(section, "capaths" | "appdefaults" | "plugins")
-            || self
-                .scopes
-                .last()
-                .is_some_and(|scope| scope.name == "auth_to_local_names")
-        {
-            tag.to_owned()
+        // MIT compares every name with `strcmp` (prof_tree.c:615); nothing is folded.
+        let key = if section == "libdefaults" && tag == "no_addresses" {
+            "noaddresses"
         } else {
-            tag.to_ascii_lowercase()
-        };
+            tag
+        }
+        .to_owned();
         let mut path: Vec<String> = self.scopes.iter().map(|scope| scope.name.clone()).collect();
         path.push(key.clone());
         let discarded =
