@@ -544,7 +544,10 @@ and `accept_sec_context_header`; `Krb5MechToken::decode` returns the first two.
 `parse_negotiate_header` and `Krb5MechToken::decode`, and
 `NegotiationRequiresState` unless `negState` is accept-completed and a
 `supportedMech` is present (`UnsupportedMechanism` when `supportedMech` was not
-offered).
+offered). A response with a mechListMIC also needs an AP-REP response token
+(`MissingApRep` when it is absent or not an AP-REP) and a MIC that verifies
+against the offer, the acceptor sequence and the context key
+(`InvalidMechListMic`); v0.2.2 did not read the MIC.
 `NegTokenInit::krb5_ap_req` returns the first two (from its call of
 `Krb5MechToken::decode`), `MechListMicRequiresState` and `MissingMechListMic`;
 `Token::krb5_ap_req` returns the same and `NegotiationRequiresState`
@@ -1511,7 +1514,7 @@ for text parsing. Plugin `disable` and `enable_only` are WP-16.
 
 Profile braces (FU-CFG-R08): `name =` followed by `{` has the same subsection
 meaning as `name = {` in every section, matching MIT's generic profile grammar.
-Unknown and deferred sections reach their normal diagnostics. Quoted empty
+In Strict mode both forms give the same result in every section. Quoted empty
 strings are scalars; the existing unquoted empty-scalar extension remains
 available outside mandatory subsection sections when no brace follows.
 

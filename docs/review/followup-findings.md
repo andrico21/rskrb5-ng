@@ -403,3 +403,6 @@ is a parity feature, not a defect>`.
 | critic:critics-e2f3700/u6x.md#U6X-02 | FU-DOC-R130 | no |
 | critic:critics-e2f3700/u6x.md#U6X-03 | FU-DOC-R131 | no |
 | critic:critics-e2f3700/u6y.md#U6Y-01 | FU-DOC-R132 | no |
+| critic:critics-c9f551c/u6x.md#U6X-01 | FU-DOC-R133 | no |
+| critic:critics-c9f551c/u6x.md#U6X-02 | FU-DOC-R134 | no |
+| critic:critics-c9f551c/u6x.md#U6X-03 | FU-DOC-R135 | no |
