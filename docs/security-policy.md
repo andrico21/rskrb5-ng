@@ -172,17 +172,20 @@ alone grants permission to use legacy algorithms.
 ## Secret ownership and residual copies
 
 First-party owning passwords, keys and secret staging buffers use zeroizing
-owners; borrowed convenience APIs leave input erasure to the caller. This is a
-bounded guarantee, not a claim that every historical copy is erased:
+owners; borrowed convenience APIs leave input erasure to the caller. The
+Tokio transport builds its TCP record frames and the kpasswd request frame in
+zeroizing owners, erased on success, on error and when the future is dropped.
+This is a bounded guarantee, not a claim that every historical copy is erased:
 
 - rasn `OctetString` and decoded ASN.1 storage can own key, ticket or plaintext
   copies that the crate cannot reliably erase through the dependency's API.
 - RustCrypto cipher schedules and internal hash/HMAC/KDF state belong to their
   implementation types. No blanket erasure guarantee is made for those copies.
-- Returned raw `Vec<u8>`/`String`, caller clones, transport/application buffers,
-  allocator remnants, registers, stack spills, OS paging and core dumps are
-  outside value-owner erasure guarantees. Callers must protect and erase what
-  they own, avoid logging tokens, and control dumps and persistence.
+- Returned raw `Vec<u8>`/`String`, caller clones, application buffers, kernel
+  and Tokio socket buffers, allocator remnants, registers, stack spills, OS
+  paging and core dumps are outside value-owner erasure guarantees. Callers
+  must protect and erase what they own, avoid logging tokens, and control
+  dumps and persistence.
 - `panic=abort` does not run destructors and is not an erasure control.
 
 Password-specific kpasswd DER uses first-party zeroizing writers to avoid known

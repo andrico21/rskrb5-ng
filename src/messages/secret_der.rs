@@ -54,6 +54,11 @@ impl Drop for SecretDer {
 mod tests {
     /// KDC reply encoder ownership regressions.
     mod kdc;
+    /// Kpasswd request encoder ownership regressions.
+    mod kpasswd;
+    /// TCP request frame ownership regressions.
+    #[cfg(feature = "tokio")]
+    mod transport;
     use core::{cell::RefCell, error::Error};
 
     use rasn::der;

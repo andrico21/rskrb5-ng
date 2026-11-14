@@ -73,6 +73,7 @@ use crate::{
     kadmin,
     keytab::{EncryptionKey, Keytab},
     krb_error::decode as decode_krb_error,
+    messages::secret_der::SecretDer,
 };
 
 /// Default timeout applied to each KDC exchange.
@@ -425,6 +426,9 @@ impl Tokio {
 
     /// Exchange one bounded TCP record using the service's length rules.
     ///
+    /// The record built from `request` is erased when this function returns or
+    /// its future is dropped.
+    ///
     /// # Errors
     /// Returns I/O, length, reserved-bit or empty-response errors.
     ///
@@ -437,9 +441,12 @@ impl Tokio {
         framing: TcpFraming,
     ) -> Result<Vec<u8>, Error> {
         let request_len = tcp_request_length(request.len(), framing)?;
-        let mut framed = Vec::with_capacity(request.len().saturating_add(TCP_RECORD_MARK_LEN));
-        framed.extend_from_slice(&request_len.to_be_bytes());
-        framed.extend_from_slice(request);
+        // `concat` allocates the exact length once, so nothing grows and no
+        // earlier allocation holds an unerased copy of the request.
+        let framed = SecretDer::new(
+            [request_len.to_be_bytes().as_slice(), request].concat(),
+            "tcp request frame",
+        );
         stream.write_all(&framed).await?;
 
         let mut header = [0; TCP_RECORD_MARK_LEN];
@@ -881,7 +888,7 @@ impl Tokio {
     where
         A: ToSocketAddrs,
     {
-        let frame = request.encode()?;
+        let frame = SecretDer::new(request.encode()?, "kpasswd request frame");
         let response = self.send_password_once(protocol, addr, &frame).await?;
         kadmin::Reply::parse(&response)
             .map_err(|source| Error::KpasswdOutcomeUnknown(Box::new(Error::from(source))))
@@ -915,7 +922,7 @@ impl Tokio {
         request: &kadmin::Request,
     ) -> Result<kadmin::Reply, Error> {
         restrictions::config(config)?;
-        let frame = request.encode()?;
+        let frame = SecretDer::new(request.encode()?, "kpasswd request frame");
         let response = self
             .send_to_kpasswd_realm(config, protocol, realm, &frame)
             .await?;
