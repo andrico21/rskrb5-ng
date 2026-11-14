@@ -52,6 +52,8 @@ mod tests {
     mod dns;
     /// Real-key kpasswd request and response fixtures.
     mod kpasswd_context;
+    /// Password change discovery through DNS for `KdcProtocol::Auto`.
+    mod kpasswd_dns;
     mod kpasswd_order;
     /// Checked password result regressions.
     mod password_results;
