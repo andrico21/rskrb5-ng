@@ -6,7 +6,7 @@
 
 [[plan]]
 number = 1
-todos = 40
+todos = 148
 
 [[plan]]
 number = 2
@@ -214,6 +214,546 @@ title = "Clean critic round on the changed units"
 
 [[todo]]
 plan = 1
+number = 41
+title = "U2-01: authorize credential enctypes inside known PA envelopes (round 6, major)"
+
+[[todo]]
+plan = 1
+number = 42
+title = "U2-02 and U2-03: credential inventory macro-visibility and alias-scope gaps (round 6)"
+
+[[todo]]
+plan = 1
+number = 43
+title = "U1-01 and U5-01: NegTokenInit reqFlags setter; local-name-map `module` principal (round 6)"
+
+[[todo]]
+plan = 1
+number = 44
+title = "U6-01, U6-02, U6-03: gate bypasses (macro module, legacy cargo config, invalid fence) (round 6)"
+
+[[todo]]
+plan = 1
+number = 45
+title = "U6-04: CHANGELOG and migration guide for the final policy fixes (round 6)"
+
+[[todo]]
+plan = 1
+number = 46
+title = "Mutation check on todos 41-45, then clean critic round 7 on the changed units"
+
+[[todo]]
+plan = 1
+number = 47
+title = "U2-01 (round 7): authorize encrypted request-body authorization data in checked exchanges"
+
+[[todo]]
+plan = 1
+number = 48
+title = "U2-02 and U2-03 (round 7): inventory scanner fail-closed on repeated macro visibility and generic aliases"
+
+[[todo]]
+plan = 1
+number = 49
+title = "U1-01 and U5-01 (round 7): ContextFlags validation; include/includedir principal names"
+
+[[todo]]
+plan = 1
+number = 50
+title = "U6-01, U6-02, U6-03 (round 7): gate fail-closed fixes"
+
+[[todo]]
+plan = 1
+number = 51
+title = "Mutation check on todos 47-50, then clean critic round 8 on the changed units"
+
+[[todo]]
+plan = 1
+number = 52
+title = "U5-01 (round 8, major): `=` in include paths inside local-name maps"
+
+[[todo]]
+plan = 1
+number = 53
+title = "U2-01..U2-05 (round 8): replace the credential inventory text scanner with a `syn` parse"
+
+[[todo]]
+plan = 1
+number = 54
+title = "U6-01 and U6-02 (round 8): procedural attributes and HTML-attribute backticks"
+
+[[todo]]
+plan = 1
+number = 55
+title = "Mutation check on todos 52-54, then clean critic round 9 on the changed units"
+
+[[todo]]
+plan = 1
+number = 56
+title = "U5-01 and U5-02 (round 9): relation-tag whitespace contract"
+
+[[todo]]
+plan = 1
+number = 57
+title = "U6-01 and U6-02 (round 9): HTML prepass and character references in package links"
+
+[[todo]]
+plan = 1
+number = 58
+title = "U2-01..U2-07 (round 9): edges of the syn credential inventory"
+
+[[todo]]
+plan = 1
+number = 59
+title = "Mutation check on todos 56-58, then clean critic round 10 on the changed units"
+
+[[todo]]
+plan = 1
+number = 60
+title = "Round 10 u5 findings: Unicode in relation tags and section names"
+
+[[todo]]
+plan = 1
+number = 61
+title = "Round 10 u6 findings: package_links.py on a real CommonMark parser"
+
+[[todo]]
+plan = 1
+number = 62
+title = "Round 10 u2 findings: edges of the syn credential inventory"
+
+[[todo]]
+plan = 1
+number = 63
+title = "Mutation check on todos 60-62, then clean critic round 11 on the changed units"
+
+[[todo]]
+plan = 1
+number = 64
+title = "Round 11 u5 findings: C-locale padding in values and include arguments (product code)"
+
+[[todo]]
+plan = 1
+number = 65
+title = "Round 11 u6 findings: heading anchors from parser tokens; workflow install ordering"
+
+[[todo]]
+plan = 1
+number = 66
+title = "Round 11 u2 findings U2-02..U2-04: inventory edges (U2-01 split into todo 68)"
+
+[[todo]]
+plan = 1
+number = 67
+title = "Mutation check on todos 64-66 and 68, then clean critic round 12 on the changed units"
+
+[[todo]]
+plan = 1
+number = 68
+title = "U2-01 (round 11): delegated self methods and receiver aliases evade replacement discovery"
+
+[[todo]]
+plan = 1
+number = 69
+title = "Round 12 u5 findings: remaining Unicode-aware calls in the config parser, missing proofs, doc divergences"
+
+[[todo]]
+plan = 1
+number = 70
+title = "Round 12 u2 finding: the replacement audit does not treat Tokio's TGT, TGT-cache and credential fields as credential storage"
+
+[[todo]]
+plan = 1
+number = 71
+title = "Mutation check on todos 69-70, then critic round 13 on the changed units (Critic scope applies)"
+
+[[todo]]
+plan = 1
+number = 72
+title = "Round 12 u6 finding: migration guide says unquoted assignment whitespace is still ignored"
+
+[[todo]]
+plan = 1
+number = 73
+title = "Library findings surfaced by todo 70 (orchestrator-found, category 1, executor decision: owner may veto)"
+
+[[todo]]
+plan = 1
+number = 74
+title = "Round 13 u5 and u2 findings: remaining C-locale sites in the config grammar, with a mechanical class guard"
+
+[[todo]]
+plan = 1
+number = 75
+title = "Round 13 u3 and u6 findings: documentation accuracy (CHANGELOG clock wording, migration guide, review records)"
+
+[[todo]]
+plan = 1
+number = 76
+title = "Mutation check on todo 74, then critic round 14 on the changed units (Critic scope applies)"
+
+[[todo]]
+plan = 1
+number = 77
+title = "Round 14 u5 and u6 findings: SPAKE group separators, the class guard's ASCII-whitespace APIs, migration-guide omissions"
+
+[[todo]]
+plan = 1
+number = 78
+title = "CI is red on main since stable Rust 1.100.0: move test-only dependencies to [dev-dependencies] (owner decision 2026-11-12)"
+
+[[todo]]
+plan = 1
+number = 79
+title = "Mutation check on todos 77-78, then critic round 15 on the changed units (Critic scope applies)"
+
+[[todo]]
+plan = 1
+number = 80
+title = "Round 15 findings: CHANGELOG vertical-tab wording, Cargo.toml dev-dependency order (docs and manifest only)"
+
+[[todo]]
+plan = 1
+number = 81
+title = "Critic round 16 on the changed units (Critic scope applies); no mutation check needed"
+
+[[todo]]
+plan = 1
+number = 82
+title = "Round 16 findings U6-01..U6-05: docs and manifest only (no source, no test)"
+
+[[todo]]
+plan = 1
+number = 83
+title = "Class sweep of the v0.2.2-baseline claims in CHANGELOG [0.3.0] and the migration guide (docs only)"
+
+[[todo]]
+plan = 1
+number = 84
+title = "Critic round 17 on the changed units (Critic scope applies); no mutation check needed unless a src file changed"
+
+[[todo]]
+plan = 1
+number = 85
+title = "Second baseline sweep (executed before todo 84): guide mirrors of the 17 fixed claims and the other baseline markers (docs only)"
+
+[[todo]]
+plan = 1
+number = 86
+title = "Audit: public API diff v0.2.2 -> main against the CHANGELOG and the migration guide (read-only, evidence only)"
+
+[[todo]]
+plan = 1
+number = 87
+title = "Audit: profile reader differential v0.2.2 vs main against the CHANGELOG and the migration guide (read-only, evidence only)"
+
+[[todo]]
+plan = 1
+number = 88
+title = "Fix round 17 findings and the audit gaps (docs only; executed after 86 and 87)"
+
+[[todo]]
+plan = 1
+number = 89
+title = "Critic round 18 on the changed units (Critic scope applies); no mutation check needed unless a src file changed"
+
+[[todo]]
+plan = 1
+number = 90
+title = "Triage of the profile audit's possible defects PD-01..PD-07 (executed before 88; read-only, evidence only)"
+
+[[todo]]
+plan = 1
+number = 91
+title = "API migration notes from the public API audit (docs only; executed after 88)"
+
+[[todo]]
+plan = 1
+number = 92
+title = "Profile reader migration notes from the profile audit and its triage (docs only; executed after 91)"
+
+[[todo]]
+plan = 1
+number = 93
+title = "Audit: config FILE loading and include differential v0.2.2 vs main (read-only, evidence only)"
+
+[[todo]]
+plan = 1
+number = 94
+title = "Audit: keytab and ccache reader/writer differential v0.2.2 vs main (read-only, evidence only)"
+
+[[todo]]
+plan = 1
+number = 95
+title = "Fix round 18 findings and write the notes of audits 93 and 94 (docs only; executed after 93 and 94)"
+
+[[todo]]
+plan = 1
+number = 96
+title = "Critic round 19 on the changed units (Critic scope applies); no mutation check needed unless a src file changed"
+
+[[todo]]
+plan = 1
+number = 97
+title = "Triage of the possible defects of audits 93 and 94 (executed before 95; read-only, evidence only)"
+
+[[todo]]
+plan = 1
+number = 98
+title = "Library fixes from the A verdicts of the audits' triage (src change; category 1; executor decision: owner may veto; executed before 95)"
+
+[[todo]]
+plan = 1
+number = 99
+title = "Mutation check on the src changes of todo 98 (orchestrated like todos 76 and 79a)"
+
+[[todo]]
+plan = 1
+number = 100
+title = "Audit: the other profile sections (`[appdefaults]`, `[capaths]`, `[plugins]`, `[logging]`, `[kdcdefaults]`, `[dbdefaults]`, `[dbmodules]`, unknown) differential v0.2.2 vs main (read-only, evidence only)"
+
+[[todo]]
+plan = 1
+number = 101
+title = "Audit: SPNEGO token and PAC reader encode/decode differential v0.2.2 vs main (read-only, evidence only)"
+
+[[todo]]
+plan = 1
+number = 102
+title = "Fix round 19 findings (docs; comment-only rustdoc edits in src/config.rs and src/error.rs; executed before 103)"
+
+[[todo]]
+plan = 1
+number = 103
+title = "Notes from audits 100 and 101 and the older guide text they contradict (docs only; executed after 100, 101 and 102)"
+
+[[todo]]
+plan = 1
+number = 104
+title = "Critic round 20 on the changed units (Critic scope applies)"
+
+[[todo]]
+plan = 1
+number = 105
+title = "OWNER DECISION 2026-11-13: restore cwd resolution of relative `include`/`includedir` paths (src change; red-first; executed before 103)"
+
+[[todo]]
+plan = 1
+number = 106
+title = "OWNER DECISION 2026-11-13: reject keytab entries with a zero-length realm, zero-length key or zero component count as malformed (src change; red-first; executed after 105)"
+
+[[todo]]
+plan = 1
+number = 107
+title = "Triage of the possible defects of audit 101 (SPNEGO and PAC; read-only, evidence only)"
+
+[[todo]]
+plan = 1
+number = 108
+title = "Mutation check on the src changes of todos 105 and 106 (orchestrated like todos 76, 79a and 99)"
+
+[[todo]]
+plan = 1
+number = 109
+title = "OWNER DECISION 2026-11-13: kpasswd transport order matches MIT (TCP first, UDP after definite TCP failure; UDP refusal definite) (src change; red-first; executed before 108)"
+
+[[todo]]
+plan = 1
+number = 110
+title = "OWNER DECISION 2026-11-13: SPNEGO NegTokenInit reqFlags: strict encode, lenient decode (src change; red-first; executed before 108)"
+
+[[todo]]
+plan = 1
+number = 111
+title = "Close the open mutation row of todo 108: extract the kpasswd UDP refusal predicate (behaviour-preserving production refactor, executor decision: owner may veto)"
+
+[[todo]]
+plan = 1
+number = 112
+title = "Triage of the possible defects of audit 100 (other profile sections; read-only, evidence only; executed before 103)"
+
+[[todo]]
+plan = 1
+number = 113
+title = "OWNER DECISION 2026-11-13: `[plugins]` interface and control names are case-sensitive like MIT (src change; red-first; executed before 114)"
+
+[[todo]]
+plan = 1
+number = 114
+title = "Mutation check on the src changes of todo 113 (orchestrated like todos 99 and 108)"
+
+[[todo]]
+plan = 1
+number = 115
+title = "Round 20 library and test findings: U5-02, U6D-02 (src), U5-01, U3-01 (tests) (red-first; executed with 117)"
+
+[[todo]]
+plan = 1
+number = 116
+title = "Mutation check on the src changes of todo 115 (orchestrated like todos 108, 111 and 114)"
+
+[[todo]]
+plan = 1
+number = 117
+title = "Round 20 documentation findings (29 findings; docs and comment-only rustdoc; executed with 115)"
+
+[[todo]]
+plan = 1
+number = 118
+title = "Critic round 21, NARROWED by owner decision 2026-11-13 (Critic scope text unchanged)"
+
+[[todo]]
+plan = 1
+number = 119
+title = "Round 21 findings (10 documentation findings; docs only) with a SELF-CHECK of its own new text"
+
+[[todo]]
+plan = 1
+number = 120
+title = "Critic round 22 (narrowed scope, owner decision 2026-11-13)"
+
+[[todo]]
+plan = 1
+number = 121
+title = "Round 22 findings (7 documentation nits; docs only) with a MINIMAL-TEXT rule"
+
+[[todo]]
+plan = 1
+number = 122
+title = "Critic round 23 (narrowed scope, owner decision 2026-11-13)"
+
+[[todo]]
+plan = 1
+number = 123
+title = "Round 23 findings (5 documentation nits; docs only), same four rules as todo 121"
+
+[[todo]]
+plan = 1
+number = 124
+title = "Critic round 24 (narrowed scope, owner decision 2026-11-13)"
+
+[[todo]]
+plan = 1
+number = 125
+title = "Round 24 finding U6B-01 (one documentation nit; docs only), same four rules as todos 121 and 123"
+
+[[todo]]
+plan = 1
+number = 126
+title = "Critic round 25 (narrowed scope, owner decision 2026-11-13)"
+
+[[todo]]
+plan = 1
+number = 127
+title = "Round 25 findings U6X-01, U6X-02, U6Y-01 (three documentation nits; docs only), same rules as todos 121, 123, 125"
+
+[[todo]]
+plan = 1
+number = 128
+title = "Critic round 26 (narrowed scope, owner decision 2026-11-13)"
+
+[[todo]]
+plan = 1
+number = 129
+title = "Round 26 findings U6X-01, U6X-02, U6X-03, U6Y-01 (four documentation nits; docs only), same rules as todos 121-127"
+
+[[todo]]
+plan = 1
+number = 130
+title = "Critic round 27 (narrowed scope, owner decision 2026-11-13)"
+
+[[todo]]
+plan = 1
+number = 131
+title = "Round 27 findings U6X-01, U6X-02, U6X-03 (three documentation nits; docs only), same rules as todos 121-129"
+
+[[todo]]
+plan = 1
+number = 132
+title = "Critic round 28, the LAST critic round (narrowed scope, owner decisions 2026-11-13 and 2026-11-14)"
+
+[[todo]]
+plan = 1
+number = 133
+title = "Round 28 findings U6X-01, U6X-02 (two documentation nits; docs only): the LAST fix before the Final verification wave (owner cap 2026-11-14)"
+
+[[todo]]
+plan = 1
+number = 134
+title = "OWNER DECISION 2026-11-14: fix the rustdoc of `InitiatorContext::verify_ap_rep_response_header` first (comment-only src change; then F1-F4 again on the new final SHA)"
+
+[[todo]]
+plan = 1
+number = 135
+title = "Supervisor findings ORA-01 and U6-01 (C1, do FIRST): regenerate docs/parity-todo-index.toml from BOTH plans"
+
+[[todo]]
+plan = 1
+number = 136
+title = "Supervisor findings U6-02 (C2) and U6-03: the changelog_rows gate matches the word; the contributor docs list the gates"
+
+[[todo]]
+plan = 1
+number = 137
+title = "Supervisor findings U1-01..U1-06 (A4, B1, B2, B4 and two rustdoc fixes): SPNEGO completion proofs, Tower classifier proofs, the unreachable MIC-key re-check"
+
+[[todo]]
+plan = 1
+number = 138
+title = "Supervisor findings U2-02 (A1, security), U2-03 and U2-04: the RFC 6806 reply checksum is bound to the reply key; honest unsupported-PA message; exchange error docs"
+
+[[todo]]
+plan = 1
+number = 139
+title = "Supervisor finding U2-01 (B3): the secret audit classifies Keytab and the rasn request types (after todo 138: both edit src/client.rs)"
+
+[[todo]]
+plan = 1
+number = 140
+title = "Supervisor finding ORA-03 (A2): `exchange_tcp_framed` frames the request into a zeroizing owner"
+
+[[todo]]
+plan = 1
+number = 141
+title = "Supervisor findings U3-01 (A5, owner decision 2026-11-14: match MIT) and U3-02: kpasswd `Auto` discovers ONCE, MIT-shaped; timeout rustdoc (after todo 140: both edit src/client/transport.rs)"
+
+[[todo]]
+plan = 1
+number = 142
+title = "Supervisor finding U4-01 (A6): acceptor admission does not depend on client request lists; `Config::EnctypeNotPermitted` keeps its name"
+
+[[todo]]
+plan = 1
+number = 143
+title = "Supervisor rule A7 (executor choice 4, owner answer 2026-11-14 `the same: cleanest code and security + match MIT`): section headers and relation names match case-sensitively like MIT (src change; red-first)"
+
+[[todo]]
+plan = 1
+number = 144
+title = "Supervisor findings U5-01..U5-06 and U6-04 (D, A3): ambient-reader docs, config rustdoc, the empty-assignment extension, the keytab component-count reservation (after todo 143: docs/config-profile.md)"
+
+[[todo]]
+plan = 1
+number = 145
+title = "Supervisor findings ORA-04 (C4: Rust 1.100) and U5-07 (D5: overlay fact-fix), owner answer 2026-11-14: authorized one more overlay fact-fix commit"
+
+[[todo]]
+plan = 1
+number = 146
+title = "Supervisor finding ORA-02 (C3): supplemental mutation campaign for the `include!`d production files (orchestrated like todos 99, 108 and 116; after todos 142, 143 and 145)"
+
+[[todo]]
+plan = 1
+number = 147
+title = "In-diff mutation check on the src changes of todos 137-145 (orchestrated like todos 108, 111, 114 and 116; after todos 141-145)"
+
+[[todo]]
+plan = 1
+number = 148
+title = "Handoff of the fix delta to the supervisor (bounded verification pass); records E"
+
+[[todo]]
+plan = 1
 number = "F1"
 title = "Plan compliance audit"
 
@@ -250,7 +790,7 @@ title = "Rust extension points (WP-16)"
 [[todo]]
 plan = 2
 number = 4
-title = "Exchange engine, responder and options (WP-04)"
+title = "`src/config.rs` responsibility refactor; exchange engine, responder and options (WP-04)"
 
 [[todo]]
 plan = 2

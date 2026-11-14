@@ -409,3 +409,5 @@ is a parity feature, not a defect>`.
 | critic:critics-e4ce316/u6x.md#U6X-01 | FU-DOC-R136 | no |
 | critic:critics-e4ce316/u6x.md#U6X-02 | FU-DOC-R137 | no |
 | executor:todo-134#verify-ap-rep-rustdoc | FU-DOC-R138 | no |
+| critic:critics-efadae8/oracle.md#ORA-01 | FU-DOC-R139 | no |
+| critic:critics-efadae8/u6.md#U6-01 | FU-DOC-R139 | no |
