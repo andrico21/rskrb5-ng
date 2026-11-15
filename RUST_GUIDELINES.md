@@ -26,7 +26,7 @@ not as permission.
 ## Source and pin
 
 - **Upstream repository:** `andrico21/rust-guidelines` (private; readable through `gh api`).
-- **Pinned commit:** `707deb5ec9654654b80d07442d376bff17ae5352` (2026-11-15). It is a local commit of the reference checkout, not yet pushed upstream (the project overlay is the local commit `90aae3e0028e62e0c4753bc5f1376750201d2307`, 2026-11-14, below it), so `gh api` cannot fetch it until the owner pushes; the vendored bytes were taken with `git show <pin>:<path>` and proved by `git rev-parse <pin>:<path>` equal to `git hash-object`.
+- **Pinned commit:** `707deb5ec9654654b80d07442d376bff17ae5352` (2026-11-15), a commit on `master` of the upstream repository. Its parent `90aae3e0028e62e0c4753bc5f1376750201d2307` (2026-11-14) changed the project overlay; both commits are on the upstream, so `gh api` fetches the files at the pin. The four vendored files are byte for byte the upstream files at the pin (the blob ids and SHA-256 hashes below).
 - **Temporary core exemption:** the pinned core sets `cargo::manual_readme` to `allow` (Exclusions table) because of the open Cargo bug [rust-lang/cargo#17730](https://github.com/rust-lang/cargo/issues/17730) (`cargo package` verification lints the normalized manifest). The removal condition: Cargo no longer lints the normalized manifest during `cargo package` verification. `docs/lint-policy.md` names the same condition.
 - **Rule changes:** they are made upstream, by review, then re-vendored here. Errata found in the vendored text are reported upstream, never patched locally.
 
