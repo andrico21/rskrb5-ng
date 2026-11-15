@@ -12,6 +12,16 @@ builds, lints and tests clean, and so does Windows.
   [core guidelines](https://github.com/andrico21/rskrb5-ng/blob/main/docs/rust-guidelines/RUST_GUIDELINES.md). The pin and the
   re-vendor procedure are in the [vendoring index](https://github.com/andrico21/rskrb5-ng/blob/main/RUST_GUIDELINES.md).
   `profile_eq.py` compares the two as parsed TOML; any difference fails.
+- The profile has two single-lint overrides, both set to `allow`, and
+  `completeness_check.py` accepts no other `allow`: `clippy::redundant_pub_crate`
+  (it contradicts `unreachable_pub`) and `cargo::manual_readme`. The second is
+  temporary. Cargo 1.100 lints the normalized manifest that `cargo package`
+  verifies, where `readme` is always written out, so the lint fails `cargo package`
+  and `cargo publish --dry-run` (open upstream bug
+  [rust-lang/cargo#17730](https://github.com/rust-lang/cargo/issues/17730)).
+  Remove the override from the core, from `Cargo.toml` and from the allow set of
+  `completeness_check.py` when Cargo no longer lints the normalized manifest
+  during `cargo package` verification.
 - [`clippy.toml`](../clippy.toml) is the core sample. Only
   `allowed-duplicate-crates` (each with a reason comment, matching the
   `[[bans.skip]]` names in [`deny.toml`](../deny.toml)) and `doc-valid-idents`
@@ -82,7 +92,7 @@ in the `lint-gates` job of [`ci.yml`](https://github.com/andrico21/rskrb5-ng/blo
 | `exception_gate.py --enforce` | every `expect` is one of the six sanctioned forms above on a matching item; `lint-migration:`, `invariant:` and any other reason fail |
 | (both gates) | fail closed on spelling the lexer cannot see through: `#`, `!` and `[` are read as separate tokens, so `# [allow(..)]` is still an attribute; a macro metavariable in or as an attribute (`#[$m]`, `#$t`), an `allow(..)`/`expect(..)` token tree passed to a macro, an attribute that does not start with a path, and `include!` or `#[path]` of anything but a relative `.rs` path without `..` are all reported |
 | `profile_eq.py --clippy-toml` | `[lints]` (the rustc, rustdoc, Clippy and Cargo tables) equals the vendored core profile; `clippy.toml` equals the core sample apart from the two append-only keys |
-| `completeness_check.py` | the profile is complete for the current stable: the rustc, Clippy `restriction` and Cargo `restriction` lints missing from `Cargo.toml` are exactly the documented exclusions (the Cargo leg reads the `rust-docs` page of the stable toolchain) |
+| `completeness_check.py` | the profile is complete for the current stable: the rustc, Clippy `restriction` and Cargo `restriction` lints missing from `Cargo.toml` are exactly the documented exclusions (the Cargo leg reads the `rust-docs` page of the stable toolchain), and the profile's only `allow` entries are the two documented overrides |
 | `facade_gate.py --enforce` | no `pub use` (or `pub(..) use`) outside the crate-root scope of `src/lib.rs`, cfg-disabled code included |
 | `prose_gate.py --enforce` | the core's non-lint rules on every item of the whole tree (`--paths <globs>` narrows a local run; `facade_gate.py --paths` works the same way, and an empty selection selects nothing) |
 | `feature_closures.py run` | every feature closure: `cargo clippy --all-targets <args> -- -D warnings`, then `cargo test <args>` |

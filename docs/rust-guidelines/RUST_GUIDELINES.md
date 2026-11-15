@@ -1637,7 +1637,7 @@ callers.
   - every Cargo lint (Cargo 1.100+): the groups `default` and `pedantic`, plus one side of
     each mutually exclusive `restriction` pair.
 
-  In numbers: 12 rustc lint groups and 61 individual rustc lints, rustdoc `all`, 4 Clippy groups and 120 of 135 `restriction` lints, 2 Cargo groups and 2 of 4 Cargo `restriction` lints at `deny`, plus `unsafe_code = "forbid"`. 27 lints are excluded and one contradiction is overridden, each with its reason below.
+  In numbers: 12 rustc lint groups and 61 individual rustc lints, rustdoc `all`, 4 Clippy groups and 120 of 135 `restriction` lints, 2 Cargo groups and 2 of 4 Cargo `restriction` lints at `deny`, plus `unsafe_code = "forbid"`. 27 lints are excluded and two lints are overridden (one contradiction, one temporary upstream-bug exemption), each with its reason below.
 - **A lint is left out only for a stated reason.** It must be (a) unstable (nightly-only),
   (b) one half of a mutually exclusive pair (Clippy ships several; one side is chosen),
   (c) in contradiction with a rule of this guide, or (d) documented by its own authors as
@@ -1645,8 +1645,9 @@ callers.
   [Exclusions](#exclusions). Nothing is left out for convenience.
 - **Overlays may add lints and may not remove any.** A project overlay that needs something
   stricter adds it on top of the profile.
-- **No group-level `allow` in any manifest.** The single exception is the one documented
-  contradiction override inside the profile.
+- **No group-level `allow` in any manifest.** The only exceptions are the two documented
+  single-lint overrides inside the profile (`clippy::redundant_pub_crate` and
+  `cargo::manual_readme`).
 - **Local exceptions use `#[expect(lint, reason = "...")]` on the narrowest item.**
   - `#[allow]` is itself denied (`allow_attributes`), and so is an `expect` without a
     reason (`allow_attributes_without_reason`).
@@ -1894,6 +1895,10 @@ pedantic = { level = "deny", priority = -1 }
 # `restriction`: one side of each mutually exclusive pair (the snake_case side is excluded)
 non_kebab_case_features = "deny"
 non_kebab_case_packages = "deny"
+# TEMPORARY upstream-bug override (rust-lang/cargo#17730): `cargo package` verifies the
+# normalized manifest, where `readme` is always spelled out, and `manual_readme` denies it.
+# Remove this line when Cargo no longer lints the normalized manifest during verification.
+manual_readme = "allow"
 ```
 
 Every member crate inherits it:
@@ -1987,6 +1992,7 @@ doc-valid-idents = [".."]             # ".." keeps Clippy's defaults; append pro
 | `clippy::single_call_fn` | restriction | contradicts `too_many_lines`/`cognitive_complexity` decomposition (helpers called once) |
 | `clippy::unneeded_field_pattern` | restriction | contradicts exhaustive destructuring (Section 3) and `rest_pattern_accessible_field` |
 | `clippy::redundant_pub_crate` | nursery, set to `allow` | contradicts rustc `unreachable_pub` (denied): opposite advice on `pub(crate)` |
+| `cargo::manual_readme` | Cargo pedantic, set to `allow` | temporary: `cargo package` verifies the normalized manifest, where Cargo writes `readme` out, so the lint fails the verification of a package that ships a README.md (open upstream bug rust-lang/cargo#17730). Remove the override when Cargo no longer lints the normalized manifest during `cargo package` verification |
 | `cargo::non_snake_case_features` | Cargo restriction | mutually exclusive with `non_kebab_case_features` (chosen: kebab-case, matching the package names) |
 | `cargo::non_snake_case_packages` | Cargo restriction | mutually exclusive with `non_kebab_case_packages` (chosen: kebab-case, as every project already is) |
 
@@ -2130,7 +2136,9 @@ The patterns below come up immediately. All were exercised against the profile.
     - a dependency declared only to raise or pin a transitive dependency's version: move it
       to `[target.'cfg(false)'.dependencies]` (Cargo's documented fix). It still pins the
       lockfile, but it turns on no features.
-  - `manual_readme`: drop a `readme = "README.md"` that Cargo would infer.
+  - `manual_readme`: exempt in the profile while rust-lang/cargo#17730 is open (see
+    [Exclusions](#exclusions)); once the exemption is removed, drop a `readme = "README.md"`
+    that Cargo would infer.
   - `non_kebab_case_features`: an optional dependency named `serde_json` creates an implicit
     feature of that name and trips the lint. Write `serde-json = ["dep:serde_json"]`.
     "Private" feature names such as `_internal` or `__private` trip it too; use an

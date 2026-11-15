@@ -26,7 +26,8 @@ not as permission.
 ## Source and pin
 
 - **Upstream repository:** `andrico21/rust-guidelines` (private; readable through `gh api`).
-- **Pinned commit:** `90aae3e0028e62e0c4753bc5f1376750201d2307` (2026-11-14). On 2026-11-14 it was a local commit of the reference checkout, not yet pushed upstream, so `gh api` could not fetch it until the owner pushes; the vendored bytes were taken with `git show <pin>:<path>` and proved by `git rev-parse <pin>:<path>` equal to `git hash-object`.
+- **Pinned commit:** `707deb5ec9654654b80d07442d376bff17ae5352` (2026-11-15). It is a local commit of the reference checkout, not yet pushed upstream (the project overlay is the local commit `90aae3e0028e62e0c4753bc5f1376750201d2307`, 2026-11-14, below it), so `gh api` cannot fetch it until the owner pushes; the vendored bytes were taken with `git show <pin>:<path>` and proved by `git rev-parse <pin>:<path>` equal to `git hash-object`.
+- **Temporary core exemption:** the pinned core sets `cargo::manual_readme` to `allow` (Exclusions table) because of the open Cargo bug [rust-lang/cargo#17730](https://github.com/rust-lang/cargo/issues/17730) (`cargo package` verification lints the normalized manifest). The removal condition: Cargo no longer lints the normalized manifest during `cargo package` verification. `docs/lint-policy.md` names the same condition.
 - **Rule changes:** they are made upstream, by review, then re-vendored here. Errata found in the vendored text are reported upstream, never patched locally.
 
 ## Do not edit; re-vendor to update
@@ -39,7 +40,7 @@ and the next re-vendor would overwrite it. To update, follow the re-vendor proce
 
 | File | Git blob at the pin | SHA-256 |
 |------|---------------------|---------|
-| `RUST_GUIDELINES.md` | `30c203c29f4ef7e5607416924ab9b268f363eb47` | `077e44a554b272bbe50d08aa8e636302a00b5edb8230f1ec26511a7867ba5502` |
+| `RUST_GUIDELINES.md` | `345b45748604d248c03064bc1bdf94964c594bcc` | `58caf0f92ed09279e99590ae296d17b8e44231fc1cbff097dac706b9a5f43712` |
 | `overlays/domains/kerberos-credential-protocols.md` | `99da625eb44c51de0fb8d047edb6957319882bce` | `9f2d10141e4e576e0fdbe3873e633403454e4370a206c9dd0154b7bf9f9517d5` |
 | `overlays/domains/http-services.md` | `a80c843f7f8b69e1026cc8bf50e465b253e6ea19` | `120d64975591eb62801c5f83586cebebcfe4495e939ef1b7bd376eb476859d83` |
 | `overlays/projects/rskrb5-ng.md` | `715ea991ced040c69f7514d67b8f96dc4be8a415` | `1bda929e729516cb9f5b13b17177ed8ec475f6f812f2e7bb60398f60762cddfc` |
@@ -66,7 +67,8 @@ profile's reference project.
    or a domain overlay. A deviation is dated, temporary, and phrased as a task.
 4. **Lints: add, never remove.** The core Section 9 profile is the floor. Local exceptions
    are `#[expect(lint, reason = "...")]` on the narrowest item; manifests carry no
-   group-level allows.
+   group-level allows. Cargo lints (`[lints.cargo]`) have no local exception: an
+   unsatisfiable Cargo lint is a core change (an exclusion row), never a member opt-out.
 5. **If an overlay contradicts the core outside a declared override, the core wins.** The
    overlay is then a bug to fix in this repository.
 6. **Order of precedence when rules pull apart:** security, then correctness, then

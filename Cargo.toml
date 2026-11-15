@@ -473,3 +473,7 @@ pedantic = { level = "deny", priority = -1 }
 # `restriction`: one side of each mutually exclusive pair (the snake_case side is excluded)
 non_kebab_case_features = "deny"
 non_kebab_case_packages = "deny"
+# TEMPORARY upstream-bug override (rust-lang/cargo#17730): `cargo package` verifies the
+# normalized manifest, where `readme` is always spelled out, and `manual_readme` denies it.
+# Remove this line when Cargo no longer lints the normalized manifest during verification.
+manual_readme = "allow"
