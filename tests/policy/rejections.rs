@@ -130,6 +130,52 @@ fn policy_converts_into_negotiation_domains() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Every feature and reason renders its own text, and the rejection message carries both.
+///
+/// The wording is not pinned: the text of a feature or reason must be present, differ
+/// from every sibling and keep the checksum id, and the message must contain the two texts.
+#[test]
+fn rejection_display_is_present_distinct_and_composed() {
+    // Given the nine-feature catalogue and the three reasons.
+    let features = [
+        RejectedFeature::SingleDes,
+        RejectedFeature::KerberosV4,
+        RejectedFeature::V4Conversion,
+        RejectedFeature::RsaPkinit,
+        RejectedFeature::Draft9Pkinit,
+        RejectedFeature::Rc4Export,
+        RejectedFeature::UnauthenticatedChecksum { id: 4242_i32 },
+        RejectedFeature::UnprotectedPasswordChange,
+        RejectedFeature::WeakCrypto,
+    ];
+    let reasons = [
+        RejectionReason::RemovedAndInsecure,
+        RejectionReason::InsecureByDesign,
+        RejectionReason::MissingAuthentication,
+    ];
+    // When each is rendered on its own.
+    let feature_texts = features.map(|feature| feature.to_string());
+    let reason_texts = reasons.map(|reason| reason.to_string());
+    // Then every text is present and no two siblings share one.
+    for texts in [feature_texts.as_slice(), reason_texts.as_slice()] {
+        let mut distinct = texts.to_vec();
+        distinct.sort();
+        distinct.dedup();
+        assert_eq!(distinct.len(), texts.len());
+        assert!(texts.iter().all(|text| !text.is_empty()));
+    }
+    // And the checksum feature keeps its identifier.
+    assert!(feature_texts.iter().any(|text| text.contains("4242")));
+    // And the rejection message contains the text of its feature and of its reason.
+    for (feature, feature_text) in features.into_iter().zip(&feature_texts) {
+        for (reason, reason_text) in reasons.into_iter().zip(&reason_texts) {
+            let message = Policy::RejectedFeature { feature, reason }.to_string();
+            assert!(message.contains(feature_text.as_str()));
+            assert!(message.ends_with(reason_text.as_str()));
+        }
+    }
+}
+
 /// Inspect only causal structure, not human-readable formatting.
 fn assert_policy_source(error: &dyn Error, policy: Policy) -> Result<(), Box<dyn Error>> {
     let mut source = error.source();
