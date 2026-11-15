@@ -32,7 +32,7 @@ pub(super) async fn discover(
 /// The result is one list of endpoints tagged [`KdcProtocol::Tcp`] or
 /// [`KdcProtocol::Udp`]: a configured server appears once per protocol, DNS
 /// entries keep the protocol of their record set, and administrative hosts
-/// found only when no `_kpasswd` record exists appear for both.
+/// found only when neither `_kpasswd` record set held a record appear for both.
 ///
 /// # Errors
 /// Returns configuration, endpoint parsing or DNS discovery errors.

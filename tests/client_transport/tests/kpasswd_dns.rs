@@ -165,9 +165,9 @@ fn kpasswd_auto_udp_only_zone_never_asks_admin() -> Result<(), TestError> {
     })
 }
 
-/// A root target in either `_kpasswd` record set aborts discovery: no fallback, no other pass.
+/// A root target contributes no endpoint: the other record set answers and `_kerberos-adm` is never asked about.
 #[test]
-fn kpasswd_auto_root_target_aborts_without_the_other_pass() -> Result<(), TestError> {
+fn kpasswd_auto_root_target_leaves_the_other_set_in_use() -> Result<(), TestError> {
     runtime()?.block_on(async {
         for root_in_tcp in [true, false] {
             // Given one record set answering the root name and the other a live endpoint.
@@ -186,35 +186,171 @@ fn kpasswd_auto_root_target_aborts_without_the_other_pass() -> Result<(), TestEr
                 ("_kerberos-adm._tcp.test.gokrb5.", vec![(749, "127.0.0.1.")]),
             ])
             .await?;
-            let server = tokio::spawn(async move {
-                let (request, mut socket) = read_tcp_request(&listener).await?;
-                write_tcp_response(&mut socket, b"tcp-reply").await?;
-                Ok::<_, io::Error>((request, listener))
-            });
+            let (udp_answer, tcp_answer) = if root_in_tcp {
+                (Some(udp_responder(udp, b"udp-reply")), None)
+            } else {
+                let server = tokio::spawn(async move {
+                    let (request, mut socket) = read_tcp_request(&listener).await?;
+                    write_tcp_response(&mut socket, b"tcp-reply").await?;
+                    Ok::<_, io::Error>(request)
+                });
+                (None, Some(server))
+            };
             // When the Auto request runs.
             let result = dns
                 .transport()?
                 .send_to_kpasswd_realm(&dns_config()?, KdcProtocol::Auto, REALM, REQUEST)
                 .await;
             let questions = dns.finish().await?;
-            // Then it fails with the discovery error and nothing was sent anywhere.
-            assert!(
-                matches!(&result, Err(ClientError::DnsServiceUnavailable { service, realm })
-                    if service == "_kpasswd" && realm == REALM),
-                "root in tcp: {root_in_tcp}: expected DnsServiceUnavailable, got {}",
-                describe(&result)
+            // Then both record sets were asked about and the administration service was not.
+            assert_eq!(
+                asked(&questions, "_kpasswd._udp"),
+                1,
+                "root in tcp: {root_in_tcp}: {questions:?}"
+            );
+            assert_eq!(
+                asked(&questions, "_kpasswd._tcp"),
+                1,
+                "root in tcp: {root_in_tcp}: {questions:?}"
             );
             assert_eq!(
                 asked(&questions, "_kerberos-adm"),
                 0,
-                "questions: {questions:?}"
+                "root in tcp: {root_in_tcp}: {questions:?}"
             );
-            assert_no_datagram(&udp, "root target").await;
-            assert!(
-                timeout(Duration::from_millis(50), server).await.is_err(),
-                "root in tcp: {root_in_tcp}: the TCP peer was contacted"
-            );
+            // And the live set answered.
+            let reply = shown(result)?;
+            if let Some(responder) = udp_answer {
+                assert_eq!(reply, b"udp-reply");
+                let (peer, length) =
+                    bounded(Duration::from_secs(10), "UDP responder", responder).await???;
+                assert_eq!(length, REQUEST.len());
+                assert_no_datagram(&peer, "retransmit").await;
+            }
+            if let Some(server) = tcp_answer {
+                assert_eq!(reply, b"tcp-reply");
+                assert_eq!(
+                    bounded(Duration::from_secs(10), "TCP peer", server).await???,
+                    REQUEST
+                );
+            }
         }
+        Ok(())
+    })
+}
+
+/// A root target among real records of one set is skipped and the real records are used.
+#[test]
+fn kpasswd_auto_root_target_among_real_records_is_skipped() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given a `_kpasswd._tcp` set holding a root record and a live endpoint, and a published administration host.
+        let (udp, listener) = bind_udp_and_tcp_pair().await?;
+        let dns = Dns::start(vec![
+            (
+                "_kpasswd._tcp.test.gokrb5.",
+                vec![(0, "."), (listener.local_addr()?.port(), "127.0.0.1.")],
+            ),
+            ("_kerberos-adm._tcp.test.gokrb5.", vec![(749, "127.0.0.1.")]),
+        ])
+        .await?;
+        let server = tokio::spawn(async move {
+            let (request, mut socket) = read_tcp_request(&listener).await?;
+            write_tcp_response(&mut socket, b"tcp-reply").await?;
+            Ok::<_, io::Error>(request)
+        });
+        // When the Auto request runs.
+        let result = dns
+            .transport()?
+            .send_to_kpasswd_realm(&dns_config()?, KdcProtocol::Auto, REALM, REQUEST)
+            .await;
+        let questions = dns.finish().await?;
+        // Then the live TCP record answered and the administration service was never asked about.
+        assert_eq!(shown(result)?, b"tcp-reply");
+        assert_eq!(
+            bounded(Duration::from_secs(10), "TCP peer", server).await???,
+            REQUEST
+        );
+        assert_eq!(
+            asked(&questions, "_kerberos-adm"),
+            0,
+            "questions: {questions:?}"
+        );
+        assert_no_datagram(&udp, "UDP entry").await;
+        Ok(())
+    })
+}
+
+/// Root targets only, in both sets: discovery fails before any I/O and `_kerberos-adm` is never asked about.
+#[test]
+fn kpasswd_auto_root_targets_only_are_unavailable() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given both record sets answering only the root name, and a published administration host.
+        let (udp, listener) = bind_udp_and_tcp_pair().await?;
+        let dns = Dns::start(vec![
+            ("_kpasswd._udp.test.gokrb5.", vec![(0, ".")]),
+            ("_kpasswd._tcp.test.gokrb5.", vec![(0, ".")]),
+            ("_kerberos-adm._tcp.test.gokrb5.", vec![(749, "127.0.0.1.")]),
+        ])
+        .await?;
+        // When the Auto request runs.
+        let result = dns
+            .transport()?
+            .send_to_kpasswd_realm(&dns_config()?, KdcProtocol::Auto, REALM, REQUEST)
+            .await;
+        let questions = dns.finish().await?;
+        // Then both record sets were asked about and the call fails with the discovery error.
+        assert_eq!(asked(&questions, "_kpasswd._udp"), 1, "{questions:?}");
+        assert_eq!(asked(&questions, "_kpasswd._tcp"), 1, "{questions:?}");
+        assert!(
+            matches!(&result, Err(ClientError::DnsServiceUnavailable { service, realm })
+                if service == "_kpasswd" && realm == REALM),
+            "expected DnsServiceUnavailable, got {}",
+            describe(&result)
+        );
+        // And the administration service was never asked about and nothing was sent.
+        assert_eq!(
+            asked(&questions, "_kerberos-adm"),
+            0,
+            "questions: {questions:?}"
+        );
+        assert_no_datagram(&udp, "root targets only").await;
+        assert_no_connection(&listener, "root targets only").await;
+        Ok(())
+    })
+}
+
+/// A published `_kpasswd` record whose target does not resolve is a definite failure, not an absent service.
+#[test]
+fn kpasswd_auto_unresolvable_published_target_asks_no_admin() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given a `_kpasswd._udp` record naming a host the DNS server cannot resolve, and a published administration host.
+        let dns = Dns::start(vec![
+            (
+                "_kpasswd._udp.test.gokrb5.",
+                vec![(464, "unresolvable.test.gokrb5.")],
+            ),
+            ("_kerberos-adm._tcp.test.gokrb5.", vec![(749, "127.0.0.1.")]),
+        ])
+        .await?;
+        // When the Auto request runs.
+        let result = dns
+            .transport()?
+            .send_to_kpasswd_realm(&dns_config()?, KdcProtocol::Auto, REALM, REQUEST)
+            .await;
+        let questions = dns.finish().await?;
+        // Then the administration service was never asked about.
+        assert_eq!(
+            asked(&questions, "_kerberos-adm"),
+            0,
+            "questions: {questions:?}"
+        );
+        // And the call failed definitely, naming the target that did not resolve.
+        assert!(
+            matches!(&result, Err(ClientError::DnsSrvLookup { realm: _, protocol: _, message })
+                if message.contains("unresolvable.test.gokrb5")),
+            "expected the DnsSrvLookup of the unresolvable target, got {}",
+            describe(&result)
+        );
         Ok(())
     })
 }

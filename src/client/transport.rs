@@ -803,9 +803,10 @@ impl Tokio {
     ///
     /// With [`KdcProtocol::Auto`] the servers are discovered once for both
     /// protocols, as MIT's `changepw.c` does: `_kpasswd._udp` and
-    /// `_kpasswd._tcp` form one list, a root SRV target in either stops the
-    /// exchange, and the `_kerberos-adm._tcp` hosts (port 464, both protocols)
-    /// are used only when that list is empty. Every TCP endpoint is then tried
+    /// `_kpasswd._tcp` are both queried and form one list, a root SRV target
+    /// adds no server and the other records of its set are kept, and the
+    /// `_kerberos-adm._tcp` hosts (port 464, both protocols) are used only when
+    /// neither set held a record. Every TCP endpoint is then tried
     /// before any UDP endpoint, and `udp_preference_limit` does not apply. UDP
     /// is tried only after a definite TCP failure; a UDP refusal
     /// (`ConnectionRefused`, or `ConnectionReset` where Windows reports an ICMP
@@ -2097,12 +2098,47 @@ impl Tokio {
         realm: &str,
         protocol: KdcProtocol,
     ) -> Result<Vec<KdcEndpoint>, Error> {
+        let resolver = dns_resolver(self.dns_server)?;
+        let answer = self.srv_answer(&resolver, service, realm, protocol).await?;
+        if answer.root {
+            return Err(Error::DnsServiceUnavailable {
+                service: service.to_owned(),
+                realm: realm.to_owned(),
+            });
+        }
+        srv_targets::resolve(
+            &resolver,
+            realm,
+            protocol,
+            answer.records,
+            self.dns_server.is_some(),
+        )
+        .await
+    }
+
+    /// Look up one SRV name and order its non-root records as
+    /// [`Self::discover_srv_endpoints`] does, without resolving their targets.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::DnsSrvLookup`] when the SRV lookup fails.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: a DNS lookup changes no state. Dropping the future
+    /// abandons it, which the caller can repeat.
+    async fn srv_answer(
+        &self,
+        resolver: &TokioResolver,
+        service: &str,
+        realm: &str,
+        protocol: KdcProtocol,
+    ) -> Result<srv_targets::SrvAnswer, Error> {
         let transport = match protocol {
             KdcProtocol::Udp | KdcProtocol::Auto => "_udp",
             KdcProtocol::Tcp => "_tcp",
         };
         let query = format!("{service}.{transport}.{realm}.");
-        let resolver = dns_resolver(self.dns_server)?;
         let lookup = resolver
             .srv_lookup(query.as_str())
             .await
@@ -2112,16 +2148,10 @@ impl Tokio {
                 message: source.to_string(),
             })?;
 
-        if lookup
+        let root = lookup
             .answers()
             .iter()
-            .any(|record| matches!(&record.data, rr::RData::SRV(srv) if srv.target.is_root()))
-        {
-            return Err(Error::DnsServiceUnavailable {
-                service: service.to_owned(),
-                realm: realm.to_owned(),
-            });
-        }
+            .any(|record| matches!(&record.data, rr::RData::SRV(srv) if srv.target.is_root()));
         let mut records = lookup
             .answers()
             .iter()
@@ -2143,15 +2173,11 @@ impl Tokio {
             .filter(|(_, _, target, _)| !target.is_empty() && target != ".")
             .collect::<Vec<_>>();
         order_srv_records(&mut records, srv_draw)?;
-
-        srv_targets::resolve(
-            &resolver,
-            realm,
-            protocol,
+        Ok(srv_targets::SrvAnswer {
+            published: root || !records.is_empty(),
+            root,
             records,
-            self.dns_server.is_some(),
-        )
-        .await
+        })
     }
 
     /// Try each endpoint in turn and return the first response.
@@ -2261,9 +2287,9 @@ impl Tokio {
     ///
     /// # Errors
     ///
-    /// Returns the discovery errors of [`Self::discover_kpasswd_servers`] (a root
-    /// SRV target in either `_kpasswd` record set stops everything), the
-    /// uncertain TCP outcome, or the endpoint failures of the last pass that ran.
+    /// Returns the discovery errors (root targets only, a failed target lookup
+    /// of a published record set, or no host at all), the uncertain TCP
+    /// outcome, or the endpoint failures of the last pass that ran.
     ///
     /// # Cancel safety
     ///
