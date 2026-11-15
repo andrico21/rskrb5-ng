@@ -50,7 +50,7 @@ current campaign carries that outcome.
 
 These are the outcomes CI recorded for the enumerated source set; the
 supplemental section has the counts of the `include!`d files. The register has
-689 rows: 626 `killed`, 59 `equivalent` and 4 `hang`; 571 were opened by a
+690 rows: 626 `killed`, 60 `equivalent` and 4 `hang`; 572 were opened by a
 missed mutant and 118 by a timeout.
 
 ## Verification
@@ -322,6 +322,136 @@ failed a test and 9 survived. Their dispositions:
 The three new tests are red on their mutant and green on the tree; the
 bounded accept is covered by the three timeouts that became failures. No
 production code changed. FU-FUZ-R04 records the test changes.
+
+### In-diff check after the second pass fixes (todo 156)
+
+The base of the second pass is `d6a85f8`, the tree the supervisor verified.
+Todos 150 to 153 changed `src/` after it: the kpasswd `Auto` discovery
+(`discover_auto`, `srv_answer`), the `AcceptedContext` accessors and the
+`with_auth_data` erasure, the TCP record frame, the keytab reservation probe,
+the PA refusal arm, the `IncludeTooDeep` text and the shared
+`is_internal_fault` classifier. Todo 154 (re-landed by todo 158) changed
+comments only, and todos 155 and 158 changed no `src/`. Todo 150 also deleted
+`Credential::set_auth_data`, which adds no line to a diff and so yields no
+in-diff mutant.
+
+- Diff: `git diff -U0 d6a85f8 2c97bc7 -- src`, reduced to the hunks that add a
+  line that is not blank and not a comment (10 of 16 files; the other six
+  added comments only, or deleted code). Two of the ten
+  are test modules (`src/ccache/payload_tests.rs`,
+  `src/messages/secret_der/tests/transport.rs`), which build only under
+  `cfg(test)` and have no mutant. `examples/axum-negotiate.rs` is not a
+  cargo-mutants source; its two changed calls were checked by hand mutants.
+  None of the files that `src` pulls in with `include!` changed;
+  `src/error.rs` (the `IncludeTooDeep` format attribute) and `src/config.rs`
+  (a comment) are the includers, and a derive attribute has no mutant.
+- The check ran locally as in todo 114: `cargo mutants --all-features
+  --no-shuffle --cap-lints=true --in-diff <diff> --file F [--re R] --shard
+  k/N -j 2 --copy-target=false -- <test arguments>`, cargo-mutants 27.1.0,
+  rustc 1.100.0, `CARGO_BUILD_WARNINGS=allow`, no debug info and an 8 GiB
+  address-space cap, one shard at a time. The diff lists 28 mutants, run in
+  shards 0 to 8 split by file: `crypto_policy.rs` (0), `transport.rs` (1, 2),
+  `password_dns.rs` (3), `http.rs` (4), `keytab.rs` (5) and `spnego.rs` (6 to
+  8). The test arguments are narrowed to the targets that read the changed
+  code: `--lib --test client --test client_integration --test policy` (0),
+  `--lib --test client_transport --test client` (1 to 3), `--lib --test http
+  --test service` (4), `--lib --test keytab` (5) and `--lib --test spnego
+  --test gssapi --test http --test service --test policy` (6 to 8). A
+  narrowed run can turn a caught mutant into a missed one but not the
+  reverse, so every caught is valid; every survivor was re-run with the full
+  suite.
+- Shard 9 (`--file src/client/transport.rs --re tcp_record_frame`, no
+  `--in-diff`, `--lib --test client_transport --test client`) ran the three
+  mutants of `tcp_record_frame`, the function that this todo added to build
+  the TCP record frame (below), on the candidate tree of this todo; shards 0
+  to 8 ran on `2c97bc7`.
+- `mutants_report.py --artifacts <the 10 shard outputs> --expect-shards 10
+  --register docs/review/mutants.md --campaign
+  2c97bc73d191d1f2623b5975493b3612b20b6c4c --enforce` prints `mutants:
+  caught=21 missed=1 timeout=0 unviable=9 success=0` and `0 problem(s)` (exit
+  0, without `--allow-open`); the missed mutant has the register row below.
+
+| Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 2 | 2 | 0 | 0 | 0 | 127 |
+| 1 | 4 | 4 | 0 | 0 | 0 | 194 |
+| 2 | 4 | 1 | 1 | 0 | 2 | 150 |
+| 3 | 4 | 3 | 0 | 0 | 1 | 198 |
+| 4 | 4 | 3 | 0 | 0 | 1 | 197 |
+| 5 | 1 | 0 | 0 | 0 | 1 | 83 |
+| 6 | 3 | 0 | 0 | 0 | 3 | 116 |
+| 7 | 3 | 2 | 0 | 0 | 1 | 161 |
+| 8 | 3 | 3 | 0 | 0 | 0 | 184 |
+| 9 | 3 | 3 | 0 | 0 | 0 | 178 |
+
+The wall time includes the wait for the shared cargo lock. Counts by file:
+
+| File | Caught | Missed | Timeout | Unviable |
+| --- | ---: | ---: | ---: | ---: |
+| `src/client/crypto_policy.rs` | 2 | 0 | 0 | 0 |
+| `src/client/transport.rs` | 8 | 1 | 0 | 2 |
+| `src/client/transport/password_dns.rs` | 3 | 0 | 0 | 1 |
+| `src/http.rs` | 3 | 0 | 0 | 1 |
+| `src/keytab.rs` | 0 | 0 | 0 | 1 |
+| `src/spnego.rs` | 5 | 0 | 0 | 4 |
+
+The unviable mutants return `Default::default()` (also inside `Ok(...)` or
+`vec![...]`, or through `Box::leak`) for types without a `Default`
+(`KdcEndpoint`, `SrvAnswer`, `Principal`, `ValidatedApReq`,
+`ObjectIdentifier`) or the opaque `Future` of `NegotiateService::call`; the
+four accessor mutants of `AcceptedContext` among them are covered by hand
+mutants.
+
+The one missed mutant, `src/client/transport.rs:2199:32: delete ! in
+Tokio::srv_answer`, makes `published` true for an answer without records and
+false for an answer with records. It is `equivalent` (register row, and the
+hand mutants D12, D14 and D17 below).
+
+**Hand mutants.** cargo-mutants does not generate a mutant for a range inside
+a pattern, a call that is simply absent, an operand order, a swapped accessor
+or a copy handed out instead of a reference, so 63 hand mutants changed the
+new rules one at a time in a scratch copy (own target directory, the file
+restored after each; D17 is the cargo-mutants survivor written by hand): the
+published-set rule, the root-target rule, the admin fallback and the
+unresolvable published target of the `Auto` discovery (D1 to D17), the
+`AcceptedContext` accessors and the replaced authorization data (A1 to A7),
+the frame capacity, layout, mark and owner (T1 to T6), the keytab reservation
+argument (K1 to K4), the ends of every range of the residual PA refusal arm
+and its neighbours (P1 to P22), the `IncludeTooDeep` text (E1) and the arms
+of the shared fault classifier and its two uses in the example (C1 to C6).
+Run with the narrowed arguments of the area on `2c97bc7`, 38 failed a test
+and 24 survived; D17 was run with the full suite only. Each of the 25
+survivors was re-run with the full suite (`cargo test --all-features
+--no-fail-fast`) and survived it. Seventeen were killed by new tests (the
+three known survivors of the plan among them) and eight are `equivalent`:
+
+| Mutant | Disposition |
+| --- | --- |
+| T1: `Vec::with_capacity(TCP_RECORD_MARK_LEN)` in `exchange_tcp_framed` (known survivor (a)); T2: capacity of the request only; T3: `Vec::new()` | killed: the frame is now built by `tcp_record_frame`, and `tcp_record_frame_reserves_exactly_the_frame` asserts `capacity() == len` for requests of 1 to 3 bytes. A check `capacity() >= len` would not kill them: the vector grows to at least the frame length whatever it started with. Doubling gives 8 bytes for a frame of 5 to 7 bytes, so an allocation that was too small ends larger than the frame; from 4 bytes of request on, growth lands on the exact length and the mutants cannot be told apart, hence the short requests. Like `reservation_is_half_the_remaining_input`, it relies on `Vec::with_capacity(n)` giving exactly `n`. |
+| P1: `151..=153` to `150..=153` (known survivor (b)); P2, P5, P6, P10, P12, P13, P16, P20: one more type refused (154, 4, 10, 18, 29, 32, 137, 140) | killed: `outgoing_padata_types_are_refused_or_admitted_exactly` walks every outgoing PA type 0 to 255 and pins the refused set (peer hints, the embedding wrapper, the 28 unsupported ids, draft-9 PKINIT 14 and 15 by the selection layer) and that every other type reaches the transport. It replaces `outgoing_unsupported_credential_padata_is_rejected`, which listed only the refused types. |
+| D6: the last failed target lookup is kept instead of the first | killed: `kpasswd_auto_reports_the_first_unresolvable_set`; the `discover_auto` rustdoc now says the UDP set is asked first. |
+| D9: an unresolved set aborts before the live endpoints of the other set are used | killed: `kpasswd_auto_unresolvable_set_leaves_the_live_set_in_use` |
+| D10: a failed `_kerberos-adm` lookup becomes an empty host list | killed: `kpasswd_auto_failing_admin_lookup_is_reported` |
+| A2: `token_mechanism()` returns the selected mechanism | killed: `acceptor_accepts_optimistic_kerberos_alias` asserts the token mechanism, the one case where it differs from the selected one. |
+| A5: `set_mech_types_der(None)` keeps the old list | killed: `mech_types_der_setter_replaces_and_clears_the_list` |
+| D12: `published` is `root` only; D14: `published` is always true; D17: `root \|\| records.is_empty()` (the cargo-mutants survivor) | `equivalent`: `discover_auto` reads `published` only after the passes found no endpoint and no target failure. A non-root answer holds records, and `srv_targets::resolve` turns each record into an endpoint or a failure (`resolve_dns_endpoint_host` never returns an empty list), so such an answer ends the discovery before `published` is read. A successful SRV lookup always holds an SRV record (hickory-resolver 0.26.3, `caching_client.rs` `handle_noerror`: `Records::Exists` only when a record of the queried type was found, else `NoRecordsFound`, which `discover_auto` skips), and an SRV record is either a root target or leaves a non-empty record. Survives the full suite. |
+| A4: `ap_req()` hands out a copy | `equivalent`: the accessor takes `&self`, so a clone shows the same values and no API shows the identity of a reference. Survives the full suite. |
+| T5: the frame is handed to `SecretDer` as a clone | `equivalent`: the effect is what the dropped plain `Vec` leaves in freed memory, which no safe code observes (`unsafe_code` is forbidden, so no allocator witness exists). The proofs of todo 140 stay red on a plain `Vec`. Survives the full suite. |
+| P8, P11: 14 or 15 added to the refusal arm; P9: 11 added to it | `equivalent`: `selection::preauth` refuses 14 and 15 before the arms (draft-9 PKINIT), and 11 is matched by the hint arm above, so the added pattern is unreachable. The table test pins 14, 15 and 11 by their own refusals. Survives the full suite. |
+
+The 17 kills were repeated on the candidate tree of this todo: each fails
+its new test, and the eight equivalent mutants survive the full suite there
+as well.
+
+**Test (c) of the plan, not reachable.** The helper constant `ATTEMPTS` of
+`tests/support/loopback_pair.rs` is a test helper, outside the sources
+cargo-mutants mutates; it is noted only.
+
+Production code changed by one function: `tcp_record_frame`, which
+`exchange_tcp_framed` calls to build the record, so that its capacity is
+observable (the plan names this as the way to kill survivor (a)); the
+rustdoc of `discover_auto` names the first failure. No other behaviour
+changed. FU-FUZ-R05 records the tests and the function.
 
 ### In-diff check after todo 115 (todo 116)
 
@@ -1434,7 +1564,7 @@ minutes).
 | `src/client/renewal_eligibility.rs` | 1 | 0 | 1 | 0 | 1 | 0 |
 | `src/client/reply_constraints.rs` | 11 | 0 | 11 | 7 | 4 | 0 |
 | `src/client/time.rs` | 1 | 0 | 1 | 0 | 1 | 0 |
-| `src/client/transport.rs` | 11 | 52 | 63 | 62 | 1 | 0 |
+| `src/client/transport.rs` | 12 | 52 | 64 | 62 | 2 | 0 |
 | `src/client/transport/password_delivery.rs` | 3 | 4 | 7 | 7 | 0 | 0 |
 | `src/client/transport/password_dns.rs` | 1 | 0 | 1 | 1 | 0 | 0 |
 | `src/client/transport/realm_auto.rs` | 4 | 6 | 10 | 10 | 0 | 0 |
@@ -1499,7 +1629,7 @@ minutes).
 | `src/spnego/oid.rs` | 3 | 0 | 3 | 3 | 0 | 0 |
 | `src/spnego/token_debug.rs` | 7 | 0 | 7 | 7 | 0 | 0 |
 | `src/ticket.rs` | 3 | 0 | 3 | 3 | 0 | 0 |
-| total | 571 | 118 | 689 | 626 | 59 | 4 |
+| total | 572 | 118 | 690 | 626 | 60 | 4 |
 
 ## Register
 
@@ -2194,3 +2324,4 @@ minutes).
 | b327605e3e4382d3e515e8173776375b3fd7531e | `src/config.rs:1860:5: replace parse_assignment -> Result<(&'line str, &'line str), Error> with Ok(("", "xyzzy"))` | src/config/sections.rs | parse_assignment | replace body with Ok(("", "xyzzy")) | timeout | killed | `configuration::classification_e::tests::every_libdefaults_boundary_is_reviewed`, `every_realm_boundary_is_reviewed`, `every_section_boundary_is_reviewed` and `tightened_libdefaults_relation_refused_before_sections` fail on it; caught in a re-run of `configuration::classification_e::tests` |
 | b327605e3e4382d3e515e8173776375b3fd7531e | `src/config.rs:1860:5: replace parse_assignment -> Result<(&'line str, &'line str), Error> with Ok(("xyzzy", ""))` | src/config/sections.rs | parse_assignment | replace body with Ok(("xyzzy", "")) | timeout | killed | `configuration::classification_e::tests::every_libdefaults_boundary_is_reviewed`, `every_realm_boundary_is_reviewed`, `every_section_boundary_is_reviewed` and `tightened_libdefaults_relation_refused_before_sections` fail on it; caught in a re-run of `configuration::classification_e::tests` |
 | b327605e3e4382d3e515e8173776375b3fd7531e | `src/config.rs:1860:5: replace parse_assignment -> Result<(&'line str, &'line str), Error> with Ok(("xyzzy", "xyzzy"))` | src/config/sections.rs | parse_assignment | replace body with Ok(("xyzzy", "xyzzy")) | timeout | killed | `configuration::classification_e::tests::every_libdefaults_boundary_is_reviewed`, `every_realm_boundary_is_reviewed`, `every_section_boundary_is_reviewed` and `tightened_libdefaults_relation_refused_before_sections` fail on it; caught in a re-run of `configuration::classification_e::tests` |
+| 2c97bc73d191d1f2623b5975493b3612b20b6c4c | `src/client/transport.rs:2199:32: delete ! in Tokio::srv_answer` | src/client/transport.rs | Tokio::srv_answer | delete ! | missed | equivalent | `published` is read only by `discover_auto`, and only after the two passes found no endpoint and no target failure; an answer with non-root records always ends in one of the two, and a successful SRV lookup always holds an SRV record (a root target or a non-empty one), so the changed value is never read. Survives the full suite, also on the tree with the new tests (hand mutants D12, D14 and D17 of the section `In-diff check after the second pass fixes (todo 156)`). |
