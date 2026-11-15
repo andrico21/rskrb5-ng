@@ -1,7 +1,7 @@
 # Mutation campaign register
 
-This register records every mutant that survived the whole-crate
-`cargo mutants` campaign (FU-FUZ-01): one row per `missed` or `timeout`
+This register records every mutant that survived a `cargo mutants` campaign
+(FU-FUZ-01): one row per `missed` or `timeout`
 outcome, keyed by the campaign SHA and the full cargo-mutants name with its
 location. `scripts/lint-gates/mutants_report.py --register` reads the table at
 the end of this file; [`../lint-policy.md`](../lint-policy.md) describes the
@@ -19,6 +19,11 @@ current campaign carries that outcome.
 
 - Commit: `d7666e73b0ba46c093e74a69599c25506cd0582a` (`main`), the final tree
   after critic round 5 (`f77562b`) with the tests of its mutation check.
+- Enumerated source set: the files that cargo-mutants reaches through `mod`
+  declarations and `#[path]` attributes. It does not read a file that a module
+  file pulls in with `include!`, so the seven `include!` targets of `src` and
+  `src/config/enctype_names.rs` are outside this campaign; the section
+  "Supplemental check of the `include!`d files (todo 146)" runs their mutants.
 - CI run: [`42727860783`](https://github.com/andrico21/rskrb5-ng/actions/runs/42727860783)
   (`workflow_dispatch`), jobs `mutants (0)` to `mutants (31)`, each run once.
 - Command per shard: `timeout -k 5m 170m cargo mutants --all-features
@@ -43,11 +48,144 @@ current campaign carries that outcome.
 | unviable | 1178 |
 | total | 5079 |
 
-These are the outcomes CI recorded. The register has 683 rows: 620 `killed`,
-59 `equivalent` and 4 `hang`; 569 were opened by a missed mutant and 114 by a
-timeout.
+These are the outcomes CI recorded for the enumerated source set; the
+supplemental section has the counts of the `include!`d files. The register has
+689 rows: 626 `killed`, 59 `equivalent` and 4 `hang`; 571 were opened by a
+missed mutant and 118 by a timeout.
 
 ## Verification
+
+### Supplemental check of the `include!`d files (todo 146)
+
+The whole-crate campaign of `d7666e7` ran the mutants that cargo-mutants
+enumerates from the module tree. cargo-mutants does not read a file that a
+module file pulls in with `include!`, so the campaign list (5079 mutants) has
+no mutant in any of them (supervisor finding ORA-02, checked by program against
+`list-d7666e7.json.gz`). `grep -rn 'include!' src` lists seven targets:
+`src/config/toggle.rs`, `src/config/enctype_expr.rs`,
+`src/config/enctype_policy.rs` and `src/config/sections.rs` (in
+`src/config.rs`), `src/error/any.rs` and `src/error/policy.rs` (in
+`src/error.rs`) and `src/client/krb_error_mapping.rs` (in `src/client.rs`).
+`src/config/enctype_names.rs` is declared with `mod enctype_names;` inside
+`enctype_expr.rs`, so the campaign never reached it either. `any.rs` holds no
+function that cargo-mutants mutates (the inlined range lists no mutant), so it
+has no row below.
+
+- Tree: `b327605e3e4382d3e515e8173776375b3fd7531e` (`main`), all functions of
+  the files above, not only the changed ones.
+- Method: one scratch copy per includer (`git archive` of the tree) in which the
+  `include!("...");` line is replaced by the text of the file. The `mod
+  enctype_names;` line of `enctype_expr.rs` got `#[path =
+  "config/enctype_names.rs"]` on the same line, because `src/config.rs` is
+  loaded with `#[path]` and would otherwise look for the file next to
+  `src/`. Per scratch copy, with cargo-mutants 27.1.0 and Rust 1.100.0
+  (`CARGO_BUILD_WARNINGS=allow`, no debug info, an 8 GiB address-space cap, one
+  shard at a time, its own build directory):
+  `cargo mutants --all-features --no-shuffle --cap-lints=true --file <includer>
+  --re '<anchored regex of the inlined lines>' --shard k/n -j 2
+  --copy-target=false`, with `--file src/config/enctype_names.rs` for the
+  `src/config.rs` copy. The regex keeps only the mutants whose line lies in an
+  inlined range: 45 mutants (41 in the `src/config.rs` copy, 3 in `src/error.rs`,
+  1 in `src/client.rs`).
+- Mapping: a mutant reported at `<includer>:<line>` lies in the original file
+  `<file>` at line `<line> - <offset>`.
+
+| Includer | Scratch lines | Original file | Original lines | Offset |
+| --- | --- | --- | --- | ---: |
+| `src/config.rs` | 625-669 | `src/config/toggle.rs` | 1-45 | 624 |
+| `src/config.rs` | 673-889 | `src/config/enctype_expr.rs` | 1-217 | 672 |
+| `src/config.rs` | 1528-1684 | `src/config/enctype_policy.rs` | 1-157 | 1527 |
+| `src/config.rs` | 1852-1888 | `src/config/sections.rs` | 1-37 | 1851 |
+| `src/error.rs` | 21-107 | `src/error/any.rs` | 1-87 | 20 |
+| `src/error.rs` | 108-259 | `src/error/policy.rs` | 1-152 | 107 |
+| `src/client.rs` | 4854-4880 | `src/client/krb_error_mapping.rs` | 1-27 | 4853 |
+
+- Deviations from the whole-crate command. The runs skip
+  `public_secret_owners_are_audited` in every scratch copy and
+  `public_secret_replacements_are_audited` in the `src/config.rs` copy: they
+  audit the source files of `src` and fail in the unmutated copy on the types
+  of the inlined files (`src/error.rs::Any needs audit coverage`, `unsupported
+  source src/config.rs:705`). A skipped test can only turn a caught mutant into
+  a missed one. Four mutants (shards 15, 24, 25 and 26) ran
+  with `--timeout 120` instead of the 320 s to 350 s that cargo-mutants derives,
+  so that one shard fits one tool call. Shards 14 to 16 of 21 held these
+  mutants, so each of their mutants ran as its own shard.
+- Report: `mutants_report.py --artifacts <the 27 shard outputs> --expect-shards 27
+  --register docs/review/mutants.md --campaign
+  b327605e3e4382d3e515e8173776375b3fd7531e --enforce` prints `mutants: caught=26
+  missed=2 timeout=4 unviable=13 success=0` and `0 problem(s)` (exit 0, no
+  `--allow-open`).
+
+| Shard | Tree | Selection | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
+| ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | `config` | 0/21 | 2 | 1 | 0 | 0 | 1 | 210 |
+| 1 | `config` | 1/21 | 2 | 2 | 0 | 0 | 0 | 184 |
+| 2 | `config` | 2/21 | 2 | 2 | 0 | 0 | 0 | 192 |
+| 3 | `config` | 3/21 | 2 | 1 | 0 | 0 | 1 | 209 |
+| 4 | `config` | 4/21 | 2 | 0 | 0 | 0 | 2 | 180 |
+| 5 | `config` | 5/21 | 2 | 2 | 0 | 0 | 0 | 211 |
+| 6 | `config` | 6/21 | 2 | 1 | 0 | 0 | 1 | 210 |
+| 7 | `config` | 7/21 | 2 | 2 | 0 | 0 | 0 | 220 |
+| 8 | `config` | 8/21 | 2 | 1 | 0 | 0 | 1 | 207 |
+| 9 | `config` | 9/21 | 2 | 2 | 0 | 0 | 0 | 224 |
+| 10 | `config` | 10/21 | 2 | 2 | 0 | 0 | 0 | 229 |
+| 11 | `config` | 11/21 | 2 | 1 | 0 | 0 | 1 | 207 |
+| 12 | `config` | 12/21 | 2 | 2 | 0 | 0 | 0 | 217 |
+| 13 | `config` | 13/21 | 2 | 2 | 0 | 0 | 0 | 219 |
+| 14 | `config` | 14/21 (first mutant) | 1 | 1 | 0 | 0 | 0 | 173 |
+| 15 | `config` | 15/21 (first mutant) | 1 | 0 | 0 | 1 | 0 | 269 |
+| 16 | `config` | 16/21 (`profile_file_error` mutant) | 1 | 0 | 0 | 0 | 1 | 147 |
+| 17 | `config` | 17/21 | 2 | 2 | 0 | 0 | 0 | 203 |
+| 18 | `config` | 18/21 | 2 | 0 | 0 | 0 | 2 | 154 |
+| 19 | `config` | 19/21 | 2 | 1 | 0 | 0 | 1 | 188 |
+| 20 | `config` | 20/21 | 1 | 1 | 0 | 0 | 0 | 172 |
+| 21 | `error` | 0/2 | 2 | 0 | 2 | 0 | 0 | 300 |
+| 22 | `error` | 1/2 | 1 | 0 | 0 | 0 | 1 | 170 |
+| 23 | `client` | 0/1 | 1 | 0 | 0 | 0 | 1 | 184 |
+| 24 | `config` | 14/21 (second mutant) | 1 | 0 | 0 | 1 | 0 | 271 |
+| 25 | `config` | 15/21 (second mutant) | 1 | 0 | 0 | 1 | 0 | 285 |
+| 26 | `config` | 16/21 (`parse_assignment` mutant) | 1 | 0 | 0 | 1 | 0 | 294 |
+
+Counts by original file, from the outcomes of the 27 shards:
+
+| File | Mutants | Caught | Missed | Timeout | Unviable |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `src/client/krb_error_mapping.rs` | 1 | 0 | 0 | 0 | 1 |
+| `src/config/enctype_expr.rs` | 13 | 8 | 0 | 0 | 5 |
+| `src/config/enctype_names.rs` | 6 | 3 | 0 | 0 | 3 |
+| `src/config/enctype_policy.rs` | 11 | 10 | 0 | 0 | 1 |
+| `src/config/sections.rs` | 6 | 1 | 0 | 4 | 1 |
+| `src/config/toggle.rs` | 5 | 4 | 0 | 0 | 1 |
+| `src/error/policy.rs` | 3 | 0 | 2 | 0 | 1 |
+| total | 45 | 26 | 2 | 4 | 13 |
+
+Survivors. Six mutants have a register row, all `killed`; none is equivalent.
+
+- `RejectedFeature::fmt` and `RejectionReason::fmt` of `src/error/policy.rs`
+  (lines 82 and 118, each replaced by `Ok(Default::default())`) were missed:
+  no test rendered either type. Todo 146 added
+  `rejection_display_is_present_distinct_and_composed` in
+  `tests/policy/rejections.rs` (every feature and reason renders text, no two
+  siblings share it, the checksum feature keeps its id, the rejection message
+  contains the text of its feature and ends with the text of its reason; the
+  wording is not pinned). cargo-mutants re-ran the two mutants in the scratch
+  copy that has the test (`--test policy`): both caught. Five hand mutants of
+  `policy.rs` in a scratch copy with its own target directory, each failing the
+  test and the real tree passing it: either `fmt` replaced by `Ok(())`, the
+  checksum id dropped from the text, `V4Conversion` rendered as `Kerberos V4`
+  and `InsecureByDesign` rendered as `removed and insecure`.
+- `parse_assignment` of `src/config/sections.rs` (line 9, the body replaced by
+  `Ok(("", ""))`, `Ok(("", "xyzzy"))`, `Ok(("xyzzy", ""))` and `Ok(("xyzzy",
+  "xyzzy"))`) timed out in the full suite. Four tests fail on each mutant,
+  `configuration::classification_e::tests::every_libdefaults_boundary_is_reviewed`,
+  `every_realm_boundary_is_reviewed`, `every_section_boundary_is_reviewed` and
+  `tightened_libdefaults_relation_refused_before_sections`; the run then ended
+  only at the per-mutant timeout because
+  `messages::secret_der::tests::transport::kpasswd_request_frames_are_erased_after_failure`
+  kept running for more than 60 s. Re-run with the lib tests of
+  `configuration::classification_e::tests` only (`-- --lib --
+  configuration::classification_e::tests`), all four mutants are caught.
+  The row status is `killed`, not `hang`: a test fails on each mutant.
 
 ### In-diff check after todo 115 (todo 116)
 
@@ -807,8 +945,8 @@ tests, among them
 Critic round 5 (`f77562b`) made the credential owners private, with
 accessors, setters, redacted `Debug` impls and wipes, and changed admission and
 configuration code; it touched the files of 300 of the 552 rows. The register
-was moved to the new tree, and every change was checked by a full campaign. It
-took two rounds.
+was moved to the new tree, and every change was checked by a full campaign of the
+enumerated source set. It took two rounds.
 
 **Remap.** The 552 rows of `7343510` were matched to the 5079 mutants of
 `f77562b` by the method of todo 21: 514 on the mutated text with an identical
@@ -864,8 +1002,8 @@ this round, so no third round was needed.
 ### Final tree (todo 22)
 
 The critic rounds of todo 22 changed the code after `4d3995d`. The register
-was moved to the final tree, and every change was checked by a full campaign,
-a superset of `cargo mutants --in-diff` over the todo-22 diff. It took two
+was moved to the final tree, and every change was checked by a full campaign of the
+enumerated source set, a superset of `cargo mutants --in-diff` over the todo-22 diff. It took two
 rounds.
 
 **Remap.** The 531 rows of `4d3995d` were matched to the mutants of `aa75616`
@@ -929,7 +1067,8 @@ run, so each proof records the CI outcomes of every campaign.
 
 ### Verification campaign (todo 21)
 
-The first complete campaign (`91b09c2`, below) left 528 rows. Todos 19 and
+The first complete campaign of the enumerated source set (`91b09c2`, below)
+left 528 rows. Todos 19 and
 20 triaged them to 471 `killed`, 55 `equivalent` and 2 `hang`. The
 verification campaign took two rounds.
 
@@ -1178,6 +1317,7 @@ minutes).
 | `src/config/realm_values.rs` | 3 | 0 | 3 | 3 | 0 | 0 |
 | `src/config/restrictions.rs` | 4 | 0 | 4 | 3 | 1 | 0 |
 | `src/config/section_decode.rs` | 8 | 0 | 8 | 8 | 0 | 0 |
+| `src/config/sections.rs` | 0 | 4 | 4 | 4 | 0 | 0 |
 | `src/config/unknown.rs` | 26 | 0 | 26 | 25 | 1 | 0 |
 | `src/crypto.rs` | 26 | 9 | 35 | 23 | 8 | 4 |
 | `src/crypto/checked.rs` | 4 | 0 | 4 | 4 | 0 | 0 |
@@ -1187,6 +1327,7 @@ minutes).
 | `src/crypto/verification.rs` | 1 | 0 | 1 | 1 | 0 | 0 |
 | `src/der.rs` | 14 | 0 | 14 | 13 | 1 | 0 |
 | `src/error/credential_debug.rs` | 3 | 0 | 3 | 3 | 0 | 0 |
+| `src/error/policy.rs` | 2 | 0 | 2 | 2 | 0 | 0 |
 | `src/evaluation.rs` | 2 | 0 | 2 | 2 | 0 | 0 |
 | `src/evaluation/data.rs` | 8 | 0 | 8 | 8 | 0 | 0 |
 | `src/file_name.rs` | 7 | 0 | 7 | 3 | 4 | 0 |
@@ -1222,7 +1363,7 @@ minutes).
 | `src/spnego/oid.rs` | 3 | 0 | 3 | 3 | 0 | 0 |
 | `src/spnego/token_debug.rs` | 7 | 0 | 7 | 7 | 0 | 0 |
 | `src/ticket.rs` | 3 | 0 | 3 | 3 | 0 | 0 |
-| total | 569 | 114 | 683 | 620 | 59 | 4 |
+| total | 571 | 118 | 689 | 626 | 59 | 4 |
 
 ## Register
 
@@ -1911,3 +2052,9 @@ minutes).
 | d7666e73b0ba46c093e74a69599c25506cd0582a | `src/ticket.rs:169:5: replace build_encoded -> Result<Vec<u8>, Error> with Ok(vec![1])` | src/ticket.rs | build_encoded | replace body with Ok(vec![1]) | missed | killed | `tests::encoded_ticket_decrypts_to_known_answer` |
 | d7666e73b0ba46c093e74a69599c25506cd0582a | `src/ticket.rs:169:5: replace build_encoded -> Result<Vec<u8>, Error> with Ok(vec![])` | src/ticket.rs | build_encoded | replace body with Ok(vec![]) | missed | killed | `tests::encoded_ticket_decrypts_to_known_answer` |
 | 2a5cc8931388fca8956579b02b03ff3607b920c0 | `src/client/transport/password_delivery.rs:143:16: replace match guard matches!( error.kind(), io::ErrorKind::ConnectionRefused \| io::ErrorKind::ConnectionReset ) with true in send_udp` | src/client/transport/password_delivery.rs | send_udp | replace match guard with true | missed | killed | Todo 111 (task-111 evidence) extracted the guard into `is_udp_refusal` (src/client/transport/password_delivery.rs, same predicate, no behaviour change); the unit tests `udp_refusal_is_exactly_connection_refused_and_reset` (every `io::ErrorKind` of a reply wait) and `udp_refusal_ignores_non_io_errors` kill the predicate mutants and the hand mutants (`ConnectionReset` removed; every I/O error a refusal) without a socket; the in-diff re-run over the todo 111 diff caught all 7 mutants. |
+| b327605e3e4382d3e515e8173776375b3fd7531e | `src/error.rs:189:9: replace <impl fmt::Display for RejectedFeature>::fmt -> fmt::Result with Ok(Default::default())` | src/error/policy.rs | <impl fmt::Display for RejectedFeature>::fmt | replace body with Ok(Default::default()) | missed | killed | `rejections::rejection_display_is_present_distinct_and_composed` (tests/policy/rejections.rs); caught in a re-run with the test, and by the hand mutants listed in the supplemental section |
+| b327605e3e4382d3e515e8173776375b3fd7531e | `src/error.rs:225:9: replace <impl fmt::Display for RejectionReason>::fmt -> fmt::Result with Ok(Default::default())` | src/error/policy.rs | <impl fmt::Display for RejectionReason>::fmt | replace body with Ok(Default::default()) | missed | killed | `rejections::rejection_display_is_present_distinct_and_composed` (tests/policy/rejections.rs); caught in a re-run with the test, and by the hand mutants listed in the supplemental section |
+| b327605e3e4382d3e515e8173776375b3fd7531e | `src/config.rs:1860:5: replace parse_assignment -> Result<(&'line str, &'line str), Error> with Ok(("", ""))` | src/config/sections.rs | parse_assignment | replace body with Ok(("", "")) | timeout | killed | `configuration::classification_e::tests::every_libdefaults_boundary_is_reviewed`, `every_realm_boundary_is_reviewed`, `every_section_boundary_is_reviewed` and `tightened_libdefaults_relation_refused_before_sections` fail on it; caught in a re-run of `configuration::classification_e::tests` |
+| b327605e3e4382d3e515e8173776375b3fd7531e | `src/config.rs:1860:5: replace parse_assignment -> Result<(&'line str, &'line str), Error> with Ok(("", "xyzzy"))` | src/config/sections.rs | parse_assignment | replace body with Ok(("", "xyzzy")) | timeout | killed | `configuration::classification_e::tests::every_libdefaults_boundary_is_reviewed`, `every_realm_boundary_is_reviewed`, `every_section_boundary_is_reviewed` and `tightened_libdefaults_relation_refused_before_sections` fail on it; caught in a re-run of `configuration::classification_e::tests` |
+| b327605e3e4382d3e515e8173776375b3fd7531e | `src/config.rs:1860:5: replace parse_assignment -> Result<(&'line str, &'line str), Error> with Ok(("xyzzy", ""))` | src/config/sections.rs | parse_assignment | replace body with Ok(("xyzzy", "")) | timeout | killed | `configuration::classification_e::tests::every_libdefaults_boundary_is_reviewed`, `every_realm_boundary_is_reviewed`, `every_section_boundary_is_reviewed` and `tightened_libdefaults_relation_refused_before_sections` fail on it; caught in a re-run of `configuration::classification_e::tests` |
+| b327605e3e4382d3e515e8173776375b3fd7531e | `src/config.rs:1860:5: replace parse_assignment -> Result<(&'line str, &'line str), Error> with Ok(("xyzzy", "xyzzy"))` | src/config/sections.rs | parse_assignment | replace body with Ok(("xyzzy", "xyzzy")) | timeout | killed | `configuration::classification_e::tests::every_libdefaults_boundary_is_reviewed`, `every_realm_boundary_is_reviewed`, `every_section_boundary_is_reviewed` and `tightened_libdefaults_relation_refused_before_sections` fail on it; caught in a re-run of `configuration::classification_e::tests` |

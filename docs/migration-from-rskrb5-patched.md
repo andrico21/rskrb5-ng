@@ -2043,7 +2043,7 @@ must use the gate allowlist (`PYTHONDONTWRITEBYTECODE=1`, and workflow-level
 `CARGO_TERM_COLOR=always`). PATH, Python startup/optimization, shell startup,
 shell/default overrides and unapproved setup action inputs are rejected.
 
-Mutation evidence (FU-GATE-R04): each whole-crate campaign shard must retain
+Mutation evidence (FU-GATE-R04): each shard of a sharded mutation campaign must retain
 one successful baseline and a nonempty `mutants.json` with the exact tested
 mutant names. Rerun filtered, baseline-free or incomplete shards; an end time
 and matching counts alone do not certify completeness.
