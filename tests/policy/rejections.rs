@@ -135,7 +135,7 @@ fn policy_converts_into_negotiation_domains() -> Result<(), Box<dyn Error>> {
 /// The wording is not pinned: the text of a feature or reason must be present, differ
 /// from every sibling and keep the checksum id, and the message must contain the two texts.
 #[test]
-fn rejection_display_is_present_distinct_and_composed() {
+fn rejection_display_is_present_distinct_and_composed() -> Result<(), Box<dyn Error>> {
     // Given the nine-feature catalogue and the three reasons.
     let features = [
         RejectedFeature::SingleDes,
@@ -165,7 +165,9 @@ fn rejection_display_is_present_distinct_and_composed() {
         assert!(texts.iter().all(|text| !text.is_empty()));
     }
     // And the checksum feature keeps its identifier.
-    assert!(feature_texts.iter().any(|text| text.contains("4242")));
+    if !feature_texts.iter().any(|text| text.contains("4242")) {
+        return Err("the checksum feature lost its identifier".into());
+    }
     // And the rejection message contains the text of its feature and of its reason.
     for (feature, feature_text) in features.into_iter().zip(&feature_texts) {
         for (reason, reason_text) in reasons.into_iter().zip(&reason_texts) {
@@ -174,6 +176,7 @@ fn rejection_display_is_present_distinct_and_composed() {
             assert!(message.ends_with(reason_text.as_str()));
         }
     }
+    Ok(())
 }
 
 /// Inspect only causal structure, not human-readable formatting.
