@@ -54,10 +54,10 @@ pub(super) async fn discover(
 /// offered on port 464 over both protocols.
 ///
 /// # Errors
-/// Returns the failed target lookup of a published set when no endpoint is
-/// left, [`Error::DnsServiceUnavailable`] when only root targets were
-/// published, DNS errors of the administrative lookup, or `NoKdcEndpoints`
-/// when no host is found at all.
+/// Returns the first failed target lookup of a published set (the UDP set is
+/// asked first) when no endpoint is left, [`Error::DnsServiceUnavailable`]
+/// when only root targets were published, DNS errors of the administrative
+/// lookup, or `NoKdcEndpoints` when no host is found at all.
 ///
 /// # Cancel safety
 /// cancel-safe: abandoning DNS lookups changes no credential state.
