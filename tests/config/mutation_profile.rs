@@ -261,6 +261,12 @@ mod tests {
                     matches!(error, ConfigError::IncludeTooDeep { depth: 9, limit: 8 }),
                     "wrong nesting error: {error}"
                 );
+                // The same error reports include depth, so its text names both limits.
+                let message = error.to_string();
+                assert!(
+                    message.contains("include") && message.contains("subsection"),
+                    "a subsection overflow must not read as an include overflow: {message}"
+                );
             }
         }
         Ok(())

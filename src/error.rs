@@ -711,7 +711,7 @@ pub enum Config {
     #[error("realm has no configured kpasswd servers: {0}")]
     NoKpasswdServer(String),
     /// Include or subsection nesting reached past [`crate::config::MAX_INCLUDE_DEPTH`].
-    #[error("include nesting reached depth {depth}, past the limit of {limit}")]
+    #[error("include or subsection nesting reached depth {depth}, past the limit of {limit}")]
     IncludeTooDeep {
         /// The depth the parser reached.
         depth: usize,
