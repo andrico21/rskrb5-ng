@@ -387,7 +387,7 @@ mod tests {
         let first = with_auth_data.first_mut().context("a first credential")?;
         *first = first
             .clone()
-            .set_auth_data(vec![ccache::AuthorizationDataEntry::new(
+            .with_auth_data(vec![ccache::AuthorizationDataEntry::new(
                 1,
                 vec![2, 3].into(),
             )]);

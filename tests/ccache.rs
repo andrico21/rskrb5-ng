@@ -55,7 +55,7 @@ mod tests {
             vec![201, 202, 203, 204].into(),
         );
         credential = credential.set_second_ticket(vec![211, 212, 213, 214].into());
-        credential = credential.set_auth_data(vec![AuthorizationDataEntry::new(
+        credential = credential.with_auth_data(vec![AuthorizationDataEntry::new(
             1,
             vec![221, 222, 223, 224].into(),
         )]);
@@ -1011,7 +1011,7 @@ mod tests {
             Credential::config_entry(principal.clone(), "opaque", None, vec![0x5a; 100].into());
         credential = credential.set_second_ticket(vec![0x6b; 9].into());
         credential =
-            credential.set_auth_data(vec![AuthorizationDataEntry::new(1, vec![0x7c; 3].into())]);
+            credential.with_auth_data(vec![AuthorizationDataEntry::new(1, vec![0x7c; 3].into())]);
         let mut cache = CCache::new(principal);
         cache.credentials_mut().push(credential);
         // When the cache goes through JSON.

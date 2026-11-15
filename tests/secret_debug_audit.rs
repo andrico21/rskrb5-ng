@@ -135,10 +135,27 @@ mod tests {
     use core::cell::RefCell;
     use std::{env, fs, io, path::Path, process};
 
-    use super::inventory::{inspect, secret_field, secret_owners};
+    use super::inventory::{Storage, inspect, secret_field, secret_owners};
 
     std::thread_local! {
         static EXERCISED: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
+    }
+
+    /// Public fields that expose replaceable credential storage.
+    fn exposed_secrets(owners: &[super::inventory::Owner]) -> Vec<String> {
+        let storage = Storage::new(owners);
+        let mut failures = Vec::new();
+        for owner in owners {
+            for (name, public, ty) in &owner.fields {
+                if *public && !ty.iter().any(|word| word == "&") && storage.field(owner, name, ty) {
+                    failures.push(format!(
+                        "{} exposes replaceable secret {name}",
+                        owner.identity
+                    ));
+                }
+            }
+        }
+        failures
     }
 
     /// New credential owners and derived diagnostics cannot silently escape review.
@@ -154,8 +171,8 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let owners = inspect(root, &root.join("src"))?;
         let nested = secret_owners(&owners);
-        let mut failures = Vec::new();
-        for owner in owners {
+        let mut failures = exposed_secrets(&owners);
+        for owner in &owners {
             if nested.contains(&owner.identity) && active(&owner.identity) {
                 let expected = runtime_identity(&owner.identity);
                 if !EXERCISED.with_borrow(|types| {
@@ -169,16 +186,10 @@ mod tests {
                     ));
                 }
             }
-            for (name, public, ty) in &owner.fields {
+            for (name, _, ty) in &owner.fields {
                 if secret_field(name, ty) && !super::nonsecret::contains(&owner.identity, name) {
                     if owner.derived_debug {
                         failures.push(format!("{} derives Debug for {name}", owner.identity));
-                    }
-                    if *public && !ty.iter().any(|word| word == "&") {
-                        failures.push(format!(
-                            "{} exposes replaceable secret {name}",
-                            owner.identity
-                        ));
                     }
                     if !COVERED.contains(&owner.identity.as_str()) {
                         failures.push(format!(
@@ -351,21 +362,20 @@ mod tests {
         methods: &[super::replacement::Method],
         certificates: &[(&str, &str)],
     ) -> Vec<String> {
-        let names = secret_owners(owners);
+        let storage = Storage::new(owners);
         let secret = |candidate: &super::replacement::Method, name: &str| {
-            credential_storage(owners, &candidate.owner, name)
+            credential_storage(&storage, &candidate.owner, name)
         };
         let mut failures = Vec::new();
         for method in methods {
             let replaced = super::replacement::replaced_fields(method);
-            if !names.contains(&method.owner) || replaced.is_empty() {
+            if !storage.contains(&method.owner) || replaced.is_empty() {
                 continue;
             }
             for owner in owners.iter().filter(|owner| owner.identity == method.owner) {
                 for (field, _, ty) in &owner.fields {
                     if replaced.contains(field)
-                        && secret_field(field, ty)
-                        && !super::nonsecret::contains(&owner.identity, field)
+                        && storage.field(owner, field, ty)
                         && !REPLACEMENT_EXCEPTIONS.iter().any(|(identity, reason)| {
                             *identity == method.identity && !reason.is_empty()
                         })
@@ -448,6 +458,98 @@ mod tests {
         result
     }
 
+    /// A public field of any type that transitively holds a registered secret owner is reported, whatever the type is called.
+    #[test]
+    fn public_fields_of_secret_owner_types_are_reported() -> Result<(), io::Error> {
+        let root = env::temp_dir().join(format!("rskrb5-t151-fields-{}", process::id()));
+        fs::create_dir_all(&root)?;
+        let result = (|| {
+            fs::write(root.join("lib.rs"), "mod client;")?;
+            let prefix = "pub struct EncryptionKey { value: Vec<u8> }\npub struct Validated { key: EncryptionKey }\n";
+            for (fields, expected) in [
+                (
+                    "pub validated: Validated, pub label: String",
+                    vec!["client.rs::Context exposes replaceable secret validated"],
+                ),
+                ("pub label: String, validated: Validated", vec![]),
+                ("pub validated: &'static Validated", vec![]),
+            ] {
+                fs::write(
+                    root.join("client.rs"),
+                    format!("{prefix}pub struct Context {{ {fields} }}"),
+                )?;
+                let owners = inspect(&root, &root)?;
+                assert_eq!(exposed_secrets(&owners), expected, "fields: {fields}");
+            }
+            Ok(())
+        })();
+        fs::remove_dir_all(&root)?;
+        result
+    }
+
+    /// A public method that replaces a field holding a registered secret owner needs a proof like any credential replacement.
+    #[test]
+    fn owner_typed_replacements_require_proof() -> Result<(), io::Error> {
+        let root = env::temp_dir().join(format!("rskrb5-t151-owners-{}", process::id()));
+        fs::create_dir_all(&root)?;
+        let result = (|| {
+            fs::write(root.join("lib.rs"), "mod client;")?;
+            fs::write(
+                root.join("client.rs"),
+                "pub struct EncryptionKey { value: Vec<u8> }\npub struct Validated { key: EncryptionKey }\npub struct Context { validated: Validated }\nimpl Context { pub fn replace(&mut self, value: Validated) { self.validated = value; } }",
+            )?;
+            let owners = inspect(&root, &root)?;
+            let methods = super::replacement::inspect(&root, &root)?;
+            let failures = uncovered_replacements(&owners, &methods, &[]);
+            let expected = "client.rs::Context::replace replaces validated: ";
+            assert!(
+                failures.iter().any(|failure| failure.starts_with(expected)),
+                "owner-typed replacement admitted: {failures:?}"
+            );
+            let certified = [("client.rs::Context::replace", "probe_test")];
+            assert_eq!(
+                uncovered_replacements(&owners, &methods, &certified),
+                Vec::<String>::new()
+            );
+            Ok(())
+        })();
+        fs::remove_dir_all(&root)?;
+        result
+    }
+
+    /// A delegating method that also writes an owner-typed field itself needs its own proof for that write.
+    #[test]
+    fn owner_typed_direct_write_beside_delegation_needs_own_proof() -> Result<(), io::Error> {
+        let root = env::temp_dir().join(format!("rskrb5-t151-delegation-{}", process::id()));
+        fs::create_dir_all(&root)?;
+        let result = (|| {
+            fs::write(root.join("lib.rs"), "mod client;")?;
+            fs::write(
+                root.join("client.rs"),
+                "pub struct EncryptionKey { value: Vec<u8> }\npub struct Validated { key: EncryptionKey }\npub struct Context { validated: Validated, spare: Validated }\nimpl Context { pub fn replace(&mut self, value: Validated) { self.validated = value; } pub fn both(&mut self, value: Validated, spare: Validated) { self.replace(value); self.spare = spare; } }",
+            )?;
+            let owners = inspect(&root, &root)?;
+            let methods = super::replacement::inspect(&root, &root)?;
+            let certified = [
+                ("client.rs::Context::replace", "probe_test"),
+                (
+                    "client.rs::Context::both",
+                    "delegates:client.rs::Context::replace",
+                ),
+            ];
+            let failures = uncovered_replacements(&owners, &methods, &certified);
+            let expected = "client.rs::Context::both replaces spare: ";
+            assert!(
+                failures.iter().any(|failure| failure.starts_with(expected)
+                    && failure.contains("direct replacement of spare requires its own proof")),
+                "direct owner-typed write admitted: {failures:?}"
+            );
+            Ok(())
+        })();
+        fs::remove_dir_all(&root)?;
+        result
+    }
+
     /// A built request that retains a dependency-owned rasn AS-REQ or TGS-REQ replaces credential storage.
     #[test]
     fn request_message_replacements_require_proof() -> Result<(), io::Error> {
@@ -478,16 +580,16 @@ mod tests {
     }
 
     /// Whether `name` is credential storage of the declared owner `identity`.
-    fn credential_storage(owners: &[super::inventory::Owner], identity: &str, name: &str) -> bool {
-        owners
+    fn credential_storage(storage: &Storage<'_>, identity: &str, name: &str) -> bool {
+        storage
+            .owners()
             .iter()
             .filter(|declared| declared.identity == identity)
             .any(|declared| {
-                declared.fields.iter().any(|(field, _, ty)| {
-                    field == name
-                        && secret_field(field, ty)
-                        && !super::nonsecret::contains(&declared.identity, field)
-                })
+                declared
+                    .fields
+                    .iter()
+                    .any(|(field, _, ty)| field == name && storage.field(declared, field, ty))
             })
     }
 
@@ -553,10 +655,82 @@ mod tests {
             "src/spnego.rs::WrapToken::set_checksum",
             "Rejects an existing checksum before assignment; initializes an absent field.",
         ),
+        (
+            "src/spnego.rs::AcceptedContext::ap_req_mut",
+            "Hands out a mutable borrow of the validated AP-REQ and replaces nothing itself; its session key and subkey setters carry their own registered proofs.",
+        ),
+        (
+            "src/ccache.rs::CCache::credentials_mut",
+            "Hands out a mutable borrow of the retained credentials and replaces nothing itself; a credential the caller drops erases its payloads in Credential's Drop.",
+        ),
+        (
+            "src/ccache.rs::CCache::upsert_credential",
+            "mem::replace returns the previous credential to the caller without destroying it, or the new one is appended; the returned credential keeps its Drop erasure.",
+        ),
+        (
+            "src/ccache.rs::CCache::upsert_config_entry",
+            "Delegates to upsert_credential, which returns the previous credential to the caller or appends.",
+        ),
+        (
+            "src/ccache.rs::CCache::remove_entries_for_client",
+            "Moves the matching credentials to the caller and keeps the rest; nothing is destroyed here and the returned credentials keep their Drop erasure.",
+        ),
+        (
+            "src/keytab.rs::Keytab::entries_mut",
+            "Hands out a mutable borrow of the retained entries and replaces nothing itself; an entry the caller drops erases its key in the key's Drop.",
+        ),
+        (
+            "src/keytab.rs::Keytab::add_entry_from_password",
+            "Appends one derived entry; no retained entry is replaced or dropped.",
+        ),
+        (
+            "src/keytab.rs::Keytab::add_entry_from_password_name",
+            "Delegates to add_entry_from_password, which only appends.",
+        ),
+        (
+            "src/keytab.rs::Keytab::add_entry_from_password_ref",
+            "Delegates to add_entry_from_password, which only appends.",
+        ),
+        (
+            "src/pac.rs::CredentialData::credentials_mut",
+            "Hands out a mutable borrow of the retained package owners, which have erasing setters, and replaces nothing itself; the slice cannot drop an owner.",
+        ),
+        (
+            "src/http.rs::NegotiateService::with_now",
+            "Consuming builder: the settings layer, with its keytab, moves through unchanged; only the non-secret validation clock option changes.",
+        ),
+        (
+            "src/http.rs::NegotiateService::with_max_clock_skew",
+            "Consuming builder: the settings layer, with its keytab, moves through unchanged; only the non-secret clock skew option changes.",
+        ),
+        (
+            "src/http.rs::NegotiateService::with_keytab_principal",
+            "Consuming builder: the settings layer, with its keytab, moves through unchanged; only the principal selector (no key bytes) changes.",
+        ),
+        (
+            "src/http.rs::NegotiateService::with_client_address",
+            "Consuming builder: the settings layer, with its keytab, moves through unchanged; only the non-secret client address option changes.",
+        ),
+        (
+            "src/http.rs::NegotiateService::require_client_address",
+            "Consuming builder: the settings layer, with its keytab, moves through unchanged; only the non-secret address requirement changes.",
+        ),
+        (
+            "src/http.rs::NegotiateService::with_shared_replay_cache",
+            "Consuming builder: the settings layer, with its keytab, moves through unchanged; only the non-secret replay cache handle changes.",
+        ),
+        (
+            "src/http.rs::NegotiateService::without_shared_replay_cache",
+            "Consuming builder: the settings layer, with its keytab, moves through unchanged; only the non-secret replay cache handle changes.",
+        ),
     ];
 
     /// Methods with live pre-replacement byte observations in their owning unit tests.
     const REPLACEMENT_PROOFS: &[(&str, &str)] = &[
+        (
+            "src/ccache.rs::Credential::with_auth_data",
+            "authorization_data_replacement_erases_previous_entries",
+        ),
         (
             "src/client.rs::Tokio::cache_service_ticket",
             "client_cache_insertion_erases_live_key_owner",

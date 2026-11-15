@@ -500,7 +500,7 @@ mod tests {
         let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
         let accepted = spnego::accept_sec_context_header(&mut validator, &header)
             .context("SPNEGO AP-REQ validates")?;
-        assert_eq!(accepted.ap_req.client().name(), "testuser1");
+        assert_eq!(accepted.ap_req().client().name(), "testuser1");
 
         let ap_rep_header = accepted
             .ap_rep_response_header_with_confounder(
@@ -519,7 +519,7 @@ mod tests {
         assert_eq!(krb5.token_id(), Krb5TokenId::ApRep);
         drop(
             accepted
-                .ap_req
+                .ap_req()
                 .verify_ap_rep(krb5.message())
                 .context("AP-REP verifies")?,
         );
@@ -582,9 +582,9 @@ mod tests {
         let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
         let accepted = spnego::accept_sec_context_header(&mut validator, context.header_ref())
             .context("client SPNEGO header validates")?;
-        assert_eq!(accepted.ap_req.client().name(), "testuser1");
-        assert_eq!(accepted.ap_req.service().name(), "HTTP/host.test.gokrb5");
-        assert_eq!(accepted.ap_req.sequence_number(), Some(42));
+        assert_eq!(accepted.ap_req().client().name(), "testuser1");
+        assert_eq!(accepted.ap_req().service().name(), "HTTP/host.test.gokrb5");
+        assert_eq!(accepted.ap_req().sequence_number(), Some(42));
         Ok(())
     }
 
@@ -679,7 +679,7 @@ mod tests {
             false,
         )?));
         let accepted = accept_token(&Token::Init(init))??;
-        assert_eq!(accepted.selected_mechanism, ObjectIdentifier::krb5());
+        assert_eq!(*accepted.selected_mechanism(), ObjectIdentifier::krb5());
         Ok(())
     }
 
@@ -763,7 +763,7 @@ mod tests {
         let accepted = accept_token(&Token::Init(init))??;
         // Then its response selects the offered alias and signs the same list.
         assert_eq!(
-            accepted.selected_mechanism,
+            *accepted.selected_mechanism(),
             ObjectIdentifier::ms_legacy_krb5()
         );
         let header = accepted.ap_rep_response_header_with_confounder(
@@ -784,7 +784,7 @@ mod tests {
         );
         let krb5 = Krb5MechToken::decode(response.response_token().context("AP-REP")?)?;
         assert_eq!(krb5.oid(), &ObjectIdentifier::krb5());
-        drop(accepted.ap_req.verify_ap_rep(krb5.message())?);
+        drop(accepted.ap_req().verify_ap_rep(krb5.message())?);
         Ok(())
     }
 
@@ -847,7 +847,7 @@ mod tests {
         // Then a correctly signed retransmission can still establish the context.
         let header = spnego::negotiate_header(&Token::Init(valid))?;
         let accepted = spnego::accept_sec_context_header(&mut validator, &header)?;
-        assert_eq!(accepted.ap_req.client().name(), "testuser1");
+        assert_eq!(accepted.ap_req().client().name(), "testuser1");
         Ok(())
     }
 
@@ -997,7 +997,8 @@ mod tests {
         let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
         // When accepted, then retain the actual list TLV rather than its [0] wrapper.
         let accepted = spnego::accept_sec_context_header(&mut validator, &header)?;
-        assert_eq!(accepted.mech_types_der, Some(decode_hex(MS_THEN_KRB5)?));
+        let expected = decode_hex(MS_THEN_KRB5)?;
+        assert_eq!(accepted.mech_types_der(), Some(expected.as_slice()));
         Ok(())
     }
 
@@ -1053,7 +1054,7 @@ mod tests {
         assert_eq!(response.mech_list_mic(), None);
         let reply = Krb5MechToken::decode(response.response_token().context("AP-REP")?)?;
         assert_eq!(reply.oid(), &ObjectIdentifier::krb5());
-        drop(accepted.ap_req.verify_ap_rep(reply.message())?);
+        drop(accepted.ap_req().verify_ap_rep(reply.message())?);
         Ok(())
     }
 
@@ -1155,7 +1156,7 @@ mod tests {
         init.set_mech_types(vec![ObjectIdentifier::ms_legacy_krb5()]);
         let accepted = accept_token(&Token::Init(init))??;
         assert_eq!(
-            accepted.selected_mechanism,
+            *accepted.selected_mechanism(),
             ObjectIdentifier::ms_legacy_krb5()
         );
         Ok(())
@@ -1173,7 +1174,7 @@ mod tests {
         let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
         let accepted = spnego::accept_sec_context_header(&mut validator, &header)?;
         assert_eq!(
-            accepted.selected_mechanism,
+            *accepted.selected_mechanism(),
             ObjectIdentifier::ms_legacy_krb5()
         );
         Ok(())
@@ -1194,7 +1195,7 @@ mod tests {
             Err(Spnego::InvalidMechListMic)
         ));
         let accepted = spnego::accept_sec_context_header(&mut validator, &good)?;
-        assert_eq!(accepted.ap_req.client().name(), "testuser1");
+        assert_eq!(accepted.ap_req().client().name(), "testuser1");
         Ok(())
     }
 
@@ -1335,7 +1336,7 @@ mod tests {
         };
         let token = authenticator_token(Some(checksum), Some(0))?;
         let accepted = accept_token(&token)?.context("GSS context")?;
-        assert_eq!(accepted.ap_req.sequence_number(), Some(0));
+        assert_eq!(accepted.ap_req().sequence_number(), Some(0));
         Ok(())
     }
 
@@ -1479,7 +1480,7 @@ mod tests {
             );
             let accepted =
                 accept_token(context.spnego_token())?.context("nondelegating context")?;
-            assert_eq!(accepted.ap_req.sequence_number(), Some(42));
+            assert_eq!(accepted.ap_req().sequence_number(), Some(42));
         }
         Ok(())
     }
@@ -1566,7 +1567,7 @@ mod tests {
             Some(u32::MAX),
         )?;
         let accepted = accept_token(&token)?.context("framed delegation")?;
-        assert_eq!(accepted.ap_req.sequence_number(), Some(u32::MAX));
+        assert_eq!(accepted.ap_req().sequence_number(), Some(u32::MAX));
         Ok(())
     }
 

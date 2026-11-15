@@ -47,6 +47,25 @@ mod tests {
         Ok(())
     }
 
+    /// Replacing the authorization data erases every previous entry's live payload.
+    #[test]
+    fn authorization_data_replacement_erases_previous_entries() -> Result<(), Box<dyn Error>> {
+        let principal = Principal::new("R", 1, vec!["alice".to_owned()]);
+        let mut credential =
+            Credential::config_entry(principal, "opaque", None, vec![71; 7].into());
+        credential = credential.with_auth_data(vec![
+            AuthorizationDataEntry::new(1, hex::decode("31".repeat(23))?.into()),
+            AuthorizationDataEntry::new(2, hex::decode("32".repeat(24))?.into()),
+        ]);
+        EVENTS.with_borrow_mut(Vec::clear);
+        credential =
+            credential.with_auth_data(vec![AuthorizationDataEntry::new(3, vec![0x33; 25].into())]);
+        EVENTS.with_borrow(|events| assert_eq!(events.as_slice(), [(23, true), (24, true)]));
+        assert_eq!(credential.auth_data().len(), 1);
+        drop(credential);
+        Ok(())
+    }
+
     /// Complete and partially parsed credentials erase each retained payload before release.
     #[test]
     fn cache_payloads_erased_on_drop_and_parse_failure() -> Result<(), Box<dyn Error>> {
@@ -56,7 +75,7 @@ mod tests {
             Credential::config_entry(principal.clone(), "opaque", None, vec![71; 7].into());
         credential = credential.set_second_ticket(vec![81; 8].into());
         credential =
-            credential.set_auth_data(vec![AuthorizationDataEntry::new(1, vec![91; 9].into())]);
+            credential.with_auth_data(vec![AuthorizationDataEntry::new(1, vec![91; 9].into())]);
         let mut cache = CCache::new(principal);
         cache.credentials_mut().push(credential);
         let encoded = cache.to_bytes()?;

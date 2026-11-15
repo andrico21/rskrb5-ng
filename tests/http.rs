@@ -671,7 +671,7 @@ mod tests {
                 let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
                 let mut accepted =
                     spnego::accept_sec_context_header(&mut validator, context.header_ref())?;
-                accepted.mech_types_der = Some(hex::decode("300b06092a864886f712010202")?);
+                accepted.set_mech_types_der(Some(hex::decode("300b06092a864886f712010202")?));
                 let header = accepted.ap_rep_response_header_with_confounder(
                     &decode_hex(AP_REP_CONFOUNDER)?,
                     &ApRepOptions::default()
@@ -722,7 +722,7 @@ mod tests {
             let mut accepted =
                 spnego::accept_sec_context_header(&mut validator, context.header_ref())?;
             let list = decode_hex("300b06092a864886f712010202")?;
-            accepted.mech_types_der = Some(list.clone());
+            accepted.set_mech_types_der(Some(list.clone()));
             let header = accepted.ap_rep_response_header_with_confounder(
                 &decode_hex(AP_REP_CONFOUNDER)?,
                 &ApRepOptions::default().with_sequence_number(Some(77)),
@@ -985,8 +985,8 @@ mod tests {
         let accepted =
             krb_http::accept_request(&mut validator, &mut request).context("request validates")?;
 
-        assert_eq!(accepted.ap_req.client().name(), "testuser1");
-        assert_eq!(accepted.ap_req.service().name(), "HTTP/host.test.gokrb5");
+        assert_eq!(accepted.ap_req().client().name(), "testuser1");
+        assert_eq!(accepted.ap_req().service().name(), "HTTP/host.test.gokrb5");
         assert!(
             request.extensions().get::<AcceptedContext>().is_some(),
             "accepted context is attached to request extensions"
@@ -1006,8 +1006,8 @@ mod tests {
         let accepted =
             krb_http::accept_request(&mut validator, &mut request).context("request validates")?;
 
-        assert_eq!(accepted.ap_req.client().name(), "testuser1");
-        assert_eq!(accepted.ap_req.service().name(), "HTTP/host.test.gokrb5");
+        assert_eq!(accepted.ap_req().client().name(), "testuser1");
+        assert_eq!(accepted.ap_req().service().name(), "HTTP/host.test.gokrb5");
         Ok(())
     }
 
@@ -2123,8 +2123,8 @@ mod tests {
             let Some(accepted) = req.extensions().get::<AcceptedContext>() else {
                 return ready(Err("accepted context exists".into()));
             };
-            assert_eq!(accepted.ap_req.client().name(), "testuser1");
-            assert_eq!(accepted.ap_req.service().name(), "HTTP/host.test.gokrb5");
+            assert_eq!(accepted.ap_req().client().name(), "testuser1");
+            assert_eq!(accepted.ap_req().service().name(), "HTTP/host.test.gokrb5");
             ready(Ok(Response::new(())))
         }
     }
@@ -2148,8 +2148,8 @@ mod tests {
             let Some(accepted) = req.extensions().get::<AcceptedContext>() else {
                 return ready(Err("accepted context exists".into()));
             };
-            assert_eq!(accepted.ap_req.client().name(), "testuser1");
-            assert_eq!(accepted.ap_req.service().name(), "HTTP/host.test.gokrb5");
+            assert_eq!(accepted.ap_req().client().name(), "testuser1");
+            assert_eq!(accepted.ap_req().service().name(), "HTTP/host.test.gokrb5");
             assert_eq!(req.method().as_str(), "POST");
             assert_eq!(req.uri().path(), "/upload");
             assert_eq!(req.body(), &self.expected);

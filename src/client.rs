@@ -3665,7 +3665,6 @@ where
 
 /// Explicit request options and authenticator inputs for a subkey-bearing TGS request.
 #[derive(Clone)]
-#[non_exhaustive]
 pub struct TgsRequestParts<'request> {
     /// The ticket request options.
     options: TgsReq,

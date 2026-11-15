@@ -60,7 +60,7 @@ fn random_reply_retains_permanent_refusal() -> Result<(), Box<dyn Error>> {
     let mut accepted = spnego::accept_sec_context_header(&mut validator, &header)?;
     for id in [1_i32, 24_i32] {
         accepted
-            .ap_req
+            .ap_req_mut()
             .set_session_key(EncryptionKey::new(id, vec![0x42; 16]));
         for reply in [
             accepted.ap_rep_response_header_with_confounder(&[0x22; 16], &ApRepOptions::default()),
@@ -192,15 +192,15 @@ fn reciprocal_mic_admits_selected_key() -> Result<(), Box<dyn Error>> {
         let mut validator = Validator::new(&keys).with_now(now);
         let mut accepted = spnego::accept_sec_context_header(&mut validator, &header)?;
         accepted
-            .ap_req
+            .ap_req_mut()
             .set_crypto_policy(CryptoPolicy::from_libdefaults(&config.libdefaults)?);
-        accepted.ap_req.set_subkey(initiator.map(|id| {
+        accepted.ap_req_mut().set_subkey(initiator.map(|id| {
             EncryptionKey::new(
                 id,
                 vec![0x51; KerberosEtype::from_etype_id(id).map_or(8, KerberosEtype::key_len)],
             )
         }));
-        accepted.mech_types_der = Some(vec![0x30, 0]);
+        accepted.set_mech_types_der(Some(vec![0x30, 0]));
         let options = ApRepOptions::default()
             .with_subkey(acceptor.map(|id| EncryptionKey::new(id, vec![0x52; 32])));
         let result = accepted.ap_rep_response_header_with_confounder(&[0x22; 16], &options);
