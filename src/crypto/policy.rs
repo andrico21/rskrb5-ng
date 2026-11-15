@@ -101,9 +101,9 @@ impl Policy {
     /// Rejects weak crypto and invalid, disabled, forbidden or empty permitted lists.
     /// The request lists `default_tkt_enctypes` and `default_tgs_enctypes` are not read
     /// here, so an acceptor depends on the permitted list only; client request
-    /// construction (`AsReq::from_libdefaults`, `TgsReq::from_libdefaults` and the
-    /// configured Tokio client) checks them against it and fails with
-    /// [`error::Config::EnctypeNotPermitted`].
+    /// construction (`AsReq::from_libdefaults`, `TgsReq::from_libdefaults`, the
+    /// configured Tokio client and the configured kpasswd result path) checks
+    /// them against it and fails with [`error::Config::EnctypeNotPermitted`].
     #[inline]
     pub fn from_libdefaults(defaults: &LibDefaults) -> Result<Self, error::Config> {
         restrictions::defaults(defaults)?;
