@@ -47,6 +47,8 @@ def cargo_omissions(page: str) -> set[str]:
     return found
 
 
+# The core's two single-lint overrides; `cargo::manual_readme` is temporary (rust-lang/cargo#17730).
+ALLOWS = {("clippy", "redundant_pub_crate"), ("cargo", "manual_readme")}
 TABLES = {"rustc": "rust", "restriction": "clippy", "Cargo restriction": "cargo"}
 
 
@@ -68,10 +70,8 @@ def compare(core: str, profile: dict, discovered: dict[str, set[str]]) -> list[s
         for name, value in entries.items()
         if (value if isinstance(value, str) else value.get("level")) == "allow"
     }
-    if allows != {("clippy", "redundant_pub_crate")}:
-        errors.append(
-            f"only allow must be clippy::redundant_pub_crate; got {sorted(allows)}"
-        )
+    if allows != ALLOWS:
+        errors.append(f"the only allows must be {sorted(ALLOWS)}; got {sorted(allows)}")
     return errors
 
 
@@ -80,6 +80,7 @@ def self_test() -> int:
     profile = {
         "rust": {"new_lint": "deny"},
         "clippy": {"unwrap_used": "deny", "redundant_pub_crate": "allow"},
+        "cargo": {"manual_readme": "allow"},
     }
     discovered = {
         "rustc": omissions(
@@ -92,11 +93,15 @@ def self_test() -> int:
         "Cargo restriction": set(),
     }
     assert compare(core, profile, discovered) == []
-    lowered = {"rust": profile["rust"], "clippy": {"redundant_pub_crate": "allow"}}
+    lowered = {**profile, "clippy": {"redundant_pub_crate": "allow"}}
     assert any("unwrap_used" in e for e in compare(core, lowered, discovered))
     crossed = core.replace("| rustc |", "| restriction |")
     assert any("nightly_only" in e for e in compare(crossed, profile, discovered))
     assert compare(core, {"clippy": {"unwrap_used": "allow"}}, discovered)
+    no_cargo_allow = {**profile, "cargo": {"manual_readme": "deny"}}
+    assert any("manual_readme" in e for e in compare(core, no_cargo_allow, discovered))
+    third = {**profile, "cargo": {"manual_readme": "allow", "pedantic": "allow"}}
+    assert any("pedantic" in e for e in compare(core, third, discovered))
     page = "".join(
         f'<h2 id="{name}"><a>{name}</a></h2><p>Group: <code class="x">{group}</code></p>'
         for name, group in (
@@ -107,7 +112,7 @@ def self_test() -> int:
     )
     assert cargo_omissions(page + "</main>") == {"non_snake_case_packages"}
     cargo_core = core + "| `cargo::non_snake_case_packages` | Cargo restriction | pair |\n"
-    cargo_profile = {**profile, "cargo": {"manual_readme": "deny"}}
+    cargo_profile = profile
     cargo_found = {**discovered, "Cargo restriction": {"non_snake_case_packages"}}
     assert compare(cargo_core, cargo_profile, cargo_found) == []
     assert any(
@@ -118,7 +123,7 @@ def self_test() -> int:
         "stale exclusion" in e
         for e in compare(cargo_core, cargo_profile, {**discovered, "Cargo restriction": set()})
     )
-    print("completeness_check self-test: ok (missing lint, namespaces, sole allow, Cargo leg)")
+    print("completeness_check self-test: ok (missing lint, namespaces, the two allows, Cargo leg)")
     return 0
 
 
