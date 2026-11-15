@@ -14,7 +14,7 @@ use super::{
 /// Realm of every exchange in this module.
 const REALM: &str = "TEST.GOKRB5";
 
-/// SRV answers of one fixture name: `(port, target)`; the target `.` is the root name.
+/// SRV answers of one fixture name: `(port, target)`, the first with the best priority; the target `.` is the root name.
 type Records = Vec<(u16, &'static str)>;
 
 /// A fake DNS server and the questions it was asked, in order.
@@ -82,7 +82,7 @@ async fn serve(
         response.queries = request.queries.clone();
         match zone.iter().find(|(owner, _)| *owner == name) {
             Some((_, records)) if query.query_type() == RecordType::SRV => {
-                for (port, host) in records {
+                for (priority, (port, host)) in (0_u16..).zip(records) {
                     let target = if *host == "." {
                         Name::root()
                     } else {
@@ -91,7 +91,7 @@ async fn serve(
                     response.answers.push(Record::from_rdata(
                         query.name().clone(),
                         60,
-                        RData::SRV(SRV::new(0, 0, *port, target)),
+                        RData::SRV(SRV::new(priority, 0, *port, target)),
                     ));
                 }
             }
@@ -374,6 +374,43 @@ fn kpasswd_auto_empty_list_asks_admin_once_for_both_passes() -> Result<(), TestE
                 describe(&result)
             );
         }
+        Ok(())
+    })
+}
+
+/// The TCP pass keeps the SRV priority order of the record set: the best entry answers, the next is never used.
+#[test]
+fn kpasswd_auto_tcp_pass_keeps_the_priority_order() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given two live TCP entries of one record set, the second with the worse priority.
+        let (_first_udp, first) = bind_udp_and_tcp_pair().await?;
+        let (_second_udp, second) = bind_udp_and_tcp_pair().await?;
+        let dns = Dns::start(vec![(
+            "_kpasswd._tcp.test.gokrb5.",
+            vec![
+                (first.local_addr()?.port(), "127.0.0.1."),
+                (second.local_addr()?.port(), "127.0.0.1."),
+            ],
+        )])
+        .await?;
+        let server = tokio::spawn(async move {
+            let (request, mut socket) = read_tcp_request(&first).await?;
+            write_tcp_response(&mut socket, b"tcp-reply").await?;
+            Ok::<_, io::Error>(request)
+        });
+        // When the Auto request runs.
+        let result = dns
+            .transport()?
+            .send_to_kpasswd_realm(&dns_config()?, KdcProtocol::Auto, REALM, REQUEST)
+            .await;
+        let _questions = dns.finish().await?;
+        // Then the best entry answered and the other was never contacted.
+        assert_eq!(shown(result)?, b"tcp-reply");
+        assert_eq!(
+            bounded(Duration::from_secs(10), "first TCP peer", server).await???,
+            REQUEST
+        );
+        assert_no_connection(&second, "second TCP entry").await;
         Ok(())
     })
 }
