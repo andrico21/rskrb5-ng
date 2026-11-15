@@ -211,9 +211,10 @@ These are breaking; the migration guide maps each one.
 
 - Checked AS/TGS exchanges authorize encrypted request-body authorization data
   under the effective crypto policy before transport, preserving typed causes.
-  Known unsupported credential PA envelopes (including FAST, encrypted challenge
-  and PKINIT), outgoing peer-only enctype hints and the embedding wrapper
-  PA-GET-FROM-TYPED-DATA (type 22) are rejected (FU-CLI-R21, FU-CLI-R32).
+  Known unsupported PA types (including FAST, encrypted challenge and PKINIT),
+  outgoing peer-only enctype hints and the embedding wrapper
+  PA-GET-FROM-TYPED-DATA (type 22) are rejected; an unsupported type is refused
+  as `outgoing PA type N is not supported` (FU-CLI-R21, FU-CLI-R32, FU-CLI-R36).
 
 - Ccache parsing bounds every record count (principal components, addresses,
   authorization data) against the remaining input before reserving memory, so
@@ -770,7 +771,10 @@ Security fail-closed parsing and verification:
   future, body and error are (FU-HTTP-06).
 - `NegotiateService` maps replay-cache and poisoned-validator
   faults to an opaque hardened 500 with the cause as an `Arc<Http>` response
-  extension; authentication failures stay 401 (FU-HTTP-R02).
+  extension; authentication failures stay 401 (FU-HTTP-R02). The new
+  `http::is_internal_fault(&error::Spnego)` is the test of the replay-cache
+  faults that the service and the Axum example share, for a hand-written layer
+  that needs the same split (FU-HTTP-R10).
 - `NegotiateService` is `Clone`; clones share the validator and replay state
   (FU-HTTP-R03).
 - AP-REP and KRB-CRED accept DES3 zero padding below eight bytes; other
@@ -1271,6 +1275,9 @@ Configuration:
 - An `includedir` directive at include depth 9 returns `IncludeTooDeep` even
   when the directory is empty or holds only ignored files; depth 8 remains
   accepted (FU-CFG-R15).
+- `Error::IncludeTooDeep` reads `include or subsection nesting reached depth N,
+  past the limit of M`: the variant also reports subsection nesting, and the
+  text said `include nesting` (FU-CFG-R44).
 - Configuration defaults `k5login_authoritative` to true instead of false;
   local-login authorization remains deferred, so this grants no login. Ticket
   and renewable lifetimes use the checked MIT interval parser, rejecting

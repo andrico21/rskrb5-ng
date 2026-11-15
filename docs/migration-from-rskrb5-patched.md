@@ -1783,6 +1783,10 @@ shared cache ceiling.
 The Axum example now distinguishes replay infrastructure failures from invalid
 credentials (FU-HTTP-R05): expect HTTP 500 and inspect `Arc<error::Http>` in local
 response extensions, rather than retrying credentials after an apparent 401.
+`NegotiateService` and the example make that split with the new
+`http::is_internal_fault(&error::Spnego) -> bool` (FU-HTTP-R10); a layer of
+your own that calls `http::accept_request` can call it on the `Error::Spnego`
+it gets.
 
 Use `Validator::from_keytab(keytab)` for an owning service, as the Axum example
 now does (FU-HTTP-R06). Do not leak a keytab merely to obtain a static validator.

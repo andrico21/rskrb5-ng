@@ -66,8 +66,9 @@ Admission does not decrypt ciphertext or certify that a KDC will accept it.
 Encrypted ticket contents and authenticator plaintext are not visible envelope
 fields; builders check locally selected keys before encryption.
 
-The checked PA boundary rejects known unsupported credential mechanisms with
-`error::Client::Encode` targeting `PA-DATA`: legacy Unix-time/hardware/SAM,
+The checked PA boundary rejects known unsupported PA types with
+`error::Client::Encode` targeting `PA-DATA` and the message
+`outgoing PA type N is not supported`: legacy Unix-time/hardware/SAM,
 SESAME/DCE, modern PKINIT, extra TGT, X509 S4U, authentication sets,
 FAST armor, encrypted challenge, OTP, EPAK, PKINIT key exchange, PKU2U, SPAKE,
 OAuth2 and passkey mechanisms. Outgoing peer-only enctype hints (11/19/23/165)
