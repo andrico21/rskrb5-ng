@@ -1090,9 +1090,9 @@ impl LibDefaults {
     /// The keytab identity template never reads `UID`.
     /// Use [`Self::new`] and set `k5login_directory` explicitly to avoid discovery.
     ///
-    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
-    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
-    /// constructors.
+    /// In a set-uid or set-gid process `HOME` is still read. MIT 1.22.2 never reads `HOME` for
+    /// `k5login_directory` (`localauth_k5login.c:106` uses the passwd home directory of the target
+    /// user) and this crate only stores the value; such programs should use [`Self::new`].
     #[inline]
     #[must_use]
     pub fn from_env() -> Self {

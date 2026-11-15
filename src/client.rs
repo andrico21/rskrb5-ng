@@ -4067,11 +4067,13 @@ pub fn build_ticket_renewal_req_with_confounder(
 /// # Errors
 ///
 /// Before the transport is used, returns [`Error::Encode`] when the request DER
-/// does not encode the message it carries or a PA-DATA entry is an unsupported
-/// credential mechanism or a peer-only enctype hint, [`Error::Decode`] when a
-/// PA-DATA value does not decode, and [`Error::Crypto`] carrying the typed
-/// policy refusal when the crypto policy does not permit an encryption type
-/// that the request or the reply key uses. Then returns the transport's error,
+/// does not encode the message it carries or a PA-DATA entry is a known
+/// unsupported PA type, a peer-only enctype hint or the embedding wrapper
+/// PA-GET-FROM-TYPED-DATA (type 22), [`Error::Decode`] when a PA-DATA value
+/// does not decode, and [`Error::Crypto`] carrying the typed policy refusal when
+/// the crypto policy does not permit an encryption type that the request or the
+/// reply key uses or a PA-DATA entry has a permanently rejected type (draft-9
+/// PKINIT, types 14 and 15). Then returns the transport's error,
 /// and the errors of [`process_as_rep`].
 #[inline]
 pub fn exchange_as_req<T>(
@@ -4092,11 +4094,13 @@ where
 /// # Errors
 ///
 /// Before the transport is used, returns [`Error::Encode`] when the request DER
-/// does not encode the message it carries or a PA-DATA entry is an unsupported
-/// credential mechanism or a peer-only enctype hint, [`Error::Decode`] when a
-/// PA-DATA value does not decode, and [`Error::Crypto`] carrying the typed
-/// policy refusal when the crypto policy does not permit an encryption type
-/// that the request or the reply key uses. Then returns the transport's error,
+/// does not encode the message it carries or a PA-DATA entry is a known
+/// unsupported PA type, a peer-only enctype hint or the embedding wrapper
+/// PA-GET-FROM-TYPED-DATA (type 22), [`Error::Decode`] when a PA-DATA value
+/// does not decode, and [`Error::Crypto`] carrying the typed policy refusal when
+/// the crypto policy does not permit an encryption type that the request or the
+/// reply key uses or a PA-DATA entry has a permanently rejected type (draft-9
+/// PKINIT, types 14 and 15). Then returns the transport's error,
 /// and the errors of [`process_tgs_rep`].
 #[inline]
 pub fn exchange_tgs_req<T>(
