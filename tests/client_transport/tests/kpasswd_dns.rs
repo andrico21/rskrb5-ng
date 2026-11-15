@@ -134,7 +134,7 @@ async fn assert_no_connection(listener: &TcpListener, what: &str) {
 fn kpasswd_auto_udp_only_zone_never_asks_admin() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given a zone that publishes `_kpasswd._udp` and `_kerberos-adm._tcp` (MIT's documented layout).
-        let (udp, listener) = bind_udp_and_tcp_pair().await?;
+        let (listener, udp) = bind_tcp_and_udp_pair().await?;
         let port = udp.local_addr()?.port();
         let dns = Dns::start(vec![
             ("_kpasswd._udp.test.gokrb5.", vec![(port, "127.0.0.1.")]),
@@ -171,7 +171,7 @@ fn kpasswd_auto_root_target_leaves_the_other_set_in_use() -> Result<(), TestErro
     runtime()?.block_on(async {
         for root_in_tcp in [true, false] {
             // Given one record set answering the root name and the other a live endpoint.
-            let (udp, listener) = bind_udp_and_tcp_pair().await?;
+            let (listener, udp) = bind_tcp_and_udp_pair().await?;
             let port = udp.local_addr()?.port();
             let live = vec![(port, "127.0.0.1.")];
             let root = vec![(0, ".")];
@@ -244,7 +244,7 @@ fn kpasswd_auto_root_target_leaves_the_other_set_in_use() -> Result<(), TestErro
 fn kpasswd_auto_root_target_among_real_records_is_skipped() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given a `_kpasswd._tcp` set holding a root record and a live endpoint, and a published administration host.
-        let (udp, listener) = bind_udp_and_tcp_pair().await?;
+        let (listener, udp) = bind_tcp_and_udp_pair().await?;
         let dns = Dns::start(vec![
             (
                 "_kpasswd._tcp.test.gokrb5.",
@@ -285,7 +285,7 @@ fn kpasswd_auto_root_target_among_real_records_is_skipped() -> Result<(), TestEr
 fn kpasswd_auto_root_targets_only_are_unavailable() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given both record sets answering only the root name, and a published administration host.
-        let (udp, listener) = bind_udp_and_tcp_pair().await?;
+        let (listener, udp) = bind_tcp_and_udp_pair().await?;
         let dns = Dns::start(vec![
             ("_kpasswd._udp.test.gokrb5.", vec![(0, ".")]),
             ("_kpasswd._tcp.test.gokrb5.", vec![(0, ".")]),
@@ -399,8 +399,8 @@ fn kpasswd_auto_tcp_only_zone_failing_asks_no_admin() -> Result<(), TestError> {
 fn kpasswd_auto_both_record_sets_discovered_once_tcp_first() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given a live UDP entry and a live TCP entry on different hosts of one zone.
-        let (udp, udp_listener) = bind_udp_and_tcp_pair().await?;
-        let (tcp_udp, tcp_listener) = bind_udp_and_tcp_pair().await?;
+        let (udp_listener, udp) = bind_tcp_and_udp_pair().await?;
+        let (tcp_listener, tcp_udp) = bind_tcp_and_udp_pair().await?;
         let dns = Dns::start(vec![
             (
                 "_kpasswd._udp.test.gokrb5.",
@@ -445,7 +445,7 @@ fn kpasswd_auto_udp_pass_follows_a_refused_tcp_pass() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given a refused TCP entry and a live UDP entry.
         let tcp_port = closed_port_number().await?;
-        let (udp, listener) = bind_udp_and_tcp_pair().await?;
+        let (listener, udp) = bind_tcp_and_udp_pair().await?;
         drop(listener);
         let dns = Dns::start(vec![
             ("_kpasswd._tcp.test.gokrb5.", vec![(tcp_port, "127.0.0.1.")]),
@@ -519,8 +519,8 @@ fn kpasswd_auto_empty_list_asks_admin_once_for_both_passes() -> Result<(), TestE
 fn kpasswd_auto_tcp_pass_keeps_the_priority_order() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given two live TCP entries of one record set, the second with the worse priority.
-        let (_first_udp, first) = bind_udp_and_tcp_pair().await?;
-        let (_second_udp, second) = bind_udp_and_tcp_pair().await?;
+        let (first, _first_udp) = bind_tcp_and_udp_pair().await?;
+        let (second, _second_udp) = bind_tcp_and_udp_pair().await?;
         let dns = Dns::start(vec![(
             "_kpasswd._tcp.test.gokrb5.",
             vec![

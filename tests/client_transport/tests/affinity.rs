@@ -8,9 +8,8 @@ use super::*;
 #[test]
 fn tokio_transport_auto_honors_tcp_first_udp_preference_limit() -> Result<(), TestError> {
     runtime()?.block_on(async {
-        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let (listener, udp) = bind_tcp_and_udp_pair().await?;
         let addr = listener.local_addr()?;
-        let udp = UdpSocket::bind(addr).await?;
         let config = config_with_kdcs_and_udp_limit([addr.to_string()], 1)?;
         let task = tokio::spawn(async move {
             let (request, mut socket) = read_tcp_request(&listener).await?;
