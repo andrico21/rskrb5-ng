@@ -438,3 +438,4 @@ is a parity feature, not a defect>`.
 | critic:critics-efadae8/u5.md#U5-04 | FU-CFG-R41 | no |
 | critic:critics-efadae8/u5.md#U5-05 | FU-CFG-R42 | no |
 | critic:critics-efadae8/u6.md#U6-04 | FU-CFG-R43 | no |
+| executor:todo-147#in-diff-mutation-check-efadae8 | FU-FUZ-R04 | no |
