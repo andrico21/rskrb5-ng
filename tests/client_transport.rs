@@ -8,3 +8,7 @@ mod ambient_guard;
 /// Transport scenarios and their loopback fixtures.
 #[path = "client_transport/cases.rs"]
 mod cases;
+
+/// A loopback TCP listener and UDP socket on one port number, retried on a collision.
+#[path = "support/loopback_pair.rs"]
+mod loopback_pair;

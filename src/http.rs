@@ -47,9 +47,7 @@ use crate::{
 /// HTTP Negotiate adapter result.
 pub type Result<T> = CoreResult<T, Error>;
 
-use crate::error::Http as Error;
-#[cfg(feature = "tower")]
-use crate::error::{Service as ServiceError, Spnego as SpnegoError};
+use crate::error::{Http as Error, Service as ServiceError, Spnego as SpnegoError};
 
 /// Tower Negotiate middleware error.
 #[cfg(feature = "tower")]
@@ -655,6 +653,26 @@ pub fn accept_request<B>(
     let accepted = spnego::accept_sec_context_header(validator, authorization_header(request)?)?;
     drop(request.extensions_mut().insert(accepted.clone()));
     Ok(accepted)
+}
+
+/// Whether `error` is a fault of the server, not a failure of the client's credentials.
+///
+/// These are the faults of the replay cache: its lock is poisoned, the validation clock moved
+/// behind its high-water mark, or all its slots hold live records. `NegotiateService` answers such a
+/// request `500 Internal Server Error`, with the error as an `Arc<Http>` response extension,
+/// instead of a `401`; a handler built on
+/// [`accept_request`] should do the same for an [`Error::Spnego`] that passes this test.
+#[inline]
+#[must_use]
+pub const fn is_internal_fault(error: &SpnegoError) -> bool {
+    matches!(
+        error,
+        SpnegoError::Service(
+            ServiceError::ReplayCachePoisoned
+                | ServiceError::ReplayCacheClockRollback
+                | ServiceError::ReplayCacheCapacityExceeded { capacity: _ }
+        )
+    )
 }
 
 /// Return the first Negotiate challenge from all WWW-Authenticate headers.
@@ -1707,14 +1725,7 @@ where
                 return NegotiateFuture::ready(Ok(challenge_response()));
             }
             Err(Error::Spnego(source)) => {
-                if matches!(
-                    &source,
-                    SpnegoError::Service(
-                        ServiceError::ReplayCachePoisoned
-                            | ServiceError::ReplayCacheClockRollback
-                            | ServiceError::ReplayCacheCapacityExceeded { capacity: _ }
-                    )
-                ) {
+                if is_internal_fault(&source) {
                     let mut response = Response::new(ResBody::default());
                     *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                     drop(

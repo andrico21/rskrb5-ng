@@ -42,7 +42,7 @@ mod tests {
     mod bounded;
     use bounded::{bounded, stop};
 
-    use crate::ambient_guard::tests::access_violations;
+    use crate::{ambient_guard::tests::access_violations, loopback_pair::bind_tcp_and_udp_pair};
     /// Configured preauthentication connection reuse.
     mod affinity;
     /// Live KDC probe exchange implementation.
@@ -57,6 +57,8 @@ mod tests {
     mod kpasswd_order;
     /// Checked password result regressions.
     mod password_results;
+    /// The shared loopback port-pair helper and its retry proof.
+    mod port_pair;
     /// Unsigned outcomes through both public checked helpers.
     mod unsigned;
     use core::{fmt, future::poll_fn, net::SocketAddr, pin::pin, task::Poll};
@@ -136,7 +138,7 @@ mod tests {
     #[test]
     fn kpasswd_udp_timeout_does_not_retry_tcp() -> Result<(), TestError> {
         runtime()?.block_on(async {
-            let (udp, tcp) = bind_udp_and_tcp_pair().await?;
+            let (tcp, udp) = bind_tcp_and_udp_pair().await?;
             let config = config_with_kpasswd_servers([udp.local_addr()?.to_string()], 1465)?;
             let received = tokio::spawn(async move {
                 let mut bytes = [0; 64];
@@ -662,7 +664,7 @@ mod tests {
         runtime()?.block_on(async {
             for tcp_first in [false, true] {
                 for too_big in [false, true] {
-                    let (udp, tcp) = bind_udp_and_tcp_pair().await?;
+                    let (tcp, udp) = bind_tcp_and_udp_pair().await?;
                     let addr = udp.local_addr()?;
                     let config = config_with_kdcs_and_udp_limit(
                         [addr.to_string()],
@@ -721,7 +723,7 @@ mod tests {
     fn direct_auto_classifies_udp_reply() -> Result<(), TestError> {
         runtime()?.block_on(async {
             for too_big in [false, true] {
-                let (udp, tcp) = bind_udp_and_tcp_pair().await?;
+                let (tcp, udp) = bind_tcp_and_udp_pair().await?;
                 let addr = udp.local_addr()?;
                 let response = if too_big {
                     response_too_big_error()?
@@ -1044,7 +1046,7 @@ mod tests {
     #[test]
     fn tokio_transport_auto_retries_tcp_after_udp_response_too_big() -> Result<(), TestError> {
         runtime()?.block_on(async {
-            let (udp, listener) = bind_udp_and_tcp_pair().await?;
+            let (listener, udp) = bind_tcp_and_udp_pair().await?;
             let addr = udp.local_addr()?;
             let too_big = response_too_big_error()?;
 
@@ -1179,27 +1181,6 @@ mod tests {
         }
         input.push_str(" }\n");
         Ok(Config::parse(&input)?)
-    }
-
-    /// Binds a UDP socket and a TCP listener on the same loopback port.
-    ///
-    /// The kernel picks a free UDP port, but that number may already be taken
-    /// for TCP by another socket or excluded for TCP (Windows reports that as
-    /// `PermissionDenied`), so either error retries on a fresh port.
-    async fn bind_udp_and_tcp_pair() -> io::Result<(UdpSocket, TcpListener)> {
-        for _ in 0_u8..16 {
-            let udp = UdpSocket::bind("127.0.0.1:0").await?;
-            match TcpListener::bind(udp.local_addr()?).await {
-                Ok(listener) => return Ok((udp, listener)),
-                Err(error)
-                    if matches!(
-                        error.kind(),
-                        io::ErrorKind::AddrInUse | io::ErrorKind::PermissionDenied
-                    ) => {}
-                Err(error) => return Err(error),
-            }
-        }
-        Err(io::Error::from(io::ErrorKind::AddrInUse))
     }
 
     /// Accepts one connection and reads one length-prefixed request from it.

@@ -54,8 +54,10 @@ pub(super) fn padata(policy: &CryptoPolicy, data: &[rasn_kerberos::PaData]) -> R
                     ),
                 });
             }
-            // These credential mechanisms have no checked envelope implementation.
-            // Reject rather than transmit opaque nested encryption (including FAST).
+            // PA types this client neither builds nor can policy-check: credential mechanisms
+            // (PKINIT, OTP, SPAKE and the like), the halves a KDC sends, FAST armor and
+            // authentication sets, and obsolete or vendor ids. Reject rather than transmit
+            // opaque nested encryption; the message claims no more than the refusal.
             5..=9
             | 12..=13
             | 16..=17
@@ -68,10 +70,7 @@ pub(super) fn padata(policy: &CryptoPolicy, data: &[rasn_kerberos::PaData]) -> R
             | 151..=153 => {
                 return Err(Error::Encode {
                     target: "PA-DATA",
-                    message: format!(
-                        "unsupported credential preauthentication type {}",
-                        entry.r#type
-                    ),
+                    message: format!("outgoing PA type {} is not supported", entry.r#type),
                 });
             }
             _ => {}

@@ -26,7 +26,7 @@ fn transport() -> Tokio {
 
 /// A UDP socket and a TCP listener whose shared loopback port is then closed for both.
 pub(super) async fn closed_port() -> Result<String, TestError> {
-    let (udp, listener) = bind_udp_and_tcp_pair().await?;
+    let (listener, udp) = bind_tcp_and_udp_pair().await?;
     let addr = udp.local_addr()?.to_string();
     drop((udp, listener));
     Ok(addr)
@@ -67,7 +67,7 @@ pub(super) fn udp_responder(
 fn kpasswd_auto_uses_tcp_first_and_sends_no_datagram() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given a live TCP server and an observed UDP port on the same address.
-        let (udp, listener) = bind_udp_and_tcp_pair().await?;
+        let (listener, udp) = bind_tcp_and_udp_pair().await?;
         let config = config_with_kpasswd_servers([udp.local_addr()?.to_string()], 1465)?;
         let server = tokio::spawn(async move {
             let (request, mut socket) = read_tcp_request(&listener).await?;
@@ -94,7 +94,7 @@ fn kpasswd_auto_uses_tcp_first_and_sends_no_datagram() -> Result<(), TestError> 
 fn kpasswd_auto_falls_back_to_one_datagram_after_tcp_refusal() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given a closed TCP port and a live UDP responder.
-        let (udp, listener) = bind_udp_and_tcp_pair().await?;
+        let (listener, udp) = bind_tcp_and_udp_pair().await?;
         drop(listener);
         let config = config_with_kpasswd_servers([udp.local_addr()?.to_string()], 1465)?;
         let responder = udp_responder(udp, b"udp-reply");
@@ -144,7 +144,7 @@ fn kpasswd_auto_both_protocols_refused_is_endpoint_failures() -> Result<(), Test
 fn kpasswd_auto_unknown_tcp_outcome_never_tries_udp() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given a TCP server that reads the request and drops the connection.
-        let (udp, listener) = bind_udp_and_tcp_pair().await?;
+        let (listener, udp) = bind_tcp_and_udp_pair().await?;
         let config = config_with_kpasswd_servers([udp.local_addr()?.to_string()], 1465)?;
         let server = tokio::spawn(async move {
             let (request, socket) = read_tcp_request(&listener).await?;
@@ -175,7 +175,7 @@ fn kpasswd_auto_unknown_tcp_outcome_never_tries_udp() -> Result<(), TestError> {
 fn kpasswd_auto_silent_udp_peer_is_unknown() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given a closed TCP port and a UDP peer that reads but never replies.
-        let (udp, listener) = bind_udp_and_tcp_pair().await?;
+        let (listener, udp) = bind_tcp_and_udp_pair().await?;
         drop(listener);
         let config = config_with_kpasswd_servers([udp.local_addr()?.to_string()], 1465)?;
         // When the Auto request runs.
@@ -233,9 +233,9 @@ fn kpasswd_explicit_udp_refusal_is_definite() -> Result<(), TestError> {
 fn kpasswd_auto_tries_all_tcp_endpoints_before_udp() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given endpoint one with TCP closed and UDP live, and endpoint two with TCP live.
-        let (udp_one, listener_one) = bind_udp_and_tcp_pair().await?;
+        let (listener_one, udp_one) = bind_tcp_and_udp_pair().await?;
         drop(listener_one);
-        let (udp_two, listener_two) = bind_udp_and_tcp_pair().await?;
+        let (listener_two, udp_two) = bind_tcp_and_udp_pair().await?;
         let config = config_with_kpasswd_servers(
             [
                 udp_one.local_addr()?.to_string(),
@@ -269,7 +269,7 @@ fn kpasswd_auto_tries_all_tcp_endpoints_before_udp() -> Result<(), TestError> {
 fn kpasswd_explicit_address_auto_uses_tcp_first() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given a live TCP server and an observed UDP port on the same address.
-        let (udp, listener) = bind_udp_and_tcp_pair().await?;
+        let (listener, udp) = bind_tcp_and_udp_pair().await?;
         let addr = udp.local_addr()?;
         let request = KpasswdRequest::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)?;
         let reply = kpasswd_reply_frame(0, &response_too_big_error()?)?;
@@ -294,7 +294,7 @@ fn kpasswd_explicit_address_auto_uses_tcp_first() -> Result<(), TestError> {
 fn kpasswd_explicit_address_auto_falls_back_to_udp_after_tcp_refusal() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given a closed TCP port and a live UDP responder on the same address.
-        let (udp, listener) = bind_udp_and_tcp_pair().await?;
+        let (listener, udp) = bind_tcp_and_udp_pair().await?;
         drop(listener);
         let addr = udp.local_addr()?;
         let request = KpasswdRequest::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)?;
@@ -318,7 +318,7 @@ fn kpasswd_explicit_address_auto_falls_back_to_udp_after_tcp_refusal() -> Result
 fn kpasswd_explicit_address_auto_unknown_tcp_outcome_never_tries_udp() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given a TCP server that reads the request and drops the connection, and an observed UDP port.
-        let (udp, listener) = bind_udp_and_tcp_pair().await?;
+        let (listener, udp) = bind_tcp_and_udp_pair().await?;
         let addr = udp.local_addr()?;
         let request = KpasswdRequest::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)?;
         let server = tokio::spawn(async move {
