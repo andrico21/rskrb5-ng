@@ -6,7 +6,7 @@
 
 [[plan]]
 number = 1
-todos = 149
+todos = 157
 
 [[plan]]
 number = 2
@@ -756,6 +756,46 @@ title = "Handoff of the fix delta to the supervisor (bounded verification pass);
 plan = 1
 number = 149
 title = "Defect found by the todo 148 dossier: a stray EMPTY tracked file `cargo` at the repository root ships in the package (added by todo 141's docs commit 0e41496)"
+
+[[todo]]
+plan = 1
+number = 150
+title = "Second pass F1 (kpasswd Auto discovery: match MIT 1.22.2, which never aborts on a root SRV target; supervisor findings V2-01, V2-02, ORB-01) and the mechanical gate wrapper (P3); the index rows of todos 150-157"
+
+[[todo]]
+plan = 1
+number = 151
+title = "Second pass F2 (secret ownership in the audit: `AcceptedContext.ap_req`, owner tracking, ccache authorization-data setters; supervisor item F2)"
+
+[[todo]]
+plan = 1
+number = 152
+title = "Second pass F3, F4, F7 (TCP frame construction, keytab reservation probe, cancellation stall test)"
+
+[[todo]]
+plan = 1
+number = 153
+title = "Second pass F5, F6, F8 (reserved PA ids message, `IncludeTooDeep` Display, example fault classifier)"
+
+[[todo]]
+plan = 1
+number = 154
+title = "Second pass F9, F10, F11, F12 (documentation)"
+
+[[todo]]
+plan = 1
+number = 155
+title = "OWNER DECISION 2026-11-15: push the two rust-guidelines commits (`90aae3e`, `707deb5`) and verify the vendored files against the public pin"
+
+[[todo]]
+plan = 1
+number = 156
+title = "In-diff mutation check on the src changes of todos 150-153 (and 154 if any non-comment line changed) (orchestrated like todos 108, 116 and 147)"
+
+[[todo]]
+plan = 1
+number = 157
+title = "Handoff of the second fix delta to the supervisor (bounded re-check of F1-F12 only)"
 
 [[todo]]
 plan = 1

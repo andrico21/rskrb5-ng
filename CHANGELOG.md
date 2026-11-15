@@ -84,10 +84,12 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
   result helpers) TCP, then UDP. UDP is tried only after a definite TCP
   failure, with one datagram per endpoint and no retransmit. With DNS the
   servers are discovered once for both protocols, as in `changepw.c`
-  (FU-CLI-R29): `_kpasswd._udp` and `_kpasswd._tcp` form one list, a root SRV
-  target in either stops the exchange, and the `_kerberos-adm._tcp` hosts
-  (port 464, both protocols) are used only when that list is empty; v0.2.2
-  discovered separately for each protocol it tried. Explicit `Tcp` and `Udp`
+  (FU-CLI-R29, FU-CLI-R34): `_kpasswd._udp` and `_kpasswd._tcp` are both queried and form one list, a
+  root SRV target adds no server and the other records of its set are kept (MIT
+  1.22.2 never aborts on one), and the `_kerberos-adm._tcp` hosts (port 464,
+  both protocols) are used only when neither set held a record; with root
+  targets only the call fails with `DnsServiceUnavailable` before any I/O;
+  v0.2.2 discovered separately for each protocol it tried. Explicit `Tcp` and `Udp`
   still discover for their own protocol.
   `udp_preference_limit` does not apply to password changes (MIT's `changepw.c`
   never consults it); it still orders KDC requests. If a TCP request may
