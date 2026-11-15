@@ -17,9 +17,8 @@ after changing configuration. Public configuration fields are staging values,
 not evidence that a selection is authorized. Invalid staging values fail closed.
 The snapshot, and so every acceptor, does not read `default_tkt_enctypes` or
 `default_tgs_enctypes`: MIT reads those two keys only on the client side. Client request construction (`AsReq::from_libdefaults`,
-`TgsReq::from_libdefaults`, the configured Tokio client and the configured
-kpasswd result path) rejects a request list outside the permitted list with
-`error::Config::EnctypeNotPermitted`.
+`TgsReq::from_libdefaults`, the configured Tokio client) rejects a request list
+outside the permitted list with `error::Config::EnctypeNotPermitted`.
 
 The implemented secure `DEFAULT` is AES-SHA2 then AES-SHA1: IDs
 **[20, 19, 18, 17]**. DES3 and RC4 are never inserted by `DEFAULT`, even when
@@ -210,18 +209,15 @@ or an ownership-preserving replacement, not just wrapping the first input copy.
 ## Set-uid and set-gid processes
 
 The functions with an `# Ambient input` rustdoc section read `KRB5_CONFIG`,
-`KRB5CCNAME`, `KRB5_KTNAME`, `KRB5_CLIENT_KTNAME` and `TMPDIR` on Unix in
-set-uid and set-gid processes too. MIT 1.22.2 reads them through
-`secure_getenv`, which returns nothing there, so in such a process the
-invoking user chooses the configuration, credential cache and keytab that this
-crate trusts. A program that runs with an elevated identity must use the
-explicit constructors (`Config::load_paths`, `CCache::load_name`,
-`Keytab::load_name`, a literal name) and not the ambient readers.
-`LibDefaults::from_env` also reads `HOME` for `k5login_directory`; MIT never
-reads `HOME` for it (it uses the home directory of the target user's passwd
-entry) and this crate only stores the value. Windows has no set-uid or set-gid
-processes. `docs/config-profile.md` (Deliberate divergences and bounds) lists
-the MIT sources.
+`KRB5CCNAME`, `KRB5_KTNAME`, `KRB5_CLIENT_KTNAME`, `TMPDIR` and `HOME` (and
+`TEMP` and `APPDATA` on Windows) in set-uid and set-gid processes too. MIT
+1.22.2 reads them through `secure_getenv`, which returns nothing there, so in
+such a process the invoking user chooses the configuration, credential cache
+and keytab that this crate trusts. A program that runs with an elevated
+identity must use the explicit constructors (`Config::load_paths`,
+`CCache::load_name`, `Keytab::load_name`, a literal name) and not the ambient
+readers. `docs/config-profile.md` (Deliberate divergences and bounds) lists the
+MIT sources.
 
 <a id="windows-api-ccache"></a>
 ## Windows API credential cache

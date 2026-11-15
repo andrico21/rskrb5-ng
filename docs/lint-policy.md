@@ -81,9 +81,7 @@ forbidden.
 ## Gates
 
 All gate scripts live in [`scripts/lint-gates/`](https://github.com/andrico21/rskrb5-ng/tree/main/scripts/lint-gates), use
-the Python standard library plus the hash-pinned `markdown-it-py` and `mdurl` of
-`scripts/lint-gates/requirements.txt` (see Dependency changes), and have a
-`--self-test` mode. CI runs them
+the Python standard library only, and have a `--self-test` mode. CI runs them
 in the `lint-gates` job of [`ci.yml`](https://github.com/andrico21/rskrb5-ng/blob/main/.github/workflows/ci.yml);
 [`prek.toml`](https://github.com/andrico21/rskrb5-ng/blob/main/prek.toml) mirrors the fast ones as a pre-push hook.
 

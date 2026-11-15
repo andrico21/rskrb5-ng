@@ -458,13 +458,3 @@ is a parity feature, not a defect>`.
 | critic:critics-d6a85f8/verdict.md#F6 | FU-CFG-R44 | no |
 | critic:critics-d6a85f8/verdict.md#F8 | FU-HTTP-R10 | no |
 | executor:todo-153#windows-port-pairing | FU-TST-R62 | no |
-| critic:critics-d6a85f8/v1.md#V1-01 | FU-DOC-R146 | no |
-| critic:critics-d6a85f8/verdict.md#F9 | FU-DOC-R146 | no |
-| critic:critics-d6a85f8/v3.md#V3-01 | FU-DOC-R147 | no |
-| critic:critics-d6a85f8/v5.md#V5-01 | FU-DOC-R147 | no |
-| critic:critics-d6a85f8/v6.md#V6-01 | FU-DOC-R147 | no |
-| critic:critics-d6a85f8/verdict.md#F10 | FU-DOC-R147 | no |
-| critic:critics-d6a85f8/oracle-delta.md#ORB-02 | FU-DOC-R148 | no |
-| critic:critics-d6a85f8/verdict.md#F11 | FU-DOC-R148 | no |
-| critic:critics-d6a85f8/v4.md#V4-01 | FU-DOC-R149 | no |
-| critic:critics-d6a85f8/verdict.md#F12 | FU-DOC-R149 | no |
