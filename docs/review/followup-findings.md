@@ -446,3 +446,7 @@ is a parity feature, not a defect>`.
 | critic:critics-d6a85f8/v2.md#V2-02 | FU-CLI-R34 | no |
 | critic:critics-d6a85f8/oracle-delta.md#ORB-01 | FU-CLI-R34 | no |
 | critic:critics-d6a85f8/verdict.md#F1 | FU-CLI-R34 | no |
+| critic:critics-d6a85f8/verdict.md#F2 | FU-TST-R61 | no |
+| executor:todo-151#accepted-context-private-fields | FU-SPN-R23 | no |
+| executor:todo-151#ccache-auth-data-setters | FU-FIL-R11 | no |
+| executor:todo-151#tgs-request-parts-non-exhaustive | FU-CLI-R35 | no |

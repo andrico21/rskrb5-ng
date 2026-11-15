@@ -499,8 +499,8 @@ unknown flags and extensions, and does not import delegated credentials.
 
 ### SPNEGO acceptor negotiation (RSK-C4BE57A0)
 
-`AcceptedContext::selected_mechanism` records the first offered Kerberos OID, echoed
-as SPNEGO `supportedMech`. The additive `token_mechanism` field preserves the
+`AcceptedContext::selected_mechanism()` returns the first offered Kerberos OID, echoed
+as SPNEGO `supportedMech`. The additive `token_mechanism()` returns the
 optimistic token's OID for the inner AP-REP `thisMech`. Both standard and Microsoft
 legacy OIDs identify the same mechanism, including raw Kerberos headers. An
 MS-KRB5-first offer with a standard Kerberos AP-REQ and no MIC is accepted, as sent by
@@ -512,7 +512,11 @@ unsupported mechanisms return `UnsupportedMechanism`. The unconstructed
 `error::Spnego::OptimisticMechanismMismatch` variant was removed before 0.3.0 release;
 it never existed in 0.2.2.
 
-The additive `AcceptedContext::mech_types_der` field retains the exact received
+`AcceptedContext` has only private fields (v0.2.2: `pub ap_req`): read
+`accepted.ap_req` with `accepted.ap_req()`, and change it only through
+`ap_req_mut()` (FU-SPN-R23).
+
+The additive `AcceptedContext::mech_types_der()` returns the exact received
 list TLV when a MIC verified. AP-REP response helpers include a reciprocal MIC
 over it, using usage 23 and the AP-REP acceptor subkey, authenticator subkey or
 ticket key (in that order). Verification uses usage 25 and the authenticator

@@ -301,7 +301,7 @@ SPNEGO, GSS tokens, DER and OIDs:
   non-Kerberos first preference requires a valid mechListMIC; supplied first-choice
   MICs also verify before replay insertion. Replies select the first offered Kerberos
   OID in `supportedMech`, preserving the token OID in AP-REP `thisMech` through the
-  additive `AcceptedContext::token_mechanism` field (MIT/MS-SPNG behavior). Replies
+  additive `AcceptedContext::token_mechanism()` accessor (MIT/MS-SPNG behavior). Replies
   include a reciprocal MIC over the received list when one was verified, retained in
   `AcceptedContext::mech_types_der`. Only RFC 4121 MIC tokens with AES session
   enctypes are supported for mechListMIC; RFC 4757 RC4 and RFC 1964 DES3 MIC formats
@@ -671,7 +671,22 @@ Security fail-closed parsing and verification:
   audit classifies `Keytab` and the `AsReq`/`TgsReq` types as credential
   storage, so a public field of those types fails it and every public
   replacement of one needs a proof or a reviewed exception (FU-CLI-R31,
-  FU-TST-R60).
+  FU-TST-R60). The `#[non_exhaustive]` on `TgsRequestParts` is gone: it added
+  nothing, and clippy's denied `exhaustive_structs` does not ask for it on a
+  struct with no public field (FU-CLI-R35).
+- `spnego::AcceptedContext` has only private fields (v0.2.2: `pub ap_req`):
+  read them with `ap_req()`, `selected_mechanism()`, `token_mechanism()` and
+  `mech_types_der()`; `ap_req_mut()` and `set_mech_types_der()` replace what
+  assigning a field did (FU-SPN-R23).
+- The secret audit finds secret owners by tracking them, not by a list of type
+  names: a public field of a type that holds a registered secret owner, directly
+  or through other owners, fails it, and so does a public replacement of such a
+  field that has no proof or reviewed exception. `AcceptedContext::ap_req` was
+  the public field it reported (FU-TST-R61).
+- `ccache::Credential::set_auth_data` is removed: it did what `with_auth_data`
+  does (its `clear()` changed nothing, because the replaced entries erase their
+  bytes when dropped), and no release has shipped it. A test observes
+  `with_auth_data` erase the replaced entries' payloads (FU-FIL-R11).
 - Service-ticket acquisition judges a cached realm TGT from one clock reading
   and no longer tries a TGS renewal of one it has just found invalid (v0.2.2
   renewed any cached TGT whose `renew_till` had not passed); it now falls through to primary-TGT acquisition
