@@ -442,3 +442,7 @@ is a parity feature, not a defect>`.
 | critic:critics-efadae8/u5.md#U5-07 | FU-DOC-R145 | no |
 | critic:critics-efadae8/oracle.md#ORA-04 | FU-CI-R19 | no |
 | executor:todo-149#stray-cargo-file | FU-CI-R20 | no |
+| critic:critics-d6a85f8/v2.md#V2-01 | FU-CLI-R34 | no |
+| critic:critics-d6a85f8/v2.md#V2-02 | FU-CLI-R34 | no |
+| critic:critics-d6a85f8/oracle-delta.md#ORB-01 | FU-CLI-R34 | no |
+| critic:critics-d6a85f8/verdict.md#F1 | FU-CLI-R34 | no |

@@ -204,7 +204,8 @@ explicit port is provided; blank input selects the system resolver. Invalid
 input returns `Client::DnsResolverConfig`.
 
 A root SRV target now returns `Client::DnsServiceUnavailable { service, realm }`
-instead of allowing administration-service fallback.
+instead of allowing administration-service fallback; `KdcProtocol::Auto` for a
+password change treats it as described below.
 
 KDC TCP framing rejects the reserved high bit with `Client::TcpReservedBitSet`;
 outgoing KDC lengths above 31 bits return `Client::TcpRequestTooLarge`.
@@ -216,10 +217,11 @@ failures, response errors and timeouts return `Client::KpasswdOutcomeUnknown`.
 a definite TCP failure (all TCP endpoints, then all UDP endpoints; for an
 explicit address TCP, then UDP), as MIT's `changepw.c` does, and
 `udp_preference_limit` does not apply to it. With DNS the servers are
-discovered once for both protocols (`_kpasswd._udp` and `_kpasswd._tcp` in one
-list, a root SRV target in either stops the exchange, `_kerberos-adm._tcp`
-hosts at port 464 only when that list is empty; FU-CLI-R29; v0.2.2 discovered
-separately for each protocol it tried); explicit `Tcp` and `Udp` discover for
+discovered once for both protocols (`_kpasswd._udp` and `_kpasswd._tcp` both
+queried into one list, a root SRV target adds no server and the other records
+of its set are kept, `_kerberos-adm._tcp` hosts at port 464 only when neither
+set held a record, root targets only fail with `DnsServiceUnavailable`;
+FU-CLI-R29; v0.2.2 discovered separately for each protocol it tried); explicit `Tcp` and `Udp` discover for
 their own protocol. A refusal while the single UDP
 reply is awaited (`ConnectionRefused`, or `ConnectionReset` on Windows) is a
 definite endpoint failure, so a closed UDP kpasswd port moves on to the next

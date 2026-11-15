@@ -4,6 +4,16 @@ use super::{
     Error, KdcEndpoint, KdcEndpointSource, KdcProtocol, TokioResolver, resolve_dns_endpoint_host,
 };
 
+/// One SRV answer before its targets are resolved.
+pub(super) struct SrvAnswer {
+    /// The answer held at least one record, a root one included.
+    pub published: bool,
+    /// A record named the root target, which stands for no service.
+    pub root: bool,
+    /// `(priority, weight, target, port)` of the non-root records in service order.
+    pub records: Vec<(u16, u16, String, u16)>,
+}
+
 /// Resolve selected SRV targets while preserving their service order.
 ///
 /// # Errors

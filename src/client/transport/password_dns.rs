@@ -1,6 +1,6 @@
 //! DNS password-service fallback.
 
-use super::{Error, KdcEndpoint, KdcProtocol, Tokio};
+use super::{Error, KdcEndpoint, KdcProtocol, Tokio, dns_resolver, srv_targets};
 
 /// Discover password servers for one protocol, falling back to administrative service hosts.
 ///
@@ -46,14 +46,18 @@ pub(super) async fn discover(
 
 /// Discover the password servers of [`KdcProtocol::Auto`] once, as MIT's `changepw.c` does.
 ///
-/// `_kpasswd._udp` and `_kpasswd._tcp` form one list whose entries are tagged
-/// with their protocol. A root target in either record set stops discovery
-/// without fallback. Only an empty list falls back to `_kerberos-adm._tcp`,
-/// whose hosts are offered on port 464 over both protocols.
+/// `_kpasswd._udp` and `_kpasswd._tcp` are both queried and form one list whose
+/// entries are tagged with their protocol. A root target contributes no entry
+/// and the other records of its set are kept. A set whose SRV answer held any
+/// record, decided before the targets are resolved, counts as published, and
+/// `_kerberos-adm._tcp` is queried only when neither set was. Its hosts are
+/// offered on port 464 over both protocols.
 ///
 /// # Errors
-/// Returns the root-target error, DNS errors of the administrative lookup, or
-/// `NoKdcEndpoints` when no host is found at all.
+/// Returns the failed target lookup of a published set when no endpoint is
+/// left, [`Error::DnsServiceUnavailable`] when only root targets were
+/// published, DNS errors of the administrative lookup, or `NoKdcEndpoints`
+/// when no host is found at all.
 ///
 /// # Cancel safety
 /// cancel-safe: abandoning DNS lookups changes no credential state.
@@ -61,36 +65,57 @@ pub(super) async fn discover_auto(
     transport: &Tokio,
     realm: &str,
 ) -> Result<Vec<KdcEndpoint>, Error> {
+    let resolver = dns_resolver(transport.dns_server)?;
     let mut endpoints = Vec::new();
+    let mut published = false;
+    let mut unresolved = None;
     for protocol in [KdcProtocol::Udp, KdcProtocol::Tcp] {
-        match transport
-            .discover_srv_endpoints("_kpasswd", realm, protocol)
+        let Ok(answer) = transport
+            .srv_answer(&resolver, "_kpasswd", realm, protocol)
             .await
+        else {
+            continue;
+        };
+        published |= answer.published;
+        match srv_targets::resolve(
+            &resolver,
+            realm,
+            protocol,
+            answer.records,
+            transport.dns_server.is_some(),
+        )
+        .await
         {
             Ok(found) => endpoints.extend(found),
-            Err(
-                error @ Error::DnsServiceUnavailable {
-                    service: _,
-                    realm: _,
-                },
-            ) => return Err(error),
-            Err(_) => {}
+            Err(error) => {
+                let _: &mut Error = unresolved.get_or_insert(error);
+            }
         }
     }
-    if endpoints.is_empty() {
-        endpoints = admin_entries(
-            transport
-                .discover_srv_endpoints("_kerberos-adm", realm, KdcProtocol::Tcp)
-                .await?,
-        );
+    if !endpoints.is_empty() {
+        return Ok(endpoints);
     }
-    if endpoints.is_empty() {
+    if let Some(error) = unresolved {
+        return Err(error);
+    }
+    if published {
+        return Err(Error::DnsServiceUnavailable {
+            service: "_kpasswd".to_owned(),
+            realm: realm.to_owned(),
+        });
+    }
+    let admin = admin_entries(
+        transport
+            .discover_srv_endpoints("_kerberos-adm", realm, KdcProtocol::Tcp)
+            .await?,
+    );
+    if admin.is_empty() {
         Err(Error::NoKdcEndpoints {
             realm: realm.to_owned(),
             protocol: KdcProtocol::Auto,
         })
     } else {
-        Ok(endpoints)
+        Ok(admin)
     }
 }
 
