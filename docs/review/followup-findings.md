@@ -441,3 +441,4 @@ is a parity feature, not a defect>`.
 | executor:todo-147#in-diff-mutation-check-efadae8 | FU-FUZ-R04 | no |
 | critic:critics-efadae8/u5.md#U5-07 | FU-DOC-R145 | no |
 | critic:critics-efadae8/oracle.md#ORA-04 | FU-CI-R19 | no |
+| executor:todo-149#stray-cargo-file | FU-CI-R20 | no |

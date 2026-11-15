@@ -6,7 +6,7 @@
 
 [[plan]]
 number = 1
-todos = 148
+todos = 149
 
 [[plan]]
 number = 2
@@ -751,6 +751,11 @@ title = "In-diff mutation check on the src changes of todos 137-145 (orchestrate
 plan = 1
 number = 148
 title = "Handoff of the fix delta to the supervisor (bounded verification pass); records E"
+
+[[todo]]
+plan = 1
+number = 149
+title = "Defect found by the todo 148 dossier: a stray EMPTY tracked file `cargo` at the repository root ships in the package (added by todo 141's docs commit 0e41496)"
 
 [[todo]]
 plan = 1
