@@ -69,7 +69,7 @@ It supports MICs already present in the initial token, not request-mic round
 trips. Windows MS-first/standard-inner tokens without MIC are accepted. Following
 MIT and MS-SPNG, replies echo the first offered Kerberos OID in `supportedMech`,
 but preserve the optimistic token OID in inner AP-REP `thisMech`. The additive
-`AcceptedContext::token_mechanism` field keeps those values separate; equal-OID
+`AcceptedContext::token_mechanism()` accessor keeps those values separate; equal-OID
 replies are unchanged. The two public Windows capture fixtures test original
 AP-REQ extraction and test-key full acceptance with the same negotiation shape.
 

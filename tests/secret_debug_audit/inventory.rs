@@ -49,6 +49,44 @@ fn references(owner: &Owner, ty: &[String], target: &Owner, all: &[Owner]) -> bo
         .any(|path| matches!(path, [prefix, name] if prefix == module && *name == target.name))
 }
 
+/// The registered secret owners of an inventory and the fields that store credentials through them.
+pub(super) struct Storage<'owners> {
+    owners: &'owners [Owner],
+    secret: Vec<String>,
+}
+
+impl<'owners> Storage<'owners> {
+    /// Register every owner that holds credential storage, directly or through another registered owner.
+    pub(super) fn new(owners: &'owners [Owner]) -> Self {
+        Self {
+            owners,
+            secret: secret_owners(owners),
+        }
+    }
+
+    /// Whether the field stores a credential by its own shape or holds a registered secret owner, whatever that type is called.
+    pub(super) fn field(&self, owner: &Owner, name: &str, ty: &[String]) -> bool {
+        !super::nonsecret::contains(&owner.identity, name)
+            && (secret_field(name, ty) || self.holds_owner(owner, ty))
+    }
+
+    /// The declared owners the registry was built from.
+    pub(super) fn owners(&self) -> &'owners [Owner] {
+        self.owners
+    }
+
+    /// Whether the owner identity is a registered secret owner.
+    pub(super) fn contains(&self, identity: &str) -> bool {
+        self.secret.iter().any(|registered| registered == identity)
+    }
+
+    fn holds_owner(&self, owner: &Owner, ty: &[String]) -> bool {
+        self.owners.iter().any(|target| {
+            self.secret.contains(&target.identity) && references(owner, ty, target, self.owners)
+        })
+    }
+}
+
 /// Propagate secret ownership through containers without relying on field spelling.
 pub(super) fn secret_owners(owners: &[Owner]) -> Vec<String> {
     let mut secret: Vec<String> = owners
@@ -61,19 +99,20 @@ pub(super) fn secret_owners(owners: &[Owner]) -> Vec<String> {
         .map(|owner| owner.identity.clone())
         .collect();
     for _ in 0..owners.len() {
-        let previous = secret.clone();
+        let previous = Storage {
+            owners,
+            secret: secret.clone(),
+        };
         for owner in owners {
             if owner.fields.iter().any(|(name, _, ty)| {
                 !super::nonsecret::contains(&owner.identity, name)
-                    && owners.iter().any(|target| {
-                        previous.contains(&target.identity) && references(owner, ty, target, owners)
-                    })
+                    && previous.holds_owner(owner, ty)
             }) && !secret.contains(&owner.identity)
             {
                 secret.push(owner.identity.clone());
             }
         }
-        if secret == previous {
+        if secret == previous.secret {
             break;
         }
     }

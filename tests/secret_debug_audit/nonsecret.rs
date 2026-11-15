@@ -153,6 +153,11 @@ pub(super) const FIELDS: &[(&str, &str, &str)] = &[
         "Principal selector, not key bytes.",
     ),
     (
+        "src/client.rs::Tokio",
+        "transport",
+        "Holds client::transport::Tokio (DNS server, timeout and size limits); the audit's name match confuses it with the client::Tokio owner.",
+    ),
+    (
         "src/spnego.rs::AcceptedContext",
         "mech_types_der",
         "Public mechanism OID offer list.",

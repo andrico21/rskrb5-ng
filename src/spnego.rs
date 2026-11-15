@@ -2282,17 +2282,58 @@ impl InitiatorContext {
 #[non_exhaustive]
 pub struct AcceptedContext {
     /// Validated AP-REQ details.
-    pub ap_req: ValidatedApReq,
+    ap_req: ValidatedApReq,
     /// First offered Kerberos OID, echoed as the response's `supportedMech`.
-    pub selected_mechanism: ObjectIdentifier,
+    selected_mechanism: ObjectIdentifier,
     /// Optimistic token OID, preserved as the inner AP-REP's `thisMech`.
-    pub token_mechanism: ObjectIdentifier,
+    token_mechanism: ObjectIdentifier,
     /// Received DER `MechTypeList` authenticated by the initiator MIC, if present.
     /// The response helper signs these bytes, excluding the explicit `[0]` tag.
-    pub mech_types_der: Option<Vec<u8>>,
+    mech_types_der: Option<Vec<u8>>,
 }
 
 impl AcceptedContext {
+    /// Validated AP-REQ details.
+    #[must_use]
+    #[inline]
+    pub const fn ap_req(&self) -> &ValidatedApReq {
+        &self.ap_req
+    }
+
+    /// Mutable validated AP-REQ details, useful for tests.
+    #[inline]
+    pub const fn ap_req_mut(&mut self) -> &mut ValidatedApReq {
+        &mut self.ap_req
+    }
+
+    /// First offered Kerberos OID, echoed as the response's `supportedMech`.
+    #[must_use]
+    #[inline]
+    pub const fn selected_mechanism(&self) -> &ObjectIdentifier {
+        &self.selected_mechanism
+    }
+
+    /// Optimistic token OID, preserved as the inner AP-REP's `thisMech`.
+    #[must_use]
+    #[inline]
+    pub const fn token_mechanism(&self) -> &ObjectIdentifier {
+        &self.token_mechanism
+    }
+
+    /// Received DER `MechTypeList` authenticated by the initiator MIC, if present.
+    /// The response helper signs these bytes, excluding the explicit `[0]` tag.
+    #[must_use]
+    #[inline]
+    pub fn mech_types_der(&self) -> Option<&[u8]> {
+        self.mech_types_der.as_deref()
+    }
+
+    /// Replace the received `MechTypeList` the response helper signs, useful for tests.
+    #[inline]
+    pub fn set_mech_types_der(&mut self, value: Option<Vec<u8>>) {
+        self.mech_types_der = value;
+    }
+
     /// Build a `WWW-Authenticate` header containing an AP-REP response token.
     ///
     /// # Errors

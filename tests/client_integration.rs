@@ -1682,10 +1682,10 @@ mod tests {
                 let accepted =
                     spnego::accept_sec_context_header(&mut validator, context.header_ref())?;
                 assert_eq!(
-                    accepted.ap_req.client().clone(),
+                    accepted.ap_req().client().clone(),
                     ServicePrincipal::new(REALM.to_owned(), 1, vec![USER.to_owned()])
                 );
-                assert_eq!(accepted.ap_req.service().name(), "HTTP/host.test.gokrb5");
+                assert_eq!(accepted.ap_req().service().name(), "HTTP/host.test.gokrb5");
 
                 let elapsed = SystemTime::now().duration_since(UNIX_EPOCH)?;
                 let response_header = accepted.ap_rep_response_header_with_confounder(
@@ -1999,11 +1999,11 @@ mod tests {
                 let accepted =
                     spnego::accept_sec_context_header(&mut validator, context.header_ref())?;
                 assert_eq!(
-                    accepted.ap_req.client().clone(),
+                    accepted.ap_req().client().clone(),
                     ServicePrincipal::new(REALM.to_owned(), 1, vec![USER.to_owned()])
                 );
-                assert_eq!(accepted.ap_req.service().name(), "HTTP/host.test.gokrb5");
-                assert_eq!(accepted.ap_req.session_key().etype(), RC4_HMAC_ETYPE);
+                assert_eq!(accepted.ap_req().service().name(), "HTTP/host.test.gokrb5");
+                assert_eq!(accepted.ap_req().session_key().etype(), RC4_HMAC_ETYPE);
 
                 let elapsed = SystemTime::now().duration_since(UNIX_EPOCH)?;
                 let response_header = accepted.ap_rep_response_header_with_confounder(
@@ -2078,11 +2078,11 @@ mod tests {
                 let accepted =
                     spnego::accept_sec_context_header(&mut validator, context.header_ref())?;
                 assert_eq!(
-                    accepted.ap_req.client().clone(),
+                    accepted.ap_req().client().clone(),
                     ServicePrincipal::new(REALM.to_owned(), 1, vec![USER.to_owned()])
                 );
-                assert_eq!(accepted.ap_req.service().name(), "HTTP/host.test.gokrb5");
-                assert_eq!(accepted.ap_req.session_key().etype(), DES3_ETYPE);
+                assert_eq!(accepted.ap_req().service().name(), "HTTP/host.test.gokrb5");
+                assert_eq!(accepted.ap_req().session_key().etype(), DES3_ETYPE);
 
                 let elapsed = SystemTime::now().duration_since(UNIX_EPOCH)?;
                 let response_header = accepted.ap_rep_response_header_with_confounder(

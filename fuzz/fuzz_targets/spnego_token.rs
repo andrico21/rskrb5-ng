@@ -61,7 +61,7 @@ fn accept(header: &str, now: SystemTime, ap_rep: &[u8]) {
         drop(
             accepted.ap_rep_response_header_with_confounder(&CONFOUNDER, &ApRepOptions::default()),
         );
-        drop(accepted.ap_req.verify_ap_rep(ap_rep));
+        drop(accepted.ap_req().verify_ap_rep(ap_rep));
     }
 }
 

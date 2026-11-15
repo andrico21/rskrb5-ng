@@ -1160,6 +1160,8 @@ impl Credential {
         self
     }
     /// Sets `auth_data`, preserving the other fields.
+    ///
+    /// The replaced entries are dropped, and each entry's `Drop` zeroes its bytes.
     #[must_use]
     #[inline]
     pub fn with_auth_data(mut self, value: Vec<AuthorizationDataEntry>) -> Self {
@@ -1227,15 +1229,6 @@ impl Credential {
     #[inline]
     pub fn auth_data(&self) -> &[AuthorizationDataEntry] {
         &self.auth_data
-    }
-
-    /// Replace the authorization data, zeroing the old entries' bytes.
-    #[must_use]
-    #[inline]
-    pub fn set_auth_data(mut self, value: Vec<AuthorizationDataEntry>) -> Self {
-        self.auth_data.clear();
-        self.auth_data = value;
-        self
     }
 
     /// Build a cache configuration credential.
