@@ -410,6 +410,7 @@ is a parity feature, not a defect>`.
 | critic:critics-e4ce316/u6x.md#U6X-02 | FU-DOC-R137 | no |
 | executor:todo-134#verify-ap-rep-rustdoc | FU-DOC-R138 | no |
 | critic:critics-efadae8/oracle.md#ORA-01 | FU-DOC-R139 | no |
+| critic:critics-efadae8/oracle.md#ORA-02 | FU-FUZ-R03 | no |
 | critic:critics-efadae8/u6.md#U6-01 | FU-DOC-R139 | no |
 | critic:critics-efadae8/u1.md#U1-01 | FU-SPN-R21 | no |
 | critic:critics-efadae8/u1.md#U1-02 | FU-HTTP-R09 | no |

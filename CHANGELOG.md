@@ -1548,7 +1548,9 @@ Documentation:
   `taplo`, an offline link check with the guideline checksums, the lint gates,
   a build of every fuzz target and `cargo package`. Advisory: `geiger`, a
   floating-nightly rustdoc canary, and on schedule or dispatch the
-  whole-crate mutants run in 32 shards and 300 s of fuzzing per target.
+  mutants run in 32 shards over the files cargo-mutants enumerates
+  (`docs/review/mutants.md` covers the `include!`d files separately) and 300 s
+  of fuzzing per target.
 - Publishing needs an `N.N.N` tag on a CI-green commit of `main` and the
   owner's approval of the `release` environment (`docs/RELEASING.md`).
 - The Docker MIT KDC and Active Directory integration gates run locally with
