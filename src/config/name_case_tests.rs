@@ -101,6 +101,21 @@ mod tests {
         Ok(())
     }
 
+    /// `no_addresses` has a spelling check of its own, so its wrong-case twins are checked on their own.
+    #[test]
+    fn wrong_case_twins_of_no_addresses_are_unknown() -> Result<(), Box<dyn Error>> {
+        for twin in twins("no_addresses") {
+            never_honoured(
+                &format!("[libdefaults]\n {twin} = false\n"),
+                "[libdefaults]\n",
+                &ConfigDiagnostic::UnknownRelation {
+                    path: vec!["libdefaults".to_owned(), twin],
+                },
+            )?;
+        }
+        Ok(())
+    }
+
     /// Every section header the library reads has wrong-case twins that are unknown sections.
     #[test]
     fn wrong_case_twins_of_every_section_are_unknown() -> Result<(), Box<dyn Error>> {

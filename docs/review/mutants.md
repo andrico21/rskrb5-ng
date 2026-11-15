@@ -187,6 +187,142 @@ Survivors. Six mutants have a register row, all `killed`; none is equivalent.
   configuration::classification_e::tests`), all four mutants are caught.
   The row status is `killed`, not `hang`: a test fails on each mutant.
 
+### In-diff check after todos 137 to 144 (todo 147)
+
+Todos 137 to 144 changed `src/` after the supervisor's baseline `efadae8`:
+the `TgsRequestParts` accessors, the reply-checksum binding and the PA-type
+arms, the zeroizing request frames, the one-list kpasswd discovery, the
+acceptor admission, the case-sensitive profile names and the keytab
+component reservation bound. Todo 137 also deleted code, which adds no line
+to a diff and so yields no in-diff mutant; todo 145 was merged and reverted,
+so `b327605` has the tree of `d936fa7`.
+
+- Diff: `git diff -U0 efadae8 b327605 -- src`, reduced to the hunks that add a
+  line that is not blank and not a comment (20 files, five of them test
+  modules, which build only under `cfg(test)` and have no mutant).
+- The check ran locally as in todo 114: `cargo mutants --all-features
+  --no-shuffle --cap-lints=true --in-diff <diff> [--file F] [--re R] --shard
+  k/N -j 2 --copy-target=false -- <test arguments>`, cargo-mutants 27.1.0,
+  rustc 1.100.0, `CARGO_BUILD_WARNINGS=allow`, no debug info and an 8 GiB
+  address-space cap. The diff lists 79 mutants, run in shards 0 to 15 split by
+  file (`--file`, and `--re` for a subset). The test arguments are narrowed
+  to the targets that read the changed code: `--lib --test client --test
+  client_integration` (0, 1), `--lib --test client --test client_integration
+  --test policy` (2, 3), `--lib --test client_transport --test client` (4, 5),
+  `--lib --test client_transport --test client --test kadmin` (6 to 10) and
+  `--lib --test config --test keytab --test file_mutations --test
+  config_relative_include --test profile_include_order` (11 to 15). A narrowed
+  run can turn a caught mutant into a missed one but not the reverse, so every
+  caught is valid; each survivor was re-run with the full suite.
+- Three functions lost code in these todos (`Policy::from_libdefaults`,
+  `NegotiateService::call`, `InitiatorContext::validate_completion`), so their
+  mutants were generated without `--in-diff` (shards 16 to 18, `--file F
+  --re <function>`, `--lib --test policy --test http --test service` and
+  `--lib --test spnego --test gssapi`). `src/config/enctype_policy.rs` is the
+  one changed file pulled in with `include!`: `validate_request_enctypes` was
+  checked as in todo 39, in a scratch copy with the file inlined into
+  `src/config.rs` (shard 19, `--file src/config.rs --re
+  validate_request_enctypes`), and its two mutants appear below under
+  `src/config.rs`.
+- Shards 8, 9 and 11 first ended with four `Timeout` outcomes
+  (`password_discovery::discover -> Ok(vec![])`, `configured -> Ok(None)`,
+  `configured -> Ok(Some(vec![]))` and `Profile::finish ->
+  Ok(Default::default())`). With `configured -> Ok(None)` the transport under
+  test never connects, and the lib test
+  `kpasswd_request_frames_are_erased_after_failure` waited on
+  `listener.accept()` without a bound (a hand run of that mutant was still
+  waiting after 370 s). The peers of the three frame tests now accept through
+  a 10 s bound; the same hand run fails the test after 10 s, and the three
+  shards were re-run on that tree (`4933347`, a change to
+  `src/messages/secret_der/tests/transport.rs` only) with all four mutants
+  caught. The first attempt is not part of the enforced campaign. Shards 0 to 7 and 10 ran at `b327605`,
+  the others at `4933347`. In their first narrowed run the three `padata`
+  arm mutants were missed because `--test policy` was absent.
+- `mutants_report.py --artifacts <the 20 shard outputs> --expect-shards 20
+  --register docs/review/mutants.md --campaign <SHA> --enforce` prints
+  `mutants: caught=71 missed=0 timeout=0 unviable=24 success=0` and `0
+  problem(s)` (exit 0, without `--allow-open`).
+
+| Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 8 | 2 | 0 | 0 | 6 | 364 |
+| 1 | 8 | 2 | 0 | 0 | 6 | 472 |
+| 2 | 3 | 3 | 0 | 0 | 0 | 382 |
+| 3 | 3 | 3 | 0 | 0 | 0 | 345 |
+| 4 | 5 | 3 | 0 | 0 | 2 | 249 |
+| 5 | 4 | 3 | 0 | 0 | 1 | 218 |
+| 6 | 5 | 5 | 0 | 0 | 0 | 369 |
+| 7 | 5 | 5 | 0 | 0 | 0 | 411 |
+| 8 | 4 | 2 | 0 | 0 | 2 | 391 |
+| 9 | 4 | 2 | 0 | 0 | 2 | 367 |
+| 10 | 6 | 4 | 0 | 0 | 2 | 384 |
+| 11 | 6 | 4 | 0 | 0 | 2 | 442 |
+| 12 | 5 | 5 | 0 | 0 | 0 | 391 |
+| 13 | 6 | 6 | 0 | 0 | 0 | 298 |
+| 14 | 4 | 4 | 0 | 0 | 0 | 299 |
+| 15 | 3 | 3 | 0 | 0 | 0 | 280 |
+| 16 | 3 | 2 | 0 | 0 | 1 | 265 |
+| 17 | 6 | 6 | 0 | 0 | 0 | 210 |
+| 18 | 5 | 5 | 0 | 0 | 0 | 348 |
+| 19 | 2 | 2 | 0 | 0 | 0 | 331 |
+
+The wall time includes the wait for the shared cargo lock. Counts by file:
+
+| File | Caught | Missed | Timeout | Unviable |
+| --- | ---: | ---: | ---: | ---: |
+| `src/client.rs` | 4 | 0 | 0 | 12 |
+| `src/client/crypto_policy.rs` | 6 | 0 | 0 | 0 |
+| `src/client/transport.rs` | 6 | 0 | 0 | 3 |
+| `src/client/transport/password_auto.rs` | 7 | 0 | 0 | 0 |
+| `src/client/transport/password_discovery.rs` | 4 | 0 | 0 | 4 |
+| `src/client/transport/password_dns.rs` | 4 | 0 | 0 | 2 |
+| `src/config.rs` | 3 | 0 | 0 | 1 |
+| `src/config/profile.rs` | 4 | 0 | 0 | 0 |
+| `src/config/profile_syntax.rs` | 4 | 0 | 0 | 0 |
+| `src/config/unknown.rs` | 13 | 0 | 0 | 0 |
+| `src/crypto/policy.rs` | 1 | 0 | 0 | 0 |
+| `src/http.rs` | 1 | 0 | 0 | 1 |
+| `src/kadmin/request.rs` | 3 | 0 | 0 | 0 |
+| `src/keytab.rs` | 0 | 0 | 0 | 1 |
+| `src/spnego.rs` | 11 | 0 | 0 | 0 |
+
+The unviable mutants return `Default::default()` (also inside `Ok(...)`,
+`vec![...]`, a tuple or `Box::leak`) for types without a `Default`
+(`TgsReq`, `SystemTime`, `EncryptionKey`, `Principal`, `Realm`, `KdcEndpoint`,
+`kadmin::Reply`) or leak a slice that does not fit the lifetime.
+
+**Hand mutants.** cargo-mutants does not generate a mutant for a comparison
+of method results, a list or range inside a pattern, a string label, an
+operand order or a call that is simply absent, so 59 hand mutants changed the
+new rules one at a time in a scratch copy (own target directory, the file
+restored after each): the checksum binding (`selection::reject_checksum`,
+the checksum-type check, the two error variants, the bytes the checksum
+covers, the result of `verify_checksum`), the `into_parts` and `timestamp`
+results of `TgsRequestParts`, numbers and range ends of the PA-type arms, the
+labels and order of the zeroized frames, the component reservation bound, the discovery order and abort (record-set order, root
+target, fallback condition and port, pass order, the uncertain-TCP arm, the
+configured list), the admission (the request lists in `from_libdefaults`,
+`configured_requests`, the kpasswd path and `validate_request_enctypes`), the
+case rules (each place that stopped folding a name) and the reversal of the
+two deletions of todo 137. Run with the narrowed arguments of the area, 50
+failed a test and 9 survived. Their dispositions:
+
+| Mutant | Disposition |
+| --- | --- |
+| `validate_reply_encrypted_padata`: unknown reply etype reports `InvalidFastNegotiationResponse` instead of `UnsupportedEtype` | `equivalent`: both callers decrypt the reply with this key first, through `selection::enctype`, which is `KerberosEtype::from_etype_id`, so the lookup that fails here has already succeeded. Survives the full suite. |
+| `password_dns::discover_auto`: record sets asked `_tcp` before `_udp` | `equivalent`: `password_auto::send` splits the list by protocol and keeps the order inside each, so the result is the same; only the order of the two DNS questions differs, which no result and no documented rule fixes. Survives the full suite. |
+| `password_discovery::discover_auto`: configured list built `Udp` before `Tcp` | `equivalent`: the same split. Survives the full suite. |
+| `password_dns::discover_auto`: `NoKdcEndpoints` names `Tcp` instead of `Auto` | `equivalent`: the branch needs an empty successful `_kerberos-adm._tcp` lookup, and an empty record set is `DnsSrvLookup` ("no records found", seen with a fixture that publishes the set empty). Survives the full suite. |
+| `http.rs`: `ReplayCacheSkewExceeded` mapped to the 500 response again (todo 137 removed the arm) | `equivalent`: the validator checks its skew against the cache's maximum when the skew is set and when a shared cache is attached, and `ReplayCache::insert` receives that skew. Survives the full suite. |
+| `spnego.rs`: the MIC key policy check restored in `validate_completion` (todo 137 removed it) | `equivalent`: the session key, the acceptor subkey (`verify_ap_rep`) and the initiator subkey (constructor) are checked before the key is chosen. Survives the full suite. |
+| Component reservation bound divides by 1 instead of 2 | killed: `reservation_is_half_the_remaining_input` fails on it |
+| `no_addresses` matched case-insensitively | killed: `wrong_case_twins_of_no_addresses_are_unknown` fails on it |
+| Discovered list reversed | killed: `kpasswd_auto_tcp_pass_keeps_the_priority_order` fails on it (the fixture now gives each record the priority of its position) |
+
+The three new tests are red on their mutant and green on the tree; the
+bounded accept is covered by the three timeouts that became failures. No
+production code changed. FU-FUZ-R04 records the test changes.
+
 ### In-diff check after todo 115 (todo 116)
 
 Todo 115 rejected a zero-length name component of a keytab principal (a new
