@@ -878,9 +878,9 @@ impl Principal {
         // Each component is at least a two-byte counted string; bound the
         // count against the remaining input before reserving capacity.
         let capacity = component_count.min(bytes.len().saturating_sub(*offset).div_euclid(2));
-        let mut components = Vec::with_capacity(capacity);
         #[cfg(test)]
-        reservation_tests::record(components.capacity());
+        reservation_tests::record(capacity);
+        let mut components = Vec::with_capacity(capacity);
         for _ in 0..component_count {
             components.push(read_counted_string(bytes, offset, endian)?);
         }

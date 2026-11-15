@@ -10,7 +10,7 @@ std::thread_local! {
     static LARGEST: Cell<usize> = const { Cell::new(0) };
 }
 
-/// Record the capacity of the component vector that was just allocated.
+/// Record a component capacity that is about to be reserved.
 pub(super) fn record(capacity: usize) {
     LARGEST.with(|largest| largest.set(largest.get().max(capacity)));
 }
@@ -68,7 +68,6 @@ fn reservation_is_half_the_remaining_input() -> Result<(), Error> {
         ),
         "{error:?}"
     );
-    // `Vec::with_capacity(n)` promises exactly the requested capacity.
     assert_eq!(LARGEST.with(Cell::get), 3);
     Ok(())
 }
