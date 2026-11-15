@@ -447,12 +447,14 @@ impl Tokio {
         framing: TcpFraming,
     ) -> Result<Vec<u8>, Error> {
         let request_len = tcp_request_length(request.len(), framing)?;
-        // `concat` allocates the exact length once, so nothing grows and no
-        // earlier allocation holds an unerased copy of the request.
-        let framed = SecretDer::new(
-            [request_len.to_be_bytes().as_slice(), request].concat(),
-            "tcp request frame",
-        );
+        // The reserved capacity holds the record mark and the request, and a
+        // `Vec` does not reallocate within its capacity, so no earlier allocation
+        // keeps an unerased copy of the request. Nothing that can fail runs
+        // between filling the frame and handing it to its owner.
+        let mut frame = Vec::with_capacity(TCP_RECORD_MARK_LEN.saturating_add(request.len()));
+        frame.extend_from_slice(&request_len.to_be_bytes());
+        frame.extend_from_slice(request);
+        let framed = SecretDer::new(frame, "tcp request frame");
         stream.write_all(&framed).await?;
 
         let mut header = [0; TCP_RECORD_MARK_LEN];
