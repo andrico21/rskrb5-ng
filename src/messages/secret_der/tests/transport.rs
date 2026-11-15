@@ -1,10 +1,11 @@
 //! TCP request frame ownership regressions.
 
 use core::{error::Error, time::Duration};
+use std::io::ErrorKind;
 
 use tokio::{
     io::{AsyncReadExt as _, AsyncWriteExt as _},
-    net::{TcpListener, TcpStream},
+    net::{TcpListener, TcpSocket, TcpStream},
     sync::oneshot,
     time::timeout,
 };
@@ -26,8 +27,11 @@ const FRAME: &str = "tcp request frame";
 /// Bytes of the record mark in front of the request.
 const MARK: usize = 4;
 
-/// Larger than any loopback socket buffering, so a peer that stops reading stalls the write.
+/// Far larger than the socket buffers, so a peer that stops reading stalls the write.
 const STALLING_REQUEST: usize = 1 << 26;
+
+/// Receive buffer of the peer that stops reading, small so the stall does not rest on a platform default.
+const STALLED_RECV_BUFFER: u32 = 4096;
 
 /// How long a peer waits for the transport under test to connect.
 const CONNECT_WAIT: Duration = Duration::from_secs(10);
@@ -102,8 +106,11 @@ async fn framed_request_is_erased_after_io_failure() -> Result<(), TestError> {
 /// Dropping the future in the middle of the write erases the framed request.
 #[tokio::test]
 async fn framed_request_is_erased_after_cancellation() -> Result<(), TestError> {
-    // Given a peer that reads one byte and then stops, so the write stalls.
-    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    // Given a peer with a small receive buffer that reads one byte and then stops.
+    let socket = TcpSocket::new_v4()?;
+    socket.set_recv_buffer_size(STALLED_RECV_BUFFER)?;
+    socket.bind("127.0.0.1:0".parse()?)?;
+    let listener = socket.listen(1)?;
     let address = listener.local_addr()?;
     let (started, stalled) = oneshot::channel();
     let peer = tokio::spawn(async move {
@@ -118,7 +125,7 @@ async fn framed_request_is_erased_after_cancellation() -> Result<(), TestError> 
     let transport = Tokio::new();
     ERASED.with_borrow_mut(Vec::clear);
     // When the exchange is dropped once the peer has seen the first byte.
-    let stream = tokio::select! {
+    let mut stream = tokio::select! {
         stream = stalled => stream?,
         response = transport.send_tcp(address, &request) => {
             return Err(format!("the stalled write finished: {response:?}").into());
@@ -131,7 +138,24 @@ async fn framed_request_is_erased_after_cancellation() -> Result<(), TestError> 
             [(FRAME, STALLING_REQUEST.saturating_add(MARK))]
         );
     });
-    drop(stream);
+    // And the write was cut short: the peer reads the byte it took plus what the
+    // sockets buffered, up to the end of the stream, and that is less than the frame.
+    let mut buffered = Vec::new();
+    let read = timeout(CONNECT_WAIT, stream.read_to_end(&mut buffered)).await?;
+    // A reset instead of a clean end still leaves the bytes read before it in `buffered`.
+    if let Err(error) = read
+        && !matches!(
+            error.kind(),
+            ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted
+        )
+    {
+        return Err(error.into());
+    }
+    let received = buffered.len().saturating_add(1);
+    assert!(
+        received < STALLING_REQUEST.saturating_add(MARK),
+        "the peer received {received} bytes, the whole frame"
+    );
     peer.await??;
     Ok(())
 }
