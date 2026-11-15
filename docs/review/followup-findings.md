@@ -450,7 +450,3 @@ is a parity feature, not a defect>`.
 | executor:todo-151#accepted-context-private-fields | FU-SPN-R23 | no |
 | executor:todo-151#ccache-auth-data-setters | FU-FIL-R11 | no |
 | executor:todo-151#tgs-request-parts-non-exhaustive | FU-CLI-R35 | no |
-| critic:critics-d6a85f8/verdict.md#F3 | FU-TRN-R14 | no |
-| critic:critics-d6a85f8/v3.md#V3-02 | FU-FIL-R12 | no |
-| critic:critics-d6a85f8/verdict.md#F4 | FU-FIL-R12 | no |
-| critic:critics-d6a85f8/verdict.md#F7 | FU-TRN-R15 | no |
