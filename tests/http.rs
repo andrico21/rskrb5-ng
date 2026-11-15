@@ -60,8 +60,6 @@ mod tests {
     };
     #[cfg(any(feature = "tokio", feature = "tower"))]
     use rskrb5_ng::config::Config;
-    #[cfg(feature = "tower")]
-    use rskrb5_ng::error::Service as ServiceError;
     #[cfg(any(feature = "tokio", feature = "tower"))]
     use rskrb5_ng::service::ReplayCache;
     #[cfg(any(feature = "tokio", feature = "tower"))]
@@ -69,7 +67,7 @@ mod tests {
     use rskrb5_ng::{
         ap_req,
         client::{AsRepSession, principal::Principal},
-        error::{Http as HttpError, Spnego as SpnegoError},
+        error::{Http as HttpError, Service as ServiceError, Spnego as SpnegoError},
         http as krb_http,
         keytab::{EncryptionKey, Keytab},
         service::{ApRepOptions, Validator, VerifiedApRep},
@@ -342,6 +340,48 @@ mod tests {
                 }
             )))
         ));
+        Ok(())
+    }
+
+    /// The one classifier shared by the Tower service and the Axum example names exactly the
+    /// replay-cache faults of the server; credential and policy failures are not faults.
+    #[test]
+    fn internal_fault_classifier_names_the_replay_cache_faults() -> Result<(), TestError> {
+        for fault in [
+            ServiceError::ReplayCachePoisoned,
+            ServiceError::ReplayCacheClockRollback,
+            ServiceError::ReplayCacheCapacityExceeded { capacity: 7 },
+        ] {
+            assert!(
+                krb_http::is_internal_fault(&SpnegoError::Service(fault)),
+                "a replay-cache fault must be an internal fault"
+            );
+        }
+        for not_fault in [
+            SpnegoError::Service(ServiceError::TransitPolicyRejected),
+            SpnegoError::Service(ServiceError::ReplayCacheSkewExceeded {
+                maximum: Duration::from_secs(1),
+                requested: Duration::from_secs(2),
+            }),
+            SpnegoError::MissingMechToken,
+        ] {
+            assert!(
+                !krb_http::is_internal_fault(&not_fault),
+                "{not_fault} is the client's failure"
+            );
+        }
+        // The rejection of a malformed token, as `accept_request` returns it, is not a fault.
+        let keytab = keytab()?;
+        let mut validator = Validator::new(&keytab);
+        let mut request = Request::new(());
+        krb_http::set_authorization_header(&mut request, "Negotiate invalid")?;
+        let rejected = krb_http::accept_request(&mut validator, &mut request)
+            .err()
+            .context("a malformed token was accepted")?;
+        assert!(
+            matches!(&rejected, HttpError::Spnego(cause) if !krb_http::is_internal_fault(cause)),
+            "unexpected rejection: {rejected}"
+        );
         Ok(())
     }
 

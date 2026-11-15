@@ -102,14 +102,7 @@ async fn negotiate(
                 return krb_http::challenge_response();
             }
             Err(HttpError::Spnego(source)) => {
-                if matches!(
-                    &source,
-                    SpnegoError::Service(
-                        ServiceError::ReplayCachePoisoned
-                            | ServiceError::ReplayCacheClockRollback
-                            | ServiceError::ReplayCacheCapacityExceeded { capacity: _ }
-                    )
-                ) {
+                if krb_http::is_internal_fault(&source) {
                     let mut response = Response::new(Body::empty());
                     *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                     drop(
