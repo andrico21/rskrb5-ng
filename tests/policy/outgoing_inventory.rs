@@ -5,7 +5,7 @@ use rasn_kerberos::{ApOptions, ApReq, EncryptedData, KdcReq, KdcReqBody, PaData,
 use rskrb5_ng::{
     Config, client,
     crypto::{CryptoPolicy, Use},
-    error::{Client as ClientError, Policy},
+    error::{Client as ClientError, Policy, RejectedFeature},
     keytab::EncryptionKey,
 };
 
@@ -209,17 +209,33 @@ fn outgoing_encryption_inventory_is_guarded() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Unsupported PA types cannot bypass admission as opaque informational data.
+/// PA types whose refusal names the class: the enctype hints a KDC or peer sends.
+const PEER_HINTS: [i32; 4] = [11, 19, 23, 165];
+
+/// The one PA type that only embeds an element of the other encoding.
+const EMBEDDING_WRAPPER: i32 = 22;
+
+/// PA types this client neither builds nor can policy-check: credential mechanisms, the halves a KDC
+/// sends, FAST armor, authentication sets, and obsolete or vendor ids.
+const UNSUPPORTED: [i32; 28] = [
+    5, 6, 7, 8, 9, 12, 13, 16, 17, 30, 31, 41, 130, 134, 135, 136, 138, 141, 142, 143, 144, 145,
+    146, 147, 148, 151, 152, 153,
+];
+
+/// PA types with their own decoder: a payload that is not their element is refused before the transport.
+const DECODED: [i32; 2] = [1, 2];
+
+/// The permanently refused draft-9 PKINIT types, refused by the selection layer before the arms.
+const DRAFT9_PKINIT: [i32; 2] = [14, 15];
+
+/// Every outgoing PA type from 0 to 255 is refused or admitted exactly as the inventory says.
 ///
 /// The refusal names the class where one is known (peer-only enctype hint, embedding wrapper);
-/// the rest share one message that makes no claim about the mechanism.
+/// the rest of the refused set shares one message that makes no claim about the mechanism. Every
+/// other type, those next to the refused ones included, reaches the transport.
 #[test]
-fn outgoing_unsupported_credential_padata_is_rejected() -> Result<(), Box<dyn Error>> {
-    let kinds: [i32; 33] = [
-        5_i32, 6, 7, 8, 9, 11, 12, 13, 16, 17, 19, 22, 23, 30, 31, 41, 130, 134, 135, 136, 138,
-        141, 142, 143, 144, 145, 146, 147, 148, 151, 152, 153, 165,
-    ];
-    for kind in kinds {
+fn outgoing_padata_types_are_refused_or_admitted_exactly() -> Result<(), Box<dyn Error>> {
+    for kind in 0_i32..=255_i32 {
         let mut message = populated()?;
         message
             .padata
@@ -231,6 +247,7 @@ fn outgoing_unsupported_credential_padata_is_rejected() -> Result<(), Box<dyn Er
             });
         let (as_request, tgs_request) = bind(&message)?;
         let mut transport = CountingTransport(0);
+        let mut admitted = 0_usize;
         for result in [
             client::exchange_as_req(
                 &mut transport,
@@ -243,12 +260,18 @@ fn outgoing_unsupported_credential_padata_is_rejected() -> Result<(), Box<dyn Er
                 &EncryptionKey::new(17, vec![0; 16]),
             ),
         ] {
-            let expected = if matches!(kind, 11_i32 | 19_i32 | 23_i32 | 165_i32) {
-                format!("outgoing PA type {kind} is a peer-only enctype hint")
-            } else if kind == 22_i32 {
-                format!("outgoing PA type {kind} embeds data that cannot be policy-checked")
+            let expected = if PEER_HINTS.contains(&kind) {
+                Some(format!(
+                    "outgoing PA type {kind} is a peer-only enctype hint"
+                ))
+            } else if kind == EMBEDDING_WRAPPER {
+                Some(format!(
+                    "outgoing PA type {kind} embeds data that cannot be policy-checked"
+                ))
+            } else if UNSUPPORTED.contains(&kind) {
+                Some(format!("outgoing PA type {kind} is not supported"))
             } else {
-                format!("outgoing PA type {kind} is not supported")
+                None
             };
             let actual = match &result {
                 Err(ClientError::Encode {
@@ -257,9 +280,36 @@ fn outgoing_unsupported_credential_padata_is_rejected() -> Result<(), Box<dyn Er
                 }) => Some(text.as_str()),
                 _ => None,
             };
-            assert_eq!(actual, Some(expected.as_str()), "PA type {kind}");
+            if let Some(text) = &expected {
+                assert_eq!(actual, Some(text.as_str()), "PA type {kind}");
+            } else if DRAFT9_PKINIT.contains(&kind) {
+                let error = result.err().ok_or("draft-9 PKINIT admitted")?;
+                assert!(
+                    matches!(
+                        policy_cause(&error),
+                        Some(Policy::RejectedFeature {
+                            feature: RejectedFeature::Draft9Pkinit,
+                            reason: _
+                        })
+                    ),
+                    "PA type {kind}: {error}"
+                );
+            } else if DECODED.contains(&kind) {
+                assert_eq!(actual, None, "PA type {kind} has no refusal arm");
+                assert!(
+                    result.is_err(),
+                    "PA type {kind}: a garbage element was admitted"
+                );
+            } else {
+                assert_eq!(actual, None, "PA type {kind} is not refused by the arms");
+                assert!(
+                    matches!(&result, Err(ClientError::Transport(text)) if text == "admitted request"),
+                    "PA type {kind}: expected the transport to be reached, got {result:?}"
+                );
+                admitted += 1;
+            }
         }
-        assert_eq!(transport.0, 0);
+        assert_eq!(transport.0, admitted, "PA type {kind}: transport sends");
     }
     Ok(())
 }

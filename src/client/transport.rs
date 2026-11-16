@@ -94,6 +94,18 @@ const DEFAULT_MAX_REFERRALS: usize = 5;
 #[cfg(feature = "tokio")]
 const TCP_RECORD_MARK_LEN: usize = 4;
 
+/// The record `mark` followed by `request`, in one allocation sized for both.
+///
+/// The reserved capacity holds the whole frame and a `Vec` does not reallocate within its
+/// capacity, so no earlier allocation keeps an unerased copy of `request`.
+#[cfg(feature = "tokio")]
+fn tcp_record_frame(mark: [u8; TCP_RECORD_MARK_LEN], request: &[u8]) -> Vec<u8> {
+    let mut frame = Vec::with_capacity(TCP_RECORD_MARK_LEN.saturating_add(request.len()));
+    frame.extend_from_slice(&mark);
+    frame.extend_from_slice(request);
+    frame
+}
+
 /// TCP length rules belong to the service, not to the underlying stream.
 #[derive(Clone, Copy)]
 enum TcpFraming {
@@ -447,14 +459,11 @@ impl Tokio {
         framing: TcpFraming,
     ) -> Result<Vec<u8>, Error> {
         let request_len = tcp_request_length(request.len(), framing)?;
-        // The reserved capacity holds the record mark and the request, and a
-        // `Vec` does not reallocate within its capacity, so no earlier allocation
-        // keeps an unerased copy of the request. Nothing that can fail runs
-        // between filling the frame and handing it to its owner.
-        let mut frame = Vec::with_capacity(TCP_RECORD_MARK_LEN.saturating_add(request.len()));
-        frame.extend_from_slice(&request_len.to_be_bytes());
-        frame.extend_from_slice(request);
-        let framed = SecretDer::new(frame, "tcp request frame");
+        // Nothing that can fail runs between filling the frame and handing it to its owner.
+        let framed = SecretDer::new(
+            tcp_record_frame(request_len.to_be_bytes(), request),
+            "tcp request frame",
+        );
         stream.write_all(&framed).await?;
 
         let mut header = [0; TCP_RECORD_MARK_LEN];
@@ -2642,7 +2651,29 @@ mod tests {
         net::{TcpListener, UdpSocket},
     };
 
-    use super::parse_dns_server;
+    use super::{TCP_RECORD_MARK_LEN, parse_dns_server, tcp_record_frame};
+
+    /// The frame is the mark then the request, in an allocation of exactly that size.
+    #[test]
+    fn tcp_record_frame_reserves_exactly_the_frame() -> Result<(), super::Error> {
+        // Given requests short enough that a frame grown by doubling would end larger than the frame.
+        for request in [&[1_u8][..], &[1, 2], &[1, 2, 3]] {
+            // When the frame is built with the record mark of the request.
+            let mark =
+                super::tcp_request_length(request.len(), super::TcpFraming::Kdc)?.to_be_bytes();
+            let frame = tcp_record_frame(mark, request);
+            // Then it is the mark followed by the request, with no capacity beyond that.
+            assert_eq!(frame.get(..TCP_RECORD_MARK_LEN), Some(mark.as_slice()));
+            assert_eq!(frame.get(TCP_RECORD_MARK_LEN..), Some(request));
+            assert_eq!(
+                frame.capacity(),
+                TCP_RECORD_MARK_LEN.saturating_add(request.len()),
+                "reallocated for a request of {} bytes",
+                request.len()
+            );
+        }
+        Ok(())
+    }
 
     /// Parsed UDP limits reach Auto transport with MIT fallback, cap and boundary.
     #[test]

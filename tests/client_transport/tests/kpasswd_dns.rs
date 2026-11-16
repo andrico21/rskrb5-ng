@@ -355,6 +355,116 @@ fn kpasswd_auto_unresolvable_published_target_asks_no_admin() -> Result<(), Test
     })
 }
 
+/// A set whose target does not resolve does not hide the live endpoints of the other set.
+#[test]
+fn kpasswd_auto_unresolvable_set_leaves_the_live_set_in_use() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given an unresolvable target in `_kpasswd._udp`, a live endpoint in `_kpasswd._tcp` and an administration host.
+        let (listener, udp) = bind_tcp_and_udp_pair().await?;
+        let port = udp.local_addr()?.port();
+        let dns = Dns::start(vec![
+            (
+                "_kpasswd._udp.test.gokrb5.",
+                vec![(464, "unresolvable.test.gokrb5.")],
+            ),
+            ("_kpasswd._tcp.test.gokrb5.", vec![(port, "127.0.0.1.")]),
+            ("_kerberos-adm._tcp.test.gokrb5.", vec![(749, "127.0.0.1.")]),
+        ])
+        .await?;
+        let server = tokio::spawn(async move {
+            let (request, mut socket) = read_tcp_request(&listener).await?;
+            write_tcp_response(&mut socket, b"tcp-reply").await?;
+            Ok::<_, io::Error>(request)
+        });
+        // When the Auto request runs.
+        let result = dns
+            .transport()?
+            .send_to_kpasswd_realm(&dns_config()?, KdcProtocol::Auto, REALM, REQUEST)
+            .await;
+        let questions = dns.finish().await?;
+        // Then the live TCP endpoint answered and the administration service was never asked about.
+        assert_eq!(shown(result)?, b"tcp-reply");
+        assert_eq!(
+            bounded(Duration::from_secs(10), "TCP peer", server).await???,
+            REQUEST
+        );
+        assert_eq!(
+            asked(&questions, "_kerberos-adm"),
+            0,
+            "questions: {questions:?}"
+        );
+        assert_no_datagram(&udp, "unresolvable set").await;
+        Ok(())
+    })
+}
+
+/// With both sets unresolvable the failure of the first set asked, `_kpasswd._udp`, is the one reported.
+#[test]
+fn kpasswd_auto_reports_the_first_unresolvable_set() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given an unresolvable target in each record set.
+        let dns = Dns::start(vec![
+            (
+                "_kpasswd._udp.test.gokrb5.",
+                vec![(464, "udp-missing.test.gokrb5.")],
+            ),
+            (
+                "_kpasswd._tcp.test.gokrb5.",
+                vec![(464, "tcp-missing.test.gokrb5.")],
+            ),
+        ])
+        .await?;
+        // When the Auto request runs.
+        let result = dns
+            .transport()?
+            .send_to_kpasswd_realm(&dns_config()?, KdcProtocol::Auto, REALM, REQUEST)
+            .await;
+        let _questions = dns.finish().await?;
+        // Then the error names the UDP set's target.
+        assert!(
+            matches!(&result, Err(ClientError::DnsSrvLookup { realm: _, protocol: KdcProtocol::Udp, message })
+                if message.contains("udp-missing.test.gokrb5")),
+            "expected the DnsSrvLookup of the UDP set, got {}",
+            describe(&result)
+        );
+        Ok(())
+    })
+}
+
+/// A failed administration lookup is the error of the call, not an empty host list.
+#[test]
+fn kpasswd_auto_failing_admin_lookup_is_reported() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given a zone that publishes neither `_kpasswd` set nor `_kerberos-adm`.
+        let dns = Dns::start(Vec::new()).await?;
+        // When the Auto request runs.
+        let result = dns
+            .transport()?
+            .send_to_kpasswd_realm(&dns_config()?, KdcProtocol::Auto, REALM, REQUEST)
+            .await;
+        let questions = dns.finish().await?;
+        // Then the administration service was asked about once and its lookup failure is the error.
+        assert_eq!(
+            asked(&questions, "_kerberos-adm._tcp"),
+            1,
+            "questions: {questions:?}"
+        );
+        assert!(
+            matches!(
+                &result,
+                Err(ClientError::DnsSrvLookup {
+                    realm: _,
+                    protocol: KdcProtocol::Tcp,
+                    message: _
+                })
+            ),
+            "expected the DnsSrvLookup of the administration lookup, got {}",
+            describe(&result)
+        );
+        Ok(())
+    })
+}
+
 /// Only `_kpasswd._tcp` published and refused: no UDP pass, no administration lookup.
 #[test]
 fn kpasswd_auto_tcp_only_zone_failing_asks_no_admin() -> Result<(), TestError> {

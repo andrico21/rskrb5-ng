@@ -470,3 +470,4 @@ is a parity feature, not a defect>`.
 | critic:critics-d6a85f8/v4.md#V4-01 | FU-DOC-R149 | no |
 | critic:critics-d6a85f8/verdict.md#F12 | FU-DOC-R149 | no |
 | executor:todo-155#guidelines-push | FU-DOC-R150 | no |
+| executor:todo-156#in-diff-mutation-check-d6a85f8 | FU-FUZ-R05 | no |
