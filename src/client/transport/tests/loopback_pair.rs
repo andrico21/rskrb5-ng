@@ -12,10 +12,14 @@ use alloc::collections::BTreeSet;
 use core::{
     error::Error as StdError,
     net::{Ipv4Addr, SocketAddr},
+    time::Duration,
 };
 use std::{io, process};
 
-use tokio::net::{TcpListener, UdpSocket};
+use tokio::{
+    net::{TcpListener, UdpSocket},
+    time::timeout,
+};
 
 /// Candidates tried before the helper gives up.
 const ATTEMPTS: u8 = 64;
@@ -151,9 +155,7 @@ fn candidates_are_distinct_numbers_of_the_dynamic_range() -> Result<(), Box<dyn 
         assert!(ports.contains(&first), "pid {pid}");
         assert_eq!(ports.len(), 64, "pid {pid}");
         assert!(
-            ports
-                .iter()
-                .all(|port| (FIRST_PORT..=FIRST_PORT | PORT_MASK).contains(port)),
+            ports.iter().all(|port| (49_152..=65_535).contains(port)),
             "pid {pid} leaves the range: {ports:?}"
         );
     }
@@ -216,6 +218,12 @@ fn the_process_id_moves_the_start() -> Result<(), Box<dyn StdError>> {
         second.first().ok_or("no start")?
     );
     assert!(first.iter().zip(&second).all(|(left, right)| left != right));
+    // And ids past 16 bits (a Linux id reaches 4194304) still start at different numbers.
+    let wide: BTreeSet<u16> = [0x1_0001_u32, 0x2_0002, 0x40_0003]
+        .into_iter()
+        .map(|pid| candidates(pid).next().ok_or("no start"))
+        .collect::<Result<_, _>>()?;
+    assert_eq!(wide.len(), 3, "{wide:?}");
     Ok(())
 }
 
@@ -282,7 +290,9 @@ async fn a_failure_lists_every_attempt() -> Result<(), Box<dyn StdError>> {
     .await
     .err()
     .ok_or("a held number was bound")?;
-    // Then the message lists the 64 attempts, in order, with the kind and the code.
+    // Then the error is a collision, and its message lists the 64 attempts, in order, with the
+    // kind and the code.
+    assert_eq!(error.kind(), io::ErrorKind::AddrInUse);
     let message = error.to_string();
     let expected: Vec<String> = candidates(5)
         .enumerate()
@@ -323,10 +333,45 @@ async fn the_pair_shares_a_candidate_number() -> Result<(), Box<dyn StdError>> {
         // Then both sockets sit on the same loopback number, drawn from the candidates.
         let port = listener.local_addr()?.port();
         assert_eq!(udp.local_addr()?.port(), port, "{order:?}");
+        assert!(listener.local_addr()?.ip().is_loopback(), "{order:?}");
+        assert!(udp.local_addr()?.ip().is_loopback(), "{order:?}");
         assert!(
             candidates(process::id()).any(|candidate| candidate == port),
             "{order:?}"
         );
     }
+    Ok(())
+}
+
+/// A taken first candidate does not end the search: the helper walks on to a later number.
+#[tokio::test]
+async fn a_taken_first_candidate_is_walked_past() -> Result<(), Box<dyn StdError>> {
+    // Given the first candidate of this process. Another test of this process can hold the number
+    // for the length of its run, so it is taken here once that test has let it go; a number that
+    // the OS refuses outright is as good as a held one.
+    let first = candidates(process::id())
+        .next()
+        .ok_or("no candidate")?;
+    let address = SocketAddr::from((Ipv4Addr::LOCALHOST, first));
+    let held = timeout(Duration::from_secs(10), async {
+        loop {
+            match TcpListener::bind(address).await {
+                Err(error) if error.kind() == io::ErrorKind::AddrInUse => {
+                    tokio::task::yield_now().await;
+                }
+                Err(error) if error.kind() == io::ErrorKind::PermissionDenied => break Ok(None),
+                other => break other.map(Some),
+            }
+        }
+    })
+    .await??;
+    // When the helper itself binds a pair.
+    let (listener, udp) = bind_tcp_and_udp_pair().await?;
+    // Then the pair sits on another candidate number.
+    let port = listener.local_addr()?.port();
+    assert_eq!(udp.local_addr()?.port(), port);
+    assert_ne!(port, first, "the pair took the number held by this test");
+    assert!(candidates(process::id()).any(|candidate| candidate == port));
+    drop(held);
     Ok(())
 }

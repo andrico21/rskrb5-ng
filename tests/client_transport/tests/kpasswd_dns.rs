@@ -346,8 +346,8 @@ fn kpasswd_auto_unresolvable_published_target_asks_no_admin() -> Result<(), Test
         );
         // And the call failed definitely as an endpoint failure, naming the target that did not resolve.
         assert!(
-            matches!(&result, Err(ClientError::KdcEndpointFailures { realm: _, protocol: KdcProtocol::Auto, failures })
-                if matches!(failures.as_slice(), [only] if only.contains("unresolvable.test.gokrb5"))),
+            matches!(&result, Err(ClientError::KdcEndpointFailures { realm, protocol: KdcProtocol::Auto, failures })
+                if realm.as_str() == REALM && matches!(failures.as_slice(), [only] if only.contains("unresolvable.test.gokrb5"))),
             "expected the Auto KdcEndpointFailures of the unresolvable target, got {}",
             describe(&result)
         );
@@ -422,8 +422,8 @@ fn kpasswd_auto_reports_every_unresolvable_set() -> Result<(), TestError> {
         let _questions = dns.finish().await?;
         // Then the endpoint failures name the UDP set's target and then the TCP set's target.
         assert!(
-            matches!(&result, Err(ClientError::KdcEndpointFailures { realm: _, protocol: KdcProtocol::Auto, failures })
-                if matches!(failures.as_slice(), [udp, tcp]
+            matches!(&result, Err(ClientError::KdcEndpointFailures { realm, protocol: KdcProtocol::Auto, failures })
+                if realm.as_str() == REALM && matches!(failures.as_slice(), [udp, tcp]
                     if udp.contains("udp-missing.test.gokrb5") && tcp.contains("tcp-missing.test.gokrb5"))),
             "expected the Auto KdcEndpointFailures of both sets, UDP first, got {}",
             describe(&result)
@@ -457,8 +457,8 @@ async fn explicit_unresolvable_published_target_asks_no_admin(
     );
     // And the call failed definitely as an endpoint failure of that protocol naming the target.
     assert!(
-        matches!(&result, Err(ClientError::KdcEndpointFailures { realm: _, protocol: reported, failures })
-            if *reported == protocol
+        matches!(&result, Err(ClientError::KdcEndpointFailures { realm, protocol: reported, failures })
+            if realm.as_str() == REALM && *reported == protocol
                 && matches!(failures.as_slice(), [only] if only.contains("unresolvable.test.gokrb5"))),
         "expected the {protocol:?} KdcEndpointFailures of the unresolvable target, got {}",
         describe(&result)
