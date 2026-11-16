@@ -14,8 +14,9 @@ use super::{
 /// Realm of every exchange in this module.
 const REALM: &str = "TEST.GOKRB5";
 
-/// SRV answers of one fixture name: `(port, target)`, the first with the best priority; the target `.` is the root name,
-/// and a target that starts with `+` puts its record in the additional section of the reply, so that the lookup succeeds
+/// SRV answers of one fixture name: `(port, target)`, the first with the best priority; the target `.` is the root name.
+///
+/// A target that starts with `+` puts its record in the additional section of the reply, so that the lookup succeeds
 /// with no answer record (the library skips such a record).
 type Records = Vec<(u16, &'static str)>;
 
@@ -85,14 +86,14 @@ async fn serve(
         match zone.iter().find(|(owner, _)| *owner == name) {
             Some((_, records)) if query.query_type() == RecordType::SRV => {
                 for (priority, (port, host)) in (0_u16..).zip(records) {
-                    let (section, host) = match host.strip_prefix('+') {
+                    let (section, owner) = match host.strip_prefix('+') {
                         Some(rest) => (&mut response.additionals, rest),
                         None => (&mut response.answers, *host),
                     };
-                    let target = if host == "." {
+                    let target = if owner == "." {
                         Name::root()
                     } else {
-                        Name::from_ascii(host)?
+                        Name::from_ascii(owner)?
                     };
                     section.push(Record::from_rdata(
                         query.name().clone(),
@@ -327,12 +328,16 @@ fn kpasswd_auto_root_targets_only_are_unavailable() -> Result<(), TestError> {
 
 /// A root-only set stays published when the other set has a reply without an answer record.
 #[test]
-fn kpasswd_auto_a_set_without_answer_records_does_not_unpublish_a_root_set() -> Result<(), TestError> {
+fn kpasswd_auto_a_set_without_answer_records_does_not_unpublish_a_root_set() -> Result<(), TestError>
+{
     runtime()?.block_on(async {
         // Given a root-only `_kpasswd._udp` set, a `_kpasswd._tcp` reply with no answer record, and an administration host.
         let dns = Dns::start(vec![
             ("_kpasswd._udp.test.gokrb5.", vec![(0, ".")]),
-            ("_kpasswd._tcp.test.gokrb5.", vec![(464, "+kdc.test.gokrb5.")]),
+            (
+                "_kpasswd._tcp.test.gokrb5.",
+                vec![(464, "+kdc.test.gokrb5.")],
+            ),
             ("_kerberos-adm._tcp.test.gokrb5.", vec![(749, "127.0.0.1.")]),
         ])
         .await?;

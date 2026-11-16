@@ -18,6 +18,7 @@ use std::{io, process};
 
 use tokio::{
     net::{TcpListener, UdpSocket},
+    task::yield_now,
     time::timeout,
 };
 
@@ -155,7 +156,7 @@ fn candidates_are_distinct_numbers_of_the_dynamic_range() -> Result<(), Box<dyn 
         assert!(ports.contains(&first), "pid {pid}");
         assert_eq!(ports.len(), 64, "pid {pid}");
         assert!(
-            ports.iter().all(|port| (49_152..=65_535).contains(port)),
+            ports.iter().all(|port| (0xC000..=0xFFFF).contains(port)),
             "pid {pid} leaves the range: {ports:?}"
         );
     }
@@ -349,15 +350,13 @@ async fn a_taken_first_candidate_is_walked_past() -> Result<(), Box<dyn StdError
     // Given the first candidate of this process. Another test of this process can hold the number
     // for the length of its run, so it is taken here once that test has let it go; a number that
     // the OS refuses outright is as good as a held one.
-    let first = candidates(process::id())
-        .next()
-        .ok_or("no candidate")?;
+    let first = candidates(process::id()).next().ok_or("no candidate")?;
     let address = SocketAddr::from((Ipv4Addr::LOCALHOST, first));
     let held = timeout(Duration::from_secs(10), async {
         loop {
             match TcpListener::bind(address).await {
                 Err(error) if error.kind() == io::ErrorKind::AddrInUse => {
-                    tokio::task::yield_now().await;
+                    yield_now().await;
                 }
                 Err(error) if error.kind() == io::ErrorKind::PermissionDenied => break Ok(None),
                 other => break other.map(Some),
