@@ -42,7 +42,10 @@ mod tests {
     mod bounded;
     use bounded::{bounded, stop};
 
-    use crate::{ambient_guard::tests::access_violations, loopback_pair::bind_tcp_and_udp_pair};
+    use crate::{
+        ambient_guard::tests::access_violations,
+        loopback_pair::{bind_tcp_and_udp_pair, bind_udp_with_closed_tcp},
+    };
     /// Configured preauthentication connection reuse.
     mod affinity;
     /// Live KDC probe exchange implementation.
