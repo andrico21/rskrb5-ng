@@ -65,6 +65,9 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 
 #[cfg(feature = "tokio")]
+#[path = "support/closed_port.rs"]
+mod closed_port;
+#[cfg(feature = "tokio")]
 #[path = "support/env.rs"]
 mod env;
 

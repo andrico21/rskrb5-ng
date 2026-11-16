@@ -28,7 +28,6 @@ use rskrb5_ng::{
     keytab::Keytab,
     service::Validator,
 };
-use tokio::net::TcpSocket;
 
 /// Realm of the AD user domain.
 const USER_REALM: &str = "USER.GOKRB5";
@@ -153,6 +152,10 @@ fn parse_keytab_bytes(label: &str, source: &str, bytes: &[u8]) -> Result<Keytab,
 /// Child-process runner for the tests that change the environment.
 #[path = "support/env.rs"]
 mod child_env;
+
+/// Port numbers from a reserved range that tests need refused.
+#[path = "support/closed_port.rs"]
+mod closed_port;
 
 /// Live Active Directory integration tests (gated on `TESTAD=1`), embedded
 /// keytab fixtures and the environment overrides of the AD gate.
@@ -402,11 +405,8 @@ mod tests {
     fn strict_ad_gate_rejects_unreachable_user_kdc_endpoint() -> Result<(), Box<dyn Error>> {
         const TEST_PATH: &str = "tests::strict_ad_gate_rejects_unreachable_user_kdc_endpoint";
         if !child_env::in_child(TEST_PATH) {
-            // The socket stays bound while the child runs: a freed number could be taken by a
-            // test that runs in parallel.
-            let not_listening = TcpSocket::new_v4()?;
-            not_listening.bind(([127, 0, 0, 1], 0).into())?;
-            let endpoint = not_listening.local_addr()?.to_string();
+            // A closed number of the reserved range, which no test that runs in parallel binds.
+            let endpoint = format!("127.0.0.1:{}", closed_port::reserve_closed_tcp_port()?);
 
             child_env::run_in_child(
                 TEST_PATH,

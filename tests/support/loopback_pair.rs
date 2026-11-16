@@ -27,6 +27,8 @@ use std::{
 
 use tokio::net::{TcpListener, UdpSocket};
 
+use crate::closed_port::next_reserved_port;
+
 /// Attempts of [`bind_tcp_and_udp_pair`] before it gives up.
 const ATTEMPTS: u8 = 64;
 
@@ -35,15 +37,6 @@ pub(crate) const FIRST_PORT: u16 = 49_152;
 
 /// Mask that keeps an offset inside the dynamic range (`49152..=65535` is 16384 numbers).
 pub(crate) const PORT_MASK: u64 = 0x3FFF;
-
-/// First port number of the range that [`bind_udp_with_closed_tcp`] draws from.
-///
-/// The range lies below the ephemeral range of every supported system (Windows and macOS start
-/// at 49152, Linux at 32768) and below the range of [`bind_tcp_and_udp_pair`].
-pub(crate) const RESERVED_FIRST: u16 = 20_000;
-
-/// Mask that keeps an offset inside the reserved range (8192 numbers).
-const RESERVED_MASK: u64 = 0x1FFF;
 
 /// Which socket of a pair is bound first.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -218,8 +211,7 @@ pub(crate) fn hold_wildcard(port: u16) {
 
 /// Take the next numbers of the reserved sequence until `bind` succeeds on one.
 ///
-/// The sequence is shared by every call of the process and starts at an offset that depends on
-/// the process id, so concurrent test processes are kept apart as well.
+/// The numbers come from `closed_port.rs`.
 ///
 /// # Errors
 /// Returns the error of a bind that is not a collision, and `AddrInUse` listing every attempt
@@ -230,13 +222,9 @@ pub(crate) fn hold_wildcard(port: u16) {
 async fn with_reserved_port<T>(
     mut bind: impl AsyncFnMut(SocketAddr) -> io::Result<T>,
 ) -> io::Result<T> {
-    static CALLS: AtomicU64 = AtomicU64::new(0);
-    let mut state = u64::from(process::id());
-    let start = next(&mut state);
     let mut tried = Vec::new();
     for _ in 0..ATTEMPTS {
-        let offset = start.wrapping_add(CALLS.fetch_add(1, Ordering::Relaxed)) & RESERVED_MASK;
-        let port = RESERVED_FIRST.saturating_add(u16::try_from(offset).unwrap_or(0));
+        let port = next_reserved_port();
         match bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port))).await {
             Ok(bound) => return Ok(bound),
             Err(error) if is_collision(&error) => tried.push(format!("{port} {:?}", error.kind())),

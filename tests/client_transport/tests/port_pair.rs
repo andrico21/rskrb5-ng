@@ -3,11 +3,10 @@
 
 use std::{net::UdpSocket as StdUdpSocket, sync::mpsc, thread};
 
-use tokio::net::TcpSocket;
-
 use super::{kpasswd_order::closed_port, *};
-use crate::loopback_pair::{
-    FIRST_PORT, Order, RESERVED_FIRST, bind_on, bind_pair_with, hold_wildcard,
+use crate::{
+    closed_port::{RESERVED_FIRST, reserve_closed_tcp_port},
+    loopback_pair::{FIRST_PORT, Order, bind_on, bind_pair_with, hold_wildcard},
 };
 
 /// A UDP socket that holds the number of the first candidate makes the first attempt fail and a
@@ -353,36 +352,49 @@ fn a_reserved_udp_socket_is_live_and_its_tcp_side_is_closed() -> Result<(), Test
     })
 }
 
-/// A TCP socket that is bound and does not listen refuses a connection and keeps its number
-/// against a parallel bind: the hold that tests which need a refused TCP number take.
+/// The synchronous helper of the other test binaries hands out a number of the reserved range
+/// that no pair-helper seed can draw and that refuses a TCP connect.
 #[test]
-fn a_bound_tcp_socket_that_does_not_listen_refuses_and_holds_its_number() -> Result<(), TestError> {
+fn a_reserved_tcp_port_refuses_a_connect_and_no_parallel_draw_reaches_it() -> Result<(), TestError>
+{
     runtime()?.block_on(async {
-        // Given a bound TCP socket that never listens.
-        let held = TcpSocket::new_v4()?;
-        held.bind(SocketAddr::from(([127, 0, 0, 1], 0)))?;
-        let addr = held.local_addr()?;
-        // When a connection is attempted and a parallel thread binds the same number.
+        // Given a closed TCP port number from the synchronous helper.
+        let port = reserve_closed_tcp_port()?;
+        // When a connection is attempted (Windows reports a refusal after about two seconds).
         let refused = bounded(
             Duration::from_secs(10),
-            "connect to the bound socket",
-            TcpStream::connect(addr),
+            "connect to the reserved TCP port",
+            TcpStream::connect(("127.0.0.1", port)),
         )
         .await?;
-        let parallel = thread::spawn(move || runtime()?.block_on(TcpListener::bind(addr)));
-        let rebound = parallel.join().map_err(|_panic| "the thread panicked")?;
-        // Then the connection is refused and the number is not available.
+        // Then it is refused, the number lies in the reserved range and no seed draws it.
         assert_eq!(
             refused.err().map(|error| error.kind()),
             Some(io::ErrorKind::ConnectionRefused)
         );
-        assert!(
-            rebound.as_ref().is_err_and(|error| matches!(
-                error.kind(),
-                io::ErrorKind::AddrInUse | io::ErrorKind::PermissionDenied
-            )),
-            "the parallel bind took a held number: {rebound:?}"
-        );
+        assert!((RESERVED_FIRST..FIRST_PORT).contains(&port), "{port}");
+        assert_eq!(seed_drawing_first(port).await, None, "{port}");
+        Ok::<_, TestError>(())
+    })
+}
+
+/// The synchronous and the asynchronous helper take their numbers from one sequence, so a number
+/// is never handed out twice in one process.
+#[test]
+fn the_sync_and_async_reserved_helpers_share_one_sequence() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given calls of both helpers, interleaved.
+        let mut ports = Vec::new();
+        for _ in 0..32_u8 {
+            // When each takes its next number.
+            ports.push(reserve_closed_tcp_port()?);
+            ports.push(bind_udp_with_closed_tcp().await?.local_addr()?.port());
+        }
+        // Then no number repeats.
+        let mut sorted = ports.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), ports.len(), "{ports:?}");
         Ok::<_, TestError>(())
     })
 }

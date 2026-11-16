@@ -7,6 +7,10 @@
 //! privileged groups.
 #![cfg(feature = "tokio")]
 
+/// Port numbers from a reserved range that tests need refused.
+#[path = "support/closed_port.rs"]
+mod closed_port;
+
 /// Service endpoint selection for live fixtures.
 #[path = "client_integration/endpoints.rs"]
 mod endpoints;
