@@ -97,12 +97,12 @@ mod tests {
         let failure = TokioClient::from_default_ccache_name(config, KdcProtocol::Tcp)
             .err()
             .ok_or("a value that is not Unicode was accepted")?;
-        match failure {
-            ClientFailure::CCache(CacheFailure::Expansion(ExpansionFailure::Unavailable(name))) => {
-                Ok(name)
-            }
-            other => Err(format!("not an unavailable-fact failure: {other}").into()),
-        }
+        let ClientFailure::CCache(CacheFailure::Expansion(ExpansionFailure::Unavailable(name))) =
+            failure
+        else {
+            return Err(format!("not an unavailable-fact failure: {failure}").into());
+        };
+        Ok(name)
     }
 
     /// Non-Unicode `TMPDIR` is reported under its own name, not under the token's.
