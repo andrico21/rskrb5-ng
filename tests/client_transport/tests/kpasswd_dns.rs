@@ -30,7 +30,7 @@ struct Dns {
 impl Dns {
     /// Serve `zone`; every SRV name outside it is NXDOMAIN, every empty entry is NOERROR without answers.
     async fn start(zone: Vec<(&'static str, Records)>) -> Result<Self, TestError> {
-        let socket = UdpSocket::bind("127.0.0.1:0").await?;
+        let socket = bind_udp_loopback().await?;
         let server = socket.local_addr()?.to_string();
         let (sender, questions) = unbounded_channel();
         let task = tokio::spawn(serve(socket, zone, sender));

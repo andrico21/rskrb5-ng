@@ -26,7 +26,7 @@ fn transport() -> Tokio {
 
 /// A loopback port that is closed for TCP and UDP and that no parallel test can bind.
 pub(super) async fn closed_port() -> Result<String, TestError> {
-    Ok(bind_udp_with_closed_tcp().await?.local_addr()?.to_string())
+    Ok(format!("127.0.0.1:{}", reserve_closed_port().await?))
 }
 
 /// Assert that no datagram reaches `udp` shortly after the exchange completed.

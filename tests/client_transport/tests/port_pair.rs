@@ -1,12 +1,14 @@
 //! The loopback port-pair helper retries a collision, spreads its candidates over the dynamic
 //! range and tries both bind orders.
 
-use std::{sync::mpsc, thread};
+use std::{net::UdpSocket as StdUdpSocket, sync::mpsc, thread};
 
 use tokio::net::TcpSocket;
 
 use super::{kpasswd_order::closed_port, *};
-use crate::loopback_pair::{FIRST_PORT, Order, RESERVED_FIRST, bind_on, bind_pair_with};
+use crate::loopback_pair::{
+    FIRST_PORT, Order, RESERVED_FIRST, bind_on, bind_pair_with, hold_wildcard,
+};
 
 /// A UDP socket that holds the number of the first candidate makes the first attempt fail and a
 /// later attempt succeed on another port: the proof that the helper retries.
@@ -381,6 +383,52 @@ fn a_bound_tcp_socket_that_does_not_listen_refuses_and_holds_its_number() -> Res
             )),
             "the parallel bind took a held number: {rebound:?}"
         );
+        Ok::<_, TestError>(())
+    })
+}
+
+/// Whether a wildcard UDP bind on `port` is refused, the way the DNS resolver's bind meets it.
+fn assert_wildcard_bind_collides(port: u16) {
+    let bound = StdUdpSocket::bind(("0.0.0.0", port));
+    assert!(
+        bound.as_ref().is_err_and(|error| matches!(
+            error.kind(),
+            io::ErrorKind::AddrInUse | io::ErrorKind::PermissionDenied
+        )),
+        "a wildcard bind took the number {port}: {bound:?}"
+    );
+}
+
+/// The resolver's wildcard bind collides with the number of every UDP socket that a helper hands
+/// out, so the resolver never shares a number with a fixture (Windows would let it).
+#[test]
+fn a_wildcard_bind_collides_with_every_helper_socket() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given a UDP socket from each helper.
+        let reserved = bind_udp_with_closed_tcp().await?;
+        let loopback = bind_udp_loopback().await?;
+        let (_listener, paired) = bind_tcp_and_udp_pair().await?;
+        for socket in [&reserved, &loopback, &paired] {
+            // When a wildcard socket binds the same number, then it collides.
+            assert_wildcard_bind_collides(socket.local_addr()?.port());
+        }
+        Ok::<_, TestError>(())
+    })
+}
+
+/// A wildcard socket held on a number makes a wildcard bind collide: the protection that the
+/// helpers give a number on Windows, where a wildcard bind would otherwise share the number.
+#[test]
+fn a_held_wildcard_socket_keeps_a_wildcard_bind_off_the_number() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given a number that nothing holds.
+        let probe = UdpSocket::bind("127.0.0.1:0").await?;
+        let port = probe.local_addr()?.port();
+        drop(probe);
+        // When a wildcard socket is held on it.
+        hold_wildcard(port);
+        // Then a wildcard bind on the number collides.
+        assert_wildcard_bind_collides(port);
         Ok::<_, TestError>(())
     })
 }
