@@ -9,7 +9,7 @@ use super::*;
 fn root_srv_error_is_precise() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given an authoritative root target for password service discovery.
-        let socket = UdpSocket::bind("127.0.0.1:0").await?;
+        let socket = bind_udp_loopback().await?;
         let server = socket.local_addr()?;
         let task = tokio::spawn(dns_admin_fixture(socket, Some(Name::root())));
         let config = Config::parse("[libdefaults]\ndns_lookup_kdc = true\n")?;
@@ -55,7 +55,7 @@ fn srv_target_failure_keeps_usable_peers() -> Result<(), TestError> {
         for bad_first in [false, true] {
             for password in [false, true] {
                 // Given ordered SRV records with one NXDOMAIN target and one usable literal.
-                let socket = UdpSocket::bind("127.0.0.1:0").await?;
+                let socket = bind_udp_loopback().await?;
                 let server = socket.local_addr()?;
                 let fixture = tokio::spawn(async move {
                     for _ in 0_u8..16 {
@@ -129,7 +129,7 @@ fn srv_target_failure_keeps_usable_peers() -> Result<(), TestError> {
 fn udp_password_discovers_admin_tcp_service() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given a DNS peer that advertises only the administrative TCP service.
-        let socket = UdpSocket::bind("127.0.0.1:0").await?;
+        let socket = bind_udp_loopback().await?;
         let server = socket.local_addr()?;
         let fixture = tokio::spawn(async move {
             for _ in 0_u8..8 {

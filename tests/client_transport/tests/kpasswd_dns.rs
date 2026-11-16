@@ -30,7 +30,7 @@ struct Dns {
 impl Dns {
     /// Serve `zone`; every SRV name outside it is NXDOMAIN, every empty entry is NOERROR without answers.
     async fn start(zone: Vec<(&'static str, Records)>) -> Result<Self, TestError> {
-        let socket = UdpSocket::bind("127.0.0.1:0").await?;
+        let socket = bind_udp_loopback().await?;
         let server = socket.local_addr()?.to_string();
         let (sender, questions) = unbounded_channel();
         let task = tokio::spawn(serve(socket, zone, sender));
@@ -555,8 +555,7 @@ fn kpasswd_auto_udp_pass_follows_a_refused_tcp_pass() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given a refused TCP entry and a live UDP entry.
         let tcp_port = closed_port_number().await?;
-        let (listener, udp) = bind_tcp_and_udp_pair().await?;
-        drop(listener);
+        let udp = bind_udp_with_closed_tcp().await?;
         let dns = Dns::start(vec![
             ("_kpasswd._tcp.test.gokrb5.", vec![(tcp_port, "127.0.0.1.")]),
             (

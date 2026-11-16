@@ -12,7 +12,7 @@ use std::{
     env,
     ffi::OsStr,
     fs, io,
-    net::{TcpListener, TcpStream, ToSocketAddrs as _},
+    net::{TcpStream, ToSocketAddrs as _},
     path::PathBuf,
     sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
@@ -28,6 +28,7 @@ use rskrb5_ng::{
     keytab::Keytab,
     service::Validator,
 };
+use tokio::net::TcpSocket;
 
 /// Realm of the AD user domain.
 const USER_REALM: &str = "USER.GOKRB5";
@@ -401,9 +402,11 @@ mod tests {
     fn strict_ad_gate_rejects_unreachable_user_kdc_endpoint() -> Result<(), Box<dyn Error>> {
         const TEST_PATH: &str = "tests::strict_ad_gate_rejects_unreachable_user_kdc_endpoint";
         if !child_env::in_child(TEST_PATH) {
-            let listener = TcpListener::bind(("127.0.0.1", 0))?;
-            let endpoint = listener.local_addr()?.to_string();
-            drop(listener);
+            // The socket stays bound while the child runs: a freed number could be taken by a
+            // test that runs in parallel.
+            let not_listening = TcpSocket::new_v4()?;
+            not_listening.bind(([127, 0, 0, 1], 0).into())?;
+            let endpoint = not_listening.local_addr()?.to_string();
 
             child_env::run_in_child(
                 TEST_PATH,
