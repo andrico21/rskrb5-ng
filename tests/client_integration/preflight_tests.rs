@@ -4,6 +4,7 @@ use core::error::Error;
 use std::{env, net::TcpListener, process::Command};
 
 use super::{integration_enabled, required_command_available};
+use crate::closed_port::reserve_closed_tcp_port;
 
 /// Execute the gate in a child while the parent asserts the process outcome.
 fn required_fixture(required: bool) -> Result<(), Box<dyn Error>> {
@@ -16,16 +17,15 @@ fn required_fixture(required: bool) -> Result<(), Box<dyn Error>> {
         let _enabled = integration_enabled()?;
         return Ok(());
     }
-    // Given a closed loopback endpoint and an isolated requested integration run.
-    let listener = TcpListener::bind("127.0.0.1:0")?;
-    let address = listener.local_addr()?;
-    drop(listener);
+    // Given a closed loopback endpoint (a number of the reserved range, which no test that runs in
+    // parallel binds) and an isolated requested integration run.
+    let address = format!("127.0.0.1:{}", reserve_closed_tcp_port()?);
     let output = Command::new(env::current_exe()?)
         .args([name, "--exact", "--nocapture"])
         .env("RSKRB5_T4_PREFLIGHT_CHILD", "1")
         .env("INTEGRATION", "1")
         .env("INTEGRATION_REQUIRED", if required { "1" } else { "0" })
-        .env("TEST_KDC_ADDR", address.to_string())
+        .env("TEST_KDC_ADDR", &address)
         .output()?;
     // When the fixture preflight runs, then required mode cannot pass a skip.
     assert_eq!(

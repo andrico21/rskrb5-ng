@@ -42,7 +42,12 @@ mod tests {
     mod bounded;
     use bounded::{bounded, stop};
 
-    use crate::{ambient_guard::tests::access_violations, loopback_pair::bind_tcp_and_udp_pair};
+    use crate::{
+        ambient_guard::tests::access_violations,
+        loopback_pair::{
+            bind_tcp_and_udp_pair, bind_udp_loopback, bind_udp_with_closed_tcp, reserve_closed_port,
+        },
+    };
     /// Configured preauthentication connection reuse.
     mod affinity;
     /// Live KDC probe exchange implementation.
@@ -243,7 +248,7 @@ mod tests {
     #[test]
     fn kpasswd_dns_admin_fallback_uses_port_464() -> Result<(), TestError> {
         runtime()?.block_on(async {
-            let socket = UdpSocket::bind("127.0.0.1:0").await?;
+            let socket = bind_udp_loopback().await?;
             let server = socket.local_addr()?;
             let task = tokio::spawn(dns_admin_fixture(socket, None));
             let config = Config::parse("[libdefaults]\n dns_lookup_kdc = true\n")?;
@@ -268,7 +273,7 @@ mod tests {
     #[test]
     fn kpasswd_dns_unavailable_stops_fallback() -> Result<(), TestError> {
         runtime()?.block_on(async {
-            let socket = UdpSocket::bind("127.0.0.1:0").await?;
+            let socket = bind_udp_loopback().await?;
             let server = socket.local_addr()?;
             let task = tokio::spawn(dns_admin_fixture(socket, Some(Name::root())));
             let config = Config::parse("[libdefaults]\n dns_lookup_kdc = true\n")?;
@@ -289,7 +294,7 @@ mod tests {
     #[test]
     fn kpasswd_dns_retains_all_target_addresses() -> Result<(), TestError> {
         runtime()?.block_on(async {
-            let socket = UdpSocket::bind("127.0.0.1:0").await?;
+            let socket = bind_udp_loopback().await?;
             let server = socket.local_addr()?;
             let task = tokio::spawn(dns_admin_fixture(
                 socket,
@@ -478,7 +483,7 @@ mod tests {
     fn udp_transport_rejects_truncated_datagram() -> Result<(), TestError> {
         runtime()?.block_on(async {
             // Given a peer whose response exceeds the four-byte acceptance limit.
-            let server = UdpSocket::bind("127.0.0.1:0").await?;
+            let server = bind_udp_loopback().await?;
             let addr = server.local_addr()?;
             let task = tokio::spawn(async move {
                 let mut request = [0; 64];
@@ -511,7 +516,7 @@ mod tests {
     fn udp_transport_accepts_exact_limit() -> Result<(), TestError> {
         runtime()?.block_on(async {
             for limit in [8, usize::MAX] {
-                let server = UdpSocket::bind("127.0.0.1:0").await?;
+                let server = bind_udp_loopback().await?;
                 let addr = server.local_addr()?;
                 let task = tokio::spawn(async move {
                     let mut request = [0; 64];
@@ -539,7 +544,7 @@ mod tests {
     #[test]
     fn tokio_transport_sends_udp_datagram() -> Result<(), TestError> {
         runtime()?.block_on(async {
-            let server = UdpSocket::bind("127.0.0.1:0").await?;
+            let server = bind_udp_loopback().await?;
             let addr = server.local_addr()?;
             let task = tokio::spawn(async move {
                 let mut request = [0_u8; 64];
@@ -569,7 +574,7 @@ mod tests {
     #[test]
     fn udp_request_size_boundaries() -> Result<(), TestError> {
         runtime()?.block_on(async {
-            let peer = UdpSocket::bind("127.0.0.1:0").await?;
+            let peer = bind_udp_loopback().await?;
             let addr = peer.local_addr()?;
             let transport = Tokio::new().with_timeout(Duration::from_secs(2));
             let oversized = vec![42; 65_508];
@@ -610,7 +615,7 @@ mod tests {
     #[test]
     fn password_udp_request_size_boundaries() -> Result<(), TestError> {
         runtime()?.block_on(async {
-            let peer = UdpSocket::bind("127.0.0.1:0").await?;
+            let peer = bind_udp_loopback().await?;
             let addr = peer.local_addr()?;
             let config = config_with_kpasswd_servers([addr.to_string()], 1465)?;
             let transport = Tokio::new().with_timeout(Duration::from_secs(2));
@@ -830,7 +835,7 @@ mod tests {
     #[test]
     fn tokio_transport_sends_udp_to_configured_realm_kdc() -> Result<(), TestError> {
         runtime()?.block_on(async {
-            let server = UdpSocket::bind("127.0.0.1:0").await?;
+            let server = bind_udp_loopback().await?;
             let addr = server.local_addr()?;
             let config = config_with_kdcs([addr.to_string()])?;
             let task = tokio::spawn(async move {

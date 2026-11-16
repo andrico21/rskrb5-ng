@@ -29,6 +29,8 @@ mod tests {
     use tokio::sync::oneshot;
 
     use super::*;
+    #[cfg(feature = "tokio")]
+    use crate::closed_port::reserve_closed_tcp_port;
 
     /// Binds a local KDC and a local kpasswd server, and returns them with a
     /// TCP-only configuration that points `TEST.GOKRB5` at both.
@@ -515,17 +517,13 @@ TEST.GOKRB5 = {{
     #[test]
     fn kpasswd_classification_preserves_pre_send_failure() -> Result<(), TestError> {
         runtime()?.block_on(async {
-            // Given a cached ticket and a local port with no listening server.
+            // Given a cached ticket and a closed local port: a number of the reserved range, which
+            // no test that runs in parallel binds.
             let tgt = sample_tgt_session()?;
             let ticket = current_changepw_ticket(&tgt)?;
-            let listener = TcpListener::bind("127.0.0.1:0").await?;
-            let addr = listener.local_addr()?;
-            drop(listener);
-            let mut client = Tokio::from_tgt_session(
-                config_with_kpasswd_server(&addr.to_string())?,
-                KdcProtocol::Tcp,
-                tgt,
-            );
+            let addr = format!("127.0.0.1:{}", reserve_closed_tcp_port()?);
+            let mut client =
+                Tokio::from_tgt_session(config_with_kpasswd_server(&addr)?, KdcProtocol::Tcp, tgt);
             client.cache_service_ticket(ticket)?;
             // When connection establishment fails before sending anything.
             let error = client
