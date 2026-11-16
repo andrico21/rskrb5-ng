@@ -475,3 +475,4 @@ is a parity feature, not a defect>`.
 | executor:todo-160#closed-port-race | FU-TST-R64 | no |
 | critic:critics-05f1d49/w2.md#W2-01 | FU-TST-R65 | no |
 | critic:critics-05f1d49/verdict.md#G1 | FU-TST-R65 | no |
+| critic:critics-05f1d49/verdict.md#G5 | FU-TST-R66 | no |
