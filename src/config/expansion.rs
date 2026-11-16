@@ -46,6 +46,9 @@ pub enum Failure {
     #[error("profile parameter is missing its closing brace")]
     UnterminatedToken,
     /// A recognized token lacks a fact or is unsupported on this platform.
+    ///
+    /// The payload names what is missing: a token, the environment variable that the
+    /// ambient resolver read (`TMPDIR`, `TEMP` or `APPDATA`) or the process identity.
     #[error("profile parameter unavailable: {0}")]
     Unavailable(&'static str),
 }
