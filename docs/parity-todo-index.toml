@@ -6,7 +6,7 @@
 
 [[plan]]
 number = 1
-todos = 160
+todos = 169
 
 [[plan]]
 number = 2
@@ -831,6 +831,51 @@ title = "Real manual QA"
 plan = 1
 number = "F4"
 title = "Ideal-state fidelity"
+
+[[todo]]
+plan = 1
+number = 161
+title = "Third pass G1 (the owner-tracking audit misses `NegotiateClient` and `BlockingNegotiateClient`; the class is not closed; supervisor finding W2-01)"
+
+[[todo]]
+plan = 1
+number = 162
+title = "Third pass G5 (test flake: `pinned_auto_retries_response_too_big` walks 16 sequential TCP-then-UDP port numbers; owner: first)"
+
+[[todo]]
+plan = 1
+number = 163
+title = "Third pass G3 (F1 error class: match MIT; the explicit `Tcp`/`Udp` kpasswd path gets the published-set rule)"
+
+[[todo]]
+plan = 1
+number = 164
+title = "Third pass G2 (remove `AcceptedContext::ap_req_mut` and `AcceptedContext::set_mech_types_der`)"
+
+[[todo]]
+plan = 1
+number = 165
+title = "Third pass G4 and G6 (documentation and comment fixes; supervisor finding W2-02)"
+
+[[todo]]
+plan = 1
+number = 166
+title = "Third pass G7 (a non-Unicode `TMPDIR` is reported as unavailable `TEMP`)"
+
+[[todo]]
+plan = 1
+number = 167
+title = "In-diff mutation check on the src changes of todos 161-166 (orchestrated like todos 147 and 156)"
+
+[[todo]]
+plan = 1
+number = 168
+title = "Third pass G8 (local cleanup: merged `work/*` branches, the 11 local `fix/*` copies of the remote pull-request heads, four empty cache folders; owner point 5)"
+
+[[todo]]
+plan = 1
+number = 169
+title = "Short handoff of the third delta to the supervisor (re-check of G1-G8 only)"
 
 [[todo]]
 plan = 2
