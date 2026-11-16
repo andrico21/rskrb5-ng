@@ -6,7 +6,7 @@
 
 [[plan]]
 number = 1
-todos = 169
+todos = 170
 
 [[plan]]
 number = 2
@@ -876,6 +876,11 @@ title = "Third pass G8 (local cleanup: merged `work/*` branches, the 11 local `f
 plan = 1
 number = 169
 title = "Short handoff of the third delta to the supervisor (re-check of G1-G8 only)"
+
+[[todo]]
+plan = 1
+number = 170
+title = "Two repository sentences found by the todo 169 dossier: the todo 167 survivor count in docs/review/mutants.md and the FU-OPS-R03 cells (docs only; executor decision, the owner may veto)"
 
 [[todo]]
 plan = 2
