@@ -26,7 +26,7 @@ mod tests {
         kadmin::decrypt_krb_priv_enc_part,
     };
     #[cfg(feature = "tokio")]
-    use tokio::{net::TcpSocket, sync::oneshot};
+    use tokio::sync::oneshot;
 
     use super::*;
 
@@ -515,14 +515,12 @@ TEST.GOKRB5 = {{
     #[test]
     fn kpasswd_classification_preserves_pre_send_failure() -> Result<(), TestError> {
         runtime()?.block_on(async {
-            // Given a cached ticket and a local port with no listening server. The socket stays
-            // bound for the whole test: a number that was freed again could be taken by a test
-            // that runs in parallel.
+            // Given a cached ticket and a local port with no listening server.
             let tgt = sample_tgt_session()?;
             let ticket = current_changepw_ticket(&tgt)?;
-            let not_listening = TcpSocket::new_v4()?;
-            not_listening.bind(([127, 0, 0, 1], 0).into())?;
-            let addr = not_listening.local_addr()?;
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            drop(listener);
             let mut client = Tokio::from_tgt_session(
                 config_with_kpasswd_server(&addr.to_string())?,
                 KdcProtocol::Tcp,

@@ -24,9 +24,12 @@ fn transport() -> Tokio {
     Tokio::new().with_timeout(Duration::from_millis(300))
 }
 
-/// A loopback port that is closed for TCP and UDP and that no parallel test can bind.
+/// A UDP socket and a TCP listener whose shared loopback port is then closed for both.
 pub(super) async fn closed_port() -> Result<String, TestError> {
-    Ok(format!("127.0.0.1:{}", reserve_closed_port().await?))
+    let (listener, udp) = bind_tcp_and_udp_pair().await?;
+    let addr = udp.local_addr()?.to_string();
+    drop((udp, listener));
+    Ok(addr)
 }
 
 /// Assert that no datagram reaches `udp` shortly after the exchange completed.
@@ -91,7 +94,8 @@ fn kpasswd_auto_uses_tcp_first_and_sends_no_datagram() -> Result<(), TestError> 
 fn kpasswd_auto_falls_back_to_one_datagram_after_tcp_refusal() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given a closed TCP port and a live UDP responder.
-        let udp = bind_udp_with_closed_tcp().await?;
+        let (listener, udp) = bind_tcp_and_udp_pair().await?;
+        drop(listener);
         let config = config_with_kpasswd_servers([udp.local_addr()?.to_string()], 1465)?;
         let responder = udp_responder(udp, b"udp-reply");
         // When the Auto request runs.
@@ -171,7 +175,8 @@ fn kpasswd_auto_unknown_tcp_outcome_never_tries_udp() -> Result<(), TestError> {
 fn kpasswd_auto_silent_udp_peer_is_unknown() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given a closed TCP port and a UDP peer that reads but never replies.
-        let udp = bind_udp_with_closed_tcp().await?;
+        let (listener, udp) = bind_tcp_and_udp_pair().await?;
+        drop(listener);
         let config = config_with_kpasswd_servers([udp.local_addr()?.to_string()], 1465)?;
         // When the Auto request runs.
         let result = transport()
@@ -228,7 +233,8 @@ fn kpasswd_explicit_udp_refusal_is_definite() -> Result<(), TestError> {
 fn kpasswd_auto_tries_all_tcp_endpoints_before_udp() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given endpoint one with TCP closed and UDP live, and endpoint two with TCP live.
-        let udp_one = bind_udp_with_closed_tcp().await?;
+        let (listener_one, udp_one) = bind_tcp_and_udp_pair().await?;
+        drop(listener_one);
         let (listener_two, udp_two) = bind_tcp_and_udp_pair().await?;
         let config = config_with_kpasswd_servers(
             [
@@ -288,7 +294,8 @@ fn kpasswd_explicit_address_auto_uses_tcp_first() -> Result<(), TestError> {
 fn kpasswd_explicit_address_auto_falls_back_to_udp_after_tcp_refusal() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given a closed TCP port and a live UDP responder on the same address.
-        let udp = bind_udp_with_closed_tcp().await?;
+        let (listener, udp) = bind_tcp_and_udp_pair().await?;
+        drop(listener);
         let addr = udp.local_addr()?;
         let request = KpasswdRequest::parse(&decode_hex(MARSHALLED_KPASSWD_REQ)?)?;
         let responder = udp_responder(udp, kpasswd_reply_frame(0, &response_too_big_error()?)?);

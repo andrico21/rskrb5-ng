@@ -3,8 +3,6 @@
 use core::error::Error;
 use std::{env, net::TcpListener, process::Command};
 
-use tokio::net::TcpSocket;
-
 use super::{integration_enabled, required_command_available};
 
 /// Execute the gate in a child while the parent asserts the process outcome.
@@ -18,11 +16,10 @@ fn required_fixture(required: bool) -> Result<(), Box<dyn Error>> {
         let _enabled = integration_enabled()?;
         return Ok(());
     }
-    // Given a closed loopback endpoint and an isolated requested integration run. The socket
-    // stays bound while the child runs: a freed number could be taken by a parallel test.
-    let not_listening = TcpSocket::new_v4()?;
-    not_listening.bind(([127, 0, 0, 1], 0).into())?;
-    let address = not_listening.local_addr()?;
+    // Given a closed loopback endpoint and an isolated requested integration run.
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    let address = listener.local_addr()?;
+    drop(listener);
     let output = Command::new(env::current_exe()?)
         .args([name, "--exact", "--nocapture"])
         .env("RSKRB5_T4_PREFLIGHT_CHILD", "1")
