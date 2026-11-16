@@ -472,3 +472,4 @@ is a parity feature, not a defect>`.
 | executor:todo-155#guidelines-push | FU-DOC-R150 | no |
 | executor:todo-156#in-diff-mutation-check-d6a85f8 | FU-FUZ-R05 | no |
 | executor:todo-159#dangling-test-names | FU-DOC-R151 | no |
+| executor:todo-160#closed-port-race | FU-TST-R64 | no |
