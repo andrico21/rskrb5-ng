@@ -476,3 +476,4 @@ is a parity feature, not a defect>`.
 | critic:critics-05f1d49/w2.md#W2-01 | FU-TST-R65 | no |
 | critic:critics-05f1d49/verdict.md#G1 | FU-TST-R65 | no |
 | critic:critics-05f1d49/verdict.md#G5 | FU-TST-R66 | no |
+| critic:critics-05f1d49/verdict.md#G3 | FU-CLI-R37 | no |

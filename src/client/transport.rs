@@ -668,10 +668,11 @@ impl Tokio {
     ///
     /// Returns [`Error::InvalidKdcEndpoint`] for a malformed server entry,
     /// [`Error::DnsServiceUnavailable`] for an authoritative root SRV target,
-    /// [`Error::DnsResolverConfig`], [`Error::DnsSrvLookup`] or
-    /// [`Error::NoKdcEndpoints`] when DNS SRV discovery fails or finds nothing,
-    /// and a configuration error when no kpasswd server can be derived from the
-    /// realm's configuration.
+    /// [`Error::KdcEndpointFailures`] when the published `_kpasswd` set of the
+    /// protocol has no target that resolves, [`Error::DnsResolverConfig`],
+    /// [`Error::DnsSrvLookup`] or [`Error::NoKdcEndpoints`] when DNS SRV
+    /// discovery fails or finds nothing, and a configuration error when no
+    /// kpasswd server can be derived from the realm's configuration.
     ///
     /// # Cancel safety
     ///
@@ -817,9 +818,11 @@ impl Tokio {
     /// `_kpasswd._tcp` are both queried and form one list, a root SRV target
     /// adds no server and the other records of its set are kept, and the
     /// `_kerberos-adm._tcp` hosts (port 464, both protocols) are used only when
-    /// neither set held a record. Every TCP endpoint is then tried
-    /// before any UDP endpoint, and `udp_preference_limit` does not apply. UDP
-    /// is tried only after a definite TCP failure; a UDP refusal
+    /// neither set held a record. A published set whose targets do not resolve
+    /// counts as published, and when no endpoint is left the call fails with
+    /// [`Error::KdcEndpointFailures`] naming every such set. Every TCP endpoint
+    /// is then tried before any UDP endpoint, and `udp_preference_limit` does
+    /// not apply. UDP is tried only after a definite TCP failure; a UDP refusal
     /// (`ConnectionRefused`, or `ConnectionReset` where Windows reports an ICMP
     /// port-unreachable that way) while the single reply is awaited is a
     /// definite endpoint failure, not [`Error::KpasswdOutcomeUnknown`].
@@ -2085,14 +2088,16 @@ impl Tokio {
     /// back to `_kerberos-adm._tcp` on ordinary lookup failure or no records.
     ///
     /// A root SRV target means service unavailable and stops discovery without
-    /// fallback. This discovers for one protocol; `KdcProtocol::Auto` of
+    /// fallback, and so does a published set none of whose targets resolves.
+    /// This discovers for one protocol; `KdcProtocol::Auto` of
     /// [`Self::send_to_kpasswd_realm`] uses `password_dns::discover_auto` instead.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::DnsResolverConfig`] or [`Error::DnsSrvLookup`] when the
-    /// `_kerberos-adm` fallback lookup fails, and [`Error::NoKdcEndpoints`] when
-    /// it finds no server.
+    /// Returns [`Error::KdcEndpointFailures`] when the published `_kpasswd` set
+    /// of `protocol` has no target that resolves, [`Error::DnsResolverConfig`] or
+    /// [`Error::DnsSrvLookup`] when the `_kerberos-adm` fallback lookup fails,
+    /// and [`Error::NoKdcEndpoints`] when it finds no server.
     ///
     /// # Cancel safety
     ///
@@ -2319,8 +2324,9 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns the discovery errors (root targets only, a failed target lookup
-    /// of a published record set, or no host at all), the uncertain TCP
-    /// outcome, or the endpoint failures of the last pass that ran.
+    /// of every published record set as [`Error::KdcEndpointFailures`] with
+    /// [`KdcProtocol::Auto`], or no host at all), the uncertain TCP outcome, or
+    /// the endpoint failures of the last pass that ran.
     ///
     /// # Cancel safety
     ///

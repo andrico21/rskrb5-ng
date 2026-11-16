@@ -84,13 +84,19 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
   result helpers) TCP, then UDP. UDP is tried only after a definite TCP
   failure, with one datagram per endpoint and no retransmit. With DNS the
   servers are discovered once for both protocols, as in `changepw.c`
-  (FU-CLI-R29, FU-CLI-R34): `_kpasswd._udp` and `_kpasswd._tcp` are both queried and form one list, a
+  (FU-CLI-R29, FU-CLI-R34, FU-CLI-R37): `_kpasswd._udp` and `_kpasswd._tcp` are both queried and form one list, a
   root SRV target adds no server and the other records of its set are kept (MIT
   1.22.2 never aborts on one), and the `_kerberos-adm._tcp` hosts (port 464,
   both protocols) are used only when neither set held a record; with root
-  targets only the call fails with `DnsServiceUnavailable` before any I/O;
+  targets only the call fails with `DnsServiceUnavailable` before any I/O; a
+  published set whose targets do not resolve (with `Tokio::with_dns_server`)
+  counts as published, and when no endpoint is left the call fails with
+  `KdcEndpointFailures` (`KdcProtocol::Auto`) carrying the failure of every such
+  set, UDP first (MIT ends in `KRB5_KDC_UNREACH`);
   v0.2.2 discovered separately for each protocol it tried. Explicit `Tcp` and `Udp`
-  still discover for their own protocol.
+  still discover for their own protocol, and a published `_kpasswd` set of that
+  protocol whose targets do not resolve fails with `KdcEndpointFailures` of that
+  protocol and does not fall back to `_kerberos-adm`.
   `udp_preference_limit` does not apply to password changes (MIT's `changepw.c`
   never consults it); it still orders KDC requests. If a TCP request may
   have been delivered, the result is `KpasswdOutcomeUnknown` and UDP is never

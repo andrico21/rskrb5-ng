@@ -220,9 +220,13 @@ explicit address TCP, then UDP), as MIT's `changepw.c` does, and
 discovered once for both protocols (`_kpasswd._udp` and `_kpasswd._tcp` both
 queried into one list, a root SRV target adds no server and the other records
 of its set are kept, `_kerberos-adm._tcp` hosts at port 464 only when neither
-set held a record, root targets only fail with `DnsServiceUnavailable`;
-FU-CLI-R29; v0.2.2 discovered separately for each protocol it tried); explicit `Tcp` and `Udp` discover for
-their own protocol. A refusal while the single UDP
+set held a record, root targets only fail with `DnsServiceUnavailable`, and a
+published set whose targets do not resolve, with no endpoint left, fails with
+`KdcEndpointFailures` listing every such set;
+FU-CLI-R29, FU-CLI-R37; v0.2.2 discovered separately for each protocol it tried); explicit `Tcp` and `Udp` discover for
+their own protocol, and a published `_kpasswd` set of that protocol whose
+targets do not resolve fails with `KdcEndpointFailures` and does not fall back
+to `_kerberos-adm`. A refusal while the single UDP
 reply is awaited (`ConnectionRefused`, or `ConnectionReset` on Windows) is a
 definite endpoint failure, so a closed UDP kpasswd port moves on to the next
 endpoint and, when every endpoint failed, is reported as `KdcEndpointFailures`

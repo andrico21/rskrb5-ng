@@ -422,14 +422,15 @@ of the shared fault classifier and its two uses in the example (C1 to C6).
 Run with the narrowed arguments of the area on `2c97bc7`, 38 failed a test
 and 24 survived; D17 was run with the full suite only. Each of the 25
 survivors was re-run with the full suite (`cargo test --all-features
---no-fail-fast`) and survived it. Seventeen were killed by new tests (the
-three known survivors of the plan among them) and eight are `equivalent`:
+--no-fail-fast`) and survived it. Sixteen were killed by new tests (the three known survivors of
+the plan among them), one (D6) is moot since todo 163 and eight are
+`equivalent`:
 
 | Mutant | Disposition |
 | --- | --- |
 | T1: `Vec::with_capacity(TCP_RECORD_MARK_LEN)` in `exchange_tcp_framed` (known survivor (a)); T2: capacity of the request only; T3: `Vec::new()` | killed: the frame is now built by `tcp_record_frame`, and `tcp_record_frame_reserves_exactly_the_frame` asserts `capacity() == len` for requests of 1 to 3 bytes. A check `capacity() >= len` would not kill them: the vector grows to at least the frame length whatever it started with. Doubling gives 8 bytes for a frame of 5 to 7 bytes, so an allocation that was too small ends larger than the frame; from 4 bytes of request on, growth lands on the exact length and the mutants cannot be told apart, hence the short requests. Like `reservation_is_half_the_remaining_input`, it relies on `Vec::with_capacity(n)` giving exactly `n`. |
 | P1: `151..=153` to `150..=153` (known survivor (b)); P2, P5, P6, P10, P12, P13, P16, P20: one more type refused (154, 4, 10, 18, 29, 32, 137, 140) | killed: `outgoing_padata_types_are_refused_or_admitted_exactly` walks every outgoing PA type 0 to 255 and pins the refused set (peer hints, the embedding wrapper, the 28 unsupported ids, draft-9 PKINIT 14 and 15 by the selection layer) and that every other type reaches the transport. It replaces `outgoing_unsupported_credential_padata_is_rejected`, which listed only the refused types. |
-| D6: the last failed target lookup is kept instead of the first | killed: `kpasswd_auto_reports_the_first_unresolvable_set`; the `discover_auto` rustdoc now says the UDP set is asked first. |
+| D6: the last failed target lookup is kept instead of the first | moot since todo 163 (FU-CLI-R37): it was killed by `kpasswd_auto_reports_the_first_unresolvable_set`, which reported one failure; `discover_auto` now collects the failure of every unresolvable set into `KdcEndpointFailures` (no first or last to keep), and `kpasswd_auto_reports_every_unresolvable_set` asserts both messages in the order UDP, TCP. |
 | D9: an unresolved set aborts before the live endpoints of the other set are used | killed: `kpasswd_auto_unresolvable_set_leaves_the_live_set_in_use` |
 | D10: a failed `_kerberos-adm` lookup becomes an empty host list | killed: `kpasswd_auto_failing_admin_lookup_is_reported` |
 | A2: `token_mechanism()` returns the selected mechanism | killed: `acceptor_accepts_optimistic_kerberos_alias` asserts the token mechanism, the one case where it differs from the selected one. |
@@ -439,8 +440,8 @@ three known survivors of the plan among them) and eight are `equivalent`:
 | T5: the frame is handed to `SecretDer` as a clone | `equivalent`: the effect is what the dropped plain `Vec` leaves in freed memory, which no safe code observes (`unsafe_code` is forbidden, so no allocator witness exists). The proofs of todo 140 stay red on a plain `Vec`. Survives the full suite. |
 | P8, P11: 14 or 15 added to the refusal arm; P9: 11 added to it | `equivalent`: `selection::preauth` refuses 14 and 15 before the arms (draft-9 PKINIT), and 11 is matched by the hint arm above, so the added pattern is unreachable. The table test pins 14, 15 and 11 by their own refusals. Survives the full suite. |
 
-The 17 kills were repeated on the candidate tree of this todo: each fails
-its new test, and the eight equivalent mutants survive the full suite there
+The 17 kills were repeated on the candidate tree of this todo (D6 among them,
+moot since todo 163): each failed its new test, and the eight equivalent mutants survive the full suite there
 as well.
 
 **Test (c) of the plan, not reachable.** The helper constant `ATTEMPTS` of
