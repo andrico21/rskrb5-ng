@@ -18,17 +18,17 @@ Proof methods:
 | Ref | Tip | Proof method | Proof command | Proof output | Disposition |
 |---|---|---|---|---|---|
 | `refs/heads/chore/deps-refresh` | `4142dcec0c92` | same tip as remote | `test "$(git rev-parse refs/heads/chore/deps-refresh)" = "$(git rev-parse refs/remotes/origin/chore/deps-refresh)"` | exit 0 | local ref deleted: done (archive tag archive/chore/deps-refresh, 7e8aee4136287223d571e2f98de8e5544c127eb1) |
-| `refs/heads/fix/ccache-count-bounds` | `fdf641aaea94` | same tip as remote | `test "$(git rev-parse refs/heads/fix/ccache-count-bounds)" = "$(git rev-parse refs/remotes/origin/fix/ccache-count-bounds)"` | exit 0 | kept: local copy of the PR-head branch (same tip as origin) |
-| `refs/heads/fix/client-renewal-series` | `fbf4320f2a83` | same tip as remote | `test "$(git rev-parse refs/heads/fix/client-renewal-series)" = "$(git rev-parse refs/remotes/origin/fix/client-renewal-series)"` | exit 0 | kept: local copy of the PR-head branch (same tip as origin) |
-| `refs/heads/fix/config-clockskew-handoff` | `3e4c6c545484` | same tip as remote | `test "$(git rev-parse refs/heads/fix/config-clockskew-handoff)" = "$(git rev-parse refs/remotes/origin/fix/config-clockskew-handoff)"` | exit 0 | kept: local copy of the PR-head branch (same tip as origin) |
-| `refs/heads/fix/domain-realm-normalization` | `20e48ab9a944` | same tip as remote | `test "$(git rev-parse refs/heads/fix/domain-realm-normalization)" = "$(git rev-parse refs/remotes/origin/fix/domain-realm-normalization)"` | exit 0 | kept: local copy of the PR-head branch (same tip as origin) |
-| `refs/heads/fix/enctype-policy` | `7c2c29763da9` | is-ancestor | `git merge-base --is-ancestor refs/heads/fix/enctype-policy origin/fix/enctype-policy` | exit 0 | fast-forwarded: done |
-| `refs/heads/fix/host-case-spn` | `5dd96f294af3` | same tip as remote | `test "$(git rev-parse refs/heads/fix/host-case-spn)" = "$(git rev-parse refs/remotes/origin/fix/host-case-spn)"` | exit 0 | kept: local copy of the PR-head branch (same tip as origin) |
-| `refs/heads/fix/kadmin-unsigned-success` | `a089831e548e` | same tip as remote | `test "$(git rev-parse refs/heads/fix/kadmin-unsigned-success)" = "$(git rev-parse refs/remotes/origin/fix/kadmin-unsigned-success)"` | exit 0 | kept: local copy of the PR-head branch (same tip as origin) |
-| `refs/heads/fix/mutual-auth-classification` | `71cc63b220fe` | same tip as remote | `test "$(git rev-parse refs/heads/fix/mutual-auth-classification)" = "$(git rev-parse refs/remotes/origin/fix/mutual-auth-classification)"` | exit 0 | kept: local copy of the PR-head branch (same tip as origin) |
-| `refs/heads/fix/service-authenticator-realm` | `920f9b0d2faf` | same tip as remote | `test "$(git rev-parse refs/heads/fix/service-authenticator-realm)" = "$(git rev-parse refs/remotes/origin/fix/service-authenticator-realm)"` | exit 0 | kept: local copy of the PR-head branch (same tip as origin) |
-| `refs/heads/fix/service-replay-name-type` | `b7fb459c9d33` | same tip as remote | `test "$(git rev-parse refs/heads/fix/service-replay-name-type)" = "$(git rev-parse refs/remotes/origin/fix/service-replay-name-type)"` | exit 0 | kept: local copy of the PR-head branch (same tip as origin) |
-| `refs/heads/fix/tcp-preauth-pinning` | `b1153c7b826b` | same tip as remote | `test "$(git rev-parse refs/heads/fix/tcp-preauth-pinning)" = "$(git rev-parse refs/remotes/origin/fix/tcp-preauth-pinning)"` | exit 0 | kept: local copy of the PR-head branch (same tip as origin) |
+| `refs/heads/fix/ccache-count-bounds` | `fdf641aaea94` | same tip as remote | `test "$(git rev-parse refs/heads/fix/ccache-count-bounds)" = "$(git rev-parse refs/remotes/origin/fix/ccache-count-bounds)"` | exit 0 | removed locally on 2026-11-17 (same tip as origin; the remote head is kept, see Final state) |
+| `refs/heads/fix/client-renewal-series` | `fbf4320f2a83` | same tip as remote | `test "$(git rev-parse refs/heads/fix/client-renewal-series)" = "$(git rev-parse refs/remotes/origin/fix/client-renewal-series)"` | exit 0 | removed locally on 2026-11-17 (same tip as origin; the remote head is kept, see Final state) |
+| `refs/heads/fix/config-clockskew-handoff` | `3e4c6c545484` | same tip as remote | `test "$(git rev-parse refs/heads/fix/config-clockskew-handoff)" = "$(git rev-parse refs/remotes/origin/fix/config-clockskew-handoff)"` | exit 0 | removed locally on 2026-11-17 (same tip as origin; the remote head is kept, see Final state) |
+| `refs/heads/fix/domain-realm-normalization` | `20e48ab9a944` | same tip as remote | `test "$(git rev-parse refs/heads/fix/domain-realm-normalization)" = "$(git rev-parse refs/remotes/origin/fix/domain-realm-normalization)"` | exit 0 | removed locally on 2026-11-17 (same tip as origin; the remote head is kept, see Final state) |
+| `refs/heads/fix/enctype-policy` | `7c2c29763da9` | is-ancestor | `git merge-base --is-ancestor refs/heads/fix/enctype-policy origin/fix/enctype-policy` | exit 0 | fast-forwarded: done ; removed locally on 2026-11-17 (the remote head is kept, see Final state) |
+| `refs/heads/fix/host-case-spn` | `5dd96f294af3` | same tip as remote | `test "$(git rev-parse refs/heads/fix/host-case-spn)" = "$(git rev-parse refs/remotes/origin/fix/host-case-spn)"` | exit 0 | removed locally on 2026-11-17 (same tip as origin; the remote head is kept, see Final state) |
+| `refs/heads/fix/kadmin-unsigned-success` | `a089831e548e` | same tip as remote | `test "$(git rev-parse refs/heads/fix/kadmin-unsigned-success)" = "$(git rev-parse refs/remotes/origin/fix/kadmin-unsigned-success)"` | exit 0 | removed locally on 2026-11-17 (same tip as origin; the remote head is kept, see Final state) |
+| `refs/heads/fix/mutual-auth-classification` | `71cc63b220fe` | same tip as remote | `test "$(git rev-parse refs/heads/fix/mutual-auth-classification)" = "$(git rev-parse refs/remotes/origin/fix/mutual-auth-classification)"` | exit 0 | removed locally on 2026-11-17 (same tip as origin; the remote head is kept, see Final state) |
+| `refs/heads/fix/service-authenticator-realm` | `920f9b0d2faf` | same tip as remote | `test "$(git rev-parse refs/heads/fix/service-authenticator-realm)" = "$(git rev-parse refs/remotes/origin/fix/service-authenticator-realm)"` | exit 0 | removed locally on 2026-11-17 (same tip as origin; the remote head is kept, see Final state) |
+| `refs/heads/fix/service-replay-name-type` | `b7fb459c9d33` | same tip as remote | `test "$(git rev-parse refs/heads/fix/service-replay-name-type)" = "$(git rev-parse refs/remotes/origin/fix/service-replay-name-type)"` | exit 0 | removed locally on 2026-11-17 (same tip as origin; the remote head is kept, see Final state) |
+| `refs/heads/fix/tcp-preauth-pinning` | `b1153c7b826b` | same tip as remote | `test "$(git rev-parse refs/heads/fix/tcp-preauth-pinning)" = "$(git rev-parse refs/remotes/origin/fix/tcp-preauth-pinning)"` | exit 0 | removed locally on 2026-11-17 (same tip as origin; the remote head is kept, see Final state) |
 | `refs/heads/main` | `49f2f296258e` | is-ancestor | `git merge-base --is-ancestor 49f2f29 origin/main` | exit 0 | fast-forwarded to origin/main and merged in todo 1 (integration branch in worktree rskrb5-ng-wt/main); tip listed is the pre-todo-1 value |
 | `refs/heads/release/0.2.1` | `f441b11a8ae3` | same tip as remote | `test "$(git rev-parse refs/heads/release/0.2.1)" = "$(git rev-parse refs/remotes/origin/release/0.2.1)"` | exit 0 | local ref deleted: done (archive tag archive/release/0.2.1, 158ba8f0dafc1d16dc3c3596a8aa9fc926192cde) |
 | `refs/heads/release/0.2.2` | `ca1ee8988d03` | same tip as remote | `test "$(git rev-parse refs/heads/release/0.2.2)" = "$(git rev-parse refs/remotes/origin/release/0.2.2)"` | exit 0 | local ref deleted: done (archive tag archive/release/0.2.2, 366dec196fe4d6eefa007edad6867e7575aaa6e8) |
@@ -73,7 +73,7 @@ Proof methods:
 - Work branches are local `work/*` branches only and are never pushed.
 - Current rskrb5-ng release tags `N.N.N` (without `v`) are placed on `main`
   commits. The v-prefixed tags above are historical rskrb5/rskrb5-patched releases.
-- PR-head branches (the `fix/*` branches and the four other kept branches above) are frozen: they are not deleted, rebased or force-pushed.
+- PR-head branches (the `fix/*` branches and the four other kept branches above) are frozen: their remote heads are not deleted, rebased or force-pushed.
 - `archive/*` tags hold the tips of deleted branches (`chore/deps-refresh`, `release/0.2.1`, `release/0.2.2`, `release/0.3.0`).
 
 ## Final state
@@ -89,10 +89,16 @@ Checked on 2026-10-27 with `git ls-remote --heads origin`,
   `archive/chore/deps-refresh`, `archive/release/0.2.1`,
   `archive/release/0.2.2` and `archive/release/0.3.0`. No `rskrb5-ng` release
   tag exists yet.
-- Local refs: `main`, local copies of the eleven `fix/*` PR-head branches, and a
-  `work/*` branch only while a change is in progress.
+- Local refs on that date: `main`, local copies of the eleven `fix/*` PR-head
+  branches, and a `work/*` branch only while a change is in progress.
 - The repository is standalone: `gh api repos/andrico21/rskrb5-ng --jq .fork`
   prints `false` (since 2026-10-25).
+
+Local cleanup: the eleven local `fix/*` copies of the pull-request heads and the
+merged local `work/*` branches were removed on 2026-11-17, each `fix/*` copy only after
+its tip equalled `refs/remotes/origin/<same name>`; `git switch <name>`
+recreates a local copy. The 15 remote pull-request heads are kept while the
+upstream pull requests are open.
 
 ## Upstream pull request state
 
