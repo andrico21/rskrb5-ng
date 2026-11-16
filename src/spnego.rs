@@ -66,6 +66,16 @@ mod header_tests;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod field_tests;
 
+/// Reply policy regressions over an accepted context's retained state.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod accepted_tests;
+
 use self::{
     der::{
         DerReader, TAG_APPLICATION_0, TAG_BIT_STRING, TAG_CONTEXT_0, TAG_CONTEXT_1, TAG_CONTEXT_2,
@@ -2300,12 +2310,6 @@ impl AcceptedContext {
         &self.ap_req
     }
 
-    /// Mutable validated AP-REQ details, useful for tests.
-    #[inline]
-    pub const fn ap_req_mut(&mut self) -> &mut ValidatedApReq {
-        &mut self.ap_req
-    }
-
     /// First offered Kerberos OID, echoed as the response's `supportedMech`.
     #[must_use]
     #[inline]
@@ -2326,12 +2330,6 @@ impl AcceptedContext {
     #[inline]
     pub fn mech_types_der(&self) -> Option<&[u8]> {
         self.mech_types_der.as_deref()
-    }
-
-    /// Replace the received `MechTypeList` the response helper signs, useful for tests.
-    #[inline]
-    pub fn set_mech_types_der(&mut self, value: Option<Vec<u8>>) {
-        self.mech_types_der = value;
     }
 
     /// Build a `WWW-Authenticate` header containing an AP-REP response token.

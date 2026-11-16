@@ -1002,21 +1002,6 @@ mod tests {
         Ok(())
     }
 
-    /// The setter replaces the received list and clears it again.
-    #[test]
-    fn mech_types_der_setter_replaces_and_clears_the_list() -> Result<(), TestError> {
-        // Given an accepted context that carries the received list.
-        let mut accepted = accept_token(&Token::Init(mic_init()?))??;
-        assert!(accepted.mech_types_der().is_some());
-        // When another list is set, then it is the one the accessor shows.
-        accepted.set_mech_types_der(Some(vec![0x30, 0]));
-        assert_eq!(accepted.mech_types_der(), Some([0x30, 0].as_slice()));
-        // And when none is set, the accessor shows none.
-        accepted.set_mech_types_der(None);
-        assert_eq!(accepted.mech_types_der(), None);
-        Ok(())
-    }
-
     /// Selecting Kerberos after a non-Kerberos preference requires a MIC.
     #[test]
     fn acceptor_rejects_nonfirst_kerberos() -> Result<(), TestError> {

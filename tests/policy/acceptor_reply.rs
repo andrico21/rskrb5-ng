@@ -49,39 +49,6 @@ fn http_configuration_retains_permanent_refusal() -> Result<(), Box<dyn Error>> 
     Ok(())
 }
 
-/// Random and deterministic reply helpers retain permanent policy refusals.
-#[test]
-fn random_reply_retains_permanent_refusal() -> Result<(), Box<dyn Error>> {
-    let (keys, bytes, now) = fixture(18, 18, None)?;
-    let header = spnego::negotiate_header(&Token::Init(NegTokenInit::krb5(
-        Krb5MechToken::ap_req(bytes).encode()?,
-    )))?;
-    let mut validator = Validator::new(&keys).with_now(now);
-    let mut accepted = spnego::accept_sec_context_header(&mut validator, &header)?;
-    for id in [1_i32, 24_i32] {
-        accepted
-            .ap_req_mut()
-            .set_session_key(EncryptionKey::new(id, vec![0x42; 16]));
-        for reply in [
-            accepted.ap_rep_response_header_with_confounder(&[0x22; 16], &ApRepOptions::default()),
-            accepted.ap_rep_response_header(&ApRepOptions::default()),
-        ] {
-            let error = reply.err().ok_or("permanently forbidden reply emitted")?;
-            assert!(
-                matches!(
-                    policy_cause(&error),
-                    Some(Policy::RejectedFeature {
-                        feature: _,
-                        reason: _
-                    })
-                ),
-                "reply helper lost permanent policy refusal: {error:?}"
-            );
-        }
-    }
-    Ok(())
-}
-
 /// Service reply verification admits wrapping and embedded keys independently.
 #[test]
 fn service_reply_verifier_admits_all_keys() -> Result<(), Box<dyn Error>> {
@@ -157,69 +124,6 @@ fn service_reply_verifier_admits_all_keys() -> Result<(), Box<dyn Error>> {
             usage: Use::SessionKey
         })
     ));
-    Ok(())
-}
-
-/// Reciprocal MICs admit the selected key, including mutable initiator fallbacks.
-#[test]
-fn reciprocal_mic_admits_selected_key() -> Result<(), Box<dyn Error>> {
-    let (keys, bytes, now) = fixture(18, 18, None)?;
-    let header = spnego::negotiate_header(&Token::Init(NegTokenInit::krb5(
-        Krb5MechToken::ap_req(bytes).encode()?,
-    )))?;
-    for (profile, initiator, acceptor, permitted) in [
-        ("", Some(23_i32), None, false),
-        ("", Some(16_i32), None, false),
-        ("permitted_enctypes = aes256-cts", Some(17_i32), None, false),
-        ("allow_rc4 = true", Some(23_i32), None, false),
-        (
-            "allow_rc4 = true\npermitted_enctypes = DEFAULT rc4",
-            Some(23_i32),
-            None,
-            true,
-        ),
-        (
-            "allow_des3 = true\npermitted_enctypes = DEFAULT des3",
-            Some(16_i32),
-            None,
-            true,
-        ),
-        ("", Some(18_i32), None, true),
-        ("", Some(23_i32), Some(18_i32), true),
-        ("", None, None, true),
-    ] {
-        let config = Config::parse(&format!("[libdefaults]\n{profile}"))?;
-        let mut validator = Validator::new(&keys).with_now(now);
-        let mut accepted = spnego::accept_sec_context_header(&mut validator, &header)?;
-        accepted
-            .ap_req_mut()
-            .set_crypto_policy(CryptoPolicy::from_libdefaults(&config.libdefaults)?);
-        accepted.ap_req_mut().set_subkey(initiator.map(|id| {
-            EncryptionKey::new(
-                id,
-                vec![0x51; KerberosEtype::from_etype_id(id).map_or(8, KerberosEtype::key_len)],
-            )
-        }));
-        accepted.set_mech_types_der(Some(vec![0x30, 0]));
-        let options = ApRepOptions::default()
-            .with_subkey(acceptor.map(|id| EncryptionKey::new(id, vec![0x52; 32])));
-        let result = accepted.ap_rep_response_header_with_confounder(&[0x22; 16], &options);
-        if permitted {
-            let response = spnego::parse_negotiate_header(&result?)?;
-            assert!(matches!(response, Token::Resp(reply) if reply.mech_list_mic().is_some()));
-        } else {
-            let error = result
-                .err()
-                .ok_or("excluded initiator subkey signed reciprocal MIC")?;
-            assert!(matches!(
-                policy_cause(&error),
-                Some(Policy::EnctypeNotPermitted {
-                    usage: Use::AcceptorSubkey,
-                    etype: _,
-                })
-            ));
-        }
-    }
     Ok(())
 }
 
