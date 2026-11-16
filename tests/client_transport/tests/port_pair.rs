@@ -378,10 +378,12 @@ fn a_reserved_tcp_port_refuses_a_connect_and_no_parallel_draw_reaches_it() -> Re
     })
 }
 
-/// The synchronous and the asynchronous helper take their numbers from one sequence, so a number
-/// is never handed out twice in one process.
+/// Interleaved calls of the synchronous and the asynchronous helper never repeat a number.
+///
+/// Both draw from the sequence of `closed_port.rs`; a hand mutant with a separate sequence in
+/// each survives, because two separate sequences rarely meet within 64 numbers.
 #[test]
-fn the_sync_and_async_reserved_helpers_share_one_sequence() -> Result<(), TestError> {
+fn the_sync_and_async_reserved_helpers_never_repeat_a_number() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given calls of both helpers, interleaved.
         let mut ports = Vec::new();
