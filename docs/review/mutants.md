@@ -422,9 +422,9 @@ of the shared fault classifier and its two uses in the example (C1 to C6).
 Run with the narrowed arguments of the area on `2c97bc7`, 38 failed a test
 and 24 survived; D17 was run with the full suite only. Each of the 25
 survivors was re-run with the full suite (`cargo test --all-features
---no-fail-fast`) and survived it. Sixteen were killed by new tests (the three known survivors of
-the plan among them), one (D6) is moot since todo 163 and eight are
-`equivalent`:
+--no-fail-fast`) and survived it. Fifteen were killed by new tests (the three known survivors of
+the plan among them), two (D6 since todo 163, A5 since todo 164) are moot and
+eight are `equivalent`:
 
 | Mutant | Disposition |
 | --- | --- |
@@ -434,14 +434,14 @@ the plan among them), one (D6) is moot since todo 163 and eight are
 | D9: an unresolved set aborts before the live endpoints of the other set are used | killed: `kpasswd_auto_unresolvable_set_leaves_the_live_set_in_use` |
 | D10: a failed `_kerberos-adm` lookup becomes an empty host list | killed: `kpasswd_auto_failing_admin_lookup_is_reported` |
 | A2: `token_mechanism()` returns the selected mechanism | killed: `acceptor_accepts_optimistic_kerberos_alias` asserts the token mechanism, the one case where it differs from the selected one. |
-| A5: `set_mech_types_der(None)` keeps the old list | killed: `mech_types_der_setter_replaces_and_clears_the_list` |
+| A5: `set_mech_types_der(None)` keeps the old list | moot since todo 164 (FU-SPN-R24): it was killed by `mech_types_der_setter_replaces_and_clears_the_list`; the setter and that test are removed, and no API can clear the received list of an accepted context. |
 | D12: `published` is `root` only; D14: `published` is always true; D17: `root \|\| records.is_empty()` (the cargo-mutants survivor) | `equivalent`: `discover_auto` reads `published` only after the passes found no endpoint and no target failure. A non-root answer holds records, and `srv_targets::resolve` turns each record into an endpoint or a failure (`resolve_dns_endpoint_host` never returns an empty list), so such an answer ends the discovery before `published` is read. A successful SRV lookup always holds an SRV record (hickory-resolver 0.26.3, `caching_client.rs` `handle_noerror`: `Records::Exists` only when a record of the queried type was found, else `NoRecordsFound`, which `discover_auto` skips), and an SRV record is either a root target or leaves a non-empty record. Survives the full suite. |
 | A4: `ap_req()` hands out a copy | `equivalent`: the accessor takes `&self`, so a clone shows the same values and no API shows the identity of a reference. Survives the full suite. |
 | T5: the frame is handed to `SecretDer` as a clone | `equivalent`: the effect is what the dropped plain `Vec` leaves in freed memory, which no safe code observes (`unsafe_code` is forbidden, so no allocator witness exists). The proofs of todo 140 stay red on a plain `Vec`. Survives the full suite. |
 | P8, P11: 14 or 15 added to the refusal arm; P9: 11 added to it | `equivalent`: `selection::preauth` refuses 14 and 15 before the arms (draft-9 PKINIT), and 11 is matched by the hint arm above, so the added pattern is unreachable. The table test pins 14, 15 and 11 by their own refusals. Survives the full suite. |
 
 The 17 kills were repeated on the candidate tree of this todo (D6 among them,
-moot since todo 163): each failed its new test, and the eight equivalent mutants survive the full suite there
+moot since todo 163, and A5, moot since todo 164): each failed its new test, and the eight equivalent mutants survive the full suite there
 as well.
 
 **Test (c) of the plan, not reachable.** The helper constant `ATTEMPTS` of

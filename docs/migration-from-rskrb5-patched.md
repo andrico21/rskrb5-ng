@@ -517,8 +517,9 @@ unsupported mechanisms return `UnsupportedMechanism`. The unconstructed
 it never existed in 0.2.2.
 
 `AcceptedContext` has only private fields (v0.2.2: `pub ap_req`): read
-`accepted.ap_req` with `accepted.ap_req()`, and change it only through
-`ap_req_mut()` (FU-SPN-R23).
+`accepted.ap_req` with `accepted.ap_req()`. An accepted context cannot be
+changed; `accepted.ap_req().clone()` gives an owned copy of the validated
+request (FU-SPN-R23, FU-SPN-R24).
 
 The additive `AcceptedContext::mech_types_der()` returns the exact received
 list TLV when a MIC verified. AP-REP response helpers include a reciprocal MIC
