@@ -50,7 +50,7 @@ pub(crate) fn resolve_credential_template(
         match env::var("TMPDIR") {
             Ok(value) => Some(value),
             Err(env::VarError::NotPresent) => Some("/tmp".to_owned()),
-            Err(env::VarError::NotUnicode(_value)) => return Err(Failure::Unavailable("TEMP")),
+            Err(env::VarError::NotUnicode(_value)) => return Err(Failure::Unavailable("TMPDIR")),
         }
     } else {
         None

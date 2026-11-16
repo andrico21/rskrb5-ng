@@ -359,7 +359,8 @@ The adapter reads only requested facts: Linux real/effective IDs from the
 procfs reader (`/proc/self/status`); `TMPDIR` (fallback `/tmp`) for non-Windows
 TEMP;
 Windows `TEMP` and `APPDATA`, with `USERCONFIG[DIR]` derived as
-`APPDATA\\MIT\\Kerberos5`. Invalid Unicode is an error. The Windows environment
+`APPDATA\\MIT\\Kerberos5`. A value that is not Unicode is an error that names the
+variable it was read from (`TMPDIR`, `TEMP` or `APPDATA`). The Windows environment
 mapping is an explicit limitation, not a claim of native shell-folder lookup.
 The three new environment reads are pinned by exact path/owner in
 `ambient_guard`; transitive public consumers document them and literal-input
