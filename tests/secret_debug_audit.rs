@@ -899,10 +899,6 @@ mod tests {
             "Rejects an existing checksum before assignment; initializes an absent field.",
         ),
         (
-            "src/spnego.rs::AcceptedContext::ap_req_mut",
-            "Hands out a mutable borrow of the validated AP-REQ and replaces nothing itself; its session key and subkey setters carry their own registered proofs.",
-        ),
-        (
             "src/ccache.rs::CCache::credentials_mut",
             "Hands out a mutable borrow of the retained credentials and replaces nothing itself; a credential the caller drops erases its payloads in Credential's Drop.",
         ),

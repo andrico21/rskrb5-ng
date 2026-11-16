@@ -709,9 +709,17 @@ mod tests {
                 )?;
                 let keytab = keytab()?;
                 let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
-                let mut accepted =
-                    spnego::accept_sec_context_header(&mut validator, context.header_ref())?;
-                accepted.set_mech_types_der(Some(hex::decode("300b06092a864886f712010202")?));
+                // The initiator signs its offer with its subkey, else the session key.
+                let initiator_key = match &initiator_subkey {
+                    Some(subkey) => subkey.clone(),
+                    None => EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?),
+                };
+                let request = initiator_header_with_mic(
+                    &context,
+                    &decode_hex(OFFERED_MECH_LIST)?,
+                    &initiator_key,
+                )?;
+                let accepted = spnego::accept_sec_context_header(&mut validator, &request)?;
                 let header = accepted.ap_rep_response_header_with_confounder(
                     &decode_hex(AP_REP_CONFOUNDER)?,
                     &ApRepOptions::default()
@@ -759,10 +767,13 @@ mod tests {
             let context = initiator_context()?;
             let keytab = keytab()?;
             let mut validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
-            let mut accepted =
-                spnego::accept_sec_context_header(&mut validator, context.header_ref())?;
-            let list = decode_hex("300b06092a864886f712010202")?;
-            accepted.set_mech_types_der(Some(list.clone()));
+            let list = decode_hex(OFFERED_MECH_LIST)?;
+            let request = initiator_header_with_mic(
+                &context,
+                &list,
+                &EncryptionKey::new(18, decode_hex(VALID_SESSION_KEY)?),
+            )?;
+            let accepted = spnego::accept_sec_context_header(&mut validator, &request)?;
             let header = accepted.ap_rep_response_header_with_confounder(
                 &decode_hex(AP_REP_CONFOUNDER)?,
                 &ApRepOptions::default().with_sequence_number(Some(77)),
@@ -2011,6 +2022,27 @@ mod tests {
             &decode_hex(AP_REP_CONFOUNDER)?,
         )
         .context("client SPNEGO context builds")
+    }
+
+    /// The mechanism list (DER) the fixture initiator offers: Kerberos alone.
+    const OFFERED_MECH_LIST: &str = "300b06092a864886f712010202";
+
+    /// The initiator's request carrying a genuine initiator `mechListMIC` over `list`.
+    ///
+    /// The MIC uses the authenticator's sequence number (42) and `key`, so the acceptor
+    /// verifies it and keeps `list` for its reciprocal MIC.
+    fn initiator_header_with_mic(
+        context: &spnego::InitiatorContext,
+        list: &[u8],
+        key: &EncryptionKey,
+    ) -> Result<String, TestError> {
+        let Token::Init(mut init) = spnego::parse_negotiate_header(context.header_ref())? else {
+            return Err("initiator token expected".into());
+        };
+        let mut mic = MicToken::new(0, 42).with_payload(list.to_vec());
+        mic.set_checksum(key, spnego::GSSAPI_INITIATOR_SIGN_USAGE)?;
+        init.set_mech_list_mic(Some(mic.encode()?.into()));
+        Ok(spnego::negotiate_header(&Token::Init(init))?)
     }
 
     fn ap_rep_response_header(context: &spnego::InitiatorContext) -> Result<String, TestError> {

@@ -683,8 +683,8 @@ Security fail-closed parsing and verification:
   struct with no public field (FU-CLI-R35).
 - `spnego::AcceptedContext` has only private fields (v0.2.2: `pub ap_req`):
   read them with `ap_req()`, `selected_mechanism()`, `token_mechanism()` and
-  `mech_types_der()`; `ap_req_mut()` and `set_mech_types_der()` replace what
-  assigning a field did (FU-SPN-R23).
+  `mech_types_der()`. An accepted context cannot be changed; `ap_req().clone()`
+  gives an owned copy of the validated request (FU-SPN-R23, FU-SPN-R24).
 - The secret audit finds secret owners by tracking them, not by a list of type
   names: a public field of a type that holds a registered secret owner, directly
   or through other owners, fails it, and so does a public replacement of such a
