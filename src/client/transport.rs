@@ -2641,17 +2641,21 @@ fn auto_uses_udp_first(config: &Config, request_len: usize) -> bool {
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use core::{error::Error as StdError, net::IpAddr, time::Duration};
-    use std::{io::ErrorKind, sync::mpsc::channel, thread};
+    use std::{sync::mpsc::channel, thread};
 
     use chrono::DateTime;
     use rasn::der;
     use rasn_kerberos::{KerberosString, KerberosTime, KrbError, PrincipalName};
     use tokio::{
         io::{AsyncReadExt as _, AsyncWriteExt as _},
-        net::{TcpListener, UdpSocket},
+        net::UdpSocket,
     };
 
+    use self::loopback_pair::bind_tcp_and_udp_pair;
     use super::{TCP_RECORD_MARK_LEN, parse_dns_server, tcp_record_frame};
+
+    /// Loopback TCP and UDP port pairs for the tests of this module.
+    mod loopback_pair;
 
     /// The frame is the mark then the request, in an allocation of exactly that size.
     #[test]
@@ -2774,25 +2778,7 @@ mod tests {
     /// Pinned Auto retries a UDP response-too-big error on a retained TCP stream.
     #[tokio::test]
     async fn pinned_auto_retries_response_too_big() -> Result<(), Box<dyn StdError>> {
-        // The free TCP port may be taken or excluded for UDP; Windows reports
-        // an excluded port as PermissionDenied, so both retry on a fresh port.
-        let mut bound = None;
-        for _ in 0_u8..16 {
-            let listener = TcpListener::bind("127.0.0.1:0").await?;
-            match UdpSocket::bind(listener.local_addr()?).await {
-                Ok(socket) => {
-                    bound = Some((listener, socket));
-                    break;
-                }
-                Err(error)
-                    if matches!(
-                        error.kind(),
-                        ErrorKind::AddrInUse | ErrorKind::PermissionDenied
-                    ) => {}
-                Err(error) => return Err(error.into()),
-            }
-        }
-        let (listener, socket) = bound.ok_or("no free loopback TCP and UDP port pair")?;
+        let (listener, socket) = bind_tcp_and_udp_pair().await?;
         let address = listener.local_addr()?;
         let response = der::encode(&KrbError {
             pvno: 5_i32.into(),
