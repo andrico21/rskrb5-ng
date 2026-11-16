@@ -478,3 +478,6 @@ is a parity feature, not a defect>`.
 | critic:critics-05f1d49/verdict.md#G5 | FU-TST-R66 | no |
 | critic:critics-05f1d49/verdict.md#G3 | FU-CLI-R37 | no |
 | critic:critics-05f1d49/verdict.md#G2 | FU-SPN-R24 | no |
+| critic:critics-05f1d49/w2.md#W2-02 | FU-DOC-R152 | no |
+| critic:critics-05f1d49/verdict.md#G4 | FU-DOC-R152 | no |
+| critic:critics-05f1d49/verdict.md#G6 | FU-TST-R67 | no |

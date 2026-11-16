@@ -141,8 +141,8 @@ async fn framed_request_is_erased_after_cancellation() -> Result<(), TestError> 
     });
     // And the write was cut short: the peer reads the byte it took plus what the
     // sockets buffered, up to the end of the stream, and that is less than the frame.
-    // Windows takes a send of any size whole, so there the frame arrives complete
-    // (observed on CI) and only the erasure above is asserted.
+    // Windows took the whole 64 MiB frame on loopback (CI run 43721757257), so there the
+    // frame arrives complete and only the erasure above is asserted.
     let mut buffered = Vec::new();
     let read = timeout(CONNECT_WAIT, stream.read_to_end(&mut buffered)).await?;
     // A reset instead of a clean end still leaves the bytes read before it in `buffered`.
