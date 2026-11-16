@@ -15,6 +15,9 @@ use super::{
 const REALM: &str = "TEST.GOKRB5";
 
 /// SRV answers of one fixture name: `(port, target)`, the first with the best priority; the target `.` is the root name.
+///
+/// A target that starts with `+` puts its record in the additional section of the reply, so that the lookup succeeds
+/// with no answer record (the library skips such a record).
 type Records = Vec<(u16, &'static str)>;
 
 /// A fake DNS server and the questions it was asked, in order.
@@ -83,12 +86,16 @@ async fn serve(
         match zone.iter().find(|(owner, _)| *owner == name) {
             Some((_, records)) if query.query_type() == RecordType::SRV => {
                 for (priority, (port, host)) in (0_u16..).zip(records) {
-                    let target = if *host == "." {
+                    let (section, owner) = match host.strip_prefix('+') {
+                        Some(rest) => (&mut response.additionals, rest),
+                        None => (&mut response.answers, *host),
+                    };
+                    let target = if owner == "." {
                         Name::root()
                     } else {
-                        Name::from_ascii(host)?
+                        Name::from_ascii(owner)?
                     };
-                    response.answers.push(Record::from_rdata(
+                    section.push(Record::from_rdata(
                         query.name().clone(),
                         60,
                         RData::SRV(SRV::new(priority, 0, *port, target)),
@@ -319,6 +326,43 @@ fn kpasswd_auto_root_targets_only_are_unavailable() -> Result<(), TestError> {
     })
 }
 
+/// A root-only set stays published when the other set has a reply without an answer record.
+#[test]
+fn kpasswd_auto_a_set_without_answer_records_does_not_unpublish_a_root_set() -> Result<(), TestError>
+{
+    runtime()?.block_on(async {
+        // Given a root-only `_kpasswd._udp` set, a `_kpasswd._tcp` reply with no answer record, and an administration host.
+        let dns = Dns::start(vec![
+            ("_kpasswd._udp.test.gokrb5.", vec![(0, ".")]),
+            (
+                "_kpasswd._tcp.test.gokrb5.",
+                vec![(464, "+kdc.test.gokrb5.")],
+            ),
+            ("_kerberos-adm._tcp.test.gokrb5.", vec![(749, "127.0.0.1.")]),
+        ])
+        .await?;
+        // When the Auto request runs.
+        let result = dns
+            .transport()?
+            .send_to_kpasswd_realm(&dns_config()?, KdcProtocol::Auto, REALM, REQUEST)
+            .await;
+        let questions = dns.finish().await?;
+        // Then the published root set ends the discovery with the discovery error, without the administration lookup.
+        assert!(
+            matches!(&result, Err(ClientError::DnsServiceUnavailable { service, realm })
+                if service == "_kpasswd" && realm == REALM),
+            "expected DnsServiceUnavailable, got {}",
+            describe(&result)
+        );
+        assert_eq!(
+            asked(&questions, "_kerberos-adm"),
+            0,
+            "questions: {questions:?}"
+        );
+        Ok(())
+    })
+}
+
 /// A published `_kpasswd` record whose target does not resolve is a definite failure, not an absent service.
 #[test]
 fn kpasswd_auto_unresolvable_published_target_asks_no_admin() -> Result<(), TestError> {
@@ -346,8 +390,8 @@ fn kpasswd_auto_unresolvable_published_target_asks_no_admin() -> Result<(), Test
         );
         // And the call failed definitely as an endpoint failure, naming the target that did not resolve.
         assert!(
-            matches!(&result, Err(ClientError::KdcEndpointFailures { realm: _, protocol: KdcProtocol::Auto, failures })
-                if matches!(failures.as_slice(), [only] if only.contains("unresolvable.test.gokrb5"))),
+            matches!(&result, Err(ClientError::KdcEndpointFailures { realm, protocol: KdcProtocol::Auto, failures })
+                if realm.as_str() == REALM && matches!(failures.as_slice(), [only] if only.contains("unresolvable.test.gokrb5"))),
             "expected the Auto KdcEndpointFailures of the unresolvable target, got {}",
             describe(&result)
         );
@@ -422,8 +466,8 @@ fn kpasswd_auto_reports_every_unresolvable_set() -> Result<(), TestError> {
         let _questions = dns.finish().await?;
         // Then the endpoint failures name the UDP set's target and then the TCP set's target.
         assert!(
-            matches!(&result, Err(ClientError::KdcEndpointFailures { realm: _, protocol: KdcProtocol::Auto, failures })
-                if matches!(failures.as_slice(), [udp, tcp]
+            matches!(&result, Err(ClientError::KdcEndpointFailures { realm, protocol: KdcProtocol::Auto, failures })
+                if realm.as_str() == REALM && matches!(failures.as_slice(), [udp, tcp]
                     if udp.contains("udp-missing.test.gokrb5") && tcp.contains("tcp-missing.test.gokrb5"))),
             "expected the Auto KdcEndpointFailures of both sets, UDP first, got {}",
             describe(&result)
@@ -457,8 +501,8 @@ async fn explicit_unresolvable_published_target_asks_no_admin(
     );
     // And the call failed definitely as an endpoint failure of that protocol naming the target.
     assert!(
-        matches!(&result, Err(ClientError::KdcEndpointFailures { realm: _, protocol: reported, failures })
-            if *reported == protocol
+        matches!(&result, Err(ClientError::KdcEndpointFailures { realm, protocol: reported, failures })
+            if realm.as_str() == REALM && *reported == protocol
                 && matches!(failures.as_slice(), [only] if only.contains("unresolvable.test.gokrb5"))),
         "expected the {protocol:?} KdcEndpointFailures of the unresolvable target, got {}",
         describe(&result)
@@ -636,16 +680,20 @@ fn kpasswd_auto_udp_pass_follows_a_refused_tcp_pass() -> Result<(), TestError> {
     })
 }
 
-/// An empty `_kpasswd` list, by failure or by no records, asks for the administration service once.
+/// An empty `_kpasswd` list, by failure, by no records or by no answer record, asks for the administration service once.
 #[test]
 fn kpasswd_auto_empty_list_asks_admin_once_for_both_passes() -> Result<(), TestError> {
     runtime()?.block_on(async {
-        for published_empty in [false, true] {
+        for (published_empty, sets) in [
+            ("absent", None),
+            ("no records", Some(Vec::new())),
+            ("no answer record", Some(vec![(464, "+kdc.test.gokrb5.")])),
+        ] {
             // Given no usable `_kpasswd` record set and an administration host.
             let mut zone = vec![("_kerberos-adm._tcp.test.gokrb5.", vec![(749, "127.0.0.1.")])];
-            if published_empty {
-                zone.push(("_kpasswd._udp.test.gokrb5.", Vec::new()));
-                zone.push(("_kpasswd._tcp.test.gokrb5.", Vec::new()));
+            if let Some(records) = sets {
+                zone.push(("_kpasswd._udp.test.gokrb5.", records.clone()));
+                zone.push(("_kpasswd._tcp.test.gokrb5.", records));
             }
             let dns = Dns::start(zone).await?;
             // When the Auto request runs.

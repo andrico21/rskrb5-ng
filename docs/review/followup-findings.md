@@ -482,3 +482,4 @@ is a parity feature, not a defect>`.
 | critic:critics-05f1d49/verdict.md#G4 | FU-DOC-R152 | no |
 | critic:critics-05f1d49/verdict.md#G6 | FU-TST-R67 | no |
 | critic:critics-05f1d49/verdict.md#G7 | FU-CFG-R45 | no |
+| executor:todo-167#in-diff-mutation-check-05f1d49 | FU-FUZ-R06 | no |

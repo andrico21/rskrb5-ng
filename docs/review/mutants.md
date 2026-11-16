@@ -424,7 +424,8 @@ and 24 survived; D17 was run with the full suite only. Each of the 25
 survivors was re-run with the full suite (`cargo test --all-features
 --no-fail-fast`) and survived it. Fifteen were killed by new tests (the three known survivors of
 the plan among them), two (D6 since todo 163, A5 since todo 164) are moot and
-eight are `equivalent`:
+eight were recorded as `equivalent`; todo 167 showed that two of those, D14
+and D17, are not (its section below), so they stand as killed:
 
 | Mutant | Disposition |
 | --- | --- |
@@ -435,14 +436,15 @@ eight are `equivalent`:
 | D10: a failed `_kerberos-adm` lookup becomes an empty host list | killed: `kpasswd_auto_failing_admin_lookup_is_reported` |
 | A2: `token_mechanism()` returns the selected mechanism | killed: `acceptor_accepts_optimistic_kerberos_alias` asserts the token mechanism, the one case where it differs from the selected one. |
 | A5: `set_mech_types_der(None)` keeps the old list | moot since todo 164 (FU-SPN-R24): it was killed by `mech_types_der_setter_replaces_and_clears_the_list`; the setter and that test are removed, and no API can clear the received list of an accepted context. |
-| D12: `published` is `root` only; D14: `published` is always true; D17: `root \|\| records.is_empty()` (the cargo-mutants survivor) | `equivalent`: `discover_auto` reads `published` only after the passes found no endpoint and no target failure. A non-root answer holds records, and `srv_targets::resolve` turns each record into an endpoint or a failure (`resolve_dns_endpoint_host` never returns an empty list), so such an answer ends the discovery before `published` is read. A successful SRV lookup always holds an SRV record (hickory-resolver 0.26.3, `caching_client.rs` `handle_noerror`: `Records::Exists` only when a record of the queried type was found, else `NoRecordsFound`, which `discover_auto` skips), and an SRV record is either a root target or leaves a non-empty record. Survives the full suite. |
+| D14: `published` is always true; D17: `root \|\| records.is_empty()` (the cargo-mutants survivor) | killed by todo 167 (FU-FUZ-R06): the `equivalent` reason below, that a successful SRV lookup always holds an SRV record, was wrong, because a reply whose SRV record is in the additional section is a successful lookup with no answer record and `published` false. `kpasswd_auto_empty_list_asks_admin_once_for_both_passes` now has a variant of that kind and fails both mutants. |
+| D12: `published` is `root` only | `equivalent`: `discover_auto` reads `published` only after the passes found no endpoint and no target failure. A non-root answer that holds records ends the discovery before `published` is read, since `srv_targets::resolve` turns each record into an endpoint or a failure (`resolve_dns_endpoint_host` never returns an empty list), and a non-root answer without records has `published` false in both forms. Survives the full suite. |
 | A4: `ap_req()` hands out a copy | `equivalent`: the accessor takes `&self`, so a clone shows the same values and no API shows the identity of a reference. Survives the full suite. |
 | T5: the frame is handed to `SecretDer` as a clone | `equivalent`: the effect is what the dropped plain `Vec` leaves in freed memory, which no safe code observes (`unsafe_code` is forbidden, so no allocator witness exists). The proofs of todo 140 stay red on a plain `Vec`. Survives the full suite. |
 | P8, P11: 14 or 15 added to the refusal arm; P9: 11 added to it | `equivalent`: `selection::preauth` refuses 14 and 15 before the arms (draft-9 PKINIT), and 11 is matched by the hint arm above, so the added pattern is unreachable. The table test pins 14, 15 and 11 by their own refusals. Survives the full suite. |
 
 The 17 kills were repeated on the candidate tree of this todo (D6 among them,
 moot since todo 163, and A5, moot since todo 164): each failed its new test, and the eight equivalent mutants survive the full suite there
-as well.
+as well (the two of them that todo 167 killed, D14 and D17, are no longer equivalent).
 
 **Test (c) of the plan, not reachable.** The helper constant `ATTEMPTS` of
 `tests/support/loopback_pair.rs` is a test helper, outside the sources
@@ -453,6 +455,121 @@ Production code changed by one function: `tcp_record_frame`, which
 observable (the plan names this as the way to kill survivor (a)); the
 rustdoc of `discover_auto` names the first failure. No other behaviour
 changed. FU-FUZ-R05 records the tests and the function.
+
+### In-diff check after the third pass fixes (todo 167)
+
+The base of the third pass is `05f1d49`, the tree the supervisor re-checked.
+Todos 161 to 166 changed `src/` after it: the in-crate loopback pair helper
+of the response-too-big test (todo 162), the kpasswd `Auto` and explicit
+discovery (`discover` and `discover_auto`, todo 163), the removal of two
+`AcceptedContext` methods and the in-crate `accepted_tests` module (todo
+164), and the name that a non-Unicode `TMPDIR` is reported under (todo 166).
+Todo 161 changed `tests/` only, and todo 165 changed comments of `src/` only.
+
+- Diff: `git diff -U0 05f1d49 2f7f7f14e2c11c12b3bd198dbb100d0adfc94007 --
+  src`, reduced to the hunks that add a line that is not blank and not a
+  comment (6 of 8 files; `src/config/expansion.rs` and
+  `src/messages/secret_der/tests/transport.rs` added comments only). Four of
+  the six have no mutant: `src/client/transport.rs` (the added lines are the
+  imports, the `mod loopback_pair;` declaration and the call of the helper,
+  all inside `mod tests`), `src/spnego.rs` (the `mod accepted_tests;`
+  declaration; the two methods are deleted, which adds no line) and the two
+  new test modules `src/client/transport/tests/loopback_pair.rs` and
+  `src/spnego/accepted_tests.rs`: cargo-mutants skips `cfg(test)` items, and
+  `cargo mutants --list --all-features --file <file>` lists 0 mutants for each
+  of them. `src/config/credential_names.rs` lists 2: the changed line 53 is
+  the literal `Failure::Unavailable("TMPDIR")`, which cargo-mutants does not
+  mutate, but it sits inside `resolve_credential_template`, whose two body
+  mutants are listed. `src/client/transport/password_dns.rs` lists 8 (the
+  bodies and the non-comment changes of `discover` and `discover_auto`). No
+  file that `src` pulls in with `include!` changed (`git diff --name-only`);
+  `src/config/credential_names.rs` is an ordinary `#[path]` module of
+  `src/config.rs`.
+- The check ran locally as in todo 156: `cargo mutants --all-features
+  --no-shuffle --cap-lints=true --in-diff <diff> --file F --shard k/N -j 2
+  --copy-target=false -- <test arguments>`, cargo-mutants 27.1.0, rustc
+  1.100.0, `CARGO_BUILD_WARNINGS=allow`, no debug info and an 8 GiB
+  address-space cap, one shard at a time, on `2f7f7f1`. The diff lists 10
+  mutants, run in shards 0 to 2 split by file: `credential_names.rs` (0, test
+  arguments `--lib --test config`) and `password_dns.rs` (1 and 2, `--lib
+  --test client_transport --test client`). A narrowed run can turn a caught
+  mutant into a missed one but not the reverse, so every caught is valid.
+- `mutants_report.py --artifacts <the 3 shard outputs> --expect-shards 3
+  --register docs/review/mutants.md --campaign
+  2f7f7f14e2c11c12b3bd198dbb100d0adfc94007 --enforce` prints `mutants:
+  caught=8 missed=0 timeout=0 unviable=2 success=0` and `0 problem(s)` (exit
+  0, without `--allow-open`). No mutant was missed, so the campaign adds no
+  register row and the Totals and the per-file table above are unchanged (the
+  690 rows were counted again from the table: 626 `killed`, 60 `equivalent`
+  and 4 `hang`; 572 opened by a missed mutant and 118 by a timeout).
+
+| Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 2 | 2 | 0 | 0 | 0 | 169 |
+| 1 | 4 | 3 | 0 | 0 | 1 | 214 |
+| 2 | 4 | 3 | 0 | 0 | 1 | 161 |
+
+The wall time includes the wait for the shared cargo lock. Counts by file:
+
+| File | Caught | Missed | Timeout | Unviable |
+| --- | ---: | ---: | ---: | ---: |
+| `src/client/transport/password_dns.rs` | 6 | 0 | 0 | 2 |
+| `src/config/credential_names.rs` | 2 | 0 | 0 | 0 |
+
+The two unviable mutants return `Ok(vec![Default::default()])` from `discover`
+and `discover_auto`; `KdcEndpoint` has no `Default`.
+
+**Hand mutants.** cargo-mutants has no mutant for a string literal, a range
+in a pattern, a call that is absent, an operand order or a constant of a
+`cfg(test)` module, so 71 hand mutants changed the new code one at a time in
+a scratch copy of `2f7f7f1` (own target directory, the file restored after
+each, `git status` clean after each; the unmutated baseline of every test
+command passed): the 15 of the todo 162 log (R1 to R15) and 15 more of the
+candidate function, the retry rules and the helper (P1 to P15), the 9 of the
+todo 163 log (R1 to R9) and 18 more of the explicit path and of `Auto` (E1
+to E7, A1 to A11), the 10 of the todo 164 log (R1 to R10), and the 3 of the
+todo 166 log (R1 to R3, here T1 to T3) and a fourth (T4). The tests were not
+narrowed to a name filter: the todo 162 mutants ran the whole library, the
+todo 163 ones `--lib --test client_transport --test client`, the todo 164
+ones their own module or the `http` or `secret_debug_audit` target, and the
+todo 166 ones `--lib --test config`. 60 failed a test and 11 survived. Each
+survivor was re-run with the full suite (`cargo test --all-features
+--no-fail-fast`):
+
+| Mutant | Disposition |
+| --- | --- |
+| 164 R2: the session-key check removed from `ValidatedApReq::build_ap_rep_with_confounder` (recorded `equivalent` by todo 164) | killed by the full suite, so not `equivalent`: `acceptor_reply::accepted_reply_enforces_retained_policy` (`tests/policy/acceptor_reply.rs`) sets an RC4 session key on a validated AP-REQ whose policy does not permit RC4 and expects the typed policy refusal. The lower layer cannot refuse it: `selection::enctype` (`src/crypto/selection.rs` lines 20 to 31) refuses only the ids 1 to 6, 8 and 24, and `ap_rep::build_ap_rep_with_confounder` (`src/ap_rep.rs` lines 127 to 151) calls that and then encrypts, so RC4 (23) reaches the encryption and only the runtime policy check of the service layer stops it. The two ids that `random_reply_retains_permanent_refusal` uses (1 and 24) are the ones the lower layer does refuse, which is why the narrow `--lib spnego::accepted_tests` run survives. |
+| 163 R8: `Ok(_)` of an empty explicit set returns `NoKdcEndpoints` (recorded `equivalent` by todo 163) | killed, so not `equivalent`: `udp_password_discovers_admin_tcp_service` (`tests/client_transport/tests/dns.rs`) answers `_kpasswd` with a reply whose SRV record is in the additional section only, which hickory-resolver returns as a successful lookup with no answer record (`caching_client.rs` `handle_noerror` looks for the record in every section), so `srv_targets::resolve` yields an empty list and the `Ok(_)` arm falls through to `_kerberos-adm`. The todo 163 run used the filter `kpasswd`, which excluded this test. |
+| 162 R15: the production call limited to one candidate (`candidates(pid).take(1)`) | killed by the new test `a_taken_first_candidate_is_walked_past`: it takes the first candidate of the process (once another test of the process has let it go), calls `bind_tcp_and_udp_pair` and asserts that the pair sits on another candidate. |
+| P1: the process id is not masked to 14 bits (an id past 16 bits starts at offset 0) | killed by `the_process_id_moves_the_start`, which now draws the start of three ids past 16 bits and expects three different numbers. |
+| P7: the range starts at 32768 instead of 49152 | killed by `candidates_are_distinct_numbers_of_the_dynamic_range`, whose range is now written `0xC000..=0xFFFF` instead of the constants that the mutant changes. |
+| P9: the final error is `ErrorKind::Other` instead of `AddrInUse` | killed by `a_failure_lists_every_attempt`, which now asserts the kind. |
+| P12: the pair binds `0.0.0.0` instead of the loopback address | killed by `the_pair_shares_a_candidate_number`, which now asserts that both sockets are on a loopback address. |
+| E5 and A4: the realm of the `KdcEndpointFailures` of the explicit path (E5) or of `Auto` (A4) is empty | killed: the three tests that match that error (`kpasswd_auto_unresolvable_published_target_asks_no_admin`, `kpasswd_auto_reports_every_unresolvable_set` and the shared `explicit_unresolvable_published_target_asks_no_admin`) now bind the realm and compare it with `TEST.GOKRB5`. |
+| A1: `published = answer.published` (the last answered set decides) | killed by the new test `kpasswd_auto_a_set_without_answer_records_does_not_unpublish_a_root_set`: a root-only `_kpasswd._udp` set and a `_kpasswd._tcp` reply with no answer record must end in `DnsServiceUnavailable` without a `_kerberos-adm` question. Its fixture, `Dns` in `tests/client_transport/tests/kpasswd_dns.rs`, learned the target prefix `+` that puts a record in the additional section. |
+| P4: `candidates` walks backwards (`start - k * stride`) | `equivalent`: the walk visits the numbers of the same arithmetic progression in the other direction, and everything a test or a caller can rely on is symmetric in the direction (64 distinct numbers of the range, the smallest gap that fixes the window bound, the start that the process id moves); no document names the sequence. |
+| P13: the two arms of `bind_on` swapped, so that `TcpFirst` binds UDP first | `equivalent`: when both binds succeed the pair is the same, and when one fails the failing socket's error is returned whichever ran first, the other socket being dropped. The order matters only when both sockets of a number are refused with different errors, which a test cannot arrange for a number that is simply held (on Linux, where this was measured, both socket types report the same address-in-use error; an excluded range on Windows can refuse them with different codes). |
+
+Two further mutants of todo 156 were killable and are killed now; their
+`equivalent` reason (a successful SRV lookup always holds an SRV record) was
+wrong for the same reason as 163 R8: a lookup whose SRV record sits in the
+additional section is successful with no answer record, so `srv_answer`
+returns `published` false there. D14 (`published` is always true) and D17
+(`root || records.is_empty()`) now fail
+`kpasswd_auto_empty_list_asks_admin_once_for_both_passes`, whose third variant
+is a pair of sets with no answer record; D13 (`published` ignores the root
+flag) fails the new test and `kpasswd_auto_root_targets_only_are_unavailable`.
+D12 (`published` is `root` only) is the one that stays `equivalent`: a
+non-root answer with records ends the discovery before `published` is read,
+and a non-root answer without records has `published` false in both forms.
+The earlier sentences are amended in the section of todo 156. Every kill by a
+new or changed test was repeated on the candidate tree of this todo: each
+failed its test, and P4, P13 and D12 survive the full suite there as well.
+
+Production code did not change; every change is test code (the library
+tests of the loopback pair, the fixture and the assertions of
+`tests/client_transport/tests/kpasswd_dns.rs`). FU-FUZ-R06 records the tests
+and the dispositions.
 
 ### In-diff check after todo 115 (todo 116)
 
