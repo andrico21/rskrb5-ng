@@ -683,7 +683,14 @@ Security fail-closed parsing and verification:
   names: a public field of a type that holds a registered secret owner, directly
   or through other owners, fails it, and so does a public replacement of such a
   field that has no proof or reviewed exception. `AcceptedContext::ap_req` was
-  the public field it reported (FU-TST-R61).
+  the public field it reported (FU-TST-R61). It missed a field typed by a name
+  imported with `use super::Name`, so `NegotiateClient` and
+  `BlockingNegotiateClient`, which hold `Tokio` that way, were not owners: it now
+  reads that import as the type in the parent module and reports
+  `NegotiateClient::inner_mut`, `BlockingNegotiateClient::client_mut` (both exist
+  in 0.2.2) and the nine forwarding methods of each type; all are reviewed
+  exceptions. It also fails a covered owner or a reviewed exception that no
+  longer names a registered owner or a replacing method (FU-TST-R65).
 - `ccache::Credential::set_auth_data` is removed: it did what `with_auth_data`
   does (its `clear()` changed nothing, because the replaced entries erase their
   bytes when dropped), and no release has shipped it. A test observes

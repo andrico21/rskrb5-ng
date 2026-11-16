@@ -513,6 +513,23 @@ impl Scope<'_> {
         ))
     }
 
+    /// Read a `self`, `super` or `crate` import as the logical module path it names, so that
+    /// owner matching sees the module that declares the type and not the importing module.
+    fn logical(&self, path: Vec<String>) -> Result<Vec<String>, io::Error> {
+        let Some((name, prefix)) = path.split_last() else {
+            return Ok(path);
+        };
+        if !matches!(
+            prefix.first().map(String::as_str),
+            Some("crate" | "self" | "super")
+        ) {
+            return Ok(path);
+        }
+        let mut segments = graph_paths::module_segments(self, prefix)?;
+        segments.push(name.clone());
+        Ok(segments)
+    }
+
     /// Search actual type/use declarations only, never impl-associated aliases.
     fn binding(&self, name: &str, depth: usize) -> Result<Option<Vec<String>>, io::Error> {
         if depth >= 32 {
@@ -563,7 +580,7 @@ impl Scope<'_> {
                             {
                                 return Ok(Some(resolved));
                             }
-                            return Ok(Some(path));
+                            return self.logical(path).map(Some);
                         }
                     }
                     Item::Const(_)

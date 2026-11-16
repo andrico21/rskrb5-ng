@@ -172,6 +172,7 @@ mod tests {
         let owners = inspect(root, &root.join("src"))?;
         let nested = secret_owners(&owners);
         let mut failures = exposed_secrets(&owners);
+        failures.extend(stale_covered(&nested, COVERED));
         for owner in &owners {
             if nested.contains(&owner.identity) && active(&owner.identity) {
                 let expected = runtime_identity(&owner.identity);
@@ -237,7 +238,10 @@ mod tests {
         if identity.starts_with("src/spnego") || identity.ends_with("::Spnego") {
             return cfg!(feature = "spnego");
         }
-        if identity.contains("Tokio") || identity.contains("negotiate.rs") {
+        if identity.contains("negotiate.rs") {
+            return cfg!(feature = "tokio") && cfg!(feature = "spnego");
+        }
+        if identity.contains("Tokio") {
             return cfg!(feature = "tokio");
         }
         if identity.starts_with("src/client")
@@ -318,6 +322,14 @@ mod tests {
                 test: "tokio_client_prefers_freshest_cached_tgt_session",
                 contract: "Caching keeps the fresher primary or referral TGT and drops the other; the dropped session's key erasure relies on its Drop contract, not an observed first-party wipe.",
             })]).collect::<Vec<_>>();
+        for (identity, reason) in REPLACEMENT_EXCEPTIONS {
+            for test in reason.split('`').skip(1).step_by(2) {
+                assert!(
+                    tests.iter().any(|name| name == test),
+                    "{identity} cites `{test}`, which is no test"
+                );
+            }
+        }
         for (_, proof) in &proofs {
             let test = match proof {
                 ReplacementProof::LiveWipe(test) => test,
@@ -347,13 +359,38 @@ mod tests {
             })
             .chain(super::replacement_registry::DELEGATIONS.iter().copied())
             .collect::<Vec<_>>();
-        let failures = uncovered_replacements(&owners, &methods, &certificates);
+        let mut failures = uncovered_replacements(&owners, &methods, &certificates);
+        failures.extend(stale_exceptions(&owners, &methods, REPLACEMENT_EXCEPTIONS));
         assert!(
             failures.is_empty(),
             "uncovered replacement methods:\n{}",
             failures.join("\n")
         );
         Ok(())
+    }
+
+    /// Fields of the method's receiver that it replaces and that store credentials.
+    fn replaced_credential_fields(
+        storage: &Storage<'_>,
+        method: &super::replacement::Method,
+    ) -> Vec<String> {
+        let replaced = super::replacement::replaced_fields(method);
+        if !storage.contains(&method.owner) || replaced.is_empty() {
+            return Vec::new();
+        }
+        let mut fields = Vec::new();
+        for owner in storage
+            .owners()
+            .iter()
+            .filter(|owner| owner.identity == method.owner)
+        {
+            for (field, _, ty) in &owner.fields {
+                if replaced.contains(field) && storage.field(owner, field, ty) {
+                    fields.push(field.clone());
+                }
+            }
+        }
+        fields
     }
 
     /// Replacements of credential storage that lack a proof, exception or certificate.
@@ -368,30 +405,54 @@ mod tests {
         };
         let mut failures = Vec::new();
         for method in methods {
-            let replaced = super::replacement::replaced_fields(method);
-            if !storage.contains(&method.owner) || replaced.is_empty() {
-                continue;
-            }
-            for owner in owners.iter().filter(|owner| owner.identity == method.owner) {
-                for (field, _, ty) in &owner.fields {
-                    if replaced.contains(field)
-                        && storage.field(owner, field, ty)
-                        && !REPLACEMENT_EXCEPTIONS.iter().any(|(identity, reason)| {
-                            *identity == method.identity && !reason.is_empty()
-                        })
-                        && let Err(error) = super::replacement_certification::validate(
-                            method,
-                            methods,
-                            certificates,
-                            &secret,
-                        )
-                    {
-                        failures.push(format!("{} replaces {field}: {error}", method.identity));
-                    }
+            for field in replaced_credential_fields(&storage, method) {
+                if !REPLACEMENT_EXCEPTIONS
+                    .iter()
+                    .any(|(identity, reason)| *identity == method.identity && !reason.is_empty())
+                    && let Err(error) = super::replacement_certification::validate(
+                        method,
+                        methods,
+                        certificates,
+                        &secret,
+                    )
+                {
+                    failures.push(format!("{} replaces {field}: {error}", method.identity));
                 }
             }
         }
         failures
+    }
+
+    /// Covered identities that are not registered secret owners: renamed, deleted or never resolved.
+    fn stale_covered(registered: &[String], covered: &[&str]) -> Vec<String> {
+        covered
+            .iter()
+            .filter(|identity| !registered.iter().any(|owner| owner == **identity))
+            .map(|identity| format!("{identity} is covered but is not a registered secret owner"))
+            .collect()
+    }
+
+    /// Reviewed exceptions whose method no longer exists or no longer replaces credential storage.
+    fn stale_exceptions(
+        owners: &[super::inventory::Owner],
+        methods: &[super::replacement::Method],
+        exceptions: &[(&str, &str)],
+    ) -> Vec<String> {
+        let storage = Storage::new(owners);
+        exceptions
+            .iter()
+            .filter(|(identity, _)| {
+                !methods.iter().any(|method| {
+                    method.identity == *identity
+                        && !replaced_credential_fields(&storage, method).is_empty()
+                })
+            })
+            .map(|(identity, _)| {
+                format!(
+                    "{identity} is excepted but names no method that replaces credential storage"
+                )
+            })
+            .collect()
     }
 
     /// Session and credential owner fields are credential storage whatever their names.
@@ -550,6 +611,108 @@ mod tests {
         result
     }
 
+    /// A type imported through `self`, `super` or `crate` is the owner it names, and only that one.
+    #[test]
+    fn imported_owner_types_resolve_through_relative_prefixes() -> Result<(), io::Error> {
+        let root = env::temp_dir().join(format!("rskrb5-t161-imports-{}", process::id()));
+        fs::create_dir_all(root.join("client"))?;
+        let result = (|| {
+            fs::write(root.join("lib.rs"), "mod client;")?;
+            let secret = "pub struct Tokio { key: Vec<u8> }\n";
+            let plain = "pub struct Tokio { retries: u32 }\n";
+            for (import, parent, sibling, expected) in [
+                (
+                    "use super::Tokio;",
+                    secret,
+                    plain,
+                    vec!["client/negotiate.rs::C exposes replaceable secret inner"],
+                ),
+                ("use super::Tokio;", plain, secret, vec![]),
+                (
+                    "use crate::client::Tokio;",
+                    secret,
+                    plain,
+                    vec!["client/negotiate.rs::C exposes replaceable secret inner"],
+                ),
+                ("use crate::client::Tokio;", plain, secret, vec![]),
+                (
+                    "use super::super::client::Tokio;",
+                    secret,
+                    plain,
+                    vec!["client/negotiate.rs::C exposes replaceable secret inner"],
+                ),
+            ] {
+                fs::write(
+                    root.join("client.rs"),
+                    format!("mod negotiate;\nmod transport;\n{parent}"),
+                )?;
+                fs::write(root.join("client/transport.rs"), sibling)?;
+                fs::write(
+                    root.join("client/negotiate.rs"),
+                    format!(
+                        "{import}\npub struct C {{ pub inner: Tokio }}\nimpl C {{ pub fn inner_mut(&mut self) -> &mut Tokio {{ &mut self.inner }} }}"
+                    ),
+                )?;
+                let owners = inspect(&root, &root)?;
+                assert_eq!(
+                    exposed_secrets(&owners),
+                    expected,
+                    "{import} with owner in {parent}"
+                );
+                let methods = super::replacement::inspect(&root, &root)?;
+                let failures = uncovered_replacements(&owners, &methods, &[]);
+                let proof = "client/negotiate.rs::C::inner_mut replaces inner: ";
+                assert_eq!(
+                    failures.iter().any(|failure| failure.starts_with(proof)),
+                    !expected.is_empty(),
+                    "{import}: {failures:?}"
+                );
+            }
+            Ok(())
+        })();
+        fs::remove_dir_all(&root)?;
+        result
+    }
+
+    /// A covered identity that is not a registered owner, or an exception that names no replacing method, is reported.
+    #[test]
+    fn stale_audit_entries_are_reported() -> Result<(), io::Error> {
+        let registered = ["src/a.rs::A".to_owned()];
+        assert_eq!(
+            stale_covered(&registered, &["src/a.rs::A", "src/a.rs::Gone"]),
+            ["src/a.rs::Gone is covered but is not a registered secret owner"]
+        );
+        let root = env::temp_dir().join(format!("rskrb5-t161-stale-{}", process::id()));
+        fs::create_dir_all(&root)?;
+        let result = (|| {
+            fs::write(root.join("lib.rs"), "mod client;")?;
+            fs::write(
+                root.join("client.rs"),
+                "pub struct EncryptionKey { value: Vec<u8> }\npub struct Context { key: EncryptionKey, label: String }\nimpl Context { pub fn replace(&mut self, value: EncryptionKey) { self.key = value; } pub fn rename(&mut self, value: String) { self.label = value; } pub fn size(&self) -> usize { 1 } }",
+            )?;
+            let owners = inspect(&root, &root)?;
+            let methods = super::replacement::inspect(&root, &root)?;
+            let exceptions = [
+                ("client.rs::Context::replace", "reviewed"),
+                ("client.rs::Context::rename", "reviewed"),
+                ("client.rs::Context::size", "reviewed"),
+                ("client.rs::Context::deleted", "reviewed"),
+            ];
+            let stale = |name: &str| {
+                format!(
+                    "client.rs::Context::{name} is excepted but names no method that replaces credential storage"
+                )
+            };
+            assert_eq!(
+                stale_exceptions(&owners, &methods, &exceptions),
+                [stale("rename"), stale("size"), stale("deleted")]
+            );
+            Ok(())
+        })();
+        fs::remove_dir_all(&root)?;
+        result
+    }
+
     /// A built request that retains a dependency-owned rasn AS-REQ or TGS-REQ replaces credential storage.
     #[test]
     fn request_message_replacements_require_proof() -> Result<(), io::Error> {
@@ -602,6 +765,86 @@ mod tests {
         (
             "src/http.rs::NegotiateService::inner_mut",
             "Caller-owned generic service; mutation and erasure remain the inner service's contract, not first-party credential storage.",
+        ),
+        (
+            "src/client/negotiate.rs::Client::inner_mut",
+            "0.2 API; every mutation reachable through it is an audited Tokio/Client method, and a whole-value replacement drops the old owner, whose erasure is proven by `client_cache_clear_erases_live_key_owners` (session keys), `original_allocation_is_erased_on_drop` (password) and `replacement_erases_old_key_allocation` (key bytes).",
+        ),
+        (
+            "src/client/negotiate.rs::BlockingClient::client_mut",
+            "0.2 API; every mutation reachable through it is an audited Tokio/Client method, and a whole-value replacement drops the old owner, whose erasure is proven by `client_cache_clear_erases_live_key_owners` (session keys), `original_allocation_is_erased_on_drop` (password) and `replacement_erases_old_key_allocation` (key bytes).",
+        ),
+        (
+            "src/client/negotiate.rs::Client::authorization_header",
+            "Forwards to src/client/negotiate.rs::Client::authorization_context, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/client/negotiate.rs::Client::authorization_header_for_host",
+            "Forwards to src/client/negotiate.rs::Client::authorization_context_for_host, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/client/negotiate.rs::Client::authorization_context",
+            "Forwards to src/client.rs::Tokio::spnego_context, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/client/negotiate.rs::Client::authorization_context_with_options",
+            "Forwards to src/client.rs::Tokio::spnego_context_with_options, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/client/negotiate.rs::Client::authorization_context_for_host",
+            "Forwards to src/client/negotiate.rs::Client::authorization_context, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/client/negotiate.rs::Client::change_password",
+            "Forwards to src/client.rs::Tokio::change_password, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/client/negotiate.rs::Client::change_password_for",
+            "Forwards to src/client.rs::Tokio::change_password_for, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/client/negotiate.rs::Client::change_password_with_options",
+            "Forwards to src/client.rs::Tokio::change_password_with_options, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/client/negotiate.rs::Client::change_password_for_with_options",
+            "Forwards to src/client.rs::Tokio::change_password_for_with_options, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/client/negotiate.rs::BlockingClient::authorization_header",
+            "Forwards to src/client/negotiate.rs::BlockingClient::authorization_context, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/client/negotiate.rs::BlockingClient::authorization_header_for_host",
+            "Forwards to src/client/negotiate.rs::BlockingClient::authorization_context_for_host, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/client/negotiate.rs::BlockingClient::authorization_context",
+            "Forwards to src/client/negotiate.rs::Client::authorization_context, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/client/negotiate.rs::BlockingClient::authorization_context_with_options",
+            "Forwards to src/client/negotiate.rs::Client::authorization_context_with_options, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/client/negotiate.rs::BlockingClient::authorization_context_for_host",
+            "Forwards to src/client/negotiate.rs::Client::authorization_context_for_host, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/client/negotiate.rs::BlockingClient::change_password",
+            "Forwards to src/client/negotiate.rs::Client::change_password, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/client/negotiate.rs::BlockingClient::change_password_for",
+            "Forwards to src/client/negotiate.rs::Client::change_password_for, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/client/negotiate.rs::BlockingClient::change_password_with_options",
+            "Forwards to src/client/negotiate.rs::Client::change_password_with_options, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/client/negotiate.rs::BlockingClient::change_password_for_with_options",
+            "Forwards to src/client/negotiate.rs::Client::change_password_for_with_options, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
         ),
         (
             "src/client.rs::BuiltApReq::set_message",
