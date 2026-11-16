@@ -4,8 +4,16 @@ use super::{Error, KdcEndpoint, KdcProtocol, Tokio, dns_resolver, srv_targets};
 
 /// Discover password servers for one protocol, falling back to administrative service hosts.
 ///
+/// The administrative hosts are asked for only when the `_kpasswd` set of
+/// `protocol` is absent. A set whose SRV answer held a record counts as
+/// published, and when none of its targets resolves the call fails without the
+/// fallback, as [`discover_auto`] does for its sets.
+///
 /// # Errors
-/// Returns DNS lookup, unavailable-service or empty-endpoint errors.
+/// Returns [`Error::DnsServiceUnavailable`] for a root target and
+/// [`Error::KdcEndpointFailures`] when the published set's targets all failed to
+/// resolve. When the set is absent: DNS errors of the administrative lookup, or
+/// [`Error::NoKdcEndpoints`] when no host is found.
 ///
 /// # Cancel safety
 /// cancel-safe: abandoning DNS lookups changes no credential state.
@@ -14,18 +22,36 @@ pub(super) async fn discover(
     realm: &str,
     protocol: KdcProtocol,
 ) -> Result<Vec<KdcEndpoint>, Error> {
-    match transport
-        .discover_srv_endpoints("_kpasswd", realm, protocol)
+    let resolver = dns_resolver(transport.dns_server)?;
+    if let Ok(answer) = transport
+        .srv_answer(&resolver, "_kpasswd", realm, protocol)
         .await
     {
-        Ok(endpoints) if !endpoints.is_empty() => return Ok(endpoints),
-        Err(
-            error @ Error::DnsServiceUnavailable {
-                service: _,
-                realm: _,
-            },
-        ) => return Err(error),
-        Ok(_) | Err(_) => {}
+        if answer.root {
+            return Err(Error::DnsServiceUnavailable {
+                service: "_kpasswd".to_owned(),
+                realm: realm.to_owned(),
+            });
+        }
+        match srv_targets::resolve(
+            &resolver,
+            realm,
+            protocol,
+            answer.records,
+            transport.dns_server.is_some(),
+        )
+        .await
+        {
+            Ok(endpoints) if !endpoints.is_empty() => return Ok(endpoints),
+            Ok(_) => {}
+            Err(error) => {
+                return Err(Error::KdcEndpointFailures {
+                    realm: realm.to_owned(),
+                    protocol,
+                    failures: vec![error.to_string()],
+                });
+            }
+        }
     }
     let mut endpoints = transport
         .discover_srv_endpoints("_kerberos-adm", realm, KdcProtocol::Tcp)
@@ -54,10 +80,11 @@ pub(super) async fn discover(
 /// offered on port 464 over both protocols.
 ///
 /// # Errors
-/// Returns the first failed target lookup of a published set (the UDP set is
-/// asked first) when no endpoint is left, [`Error::DnsServiceUnavailable`]
-/// when only root targets were published, DNS errors of the administrative
-/// lookup, or `NoKdcEndpoints` when no host is found at all.
+/// Returns [`Error::KdcEndpointFailures`] with the failed target lookups of
+/// every published set (the UDP set first) when no endpoint is left,
+/// [`Error::DnsServiceUnavailable`] when only root targets were published, DNS
+/// errors of the administrative lookup, or `NoKdcEndpoints` when no host is
+/// found at all.
 ///
 /// # Cancel safety
 /// cancel-safe: abandoning DNS lookups changes no credential state.
@@ -68,7 +95,7 @@ pub(super) async fn discover_auto(
     let resolver = dns_resolver(transport.dns_server)?;
     let mut endpoints = Vec::new();
     let mut published = false;
-    let mut unresolved = None;
+    let mut unresolved = Vec::new();
     for protocol in [KdcProtocol::Udp, KdcProtocol::Tcp] {
         let Ok(answer) = transport
             .srv_answer(&resolver, "_kpasswd", realm, protocol)
@@ -88,15 +115,19 @@ pub(super) async fn discover_auto(
         {
             Ok(found) => endpoints.extend(found),
             Err(error) => {
-                let _: &mut Error = unresolved.get_or_insert(error);
+                unresolved.push(error.to_string());
             }
         }
     }
     if !endpoints.is_empty() {
         return Ok(endpoints);
     }
-    if let Some(error) = unresolved {
-        return Err(error);
+    if !unresolved.is_empty() {
+        return Err(Error::KdcEndpointFailures {
+            realm: realm.to_owned(),
+            protocol: KdcProtocol::Auto,
+            failures: unresolved,
+        });
     }
     if published {
         return Err(Error::DnsServiceUnavailable {

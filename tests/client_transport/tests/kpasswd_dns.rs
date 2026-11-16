@@ -344,11 +344,11 @@ fn kpasswd_auto_unresolvable_published_target_asks_no_admin() -> Result<(), Test
             0,
             "questions: {questions:?}"
         );
-        // And the call failed definitely, naming the target that did not resolve.
+        // And the call failed definitely as an endpoint failure, naming the target that did not resolve.
         assert!(
-            matches!(&result, Err(ClientError::DnsSrvLookup { realm: _, protocol: _, message })
-                if message.contains("unresolvable.test.gokrb5")),
-            "expected the DnsSrvLookup of the unresolvable target, got {}",
+            matches!(&result, Err(ClientError::KdcEndpointFailures { realm: _, protocol: KdcProtocol::Auto, failures })
+                if matches!(failures.as_slice(), [only] if only.contains("unresolvable.test.gokrb5"))),
+            "expected the Auto KdcEndpointFailures of the unresolvable target, got {}",
             describe(&result)
         );
         Ok(())
@@ -398,9 +398,9 @@ fn kpasswd_auto_unresolvable_set_leaves_the_live_set_in_use() -> Result<(), Test
     })
 }
 
-/// With both sets unresolvable the failure of the first set asked, `_kpasswd._udp`, is the one reported.
+/// With both sets unresolvable the failure of every set is reported, the UDP set first.
 #[test]
-fn kpasswd_auto_reports_the_first_unresolvable_set() -> Result<(), TestError> {
+fn kpasswd_auto_reports_every_unresolvable_set() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given an unresolvable target in each record set.
         let dns = Dns::start(vec![
@@ -420,15 +420,68 @@ fn kpasswd_auto_reports_the_first_unresolvable_set() -> Result<(), TestError> {
             .send_to_kpasswd_realm(&dns_config()?, KdcProtocol::Auto, REALM, REQUEST)
             .await;
         let _questions = dns.finish().await?;
-        // Then the error names the UDP set's target.
+        // Then the endpoint failures name the UDP set's target and then the TCP set's target.
         assert!(
-            matches!(&result, Err(ClientError::DnsSrvLookup { realm: _, protocol: KdcProtocol::Udp, message })
-                if message.contains("udp-missing.test.gokrb5")),
-            "expected the DnsSrvLookup of the UDP set, got {}",
+            matches!(&result, Err(ClientError::KdcEndpointFailures { realm: _, protocol: KdcProtocol::Auto, failures })
+                if matches!(failures.as_slice(), [udp, tcp]
+                    if udp.contains("udp-missing.test.gokrb5") && tcp.contains("tcp-missing.test.gokrb5"))),
+            "expected the Auto KdcEndpointFailures of both sets, UDP first, got {}",
             describe(&result)
         );
         Ok(())
     })
+}
+
+/// A published `_kpasswd` set of the requested protocol whose target does not resolve is a definite failure.
+async fn explicit_unresolvable_published_target_asks_no_admin(
+    protocol: KdcProtocol,
+    set: &'static str,
+) -> Result<(), TestError> {
+    // Given a `_kpasswd` set of that protocol naming a host the DNS server cannot resolve, and a published administration host.
+    let dns = Dns::start(vec![
+        (set, vec![(464, "unresolvable.test.gokrb5.")]),
+        ("_kerberos-adm._tcp.test.gokrb5.", vec![(749, "127.0.0.1.")]),
+    ])
+    .await?;
+    // When the explicit request runs.
+    let result = dns
+        .transport()?
+        .send_to_kpasswd_realm(&dns_config()?, protocol, REALM, REQUEST)
+        .await;
+    let questions = dns.finish().await?;
+    // Then the administration service was never asked about.
+    assert_eq!(
+        asked(&questions, "_kerberos-adm"),
+        0,
+        "questions: {questions:?}"
+    );
+    // And the call failed definitely as an endpoint failure of that protocol naming the target.
+    assert!(
+        matches!(&result, Err(ClientError::KdcEndpointFailures { realm: _, protocol: reported, failures })
+            if *reported == protocol
+                && matches!(failures.as_slice(), [only] if only.contains("unresolvable.test.gokrb5"))),
+        "expected the {protocol:?} KdcEndpointFailures of the unresolvable target, got {}",
+        describe(&result)
+    );
+    Ok(())
+}
+
+/// The explicit TCP request does not fall back to `_kerberos-adm` when its `_kpasswd._tcp` target does not resolve.
+#[test]
+fn kpasswd_explicit_tcp_unresolvable_published_target_asks_no_admin() -> Result<(), TestError> {
+    runtime()?.block_on(explicit_unresolvable_published_target_asks_no_admin(
+        KdcProtocol::Tcp,
+        "_kpasswd._tcp.test.gokrb5.",
+    ))
+}
+
+/// The explicit UDP request does not fall back to `_kerberos-adm` when its `_kpasswd._udp` target does not resolve.
+#[test]
+fn kpasswd_explicit_udp_unresolvable_published_target_asks_no_admin() -> Result<(), TestError> {
+    runtime()?.block_on(explicit_unresolvable_published_target_asks_no_admin(
+        KdcProtocol::Udp,
+        "_kpasswd._udp.test.gokrb5.",
+    ))
 }
 
 /// A failed administration lookup is the error of the call, not an empty host list.
