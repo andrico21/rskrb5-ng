@@ -534,7 +534,10 @@ todo 163 ones `--lib --test client_transport --test client`, the todo 164
 ones their own module or the `http` or `secret_debug_audit` target, and the
 todo 166 ones `--lib --test config`. 60 failed a test and 11 survived. Each
 survivor was re-run with the full suite (`cargo test --all-features
---no-fail-fast`):
+--no-fail-fast`). The table has a row for each survivor (E5 and A4 share a row)
+and one row for 163 R8, which is not a survivor: it is one of the 60 that failed
+a test, and it stands in the table because todo 163 had recorded it
+`equivalent`:
 
 | Mutant | Disposition |
 | --- | --- |
