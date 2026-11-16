@@ -1,8 +1,12 @@
 //! The loopback port-pair helper retries a collision, spreads its candidates over the dynamic
 //! range and tries both bind orders.
 
-use super::*;
-use crate::loopback_pair::{FIRST_PORT, Order, bind_on, bind_pair_with};
+use std::{sync::mpsc, thread};
+
+use tokio::net::TcpSocket;
+
+use super::{kpasswd_order::closed_port, *};
+use crate::loopback_pair::{FIRST_PORT, Order, RESERVED_FIRST, bind_on, bind_pair_with};
 
 /// A UDP socket that holds the number of the first candidate makes the first attempt fail and a
 /// later attempt succeed on another port: the proof that the helper retries.
@@ -179,6 +183,204 @@ fn pair_candidates_spread_over_the_range_and_follow_the_seed() -> Result<(), Tes
         firsts.sort_unstable();
         firsts.dedup();
         assert!(firsts.len() > 1, "every seed drew the same first candidate");
+        Ok::<_, TestError>(())
+    })
+}
+
+/// Seeds that [`seed_drawing_first`] tries: the first draw of a call is uniform over 16384
+/// numbers, so a given number is missed by all of them with a probability of about `e^-16`.
+const SEEDS: u64 = 1 << 18;
+
+/// The seed of a pair helper call whose first draw is `port`, if there is one.
+async fn seed_drawing_first(port: u16) -> Option<u64> {
+    for seed in 0..SEEDS {
+        let mut first = 0_u16;
+        drop(
+            bind_pair_with(1, seed, async |candidate, _| {
+                first = candidate;
+                Err(io::Error::from(io::ErrorKind::InvalidInput))
+            })
+            .await,
+        );
+        if first == port {
+            return Some(seed);
+        }
+    }
+    None
+}
+
+/// Whether a pair helper call with `seed` takes `port` on its own thread, as a parallel test
+/// would, and a connection to the port is then accepted. `None` when the bind collided.
+async fn parallel_pair_answers(port: u16, seed: u64) -> Result<Option<bool>, TestError> {
+    let (bound_tx, bound_rx) = mpsc::channel();
+    let (done_tx, done_rx) = mpsc::channel::<()>();
+    let parallel = thread::spawn(move || -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let pair = bind_pair_with(1, seed, bind_on).await;
+            bound_tx.send(pair.is_ok())?;
+            // The pair stays bound until the connecting side is done.
+            done_rx.recv().unwrap_or_default();
+            drop(pair);
+            Ok(())
+        })
+    });
+    let bound = bound_rx.recv()?;
+    let answered = if bound {
+        let connected = bounded(
+            Duration::from_secs(10),
+            "connect to the taken port",
+            TcpStream::connect(("127.0.0.1", port)),
+        )
+        .await?;
+        Some(connected.is_ok())
+    } else {
+        None
+    };
+    drop(done_tx);
+    parallel
+        .join()
+        .map_err(|_panic| "the parallel thread panicked")??;
+    Ok(answered)
+}
+
+/// A port number that was freed again is taken by a parallel test that draws it and then
+/// answers; a closed port is a number that no parallel draw can reach and stays refused.
+#[test]
+fn a_parallel_draw_takes_a_freed_number_but_never_a_closed_port() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given a number of the dynamic range that was bound and freed again, the old way of
+        // making a closed port, and a parallel call whose first draw is that number.
+        let mut answered = None;
+        for _ in 0..8_u8 {
+            let (listener, udp) = bind_tcp_and_udp_pair().await?;
+            let freed = udp.local_addr()?.port();
+            drop((udp, listener));
+            let seed = seed_drawing_first(freed)
+                .await
+                .ok_or("no seed draws the freed number")?;
+            // When that call runs on its own thread.
+            answered = parallel_pair_answers(freed, seed).await?;
+            if answered.is_some() {
+                break;
+            }
+        }
+        // Then it holds the number and answers: a refusal expected there would see a reply.
+        assert_eq!(
+            answered,
+            Some(true),
+            "the control did not take a freed number"
+        );
+        // And no call can draw a closed port, whatever its seed, so its connect is refused.
+        let closed: SocketAddr = closed_port().await?.parse()?;
+        assert_eq!(
+            seed_drawing_first(closed.port()).await,
+            None,
+            "a parallel call can draw the closed port {closed}"
+        );
+        let refused = bounded(
+            Duration::from_secs(10),
+            "connect to the closed port",
+            TcpStream::connect(closed),
+        )
+        .await?;
+        assert_eq!(
+            refused.err().map(|error| error.kind()),
+            Some(io::ErrorKind::ConnectionRefused)
+        );
+        Ok::<_, TestError>(())
+    })
+}
+
+/// The numbers of the reserved range come from one sequence: a number that was freed is not
+/// handed to the next call, so two tests that overlap never share a closed port.
+#[test]
+fn reserved_numbers_do_not_repeat_and_stay_below_the_pair_range() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given calls that each drop their socket at once.
+        let mut ports = Vec::new();
+        for _ in 0..64_u8 {
+            // When the next call binds.
+            ports.push(bind_udp_with_closed_tcp().await?.local_addr()?.port());
+        }
+        // Then no number repeats and every number is in the reserved range, below the pair range.
+        let mut sorted = ports.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), ports.len(), "{ports:?}");
+        assert!(
+            ports
+                .iter()
+                .all(|&port| (RESERVED_FIRST..FIRST_PORT).contains(&port)),
+            "{ports:?}"
+        );
+        Ok::<_, TestError>(())
+    })
+}
+
+/// A held reserved socket is live for UDP and its TCP side is refused.
+#[test]
+fn a_reserved_udp_socket_is_live_and_its_tcp_side_is_closed() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given a reserved socket that is kept.
+        let udp = bind_udp_with_closed_tcp().await?;
+        let addr = udp.local_addr()?;
+        // When a datagram is sent to it and a connection is attempted on the same number.
+        let peer = UdpSocket::bind("127.0.0.1:0").await?;
+        assert_eq!(peer.send_to(b"ping", addr).await?, 4);
+        let connected = bounded(
+            Duration::from_secs(10),
+            "connect to the closed TCP side",
+            TcpStream::connect(addr),
+        )
+        .await?;
+        // Then the socket received the datagram and the connection was refused.
+        let mut bytes = [0_u8; 8];
+        let (length, from) = bounded(
+            Duration::from_secs(10),
+            "datagram",
+            udp.recv_from(&mut bytes),
+        )
+        .await??;
+        assert_eq!(bytes.get(..length), Some(&b"ping"[..]));
+        assert_eq!(from, peer.local_addr()?);
+        assert_eq!(
+            connected.err().map(|error| error.kind()),
+            Some(io::ErrorKind::ConnectionRefused)
+        );
+        Ok::<_, TestError>(())
+    })
+}
+
+/// A TCP socket that is bound and does not listen refuses a connection and keeps its number
+/// against a parallel bind: the hold that tests which need a refused TCP number take.
+#[test]
+fn a_bound_tcp_socket_that_does_not_listen_refuses_and_holds_its_number() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given a bound TCP socket that never listens.
+        let held = TcpSocket::new_v4()?;
+        held.bind(SocketAddr::from(([127, 0, 0, 1], 0)))?;
+        let addr = held.local_addr()?;
+        // When a connection is attempted and a parallel thread binds the same number.
+        let refused = bounded(
+            Duration::from_secs(10),
+            "connect to the bound socket",
+            TcpStream::connect(addr),
+        )
+        .await?;
+        let parallel = thread::spawn(move || runtime()?.block_on(TcpListener::bind(addr)));
+        let rebound = parallel.join().map_err(|_panic| "the thread panicked")?;
+        // Then the connection is refused and the number is not available.
+        assert_eq!(
+            refused.err().map(|error| error.kind()),
+            Some(io::ErrorKind::ConnectionRefused)
+        );
+        assert!(
+            rebound.as_ref().is_err_and(|error| matches!(
+                error.kind(),
+                io::ErrorKind::AddrInUse | io::ErrorKind::PermissionDenied
+            )),
+            "the parallel bind took a held number: {rebound:?}"
+        );
         Ok::<_, TestError>(())
     })
 }

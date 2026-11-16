@@ -555,8 +555,7 @@ fn kpasswd_auto_udp_pass_follows_a_refused_tcp_pass() -> Result<(), TestError> {
     runtime()?.block_on(async {
         // Given a refused TCP entry and a live UDP entry.
         let tcp_port = closed_port_number().await?;
-        let (listener, udp) = bind_tcp_and_udp_pair().await?;
-        drop(listener);
+        let udp = bind_udp_with_closed_tcp().await?;
         let dns = Dns::start(vec![
             ("_kpasswd._tcp.test.gokrb5.", vec![(tcp_port, "127.0.0.1.")]),
             (

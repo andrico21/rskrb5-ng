@@ -5,6 +5,10 @@
 //! numbers one after the other, so a block of numbers that UDP refuses is walked through in
 //! order. This helper therefore chooses its own candidates, spread over the dynamic port range,
 //! and alternates the bind order.
+//!
+//! A number that a test needs refused is a different case: a number that was bound and freed
+//! again can be drawn by a test that runs in parallel and then answers. That number comes from a
+//! reserved range that nothing else draws from.
 
 use core::{
     net::{Ipv4Addr, SocketAddr},
@@ -22,6 +26,15 @@ pub(crate) const FIRST_PORT: u16 = 49_152;
 
 /// Mask that keeps an offset inside the dynamic range (`49152..=65535` is 16384 numbers).
 pub(crate) const PORT_MASK: u64 = 0x3FFF;
+
+/// First port number of the range that [`bind_udp_with_closed_tcp`] draws from.
+///
+/// The range lies below the ephemeral range of every supported system (Windows and macOS start
+/// at 49152, Linux at 32768) and below the range of [`bind_tcp_and_udp_pair`].
+pub(crate) const RESERVED_FIRST: u16 = 20_000;
+
+/// Mask that keeps an offset inside the reserved range (8192 numbers).
+const RESERVED_MASK: u64 = 0x1FFF;
 
 /// Which socket of a pair is bound first.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -106,12 +119,7 @@ pub(crate) async fn bind_pair_with(
         };
         match bind(port, order).await {
             Ok(pair) => return Ok(pair),
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    io::ErrorKind::AddrInUse | io::ErrorKind::PermissionDenied
-                ) =>
-            {
+            Err(error) if is_collision(&error) => {
                 let code = error
                     .raw_os_error()
                     .map_or_else(String::new, |code| format!("({code})"));
@@ -127,6 +135,60 @@ pub(crate) async fn bind_pair_with(
             tried.join("; ")
         ),
     ))
+}
+
+/// Bind a UDP socket on a reserved loopback port number whose TCP side is free.
+///
+/// Keep the socket for a number that is closed for TCP and live for UDP; drop it for a number
+/// that is closed for both. No test that runs in parallel can bind the number: the reserved
+/// range is not the range of [`bind_tcp_and_udp_pair`] nor an ephemeral range, and every attempt
+/// of the process takes the next number of one sequence.
+///
+/// # Errors
+/// Returns the error of a bind that is not a collision, and `AddrInUse` listing every attempt
+/// when every attempt collided.
+///
+/// # Cancel safety
+/// cancel-safe: dropping the future drops the socket bound so far.
+pub(crate) async fn bind_udp_with_closed_tcp() -> io::Result<UdpSocket> {
+    static CALLS: AtomicU64 = AtomicU64::new(0);
+    // The process id keeps concurrent test processes apart, the counter the calls of this one.
+    let mut state = u64::from(process::id());
+    let start = next(&mut state);
+    let mut tried = Vec::new();
+    for _ in 0..ATTEMPTS {
+        let offset = start.wrapping_add(CALLS.fetch_add(1, Ordering::Relaxed)) & RESERVED_MASK;
+        let port = RESERVED_FIRST.saturating_add(u16::try_from(offset).unwrap_or(0));
+        let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+        // The TCP side is only probed: nothing keeps it, so a connection to it is refused.
+        let bound = match TcpListener::bind(addr).await {
+            Ok(probe) => {
+                drop(probe);
+                UdpSocket::bind(addr).await
+            }
+            Err(error) => Err(error),
+        };
+        match bound {
+            Ok(udp) => return Ok(udp),
+            Err(error) if is_collision(&error) => tried.push(format!("{port} {:?}", error.kind())),
+            Err(error) => return Err(error),
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AddrInUse,
+        format!(
+            "no reserved loopback port with a free TCP side in {ATTEMPTS} attempts: {}",
+            tried.join("; ")
+        ),
+    ))
+}
+
+/// Whether a failed bind is a collision that another number can avoid.
+fn is_collision(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::AddrInUse | io::ErrorKind::PermissionDenied
+    )
 }
 
 /// The next value of the `SplitMix64` sequence that starts at `state`.
