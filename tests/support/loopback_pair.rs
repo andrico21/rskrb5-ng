@@ -141,9 +141,11 @@ pub(crate) async fn bind_pair_with(
 
 /// Bind a UDP socket on a reserved loopback port number whose TCP side is free.
 ///
-/// The socket is live for UDP and its TCP side is closed. No test that runs in parallel can bind
+/// The socket is live for UDP and its TCP side is closed. No test that runs in parallel draws
 /// the number: the reserved range is not the range of [`bind_tcp_and_udp_pair`] nor an ephemeral
-/// range, and every attempt of the process takes the next number of one sequence.
+/// range, and every attempt of the process takes the next number of one sequence. The DNS
+/// resolver's random client ports can still take a reserved number (the FU-TST-R64 residual,
+/// see `closed_port.rs`), and the process-id offset of the sequence is probabilistic.
 ///
 /// # Errors
 /// Returns the error of a bind that is not a collision, and `AddrInUse` listing every attempt
@@ -160,7 +162,8 @@ pub(crate) async fn bind_udp_with_closed_tcp() -> io::Result<UdpSocket> {
 /// A reserved loopback port number that is closed for TCP and UDP.
 ///
 /// Nothing holds the number: the TCP side and the UDP side are bound once to prove them free and
-/// dropped. No test that runs in parallel can bind it (see [`bind_udp_with_closed_tcp`]).
+/// dropped. No test that runs in parallel draws it, and the FU-TST-R64 residual applies (see
+/// [`bind_udp_with_closed_tcp`]).
 ///
 /// # Errors
 /// Returns the error of a bind that is not a collision, and `AddrInUse` listing every attempt

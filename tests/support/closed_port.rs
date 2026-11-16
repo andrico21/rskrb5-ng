@@ -3,7 +3,9 @@
 //! A number that was bound and freed again can be bound by a test that runs in parallel, which
 //! then answers where a refusal is expected. The reserved range is not the range of the
 //! operating system's ephemeral ports and not the range that `loopback_pair.rs` draws from, so
-//! nothing else binds a number of it. A TCP connect to such a number is refused at once on
+//! no test draws a number of it. One residual remains (FU-TST-R64): the DNS resolver binds its
+//! client sockets to random wildcard ports (1024 to 65535) and can take a reserved number while
+//! a test that expects a refusal sends. A TCP connect to such a number is refused at once on
 //! Linux and macOS and after about two seconds on Windows. A TCP socket that is bound and does
 //! not listen is no substitute: macOS does not refuse a connect to it.
 
@@ -28,7 +30,8 @@ const RESERVED_MASK: u64 = 0x1FFF;
 /// The next number of the reserved sequence.
 ///
 /// The sequence is shared by every call of the process and starts at an offset that depends on
-/// the process id, so concurrent test processes are kept apart as well.
+/// the process id. That keeps concurrent test processes apart only probabilistically: two
+/// offsets can lie close together. `cargo test` runs the test binaries one after another.
 pub(crate) fn next_reserved_port() -> u16 {
     static CALLS: AtomicU64 = AtomicU64::new(0);
     static START: AtomicU64 = AtomicU64::new(0);
@@ -48,7 +51,9 @@ pub(crate) fn next_reserved_port() -> u16 {
 /// A reserved loopback port number whose TCP side is closed.
 ///
 /// Nothing holds the number: the TCP side is bound once to prove it free and dropped. No test
-/// that runs in parallel can bind it, because nothing else draws from the reserved range.
+/// that runs in parallel draws it, because nothing else draws from the reserved range; the DNS
+/// resolver's random client ports can still take it (the FU-TST-R64 residual of the module
+/// comment).
 ///
 /// # Errors
 /// Returns the error of a bind that is not a collision, and `AddrInUse` when every attempt
