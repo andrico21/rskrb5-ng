@@ -499,3 +499,4 @@ is a parity feature, not a defect>`.
 | critic:critics-b390b1e/x2.md#X2-04 | FU-DOC-R155 | no |
 | critic:critics-b390b1e/verdict.md#H5 | FU-DOC-R155 | no |
 | executor:todo-180#configured-auto-udp-first-collision | FU-TST-R71 | no |
+| executor:todo-181#kdc-endpoint-failures-protocol-doc | FU-DOC-R156 | no |
