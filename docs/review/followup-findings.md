@@ -492,3 +492,4 @@ is a parity feature, not a defect>`.
 | critic:critics-b390b1e/verdict.md#H4 | FU-TST-R70 | no |
 | critic:critics-b390b1e/x2.md#X2-01 | FU-FUZ-R07 | no |
 | critic:critics-b390b1e/verdict.md#H2 | FU-FUZ-R07 | no |
+| executor:todo-179#chrono-advisory-ignore | FU-CI-R21 | no |
