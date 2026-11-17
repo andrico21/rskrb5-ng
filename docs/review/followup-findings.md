@@ -502,3 +502,4 @@ is a parity feature, not a defect>`.
 | executor:todo-181#kdc-endpoint-failures-protocol-doc | FU-DOC-R156 | no |
 | executor:todo-182#transport-error-docs-class | FU-DOC-R157 | no |
 | executor:todo-183#udp-limit-docs-outside-src | FU-DOC-R158 | no |
+| executor:todo-184#dns-mode-target-resolution-docs | FU-DOC-R159 | no |
