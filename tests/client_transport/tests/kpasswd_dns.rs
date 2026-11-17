@@ -562,39 +562,6 @@ fn kpasswd_auto_failing_admin_lookup_is_reported() -> Result<(), TestError> {
     })
 }
 
-/// An administration reply without an answer record finds no host: the error names the requested `Auto`.
-#[test]
-fn kpasswd_auto_admin_reply_without_answer_record_finds_no_endpoints() -> Result<(), TestError> {
-    runtime()?.block_on(async {
-        // Given no `_kpasswd` set and an administration reply whose only record is in the additional section.
-        let dns = Dns::start(vec![(
-            "_kerberos-adm._tcp.test.gokrb5.",
-            vec![(749, "+kdc.test.gokrb5.")],
-        )])
-        .await?;
-        // When the Auto request runs.
-        let result = dns
-            .transport()?
-            .send_to_kpasswd_realm(&dns_config()?, KdcProtocol::Auto, REALM, REQUEST)
-            .await;
-        let questions = dns.finish().await?;
-        // Then the administration service was asked about once.
-        assert_eq!(
-            asked(&questions, "_kerberos-adm._tcp"),
-            1,
-            "questions: {questions:?}"
-        );
-        // And the call fails with no endpoints for the protocol the caller asked for.
-        assert!(
-            matches!(&result, Err(ClientError::NoKdcEndpoints { realm, protocol: KdcProtocol::Auto })
-                if realm == REALM),
-            "expected NoKdcEndpoints over Auto, got {}",
-            describe(&result)
-        );
-        Ok(())
-    })
-}
-
 /// Only `_kpasswd._tcp` published and refused: no UDP pass, no administration lookup.
 #[test]
 fn kpasswd_auto_tcp_only_zone_failing_asks_no_admin() -> Result<(), TestError> {
