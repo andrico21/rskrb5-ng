@@ -16,8 +16,11 @@ pub(super) struct SrvAnswer {
 
 /// Resolve selected SRV targets while preserving their service order.
 ///
+/// Only with `resolve_targets` (an explicit DNS server); otherwise each target
+/// name is kept as the endpoint host and is looked up when it is contacted.
+///
 /// # Errors
-/// Returns target address lookup errors.
+/// Returns target address lookup errors when no target resolved.
 ///
 /// # Cancel safety
 /// cancel-safe: DNS lookups change no credential state.

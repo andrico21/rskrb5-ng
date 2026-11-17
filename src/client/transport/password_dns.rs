@@ -6,13 +6,15 @@ use super::{Error, KdcEndpoint, KdcProtocol, Tokio, dns_resolver, srv_targets};
 ///
 /// The administrative hosts are asked for only when the `_kpasswd` set of
 /// `protocol` is absent. A set whose SRV answer held a record counts as
-/// published, and when none of its targets resolves the call fails without the
-/// fallback, as [`discover_auto`] does for its sets.
+/// published, and when, with an explicit DNS server, none of its targets
+/// resolves the call fails without the fallback, as [`discover_auto`] does for
+/// its sets; the system resolver keeps the target names as endpoints.
 ///
 /// # Errors
 /// Returns [`Error::DnsServiceUnavailable`] for a root target and
-/// [`Error::KdcEndpointFailures`] when the published set's targets all failed to
-/// resolve. When the set is absent: DNS errors of the administrative lookup, or
+/// [`Error::KdcEndpointFailures`] when, with an explicit DNS server, the
+/// published set's targets all failed to resolve. When the set is absent: DNS
+/// errors of the administrative lookup, or
 /// [`Error::NoKdcEndpoints`] when no host is found.
 ///
 /// # Cancel safety
@@ -81,7 +83,8 @@ pub(super) async fn discover(
 ///
 /// # Errors
 /// Returns [`Error::KdcEndpointFailures`] with one entry per published set none
-/// of whose targets resolved (the UDP set first) when no endpoint is left and
+/// of whose targets resolved (the UDP set first; with an explicit DNS server
+/// only, the system resolver keeps target names) when no endpoint is left and
 /// there is such a set,
 /// [`Error::DnsServiceUnavailable`] when only root targets were published, DNS
 /// errors of the administrative lookup, or `NoKdcEndpoints` when no host is
