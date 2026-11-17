@@ -6,7 +6,7 @@
 
 [[plan]]
 number = 1
-todos = 181
+todos = 182
 
 [[plan]]
 number = 2
@@ -936,6 +936,11 @@ title = "Final verification finding F2-01 (the in-crate test `configured_auto_re
 plan = 1
 number = 181
 title = "Final verification finding F3-01 (the public rustdoc of the `protocol` field of `Error::KdcEndpointFailures`, `Error::NoKdcEndpoints` and the sibling DNS variants says `Requested wire protocol`, but an `Auto` call reports the protocol of the LAST pass or `Auto`: state exactly what is reported)"
+
+[[todo]]
+plan = 1
+number = 182
+title = "Final verification findings of pass 3 (F2-01, F2-02, F2-03 of F2 and F3-02 of F3: three inexact public rustdoc statements in the transport error docs; CLOSE THE CLASS by deriving every documented transport error from the code and sweeping the input dimensions)"
 
 [[todo]]
 plan = 2

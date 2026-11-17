@@ -500,3 +500,4 @@ is a parity feature, not a defect>`.
 | critic:critics-b390b1e/verdict.md#H5 | FU-DOC-R155 | no |
 | executor:todo-180#configured-auto-udp-first-collision | FU-TST-R71 | no |
 | executor:todo-181#kdc-endpoint-failures-protocol-doc | FU-DOC-R156 | no |
+| executor:todo-182#transport-error-docs-class | FU-DOC-R157 | no |
