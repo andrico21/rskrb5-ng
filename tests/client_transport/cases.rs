@@ -1398,7 +1398,10 @@ mod tests {
     #[test]
     fn auto_login_reuses_the_stream_after_the_udp_fall_back_to_tcp() -> Result<(), TestError> {
         runtime()?.block_on(async {
-            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            // The test holds the UDP side of the listener's number: a plain `:0` listener leaves
+            // that number to a parallel test's UDP server, whose answer ends the Auto login
+            // without TCP (FU-TST-R69).
+            let (listener, udp) = bind_tcp_and_udp_pair().await?;
             let addr = listener.local_addr()?;
             let server = tokio::spawn(async move {
                 let (mut socket, _) = bounded(
@@ -1417,7 +1420,7 @@ mod tests {
                 Ok::<_, TestError>((first.len(), second.len(), reconnected))
             });
 
-            // No UDP socket answers on this port, so the Auto leg falls back to
+            // The held UDP socket never answers, so the Auto leg times out and falls back to
             // TCP; the retry must ride that same connection.
             drop(login_over(addr, KdcProtocol::Auto).await.err());
 
@@ -1432,6 +1435,7 @@ mod tests {
                 !reconnected,
                 "preauth retry must not open a second connection"
             );
+            drop(udp);
             Ok::<_, TestError>(())
         })
     }
