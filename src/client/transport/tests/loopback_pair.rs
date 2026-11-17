@@ -160,6 +160,12 @@ fn candidates_are_distinct_numbers_of_the_dynamic_range() -> Result<(), Box<dyn 
             "pid {pid} leaves the range: {ports:?}"
         );
     }
+    // And the walk is the documented `(pid & 0x3FFF) + k * 255` modulo 16384 (FU-TST-R66), forwards:
+    // for process id 0 the first three numbers are 0xC000, 0xC000 + 255 and 0xC000 + 2 * 255.
+    assert!(
+        candidates(0).take(3).eq([0xC000, 0xC0FF, 0xC1FE]),
+        "the candidates of pid 0 do not start 0xC000, 0xC0FF, 0xC1FE"
+    );
     // And the stride, being odd, would visit every number of the range before repeating one.
     let visited: BTreeSet<u16> = (0..=PORT_MASK)
         .map(|step| step.wrapping_mul(STRIDE) & PORT_MASK)
