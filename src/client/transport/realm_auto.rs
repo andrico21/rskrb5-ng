@@ -86,8 +86,8 @@ mod tests {
     /// Configured TCP-first Auto preserves the winning stream for preauthentication.
     #[tokio::test]
     async fn configured_auto_retains_tcp_stream() -> Result<(), Box<dyn StdError>> {
-        // Given a configured TCP-first peer that answers on an open stream. A limit of 0 is below every
-        // request length, so Auto sends no datagram to the UDP number that equals this listener's.
+        // Given a configured TCP-first peer that answers on an open stream. A limit of 0 is below the one-byte
+        // request, so Auto sends no datagram to the UDP number that equals this listener's.
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;
         let config = Config::parse(&format!(

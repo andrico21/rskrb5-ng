@@ -221,17 +221,18 @@ discovered once for both protocols (`_kpasswd._udp` and `_kpasswd._tcp` both
 queried into one list, a root SRV target adds no server and the other records
 of its set are kept, `_kerberos-adm._tcp` hosts at port 464 only when neither
 set held a record, root targets only fail with `DnsServiceUnavailable`, and a
-published set whose targets do not resolve, with no endpoint left, fails with
+published set none of whose targets resolves, with no endpoint left, fails with
 `KdcEndpointFailures` listing every such set;
 FU-CLI-R29, FU-CLI-R37; v0.2.2 discovered separately for each protocol it tried); explicit `Tcp` and `Udp` discover for
-their own protocol, and a published `_kpasswd` set of that protocol whose
-targets do not resolve fails with `KdcEndpointFailures` and does not fall back
-to `_kerberos-adm`. A refusal while the single UDP
+their own protocol, and a published `_kpasswd` set of that protocol none of
+whose targets resolves fails with `KdcEndpointFailures` (a root target in the
+set fails with `DnsServiceUnavailable` instead) and does not fall back to
+`_kerberos-adm`. A refusal while the single UDP
 reply is awaited (`ConnectionRefused`, or `ConnectionReset` on Windows) is a
 definite endpoint failure, so a closed UDP kpasswd port moves on to the next
 endpoint and, when every endpoint failed, is reported as `KdcEndpointFailures`
 (for an explicit address, as the plain `Client::Io`) (v0.2.2: UDP first for a
-request within `udp_preference_limit`, a configured realm falling back to TCP
+request within `udp_preference_limit` (never at limit 1), a configured realm falling back to TCP
 after any UDP failure; an explicit address always UDP first, then TCP). If TCP
 fails after the request may have been delivered, UDP is never tried. Do not
 treat an unknown outcome as a failed mutation or blindly retry it. A password
@@ -1041,10 +1042,11 @@ their `*_without_env` twins are gone. Named ambient discovery remains explicit:
 local-login consumer still grants no authorization. Ticket and renewable
 lifetimes use checked MIT intervals: negative totals, overflow, malformed unit
 order and trailing garbage are rejected. Zero renewable lifetime disables
-renewal. For KDC requests, Auto transport uses 1465 for a negative
+renewal. For KDC requests to a realm, Auto transport uses 1465 for a negative
 `udp_preference_limit` (v0.2.2: never UDP first) and caps values above 32700
 (v0.2.2: no cap); UDP first at a request size equal to the limit is as in
-v0.2.2; password changes ignore the limit (see "Explicit transport DNS
+v0.2.2 (which never went UDP first at limit 1; a request of at most one byte
+now does); password changes ignore the limit (see "Explicit transport DNS
 configuration"). Explicit TCP or UDP bypasses
 this preference (FU-DOC-R10, FU-DOC-R75).
 

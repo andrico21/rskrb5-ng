@@ -88,21 +88,23 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
   root SRV target adds no server and the other records of its set are kept (MIT
   1.22.2 never aborts on one), and the `_kerberos-adm._tcp` hosts (port 464,
   both protocols) are used only when neither set held a record; with root
-  targets only the call fails with `DnsServiceUnavailable` before any I/O; a
-  published set whose targets do not resolve (with `Tokio::with_dns_server`)
-  counts as published, and when no endpoint is left the call fails with
-  `KdcEndpointFailures` (`KdcProtocol::Auto`) carrying the failure of every such
+  targets only the call fails with `DnsServiceUnavailable` before any request
+  is sent to a password server; a published set none of whose targets resolves
+  (with `Tokio::with_dns_server`) counts as published, and when no endpoint is
+  left the call fails with `KdcEndpointFailures` (`KdcProtocol::Auto`) carrying the failure of every such
   set, UDP first (MIT ends in `KRB5_KDC_UNREACH`);
   v0.2.2 discovered separately for each protocol it tried. Explicit `Tcp` and `Udp`
   still discover for their own protocol, and a published `_kpasswd` set of that
-  protocol whose targets do not resolve fails with `KdcEndpointFailures` of that
-  protocol and does not fall back to `_kerberos-adm`.
+  protocol none of whose targets resolves fails with `KdcEndpointFailures` of
+  that protocol (a root target in the set fails with `DnsServiceUnavailable`
+  instead) and does not fall back to `_kerberos-adm`.
   `udp_preference_limit` does not apply to password changes (MIT's `changepw.c`
-  never consults it); it still orders KDC requests. If a TCP request may
-  have been delivered, the result is `KpasswdOutcomeUnknown` and UDP is never
-  tried, which MIT does not do. v0.2.2 went UDP first for a request of at most
-  `udp_preference_limit` bytes (a configured realm; default 1465) and, with an
-  explicit address, always UDP first, and it fell back to TCP after any UDP
+  never consults it); it still orders KDC requests to a realm, and a KDC
+  request to an explicit address goes UDP first whatever the limit. If a TCP
+  request may have been delivered, the result is `KpasswdOutcomeUnknown` and UDP
+  is never tried, which MIT does not do. v0.2.2 went UDP first for a request of
+  at most `udp_preference_limit` bytes (a configured realm; default 1465; never
+  at a limit of 1) and, with an explicit address, always UDP first, and it fell back to TCP after any UDP
   error, even one that arrived after the datagram was sent. A closed UDP
   kpasswd port is no longer the first thing tried, and in the UDP stage it is
   a plain endpoint failure.
@@ -478,7 +480,9 @@ Transport, DNS, IPv6, SRV and kpasswd retry:
   `Tokio::with_dns_server` (ambient input `RSKRB5_DNS_SERVER`).
 - DNS admin-server fallback for kpasswd uses port 464 (RSK-4AD555A5).
 - An SRV record with target `.` returns `Client::DnsServiceUnavailable` and
-  stops the fallback (RSK-DF8D47BE).
+  stops the fallback (RSK-DF8D47BE); in the `_kpasswd` sets of a
+  `KdcProtocol::Auto` password change a root target is skipped unless only root
+  targets were published.
 - DNS resolution keeps every address of each SRV target (RSK-521F824C).
 - SRV weights select targets by probability within a priority (RFC 2782)
   (RSK-DBD57F3E).
@@ -1295,10 +1299,12 @@ Configuration:
   local-login authorization remains deferred, so this grants no login. Ticket
   and renewable lifetimes use the checked MIT interval parser, rejecting
   negative totals, overflow, malformed unit order and trailing garbage. Auto
-  transport for KDC requests normalizes negative `udp_preference_limit` to 1465
-  (v0.2.2: never UDP first) and caps values above 32700 (v0.2.2: no cap); a
-  request size equal to the limit sends UDP first, as in v0.2.2; password
-  changes ignore the limit (FU-DOC-R10, FU-DOC-R75).
+  transport for KDC requests to a realm normalizes negative
+  `udp_preference_limit` to 1465 (v0.2.2: never UDP first) and caps values above
+  32700 (v0.2.2: no cap); a request size equal to the limit sends UDP first, as
+  in v0.2.2 (which never went UDP first at a limit of 1; a request of at most
+  one byte now does); password changes ignore the limit (FU-DOC-R10,
+  FU-DOC-R75).
 
 Service and replay cache:
 
