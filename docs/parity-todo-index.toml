@@ -6,7 +6,7 @@
 
 [[plan]]
 number = 1
-todos = 176
+todos = 170
 
 [[plan]]
 number = 2
@@ -881,36 +881,6 @@ title = "Short handoff of the third delta to the supervisor (re-check of G1-G8 o
 plan = 1
 number = 170
 title = "Two repository sentences found by the todo 169 dossier: the todo 167 survivor count in docs/review/mutants.md and the FU-OPS-R03 cells (docs only; executor decision, the owner may veto)"
-
-[[todo]]
-plan = 1
-number = 171
-title = "Fourth pass H3 (the hand mutants 167 P4 and P13 are labelled `equivalent` but are not; pin the documented candidate formula; supervisor finding X2-02)"
-
-[[todo]]
-plan = 1
-number = 172
-title = "Fourth pass H4 (`a_taken_first_candidate_is_walked_past` spins on `bind` for up to 10 s waiting for other tests; replace it with a deterministic form; supervisor finding X2-03)"
-
-[[todo]]
-plan = 1
-number = 173
-title = "Fourth pass H2 (the register row of the D17 cargo-mutants survivor still says `equivalent`; then sweep every remaining `equivalent` row against the hand tables by program; supervisor finding X2-01)"
-
-[[todo]]
-plan = 1
-number = 174
-title = "Fourth pass H1 (the G4 rustdoc of `exchange_as_req_with_config` and `exchange_tgs_req_with_config` is still inexact: the exact Config/Crypto split; supervisor finding X1-01)"
-
-[[todo]]
-plan = 1
-number = 175
-title = "Fourth pass H5 (the MIT-admin-1 residual sentence attributes the explicit path's root-set discard to `the shared helper`; supervisor finding X2-04)"
-
-[[todo]]
-plan = 1
-number = 176
-title = "Short note on the fourth fix delta to the supervisor (direct check of H1-H5; no reviewer round)"
 
 [[todo]]
 plan = 2
