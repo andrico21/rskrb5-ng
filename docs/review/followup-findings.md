@@ -496,3 +496,5 @@ is a parity feature, not a defect>`.
 | executor:todo-179#chrono-advisory-ignore | FU-CI-R21 | no |
 | critic:critics-b390b1e/x1.md#X1-01 | FU-DOC-R154 | no |
 | critic:critics-b390b1e/verdict.md#H1 | FU-DOC-R154 | no |
+| critic:critics-b390b1e/x2.md#X2-04 | FU-DOC-R155 | no |
+| critic:critics-b390b1e/verdict.md#H5 | FU-DOC-R155 | no |
