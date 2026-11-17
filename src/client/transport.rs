@@ -695,8 +695,14 @@ impl Tokio {
     /// Returns the discovery errors of [`Self::discover_kdcs`],
     /// [`Error::NoKdcEndpoints`] when no endpoint is available, and
     /// [`Error::KdcEndpointFailures`] when every endpoint fails.
-    /// [`KdcProtocol::Auto`] retries over the other protocol after a failure of
-    /// the first and returns the errors of that retry.
+    /// [`KdcProtocol::Auto`] tries UDP first when the request is no longer than
+    /// `udp_preference_limit` and TCP first otherwise, retries over the other
+    /// protocol after a failure of the first (or, from UDP, after
+    /// `KRB_ERR_RESPONSE_TOO_BIG`) and returns the errors of that retry only:
+    /// [`Error::KdcEndpointFailures`], [`Error::NoKdcEndpoints`] and
+    /// [`Error::DnsSrvLookup`] then carry the protocol of the second pass (`Tcp`
+    /// after UDP first, `Udp` after TCP first), and `failures` lists only its
+    /// endpoints; the first pass's errors are dropped.
     ///
     /// # Cancel safety
     ///
@@ -826,6 +832,14 @@ impl Tokio {
     /// (`ConnectionRefused`, or `ConnectionReset` where Windows reports an ICMP
     /// port-unreachable that way) while the single reply is awaited is a
     /// definite endpoint failure, not [`Error::KpasswdOutcomeUnknown`].
+    ///
+    /// With [`KdcProtocol::Auto`] the endpoint failures are those of the last
+    /// pass that ran: [`Error::KdcEndpointFailures`] carries `protocol` `Udp` and
+    /// lists only the UDP endpoints (the TCP failures that preceded them are not
+    /// in the list), or `protocol` `Tcp` and the TCP endpoints when the
+    /// discovered list holds no UDP endpoint. A discovery failure keeps
+    /// `protocol` `Auto` in [`Error::KdcEndpointFailures`] and
+    /// [`Error::NoKdcEndpoints`].
     ///
     /// # Cancel safety
     ///
