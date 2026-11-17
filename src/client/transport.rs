@@ -1083,16 +1083,20 @@ impl Tokio {
     /// # Errors
     ///
     /// Before any I/O it returns [`Error::Config`] when the configuration is refused
-    /// without a typed policy cause (for example an unknown enctype name) or a
-    /// request list names an enctype outside the permitted list
+    /// for a reason other than a permanently rejected `[libdefaults]` choice (for
+    /// example an unknown enctype name, an RC4 or DES3 name without `allow_rc4` or
+    /// `allow_des3`, an unsupported relation, or a removed protocol mode in a
+    /// `[realms]` relation, whose typed cause stays inside the configuration error)
+    /// or a request list names an enctype outside the permitted list
     /// ([`crate::error::Config::EnctypeNotPermitted`]), [`Error::Encode`] when the
     /// request DER does not encode the message it carries or a PA-DATA entry is a
     /// known unsupported PA type, a peer-only enctype hint or the embedding wrapper
     /// PA-GET-FROM-TYPED-DATA (type 22), [`Error::Decode`] when a PA-DATA value does
     /// not decode, and [`Error::Crypto`] carrying the typed policy refusal when the
     /// crypto policy does not permit an encryption type that the request or the reply
-    /// key uses, the configuration names an encryption type the policy refuses (a
-    /// removed enctype such as `des-cbc-crc`) or a PA-DATA entry has a permanently
+    /// key uses, `[libdefaults]` makes a choice the policy permanently rejects (a
+    /// removed enctype such as `des-cbc-crc` in an enctype list, `allow_weak_crypto`,
+    /// or an unkeyed `safe_checksum_type`) or a PA-DATA entry has a permanently
     /// rejected type (draft-9 PKINIT, types 14 and 15).
     ///
     /// Returns the errors of [`Self::send_to_realm`], [`Error::Kdc`] when the KDC
@@ -1183,16 +1187,20 @@ impl Tokio {
     /// # Errors
     ///
     /// Before any I/O it returns [`Error::Config`] when the configuration is refused
-    /// without a typed policy cause (for example an unknown enctype name) or a
-    /// request list names an enctype outside the permitted list
+    /// for a reason other than a permanently rejected `[libdefaults]` choice (for
+    /// example an unknown enctype name, an RC4 or DES3 name without `allow_rc4` or
+    /// `allow_des3`, an unsupported relation, or a removed protocol mode in a
+    /// `[realms]` relation, whose typed cause stays inside the configuration error)
+    /// or a request list names an enctype outside the permitted list
     /// ([`crate::error::Config::EnctypeNotPermitted`]), [`Error::Encode`] when the
     /// request DER does not encode the message it carries or a PA-DATA entry is a
     /// known unsupported PA type, a peer-only enctype hint or the embedding wrapper
     /// PA-GET-FROM-TYPED-DATA (type 22), [`Error::Decode`] when a PA-DATA value does
     /// not decode, and [`Error::Crypto`] carrying the typed policy refusal when the
     /// crypto policy does not permit an encryption type that the request or the reply
-    /// key uses, the configuration names an encryption type the policy refuses (a
-    /// removed enctype such as `des-cbc-crc`) or a PA-DATA entry has a permanently
+    /// key uses, `[libdefaults]` makes a choice the policy permanently rejects (a
+    /// removed enctype such as `des-cbc-crc` in an enctype list, `allow_weak_crypto`,
+    /// or an unkeyed `safe_checksum_type`) or a PA-DATA entry has a permanently
     /// rejected type (draft-9 PKINIT, types 14 and 15).
     ///
     /// Returns the errors of [`Self::send_to_realm`], [`Error::Kdc`] when the KDC
