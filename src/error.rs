@@ -479,23 +479,26 @@ pub enum Client {
     #[cfg(feature = "tokio")]
     #[error("DNS resolver configuration failed: {0}")]
     DnsResolverConfig(String),
-    /// DNS SRV KDC lookup failed.
+    /// A DNS SRV lookup failed, or none of the targets of an SRV answer resolved
+    /// to an address.
     #[cfg(feature = "tokio")]
     #[error("DNS SRV lookup failed for {realm} over {protocol:?}: {message}")]
     DnsSrvLookup {
         /// Realm being discovered.
         realm: String,
-        /// Protocol the failed discovery ran with, which picks the SRV label it
-        /// queried: `Udp` is `_udp`, `Tcp` is `_tcp`, and `Auto` (only a lookup
-        /// that itself ran with `Auto`, such as `discover_kdcs`) is `_udp`. It is
-        /// not always the protocol the caller requested: a KDC call with `Auto`
-        /// reports the protocol of its second pass, and the `_kerberos-adm._tcp`
-        /// fallback of a kpasswd call reports `Tcp` whatever was requested.
+        /// Protocol of the failed discovery, which picks the SRV label: `Udp`
+        /// and `Auto` query `_udp`, `Tcp` queries `_tcp`. It is not always the
+        /// requested protocol: a KDC request with `Auto` reports its second pass
+        /// (see [`Tokio::send_to_realm`]), and the `_kerberos-adm._tcp` fallback
+        /// of a kpasswd call reports `Tcp` whatever was requested.
+        ///
+        /// [`Tokio::send_to_realm`]: crate::client::transport::Tokio::send_to_realm
         protocol: KdcProtocol,
-        /// Resolver error message.
+        /// The resolver's error for the SRV lookup, or one entry per failed
+        /// target lookup, joined by `; `.
         message: String,
     },
-    /// DNS explicitly declares that the requested service is unavailable.
+    /// A root SRV target declares the service named in `service` unavailable.
     #[cfg(feature = "tokio")]
     #[error("DNS service {service} is unavailable for {realm}")]
     DnsServiceUnavailable {
@@ -510,35 +513,33 @@ pub enum Client {
     NoKdcEndpoints {
         /// Realm being discovered.
         realm: String,
-        /// Protocol the failed discovery was asked for. For `Tcp` and `Udp` it is
-        /// the requested one. A KDC call with `Auto` discovers once per pass and
-        /// reports the protocol of its second pass (`Tcp` after a UDP-first pass,
-        /// `Udp` after a TCP-first pass). `Auto` is reported when the discovery
-        /// itself ran with `Auto`: a kpasswd call (it discovers once for both
-        /// protocols), `discover_kdcs` and `discover_kpasswd_servers`.
+        /// Protocol of the failed discovery: the requested one, except that a
+        /// KDC request with `Auto` reports its second pass (see
+        /// [`Tokio::send_to_realm`]).
+        ///
+        /// [`Tokio::send_to_realm`]: crate::client::transport::Tokio::send_to_realm
         protocol: KdcProtocol,
     },
     /// Every endpoint of the last pass that ran failed, or kpasswd discovery
-    /// found no endpoint because the targets of every published record set did
-    /// not resolve.
+    /// found no endpoint and none of the targets of at least one published
+    /// record set resolved.
     #[cfg(feature = "tokio")]
     #[error("all KDC endpoints for {realm} over {protocol:?} failed: {failures:?}")]
     KdcEndpointFailures {
         /// Realm being contacted.
         realm: String,
-        /// Protocol of the pass that failed. For `Tcp` and `Udp` it is the
-        /// requested one. A call with `Auto` reports the last pass that ran: for
-        /// a KDC request the second pass (`Tcp` after a UDP-first pass, `Udp`
-        /// after a TCP-first pass, as `udp_preference_limit` orders them), for a
-        /// password change the UDP pass, or the TCP pass when the discovered
-        /// list holds no UDP endpoint. `Auto` is reported only by a kpasswd
-        /// discovery failure.
+        /// Protocol of that pass or of the failed discovery: the requested one,
+        /// except with `Auto`, where a KDC request reports its second pass (see
+        /// [`Tokio::send_to_realm`]) and a kpasswd request its last pass (see
+        /// [`Tokio::send_to_kpasswd_realm`]); `Auto` itself is reported only for
+        /// a kpasswd discovery failure.
+        ///
+        /// [`Tokio::send_to_realm`]: crate::client::transport::Tokio::send_to_realm
+        /// [`Tokio::send_to_kpasswd_realm`]: crate::client::transport::Tokio::send_to_kpasswd_realm
         protocol: KdcProtocol,
-        /// Failure messages of that pass only, one per endpoint in the order
-        /// tried, each `authority: error`; the endpoints of an earlier pass of an
-        /// `Auto` call are not listed. For a kpasswd discovery failure, one entry
-        /// per published record set whose targets did not resolve (UDP set
-        /// first; a single entry for an explicit `Tcp` or `Udp`).
+        /// One `authority: error` entry per endpoint of that pass, in the order
+        /// tried; for a kpasswd discovery failure, one entry per published
+        /// record set none of whose targets resolved, the UDP set first.
         failures: Vec<String>,
     },
     /// Tokio transport exchange timed out.
