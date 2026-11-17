@@ -124,11 +124,12 @@ pub enum KdcProtocol {
     Udp,
     /// RFC 4120 TCP transport with a four-byte big-endian length prefix.
     Tcp,
-    /// gokrb5-style transport preference using UDP/TCP fallback for KDC
-    /// requests, ordered by `udp_preference_limit`. Password changes follow
-    /// MIT's `changepw.c` instead: one discovery for both protocols, then TCP
-    /// first (every endpoint), then UDP (one datagram per endpoint, no
-    /// retransmit) only after a definite TCP failure, whatever
+    /// gokrb5-style UDP/TCP fallback for KDC requests: UDP first to an explicit
+    /// address ([`Tokio::send`]), and for a realm in the order that
+    /// `udp_preference_limit` selects ([`Tokio::send_to_realm`]). Password
+    /// changes follow MIT's `changepw.c` instead: one discovery for both
+    /// protocols, then TCP first (every endpoint), then UDP (one datagram per
+    /// endpoint, no retransmit) only after a definite TCP failure, whatever
     /// `udp_preference_limit` says. They never fail over once
     /// a request may have been delivered, so UDP is never tried after a TCP
     /// request that may have been delivered.
@@ -428,9 +429,10 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns [`Error::TcpRequestTooLarge`] when `request` does not fit a record
-    /// mark, [`Error::Io`] when the stream fails, [`Error::TcpResponseTooLarge`]
-    /// when the reply exceeds the configured limit, and
-    /// [`Error::EmptyKdcResponse`] for an empty reply.
+    /// mark, [`Error::Io`] when the stream fails, [`Error::TcpReservedBitSet`]
+    /// when the reply record's reserved high bit is set,
+    /// [`Error::TcpResponseTooLarge`] when the reply exceeds the configured
+    /// limit, and [`Error::EmptyKdcResponse`] for an empty reply.
     ///
     /// # Cancel safety
     ///
@@ -528,18 +530,18 @@ impl Tokio {
 
     /// Send a follow-up request on a stream pinned by an earlier exchange.
     ///
-    /// Returns `Ok(None)` when there is no pinned stream, or when the KDC closed
-    /// the one we had: RFC 4120 section 7.2.2 permits the KDC to close the
-    /// stream at any time after a response and requires that closure not be
-    /// treated as fatal, so the caller retries on a fresh connection. Protocol
-    /// errors would recur on a new connection, so they propagate instead of
-    /// spending another round trip.
+    /// Returns `Ok(None)` when there is no pinned stream, or when the exchange on
+    /// it fails with an I/O error, as when the KDC closed it: RFC 4120 section
+    /// 7.2.2 permits the KDC to close the stream at any time after a response
+    /// and requires that closure not be treated as fatal, so the caller retries
+    /// on a fresh connection. Protocol errors would recur on a new connection,
+    /// so they propagate instead of spending another round trip.
     ///
     /// # Errors
     ///
     /// Returns [`Error::TransportTimeout`] when the follow-up exceeds the
-    /// transport timeout, and the framing errors of [`Self::exchange_tcp`]; a
-    /// closed stream is `Ok(None)` instead.
+    /// transport timeout, and the framing errors of [`Self::exchange_tcp`]; an
+    /// I/O error, a closed stream among them, is `Ok(None)` instead.
     ///
     /// # Cancel safety
     ///
@@ -666,8 +668,9 @@ impl Tokio {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidKdcEndpoint`] for a malformed server entry,
-    /// [`Error::DnsServiceUnavailable`] for an authoritative root SRV target,
+    /// Returns [`Error::Config`] for an unsupported or malformed configuration
+    /// restriction, [`Error::InvalidKdcEndpoint`] for a malformed server entry,
+    /// [`Error::DnsServiceUnavailable`] for a root SRV target,
     /// [`Error::KdcEndpointFailures`] when the published `_kpasswd` set of the
     /// protocol has no target that resolves, [`Error::DnsResolverConfig`],
     /// [`Error::DnsSrvLookup`] or [`Error::NoKdcEndpoints`] when DNS SRV
@@ -696,8 +699,9 @@ impl Tokio {
     /// [`Error::NoKdcEndpoints`] when no endpoint is available, and
     /// [`Error::KdcEndpointFailures`] when every endpoint fails.
     /// [`KdcProtocol::Auto`] tries UDP first when the request is no longer than
-    /// `udp_preference_limit` and TCP first otherwise, retries over the other
-    /// protocol after a failure of the first (or, from UDP, after
+    /// the effective `udp_preference_limit` (1465 when the setting is negative,
+    /// otherwise the setting capped at 32700) and TCP first otherwise, retries
+    /// over the other protocol after a failure of the first (or, from UDP, after
     /// `KRB_ERR_RESPONSE_TOO_BIG`) and returns the errors of that retry only:
     /// [`Error::KdcEndpointFailures`], [`Error::NoKdcEndpoints`] and
     /// [`Error::DnsSrvLookup`] then carry the protocol of the second pass (`Tcp`
@@ -824,11 +828,12 @@ impl Tokio {
     /// `_kpasswd._tcp` are both queried and form one list, a root SRV target
     /// adds no server and the other records of its set are kept, and the
     /// `_kerberos-adm._tcp` hosts (port 464, both protocols) are used only when
-    /// neither set held a record. A published set whose targets do not resolve
-    /// counts as published, and when no endpoint is left the call fails with
-    /// [`Error::KdcEndpointFailures`] naming every such set. Every TCP endpoint
-    /// is then tried before any UDP endpoint, and `udp_preference_limit` does
-    /// not apply. UDP is tried only after a definite TCP failure; a UDP refusal
+    /// neither set held a record. A published set none of whose targets
+    /// resolves counts as published, and when no endpoint is left the call fails
+    /// with [`Error::KdcEndpointFailures`] naming every such set. Every TCP
+    /// endpoint is then tried before any UDP endpoint, and
+    /// `udp_preference_limit` does not apply. UDP is tried only after a definite
+    /// TCP failure; a UDP refusal
     /// (`ConnectionRefused`, or `ConnectionReset` where Windows reports an ICMP
     /// port-unreachable that way) while the single reply is awaited is a
     /// definite endpoint failure, not [`Error::KpasswdOutcomeUnknown`].
@@ -1804,6 +1809,12 @@ impl Tokio {
     /// and an error when the AS-REP cannot be decrypted with the password-derived
     /// key or matched to the request.
     ///
+    /// When an exchange ran over TCP, the next request goes first over the
+    /// stream it kept: an I/O failure there (a closed stream, for example)
+    /// sends the request again as [`Self::send_to_realm`] does, and any other
+    /// failure there is returned, as one of the errors of [`Self::send_tcp`]
+    /// other than [`Error::Io`].
+    ///
     /// # Cancel safety
     ///
     /// cancel-safe: it takes `&self` and changes no client state. Dropping the
@@ -1839,6 +1850,12 @@ impl Tokio {
     /// errors of [`Self::send_to_realm`], [`Error::Kdc`] when the KDC rejects the login,
     /// and an error when the AS-REP cannot be decrypted with the password-derived
     /// key or matched to the request.
+    ///
+    /// When an exchange ran over TCP, the next request goes first over the
+    /// stream it kept: an I/O failure there (a closed stream, for example)
+    /// sends the request again as [`Self::send_to_realm`] does, and any other
+    /// failure there is returned, as one of the errors of [`Self::send_tcp`]
+    /// other than [`Error::Io`].
     ///
     /// # Cancel safety
     ///
@@ -1997,6 +2014,12 @@ impl Tokio {
     /// and an error when the AS-REP cannot be decrypted with the keytab-derived
     /// key or matched to the request.
     ///
+    /// When an exchange ran over TCP, the next request goes first over the
+    /// stream it kept: an I/O failure there (a closed stream, for example)
+    /// sends the request again as [`Self::send_to_realm`] does, and any other
+    /// failure there is returned, as one of the errors of [`Self::send_tcp`]
+    /// other than [`Error::Io`].
+    ///
     /// # Cancel safety
     ///
     /// cancel-safe: it takes `&self` and changes no client state. Dropping the
@@ -2025,6 +2048,12 @@ impl Tokio {
     /// errors of [`Self::send_to_realm`], [`Error::Kdc`] when the KDC rejects the login,
     /// and an error when the AS-REP cannot be decrypted with the keytab-derived
     /// key or matched to the request.
+    ///
+    /// When an exchange ran over TCP, the next request goes first over the
+    /// stream it kept: an I/O failure there (a closed stream, for example)
+    /// sends the request again as [`Self::send_to_realm`] does, and any other
+    /// failure there is returned, as one of the errors of [`Self::send_tcp`]
+    /// other than [`Error::Io`].
     ///
     /// # Cancel safety
     ///
@@ -2349,10 +2378,9 @@ impl Tokio {
     ///
     /// # Errors
     ///
-    /// Returns the discovery errors (root targets only, a failed target lookup
-    /// of every published record set as [`Error::KdcEndpointFailures`] with
-    /// [`KdcProtocol::Auto`], or no host at all), the uncertain TCP outcome, or
-    /// the endpoint failures of the last pass that ran.
+    /// Returns the discovery errors (see [`Self::send_to_kpasswd_realm`]), the
+    /// uncertain TCP outcome, or the endpoint failures of the last pass that
+    /// ran.
     ///
     /// # Cancel safety
     ///

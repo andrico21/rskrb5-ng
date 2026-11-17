@@ -80,8 +80,9 @@ pub(super) async fn discover(
 /// offered on port 464 over both protocols.
 ///
 /// # Errors
-/// Returns [`Error::KdcEndpointFailures`] with the failed target lookups of
-/// every published set (the UDP set first) when no endpoint is left,
+/// Returns [`Error::KdcEndpointFailures`] with one entry per published set none
+/// of whose targets resolved (the UDP set first) when no endpoint is left and
+/// there is such a set,
 /// [`Error::DnsServiceUnavailable`] when only root targets were published, DNS
 /// errors of the administrative lookup, or `NoKdcEndpoints` when no host is
 /// found at all.
