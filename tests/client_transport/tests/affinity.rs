@@ -46,8 +46,10 @@ fn configured_auto_logins_reuse_connection() -> Result<(), TestError> {
     runtime()?.block_on(async {
         for limit in [1_u16, 1465] {
             for keytab in [false, true] {
-                // Given a TCP KDC requiring a second AS request and no UDP listener.
-                let listener = TcpListener::bind("127.0.0.1:0").await?;
+                // Given a TCP KDC requiring a second AS request and a held, silent UDP side of its
+                // number: a plain `:0` listener leaves that number to a parallel test's UDP server,
+                // whose answer ends the Auto login without TCP (FU-TST-R69).
+                let (listener, udp) = bind_tcp_and_udp_pair().await?;
                 let addr = listener.local_addr()?;
                 let config = Config::parse(&format!("[libdefaults]\ndns_lookup_kdc = false\nudp_preference_limit = {limit}\n[realms]\nTEST.GOKRB5 = {{\nkdc = {addr}\n}}\n"))?;
                 let transport = Tokio::new().with_timeout(Duration::from_millis(200));
@@ -81,6 +83,7 @@ fn configured_auto_logins_reuse_connection() -> Result<(), TestError> {
                 let (exchange, result) = tokio::join!(fixture, login);
                 exchange?;
                 result?;
+                drop(udp);
             }
         }
         Ok(())

@@ -487,3 +487,4 @@ is a parity feature, not a defect>`.
 | executor:todo-170#todo-169-dossier-sentences | FU-DOC-R153 | no |
 | critic:critics-b390b1e/x2.md#X2-02 | FU-TST-R68 | no |
 | critic:critics-b390b1e/verdict.md#H3 | FU-TST-R68 | no |
+| executor:todo-177#auto-login-udp-port-collision | FU-TST-R69 | no |
