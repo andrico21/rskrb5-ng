@@ -515,9 +515,12 @@ documentation's XOR wording describes the current getter.
 [sendto_kdc.c:474–494](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/sendto_kdc.c#L474-L494)
 defines effective Auto transport UDP preference: negative uses default 1465
 (v0.2.2: never UDP first), large values cap at 32700 (v0.2.2: no cap), and
-request size equal to the limit uses UDP first (as in v0.2.2). It governs KDC
-requests only: `Auto` for a password change is TCP first and ignores it
-(v0.2.2 applied it there too). Explicit TCP/UDP still bypass Auto selection.
+request size equal to the limit uses UDP first (as in v0.2.2, which never went
+UDP first at limit 1; a request of at most one byte now does). It governs KDC
+requests to a realm only: a KDC request to an explicit address is UDP first
+whatever the limit, and `Auto` for a password change is TCP first and ignores
+it (v0.2.2 applied it to a password change for a realm). Explicit TCP/UDP still
+bypass Auto selection.
 Table-driven lib tests exercise this actual consumer, including limit 1 and cap
 boundaries.
 
