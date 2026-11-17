@@ -312,7 +312,7 @@ failed a test and 9 survived. Their dispositions:
 | `validate_reply_encrypted_padata`: unknown reply etype reports `InvalidFastNegotiationResponse` instead of `UnsupportedEtype` | `equivalent`: both callers decrypt the reply with this key first, through `selection::enctype`, which is `KerberosEtype::from_etype_id`, so the lookup that fails here has already succeeded. Survives the full suite. |
 | `password_dns::discover_auto`: record sets asked `_tcp` before `_udp` | killed since todo 163 (FU-CLI-R37): `kpasswd_auto_reports_every_unresolvable_set` fails on it (the same edit is hand mutant A2 of todo 167, `167-A2 RED(1)`). Todo 147 recorded it `equivalent`: `password_auto::send` splits the list by protocol and keeps the order inside each, so the result is the same; only the order of the two DNS questions differs, which no result and no documented rule fixes. That reason no longer holds: since todo 163 the failure list of `Auto` names the UDP set first. Corrected by todo 173 (FU-FUZ-R07). |
 | `password_discovery::discover_auto`: configured list built `Udp` before `Tcp` | `equivalent`: the same split. Survives the full suite. |
-| `password_dns::discover_auto`: `NoKdcEndpoints` names `Tcp` instead of `Auto` | `equivalent`: the branch needs an empty successful `_kerberos-adm._tcp` lookup, and an empty record set is `DnsSrvLookup` ("no records found", seen with a fixture that publishes the set empty). Survives the full suite. |
+| `password_dns::discover_auto`: `NoKdcEndpoints` names `Tcp` instead of `Auto` (hand mutant D8) | killed since todo 178 (FU-FUZ-R08): `kpasswd_auto_admin_reply_without_answer_record_finds_no_endpoints` (`tests/client_transport/tests/kpasswd_dns.rs`) fails on it (`expected NoKdcEndpoints over Auto, got no KDC endpoints discovered for TEST.GOKRB5 over Tcp`). Todo 147 recorded it `equivalent`: the branch needs an empty successful `_kerberos-adm._tcp` lookup, and an empty record set is `DnsSrvLookup`. That holds for a reply with no record at all, not for a reply whose only SRV record is in the additional section (163 R8): `srv_answer` keeps answer records only, `srv_targets::resolve` of an empty list is `Ok` with no endpoint, `discover_srv_endpoints` returns it and `admin_entries` of it is empty. The todo 147 run (full suite, green) and the todo 178 run on `8f9fb02` (full suite, 1888 passed, 0 failed) both survived it: no test sent such a reply to `_kerberos-adm._tcp`. |
 | `http.rs`: `ReplayCacheSkewExceeded` mapped to the 500 response again (todo 137 removed the arm) | `equivalent`: the validator checks its skew against the cache's maximum when the skew is set and when a shared cache is attached, and `ReplayCache::insert` receives that skew. Survives the full suite. |
 | `spnego.rs`: the MIC key policy check restored in `validate_completion` (todo 137 removed it) | `equivalent`: the session key, the acceptor subkey (`verify_ap_rep`) and the initiator subkey (constructor) are checked before the key is chosen. Survives the full suite. |
 | Component reservation bound divides by 1 instead of 2 | killed: `reservation_is_half_the_remaining_input` fails on it |
@@ -590,12 +590,36 @@ killed by `kpasswd_auto_root_targets_only_are_unavailable` and
 hand mutant. Ten rows of the sections above record a hand mutant
 `equivalent` (twelve mutants): one more was refuted by a hand table, the todo
 147 mutant of the record-set order (hand mutant A2 of todo 167; its row in
-the section of todo 147 says so), and one has a reason that later text
-questions without a run that decides it, `NoKdcEndpoints` naming `Tcp`
-instead of `Auto` (its reason says that an empty record set is an error,
-while 163 R8 shows that an SRV record in the additional section is a successful
-lookup with no answer record; no hand table covers that mutant, so its row is
-unchanged and the question is open).
+the section of todo 147 says so), and one had a reason that later text
+questioned without a run that decided it, `NoKdcEndpoints` naming `Tcp`
+instead of `Auto`; todo 178 ran it (below) and killed it, so of those ten rows
+eight stand `equivalent` (ten mutants).
+
+Todo 178 (FU-FUZ-R08) closed the question that the sweep left open, the todo
+147 hand mutant D8 (`NoKdcEndpoints` naming `Tcp` instead of `Auto` in
+`password_dns::discover_auto`). The code reading: the branch is the
+`admin.is_empty()` arm after the administration lookup, reached when no
+`_kpasswd` set was published, no set failed to resolve and `_kerberos-adm._tcp`
+is a successful lookup that yields no endpoint. `srv_answer` builds `records`
+from the answer section only and drops root and empty targets, so a reply
+whose only SRV record sits in the additional section gives `records` empty with
+`root` false; `srv_targets::resolve` returns `Ok` with an empty list for it
+(it fails only when a target was tried and none resolved), and
+`discover_srv_endpoints` returns that list unchanged. A reply with no record at
+all is `DnsSrvLookup` instead, and a root target is `DnsServiceUnavailable`. The
+full suite on a scratch copy of `8f9fb02` with D8 applied (`cargo test --locked
+--all-features --no-fail-fast`) was green: 55 `test result` lines, 1888
+passed, 0 failed, so the branch was reachable and unpinned. The new test
+`kpasswd_auto_admin_reply_without_answer_record_finds_no_endpoints` serves that
+reply for `_kerberos-adm._tcp` with no `_kpasswd` set and asserts
+`NoKdcEndpoints` with the realm and `protocol: KdcProtocol::Auto`; it is green
+on the tree and red on D8 (and on a variant that empties the `realm` field of
+the same error). The 27 hand mutants of the todos 163 and 167 tables that edit
+`password_dns.rs`, and the todo 147 inversion of the same condition, were
+replayed against the binary that holds the new test file and are all red there
+(the one whose recorded kill is a library test, `167-E6`, is red in this binary
+too). No production line changed and the register Totals do not change: D8 is a
+prose row, so 628 `killed`, 58 `equivalent` and 4 `hang` stand.
 
 Production code did not change; every change is test code (the library
 tests of the loopback pair, the fixture and the assertions of
