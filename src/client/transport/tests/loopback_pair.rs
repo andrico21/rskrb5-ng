@@ -12,15 +12,10 @@ use alloc::collections::BTreeSet;
 use core::{
     error::Error as StdError,
     net::{Ipv4Addr, SocketAddr},
-    time::Duration,
 };
 use std::{io, process};
 
-use tokio::{
-    net::{TcpListener, UdpSocket},
-    task::yield_now,
-    time::timeout,
-};
+use tokio::net::{TcpListener, UdpSocket};
 
 /// Candidates tried before the helper gives up.
 const ATTEMPTS: u8 = 64;
@@ -350,33 +345,24 @@ async fn the_pair_shares_a_candidate_number() -> Result<(), Box<dyn StdError>> {
     Ok(())
 }
 
-/// A taken first candidate does not end the search: the helper walks on to a later number.
+/// A pair that is held is walked past: a second pair sits on another candidate number.
 #[tokio::test]
-async fn a_taken_first_candidate_is_walked_past() -> Result<(), Box<dyn StdError>> {
-    // Given the first candidate of this process. Another test of this process can hold the number
-    // for the length of its run, so it is taken here once that test has let it go; a number that
-    // the OS refuses outright is as good as a held one.
-    let first = candidates(process::id()).next().ok_or("no candidate")?;
-    let address = SocketAddr::from((Ipv4Addr::LOCALHOST, first));
-    let held = timeout(Duration::from_secs(10), async {
-        loop {
-            match TcpListener::bind(address).await {
-                Err(error) if error.kind() == io::ErrorKind::AddrInUse => {
-                    yield_now().await;
-                }
-                Err(error) if error.kind() == io::ErrorKind::PermissionDenied => break Ok(None),
-                other => break other.map(Some),
-            }
-        }
-    })
-    .await??;
-    // When the helper itself binds a pair.
-    let (listener, udp) = bind_tcp_and_udp_pair().await?;
-    // Then the pair sits on another candidate number.
-    let port = listener.local_addr()?.port();
-    assert_eq!(udp.local_addr()?.port(), port);
-    assert_ne!(port, first, "the pair took the number held by this test");
-    assert!(candidates(process::id()).any(|candidate| candidate == port));
-    drop(held);
+async fn a_held_pair_is_walked_past() -> Result<(), Box<dyn StdError>> {
+    // Given a pair that this test holds until its end.
+    let (first_listener, first_udp) = bind_tcp_and_udp_pair().await?;
+    // When the helper binds a second pair while the first is held.
+    let (second_listener, second_udp) = bind_tcp_and_udp_pair().await?;
+    // Then each pair shares one number, both numbers are candidates of this process, and the
+    // numbers differ: the held one was not handed out again.
+    let first = first_listener.local_addr()?.port();
+    let second = second_listener.local_addr()?.port();
+    assert_eq!(first_udp.local_addr()?.port(), first);
+    assert_eq!(second_udp.local_addr()?.port(), second);
+    assert!(candidates(process::id()).any(|candidate| candidate == first));
+    assert!(candidates(process::id()).any(|candidate| candidate == second));
+    assert_ne!(
+        first, second,
+        "the second pair took the number of the held one"
+    );
     Ok(())
 }

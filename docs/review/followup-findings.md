@@ -488,3 +488,5 @@ is a parity feature, not a defect>`.
 | critic:critics-b390b1e/x2.md#X2-02 | FU-TST-R68 | no |
 | critic:critics-b390b1e/verdict.md#H3 | FU-TST-R68 | no |
 | executor:todo-177#auto-login-udp-port-collision | FU-TST-R69 | no |
+| critic:critics-b390b1e/x2.md#X2-03 | FU-TST-R70 | no |
+| critic:critics-b390b1e/verdict.md#H4 | FU-TST-R70 | no |
