@@ -494,3 +494,5 @@ is a parity feature, not a defect>`.
 | critic:critics-b390b1e/verdict.md#H2 | FU-FUZ-R07 | no |
 | executor:todo-178#d8-hand-mutant-run | FU-FUZ-R08 | no |
 | executor:todo-179#chrono-advisory-ignore | FU-CI-R21 | no |
+| critic:critics-b390b1e/x1.md#X1-01 | FU-DOC-R154 | no |
+| critic:critics-b390b1e/verdict.md#H1 | FU-DOC-R154 | no |
