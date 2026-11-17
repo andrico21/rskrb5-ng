@@ -50,7 +50,7 @@ current campaign carries that outcome.
 
 These are the outcomes CI recorded for the enumerated source set; the
 supplemental section has the counts of the `include!`d files. The register has
-690 rows: 626 `killed`, 60 `equivalent` and 4 `hang`; 572 were opened by a
+690 rows: 628 `killed`, 58 `equivalent` and 4 `hang`; 572 were opened by a
 missed mutant and 118 by a timeout.
 
 ## Verification
@@ -310,7 +310,7 @@ failed a test and 9 survived. Their dispositions:
 | Mutant | Disposition |
 | --- | --- |
 | `validate_reply_encrypted_padata`: unknown reply etype reports `InvalidFastNegotiationResponse` instead of `UnsupportedEtype` | `equivalent`: both callers decrypt the reply with this key first, through `selection::enctype`, which is `KerberosEtype::from_etype_id`, so the lookup that fails here has already succeeded. Survives the full suite. |
-| `password_dns::discover_auto`: record sets asked `_tcp` before `_udp` | `equivalent`: `password_auto::send` splits the list by protocol and keeps the order inside each, so the result is the same; only the order of the two DNS questions differs, which no result and no documented rule fixes. Survives the full suite. |
+| `password_dns::discover_auto`: record sets asked `_tcp` before `_udp` | killed since todo 163 (FU-CLI-R37): `kpasswd_auto_reports_every_unresolvable_set` fails on it (the same edit is hand mutant A2 of todo 167, `167-A2 RED(1)`). Todo 147 recorded it `equivalent`: `password_auto::send` splits the list by protocol and keeps the order inside each, so the result is the same; only the order of the two DNS questions differs, which no result and no documented rule fixes. That reason no longer holds: since todo 163 the failure list of `Auto` names the UDP set first. Corrected by todo 173 (FU-FUZ-R07). |
 | `password_discovery::discover_auto`: configured list built `Udp` before `Tcp` | `equivalent`: the same split. Survives the full suite. |
 | `password_dns::discover_auto`: `NoKdcEndpoints` names `Tcp` instead of `Auto` | `equivalent`: the branch needs an empty successful `_kerberos-adm._tcp` lookup, and an empty record set is `DnsSrvLookup` ("no records found", seen with a fixture that publishes the set empty). Survives the full suite. |
 | `http.rs`: `ReplayCacheSkewExceeded` mapped to the 500 response again (todo 137 removed the arm) | `equivalent`: the validator checks its skew against the cache's maximum when the skew is set and when a shared cache is attached, and `ReplayCache::insert` receives that skew. Survives the full suite. |
@@ -404,8 +404,8 @@ mutants.
 
 The one missed mutant, `src/client/transport.rs:2199:32: delete ! in
 Tokio::srv_answer`, makes `published` true for an answer without records and
-false for an answer with records. It is `equivalent` (register row, and the
-hand mutants D12, D14 and D17 below).
+false for an answer with records. It was recorded `equivalent` (register row, and the
+hand mutants D12, D14 and D17 below); todo 167 killed it (D17 below, FU-FUZ-R06) and todo 173 set the register row `killed`.
 
 **Hand mutants.** cargo-mutants does not generate a mutant for a range inside
 a pattern, a call that is simply absent, an operand order, a swapped accessor
@@ -500,8 +500,9 @@ Todo 161 changed `tests/` only, and todo 165 changed comments of `src/` only.
   caught=8 missed=0 timeout=0 unviable=2 success=0` and `0 problem(s)` (exit
   0, without `--allow-open`). No mutant was missed, so the campaign adds no
   register row and the Totals and the per-file table above are unchanged (the
-  690 rows were counted again from the table: 626 `killed`, 60 `equivalent`
-  and 4 `hang`; 572 opened by a missed mutant and 118 by a timeout).
+  690 rows were counted again from the table: 628 `killed`, 58 `equivalent`
+  and 4 `hang` after the corrections of todo 173 (626 and 60 when this campaign
+  ran); 572 opened by a missed mutant and 118 by a timeout).
 
 | Shard | Mutants | Caught | Missed | Timeout | Unviable | Wall time (s) |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -570,6 +571,31 @@ and a non-root answer without records has `published` false in both forms.
 The earlier sentences are amended in the section of todo 156. Every kill by a
 new or changed test was repeated on the candidate tree of this todo: each
 failed its test, and P4, P13 and D12 survived the full suite there as well (todo 171 later killed P4, see its row).
+
+Todo 173 (FU-FUZ-R07, supervisor finding X2-01) set the register row of D17
+`killed` and swept by program (`sweep173.py`, task-173 archive) every
+`equivalent` register row and every hand mutant recorded `equivalent` in the
+sections above against the hand tables of todos 147, 156, 163, 164 and 167
+(matched by file, function and mutation text, never by line number). Of the 60
+rows that stood `equivalent`, one matched a hand mutant (the D17 row) and 59
+matched none: 42 are in files that no hand mutant edits, 12 in files with
+hand mutants but none in the function, 5 in a function whose hand mutants make
+other changes. Comparing each function with its text on the campaign commit
+`d7666e7` found one row whose code had moved: the `&&` of the target filter,
+which FU-CLI-R34 moved from `discover_srv_endpoints` into `srv_answer`, is
+killed by `kpasswd_auto_root_targets_only_are_unavailable` and
+`kpasswd_auto_a_set_without_answer_records_does_not_unpublish_a_root_set`
+(hand mutant S1 of todo 173), so that row is `killed` too. The register now has
+628 `killed`, 58 `equivalent` and 4 `hang` rows, and none of the 58 matches a
+hand mutant. Ten rows of the sections above record a hand mutant
+`equivalent` (twelve mutants): one more was refuted by a hand table, the todo
+147 mutant of the record-set order (hand mutant A2 of todo 167; its row in
+the section of todo 147 says so), and one has a reason that later text
+questions without a run that decides it, `NoKdcEndpoints` naming `Tcp`
+instead of `Auto` (its reason says that an empty record set is an error,
+while 163 R8 shows that an SRV record in the additional section is a successful
+lookup with no answer record; no hand table covers that mutant, so its row is
+unchanged and the question is open).
 
 Production code did not change; every change is test code (the library
 tests of the loopback pair, the fixture and the assertions of
@@ -1687,7 +1713,7 @@ minutes).
 | `src/client/renewal_eligibility.rs` | 1 | 0 | 1 | 0 | 1 | 0 |
 | `src/client/reply_constraints.rs` | 11 | 0 | 11 | 7 | 4 | 0 |
 | `src/client/time.rs` | 1 | 0 | 1 | 0 | 1 | 0 |
-| `src/client/transport.rs` | 12 | 52 | 64 | 62 | 2 | 0 |
+| `src/client/transport.rs` | 12 | 52 | 64 | 64 | 0 | 0 |
 | `src/client/transport/password_delivery.rs` | 3 | 4 | 7 | 7 | 0 | 0 |
 | `src/client/transport/password_dns.rs` | 1 | 0 | 1 | 1 | 0 | 0 |
 | `src/client/transport/realm_auto.rs` | 4 | 6 | 10 | 10 | 0 | 0 |
@@ -1752,7 +1778,7 @@ minutes).
 | `src/spnego/oid.rs` | 3 | 0 | 3 | 3 | 0 | 0 |
 | `src/spnego/token_debug.rs` | 7 | 0 | 7 | 7 | 0 | 0 |
 | `src/ticket.rs` | 3 | 0 | 3 | 3 | 0 | 0 |
-| total | 572 | 118 | 690 | 626 | 60 | 4 |
+| total | 572 | 118 | 690 | 628 | 58 | 4 |
 
 ## Register
 
@@ -1894,7 +1920,7 @@ minutes).
 | d7666e73b0ba46c093e74a69599c25506cd0582a | `src/client/reply_constraints.rs:65:29: replace \| with ^ in validate` | src/client/reply_constraints.rs | validate | replace \| with ^ | missed | equivalent | POSTDATED (0x02000000) and INVALID (0x01000000) have disjoint set bits; OR and XOR produce the same flag mask. |
 | d7666e73b0ba46c093e74a69599c25506cd0582a | `src/client/reply_constraints.rs:67:79: replace \| with ^ in validate` | src/client/reply_constraints.rs | validate | replace \| with ^ | missed | equivalent | RENEWABLE (0x00800000) and RENEWABLE_OK (0x00000010) have disjoint set bits; OR and XOR produce the same request mask. |
 | d7666e73b0ba46c093e74a69599c25506cd0582a | `src/client/time.rs:31:16: replace < with <= in from_kerberos` | src/client/time.rs | from_kerberos | replace < with <= | missed | equivalent | Only seconds=0 changes branch; checked addition and subtraction of Duration::ZERO both return UNIX_EPOCH. |
-| d7666e73b0ba46c093e74a69599c25506cd0582a | `src/client/transport.rs:2082:60: replace && with \|\| in Tokio::discover_srv_endpoints` | src/client/transport.rs | Tokio::discover_srv_endpoints | replace && with \|\| | missed | equivalent | Wire-decoded DNS names are fully qualified; the earlier is_root check rejects zero-label names. Remaining names contain a nonempty label (literal label dots are escaped by Hickory), so trimming terminal dots leaves neither empty nor dot. Both predicates are true for every reachable target. |
+| d7666e73b0ba46c093e74a69599c25506cd0582a | `src/client/transport.rs:2082:60: replace && with \|\| in Tokio::discover_srv_endpoints` | src/client/transport.rs | Tokio::discover_srv_endpoints | replace && with \|\| | missed | killed | `kpasswd_auto_root_targets_only_are_unavailable` and `kpasswd_auto_a_set_without_answer_records_does_not_unpublish_a_root_set` (todo 173, FU-FUZ-R07): the row was `equivalent` on the campaign tree, where this filter sat in `Tokio::discover_srv_endpoints` after the root check that returned first; FU-CLI-R34 (commit 32f4b56) moved the record collection into `Tokio::srv_answer`, whose caller `discover_auto` goes on after a root answer, so the root record (its target is empty once the final dot is trimmed) must be dropped by this filter. The same expression with `\|\|` for `&&` there fails both tests on `0c93e32` (`expected DnsServiceUnavailable, got all KDC endpoints for TEST.GOKRB5 over Auto failed`) and the unmutated tree passes them (hand mutant S1 of todo 173). Earlier reason: Wire-decoded DNS names are fully qualified; the earlier is_root check rejects zero-label names. Remaining names contain a nonempty label (literal label dots are escaped by Hickory), so trimming terminal dots leaves neither empty nor dot. Both predicates are true for every reachable target. |
 | d7666e73b0ba46c093e74a69599c25506cd0582a | `src/client/transport.rs:2115:9: replace Tokio::send_to_endpoints -> Result<Vec<u8>, Error> with Ok(vec![0])` | src/client/transport.rs | Tokio::send_to_endpoints | replace body with Ok(vec![0]) | timeout | killed | `configured_auto_logins_reuse_connection` |
 | d7666e73b0ba46c093e74a69599c25506cd0582a | `src/client/transport.rs:2115:9: replace Tokio::send_to_endpoints -> Result<Vec<u8>, Error> with Ok(vec![1])` | src/client/transport.rs | Tokio::send_to_endpoints | replace body with Ok(vec![1]) | timeout | killed | `configured_auto_logins_reuse_connection` |
 | d7666e73b0ba46c093e74a69599c25506cd0582a | `src/client/transport.rs:2115:9: replace Tokio::send_to_endpoints -> Result<Vec<u8>, Error> with Ok(vec![])` | src/client/transport.rs | Tokio::send_to_endpoints | replace body with Ok(vec![]) | timeout | killed | `configured_auto_logins_reuse_connection` |
@@ -2447,4 +2473,4 @@ minutes).
 | b327605e3e4382d3e515e8173776375b3fd7531e | `src/config.rs:1860:5: replace parse_assignment -> Result<(&'line str, &'line str), Error> with Ok(("", "xyzzy"))` | src/config/sections.rs | parse_assignment | replace body with Ok(("", "xyzzy")) | timeout | killed | `configuration::classification_e::tests::every_libdefaults_boundary_is_reviewed`, `every_realm_boundary_is_reviewed`, `every_section_boundary_is_reviewed` and `tightened_libdefaults_relation_refused_before_sections` fail on it; caught in a re-run of `configuration::classification_e::tests` |
 | b327605e3e4382d3e515e8173776375b3fd7531e | `src/config.rs:1860:5: replace parse_assignment -> Result<(&'line str, &'line str), Error> with Ok(("xyzzy", ""))` | src/config/sections.rs | parse_assignment | replace body with Ok(("xyzzy", "")) | timeout | killed | `configuration::classification_e::tests::every_libdefaults_boundary_is_reviewed`, `every_realm_boundary_is_reviewed`, `every_section_boundary_is_reviewed` and `tightened_libdefaults_relation_refused_before_sections` fail on it; caught in a re-run of `configuration::classification_e::tests` |
 | b327605e3e4382d3e515e8173776375b3fd7531e | `src/config.rs:1860:5: replace parse_assignment -> Result<(&'line str, &'line str), Error> with Ok(("xyzzy", "xyzzy"))` | src/config/sections.rs | parse_assignment | replace body with Ok(("xyzzy", "xyzzy")) | timeout | killed | `configuration::classification_e::tests::every_libdefaults_boundary_is_reviewed`, `every_realm_boundary_is_reviewed`, `every_section_boundary_is_reviewed` and `tightened_libdefaults_relation_refused_before_sections` fail on it; caught in a re-run of `configuration::classification_e::tests` |
-| 2c97bc73d191d1f2623b5975493b3612b20b6c4c | `src/client/transport.rs:2199:32: delete ! in Tokio::srv_answer` | src/client/transport.rs | Tokio::srv_answer | delete ! | missed | equivalent | `published` is read only by `discover_auto`, and only after the two passes found no endpoint and no target failure; an answer with non-root records always ends in one of the two, and a successful SRV lookup always holds an SRV record (a root target or a non-empty one), so the changed value is never read. Survives the full suite, also on the tree with the new tests (hand mutants D12, D14 and D17 of the section `In-diff check after the second pass fixes (todo 156)`). |
+| 2c97bc73d191d1f2623b5975493b3612b20b6c4c | `src/client/transport.rs:2199:32: delete ! in Tokio::srv_answer` | src/client/transport.rs | Tokio::srv_answer | delete ! | missed | killed | `kpasswd_auto_empty_list_asks_admin_once_for_both_passes` (todo 167, FU-FUZ-R06): a reply whose SRV record is in the additional section is a successful lookup with no answer record, so `published` is false there and the mutant makes it true; hand mutant D17 of the section `In-diff check after the second pass fixes (todo 156)` fails that test (`167-D17 RED(1)`, hand table of todo 167). The row was recorded `equivalent` with the reason that a successful SRV lookup always holds an SRV record, which was wrong; corrected by todo 173 (FU-FUZ-R07). |
