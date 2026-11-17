@@ -498,3 +498,4 @@ is a parity feature, not a defect>`.
 | critic:critics-b390b1e/verdict.md#H1 | FU-DOC-R154 | no |
 | critic:critics-b390b1e/x2.md#X2-04 | FU-DOC-R155 | no |
 | critic:critics-b390b1e/verdict.md#H5 | FU-DOC-R155 | no |
+| executor:todo-180#configured-auto-udp-first-collision | FU-TST-R71 | no |

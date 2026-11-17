@@ -6,7 +6,7 @@
 
 [[plan]]
 number = 1
-todos = 179
+todos = 180
 
 [[plan]]
 number = 2
@@ -926,6 +926,11 @@ title = "Fourth pass sweep residual (the todo 147 hand mutant D8 is recorded `eq
 plan = 1
 number = 179
 title = "Fourth pass incident 2 (main's `deny` job fails on the new advisory RUSTSEC-2026-0543, chrono is unmaintained: ignore it with a documented reason; owner decision 2026-11-17)"
+
+[[todo]]
+plan = 1
+number = 180
+title = "Final verification finding F2-01 (the in-crate test `configured_auto_retains_tcp_stream` sends UDP first to the number of a plain `127.0.0.1:0` TCP listener while its comment says TCP first: the todo 177 class, missed by that census)"
 
 [[todo]]
 plan = 2
