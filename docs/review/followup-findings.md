@@ -490,3 +490,5 @@ is a parity feature, not a defect>`.
 | executor:todo-177#auto-login-udp-port-collision | FU-TST-R69 | no |
 | critic:critics-b390b1e/x2.md#X2-03 | FU-TST-R70 | no |
 | critic:critics-b390b1e/verdict.md#H4 | FU-TST-R70 | no |
+| critic:critics-b390b1e/x2.md#X2-01 | FU-FUZ-R07 | no |
+| critic:critics-b390b1e/verdict.md#H2 | FU-FUZ-R07 | no |
