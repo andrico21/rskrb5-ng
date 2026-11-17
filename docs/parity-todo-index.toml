@@ -6,7 +6,7 @@
 
 [[plan]]
 number = 1
-todos = 182
+todos = 183
 
 [[plan]]
 number = 2
@@ -941,6 +941,11 @@ title = "Final verification finding F3-01 (the public rustdoc of the `protocol` 
 plan = 1
 number = 182
 title = "Final verification findings of pass 3 (F2-01, F2-02, F2-03 of F2 and F3-02 of F3: three inexact public rustdoc statements in the transport error docs; CLOSE THE CLASS by deriving every documented transport error from the code and sweeping the input dimensions)"
+
+[[todo]]
+plan = 1
+number = 183
+title = "Documents outside src that repeat the `udp_preference_limit` and endpoint-error statements corrected by todos 181 and 182 (CHANGELOG, migration guide, docs/**), and one imprecise test comment (found by the todo 182 worker as out-of-scope notes; category 1 documents and `src/**` comments of any severity)"
 
 [[todo]]
 plan = 2
