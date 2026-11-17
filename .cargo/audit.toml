@@ -2,4 +2,20 @@
 # Mirrors deny.toml `[advisories] ignore`; the two ignore sets must stay equal.
 # Every future entry must name the advisory, state why it does not apply to
 # this crate, and note whether an upstream fix exists.
-ignore = []
+#
+# RUSTSEC-2026-0543: chrono is unmaintained (INFO, type unmaintained, issued
+# 2026-11-17, all versions affected, locked 0.4.45; a maintenance notice, not a
+# vulnerability). Not a defect of this crate: chrono (optional, feature
+# `messages`, `default-features = false`, `std` only) is the value type of
+# rasn-kerberos 0.29.0's `KerberosTime`; this crate builds whole-second UTC
+# values from integer seconds (src/client/time.rs, src/client.rs,
+# src/service.rs, src/krb_cred/conversion.rs), reads them back with
+# `timestamp()` and formats one RFC 3339 string (src/client.rs `json_time`); no
+# parser, local clock or network code of chrono runs here. rasn 0.29.0 (the
+# ASN.1 codec) pulls chrono too and cannot be replaced in this release.
+# Upstream: no patched version (https://github.com/chronotope/chrono/issues/1768;
+# alternatives: jiff, time); rasn 0.30.0 (2026-11-02) still requires chrono
+# ^0.4.38; the picky crates in the lock do not use it. Revisit when rasn drops
+# chrono or a maintained replacement is adopted (plan 2); remove this entry
+# together with the equal one in deny.toml. Full reason text: deny.toml.
+ignore = ["RUSTSEC-2026-0543"]
