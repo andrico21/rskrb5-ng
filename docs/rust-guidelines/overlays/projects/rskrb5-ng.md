@@ -59,15 +59,20 @@ everything else is timeless or a dated record.
   a CHANGELOG bullet), `allow_gate.py --enforce`, `exception_gate.py --enforce` (the six
   sanctioned `expect` forms), `profile_eq.py --clippy-toml`, `completeness_check.py`,
   `facade_gate.py --enforce`, `prose_gate.py --enforce` (whole tree),
-  `feature_closures.py check-ci .github/workflows/ci.yml`, `fuzz_lint.py --enforce`,
+  `feature_closures.py check-ci .github/workflows/ci.yml`, `dep_admission.py --enforce` (the
+  dependency admission rules of `docs/dependency-admission.md`), `leaf_features.py --enforce`
+  (leaf flags are additive), `advisory_ignores.py --enforce` (the ignore sets of `deny.toml`
+  and `.cargo/audit.toml` are equal), `fuzz_lint.py --enforce`,
   `fuzz_coverage.py --enforce`, `gate_hygiene.py --enforce`, `workflow_gate.py --enforce`,
   `scripts/check-error-constructions.py`, `scripts/check-github-ad-gate.py --self-test`,
   `scripts/check-ad-integration-env-smoke.py`, `scripts/run-gated-integration.sh
   self-test`, `scripts/release-publish.sh self-test`, and no `lint-migration` match.
-- **Feature closures:** computed from the `[features]` table (`python3
-  scripts/lint-gates/feature_closures.py list`); each is a `closures` matrix entry in CI
-  running `cargo clippy --all-targets <args> -- -D warnings` and `cargo test <args>`.
-  `feature_closures.py check-ci` keeps the matrix complete.
+- **Feature closures:** the 36 core feature closures are computed from the core features of the
+  `[features]` table (`python3 scripts/lint-gates/feature_closures.py list`); each is a `closures`
+  matrix entry in CI running `cargo clippy --all-targets <args> -- -D warnings` and `cargo test
+  <args>`. The leaf flags are the keys of `[package.metadata.rskrb5-ng.leaf-features]` in
+  `Cargo.toml`; each adds a `default + <leaf>` entry, a minimal-build entry and, once, an
+  `--all-features` entry. `feature_closures.py check-ci` keeps the matrix complete.
 - **CI jobs:** the blocking and the advisory sets are the ones named in project rule 8;
   `overlay_facts.py` compares them with the jobs of `.github/workflows/ci.yml`.
 - **Fuzz targets:** `fuzz/fuzz_targets/` holds 14 `.rs` files and `fuzz/Cargo.toml` declares
@@ -109,15 +114,23 @@ everything else is timeless or a dated record.
      "public API: unused inside the unit-test harness"))]`.
 3. **No `#[allow]`/`#![allow]`/`cfg_attr(.., allow(..))` and no `unsafe` anywhere,**
    tests included. Environment-dependent tests set variables in a child test process.
-4. **Every feature closure lints and tests clean.** The closures are computed from the
-   `[features]` table of `Cargo.toml`, never hand-listed. Each one passes
-   `cargo clippy --all-targets -- -D warnings` and `cargo test`. Clippy with
-   `--all-features --target x86_64-pc-windows-msvc` is clean too.
+4. **The 36 core feature closures lint and test clean; every leaf flag is additive, and is
+   checked on top of the default build, the minimal build and all-features; Windows clippy
+   clean.** The core closures are computed from the core features of the `[features]` table
+   of `Cargo.toml`, never hand-listed. Each one passes `cargo clippy --all-targets -- -D
+   warnings` and `cargo test`. A leaf flag is a key of
+   `[package.metadata.rskrb5-ng.leaf-features]`; it enables optional dependencies and the code
+   that uses them, and nothing else (`leaf_features.py` enforces it), and is never in
+   `default`. Each leaf `L` is linted and tested as `--features L` on the default build, as
+   `--no-default-features` with its declared minimal core features and `L`, and in the one
+   `--all-features` run. Clippy with `--all-features --target x86_64-pc-windows-msvc` is
+   clean too.
 5. **The core's prose rules apply to all code:** cancel-safety sections, test docs,
    `Result`-returning tests, Drop audits and emptiness messages.
 6. **Toolchain:** floating `stable` in CI (core Version Policy), never pinned;
    `rust-version` is the latest stable the crate was verified on, proven by an MSRV job.
-7. **Dependencies** are at their latest major versions, with no pre-release pins.
+7. **Dependencies** are at their latest major versions, with no pre-release pins. A new
+   dependency enters only through `docs/dependency-admission.md` (`dep_admission.py`).
 8. **CI is the core Section 12 list plus rmcp-server-kit's stricter practice,** all
    blocking: `fmt`; clippy and tests in every feature closure (`closures`);
    `clippy-windows`; `lib-feature-sets`; `readme-commands`; `test` on Linux, macOS and
@@ -127,7 +140,9 @@ everything else is timeless or a dated record.
    features); `deny`; `audit`; `vet`; `machete`; `taplo`; `docs-validate`; `lint-gates`
    (every gate listed above, including `package_links.py`,
    `scripts/check-error-constructions.py` and `scripts/check-config-relations.py`);
-   `fuzz-build`; `package`. Advisory (`continue-on-error`): `geiger`,
+   `fuzz-build`; `package`; `cargo-issue` (on the weekly schedule only: it fails once
+   rust-lang/cargo#17730 is closed, which ends the temporary `manual_readme` exemption).
+   Advisory (`continue-on-error`): `geiger`,
    `rustdoc-nightly-canary`, and on schedule or dispatch `mutants` (32 shards),
    `mutants-report` and `fuzz`.
 9. **Releases go only through the tag-gated workflows.** Release tags are `N.N.N`, without

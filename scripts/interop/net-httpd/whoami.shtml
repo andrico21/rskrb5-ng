@@ -1,0 +1,3 @@
+principal=<!--#echo var="REMOTE_USER" -->
+mechanism=<!--#echo var="GSS_MECH" -->
+auth-type=<!--#echo var="AUTH_TYPE" -->
