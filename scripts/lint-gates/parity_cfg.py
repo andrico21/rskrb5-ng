@@ -20,7 +20,7 @@ from functools import cache
 from pathlib import Path
 
 from common import blank_ranges, scan_items
-from feature_closures import Closure, load
+from feature_closures import Closure, load_all
 from rust_lex import (
     iter_attributes,
     match_bracket,
@@ -92,7 +92,7 @@ def admitted(attribute: str, enabled: frozenset[str]) -> bool:
 
 @cache
 def feature_universe() -> tuple[Closure, ...]:
-    return tuple(load(Path(__file__).resolve().parents[2]))
+    return tuple(load_all(Path(__file__).resolve().parents[2]))
 
 
 def public_source(source: str) -> str:
