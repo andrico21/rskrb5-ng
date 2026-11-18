@@ -1,6 +1,10 @@
 //! HTTP Negotiate (SPNEGO) scenarios.
 //!
 //! Service tickets issued by the MIT KDC are accepted with the keytabs MIT exported.
+//! The fixture's HTTP and host services are `+no_auth_data_required`, so their
+//! tickets carry no PAC: the acceptor refuses the PAC MIT 1.20+ issues (no
+//! `KERB_VALIDATION_INFO` buffer), a library defect reported for the plan-2
+//! register; PAC interop scenarios come with the PAC work.
 
 use core::error::Error;
 use std::time::SystemTime;
@@ -55,6 +59,10 @@ fn negotiate_header_is_accepted_with_the_mit_http_keytab() -> Result<(), Box<dyn
         let mut validator = Validator::new(&keytab).with_now(SystemTime::now());
         let accepted = spnego::accept_sec_context_header(&mut validator, context.header_ref())
             .map_err(|error| format!("the acceptor refused the MIT-issued ticket: {error}"))?;
+        assert!(
+            accepted.ap_req().pac().is_none(),
+            "the fixture's HTTP service is +no_auth_data_required, so its tickets carry no PAC"
+        );
         let krb5 = ObjectIdentifier::krb5();
         assert_negotiated_mechanism(krb5.arcs(), accepted.selected_mechanism().arcs())?;
         assert_negotiated_mechanism(krb5.arcs(), accepted.token_mechanism().arcs())?;

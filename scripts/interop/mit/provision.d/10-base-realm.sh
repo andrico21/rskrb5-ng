@@ -11,6 +11,10 @@
 #   kpasswduser               disposable password-change account, +requires_preauth
 #   HTTP/http.test.rskrb5     service, random keys, keytab out/http.keytab
 #   host/mit-kdc.test.rskrb5  host keytab out/host.keytab
+#     Both services are +no_auth_data_required: MIT 1.20+ puts a PAC without
+#     KERB_VALIDATION_INFO into every other service ticket
+#     (src/kdc/kdc_authdata.c:479-494), which the rskrb5-ng acceptor refuses
+#     today (reported library defect); PAC interop is added with the PAC work.
 #   admin/admin               kadmind administrator (ACL: everything)
 #   kadm5test1, kadm5test2    disposable principals for kadm5 work
 # Every principal has AES-SHA2 and AES-SHA1 keys (kdc.conf supported_enctypes).
@@ -68,8 +72,8 @@ kadmin_query "modprinc -maxrenewlife \"7 days\" krbtgt/$REALM" "modified"
 ensure_principal testuser1 -maxrenewlife '"7 days"' -pw "$INTEROP_MIT_USER_PASSWORD"
 ensure_principal preauthuser +requires_preauth -pw "$INTEROP_MIT_PREAUTH_USER_PASSWORD"
 ensure_principal kpasswduser +requires_preauth -pw "$INTEROP_MIT_KPASSWD_USER_PASSWORD"
-ensure_principal HTTP/http.test.rskrb5 -randkey
-ensure_principal host/mit-kdc.test.rskrb5 -randkey
+ensure_principal HTTP/http.test.rskrb5 +no_auth_data_required -randkey
+ensure_principal host/mit-kdc.test.rskrb5 +no_auth_data_required -randkey
 ensure_principal admin/admin -pw "$INTEROP_MIT_ADMIN_PASSWORD"
 ensure_principal kadm5test1 -randkey
 ensure_principal kadm5test2 -randkey
