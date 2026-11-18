@@ -299,6 +299,10 @@ interop_build_image() {
 }
 
 interop_container_state() {
+  if [[ -z "$INTEROP_RT" ]] && ! interop_detect_runtime 2>/dev/null; then
+    printf 'unknown (no container runtime)'
+    return 0
+  fi
   interop_rt inspect -f '{{.State.Status}}' "$1" 2>/dev/null || printf 'missing'
 }
 

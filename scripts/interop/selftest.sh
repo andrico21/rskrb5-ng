@@ -80,8 +80,12 @@ interop_self_test() {
   INTEROP_SUITE_NAMES=(selftest)
   INTEROP_SUITE_TARGETS=(interop_selftest)
   INTEROP_SUITE_FIXTURES=(mit-kdc)
-  INTEROP_RT=stub
+  # `run.sh test` starts without a selected runtime: the fixture report must
+  # select one itself (probe run 44267620042 printed `missing`).
+  INTEROP_RT=""
+  interop_detect_runtime() { INTEROP_RT=stub; }
   interop_rt() {
+    [[ "$INTEROP_RT" == stub ]] || return 1
     case "$1" in
       inspect) printf 'exited' ;;
       *) return 0 ;;
@@ -130,7 +134,7 @@ interop_self_test() {
   out="$( (SELFTEST_CARGO_MODE=complete INTEROP_REQUIRED=1 cmd_test selftest) 2>&1)" ||
     st_fail "required mode failed with every scenario run: $out"
   [[ "$out" == *"scenarios listed 2, ran 2, skipped 0"* ]] || st_fail "the scenario counts were not reported: $out"
-  unset -f cargo interop_rt
+  unset -f cargo interop_rt interop_detect_runtime
 
   # 4. Redaction of fixture logs.
   "$INTEROP_ROOT/scripts/interop/redact.sh" --self-test >/dev/null || st_fail "redact.sh --self-test failed"
