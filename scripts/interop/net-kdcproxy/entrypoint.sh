@@ -1,7 +1,7 @@
 #!/bin/bash
 # Entrypoint of the MS-KKDCP KDC proxy fixture `kdcproxy` (lane 1D-b).
 #
-# 1. Generates the per-run TLS material in the tmpfs /run/interop/tls: a test
+# 1. Generates the per-run TLS material in the tmpfs /run/kdcproxy: a test
 #    CA (EC P-256), the server certificate it signs (SAN DNS
 #    kdcproxy.test.rskrb5, DNS localhost, IP 127.0.0.1; serverAuth), and an
 #    unrelated "wrong" CA for negative tests. Only the two CA certificates are
@@ -16,7 +16,9 @@ set -euo pipefail
 
 readonly FIXTURE=kdcproxy
 readonly RUN_DIR=/run/interop
-readonly TLS="$RUN_DIR/tls"
+# The workers run as nobody and cannot traverse the 0700 /run/interop, so the
+# TLS material lives in the separate tmpfs /run/kdcproxy (fixture.sh).
+readonly TLS=/run/kdcproxy
 readonly OUT="$RUN_DIR/out"
 readonly READY="$RUN_DIR/ready"
 
@@ -53,6 +55,8 @@ generate_tls() {
     -days 2 -extfile "$TLS/server.ext" -out "$TLS/server.pem" 2>/dev/null || fail "could not sign the server certificate"
   rm -f "$TLS/ca.key" "$TLS/wrong-ca.key" "$TLS/server.csr" "$TLS/server.ext"
   chown nobody:nogroup "$TLS/server.key"
+  chmod 0755 "$TLS"
+  chmod 0644 "$TLS/server.pem" "$TLS/ca.pem" "$TLS/wrong-ca.pem"
   cp "$TLS/ca.pem" "$OUT/ca.pem"
   cp "$TLS/wrong-ca.pem" "$OUT/wrong-ca.pem"
   log "generated the per-run test CA and server certificate"

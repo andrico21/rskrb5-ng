@@ -14,7 +14,7 @@
 #
 # Secrets: none in any layer. The entrypoint generates a per-run TLS test CA,
 # the server certificate (SAN kdcproxy.test.rskrb5, localhost, 127.0.0.1)
-# and an unrelated "wrong" CA into the tmpfs /run/interop at start; the
+# and an unrelated "wrong" CA into the tmpfs /run/kdcproxy at start; the
 # private keys never leave it, only the two CA certificates are copied out.
 # No capability beyond the runtime defaults: gunicorn's master binds 443 as
 # the container's root user and its workers run as nobody.

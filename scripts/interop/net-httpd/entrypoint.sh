@@ -37,8 +37,11 @@ main() {
     waited=$((waited + 1))
   done
   install -o www-data -g www-data -m 0600 "$KEYTAB_IN" "$KEYTAB"
+  # Debian's envvars reads unset variables; source it outside nounset.
+  set +u
   # shellcheck disable=SC1091
   source /etc/apache2/envvars
+  set -u
   mkdir -p "$APACHE_RUN_DIR" "$APACHE_LOCK_DIR" "$APACHE_LOG_DIR"
   apache2 -D FOREGROUND &
   local pid=$!

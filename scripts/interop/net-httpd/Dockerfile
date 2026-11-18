@@ -32,7 +32,7 @@ ARG MAG_SHA256=a4bb89a2704b2a9461fbc9c0397f326b092c358d9d12b6311c2aa63d161f0530
 ARG MAG_SHA512=97eb6dff90e686cd5d25c2925987bf51dbdf627720e74105204ec4625455255548414a03599cfd5a85734f5496f6a7b1f09760771a8278e8348e6ca35b6c48d0
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        apache2-dev bison build-essential ca-certificates curl flex libkrb5-dev libssl-dev pkg-config \
+        apache2-bin apache2-dev bison build-essential ca-certificates curl flex libkrb5-dev libssl-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 RUN set -eu; \

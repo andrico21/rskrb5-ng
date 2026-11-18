@@ -70,6 +70,7 @@ fixture_kdcproxy_up() {
   interop_env INTEROP_KDCPROXY_IMAGE "$image"
   interop_run_container "$fixture" "$image" \
     --hostname kdcproxy.test.rskrb5 --network-alias kdcproxy.test.rskrb5 \
+    --tmpfs /run/kdcproxy:rw,mode=0700 \
     -p "$host:$port:443/tcp" || interop_die "fixture $fixture: container $container did not start" || return 1
   interop_wait_ready "$fixture" || return 1
   interop_wait_tcp "$fixture" "$host" "$port" || return 1

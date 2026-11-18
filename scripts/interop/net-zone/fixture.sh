@@ -247,8 +247,9 @@ net_zone_self_check() {
     'URI answer: 10 1 "krb5srv:m:udp:kdc.other.rskrb5:88"' "Resolving hostname kdc.other.rskrb5" || return 1
 
   interop_rt logs "$(interop_container_name "$fixture")" >"$dir/server.log" 2>&1 || true
-  net_expect "$fixture" server "$dir/server.log" '"URI IN _kerberos.TEST.RSKRB5.' \
-    '"SRV IN _kerberos._udp.TEST.RSKRB5.' '"A IN kdc.test.rskrb5.' || return 1
+  # CoreDNS logs query names in lower case.
+  net_expect "$fixture" server "$dir/server.log" '"URI IN _kerberos.test.rskrb5.' \
+    '"SRV IN _kerberos._udp.test.rskrb5.' '"A IN kdc.test.rskrb5.' || return 1
   interop_log "fixture $fixture self-check passed (SRV/URI/TXT/site/AAAA records; MIT found the KDCs by URI, SRV and site)"
 }
 

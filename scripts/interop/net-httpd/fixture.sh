@@ -101,7 +101,7 @@ net_httpd_self_check() {
   net_refuse "$fixture" anonymous "$dir/anonymous.log" "principal=" || return 1
   net_expect "$fixture" negotiate "$dir/negotiate.log" \
     "HTTP/1.1 200 OK" "WWW-Authenticate: Negotiate " \
-    "principal=testuser1@TEST.RSKRB5" "mechanism=Negotiate/krb5" "auth-type=GSSAPI" || return 1
+    "principal=testuser1@TEST.RSKRB5" "mechanism=Negotiate/krb5" "auth-type=Negotiate" || return 1
   interop_rt logs "$(interop_container_name "$fixture")" >"$dir/server.log" 2>&1 || true
   net_expect "$fixture" server "$dir/server.log" '"GET /whoami/ HTTP/1.1" 200 user=testuser1@TEST.RSKRB5' || return 1
   interop_log "fixture $fixture self-check passed (401 Negotiate challenge, SPNEGO login as testuser1@TEST.RSKRB5)"

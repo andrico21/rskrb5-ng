@@ -82,7 +82,7 @@ net_expect() {
       interop_die "fixture $fixture self-check $check failed: no line contains '$pattern'"
       return 1
     fi
-    printf '%s: %s\n' "$check" "$line" | net_mask_trace >>"$summary"
+    printf '%s: %s\n' "$check" "${line:0:160}" | net_mask_trace >>"$summary"
   done
 }
 
