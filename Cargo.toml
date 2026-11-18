@@ -38,7 +38,12 @@ features = ["http", "tower"]
 [package.metadata.rskrb5-ng.leaf-features.camellia]
 minimal = []
 modules = ["src/crypto/camellia.rs", "src/crypto/camellia/"]
-tests = ["tests/crypto_camellia.rs", "tests/crypto_camellia/"]
+tests = [
+  "tests/crypto_camellia.rs",
+  "tests/crypto_camellia/",
+  "tests/interop_camellia.rs",
+  "tests/interop_camellia/",
+]
 
 [lib]
 name = "rskrb5_ng"
