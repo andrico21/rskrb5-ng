@@ -60,7 +60,7 @@ RUN ./configure --prefix=/opt/krb5 --sysconfdir=/etc --localstatedir=/var/lib \
 
 FROM ${BASE_IMAGE} AS mit
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libssl3t64 tini \
+    && apt-get install -y --no-install-recommends libssl3t64 openssl tini \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /opt/krb5 /opt/krb5
 ENV PATH=/opt/krb5/sbin:/opt/krb5/bin:/usr/sbin:/usr/bin:/sbin:/bin \
@@ -74,5 +74,14 @@ COPY entrypoint.sh /opt/interop/mit/entrypoint.sh
 COPY provision.d/ /opt/interop/mit/provision.d/
 COPY started.d/ /opt/interop/mit/started.d/
 # --- later lanes: COPY their profile fragments and provision.d scripts here ---
+# Lane 1D-a (advanced preauth: FAST, SPAKE, OTP, PKINIT, anonymous): profile
+# fragments (SPAKE groups; KDC-side FAST, SPAKE, OTP and PKINIT relations),
+# the kadmin helpers of its provision.d scripts, the client-side PKINIT anchor
+# profile and the container-side self-checks run by fixture.sh. The openssl
+# CLI (apt, above) generates the per-run PKINIT test CA in
+# provision.d/45-pkinit.sh; no key or certificate is built into any layer.
+COPY krb5.conf.d/ /etc/krb5.conf.d/
+COPY kdc.conf.d/ /etc/krb5kdc/kdc.conf.d/
+COPY preauth/ /opt/interop/mit/preauth/
 EXPOSE 88/tcp 88/udp 464/tcp 464/udp 749/tcp
 ENTRYPOINT ["/usr/bin/tini", "--", "/opt/interop/mit/entrypoint.sh"]
