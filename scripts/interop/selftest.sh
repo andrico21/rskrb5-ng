@@ -153,6 +153,9 @@ interop_self_test() {
   # 5. Lane 1D-b network fixtures (scripts/interop/net-*/).
   interop_self_test_net "$scratch" || failures=$((failures + 1))
 
+  # 5. Samba fixtures (lane 1E).
+  interop_self_test_samba || st_fail "the Samba fixture registration checks failed"
+
   rm -rf "$scratch"
   if ((failures != 0)); then
     return 1
@@ -456,5 +459,78 @@ interop_self_test_net() {
   [[ "$(cat "$INTEROP_STATE_DIR/fx/selfcheck.txt")" == "good: Storing x in KCM:0" ]] ||
     net_fail "the self-check summary does not hold exactly the matched line"
   unset -f net_fail
+  ((failures == 0))
+}
+
+# Lane 1E: the Samba fixture registration, without containers. Default: both
+# DCs (samba-res before samba-user, its trust partner) and the suite `samba`
+# over both; INTEROP_SAMBA=0 registers nothing; samba-user refuses to start
+# before samba-res delivered its administrator secret; administrator
+# passwords are drawn until complex, within a bound.
+interop_self_test_samba() {
+  local failures=0 out
+  sf() {
+    echo "self-test FAIL (samba): $*" >&2
+    failures=$((failures + 1))
+  }
+  out="$(
+    INTEROP_FIXTURES=() INTEROP_SUITE_NAMES=() INTEROP_SUITE_TARGETS=() INTEROP_SUITE_FIXTURES=()
+    unset INTEROP_SAMBA
+    # shellcheck source=scripts/interop/samba/fixture.sh
+    source "$INTEROP_ROOT/scripts/interop/samba/fixture.sh"
+    printf '%s|%s|%s|%s' "${INTEROP_FIXTURES[*]}" "${INTEROP_SUITE_NAMES[*]}" \
+      "${INTEROP_SUITE_TARGETS[*]}" "${INTEROP_SUITE_FIXTURES[*]}"
+  )"
+  [[ "$out" == "samba-res samba-user|samba|interop_samba|samba-user samba-res" ]] ||
+    sf "default registration is '$out'"
+  out="$(
+    INTEROP_FIXTURES=() INTEROP_SUITE_NAMES=()
+    # The opt-out is local to this command substitution on purpose (SC2030).
+    # shellcheck disable=SC2030
+    INTEROP_SAMBA=0
+    # shellcheck source=scripts/interop/samba/fixture.sh
+    source "$INTEROP_ROOT/scripts/interop/samba/fixture.sh"
+    printf '%s|%s' "${INTEROP_FIXTURES[*]}" "${INTEROP_SUITE_NAMES[*]}"
+  )"
+  [[ "$out" == "|" ]] || sf "INTEROP_SAMBA=0 still registered '$out'"
+  out="$(
+    # Local to this command substitution on purpose (SC2030).
+    # shellcheck disable=SC2030
+    INTEROP_SAMBA_RES_ADMIN_PASSWORD=''
+    interop_build_image() { echo "image build attempted" >&2; return 1; }
+    # shellcheck source=scripts/interop/samba/fixture.sh
+    source "$INTEROP_ROOT/scripts/interop/samba/fixture.sh"
+    fixture_samba_user_up 2>&1
+  )" && sf "samba-user started without samba-res"
+  [[ "$out" == *"needs samba-res"* && "$out" != *"image build attempted"* ]] ||
+    sf "samba-user without samba-res did not refuse first, naming samba-res: $out"
+  local counter
+  counter="$(mktemp "${TMPDIR:-/tmp}/rskrb5-interop-draws.XXXXXX")"
+  out="$(
+    # The draws run in command substitutions, so the stub counts in a file.
+    interop_new_secret() {
+      printf 'x' >>"$counter"
+      if (($(wc -c <"$counter") < 3)); then
+        printf 'abcdefghijklABCDEFGHIJKL'
+      else
+        printf 'abcdefghijklABCDEFGH1234'
+      fi
+    }
+    # shellcheck source=scripts/interop/samba/fixture.sh
+    source "$INTEROP_ROOT/scripts/interop/samba/fixture.sh"
+    samba_new_admin_password
+    printf ' %s' "$(wc -c <"$counter")"
+  )"
+  rm -f "$counter"
+  [[ "$out" == "abcdefghijklABCDEFGH1234 3" ]] ||
+    sf "the administrator password draw did not skip secrets without a digit: '$out'"
+  out="$(
+    interop_new_secret() { printf 'abcdefghijklmnopqrstuvwx'; }
+    # shellcheck source=scripts/interop/samba/fixture.sh
+    source "$INTEROP_ROOT/scripts/interop/samba/fixture.sh"
+    samba_new_admin_password 2>&1
+  )" && sf "the administrator password draw accepted a secret without upper case and digits"
+  [[ "$out" == *"no complex administrator password after 32 draws"* ]] ||
+    sf "the bounded draw did not fail naming its bound: $out"
   ((failures == 0))
 }
