@@ -9,9 +9,12 @@ name: interop
 # scripts/interop/ (lib.sh). Fixture logs are uploaded with the run's
 # generated secrets redacted (scripts/interop/redact.sh).
 #
-# Jobs: `mit` (MIT krb5 1.22.2, realm TEST.RSKRB5). A Samba AD job is added
-# by plan 2 todo 1 lane 1E below `mit`, with the same steps and its own
-# suite. Actions are pinned to the commit SHAs ci.yml uses.
+# Jobs: `mit` (MIT krb5 1.22.2, realm TEST.RSKRB5, and every MIT-based
+# fixture; INTEROP_SAMBA=0 leaves the Samba fixtures and the `samba` suite
+# unregistered, see scripts/interop/samba/fixture.sh) and `samba` (two Samba
+# 4.22 AD DCs, USER.RSKRB5 and RES.RSKRB5 with a forest trust; `run.sh all`
+# with every fixture registered, so it runs the `samba` suite and every
+# other suite). Actions are pinned to the commit SHAs ci.yml uses.
 
 on:
   push:
@@ -40,6 +43,7 @@ jobs:
     timeout-minutes: 60
     env:
       INTEROP_RUNTIME: docker
+      INTEROP_SAMBA: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -67,4 +71,36 @@ jobs:
           path: ${{ runner.temp }}/interop-logs
           if-no-files-found: warn
           retention-days: 14
-  # Lane 1E inserts the `samba` job here.
+  samba:
+    name: samba
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      INTEROP_RUNTIME: docker
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-bin: false
+      - name: Toolchain guard (cargo and rustc on PATH)
+        shell: bash
+        run: |
+          if command -v cargo && cargo -V && rustc -V; then
+            exit 0
+          fi
+          echo "::error::no working cargo/rustc on PATH on runner image ${ImageOS:-unknown} ${ImageVersion:-unknown}"
+          exit 1
+      - name: Interop self-test (no containers)
+        run: bash scripts/interop/run.sh self-test
+      - name: Interop suites (Samba AD and every other fixture)
+        shell: bash
+        run: INTEROP_LOG_DIR="$RUNNER_TEMP/interop-logs" scripts/interop/run.sh all
+      - name: Upload the redacted fixture logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: interop-samba-logs
+          path: ${{ runner.temp }}/interop-logs
+          if-no-files-found: warn
+          retention-days: 14

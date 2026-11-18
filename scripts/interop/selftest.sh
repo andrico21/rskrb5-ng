@@ -139,9 +139,52 @@ interop_self_test() {
   # 4. Redaction of fixture logs.
   "$INTEROP_ROOT/scripts/interop/redact.sh" --self-test >/dev/null || st_fail "redact.sh --self-test failed"
 
+  # 5. Samba fixtures (lane 1E).
+  interop_self_test_samba || st_fail "the Samba fixture registration checks failed"
+
   rm -rf "$scratch"
   if ((failures != 0)); then
     return 1
   fi
   echo "self-test: ok"
+}
+
+# Lane 1E: the Samba fixture registration, without containers. Default: both
+# DCs (samba-res before samba-user, its trust partner) and the suite `samba`
+# over both; INTEROP_SAMBA=0 registers nothing; samba-user refuses to start
+# before samba-res delivered its administrator secret.
+interop_self_test_samba() {
+  local failures=0 out
+  sf() {
+    echo "self-test FAIL (samba): $*" >&2
+    failures=$((failures + 1))
+  }
+  out="$(
+    INTEROP_FIXTURES=() INTEROP_SUITE_NAMES=() INTEROP_SUITE_TARGETS=() INTEROP_SUITE_FIXTURES=()
+    unset INTEROP_SAMBA
+    # shellcheck source=scripts/interop/samba/fixture.sh
+    source "$INTEROP_ROOT/scripts/interop/samba/fixture.sh"
+    printf '%s|%s|%s|%s' "${INTEROP_FIXTURES[*]}" "${INTEROP_SUITE_NAMES[*]}" \
+      "${INTEROP_SUITE_TARGETS[*]}" "${INTEROP_SUITE_FIXTURES[*]}"
+  )"
+  [[ "$out" == "samba-res samba-user|samba|interop_samba|samba-user samba-res" ]] ||
+    sf "default registration is '$out'"
+  out="$(
+    INTEROP_FIXTURES=() INTEROP_SUITE_NAMES=()
+    INTEROP_SAMBA=0
+    # shellcheck source=scripts/interop/samba/fixture.sh
+    source "$INTEROP_ROOT/scripts/interop/samba/fixture.sh"
+    printf '%s|%s' "${INTEROP_FIXTURES[*]}" "${INTEROP_SUITE_NAMES[*]}"
+  )"
+  [[ "$out" == "|" ]] || sf "INTEROP_SAMBA=0 still registered '$out'"
+  out="$(
+    INTEROP_SAMBA_RES_ADMIN_PASSWORD=''
+    interop_build_image() { echo "image build attempted" >&2; return 1; }
+    # shellcheck source=scripts/interop/samba/fixture.sh
+    source "$INTEROP_ROOT/scripts/interop/samba/fixture.sh"
+    fixture_samba_user_up 2>&1
+  )" && sf "samba-user started without samba-res"
+  [[ "$out" == *"needs samba-res"* && "$out" != *"image build attempted"* ]] ||
+    sf "samba-user without samba-res did not refuse first, naming samba-res: $out"
+  ((failures == 0))
 }
