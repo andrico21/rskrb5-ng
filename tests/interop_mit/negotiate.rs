@@ -49,10 +49,12 @@ fn negotiate_header_is_accepted_with_the_mit_http_keytab() -> Result<(), Box<dyn
             AES256_SHA2,
             ticket_etype(ticket.ticket().as_slice())?,
         )?;
-        let context = spnego::init_sec_context(&ticket, spnego::InitiatorContextOptions::new())?;
+        let context = spnego::init_sec_context(&ticket, spnego::InitiatorContextOptions::new())
+            .map_err(|error| format!("the initiator could not build the token: {error}"))?;
         let keytab = Keytab::load(harness::var("INTEROP_MIT_HTTP_KEYTAB")?)?;
         let mut validator = Validator::new(&keytab).with_now(SystemTime::now());
-        let accepted = spnego::accept_sec_context_header(&mut validator, context.header_ref())?;
+        let accepted = spnego::accept_sec_context_header(&mut validator, context.header_ref())
+            .map_err(|error| format!("the acceptor refused the MIT-issued ticket: {error}"))?;
         let krb5 = ObjectIdentifier::krb5();
         assert_negotiated_mechanism(krb5.arcs(), accepted.selected_mechanism().arcs())?;
         assert_negotiated_mechanism(krb5.arcs(), accepted.token_mechanism().arcs())?;
@@ -62,7 +64,9 @@ fn negotiate_header_is_accepted_with_the_mit_http_keytab() -> Result<(), Box<dyn
             "the acceptor sees the test user"
         );
         let answer = accepted.ap_rep_response_header(&ApRepOptions::default())?;
-        let verified = context.verify_ap_rep_response_header(&answer)?;
+        let verified = context
+            .verify_ap_rep_response_header(&answer)
+            .map_err(|error| format!("the initiator refused the AP-REP: {error}"))?;
         assert_eq!(
             verified.ctime(),
             context.authenticator_ctime(),
@@ -83,10 +87,12 @@ fn negotiate_acceptor_rejects_a_replayed_header() -> Result<(), Box<dyn Error>> 
         let ticket = client
             .get_service_ticket(service("INTEROP_MIT_HTTP_SERVICE")?)
             .await?;
-        let context = spnego::init_sec_context(&ticket, spnego::InitiatorContextOptions::new())?;
+        let context = spnego::init_sec_context(&ticket, spnego::InitiatorContextOptions::new())
+            .map_err(|error| format!("the initiator could not build the token: {error}"))?;
         let keytab = Keytab::load(harness::var("INTEROP_MIT_HTTP_KEYTAB")?)?;
         let mut validator = Validator::new(&keytab).with_now(SystemTime::now());
-        let accepted = spnego::accept_sec_context_header(&mut validator, context.header_ref())?;
+        let accepted = spnego::accept_sec_context_header(&mut validator, context.header_ref())
+            .map_err(|error| format!("the acceptor refused the MIT-issued ticket: {error}"))?;
         assert_negotiated_mechanism(
             ObjectIdentifier::krb5().arcs(),
             accepted.selected_mechanism().arcs(),
@@ -118,10 +124,12 @@ fn host_keytab_accepts_a_mit_issued_ticket() -> Result<(), Box<dyn Error>> {
             AES256_SHA2,
             ticket_etype(ticket.ticket().as_slice())?,
         )?;
-        let context = spnego::init_sec_context(&ticket, spnego::InitiatorContextOptions::new())?;
+        let context = spnego::init_sec_context(&ticket, spnego::InitiatorContextOptions::new())
+            .map_err(|error| format!("the initiator could not build the token: {error}"))?;
         let keytab = Keytab::load(harness::var("INTEROP_MIT_HOST_KEYTAB")?)?;
         let mut validator = Validator::new(&keytab).with_now(SystemTime::now());
-        let accepted = spnego::accept_sec_context_header(&mut validator, context.header_ref())?;
+        let accepted = spnego::accept_sec_context_header(&mut validator, context.header_ref())
+            .map_err(|error| format!("the acceptor refused the MIT-issued ticket: {error}"))?;
         assert_negotiated_mechanism(
             ObjectIdentifier::krb5().arcs(),
             accepted.selected_mechanism().arcs(),
