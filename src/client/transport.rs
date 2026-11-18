@@ -290,6 +290,11 @@ impl Tokio {
     /// parses as a `core::net::IpAddr` gives its address with port 53. An
     /// explicit IPv6 port therefore requires brackets: bare `fd00::1:5353` is an
     /// IPv6 address using port 53, and `[fd00::1]` without a port is refused.
+    /// In `[address]:port` a zone id may follow an IPv6 address: a `%` and
+    /// ASCII digits whose value fits in a `u32`, as in `[fe80::1%2]:5353`. The
+    /// zone id is dropped, so that value selects `fe80::1` port 5353 with no
+    /// zone; any other zone id, and a zone id in a value without brackets
+    /// (`fe80::1%2`), is refused.
     ///
     /// The server is used only for DNS discovery: configured host names and the
     /// host names of explicit addresses are looked up by the system in either
@@ -2699,8 +2704,10 @@ async fn resolve_dns_endpoint_host(
 }
 
 /// Parse a DNS server literal by the rule that [`Tokio::with_dns_server`]
-/// documents (a `core::net::SocketAddr`, else a `core::net::IpAddr` with port
-/// 53), after trimming `value` with `str::trim`.
+/// documents, after trimming `value` with `str::trim`.
+///
+/// A `core::net::SocketAddr` gives its address and port, without its zone
+/// id; else a `core::net::IpAddr` gives its address with port 53.
 ///
 /// # Errors
 ///

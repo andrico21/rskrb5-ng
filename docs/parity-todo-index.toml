@@ -6,7 +6,7 @@
 
 [[plan]]
 number = 1
-todos = 186
+todos = 187
 
 [[plan]]
 number = 2
@@ -961,6 +961,11 @@ title = "Audit the PUBLIC rustdoc of the whole `client::transport` module that t
 plan = 1
 number = 186
 title = "Final verification finding F2-01 of pass 5: the `# Errors` clauses of `KdcEndpoint::configured_with_default_port` hold only for a value that STARTS with `[`; close the class of string-parsing rules (`configured*`, `with_dns_server`) by an exhaustive differential check of an executable model of the documented rule against the code"
+
+[[todo]]
+plan = 1
+number = 187
+title = "The zone id of a bracketed `SocketAddr` value of `Tokio::with_dns_server` is accepted and dropped: document it exactly (owner decision 2026-11-18: `Document it exactly, plan 2 for behaviour`); the behaviour change (honour or reject the scope) is plan 2"
 
 [[todo]]
 plan = 2

@@ -203,7 +203,8 @@ that choose this input must read it themselves and pass its value to
 selects the system resolver. A value that parses as a `core::net::SocketAddr`
 (IPv4 `address:port`, IPv6 `[address]:port`) sets the port; one that parses
 as a `core::net::IpAddr` uses port 53 (so `fd00::1:5353` is an IPv6 address).
-Other input returns `Client::DnsResolverConfig`.
+The zone id of a `SocketAddr` is dropped: `[fe80::1%2]:5353` selects `fe80::1`
+port 5353. Other input returns `Client::DnsResolverConfig`.
 
 A root SRV target now returns `Client::DnsServiceUnavailable { service, realm }`
 instead of allowing administration-service fallback; `KdcProtocol::Auto` for a
