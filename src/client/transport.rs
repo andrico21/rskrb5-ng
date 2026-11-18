@@ -8,7 +8,8 @@ use core::{
 /// Service-specific TCP record length validation.
 mod framing;
 
-/// Validate a KDC TCP record mark before allocating its response body.
+/// Validate a KDC TCP record mark before allocating its response body, and
+/// return the record length it declares.
 ///
 /// # Errors
 /// Returns [`Error::TcpReservedBitSet`] for the RFC 4120 reserved high bit,
@@ -184,19 +185,23 @@ impl KdcEndpoint {
 
     /// Create a configured endpoint from a `host[:port]` value and default port.
     ///
-    /// `value` is trimmed. A value that parses as a `core::net::IpAddr` is the
-    /// host, with `default_port` (so `fd00::1:88` is an IPv6 address); `[host]`
-    /// and `[host]:port` take the host from inside the brackets. Otherwise, when
-    /// the text after the last `:` is one or more ASCII digits and the text before
-    /// it is not empty and does not end in `:`, they are the port and the host;
-    /// without such a port the whole value is the host, with `default_port`.
+    /// `value` is trimmed with `str::trim`. A value that parses as a
+    /// `core::net::IpAddr` is the host, with `default_port` (so `fd00::1:88` is
+    /// an IPv6 address). A value that starts with `[` takes the host from between
+    /// that `[` and the first `]`, and after that `]` has either nothing (the port
+    /// is `default_port`) or a `:` and the port. Otherwise, when the text after
+    /// the last `:` is one or more ASCII digits and the text before it is not
+    /// empty and does not end in `:`, they are the port and the host; without
+    /// such a port the whole value is the host, with `default_port`. In a value
+    /// that does not start with `[`, a `[` or `]` is an ordinary character.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidKdcEndpoint`] when `value` is blank, when a `[` has
-    /// no closing `]` or encloses nothing, when the `]` is followed by text other
-    /// than `:port`, when a port does not parse as a `u16`, or when a value with a
-    /// single `:` has no such port.
+    /// Returns [`Error::InvalidKdcEndpoint`] when the trimmed `value` is empty;
+    /// when it starts with `[` and has no `]`, has nothing between the `[` and the
+    /// first `]`, or has text after that `]` that does not start with `:`; when a
+    /// port does not parse as a `u16`; or when a value that does not start with
+    /// `[` has a single `:` and no such port.
     #[inline]
     pub fn configured_with_default_port(
         protocol: KdcProtocol,
@@ -213,7 +218,8 @@ impl KdcEndpoint {
     }
 
     #[must_use]
-    /// Return a display-friendly `host:port` authority.
+    /// Return `host:port`, with the host in brackets (`[host]:port`) when it
+    /// contains a `:` and does not start with `[`.
     #[inline]
     pub fn authority(&self) -> String {
         if self.host.contains(':') && !self.host.starts_with('[') {
@@ -277,9 +283,13 @@ impl Tokio {
 
     /// Select an explicit DNS server using an IP literal and optional port.
     ///
-    /// Blank input selects the system resolver. Bare IP literals use port 53.
-    /// An explicit IPv6 port requires brackets, for example `[fd00::1]:5353`.
-    /// Bare `fd00::1:5353` is an IPv6 address using the default port 53.
+    /// `value` is trimmed with `str::trim`; an empty result selects the system
+    /// resolver. Otherwise a value that parses as a `core::net::SocketAddr`
+    /// (IPv4 `address:port`, IPv6 `[address]:port`, for example
+    /// `[fd00::1]:5353`) gives the server's address and port, and a value that
+    /// parses as a `core::net::IpAddr` gives its address with port 53. An
+    /// explicit IPv6 port therefore requires brackets: bare `fd00::1:5353` is an
+    /// IPv6 address using port 53, and `[fd00::1]` without a port is refused.
     ///
     /// The server is used only for DNS discovery: configured host names and the
     /// host names of explicit addresses are looked up by the system in either
@@ -299,7 +309,8 @@ impl Tokio {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::DnsResolverConfig`] for malformed server literals.
+    /// Returns [`Error::DnsResolverConfig`] when the trimmed `value` is not empty
+    /// and parses as neither a `core::net::SocketAddr` nor a `core::net::IpAddr`.
     #[inline]
     pub fn with_dns_server(mut self, value: &str) -> Result<Self, Error> {
         self.dns_server = if value.trim().is_empty() {
@@ -2546,13 +2557,13 @@ fn non_empty_kdc_response(response: Vec<u8>) -> Result<Vec<u8>, Error> {
     Ok(response)
 }
 
-/// Split a `host[:port]` or `[ipv6][:port]` KDC entry into host and port.
+/// Split a `host[:port]` KDC entry into host and port, by the rule that
+/// [`KdcEndpoint::configured_with_default_port`] documents.
 ///
 /// # Errors
 ///
-/// Returns [`Error::InvalidKdcEndpoint`] when `value` is empty, has an
-/// unterminated or empty `[...]` IPv6 host, has a port that is not a `u16`, or
-/// has a single `:` without a valid port.
+/// Returns [`Error::InvalidKdcEndpoint`] in the cases that
+/// [`KdcEndpoint::configured_with_default_port`] documents.
 #[cfg(feature = "tokio")]
 fn parse_kdc_endpoint(value: &str, default_port: u16) -> Result<(String, u16), Error> {
     let endpoint = value.trim();
@@ -2687,15 +2698,14 @@ async fn resolve_dns_endpoint_host(
     Ok(hosts)
 }
 
-/// Parse an `ip` or `ip:port` DNS server literal, defaulting to port 53.
-///
-/// Explicit IPv6 ports require `[address]:port`; an unbracketed IPv6 literal
-/// always uses port 53, even if its last component looks like a port.
+/// Parse a DNS server literal by the rule that [`Tokio::with_dns_server`]
+/// documents (a `core::net::SocketAddr`, else a `core::net::IpAddr` with port
+/// 53), after trimming `value` with `str::trim`.
 ///
 /// # Errors
 ///
-/// Returns a description of the problem when `value` is blank or not an IP
-/// literal.
+/// Returns a description of the problem when the trimmed `value` is empty or
+/// parses as neither a `core::net::SocketAddr` nor a `core::net::IpAddr`.
 #[cfg(feature = "tokio")]
 fn parse_dns_server(value: &str) -> Result<(IpAddr, u16), String> {
     let server = value.trim();

@@ -469,8 +469,9 @@ kpasswd, KRB-PRIV/KRB-SAFE messages and secrets:
 
 Transport, DNS, IPv6, SRV and kpasswd retry:
 
-- Bare IPv6 literals keep their full address and the default port; an IPv6
-  port needs brackets (RSK-03EDCC7E).
+- Bare IPv6 literals keep their full address and the default port, so
+  `fd00::1:88` is an address; brackets give an IPv6 literal a port
+  (RSK-03EDCC7E).
 - The admin-server fallback for kpasswd keeps IPv6 hosts and uses port 464
   (RSK-3F13B5FE).
 - UDP transport reaches IPv6-only endpoints (RSK-0D8D7D97).

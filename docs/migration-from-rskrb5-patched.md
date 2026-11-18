@@ -199,9 +199,11 @@ configuration/credential discovery entry points document `# Ambient input`.
 
 `client::transport::Tokio` no longer reads `RSKRB5_DNS_SERVER`. Applications
 that choose this input must read it themselves and pass its value to
-`Tokio::new().with_dns_server(&value)?`. IP literals use port 53 unless an
-explicit port is provided; blank input selects the system resolver. Invalid
-input returns `Client::DnsResolverConfig`.
+`Tokio::new().with_dns_server(&value)?`. The value is trimmed; blank input
+selects the system resolver. A value that parses as a `core::net::SocketAddr`
+(IPv4 `address:port`, IPv6 `[address]:port`) sets the port; one that parses
+as a `core::net::IpAddr` uses port 53 (so `fd00::1:5353` is an IPv6 address).
+Other input returns `Client::DnsResolverConfig`.
 
 A root SRV target now returns `Client::DnsServiceUnavailable { service, realm }`
 instead of allowing administration-service fallback; `KdcProtocol::Auto` for a
