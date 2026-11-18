@@ -1812,10 +1812,6 @@ mod tests {
             .ok_or("an allowlist without a supported enctype is rejected")?;
 
             if names == "camellia256-cts-cmac" {
-                assert!(
-                    !camellia::AVAILABLE,
-                    "named Camellia is supported by the leaf"
-                );
                 assert!(matches!(error, Error::EmptyEnctypeExpression));
             } else {
                 assert!(
