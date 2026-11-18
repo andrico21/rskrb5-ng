@@ -45,7 +45,8 @@ mod tests {
     use crate::{
         ambient_guard::tests::access_violations,
         loopback_pair::{
-            bind_tcp_and_udp_pair, bind_udp_loopback, bind_udp_with_closed_tcp, reserve_closed_port,
+            bind_tcp_and_udp_pair, bind_udp_loopback, bind_udp_loopback_v6,
+            bind_udp_with_closed_tcp, reserve_closed_port,
         },
     };
     /// Configured preauthentication connection reuse.
@@ -451,7 +452,7 @@ mod tests {
     fn udp_transport_reaches_ipv6_loopback() -> Result<(), TestError> {
         runtime()?.block_on(async {
             // Given a live IPv6-only UDP peer on an ephemeral port.
-            let server = UdpSocket::bind("[::1]:0").await?;
+            let server = bind_udp_loopback_v6().await?;
             let addr = server.local_addr()?;
             let task = tokio::spawn(async move {
                 let mut request = [0; 64];
