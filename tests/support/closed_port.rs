@@ -10,12 +10,24 @@
 //! its resolver with the default options. A TCP connect to a reserved number is refused at once
 //! on Linux and macOS and after about two seconds on Windows. A TCP socket that is bound and
 //! does not listen is no substitute: macOS does not refuse a connect to it.
+//!
+//! Binding the number and dropping the socket does not prove it closed (FU-TST-P07). macOS gives
+//! a socket its close-on-exec flag in a second call after `socket()`, so a test thread that
+//! spawns a child process (`support/env.rs`) in between hands the child the proof listener: the
+//! number keeps answering until that child exits, a few milliseconds after the drop, and the
+//! child of another test that connects there is accepted instead of refused. The proof therefore
+//! also connects to the number once and rejects a number that answers.
 
 use core::{
     net::{Ipv4Addr, SocketAddr},
     sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
 };
-use std::{io, net::TcpListener, process};
+use std::{
+    io,
+    net::{TcpListener, TcpStream},
+    process,
+};
 
 /// Attempts of [`reserve_closed_tcp_port`] before it gives up.
 const ATTEMPTS: u8 = 64;
@@ -25,6 +37,14 @@ const ATTEMPTS: u8 = 64;
 /// The range lies below the ephemeral range of every supported system (Windows and macOS start
 /// at 49152, Linux at 32768) and below the range that `loopback_pair.rs` draws from.
 pub(crate) const RESERVED_FIRST: u16 = 20_000;
+
+/// Longest wait for the answer of the connect that proves a number closed.
+///
+/// A listener answers a loopback connect at once and a closed number is refused at once. Windows
+/// refuses after about two seconds: the bound ends that wait, and a number that has not answered
+/// by then counts as closed (a Windows handle is not inherited by a child, so no listener
+/// outlives the proof there).
+const ANSWER_BOUND: Duration = Duration::from_millis(100);
 
 /// Mask that keeps an offset inside the reserved range (8192 numbers).
 const RESERVED_MASK: u64 = 0x1FFF;
@@ -52,16 +72,49 @@ pub(crate) fn next_reserved_port() -> u16 {
 
 /// A reserved loopback port number whose TCP side is closed.
 ///
-/// Nothing holds the number: the TCP side is bound once to prove it free and dropped. No test
-/// that runs in parallel draws it, because nothing else draws from the reserved range; the DNS
-/// resolver's random client ports can still take it (the FU-TST-R64 residual of the module
-/// comment).
+/// Nothing holds the number: the TCP side is bound once to prove it free, dropped, and a connect
+/// to it must not be answered (see [`prove_closed_with`]). No test that runs in parallel draws
+/// it, because nothing else draws from the reserved range; the DNS resolver's random client
+/// ports can still take it (the FU-TST-R64 residual of the module comment).
 ///
 /// # Errors
 /// Returns the error of a bind that is not a collision, and `AddrInUse` when every attempt
 /// collided.
 pub(crate) fn reserve_closed_tcp_port() -> io::Result<u16> {
-    reserve_closed_tcp_port_with(|address| TcpListener::bind(address).map(drop))
+    reserve_closed_tcp_port_with(|address| {
+        prove_closed_with(
+            address,
+            |bound| TcpListener::bind(bound).map(drop),
+            tcp_answers,
+        )
+    })
+}
+
+/// Whether a TCP connect to `address` is answered within [`ANSWER_BOUND`].
+pub(crate) fn tcp_answers(address: SocketAddr) -> bool {
+    TcpStream::connect_timeout(&address, ANSWER_BOUND).is_ok()
+}
+
+/// Prove that no listener holds `address`: `bind` takes and frees it, then `answers` must say no.
+///
+/// A bind that succeeds is not enough: a child process that inherited the freed socket (see the
+/// module comment) still answers.
+///
+/// # Errors
+/// Returns the error of `bind`, and `AddrInUse` when the number answers.
+pub(crate) fn prove_closed_with(
+    address: SocketAddr,
+    bind: impl FnOnce(SocketAddr) -> io::Result<()>,
+    answers: impl FnOnce(SocketAddr) -> bool,
+) -> io::Result<()> {
+    bind(address)?;
+    if answers(address) {
+        return Err(io::Error::new(
+            io::ErrorKind::AddrInUse,
+            format!("a TCP connect to {address} is answered"),
+        ));
+    }
+    Ok(())
 }
 
 /// Take the next numbers of the reserved sequence until `probe` accepts one.

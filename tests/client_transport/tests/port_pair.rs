@@ -2,11 +2,18 @@
 //! range and tries both bind orders.
 
 use core::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::{net::UdpSocket as StdUdpSocket, sync::mpsc, thread};
+use std::{
+    net::{TcpListener as StdTcpListener, UdpSocket as StdUdpSocket},
+    sync::mpsc,
+    thread,
+};
 
 use super::{kpasswd_order::closed_port, *};
 use crate::{
-    closed_port::{RESERVED_FIRST, reserve_closed_tcp_port, reserve_closed_tcp_port_with},
+    closed_port::{
+        RESERVED_FIRST, prove_closed_with, reserve_closed_tcp_port, reserve_closed_tcp_port_with,
+        tcp_answers,
+    },
     loopback_pair::{
         FIRST_PORT, Order, bind_on, bind_pair_with, bind_tcp_and_udp_pair_with, hold_wildcard,
         hold_wildcard_v6, with_reserved_port,
@@ -545,5 +552,48 @@ fn the_sync_reserved_search_makes_the_stated_attempts() -> Result<(), TestError>
     let error = result.err().ok_or("every attempt collided")?;
     assert_eq!(calls, 64);
     assert_eq!(error.kind(), io::ErrorKind::AddrInUse);
+    Ok(())
+}
+
+/// A number whose connect is answered is not proved closed, whatever its bind says: the search
+/// skips it (FU-TST-P07: on macOS a child that inherited the freed proof socket answers).
+#[test]
+fn an_answering_number_is_skipped_by_the_reserved_search() -> Result<(), TestError> {
+    // Given a bind that succeeds on every number, as the bind of the proof does next to a
+    // leaked listener, and a connect that the first two numbers drawn answer.
+    let mut drawn = Vec::new();
+    // When the search runs.
+    let found = reserve_closed_tcp_port_with(|address| {
+        prove_closed_with(
+            address,
+            |_bound| Ok(()),
+            |probed| {
+                drawn.push(probed.port());
+                drawn.len() <= 2
+            },
+        )
+    })?;
+    // Then the third number is the one returned.
+    assert_eq!(drawn.len(), 3, "{drawn:?}");
+    assert_eq!(drawn.last(), Some(&found), "{drawn:?}");
+    Ok(())
+}
+
+/// A live listener answers the connect of the proof, so the proof rejects its number with a
+/// collision even when the bind of the proof succeeds.
+#[test]
+fn a_live_listener_is_not_proved_closed() -> Result<(), TestError> {
+    // Given a listener that is alive for the whole test.
+    let listener = StdTcpListener::bind("127.0.0.1:0")?;
+    let address = listener.local_addr()?;
+    // When the proof runs with the real connect and a bind that succeeds.
+    let proof = prove_closed_with(address, |_bound| Ok(()), tcp_answers);
+    // Then the number answers and the proof reports a collision.
+    assert!(tcp_answers(address), "the listener did not answer");
+    let error = proof
+        .err()
+        .ok_or("the proof accepted an answering number")?;
+    assert_eq!(error.kind(), io::ErrorKind::AddrInUse, "{error}");
+    drop(listener);
     Ok(())
 }
