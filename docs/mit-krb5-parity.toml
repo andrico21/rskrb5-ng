@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 36
-partial = 75
-absent = 42
+implemented = 38
+partial = 74
+absent = 41
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -518,17 +518,37 @@ id = "MIT-crypto-3"
 area = "crypto"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Camellia128/256 CTS-CMAC"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "Closed enctype dispatcher has AES/DES3/RC4 only."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = [
+  "crypto::camellia::CtsCmacEtype",
+  "crypto::camellia::CtsCmacEtype::from_etype_id",
+  "crypto::camellia::CtsCmacEtype::string_to_key",
+  "crypto::camellia::CtsCmacEtype::encrypt_message_with_confounder",
+  "crypto::camellia::CtsCmacEtype::decrypt_message",
+]
+test_names = [
+  "tests/crypto_camellia.rs::rfc6803_string_to_key",
+  "tests/crypto_camellia.rs::rfc6803_key_derivation",
+  "tests/crypto_camellia.rs::rfc6803_encryptions",
+  "tests/crypto_camellia.rs::libk5crypto_ciphertexts_open_and_reseal",
+  "tests/crypto_camellia.rs::string_to_key_matches_libk5crypto",
+  "tests/crypto_camellia.rs::gss_prf_plus_matches_mit_gss_vectors",
+  "tests/crypto_camellia.rs::malformed_input_is_rejected",
+  "tests/crypto_camellia.rs::string_to_key_parameters_are_bounded",
+  "tests/crypto_camellia.rs::the_leaf_does_not_grant_permission",
+  "tests/crypto_camellia.rs::naming_camellia_permits_exactly_that",
+  "tests/crypto_camellia.rs::default_excludes_camellia",
+  "tests/policy/expressions.rs::camellia_modes",
+]
+feature_flags = ["camellia"]
+security_divergence = "Camellia is compiled only with the additive `camellia` Cargo feature, which grants no runtime permission: `permitted_enctypes` must name it, a default policy refuses it for every use, and without the feature Camellia names keep their diagnostic (compatible mode) or error (strict mode) naming the feature. `DEFAULT` never includes Camellia (MIT's `DEFAULT` does) because the admitted RustCrypto `camellia` crate reads secret-indexed S-box tables and is not constant-time. Peer-supplied string-to-key work is bounded by 2^24 iterations and floored at 32768 (MIT has no floor)."
 disposition = "WP-03"
 closing_plan = 2
 closing_todo = 5
 contributors = []
+doc_anchor = "docs/security-policy.md#camellia"
 
 [[feature]]
 id = "MIT-crypto-4"
@@ -702,17 +722,31 @@ id = "MIT-crypto-11"
 area = "crypto"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Keyed checksum types, checksum selection, checksum/key-usage enforcement"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Existing keyed AES/DES3/RC4 suite works; Camellia checksum suite missing."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = [
+  "crypto::KerberosEtype::checksum",
+  "crypto::KerberosEtype::verify_checksum",
+  "crypto::selection::checksum",
+  "crypto::camellia::CtsCmacEtype::checksum",
+  "crypto::camellia::CtsCmacEtype::verify_checksum",
+]
+test_names = [
+  "tests/crypto_camellia.rs::rfc6803_checksums",
+  "tests/crypto_camellia.rs::checksums_match_libk5crypto",
+  "tests/crypto_camellia.rs::reports_metadata_and_dispatch",
+  "tests/policy/selection.rs::checksum_selection_is_typed",
+  "tests/policy/raw_selection.rs::peer_checksum_selection_is_typed",
+  "tests/crypto_aes.rs::reports_aes_sha2_metadata_and_dispatch",
+]
+feature_flags = ["camellia"]
+security_divergence = "The keyed checksum suite is AES-SHA1, AES-SHA2, DES3 and RC4-HMAC, plus `cmac-camellia128` and `cmac-camellia256` (types 17 and 18) with the `camellia` feature. Every checksum is verified in constant time with an exact length; unkeyed and weak types stay rejected by name (D2). Selecting a Camellia checksum does not permit Camellia: the enctype policy decides."
 disposition = "WP-03"
 closing_plan = 2
 closing_todo = 5
 contributors = []
+doc_anchor = "docs/security-policy.md#camellia"
 
 [[feature]]
 id = "MIT-ccache-1"
