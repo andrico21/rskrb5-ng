@@ -2704,8 +2704,10 @@ async fn resolve_dns_endpoint_host(
 }
 
 /// Parse a DNS server literal by the rule that [`Tokio::with_dns_server`]
-/// documents (a `core::net::SocketAddr`, whose zone id is dropped, else a
-/// `core::net::IpAddr` with port 53), after trimming `value` with `str::trim`.
+/// documents, after trimming `value` with `str::trim`.
+///
+/// A `core::net::SocketAddr` gives its address and port, without its zone
+/// id; else a `core::net::IpAddr` gives its address with port 53.
 ///
 /// # Errors
 ///
