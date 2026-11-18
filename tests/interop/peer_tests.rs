@@ -105,7 +105,12 @@ fn request_frames_follow_the_documented_layout() -> Result<(), PeerError> {
 
 /// A reply length of 0 or above 1 MiB, a short body and a cut-off field fail.
 #[test]
-fn reply_frames_outside_the_bounds_are_malformed() {
+fn reply_frames_outside_the_bounds_are_malformed() -> Result<(), PeerError> {
+    assert_eq!(
+        read_reply(&mut Cursor::new(vec![0, 0, 0, 2, 7, 9]))?,
+        (7, vec![9]),
+        "a well-formed reply splits into status and the bytes after it"
+    );
     assert!(
         matches!(
             read_reply(&mut Cursor::new(vec![0, 0, 0, 0])),
@@ -132,17 +137,19 @@ fn reply_frames_outside_the_bounds_are_malformed() {
         matches!(client.ping(), Err(PeerError::Malformed(_))),
         "a field that runs past the frame"
     );
+    Ok(())
 }
 
 /// Status 2 and 3 become typed errors; an unknown status and a CONTINUE for a
 /// step-less command are malformed.
 #[test]
-fn status_bytes_map_to_typed_errors() {
+fn status_bytes_map_to_typed_errors() -> Result<(), PeerError> {
     let mut client = peer(&[
         reply(2, &[&[0, 0x0d, 0, 0], &[0, 0, 0, 7], b"no key"]),
         reply(3, &[b"unknown command"]),
         reply(9, &[]),
         reply(1, &[]),
+        reply(0, &[]),
     ]);
     assert!(
         matches!(client.ping(), Err(PeerError::Gss { major, minor, text })
@@ -161,6 +168,8 @@ fn status_bytes_map_to_typed_errors() {
         matches!(client.ping(), Err(PeerError::Malformed(_))),
         "ping has no steps"
     );
+    client.set_env("HOPS", "1")?;
+    Ok(())
 }
 
 /// `ping`, `mechs`, `set_env` and `trace`.
@@ -210,7 +219,7 @@ fn session_commands_encode_and_decode() -> Result<(), Box<dyn Error>> {
 /// A password credential and an enterprise name travel as documented, and an
 /// unnamed initiator step uses the defaults.
 #[test]
-fn password_credentials_and_default_steps_use_the_documented_fields() {
+fn password_credentials_and_default_steps_use_the_documented_fields() -> Result<(), PeerError> {
     let password = CredRequest::new(Usage::Initiate)
         .named(Name::enterprise("user"))
         .with_password(b"pw");
@@ -240,6 +249,14 @@ fn password_credentials_and_default_steps_use_the_documented_fields() {
         Some(&b"next"[..]),
         "a repeated accept step carries the new token"
     );
+    let fields = password.fields();
+    let borrowed: Vec<&[u8]> = fields.iter().map(Vec::as_slice).collect();
+    assert_eq!(
+        encode_request(b'A', &borrowed)?.get(4),
+        Some(&b'A'),
+        "a credential request frames as an A command"
+    );
+    Ok(())
 }
 
 /// The raw calls send unframed bytes and return the status and the bytes after it;
