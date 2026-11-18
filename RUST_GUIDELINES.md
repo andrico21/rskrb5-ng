@@ -26,7 +26,7 @@ not as permission.
 ## Source and pin
 
 - **Upstream repository:** `andrico21/rust-guidelines` (private; readable through `gh api`).
-- **Pinned commit:** `5e41bd93dde2791de21dd30ffebe1a98363c5ec4` (2026-11-18), a commit on `master` of the upstream repository. It changed only the project overlay (rule 4, the gate list, rule 7 and the CI job list); its parent `707deb5ec9654654b80d07442d376bff17ae5352` (2026-11-15) is the pin before it and exempted `cargo::manual_readme` in the core. Both commits are on the upstream, so `gh api` fetches the files at the pin. The four vendored files are byte for byte the upstream files at the pin (the blob ids and SHA-256 hashes below).
+- **Pinned commit:** `707deb5ec9654654b80d07442d376bff17ae5352` (2026-11-15), a commit on `master` of the upstream repository. Its parent `90aae3e0028e62e0c4753bc5f1376750201d2307` (2026-11-14) changed the project overlay; both commits are on the upstream, so `gh api` fetches the files at the pin. The four vendored files are byte for byte the upstream files at the pin (the blob ids and SHA-256 hashes below).
 - **Temporary core exemption:** the pinned core sets `cargo::manual_readme` to `allow` (Exclusions table) because of the open Cargo bug [rust-lang/cargo#17730](https://github.com/rust-lang/cargo/issues/17730) (`cargo package` verification lints the normalized manifest). The removal condition: Cargo no longer lints the normalized manifest during `cargo package` verification. `docs/lint-policy.md` names the same condition.
 - **Rule changes:** they are made upstream, by review, then re-vendored here. Errata found in the vendored text are reported upstream, never patched locally.
 
@@ -43,7 +43,7 @@ and the next re-vendor would overwrite it. To update, follow the re-vendor proce
 | `RUST_GUIDELINES.md` | `345b45748604d248c03064bc1bdf94964c594bcc` | `58caf0f92ed09279e99590ae296d17b8e44231fc1cbff097dac706b9a5f43712` |
 | `overlays/domains/kerberos-credential-protocols.md` | `99da625eb44c51de0fb8d047edb6957319882bce` | `9f2d10141e4e576e0fdbe3873e633403454e4370a206c9dd0154b7bf9f9517d5` |
 | `overlays/domains/http-services.md` | `a80c843f7f8b69e1026cc8bf50e465b253e6ea19` | `120d64975591eb62801c5f83586cebebcfe4495e939ef1b7bd376eb476859d83` |
-| `overlays/projects/rskrb5-ng.md` | `eb7c2f0ca6eaa4b0b3124999651dc90eba7c97a6` | `83e364c4d7265e5f98d8dfb71e4b505dcb1a696c8d1df7ac48ee52616b37e337` |
+| `overlays/projects/rskrb5-ng.md` | `715ea991ced040c69f7514d67b8f96dc4be8a415` | `1bda929e729516cb9f5b13b17177ed8ec475f6f812f2e7bb60398f60762cddfc` |
 
 `docs/rust-guidelines/SHA256SUMS` holds the same hashes. CI checks them with
 `(cd docs/rust-guidelines && sha256sum -c SHA256SUMS)`.

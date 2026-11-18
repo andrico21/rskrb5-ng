@@ -3,13 +3,11 @@
 //! A number that was bound and freed again can be bound by a test that runs in parallel, which
 //! then answers where a refusal is expected. The reserved range is not the range of the
 //! operating system's ephemeral ports and not the range that `loopback_pair.rs` draws from, so
-//! no test draws a number of it. One residual remains (FU-TST-R64, FU-TST-P03): the DNS resolver
-//! binds its client sockets to random wildcard ports (1024 to 65535) and can take a reserved
-//! number while a test that expects a refusal sends. That matters only for a refusal over UDP (a
-//! UDP socket does not change a TCP connect) and the tests cannot remove it: the crate builds
-//! its resolver with the default options. A TCP connect to a reserved number is refused at once
-//! on Linux and macOS and after about two seconds on Windows. A TCP socket that is bound and
-//! does not listen is no substitute: macOS does not refuse a connect to it.
+//! no test draws a number of it. One residual remains (FU-TST-R64): the DNS resolver binds its
+//! client sockets to random wildcard ports (1024 to 65535) and can take a reserved number while
+//! a test that expects a refusal sends. A TCP connect to such a number is refused at once on
+//! Linux and macOS and after about two seconds on Windows. A TCP socket that is bound and does
+//! not listen is no substitute: macOS does not refuse a connect to it.
 
 use core::{
     net::{Ipv4Addr, SocketAddr},
@@ -61,23 +59,13 @@ pub(crate) fn next_reserved_port() -> u16 {
 /// Returns the error of a bind that is not a collision, and `AddrInUse` when every attempt
 /// collided.
 pub(crate) fn reserve_closed_tcp_port() -> io::Result<u16> {
-    reserve_closed_tcp_port_with(|address| TcpListener::bind(address).map(drop))
-}
-
-/// Take the next numbers of the reserved sequence until `probe` accepts one.
-///
-/// Only `AddrInUse` and `PermissionDenied` are collisions that another number avoids.
-///
-/// # Errors
-/// Returns the error of a probe that is not a collision, and `AddrInUse` when every attempt
-/// collided.
-pub(crate) fn reserve_closed_tcp_port_with(
-    mut probe: impl FnMut(SocketAddr) -> io::Result<()>,
-) -> io::Result<u16> {
     for _ in 0..ATTEMPTS {
         let port = next_reserved_port();
-        match probe(SocketAddr::from((Ipv4Addr::LOCALHOST, port))) {
-            Ok(()) => return Ok(port),
+        match TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port))) {
+            Ok(probe) => {
+                drop(probe);
+                return Ok(port);
+            }
             Err(error)
                 if matches!(
                     error.kind(),

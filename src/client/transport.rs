@@ -20,15 +20,6 @@ mod framing;
 pub fn kdc_tcp_record_length(header: [u8; 4], max: usize) -> Result<usize, Error> {
     framing::kdc_record_length(header, max)
 }
-/// Loopback port numbers that the in-crate tests need refused.
-#[cfg(test)]
-#[expect(
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
-    reason = "test code is not rendered API documentation"
-)]
-#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod closed_port_tests;
 /// DNS server literal boundary tests.
 #[cfg(test)]
 #[expect(
@@ -2784,12 +2775,7 @@ mod tests {
     /// Loopback TCP and UDP port pairs for the tests of this module.
     mod loopback_pair;
 
-    /// The frame is the mark then the request, in one allocation sized for exactly that.
-    ///
-    /// `Vec::with_capacity(n)` requests exactly `n` bytes from the allocator, and `capacity()` is
-    /// documented as at least `n` and not more than the allocation, never as exactly `n`. A frame
-    /// that was grown instead ends with the capacity of a growth step, which no request of this
-    /// test reaches.
+    /// The frame is the mark then the request, in an allocation of exactly that size.
     #[test]
     fn tcp_record_frame_reserves_exactly_the_frame() -> Result<(), super::Error> {
         // Given requests short enough that a frame grown by doubling would end larger than the frame.
@@ -2798,16 +2784,12 @@ mod tests {
             let mark =
                 super::tcp_request_length(request.len(), super::TcpFraming::Kdc)?.to_be_bytes();
             let frame = tcp_record_frame(mark, request);
-            // Then it is the mark followed by the request.
+            // Then it is the mark followed by the request, with no capacity beyond that.
             assert_eq!(frame.get(..TCP_RECORD_MARK_LEN), Some(mark.as_slice()));
             assert_eq!(frame.get(TCP_RECORD_MARK_LEN..), Some(request));
-            // And it holds at least the frame, with the capacity that an exact request of the
-            // frame's size gives, so that no reallocation grew it.
-            let reserved = TCP_RECORD_MARK_LEN.saturating_add(request.len());
-            assert!(frame.capacity() >= reserved, "capacity below the frame");
             assert_eq!(
                 frame.capacity(),
-                Vec::<u8>::with_capacity(reserved).capacity(),
+                TCP_RECORD_MARK_LEN.saturating_add(request.len()),
                 "reallocated for a request of {} bytes",
                 request.len()
             );

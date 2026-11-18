@@ -45,12 +45,8 @@ def resolve(features: dict[str, list[str]], seeds: frozenset[str]) -> frozenset[
     return frozenset(result)
 
 
-def compute(features: dict[str, list[str]], everything: bool = True) -> list[Closure]:
-    """Expand reachable unions, retaining shortest lexicographic generators.
-
-    `everything` says the full closure is `--all-features`: false when leaf
-    flags exist, which `--all-features` would also enable.
-    """
+def compute(features: dict[str, list[str]]) -> list[Closure]:
+    """Expand reachable unions, retaining shortest lexicographic generators."""
     generators: dict[frozenset[str], tuple[str, ...]] = {frozenset(): ()}
     for name in sorted(features):
         for closure, seeds in list(generators.items()):
@@ -66,7 +62,7 @@ def compute(features: dict[str, list[str]], everything: bool = True) -> list[Clo
     )
     result = []
     for closure, seeds in generators.items():
-        if everything and closure == frozenset(features):
+        if closure == frozenset(features):
             arguments = ("--all-features",)
         elif "default" in closure:
             candidates = [
@@ -84,60 +80,9 @@ def compute(features: dict[str, list[str]], everything: bool = True) -> list[Clo
     return sorted(result, key=lambda value: (len(value.features), value.label))
 
 
-def leaf_minimals(manifest: dict) -> dict[str, tuple[str, ...]]:
-    """Leaf flag -> its minimal core features, from `[package.metadata.rskrb5-ng.leaf-features]`."""
-    table = (
-        manifest.get("package", {})
-        .get("metadata", {})
-        .get("rskrb5-ng", {})
-        .get("leaf-features", {})
-    )
-    return {name: tuple(body.get("minimal", ())) for name, body in table.items()}
-
-
-def core_closures(features: dict[str, list[str]], minimals: dict[str, tuple[str, ...]]) -> list[Closure]:
-    """The closures over the core features, leaves left out."""
-    core = {name: edges for name, edges in features.items() if name not in minimals}
-    return compute(core, everything=not minimals)
-
-
-def compute_all(features: dict[str, list[str]], minimals: dict[str, tuple[str, ...]]) -> list[Closure]:
-    """Core closures, plus per leaf `default + L` and `minimal + L`, plus `--all-features`."""
-    closures = core_closures(features, minimals)
-    if not minimals:
-        return closures
-    default = resolve(features, frozenset({"default"})) if "default" in features else frozenset()
-    extra = []
-    for leaf in sorted(minimals):
-        extra.append(Closure(default | resolve(features, frozenset({leaf})), ("--features", leaf)))
-        seeds = (*minimals[leaf], leaf)
-        extra.append(
-            Closure(
-                resolve(features, frozenset(seeds)),
-                ("--no-default-features", "--features", ",".join(seeds)),
-            )
-        )
-    extra.append(Closure(frozenset(features), ("--all-features",)))
-    seen = {closure.arguments for closure in closures}
-    for closure in extra:
-        if closure.arguments not in seen:
-            seen.add(closure.arguments)
-            closures.append(closure)
-    return closures
-
-
 def load(root: Path) -> list[Closure]:
-    """The core closures (36 over the eight current features)."""
     with (root / "Cargo.toml").open("rb") as stream:
-        manifest = tomllib.load(stream)
-    return core_closures(manifest["features"], leaf_minimals(manifest))
-
-
-def load_all(root: Path) -> list[Closure]:
-    """The core closures and the leaf closures: what CI runs."""
-    with (root / "Cargo.toml").open("rb") as stream:
-        manifest = tomllib.load(stream)
-    return compute_all(manifest["features"], leaf_minimals(manifest))
+        return compute(tomllib.load(stream)["features"])
 
 
 CLIPPY_RUN = "cargo clippy --all-targets ${{ matrix.closures }} -- -D warnings"
@@ -340,40 +285,6 @@ def self_test() -> int:
             + "".join(f"      - name: step\n        run: {run}\n" for run in runs)
         )
 
-    # Leaf flags: the core closures are unchanged; each leaf adds default+L and
-    # minimal+L, and one --all-features run replaces the core all-closure.
-    leaf_features = {
-        "default": ["a"],
-        "a": ["b"],
-        "b": [],
-        "alpha": ["b", "dep:x"],
-        "beta": ["dep:y"],
-    }
-    minimals = {"alpha": ("b",), "beta": ()}
-    core_only = {name: edges for name, edges in leaf_features.items() if name not in minimals}
-    assert compute_all(core_only, {}) == compute(core_only)
-    with_leaves = compute_all(leaf_features, minimals)
-    arguments = [closure.arguments for closure in with_leaves]
-    assert len(arguments) == len(set(arguments)), "duplicate closure arguments"
-    for expected in (
-        ("--features", "alpha"),
-        ("--no-default-features", "--features", "b,alpha"),
-        ("--features", "beta"),
-        ("--no-default-features", "--features", "beta"),
-        ("--all-features",),
-    ):
-        assert expected in arguments, (expected, arguments)
-    assert arguments.count(("--all-features",)) == 1
-    for closure in with_leaves:
-        if closure.arguments == ("--all-features",):
-            assert closure.features == frozenset(leaf_features)
-    core_part = [c for c in with_leaves if not (c.features & set(minimals))]
-    assert {c.features for c in core_part} == {c.features for c in compute(core_only, everything=False)}
-    assert all(c.arguments != ("--all-features",) for c in core_part)
-    assert len(core_part) == len(compute(core_only)), "the core closure count must not change"
-    manifest = {"package": {"metadata": {"rskrb5-ng": {"leaf-features": {"alpha": {"minimal": ["b"]}, "beta": {}}}}}}
-    assert leaf_minimals(manifest) == minimals and leaf_minimals({}) == {}
-
     quoted = [f'"{shlex.join(closure.arguments)}"' for closure in closures]
     head = "name: CI\non:\n  push:\njobs:\n  fmt:\n    runs-on: ubuntu-latest\n"
     script = (
@@ -501,16 +412,6 @@ def self_test() -> int:
                 pass
             else:
                 raise AssertionError(f"check-ci accepted: {label}")
-        leaf_quoted = [f'"{shlex.join(closure.arguments)}"' for closure in with_leaves]
-        path.write_text(head + job(leaf_quoted))
-        check_ci(with_leaves, path)
-        path.write_text(head + job([q for q in leaf_quoted if "alpha" not in q]))
-        try:
-            check_ci(with_leaves, path)
-        except RuntimeError:
-            pass
-        else:
-            raise AssertionError("check-ci accepted a matrix without a leaf closure")
         config = Path(directory) / "config.toml"
         accepted_configs = (
             '[build]\nwarnings = "deny"\n',
@@ -571,7 +472,7 @@ def main() -> int:
     args = parser.parse_args()
     if args.self_test:
         return self_test()
-    closures = load_all(args.root)
+    closures = load(args.root)
     if args.command == "list":
         for closure in closures:
             print(closure.label + "\t" + shlex.join(closure.arguments))

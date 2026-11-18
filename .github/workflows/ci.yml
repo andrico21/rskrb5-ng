@@ -24,9 +24,7 @@ name: CI
 # the profile equal to the vendored core and complete against current stable;
 # `facade_gate.py` and `prose_gate.py` (whole tree) enforce the source rules;
 # `feature_closures.py check-ci` holds the `closures` matrix equal to the
-# computed feature closures (core closures plus the additive leaf flags);
-# `dep_admission.py` and `leaf_features.py` admit dependencies and hold leaf
-# flags additive. See `docs/lint-policy.md` and `docs/dependency-admission.md`.
+# computed feature closures. See `docs/lint-policy.md`.
 #
 # Vendored guidelines. `docs/rust-guidelines/` is checked against its
 # SHA256SUMS in `docs-validate`; update it only by re-vendoring.
@@ -42,8 +40,7 @@ name: CI
 # Blocking: every job except the advisory ones below. Advisory (never a
 # merge gate, per core Section 12 "Recommended"): `geiger`,
 # `rustdoc-nightly-canary`, and the scheduled/dispatch `fuzz`, `mutants` and
-# `mutants-report`; they are the only jobs allowed to fail. `cargo-issue` runs
-# only on the weekly schedule and fails when rust-lang/cargo#17730 is closed.
+# `mutants-report`; they are the only jobs allowed to fail.
 
 on:
   push:
@@ -511,12 +508,6 @@ jobs:
         run: python3 scripts/lint-gates/prose_gate.py --enforce
       - name: The closures matrix lists every feature closure
         run: python3 scripts/lint-gates/feature_closures.py check-ci .github/workflows/ci.yml
-      - name: Dependency admission (forbidden crates, links, optional leaf dependencies)
-        run: python3 scripts/lint-gates/dep_admission.py --enforce
-      - name: Leaf flags are additive (cfg only in a leaf's own paths and seams)
-        run: python3 scripts/lint-gates/leaf_features.py --enforce
-      - name: deny.toml and audit.toml ignore the same advisories
-        run: python3 scripts/lint-gates/advisory_ignores.py --enforce
       - name: Fuzz lint profile
         run: python3 scripts/lint-gates/fuzz_lint.py --enforce
       # Targets come from fuzz/Cargo.toml, so this needs no cargo-fuzz.
@@ -541,19 +532,6 @@ jobs:
         run: |
           grep -rn lint-migration src tests examples fuzz && exit 1
           test $? -eq 1
-
-  # Scheduled only: the weekly run fails once Cargo bug #17730 is fixed, which
-  # ends the temporary `manual_readme` exemption (docs/dependency-admission.md).
-  cargo-issue:
-    name: cargo-issue
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule'
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: rust-lang/cargo#17730 is still open
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 scripts/lint-gates/upstream_issue.py --enforce
 
   fuzz-build:
     name: fuzz-build

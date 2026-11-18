@@ -97,12 +97,8 @@ in the `lint-gates` job of [`ci.yml`](https://github.com/andrico21/rskrb5-ng/blo
 | `completeness_check.py` | the profile is complete for the current stable: the rustc, Clippy `restriction` and Cargo `restriction` lints missing from `Cargo.toml` are exactly the documented exclusions (the Cargo leg reads the `rust-docs` page of the stable toolchain), and the profile's only `allow` entries are the two documented overrides |
 | `facade_gate.py --enforce` | no `pub use` (or `pub(..) use`) outside the crate-root scope of `src/lib.rs`, cfg-disabled code included |
 | `prose_gate.py --enforce` | the core's non-lint rules on every item of the whole tree (`--paths <globs>` narrows a local run; `facade_gate.py --paths` works the same way, and an empty selection selects nothing) |
-| `feature_closures.py run` | every core feature closure and every leaf closure (see "Every closure, and Windows"): `cargo clippy --all-targets <args> -- -D warnings`, then `cargo test <args>` |
-| `feature_closures.py check-ci .github/workflows/ci.yml` | the matrix of the job whose id is `closures` lists exactly the computed core and leaf closures, each once; the job is defined once, no other `closures:` key exists (no decoy job or matrix), the matrix has no `include`/`exclude`, the job has no `if`/`continue-on-error`, and its steps run exactly the strict clippy and test commands. Nothing may cap lints or swallow a failure: the job has no `env`, `defaults`, `shell`, `container` or `working-directory` and uses only the checkout, toolchain and cache actions; the workflow sets no `defaults` and no Cargo or rustc variable beyond `CARGO_TERM_COLOR`, `CARGO_INCREMENTAL`, `CARGO_NET_RETRY` and `RUST_BACKTRACE`; and `.cargo/config.toml` keeps `build.warnings = "deny"` with no `rustflags`, wrapper, `rustc` or Cargo/rustc `[env]` variable |
-| `dep_admission.py --enforce` | the dependency admission rules of [`dependency-admission.md`](dependency-admission.md): no forbidden crate (`openssl*`, `native-tls`, `ring`, `aws-lc*`, `cryptoki*`, `libloading`, `bindgen`) in any manifest or in the feature-resolved normal, build or dev graph of a first-party package on four targets; no `links` package or `cc`/`cmake`/`pkg-config` build script outside the OS-wrapper allow list; `libfuzzer-sys` only in the standalone fuzz crate; every dependency added after the baseline is optional, enabled only by leaf features and has an admission record, except the recorded `rustix` target-table exception (`--offline` passes through to cargo) |
-| `leaf_features.py --enforce` | leaf flags are additive: every `cfg(.. feature = "<leaf>" ..)` in `src/`, `tests/`, `examples/` and `fuzz/` lies in that leaf's declared modules, declared tests, one declared seam (file, item, one delegating call) or the single `mod` line in `src/lib.rs`; no `cfg` names two leaves; no leaf is in `default`, is enabled by a core feature or enables another leaf; all read from `[package.metadata.rskrb5-ng.leaf-features]` of `Cargo.toml` |
-| `advisory_ignores.py --enforce` | the `[advisories] ignore` sets of `deny.toml` and `.cargo/audit.toml` are equal |
-| `upstream_issue.py --enforce` | rust-lang/cargo#17730 is open; it runs only in the weekly scheduled CI run (the `cargo-issue` job), and its failure means `manual_readme = "allow"` is removed from `Cargo.toml`, the core and the allow set together |
+| `feature_closures.py run` | every feature closure: `cargo clippy --all-targets <args> -- -D warnings`, then `cargo test <args>` |
+| `feature_closures.py check-ci .github/workflows/ci.yml` | the matrix of the job whose id is `closures` lists exactly the computed closures, each once; the job is defined once, no other `closures:` key exists (no decoy job or matrix), the matrix has no `include`/`exclude`, the job has no `if`/`continue-on-error`, and its steps run exactly the strict clippy and test commands. Nothing may cap lints or swallow a failure: the job has no `env`, `defaults`, `shell`, `container` or `working-directory` and uses only the checkout, toolchain and cache actions; the workflow sets no `defaults` and no Cargo or rustc variable beyond `CARGO_TERM_COLOR`, `CARGO_INCREMENTAL`, `CARGO_NET_RETRY` and `RUST_BACKTRACE`; and `.cargo/config.toml` keeps `build.warnings = "deny"` with no `rustflags`, wrapper, `rustc` or Cargo/rustc `[env]` variable |
 | `fuzz_lint.py --enforce` | the root profile on the nightly fuzz crate, in a disposable copy (without `--enforce` it reports the clippy result and exits 0, like every gate) |
 | `fuzz_coverage.py --enforce` | the parser inventory of [`review/fuzz.md`](https://github.com/andrico21/rskrb5-ng/blob/main/docs/review/fuzz.md) exists and is not empty, lists every function the parser search finds, names only functions still defined in their source file, and names only targets of `fuzz/Cargo.toml` (`--coverage DIR` proves the mappings from coverage exports) |
 | `workflow_gate.py --enforce` | the `lint-gates` job and the prek hook run every gate, plus the error-variant construction audit and the offline self-tests of `scripts/check-github-ad-gate.py`, `scripts/check-ad-integration-env-smoke.py`, `scripts/run-gated-integration.sh` and `scripts/release-publish.sh`, and the job may not be skipped or advisory; every action is pinned to a commit SHA, each `dtolnay/rust-toolchain` channel to one SHA, and the release workflows use CI's `# stable` revision |
@@ -202,11 +198,6 @@ conversions, `?`, `expect` and `unwrap` outside assertions still require it.
 
 ## Dependency changes
 
-A new dependency of the crate needs an admission record and must be an
-optional leaf dependency (`dep_admission.py`, `leaf_features.py`); the process
-and the forbidden crates are in [`dependency-admission.md`](dependency-admission.md).
-The notes below record approvals of other dependency edges.
-
 The owner approved markdown-it-py 3.0.0 and its mdurl 0.1.2 dependency on
 2026-11-11 for the package-link gate (FU-CI-R12, FU-CI-R13, FU-CI-R14).
 `scripts/lint-gates/requirements.txt` pins exact versions and PyPI wheel
@@ -242,20 +233,11 @@ MIT/Apache-2.0 licensed. There is no separate committed SBOM to update.
 
 `feature_closures.py list` computes the distinct closures of the `[features]`
 table (`default` counts as a feature) and the canonical Cargo arguments for
-each: 36 core closures today. Each one must pass `cargo clippy --all-targets <args>
+each: 36 closures today. Each one must pass `cargo clippy --all-targets <args>
 -- -D warnings` and `cargo test <args>`; `feature_closures.py run` runs both
 for all of them. A consumer may therefore enable any feature combination under
 its own strict lints. In CI each closure is one leg of the `closures` matrix,
 written out statically and held equal to the computed list by `check-ci`.
-
-Leaf flags (`camellia`, `pkinit`, ... : the optional, additive dependency
-flags of [`dependency-admission.md`](dependency-admission.md)) are not part of
-the 36. They are the keys of `[package.metadata.rskrb5-ng.leaf-features]` in
-`Cargo.toml`, each with its minimal core features. For each leaf `L`,
-`feature_closures.py` adds `default + L` (`--features L`) and the minimal build
-(`--no-default-features --features <minimal core>,L`), and one `--all-features`
-run for the whole set; `list`, `run` and `check-ci` cover the core and the leaf
-closures, and the core closures never change when a leaf is added.
 
 Items used only under some features carry a precise `#[cfg(feature = ..)]`,
 and Unix-only helpers carry `#[cfg(unix)]`, so nothing is dead or unused in any

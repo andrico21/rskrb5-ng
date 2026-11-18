@@ -12,11 +12,10 @@
 //!
 //! The DNS resolver binds its client sockets to random wildcard ports, and Windows lets such a
 //! bind share the number of a socket bound to one address: a UDP socket that a test holds must
-//! also keep a wildcard socket on its number. An IPv6 socket keeps an IPv6 wildcard socket
-//! (`bind_udp_loopback_v6`).
+//! also keep a wildcard socket on its number.
 
 use core::{
-    net::{Ipv4Addr, Ipv6Addr, SocketAddr},
+    net::{Ipv4Addr, SocketAddr},
     sync::atomic::{AtomicU64, Ordering},
 };
 use std::{
@@ -67,24 +66,10 @@ impl Order {
 /// # Cancel safety
 /// cancel-safe: dropping the future drops the sockets bound so far.
 pub(crate) async fn bind_tcp_and_udp_pair() -> io::Result<(TcpListener, UdpSocket)> {
-    bind_tcp_and_udp_pair_with(bind_on).await
-}
-
-/// The search of [`bind_tcp_and_udp_pair`] with its attempts, candidates and seed, and `bind` in
-/// place of [`bind_on`], so that a test observes how many attempts the public helper makes.
-///
-/// # Errors
-/// As [`bind_tcp_and_udp_pair`].
-///
-/// # Cancel safety
-/// cancel-safe when `bind` is: dropping the future drops the sockets bound so far.
-pub(crate) async fn bind_tcp_and_udp_pair_with(
-    bind: impl AsyncFnMut(u16, Order) -> io::Result<(TcpListener, UdpSocket)>,
-) -> io::Result<(TcpListener, UdpSocket)> {
     static CALLS: AtomicU64 = AtomicU64::new(0);
     // The process id keeps concurrent test processes apart, the counter concurrent calls.
     let seed = (u64::from(process::id()) << 32_u32) ^ CALLS.fetch_add(1, Ordering::Relaxed);
-    bind_pair_with(ATTEMPTS, seed, bind).await
+    bind_pair_with(ATTEMPTS, seed, bind_on).await
 }
 
 /// Bind both sockets on `port` of the loopback address in the given order.
@@ -159,8 +144,8 @@ pub(crate) async fn bind_pair_with(
 /// The socket is live for UDP and its TCP side is closed. No test that runs in parallel draws
 /// the number: the reserved range is not the range of [`bind_tcp_and_udp_pair`] nor an ephemeral
 /// range, and every attempt of the process takes the next number of one sequence. The DNS
-/// resolver's random client ports can still take a reserved number (the FU-TST-R64 and FU-TST-P03
-/// residual, see `closed_port.rs`), and the process-id offset of the sequence is probabilistic.
+/// resolver's random client ports can still take a reserved number (the FU-TST-R64 residual,
+/// see `closed_port.rs`), and the process-id offset of the sequence is probabilistic.
 ///
 /// # Errors
 /// Returns the error of a bind that is not a collision, and `AddrInUse` listing every attempt
@@ -207,20 +192,6 @@ pub(crate) async fn bind_udp_loopback() -> io::Result<UdpSocket> {
     Ok(udp)
 }
 
-/// Bind a UDP socket on an IPv6 loopback port number that the system chooses, and keep a
-/// wildcard socket on the number (see [`hold_wildcard_v6`]).
-///
-/// # Errors
-/// Returns the error of the bind.
-///
-/// # Cancel safety
-/// cancel-safe: dropping the future drops the socket bound so far.
-pub(crate) async fn bind_udp_loopback_v6() -> io::Result<UdpSocket> {
-    let udp = UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await?;
-    hold_wildcard_v6(udp.local_addr()?.port());
-    Ok(udp)
-}
-
 /// Wildcard sockets that keep the DNS resolver off the numbers of the UDP sockets of this process.
 static WILDCARD_HOLDS: Mutex<Vec<StdUdpSocket>> = Mutex::new(Vec::new());
 
@@ -241,19 +212,6 @@ pub(crate) fn hold_wildcard(port: u16) {
     }
 }
 
-/// Keep an IPv6 wildcard UDP socket on `port` until the process ends.
-///
-/// The same protection as [`hold_wildcard`] for the IPv6 family: a wildcard bind of that family
-/// on a number whose socket is bound to `::1` collides instead of sharing the number.
-pub(crate) fn hold_wildcard_v6(port: u16) {
-    if let Ok(socket) = StdUdpSocket::bind((Ipv6Addr::UNSPECIFIED, port)) {
-        WILDCARD_HOLDS
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(socket);
-    }
-}
-
 /// Take the next numbers of the reserved sequence until `bind` succeeds on one.
 ///
 /// The numbers come from `closed_port.rs`.
@@ -264,7 +222,7 @@ pub(crate) fn hold_wildcard_v6(port: u16) {
 ///
 /// # Cancel safety
 /// cancel-safe when `bind` is: dropping the future drops what `bind` returned so far.
-pub(crate) async fn with_reserved_port<T>(
+async fn with_reserved_port<T>(
     mut bind: impl AsyncFnMut(SocketAddr) -> io::Result<T>,
 ) -> io::Result<T> {
     let mut tried = Vec::new();
