@@ -1,0 +1,4 @@
+# kadmind ACL of the MIT interop fixture (test realm only).
+# The admin principal may do everything; later lanes add their own lines in
+# provision.d scripts (appending to this file before kadmind starts).
+admin/admin@TEST.RSKRB5 *
