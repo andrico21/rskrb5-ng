@@ -90,10 +90,11 @@ fn ticket_etype(der: &[u8]) -> Result<i32, Box<dyn Error>> {
     Ok(ticket::decode(der)?.enc_part.etype)
 }
 
-/// The MIT KDC encrypts the AS reply in the user's Camellia key, issues a
-/// Camellia service ticket with a Camellia session key, and the acceptor
-/// opens it with a Camellia keytab: every step is asserted, so no fallback to
-/// AES can pass.
+/// The Camellia negotiation with MIT.
+///
+/// The KDC encrypts the AS reply in the user's Camellia key and issues a Camellia
+/// service ticket with a Camellia session key, and the acceptor opens it with a
+/// Camellia keytab. Every step is asserted, so no fallback to AES can pass.
 #[test]
 fn camellia_is_negotiated_with_the_mit_realm() -> Result<(), Box<dyn Error>> {
     if !harness::require("camellia_is_negotiated_with_the_mit_realm", &[MIT_KDC])? {

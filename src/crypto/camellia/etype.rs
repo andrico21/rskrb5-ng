@@ -3,6 +3,8 @@
 use sha1::Sha1;
 
 use super::{CtsCmacEtype, cts, kdf};
+#[cfg(test)]
+use crate::crypto::pbkdf2_observation;
 use crate::{
     crypto::{
         KERBEROS_CONSTANT, Purpose, SecretScratch, s2kparams_to_iterations, split_trailing_mac,
@@ -117,7 +119,7 @@ impl CtsCmacEtype {
     #[must_use]
     pub fn string_to_pbkdf2(self, secret: &[u8], saltp: &[u8], iterations: u32) -> Vec<u8> {
         #[cfg(test)]
-        crate::crypto::pbkdf2_observation::record();
+        pbkdf2_observation::record();
         let mut out = SecretScratch::new(vec![0; self.key_len()]);
         pbkdf2::pbkdf2_hmac::<Sha1>(secret, saltp, iterations, &mut out);
         out.into_vec()
