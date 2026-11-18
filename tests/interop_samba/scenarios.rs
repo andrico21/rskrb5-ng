@@ -27,7 +27,7 @@ use crate::harness::{self, Fixture};
 #[path = "ad.rs"]
 mod ad;
 
-/// AS, TGS, pre-authentication, referral and error scenarios.
+/// AS, TGS, pre-authentication, cross-realm and error scenarios.
 #[path = "kdc.rs"]
 mod kdc;
 
@@ -179,6 +179,14 @@ fn tgs_options(
     Ok(TgsReq::new(SystemTime::now(), nonce(protocol, sequence)?)
         .with_ticket_lifetime(Duration::from_hours(1))
         .with_etypes(etypes))
+}
+
+/// Replaces `error` by its `Display` text: libtest prints a returned error
+/// through `Debug`, which for the client errors names only the variant.
+fn shown(error: Box<dyn Error>) -> Box<dyn Error> {
+    let text = error.to_string();
+    drop(error);
+    text.into()
 }
 
 /// The enctype of the encrypted part of the DER `ticket` (the service key).

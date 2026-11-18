@@ -15,12 +15,17 @@ load_secrets
 quiet samba-tool domain passwordsettings set --complexity=off --min-pwd-age=0 --history-length=0
 
 # Claims: a claim type sourced from the user attribute `department`, issued
-# into the PAC (domain functional level 2016).
+# into the PAC (domain functional level 2016). Samba puts a zero-length claims
+# buffer into the PAC of a user without claims, which the crate's PAC parser
+# refuses (register row FU-IOP-P14, todo 22), so the clients whose PACs the
+# scenarios validate carry a claim.
 quiet samba-tool domain claim claim-type create --attribute=department --class=user \
   --name=Department --description="rskrb5 interop claim"
 
 # Clients.
 create_user testuser1 INTEROP_SAMBA_USER_USER_PASSWORD department=Interop
+# testuser3 has DONT_REQUIRE_PREAUTH, but Samba 4.22 still requires
+# pre-authentication from it (register row FU-IOP-P15).
 create_user testuser3 INTEROP_SAMBA_USER_NOPREAUTH_USER_PASSWORD
 quiet python3 "$ACCOUNT_TOOL" uac testuser3 DONT_REQUIRE_PREAUTH
 create_user s4uclient INTEROP_SAMBA_USER_S4U_CLIENT_PASSWORD

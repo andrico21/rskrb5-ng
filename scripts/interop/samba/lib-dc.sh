@@ -10,10 +10,10 @@ readonly ACCOUNT_TOOL=/opt/interop/samba/account.py
 
 case "${SAMBA_ROLE:-}" in
   user)
-    readonly REALM=USER.RSKRB5 NETBIOS=USER DC_NAME=dcuser ROLE_UPPER=USER
+    readonly REALM=USER.RSKRB5 NETBIOS=USER DC_NAME=dcuser ROLE_UPPER=USER FUNCTION_LEVEL=2016
     ;;
   res)
-    readonly REALM=RES.RSKRB5 NETBIOS=RES DC_NAME=dcres ROLE_UPPER=RES
+    readonly REALM=RES.RSKRB5 NETBIOS=RES DC_NAME=dcres ROLE_UPPER=RES FUNCTION_LEVEL=2016
     ;;
   *)
     printf 'interop[samba]: FAILED: SAMBA_ROLE must be user or res, not "%s"\n' "${SAMBA_ROLE:-}" >&2

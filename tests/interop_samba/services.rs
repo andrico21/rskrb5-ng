@@ -12,7 +12,7 @@ use rskrb5_ng::{
 
 use super::{
     AES256_SHA1, FLAG_PRE_AUTHENT, SAMBA_USER, SAMBA_USER_KPASSWD, config, password, runtime,
-    service, ticket_etype, transport, user, user_realm,
+    service, shown, ticket_etype, transport, user, user_realm,
 };
 use crate::harness::{self, assert_negotiated_enctype, assert_ticket_flag};
 
@@ -26,11 +26,16 @@ const KDC_ERR_BADOPTION: i32 = 13;
 /// RFC 4120 ticket flag bit `forwardable`.
 const FLAG_FORWARDABLE: u32 = 1;
 
-/// FU-TST-06: the high-level password change of the crate against Samba's
-/// kpasswd service. Samba's reply passes every RSK-789A6FBB reply control
-/// (AP-REP server sequence, timestamp, sender address); afterwards the KDC
-/// refuses the old password with `KDC_ERR_PREAUTH_FAILED` and issues a
-/// pre-authenticated TGT for the new one.
+/// FU-TST-06: the high-level password change of the crate
+/// (`Tokio::change_password_for`) sets a new password on the disposable
+/// account kpasswduser as the domain Administrator through Samba's kpasswd
+/// service. Samba's reply passes every RSK-789A6FBB reply control (AP-REP
+/// server sequence, timestamp, sender address); afterwards the KDC refuses
+/// the old password with `KDC_ERR_PREAUTH_FAILED` and issues a
+/// pre-authenticated TGT for the new one. (The self-change `change_password`
+/// names the client as the RFC 3244 target, which Samba treats as an
+/// administrative reset and refuses for a plain user: register row
+/// FU-IOP-P13, todo 23.)
 #[test]
 fn kpasswd_changes_the_samba_disposable_account_password() -> Result<(), Box<dyn Error>> {
     if !harness::require(
@@ -44,11 +49,16 @@ fn kpasswd_changes_the_samba_disposable_account_password() -> Result<(), Box<dyn
         let account = user("INTEROP_SAMBA_USER_KPASSWD_USER")?;
         let old = password("INTEROP_SAMBA_USER_KPASSWD_USER_PASSWORD")?;
         let new = password("INTEROP_SAMBA_USER_KPASSWD_USER_NEW_PASSWORD")?;
-        let mut client =
-            Tokio::with_password(config.clone(), KdcProtocol::Tcp, account.clone(), old.clone())
-                .with_transport(transport());
-        let result = client
-            .change_password(
+        let mut administrator = Tokio::with_password(
+            config.clone(),
+            KdcProtocol::Tcp,
+            user("INTEROP_SAMBA_USER_ADMIN_PRINCIPAL")?,
+            password("INTEROP_SAMBA_USER_ADMIN_PASSWORD")?,
+        )
+        .with_transport(transport());
+        let result = administrator
+            .change_password_for(
+                account.clone(),
                 Password::from_vec(new.clone()),
                 ipv4_host_address(Ipv4Addr::LOCALHOST.octets()),
             )
@@ -77,6 +87,7 @@ fn kpasswd_changes_the_samba_disposable_account_password() -> Result<(), Box<dyn
         assert_negotiated_enctype("TGT session key", AES256_SHA1, session.session_key().etype())?;
         Ok::<_, Box<dyn Error>>(())
     })
+    .map_err(shown)
 }
 
 /// Classic constrained delegation: svc-s4u (protocol transition, allowed to
@@ -96,7 +107,7 @@ fn s4u_constrained_delegation_reaches_only_the_allowed_target() -> Result<(), Bo
         let account = Principal::user(realm.as_str(), harness::var("INTEROP_SAMBA_USER_S4U_ACCOUNT")?);
         let impersonated = user("INTEROP_SAMBA_USER_S4U_CLIENT")?;
         let mut client = Tokio::with_keytab(
-            config("")?,
+            config(" forwardable = true")?,
             KdcProtocol::Tcp,
             account.clone(),
             Keytab::load(harness::var("INTEROP_SAMBA_USER_S4U_KEYTAB")?)?,
@@ -129,4 +140,5 @@ fn s4u_constrained_delegation_reaches_only_the_allowed_target() -> Result<(), Bo
         );
         Ok::<_, Box<dyn Error>>(())
     })
+    .map_err(shown)
 }

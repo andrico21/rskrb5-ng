@@ -22,6 +22,10 @@ remote_ip="$(getent hosts dcres.res.rskrb5 | awk '{ print $1; exit }')"
 quiet samba-tool domain trust create res.rskrb5 --type=forest --direction=both \
   --create-location=both --ipaddress="$remote_ip" --authentication-file="$REMOTE_AUTH" \
   --local-dc-ipaddress=127.0.0.1 --local-dc-authentication-file="$LOCAL_AUTH"
+# The seeded RC4 trust scenario asks for an rc4-hmac session key on
+# krbtgt/RES.RSKRB5@USER.RSKRB5; the trust keys stay AES (0x1c = RC4 session
+# keys allowed besides AES128/AES256).
+quiet python3 "$ACCOUNT_TOOL" tdo-enctypes res.rskrb5 0x1c
 samba-tool domain trust show res.rskrb5 --local-dc-ipaddress=127.0.0.1 \
   --local-dc-authentication-file="$LOCAL_AUTH" 2>&1 | grep -E 'TrustType|TrustDirection|TrustAttributes|NetbiosName|DnsDomain' >&2 || true
 log "forest trust $REALM <-> RES.RSKRB5 created (both directions, remote DC $remote_ip)"

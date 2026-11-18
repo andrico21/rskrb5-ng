@@ -14,9 +14,15 @@ create_user sysHTTP INTEROP_SAMBA_RES_HTTP_ACCOUNT_PASSWORD
 add_spn sysHTTP HTTP/host.res.rskrb5
 quiet python3 "$ACCOUNT_TOOL" enctypes sysHTTP 0x1c
 
-# A client of the resource domain (the reverse trust direction).
-create_user resuser INTEROP_SAMBA_RES_USER_PASSWORD
+# Claims: a claim type sourced from the user attribute `department`, issued
+# into the PAC (domain functional level 2016).
+quiet samba-tool domain claim claim-type create --attribute=department --class=user \
+  --name=Department --description="rskrb5 interop claim"
+
+# A client of the resource domain (the reverse trust direction) with the
+# claim Department=Interop.
+create_user resuser INTEROP_SAMBA_RES_USER_PASSWORD department=Interop
 
 export_keytab syshttp.keytab sysHTTP@RES.RSKRB5
 export_keytab http.keytab HTTP/host.res.rskrb5@RES.RSKRB5
-log "accounts, SPNs and keytabs of $REALM ready"
+log "accounts, SPNs, claims and keytabs of $REALM ready"

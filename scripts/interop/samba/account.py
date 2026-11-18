@@ -9,6 +9,8 @@ line (loaded from the run's tmpfs secrets), never from argv, and never printed.
     account.py password NAME PASSWORD_VARIABLE
     account.py uac NAME FLAG...            (FLAG: DONT_REQUIRE_PREAUTH)
     account.py enctypes NAME VALUE         (msDS-SupportedEncryptionTypes)
+    account.py tdo-enctypes PARTNER VALUE  (the same on the trusted-domain
+                                            object of the trust with PARTNER)
 """
 
 import os
@@ -44,10 +46,18 @@ def account_dn(samdb: SamDB, name: str) -> ldb.Dn:
     return found[0].dn
 
 
-def replace(samdb: SamDB, name: str, attribute: str, value: str) -> None:
-    message = ldb.Message(account_dn(samdb, name))
+def replace(samdb: SamDB, name: str, attribute: str, value: str, dn: ldb.Dn | None = None) -> None:
+    message = ldb.Message(dn if dn is not None else account_dn(samdb, name))
     message[attribute] = ldb.MessageElement(value, ldb.FLAG_MOD_REPLACE, attribute)
     samdb.modify(message)
+
+
+def trusted_domain_dn(samdb: SamDB, partner: str) -> ldb.Dn:
+    expression = "(&(objectClass=trustedDomain)(trustPartner=%s))" % ldb.binary_encode(partner)
+    found = samdb.search(base=samdb.domain_dn(), scope=ldb.SCOPE_SUBTREE, expression=expression, attrs=[])
+    if len(found) != 1:
+        raise SystemExit("trusted domain %s: %d matches" % (partner, len(found)))
+    return found[0].dn
 
 
 def main(argv: list[str]) -> None:
@@ -74,6 +84,9 @@ def main(argv: list[str]) -> None:
             )
     elif action == "enctypes":
         replace(samdb, name, "msDS-SupportedEncryptionTypes", str(int(argv[3], 0)))
+    elif action == "tdo-enctypes":
+        dn = trusted_domain_dn(samdb, name)
+        replace(samdb, name, "msDS-SupportedEncryptionTypes", str(int(argv[3], 0)), dn)
     else:
         raise SystemExit(__doc__)
 

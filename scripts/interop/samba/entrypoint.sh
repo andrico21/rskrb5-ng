@@ -42,8 +42,9 @@ configure_resolver() {
 }
 
 # Provisions the domain. Settings (each one recorded in fixture.sh):
-# - ad dc functional level / --function-level 2016: Kerberos claims and
-#   authentication policies (Samba 4.20+), compound identity;
+# - ad dc functional level / --function-level 2016 (FUNCTION_LEVEL in
+#   lib-dc.sh): Kerberos claims, authentication policies, compound identity
+#   (Samba 4.20+);
 # - ldap server require strong auth = yes: LDAP accepts only simple binds and
 #   SASL binds with correct TLS channel bindings over TLS, and SASL binds with
 #   sign or seal on unencrypted connections (Windows LdapEnforceChannelBinding=2);
@@ -57,8 +58,8 @@ provision_domain() {
   local forwarder="$1" admin_password="$2" log="$RUN_DIR/provision.log"
   if ! samba-tool domain provision --realm="$REALM" --domain="$NETBIOS" \
     --server-role=dc --dns-backend=SAMBA_INTERNAL --host-name="$DC_NAME" \
-    --adminpass="$admin_password" --function-level=2016 \
-    --option="ad dc functional level = 2016" \
+    --adminpass="$admin_password" --function-level="$FUNCTION_LEVEL" \
+    --option="ad dc functional level = $FUNCTION_LEVEL" \
     --option="ldap server require strong auth = yes" \
     --option="tls enabled = yes" \
     --option="kdc enable fast = yes" \
@@ -67,7 +68,7 @@ provision_domain() {
     tail -n 25 "$log" >&2
     fail "samba-tool domain provision failed"
   fi
-  log "provisioned $REALM (NetBIOS $NETBIOS, DC $DC_NAME.$DNS_DOMAIN, forwarder $forwarder)"
+  log "provisioned $REALM (NetBIOS $NETBIOS, DC $DC_NAME.$DNS_DOMAIN, functional level $FUNCTION_LEVEL, forwarder $forwarder)"
 }
 
 wait_for_ports() {

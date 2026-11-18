@@ -9,7 +9,9 @@
 #   DC dcuser.user.rskrb5                    DC dcres.res.rskrb5
 #   realm USER.RSKRB5, NetBIOS USER   <==>   realm RES.RSKRB5, NetBIOS RES
 #             bidirectional forest trust (samba-tool domain trust create
-#             --type=forest --direction=both, created from samba-user, trust.sh)
+#             --type=forest --direction=both, created from samba-user, trust.sh;
+#             the USER-side trusted-domain object allows RC4 session keys,
+#             0x1c, for the seeded RC4 trust scenario; the trust keys are AES)
 #
 #   DNS: each DC resolves through its own Samba DNS server (its zone), whose
 #   `dns forwarder` is the runtime's DNS server on the network rskrb5-interop;
@@ -24,7 +26,12 @@
 #   (INTEROP_SAMBA_<USER|RES>_<KDC|KPASSWD|LDAP|LDAPS>_PORT override them).
 #
 # Settings of both DCs (entrypoint.sh provision_domain): domain and DC
-# functional level 2016 (claims, authentication policies); `ldap server
+# functional level 2016 (claims, authentication policies, compound
+# identity). Samba (at any functional level) puts a zero-length claims buffer
+# into the PAC of a user without claims and of every ticket across the trust
+# (claims do not cross it), which the crate's PAC parser refuses (register row
+# FU-IOP-P14, todo 22): s4uclient, kpasswduser or any cross-trust ticket
+# reproduce it; testuser1 and resuser carry a claim; `ldap server
 # require strong auth = yes` and `tls enabled = yes` (channel-binding
 # enforcement: LDAP SASL binds over TLS need correct tls-endpoint channel
 # bindings, simple binds need TLS, plain LDAP needs sign or seal; Samba 4.21+);
@@ -35,7 +42,8 @@
 #
 # Accounts (setup-user.sh, setup-res.sh), every password generated per run:
 #   USER.RSKRB5: testuser1 (client, claim Department=Interop), testuser3
-#     (no pre-authentication), testuser2 (HTTP/user2.user.rskrb5, AES,
+#     (DONT_REQUIRE_PREAUTH; Samba still requires pre-authentication,
+#     FU-IOP-P15), testuser2 (HTTP/user2.user.rskrb5, AES,
 #     claims and compound-identity support bits), kpasswduser (Rust kpasswd,
 #     FU-TST-06), kpasswdcheck (self-check kpasswd), setpwtarget (targeted
 #     set-password target), s4uclient (the impersonated user), svc-s4u
@@ -46,7 +54,7 @@
 #     msDS-AllowedToActOnBehalfOfOtherIdentity = svc-rbcd), svc-denied
 #     (HTTP/denied.user.rskrb5, nobody may delegate to it); Administrator.
 #   RES.RSKRB5: sysHTTP (HTTP/host.res.rskrb5, AES and RC4-HMAC), resuser
-#     (client); Administrator.
+#     (client, claim Department=Interop); Administrator.
 #
 # Order: samba-res starts first; samba-user then starts, creates the trust
 # (trust.sh, needs both administrators' passwords) and runs the self-check
@@ -136,6 +144,8 @@ fixture_samba_res_up() {
   interop_env "${prefix}_HTTP_ACCOUNT_KEYTAB" "$out/syshttp.keytab"
   interop_env "${prefix}_HTTP_KEYTAB" "$out/http.keytab"
   interop_env "${prefix}_USER" resuser
+  interop_env "${prefix}_CLAIM_TYPE" Department
+  interop_env "${prefix}_CLAIM_VALUE" Interop
 }
 
 fixture_samba_user_up() {
