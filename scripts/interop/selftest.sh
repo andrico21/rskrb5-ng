@@ -152,7 +152,8 @@ interop_self_test() {
 # Lane 1E: the Samba fixture registration, without containers. Default: both
 # DCs (samba-res before samba-user, its trust partner) and the suite `samba`
 # over both; INTEROP_SAMBA=0 registers nothing; samba-user refuses to start
-# before samba-res delivered its administrator secret.
+# before samba-res delivered its administrator secret; administrator
+# passwords are drawn until complex, within a bound.
 interop_self_test_samba() {
   local failures=0 out
   sf() {
@@ -180,6 +181,8 @@ interop_self_test_samba() {
   )"
   [[ "$out" == "|" ]] || sf "INTEROP_SAMBA=0 still registered '$out'"
   out="$(
+    # Local to this command substitution on purpose (SC2030).
+    # shellcheck disable=SC2030
     INTEROP_SAMBA_RES_ADMIN_PASSWORD=''
     interop_build_image() { echo "image build attempted" >&2; return 1; }
     # shellcheck source=scripts/interop/samba/fixture.sh
@@ -188,5 +191,33 @@ interop_self_test_samba() {
   )" && sf "samba-user started without samba-res"
   [[ "$out" == *"needs samba-res"* && "$out" != *"image build attempted"* ]] ||
     sf "samba-user without samba-res did not refuse first, naming samba-res: $out"
+  local counter
+  counter="$(mktemp "${TMPDIR:-/tmp}/rskrb5-interop-draws.XXXXXX")"
+  out="$(
+    # The draws run in command substitutions, so the stub counts in a file.
+    interop_new_secret() {
+      printf 'x' >>"$counter"
+      if (($(wc -c <"$counter") < 3)); then
+        printf 'abcdefghijklABCDEFGHIJKL'
+      else
+        printf 'abcdefghijklABCDEFGH1234'
+      fi
+    }
+    # shellcheck source=scripts/interop/samba/fixture.sh
+    source "$INTEROP_ROOT/scripts/interop/samba/fixture.sh"
+    samba_new_admin_password
+    printf ' %s' "$(wc -c <"$counter")"
+  )"
+  rm -f "$counter"
+  [[ "$out" == "abcdefghijklABCDEFGH1234 3" ]] ||
+    sf "the administrator password draw did not skip secrets without a digit: '$out'"
+  out="$(
+    interop_new_secret() { printf 'abcdefghijklmnopqrstuvwx'; }
+    # shellcheck source=scripts/interop/samba/fixture.sh
+    source "$INTEROP_ROOT/scripts/interop/samba/fixture.sh"
+    samba_new_admin_password 2>&1
+  )" && sf "the administrator password draw accepted a secret without upper case and digits"
+  [[ "$out" == *"no complex administrator password after 32 draws"* ]] ||
+    sf "the bounded draw did not fail naming its bound: $out"
   ((failures == 0))
 }

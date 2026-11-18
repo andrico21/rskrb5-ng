@@ -91,6 +91,23 @@ samba_start() {
   done
 }
 
+# Prints a fresh secret with a lower-case letter, an upper-case letter and a
+# digit: `samba-tool domain provision` checks the administrator password
+# against the default complexity rule (probe run 44307280845 drew one
+# without a digit), while every other account is created after setup-*.sh
+# turned that rule off.
+samba_new_admin_password() {
+  local value attempt
+  for attempt in {1..32}; do
+    value="$(interop_new_secret)" || return 1
+    if [[ "$value" =~ [a-z] && "$value" =~ [A-Z] && "$value" =~ [0-9] ]]; then
+      printf '%s' "$value"
+      return 0
+    fi
+  done
+  interop_die "no complex administrator password after $attempt draws"
+}
+
 samba_dc_name() {
   case "$1" in
     user) printf 'dcuser.user.rskrb5' ;;
@@ -132,7 +149,7 @@ fixture_samba_res_up() {
   local ldap="${INTEROP_SAMBA_RES_LDAP_PORT:-19312}" ldaps="${INTEROP_SAMBA_RES_LDAPS_PORT:-19313}"
   image="$(interop_build_image samba "$INTEROP_ROOT/scripts/interop/samba")" || return 1
   interop_env "${prefix}_IMAGE" "$image"
-  interop_env "${prefix}_ADMIN_PASSWORD" "$(interop_new_secret)"
+  interop_env "${prefix}_ADMIN_PASSWORD" "$(samba_new_admin_password)"
   interop_env "${prefix}_HTTP_ACCOUNT_PASSWORD" "$(interop_new_secret)"
   interop_env "${prefix}_USER_PASSWORD" "$(interop_new_secret)"
   samba_start res "$image" "$kdc" "$kpasswd" "$ldap" "$ldaps" \
@@ -157,7 +174,9 @@ fixture_samba_user_up() {
     interop_die "fixture samba-user needs samba-res (its trust partner) started first" || return 1
   image="$(interop_build_image samba "$INTEROP_ROOT/scripts/interop/samba")" || return 1
   interop_env "${prefix}_IMAGE" "$image"
-  for name in ADMIN USER NOPREAUTH_USER HTTP_ACCOUNT KPASSWD_USER KPASSWD_USER_NEW KPASSWD_CHECK \
+  interop_env "${prefix}_ADMIN_PASSWORD" "$(samba_new_admin_password)"
+  secrets+=("${prefix}_ADMIN_PASSWORD")
+  for name in USER NOPREAUTH_USER HTTP_ACCOUNT KPASSWD_USER KPASSWD_USER_NEW KPASSWD_CHECK \
     KPASSWD_CHECK_NEW SETPW_TARGET S4U_CLIENT S4U_ACCOUNT RBCD_ACCOUNT DELEGATION_TARGET DELEGATION_DENIED; do
     interop_env "${prefix}_${name}_PASSWORD" "$(interop_new_secret)"
     # The new kpasswduser password is the Rust client's to set: never delivered.
