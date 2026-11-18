@@ -139,9 +139,165 @@ interop_self_test() {
   # 4. Redaction of fixture logs.
   "$INTEROP_ROOT/scripts/interop/redact.sh" --self-test >/dev/null || st_fail "redact.sh --self-test failed"
 
+  # 5. Lane 1D-a (FAST, SPAKE, OTP+RADIUS, PKINIT, anonymous fixtures): per-run
+  #    secrets, env keys, the self-check runners (container runtime stubbed),
+  #    the container-side assertion helpers, number ranges and image pins.
+  out="$(interop_preauth_self_test "$scratch")" || true
+  [[ "$out" == *interop-preauth-checks-complete ]] || st_fail "lane 1D-a checks aborted before the end: $out"
+  out="${out%interop-preauth-checks-complete}"
+  [[ -z "$out" ]] || st_fail "lane 1D-a checks:"$'\n'"$out"
+
   rm -rf "$scratch"
   if ((failures != 0)); then
     return 1
   fi
   echo "self-test: ok"
+}
+
+# Lane 1D-a cases of `run.sh self-test`; prints one line per failed check.
+# Runs in a subshell so the fixtures it sources and the stubs it defines leave
+# no state behind.
+interop_preauth_self_test() {
+  (
+    local dir="$INTEROP_ROOT/scripts/interop" work="$1/preauth" name file prefix calls
+    mkdir -p "$work"
+    INTEROP_ENV_NAMES=()
+    # shellcheck source=scripts/interop/mit/fixture.sh
+    source "$dir/mit/fixture.sh" || {
+      printf 'cannot source mit/fixture.sh\n'
+      exit 0
+    }
+    # shellcheck source=scripts/interop/radius/fixture.sh
+    source "$dir/radius/fixture.sh" || {
+      printf 'cannot source radius/fixture.sh\n'
+      exit 0
+    }
+    bad() { printf '%s\n' "$*"; }
+    interop_log() { :; }
+
+    # Secrets: fresh [A-Za-z0-9]{24} values, all redacted as secrets, distinct.
+    interop_mit_preauth_secrets || bad "interop_mit_preauth_secrets failed"
+    local -A seen=()
+    for name in "${INTEROP_MIT_PREAUTH_SECRET_NAMES[@]}"; do
+      [[ "${!name:-}" =~ ^[A-Za-z0-9]{24}$ ]] || bad "$name is not a fresh 24-character secret"
+      interop_is_secret_name "$name" || bad "$name would not be redacted (names must end in _PASSWORD, _SECRET or _TOKEN)"
+      [[ -z "${seen[${!name:-}]:-}" ]] || bad "$name repeats another secret"
+      seen["${!name:-}"]=1
+    done
+
+    # Env keys: valid names, the files under OUT/pki, no secret-looking key.
+    local before=${#INTEROP_ENV_NAMES[@]}
+    interop_mit_preauth_env /state/mit || bad "interop_mit_preauth_env failed"
+    local -a added=("${INTEROP_ENV_NAMES[@]:before}")
+    for name in INTEROP_MIT_FAST_USER INTEROP_MIT_FAST_REQUIRED_SERVICE INTEROP_MIT_SPAKE_USER \
+      INTEROP_MIT_SPAKE_REQUIRED_SERVICE INTEROP_MIT_OTP_USER INTEROP_MIT_PKINIT_USER INTEROP_MIT_PKINIT_CERT \
+      INTEROP_MIT_PKINIT_KEY INTEROP_MIT_PKINIT_RSA_CERT INTEROP_MIT_PKINIT_ANCHORS INTEROP_MIT_ANONYMOUS_PRINCIPAL; do
+      [[ " ${added[*]} " == *" $name "* ]] || bad "interop_mit_preauth_env did not record $name"
+    done
+    [[ "${INTEROP_MIT_PKINIT_CERT:-}" == /state/mit/pki/pkinit-ec.pem ]] || bad "PKINIT cert path is ${INTEROP_MIT_PKINIT_CERT:-unset}"
+    for name in "${added[@]}"; do
+      ! interop_is_secret_name "$name" || bad "$name is recorded as a secret by the preauth env (secrets are made by interop_mit_preauth_secrets)"
+    done
+
+    # The mit-kdc self-check runner stops at the first failing check and names
+    # the fixture, the container and the check.
+    calls="$work/calls"
+    : >"$calls"
+    interop_rt() {
+      printf '%s\n' "$*" >>"$calls"
+      [[ "$*" != *"${FAILING_CHECK:-none}.sh"* ]]
+    }
+    interop_mit_run_selfcheck c1 20-fast 30-spake 2>/dev/null || bad "interop_mit_run_selfcheck failed with passing checks"
+    [[ "$(cat "$calls")" == $'exec c1 bash /opt/interop/mit/preauth/selfcheck/20-fast.sh\nexec c1 bash /opt/interop/mit/preauth/selfcheck/30-spake.sh' ]] ||
+      bad "the self-checks did not run in order: $(tr '\n' '|' <"$calls")"
+    : >"$calls"
+    local message
+    message="$(FAILING_CHECK=30-spake interop_mit_run_selfcheck c1 30-spake 45-pkinit 2>&1)" &&
+      bad "interop_mit_run_selfcheck passed with a failing check"
+    [[ "$message" == *"fixture mit-kdc (container c1): self-check 30-spake failed"* ]] ||
+      bad "the failure did not name fixture, container and check: $message"
+    ! grep -q 45-pkinit "$calls" || bad "a check ran after the failing one"
+
+    # The radius self-check: accepted AND rejected logins of otpuser must be
+    # logged after the radclient step (the radclient requests do not count).
+    interop_rt() {
+      case "$1 ${2:-}" in
+        "logs "*)
+          printf 'Info: Ready to process requests\n'
+          printf 'Auth: (3) Login OK: [otpuser] (from client interop port 0)\n'
+          printf 'Auth: (4) Login incorrect (pap: mismatch): [otpuser] (from client interop port 0)\n'
+          if [[ -e "$work/kdc-ran" ]]; then
+            case "${RADIUS_LOG_MODE:-both}" in
+              both)
+                printf 'Auth: (5) Login OK: [otpuser] (from client interop port 0)\n'
+                printf 'Auth: (6) Login incorrect (pap: mismatch): [otpuser] (from client interop port 0)\n'
+                ;;
+              no-rejection) printf 'Auth: (5) Login OK: [otpuser] (from client interop port 0)\n' ;;
+            esac
+          fi
+          ;;
+        "exec rskrb5-interop-mit-kdc") : >"$work/kdc-ran" ;;
+        *) : ;;
+      esac
+    }
+    rm -f "$work/kdc-ran"
+    interop_radius_selfcheck 2>/dev/null || bad "interop_radius_selfcheck failed although radiusd logged the KDC's accepted and rejected logins"
+    for RADIUS_LOG_MODE in none no-rejection; do
+      rm -f "$work/kdc-ran"
+      message="$(RADIUS_LOG_MODE=$RADIUS_LOG_MODE interop_radius_selfcheck 2>&1)" &&
+        bad "interop_radius_selfcheck passed with RADIUS log mode $RADIUS_LOG_MODE"
+      [[ "$message" == *"fixture radius (container rskrb5-interop-radius)"* ]] ||
+        bad "the radius failure (mode $RADIUS_LOG_MODE) did not name the fixture and container: $message"
+    done
+
+    # Container-side helpers: a trace line must match, the KDC log is read only
+    # after the mark.
+    SC_NAME=selftest SC_DIR="$work/sc" SC_KDC_LOG="$work/kdc.log"
+    # shellcheck source=scripts/interop/mit/preauth/selfcheck/lib.sh
+    source "$dir/mit/preauth/selfcheck/lib.sh"
+    sc_prepare
+    printf 'Preauth module spake (151) (real) returned: 0/Success\n' >"$SC_DIR/run.trace"
+    sc_expect_trace run 'Preauth module spake \(151\) \(real\) returned: 0/Success' "present" >/dev/null || bad "sc_expect_trace missed a present line"
+    ! sc_expect_trace run 'Encrypted timestamp' "absent" >/dev/null 2>&1 || bad "sc_expect_trace accepted a missing line"
+    sc_expect_no_trace run 'Encrypted timestamp' "absent" >/dev/null || bad "sc_expect_no_trace rejected a missing line"
+    ! sc_expect_no_trace run 'spake' "present" >/dev/null 2>&1 || bad "sc_expect_no_trace accepted a present line"
+    printf 'old ISSUE line\n' >"$SC_KDC_LOG"
+    sc_log_mark
+    printf 'new HIGHER_AUTHENTICATION_REQUIRED line\n' >>"$SC_KDC_LOG"
+    sc_expect_kdc_log 'HIGHER_AUTHENTICATION_REQUIRED' "new line" >/dev/null || bad "sc_expect_kdc_log missed a line after the mark"
+    ! sc_expect_kdc_log 'old ISSUE' "old line" >/dev/null 2>&1 || bad "sc_expect_kdc_log matched a line before the mark"
+    sc_run echoed echo hello
+    if [[ "$SC_RC" -ne 0 ]] || ! sc_expect_out echoed '^hello$' "stdout" >/dev/null; then
+      bad "sc_run did not capture the command output"
+    fi
+    sc_run failed false
+    if [[ "$SC_RC" -eq 0 ]] || sc_expect_rc failed zero "exit" >/dev/null 2>&1; then
+      bad "sc_expect_rc zero accepted a failing command"
+    fi
+
+    # Number ranges (plan lanes share one image): the 1D-a drop-ins use 20-49
+    # and no directory holds two drop-ins with one prefix; host ports stay in
+    # 19000-19099.
+    for file in provision.d/20-fast.sh provision.d/30-spake.sh provision.d/40-otp.sh provision.d/45-pkinit.sh \
+      provision.d/48-anonymous.sh kdc.conf.d/20-fast.conf kdc.conf.d/30-spake.conf kdc.conf.d/40-otp.conf \
+      kdc.conf.d/45-pkinit.conf krb5.conf.d/30-spake.conf; do
+      [[ -f "$dir/mit/$file" ]] || { bad "missing lane 1D-a file mit/$file"; continue; }
+      prefix="${file##*/}"
+      prefix="${prefix%%-*}"
+      ((10#$prefix >= 20 && 10#$prefix <= 49)) || bad "mit/$file is outside the lane 1D-a prefix range 20-49"
+    done
+    for file in provision.d started.d kdc.conf.d krb5.conf.d; do
+      [[ -z "$(find "$dir/mit/$file" -maxdepth 1 -type f -name '[0-9][0-9]-*' -printf '%f\n' | cut -c1-2 | sort | uniq -d)" ]] ||
+        bad "mit/$file holds two drop-ins with the same prefix"
+    done
+    prefix="$(grep -o 'INTEROP_RADIUS_PORT:-[0-9]*' "$dir/radius/fixture.sh" | head -1)"
+    prefix="${prefix##*-}"
+    ((prefix >= 19000 && prefix <= 19099)) || bad "the radius host port ${prefix:-unset} is outside 19000-19099"
+
+    # Every image of the fixture is pinned by digest.
+    while IFS= read -r file; do
+      [[ "$file" =~ @sha256:[0-9a-f]{64}($|[[:space:]]) ]] || bad "radius/Dockerfile FROM line is not pinned by digest: $file"
+    done < <(grep -E '^FROM ' "$dir/radius/Dockerfile")
+    printf 'interop-preauth-checks-complete'
+  )
 }
