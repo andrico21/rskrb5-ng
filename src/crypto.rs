@@ -35,6 +35,9 @@ pub type Use = policy::Use;
 /// Policy-authorized low-level cryptographic operations.
 #[path = "crypto/checked.rs"]
 pub mod checked;
+/// Kerberos PRF primitives: RFC 6113 `PRF+` and `KRB-FX-CF2`, RFC 4402 `PRF+`.
+#[path = "crypto/prf.rs"]
+pub mod prf;
 /// Trusted per-family string-to-key work-factor policy.
 #[path = "crypto/s2k.rs"]
 pub mod s2k;
