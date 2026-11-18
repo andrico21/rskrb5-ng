@@ -177,22 +177,17 @@ fn is_udp_refusal(error: &Error) -> bool {
 mod tests {
     use core::error::Error as StdError;
 
-    use tokio::net::TcpListener;
-
     use super::{Error, KdcEndpoint, KdcProtocol, Tokio, io, is_udp_refusal, send_to_endpoints};
+    use crate::client::transport::closed_port_tests::reserve_closed_tcp_port;
 
     /// Every pre-delivery failure identifies the endpoint that failed.
     #[tokio::test]
     async fn password_failures_name_each_endpoint() -> Result<(), Box<dyn StdError>> {
         // Given two distinct closed loopback endpoints.
-        let first = TcpListener::bind("127.0.0.1:0").await?;
-        let second = TcpListener::bind("127.0.0.1:0").await?;
         let addresses = [
-            first.local_addr()?.to_string(),
-            second.local_addr()?.to_string(),
+            format!("127.0.0.1:{}", reserve_closed_tcp_port()?),
+            format!("127.0.0.1:{}", reserve_closed_tcp_port()?),
         ];
-        drop(first);
-        drop(second);
         let endpoints = addresses
             .iter()
             .map(|address| KdcEndpoint::configured(KdcProtocol::Tcp, address))

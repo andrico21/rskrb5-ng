@@ -1,0 +1,7 @@
+# GSS mechanism configuration that loads MIT's negoextest test mechanisms
+# (plugins/gssapi/negoextest). Only the adapter's `E GSS_MECH_CONFIG negoextest`
+# command selects this file (GSS_MECH_CONFIG); the default configuration of the
+# image has no mech file, so ordinary krb5/SPNEGO runs never offer these OIDs.
+# The two OIDs and the module are the ones MIT's t_negoex.py uses.
+negoextest 2.25.1414534758 /opt/krb5/lib/gss_negoextest.so
+negoextest 2.25.1175737388 /opt/krb5/lib/gss_negoextest.so

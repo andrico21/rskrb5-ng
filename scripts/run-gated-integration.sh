@@ -326,28 +326,28 @@ start_fixtures() {
   docker_cmd run -d "${platform_args[@]}" -h kdc.test.gokrb5 \
     -v /etc/localtime:/etc/localtime:ro \
     -p 88:88 -p 88:88/udp -p 464:464 -p 464:464/udp \
-    --name krb5kdc jcmturner/gokrb5:kdc-centos-default >/dev/null
+    --name krb5kdc jcmturner/gokrb5:kdc-centos-default@sha256:efffbbc8f0a4255b63df7ce38dcdaceda25944108ff617a1d8386529fefba6df >/dev/null
   docker_cmd run -d "${platform_args[@]}" -h kdc.test.gokrb5 \
     -v /etc/localtime:/etc/localtime:ro \
     -p 78:88 -p 78:88/udp \
-    --name krb5kdc-old jcmturner/gokrb5:kdc-older >/dev/null
+    --name krb5kdc-old jcmturner/gokrb5:kdc-older@sha256:470174918c627caa279c2e2b3baadaf1a7c9ba4ec61e71c74d60b2136b72cc45 >/dev/null
   docker_cmd run -d "${platform_args[@]}" -h kdc.test.gokrb5 \
     -v /etc/localtime:/etc/localtime:ro \
     -p 98:88 -p 98:88/udp \
-    --name krb5kdc-latest jcmturner/gokrb5:kdc-latest >/dev/null
+    --name krb5kdc-latest jcmturner/gokrb5:kdc-latest@sha256:0df1171d24e0bf4ac6add6ca6f4a604f69e5d8c0891f01e158d7ad870cde95a7 >/dev/null
   docker_cmd run -d "${platform_args[@]}" -h kdc.resdom.gokrb5 \
     -v /etc/localtime:/etc/localtime:ro \
     -p 188:88 -p 188:88/udp \
-    --name krb5kdc-resdom jcmturner/gokrb5:kdc-resdom >/dev/null
+    --name krb5kdc-resdom jcmturner/gokrb5:kdc-resdom@sha256:31bd0837cf3a77ab1d3ede7548d6cd168a5afbee7a6a01f970cd4a841d42cefa >/dev/null
   docker_cmd run -d "${platform_args[@]}" -h kdc.test.gokrb5 \
     -v /etc/localtime:/etc/localtime:ro \
     -p 58:88 -p 58:88/udp \
-    --name krb5kdc-shorttickets jcmturner/gokrb5:kdc-shorttickets >/dev/null
+    --name krb5kdc-shorttickets jcmturner/gokrb5:kdc-shorttickets@sha256:caafd05390d6e52ba1ef88580b124f3073e6d332037d75dcd67ffd7f4d5b817e >/dev/null
   docker_cmd run -d "${platform_args[@]}" \
     --add-host host.test.gokrb5:127.0.0.88 \
     -v /etc/localtime:/etc/localtime:ro \
     -p 80:80 -p 443:443 \
-    --name gokrb5-http jcmturner/gokrb5:http >/dev/null
+    --name gokrb5-http jcmturner/gokrb5:http@sha256:372dfb026206560ac7be571e2b1b176eb2acc7996267024a22a7977a089d0a4e >/dev/null
 
   local direct="${RSKRB5_DIRECT_CONTAINER_IP:-}"
   if [[ -z "$direct" ]]; then
@@ -406,7 +406,7 @@ start_fixtures() {
     -e "TEST_KDC_ADDR=$dns_kdc_addr" \
     -e "TEST_HTTP_ADDR=$http_addr" \
     -p "$dns_bind_ns:53" -p "$dns_bind_ns:53/udp" \
-    --name dns jcmturner/gokrb5:dns >/dev/null
+    --name dns jcmturner/gokrb5:dns@sha256:578e7b318f2d4e4adfb1429b049e74cb339cc47c48e26aa866520fac3e1a2a37 >/dev/null
   relax_dns_acl
 
   local dns_ip="${DNS_IP:-}"

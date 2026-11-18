@@ -26,6 +26,8 @@ The overlay may state a number or a list only when this gate recomputes it:
   "Advisory", each `continue-on-error: true` job after it, and every other
   lower-case name in backticks there is a job of `ci.yml`.
 * Every script of the `lint-gates` job of `ci.yml` is named in the overlay.
+* "N core feature closures" is the number of closures `feature_closures.py` computes
+  from the core features (the leaf flags excluded).
 """
 
 from __future__ import annotations
@@ -39,6 +41,8 @@ from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final
+
+from feature_closures import load
 
 ROOT: Final = Path(__file__).resolve().parents[2]
 CI: Final = ".github/workflows/ci.yml"
@@ -179,6 +183,9 @@ def check(root: Path) -> list[str]:
     ):
         if f"{number} {label}" not in overlay:
             errors.append(f"{OVERLAY}: expected `{number} {label}`")
+    closures = len(load(root))
+    if f"{closures} core feature closures" not in overlay:
+        errors.append(f"{OVERLAY}: expected `{closures} core feature closures`")
     errors += check_counts(root, overlay)
     errors += check_jobs(ci, overlay)
     errors += [
@@ -200,6 +207,7 @@ def self_test() -> int:
             "inventory entries: `TMPDIR` `HOME`. 2 `# Ambient input` sections. "
             "3 occurrences of the sentence `NOT cancel-safe: this mutates credentials on the KDC`. "
             "Gates: `a_gate.py --enforce`, `b.sh self-test`. "
+            "3 core feature closures. "
             "8. **CI is blocking: `fmt`, `lint-gates`. Advisory (`continue-on-error`): "
             f"`mutants` ({shards} shards). 9. **Releases"
         )
@@ -215,6 +223,7 @@ def self_test() -> int:
             GUARD: '("src/a.rs", "A::f", "TMPDIR", "T"), ("src/a.rs", "A::f", "HOME", "H"),',
             "src/a.rs": "/// # Ambient input\n/// # Ambient input\n"
             + "// NOT cancel-safe: this mutates credentials on the KDC\n" * 3,
+            "Cargo.toml": '[features]\ndefault = ["a"]\na = []\n',
             "fuzz/Cargo.toml": '[[bin]]\nname = "a"\npath = "fuzz_targets/a.rs"\n'
             '[[bin]]\nname = "b"\npath = "fuzz_targets/b.rs"\n',
             "fuzz/fuzz_targets/a.rs": "",
@@ -238,6 +247,7 @@ def self_test() -> int:
         ("blocking job", OVERLAY, "`fmt`, ", "", "job fmt"),
         ("stale job", OVERLAY, "shards).", "shards), `gone`.", "names gone"),
         ("advisory as blocking", OVERLAY, "`fmt`, `lint-gates`", "`fmt`, `lint-gates`, `mutants`", "names mutants"),
+        ("core closure count", OVERLAY, "3 core feature", "4 core feature", "core feature closures"),
         ("gate script", OVERLAY, "`a_gate.py --enforce`", "", "a_gate.py"),
         ("shell script", OVERLAY, "`b.sh self-test`", "", "b.sh"),
     )
@@ -257,7 +267,7 @@ def self_test() -> int:
             assert expected is None or expected in out.getvalue(), f"{name}: {out.getvalue()}"
     print(
         "overlay_facts self-test: ok (shards, register row, ambient readers and sections, "
-        "cancel-safe sentences, fuzz files and bins, CI jobs, gate scripts)"
+        "cancel-safe sentences, fuzz files and bins, core closure count, CI jobs, gate scripts)"
     )
     return 0
 
