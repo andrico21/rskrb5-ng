@@ -361,7 +361,7 @@ interop_peer_self_test() {
 }
 
 # Lane 1D-b: the network fixtures register after mit-kdc with the dns zone
-# last, the derived TEST-side secrets agree between host and provision.d,
+# after the other net fixtures, the derived TEST-side secrets agree between host and provision.d,
 # the zone carries every record type MIT discovery reads, and the self-check
 # helpers fail naming the fixture. No container is started.
 interop_self_test_net() {
@@ -379,11 +379,14 @@ interop_self_test_net() {
     printf '%s\n' "${INTEROP_FIXTURES[*]}"
     printf '%s\n' "$(cmd_suites)"
   )" || net_fail "the fixture files do not load"
-  [[ "$order" =~ ^mit-kdc\ .*mit-other\ .*dns$'\n' ]] ||
-    net_fail "mit-kdc must start first and dns last: $order"
-  local fixture
+  local fixture line before_dns
+  line=" ${order%%$'\n'*} "
+  [[ "$line" == " mit-kdc "* && "$line" == *" dns "* ]] || net_fail "mit-kdc must start first and dns must be registered: $order"
+  # The zone names the other net fixtures' containers, so dns registers after
+  # them; fixtures of other lanes (mit-peer, radius) may register after dns.
+  before_dns="${line%% dns *} "
   for fixture in httpd kcm kdcproxy mit-other; do
-    [[ " ${order%%$'\n'*} " == *" $fixture "* ]] || net_fail "fixture $fixture is not registered: $order"
+    [[ "$before_dns" == *" $fixture "* ]] || net_fail "fixture $fixture is not registered before dns: $order"
   done
   [[ "$order" == *$'\n'"net interop_net mit-kdc mit-other dns httpd"* ]] ||
     net_fail "suite net is not registered with its fixtures: $order"
