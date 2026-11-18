@@ -13,7 +13,7 @@ pub mod parameters;
 #[path = "config/credential_names.rs"]
 pub(crate) mod credential_names;
 
-use alloc::{borrow::Cow, collections::BTreeMap};
+use alloc::{borrow::Cow, collections::BTreeMap, sync::Arc};
 use core::{
     net::{IpAddr, SocketAddr},
     time::Duration,
@@ -499,16 +499,7 @@ impl Config {
     where
         I: IntoIterator<Item = PathBuf>,
     {
-        let mut loader = IncludeExpansion::default().with_roots(roots);
-        if text.len() > MAX_INCLUDE_BYTES {
-            return Err(Error::IncludeTooLarge {
-                bytes: text.len(),
-                limit: MAX_INCLUDE_BYTES,
-            });
-        }
-        loader.bytes = text.len();
-        loader.expand(text, 0)?;
-        loader.profile.finish(mode)
+        compose(IncludeExpansion::default().with_roots(roots), text, mode)
     }
 
     /// Render a gokrb5-style JSON snapshot of the parsed configuration.
@@ -2069,6 +2060,68 @@ struct IncludeExpansion {
     files: usize,
     /// How many bytes of included content have been read so far.
     bytes: usize,
+    /// `[plugins]` module names a registry resolves, as `(interface, id)`;
+    /// empty unless `extensions::Registry::parse_config` composes the text.
+    modules: Arc<[(&'static str, String)]>,
+}
+
+/// Expand caller text under the include budget and apply `mode`.
+///
+/// # Errors
+/// Returns include, profile and expression-policy errors without fallback.
+fn compose(mut loader: IncludeExpansion, text: &str, mode: ParseMode) -> Result<Config, Error> {
+    if text.len() > MAX_INCLUDE_BYTES {
+        return Err(Error::IncludeTooLarge {
+            bytes: text.len(),
+            limit: MAX_INCLUDE_BYTES,
+        });
+    }
+    loader.bytes = text.len();
+    loader.expand(text, 0)?;
+    loader.profile.finish(mode)
+}
+
+/// Compose `text` with the `[plugins]` module names a registry resolves; the
+/// resolution point of `extensions::Registry::parse_config`.
+///
+/// # Errors
+/// Returns the [`Config::parse_with_mode`] errors; a `module` outside `modules`
+/// is still [`Error::UnsupportedDynamicModule`].
+pub(crate) fn compose_with_modules(
+    text: &str,
+    mode: ParseMode,
+    modules: Arc<[(&'static str, String)]>,
+) -> Result<Config, Error> {
+    compose(
+        IncludeExpansion {
+            modules,
+            ..IncludeExpansion::default()
+        },
+        text,
+        mode,
+    )
+}
+
+/// The `module <id>:<residual>` profile directive, when it is the only content of `text`.
+///
+/// MIT 1.22.2 (`prof_parse.c:309-324`) accepts it before the first section
+/// header and stops reading the file there; content after it is refused here
+/// instead of ignored. The `<id>` ends at the first `:`.
+pub(crate) fn profile_module_directive(text: &str) -> Option<(&str, &str)> {
+    let mut lines = text
+        .lines()
+        .map(|line| profile_syntax::comments(line).trim_matches(profile_syntax::tag_whitespace))
+        .filter(|line| !line.is_empty());
+    let spec = lines
+        .next()?
+        .strip_prefix("module")
+        .filter(|rest| rest.starts_with(profile_syntax::tag_whitespace))?
+        .trim_start_matches(profile_syntax::tag_whitespace);
+    lines
+        .next()
+        .is_none()
+        .then(|| spec.split_once(':'))
+        .flatten()
 }
 
 impl IncludeExpansion {
@@ -2097,7 +2150,7 @@ impl IncludeExpansion {
     /// Returns the [`Self::include_file`] or [`Self::include_dir`] error of the
     /// first directive whose target cannot be read or breaks a limit.
     fn expand(&mut self, input: &str, depth: usize) -> Result<(), Error> {
-        let mut state = profile_syntax::State::default();
+        let mut state = profile_syntax::State::with_modules(Arc::clone(&self.modules));
         let mut lines = input.lines().enumerate();
         while let Some((index, line)) = lines.next() {
             let cleaned = profile_syntax::comments(line)
@@ -2111,6 +2164,7 @@ impl IncludeExpansion {
                 .next()
                 .is_some_and(|word| state.dynamic_module(word))
                 && !state.local_mapping_assignment(cleaned)
+                && !state.registered_module(cleaned)
             {
                 return Err(Error::UnsupportedDynamicModule);
             }

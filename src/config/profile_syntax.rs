@@ -1,5 +1,6 @@
 //! Per-source grammar state and quote-aware comment boundaries.
 
+use alloc::sync::Arc;
 use core::slice;
 
 use super::{Error, Line, profile::Profile, protocol};
@@ -24,9 +25,44 @@ pub(super) struct State {
     pending_brace: bool,
     /// An empty scalar extension awaiting structural lookahead.
     pending_scalar: Option<Line>,
+    /// `[plugins]` module names a registry resolves, as `(interface, id)`.
+    modules: Arc<[(&'static str, String)]>,
 }
 
 impl State {
+    /// Fresh state that resolves the given `[plugins]` module names.
+    pub(super) fn with_modules(modules: Arc<[(&'static str, String)]>) -> Self {
+        Self {
+            modules,
+            ..Self::default()
+        }
+    }
+
+    /// Whether `text` is `module = <id>:<path>` directly inside a `[plugins]`
+    /// interface subsection and `<id>` is a module name the registry resolves
+    /// for that interface. The match is exact and case-sensitive (MIT
+    /// `plugin.c:156-187`); the path is ignored, and a quoted value never resolves.
+    pub(super) fn registered_module(&self, text: &str) -> bool {
+        let [section, interface] = self.scopes.as_slice() else {
+            return false;
+        };
+        let Some((raw_tag, raw)) = text.split_once('=') else {
+            return false;
+        };
+        let named = relation_tag(raw_tag).is_some_and(|tag| marker(tag).0 == "module");
+        let id = raw
+            .trim_matches(tag_whitespace)
+            .split_once(':')
+            .map(|(id, _)| id);
+        section.name == "plugins"
+            && named
+            && id.is_some_and(|name| {
+                self.modules
+                    .iter()
+                    .any(|(known, module)| *known == interface.name && module == name)
+            })
+    }
+
     /// Only scalar assignments in the exact local-name namespace are mapping data.
     pub(super) fn local_mapping_assignment(&self, text: &str) -> bool {
         let Some((raw_tag, raw)) = text.split_once('=') else {
@@ -148,8 +184,10 @@ impl State {
         let (raw_tag, raw) = text.split_once('=').ok_or_else(|| invalid(line))?;
         (!self.scopes.is_empty()).ok_or_else(|| invalid(line))?;
         let (tag, tag_final) = marker(relation_tag(raw_tag).ok_or_else(|| invalid(line))?);
-        (!self.dynamic_module(tag) || self.local_mapping_assignment(text))
-            .ok_or(Error::UnsupportedDynamicModule)?;
+        (!self.dynamic_module(tag)
+            || self.local_mapping_assignment(text)
+            || self.registered_module(text))
+        .ok_or(Error::UnsupportedDynamicModule)?;
         (!tag.is_empty()).ok_or_else(|| invalid(line))?;
         let section = self.scopes.first().map_or("", |scope| scope.name.as_str());
         // MIT compares every name with `strcmp` (prof_tree.c:615); nothing is folded.

@@ -21,6 +21,9 @@ pub enum Any {
     /// Kerberos cryptographic operation failed.
     #[error("crypto error: {0}")]
     Crypto(#[from] Crypto),
+    /// Extension registration, provider output or profile-module resolution failed.
+    #[error("extension error: {0}")]
+    Extensions(#[from] Extensions),
     /// PAC parsing or verification failed.
     #[error("PAC error: {0}")]
     Pac(#[from] Pac),
