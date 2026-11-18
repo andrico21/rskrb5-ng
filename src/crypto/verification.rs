@@ -33,6 +33,9 @@ pub(super) fn verify_checksum(
             super::Des3CbcSha1KdEtype::derive_key(protocol_key, &usage_constant(usage, 0x99))
                 .is_ok_and(|key| sha1(&SecretScratch::new(key), data, checksum, 20))
         }
+        KerberosEtype::Camellia(family) => {
+            family.verify_checksum(protocol_key, data, checksum, usage)
+        }
         KerberosEtype::Rc4Hmac(_) => {
             let signing_key =
                 SecretScratch::new(hmac_md5(protocol_key, super::RC4_HMAC_SIGNATURE_KEY));

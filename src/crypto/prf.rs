@@ -112,7 +112,7 @@ impl Counter {
 #[must_use]
 pub const fn output_len(etype: KerberosEtype) -> usize {
     match etype {
-        KerberosEtype::Sha1(_) | KerberosEtype::Des3CbcSha1Kd(_) => 16,
+        KerberosEtype::Sha1(_) | KerberosEtype::Des3CbcSha1Kd(_) | KerberosEtype::Camellia(_) => 16,
         KerberosEtype::Sha2(family) => family.hash_len(),
         KerberosEtype::Rc4Hmac(_) => 20,
     }
@@ -123,7 +123,9 @@ const fn seed_len(etype: KerberosEtype) -> usize {
     match etype {
         KerberosEtype::Des3CbcSha1Kd(_) => DES3_SEED_SIZE,
         KerberosEtype::Rc4Hmac(_) => RC4_HMAC_KEY_SIZE,
-        KerberosEtype::Sha1(_) | KerberosEtype::Sha2(_) => etype.key_len(),
+        KerberosEtype::Sha1(_) | KerberosEtype::Sha2(_) | KerberosEtype::Camellia(_) => {
+            etype.key_len()
+        }
     }
 }
 
@@ -135,7 +137,9 @@ fn random_to_key(etype: KerberosEtype, seed: &[u8]) -> Result<Zeroizing<Vec<u8>>
     Ok(Zeroizing::new(match etype {
         KerberosEtype::Des3CbcSha1Kd(_) => Des3CbcSha1KdEtype::random_to_key(seed)?,
         KerberosEtype::Rc4Hmac(_) => Rc4HmacEtype::random_to_key(seed)?,
-        KerberosEtype::Sha1(_) | KerberosEtype::Sha2(_) => seed.to_vec(),
+        KerberosEtype::Sha1(_) | KerberosEtype::Sha2(_) | KerberosEtype::Camellia(_) => {
+            seed.to_vec()
+        }
     }))
 }
 
@@ -165,6 +169,7 @@ impl<'key> Prepared<'key> {
             KerberosEtype::Des3CbcSha1Kd(_) => {
                 Des3CbcSha1KdEtype::derive_key(key.material, PRF_CONSTANT)?
             }
+            KerberosEtype::Camellia(family) => family.prf_subkey(key.material)?,
             KerberosEtype::Sha2(_) | KerberosEtype::Rc4Hmac(_) => Vec::new(),
         };
         Ok(Self {
@@ -187,6 +192,7 @@ impl<'key> Prepared<'key> {
             }
             KerberosEtype::Sha2(family) => family.derive_random(self.key.material, input)?,
             KerberosEtype::Rc4Hmac(_) => hmac_sha1(self.key.material, input),
+            KerberosEtype::Camellia(family) => family.prf_block(&self.subkey, input)?,
         };
         Ok(Zeroizing::new(block))
     }

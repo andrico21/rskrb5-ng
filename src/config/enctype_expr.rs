@@ -1,7 +1,7 @@
 use core::str::FromStr;
 
 use crate::{
-    crypto::KerberosEtype,
+    crypto::{KerberosEtype, camellia},
     error::{Policy, RejectionReason},
 };
 
@@ -121,8 +121,10 @@ impl EnctypeExpr {
     ///
     /// `allow_rc4` and `allow_des3` are enforced client-side too, deliberately
     /// stricter than MIT's KDC-side relations. No Cargo feature grants permission.
-    /// Compatible mode skips only secure unimplemented Camellia, with diagnostics;
-    /// strict mode rejects it. A later removal cannot erase an earlier refusal.
+    /// Compatible mode skips only secure Camellia names whose `camellia` leaf is not
+    /// compiled in, with diagnostics; strict mode rejects them. With the leaf compiled
+    /// in, a Camellia name resolves like any secure name, and `DEFAULT` never includes it.
+    /// A later removal cannot erase an earlier refusal.
     ///
     /// # Errors
     /// Returns [`Error::RejectedEnctype`] with a typed policy cause for D2 terms,
@@ -149,21 +151,22 @@ impl EnctypeExpr {
                 EnctypeOperation::Add => {
                     term.check_permission(allow_rc4, allow_des3)?;
                     match term.selector {
-                        enctype_names::Selector::Camellia => match mode {
+                        enctype_names::Selector::Camellia(&[]) => match mode {
                             ParseMode::Compatible => result.diagnostics.push(
                                 ConfigDiagnostic::UnsupportedSecureEnctype {
                                     token: term.token.clone(),
-                                    until: "plan-2 WP-03",
+                                    until: camellia::UNAVAILABLE_UNTIL,
                                 },
                             ),
                             ParseMode::Strict => {
                                 return Err(Error::UnsupportedSecureEnctype {
                                     token: term.token.clone(),
-                                    until: "plan-2 WP-03",
+                                    until: camellia::UNAVAILABLE_UNTIL,
                                 });
                             }
                         },
-                        enctype_names::Selector::Secure(_)
+                        enctype_names::Selector::Camellia(_)
+                        | enctype_names::Selector::Secure(_)
                         | enctype_names::Selector::Des3
                         | enctype_names::Selector::Rc4
                         | enctype_names::Selector::Rejected(_) => {
@@ -208,7 +211,7 @@ impl EnctypeTerm {
                     },
                 });
             }
-            enctype_names::Selector::Secure(_) | enctype_names::Selector::Camellia => true,
+            enctype_names::Selector::Secure(_) | enctype_names::Selector::Camellia(_) => true,
         };
         enabled.ok_or_else(|| Error::DisabledEnctype {
             token: self.token.clone(),
