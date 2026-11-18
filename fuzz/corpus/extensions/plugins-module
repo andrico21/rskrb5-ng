@@ -1,0 +1,5 @@
+[plugins]
+ ccselect = {
+ module = realm:/ignored.so
+ disable = hostname
+ }
