@@ -126,9 +126,11 @@ cmd_down() {
   return "$status"
 }
 
-# Counts a pattern in a log, 0 when absent.
-count_lines() {
-  grep -c -- "$1" "$2" || true
+# Counts the occurrences of a fixed string in a log, 0 when absent. libtest
+# prints a scenario's stderr on the line of its `test <name> ...` header, so
+# the markers are counted anywhere in a line.
+count_marks() {
+  { grep -oF -- "$1" "$2" || true; } | wc -l
 }
 
 cmd_test() {
@@ -148,8 +150,8 @@ cmd_test() {
   interop_log "suite $suite: cargo test --all-features --locked --test $target"
   cargo test --all-features --locked --test "$target" -- --nocapture --test-threads=1 2>&1 | tee "$log" || status=1
   listed="$(cargo test --all-features --locked --test "$target" -- --list 2>/dev/null | grep -c '^scenarios::.*: test$' || true)"
-  ran="$(count_lines '^interop: ran ' "$log")"
-  skipped="$(count_lines '^interop: SKIP ' "$log")"
+  ran="$(count_marks 'interop: ran ' "$log")"
+  skipped="$(count_marks 'interop: SKIP ' "$log")"
   interop_log "suite $suite: scenarios listed $listed, ran $ran, skipped $skipped"
   if [[ "${INTEROP_REQUIRED:-}" == 1 ]] && ((skipped != 0 || ran != listed || listed == 0)); then
     interop_log "suite $suite: required mode needs every listed scenario to run and none to skip"

@@ -100,17 +100,19 @@ interop_self_test() {
     }
     case "$SELFTEST_CARGO_MODE" in
       unreachable)
-        printf 'interop: ran scenarios::first\n'
+        printf 'test scenarios::first ... interop: ran scenarios::first\nok\n'
         printf 'Error: required interop fixture unreachable: mit-kdc at 127.0.0.1:18088 (container rskrb5-interop-mit-kdc)\n'
         printf 'test result: FAILED. 1 passed; 1 failed\n'
         return 101
         ;;
       skipped)
-        printf 'interop: ran scenarios::first\ninterop: SKIP scenarios::second: INTEROP_MIT_KDC unset\n'
+        printf 'test scenarios::first ... interop: ran scenarios::first\nok\n'
+        printf 'test scenarios::second ... interop: SKIP scenarios::second: INTEROP_MIT_KDC unset\nok\n'
         printf 'test result: ok. 2 passed; 0 failed\n'
         ;;
       complete)
-        printf 'interop: ran scenarios::first\ninterop: ran scenarios::second\n'
+        printf 'test scenarios::first ... interop: ran scenarios::first\nok\n'
+        printf 'test scenarios::second ... interop: ran scenarios::second\nok\n'
         printf 'test result: ok. 2 passed; 0 failed\n'
         ;;
     esac
