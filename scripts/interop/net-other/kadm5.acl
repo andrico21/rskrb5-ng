@@ -1,0 +1,2 @@
+# kadmind ACL of the second MIT interop realm (fixture mit-other, test realms only).
+admin/admin@OTHER.RSKRB5 *
