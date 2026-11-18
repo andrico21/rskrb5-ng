@@ -139,9 +139,64 @@ interop_self_test() {
   # 4. Redaction of fixture logs.
   "$INTEROP_ROOT/scripts/interop/redact.sh" --self-test >/dev/null || st_fail "redact.sh --self-test failed"
 
+  # 5. Lane 1F: the mit-peer fixture's registration, order and policy.
+  interop_peer_self_test st_fail
+
   rm -rf "$scratch"
   if ((failures != 0)); then
     return 1
   fi
   echo "self-test: ok"
+}
+
+# Lane 1F: checks of the mit-peer fixture (scripts/interop/peer-mit/) that need
+# no container: it registers itself and its suite, it is sourced after mit-kdc,
+# its security policy holds, and the constants that two languages share agree.
+# $1 is the failure reporter of interop_self_test.
+interop_peer_self_test() {
+  local report="$1" peer_dir="$INTEROP_ROOT/scripts/interop" registered files first_peer first_mit index
+  if [[ ! -f "$peer_dir/peer-mit/fixture.sh" ]]; then
+    "$report" "scripts/interop/peer-mit/fixture.sh is missing"
+    return 0
+  fi
+  registered="$(
+    INTEROP_FIXTURES=()
+    INTEROP_SUITE_NAMES=()
+    INTEROP_SUITE_TARGETS=()
+    INTEROP_SUITE_FIXTURES=()
+    # shellcheck disable=SC1091
+    source "$peer_dir/peer-mit/fixture.sh"
+    printf '%s|%s|%s|%s' "${INTEROP_FIXTURES[*]}" "${INTEROP_SUITE_NAMES[*]}" "${INTEROP_SUITE_TARGETS[*]}" "${INTEROP_SUITE_FIXTURES[*]}"
+    declare -F fixture_mit_peer_up >/dev/null || printf '|no-up'
+  )"
+  [[ "$registered" == "mit-peer|peer|interop_peer|mit-kdc mit-peer mit-peer-iso" ]] ||
+    "$report" "peer-mit/fixture.sh registered '$registered'"
+  # run.sh sources the fixtures in glob order: the KDC fixture must come first,
+  # in the C collation and in the caller's.
+  for index in C ""; do
+    files="$(
+      if [[ -n "$index" ]]; then export LC_ALL="$index"; fi
+      cd "$INTEROP_ROOT/scripts/interop" && printf '%s\n' */fixture.sh
+    )"
+    first_mit="$(grep -n '^mit/fixture.sh$' <<<"$files" | cut -d: -f1)"
+    first_peer="$(grep -n '^peer-mit/fixture.sh$' <<<"$files" | cut -d: -f1)"
+    [[ -n "$first_mit" && -n "$first_peer" && "$first_mit" -lt "$first_peer" ]] ||
+      "$report" "peer-mit/fixture.sh does not sort after mit/fixture.sh (collation '${index:-default}')"
+  done
+  ! grep -v '^[[:space:]]*#' "$peer_dir/peer-mit/fixture.sh" | grep -q -- '--privileged' ||
+    "$report" "peer-mit/fixture.sh starts a privileged container"
+  grep -q -- '--cap-drop ALL' "$peer_dir/peer-mit/fixture.sh" || "$report" "peer-mit/fixture.sh does not drop every capability"
+  ! grep -E -- ' -p "?[^1"]' "$peer_dir/peer-mit/fixture.sh" | grep -q -v '127\.0\.0\.1' ||
+    "$report" "peer-mit/fixture.sh publishes a port beyond 127.0.0.1"
+  # The per-run password of peeruser is derived the same way on both sides.
+  # shellcheck disable=SC2016  # the needle is literal text of the two scripts
+  local derivation='"rskrb5-interop peer-user v1${INTEROP_MIT_ADMIN_PASSWORD}"'
+  if ! grep -F -q -- "$derivation" "$peer_dir/peer-mit/fixture.sh" ||
+    ! grep -F -q -- "$derivation" "$peer_dir/mit/provision.d/70-peer.sh"; then
+    "$report" "the peeruser password derivation differs between fixture.sh and 70-peer.sh"
+  fi
+  # The frame limit is shared by the adapter and the Rust client: 1 MiB.
+  grep -q 'PEER_MAX_FRAME = 1048576' "$peer_dir/peer-mit/peer/peer.h" || "$report" "the adapter's frame limit is not 1 MiB"
+  grep -q 'MAX_FRAME: usize = 0x10_0000' "$INTEROP_ROOT/tests/interop/peer_frame.rs" ||
+    "$report" "the Rust client's frame limit is not 1 MiB"
 }
