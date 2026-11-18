@@ -10,11 +10,12 @@
 //! this crate keeps its own. A TCP socket that is bound and does not listen is no substitute:
 //! macOS does not refuse a connect to it.
 //!
-//! Binding the number and dropping the socket does not prove it closed (FU-TST-P07): macOS sets
-//! the close-on-exec flag of a socket in a second call after `socket()`, so a test thread that
-//! spawns a child process in between hands the child the proof listener, and the number answers
-//! until that child exits. The proof therefore also connects to the number once and rejects a
-//! number that answers.
+//! Binding the number and dropping the socket does not prove it closed (FU-TST-P07): a test
+//! thread that spawns a child process while another thread holds the proof listener hands the
+//! child a copy of the descriptor, and the copy lives until the child's `exec` closes it (on
+//! macOS std sets close-on-exec in a second call after `socket()`, which widens the window;
+//! Windows handles are not inherited). The proof therefore also connects to the number once and
+//! rejects a number that answers.
 
 use core::{
     error::Error as StdError,

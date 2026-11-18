@@ -11,12 +11,14 @@
 //! on Linux and macOS and after about two seconds on Windows. A TCP socket that is bound and
 //! does not listen is no substitute: macOS does not refuse a connect to it.
 //!
-//! Binding the number and dropping the socket does not prove it closed (FU-TST-P07). macOS gives
-//! a socket its close-on-exec flag in a second call after `socket()`, so a test thread that
-//! spawns a child process (`support/env.rs`) in between hands the child the proof listener: the
-//! number keeps answering until that child exits, a few milliseconds after the drop, and the
-//! child of another test that connects there is accepted instead of refused. The proof therefore
-//! also connects to the number once and rejects a number that answers.
+//! Binding the number and dropping the socket does not prove it closed (FU-TST-P07). A test
+//! thread that spawns a child process (`support/env.rs`) while another thread holds the proof
+//! listener hands the child a copy of the descriptor, and the copy lives until the child's `exec`
+//! closes it (on macOS std sets close-on-exec in a second call after `socket()`, which widens the
+//! window; Windows handles are not inherited). The number then keeps answering after the drop
+//! while the child holds the copy, and the child of another test that connects there is accepted
+//! instead of refused. The proof therefore also connects to the number once and rejects a number
+//! that answers.
 
 use core::{
     net::{Ipv4Addr, SocketAddr},
