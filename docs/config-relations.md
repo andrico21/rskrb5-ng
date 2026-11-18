@@ -99,7 +99,7 @@ both modes. Parsed values do not imply an implemented mechanism.
 | domain_realm | domain_realm | DNS-name -> realm map | unset | Config::resolve_realm | Exact then longest suffix; dotted suffix excludes apex | domain_realm |
 | capaths | capaths | client -> server -> direct/via graph | unset | plan 2 WP-11 | No profile-driven routing/validation; current acceptor denies cross-realm without explicit policy; diagnostic | capaths |
 | appdefaults | appdefaults | hierarchical string/boolean lookup | application-defined | Config::appdefault; Config::appdefault_boolean | Caller chooses type and consumes result; no implicit behavior | appdefaults |
-| plugins | disable | repeated module names | empty | plan 2 WP-16 | Restrictions affecting current timestamp preauth fail; nonexistent plugin behavior only diagnosed | disable |
-| plugins | enable_only | repeated module names | all built-ins | plan 2 WP-16 | Excluding current timestamp preauth fails; nonexistent plugin behavior only diagnosed | enable_only |
-| plugins | module | rejected module descriptor | empty | profile_syntax::State::line | Dynamic modules always rejected before composition | module |
+| plugins | disable | repeated module names | empty | plan 2 WP-16 | extensions::Registry::enabled filters registered providers; diagnosed until built-in consumers use it; excluding timestamp preauth fails | disable |
+| plugins | enable_only | repeated module names | all built-ins | plan 2 WP-16 | extensions::Registry::enabled keeps and orders registered providers; diagnosed until built-in consumers use it; excluding timestamp preauth fails | enable_only |
+| plugins | module | registered extension id and ignored path | empty | extensions::Registry::parse_config | A registered provider id of the interface resolves; any other module is rejected before composition | module |
 

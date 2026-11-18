@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 36
-partial = 75
-absent = 42
+implemented = 39
+partial = 74
+absent = 40
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -464,10 +464,20 @@ area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Client preauth (`clpreauth`) and KDC preauth (`kdcpreauth`) plugin interfaces"
 implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Built-in retries/padata; no pluggable client-preauth interface; kdcpreauth subpart D1 excluded."
-rust_symbols = []
-test_names = []
+evidence_status = "unit"
+missing = "P2-4: the exchange engine and the built-in timestamp preauthentication run through `extensions::ClientPreauth` sessions, with responder and cookies. P2-3 delivered the registry, per-exchange state, the round and output bounds and the outgoing PA-DATA admission of mechanism output. The kdcpreauth subpart is D1-excluded."
+rust_symbols = [
+  "extensions::ClientPreauth",
+  "extensions::PreauthState",
+  "extensions::PreauthSession",
+  "extensions::Registry::preauth_session",
+]
+test_names = [
+  "tests/extensions.rs::rejected_enctype_padata_is_refused_by_policy",
+  "tests/extensions.rs::mechanism_bounds_and_types",
+  "tests/extensions.rs::per_exchange_state_and_round_bound",
+  "tests/extensions.rs::session_order_selection_and_conflicts",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-16"
@@ -1955,10 +1965,15 @@ id = "MIT-config-54"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`[plugins]` `disable`, `enable_only`, `module` common relations"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Registered Rust provider selection; disable/enable_only are parsed per interface and restrictions that would exclude the current timestamp preauth fail."
-rust_symbols = []
+missing = ""
+rust_symbols = [
+  "extensions::Registry",
+  "extensions::Registry::enabled",
+  "extensions::Registry::parse_config",
+  "extensions::Interface",
+]
 test_names = [
   "tests/config/section_composition_d.rs::disable",
   "tests/config/section_composition_d.rs::enable_only",
@@ -1968,9 +1983,15 @@ test_names = [
   "tests/config/plugin_case.rs::lower_interface_still_fails_closed",
   "tests/config/plugin_case.rs::upper_control_is_unknown_relation",
   "tests/config/name_case.rs::plugins_header_is_case_sensitive",
+  "tests/extensions.rs::registration_order_is_deterministic",
+  "tests/extensions.rs::duplicate_and_invalid_ids_are_refused",
+  "tests/extensions.rs::plugins_disable_and_enable_only",
+  "tests/extensions.rs::plugin_module_resolves_registered_ids",
+  "tests/extensions.rs::selection_order_and_priority",
+  "tests/extensions.rs::local_authorization_denial_wins",
 ]
 feature_flags = []
-security_divergence = ""
+security_divergence = "A registered provider is active without a `module` relation, and `module = <id>:<path>` only checks that `<id>` is a registered provider of that interface (the path is ignored and nothing is reordered), where MIT puts `module` entries before the built-ins (`plugin.c:205-252`); any other `module` stays `Config::UnsupportedDynamicModule`. Strict mode still refuses `disable` and `enable_only` with `NotYetEffective` until the built-in consumers route through the registry (P2-4, P2-11, P2-15, P2-25; tests/config/plugin_case.rs::upper_interface_strict_matches_other_interfaces), and a `clpreauth` restriction that excludes `encrypted_timestamp` fails in both modes."
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 3
@@ -1981,10 +2002,13 @@ id = "MIT-config-55"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`include`, `includedir`, `module` config source directive"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "P2-3: MIT `module` config providers; `module` is Config::UnsupportedDynamicModule in every mode until registered Rust profile providers exist. include/includedir semantics were delivered by P1-15."
-rust_symbols = []
+missing = ""
+rust_symbols = [
+  "extensions::Registry::parse_config",
+  "extensions::ProfileProvider",
+]
 test_names = [
   "tests/config/profile.rs::includes_resume_parent_state",
   "tests/config/readers.rs::reader_composes_absolute_includes",
@@ -1992,9 +2016,12 @@ test_names = [
   "tests/config/readers.rs::dynamic_modules_fail_in_every_mode",
   "tests/config/plugin_case.rs::upper_module_is_unknown_relation",
   "tests/config/plugin_case.rs::reader_upper_module_is_unknown_relation",
+  "tests/extensions.rs::profile_module_directive_uses_the_provider",
+  "tests/extensions.rs::profile_provider_cannot_bypass_the_parser",
+  "tests/extensions.rs::plugin_module_resolves_registered_ids",
 ]
 feature_flags = []
-security_divergence = "include and includedir arguments lose ASCII padding at both ends, where MIT removes only leading blanks and a trailing CR or LF and keeps trailing blanks in the file name (tests/config/value_whitespace.rs::include_arguments_accept_ascii_padding). A source with any byte that is not UTF-8 is refused whole, where MIT reads bytes (tests/config/profile.rs::non_utf8_root_is_file_error_and_non_utf8_include_is_include_error). Sources are bounded at 4 MiB in total, 256 files and include depth 8 (v0.2.2: 1 MiB, 64 files); MIT prof_parse.c has no such bound. Every source starts outside every section, so a relation before its first header is an InvalidLine where MIT ignores it (prof_parse.c:326). Leading whitespace before an include or includedir directive is accepted, where MIT recognizes the directive only at the start of the line (prof_parse.c:296-305 tests the raw line, so an indented directive inside a section is a relation without an equals sign, PROF_RELATION_SYNTAX at prof_parse.c:150-151, and before the first header it is ignored, prof_parse.c:326). Relative include paths follow the working directory as in MIT (that divergence from MIT was removed by todo 105). See docs/config-profile.md, Deliberate divergences and bounds."
+security_divergence = "include and includedir arguments lose ASCII padding at both ends, where MIT removes only leading blanks and a trailing CR or LF and keeps trailing blanks in the file name (tests/config/value_whitespace.rs::include_arguments_accept_ascii_padding). A source with any byte that is not UTF-8 is refused whole, where MIT reads bytes (tests/config/profile.rs::non_utf8_root_is_file_error_and_non_utf8_include_is_include_error). Sources are bounded at 4 MiB in total, 256 files and include depth 8 (v0.2.2: 1 MiB, 64 files); MIT prof_parse.c has no such bound. Every source starts outside every section, so a relation before its first header is an InvalidLine where MIT ignores it (prof_parse.c:326). Leading whitespace before an include or includedir directive is accepted, where MIT recognizes the directive only at the start of the line (prof_parse.c:296-305 tests the raw line, so an indented directive inside a section is a relation without an equals sign, PROF_RELATION_SYNTAX at prof_parse.c:150-151, and before the first header it is ignored, prof_parse.c:326). Relative include paths follow the working directory as in MIT (that divergence from MIT was removed by todo 105). See docs/config-profile.md, Deliberate divergences and bounds. The `module <id>:<residual>` directive resolves through `extensions::Registry::parse_config` only: `<id>` names a registered `ProfileProvider` (no shared object is loaded) and the directive must be the only content of the text, where MIT stops reading the first file at the directive and ignores what follows (`prof_parse.c:309-324`, `prof_init.c:186-196`); the `Config` loaders, which take no registry, keep refusing it."
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 3
@@ -2700,11 +2727,21 @@ id = "MIT-plugin-1"
 area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`clpreauth` client preauthentication"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "No registered preauth trait."
-rust_symbols = []
-test_names = []
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "P2-4: the exchange engine and the built-in timestamp preauthentication run through `extensions::ClientPreauth` sessions, with responder and cookies. P2-3 delivered the registry, per-exchange state, the round and output bounds and the outgoing PA-DATA admission of mechanism output."
+rust_symbols = [
+  "extensions::ClientPreauth",
+  "extensions::PreauthState",
+  "extensions::PreauthSession",
+  "extensions::Registry::preauth_session",
+]
+test_names = [
+  "tests/extensions.rs::rejected_enctype_padata_is_refused_by_policy",
+  "tests/extensions.rs::mechanism_bounds_and_types",
+  "tests/extensions.rs::per_exchange_state_and_round_bound",
+  "tests/extensions.rs::session_order_selection_and_conflicts",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-16"
@@ -2717,13 +2754,27 @@ id = "MIT-plugin-2"
 area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`ccselect` credential-cache selection"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "Explicit cache constructors only, no k5identity/realm/hostname selection registry."
-rust_symbols = []
-test_names = []
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "P2-11: selection over a credential-cache collection (`krb5_cc_select` with the fallback host realm of a referral-realm server) and the default `$HOME/.k5identity`. P2-3 delivered `extensions::CacheSelector`, `Registry::select_cache` and the `k5identity`, `realm` and `hostname` built-ins."
+rust_symbols = [
+  "extensions::CacheSelector",
+  "extensions::Registry::select_cache",
+  "extensions::K5Identity",
+  "extensions::RealmSelector",
+  "extensions::HostnameSelector",
+]
+test_names = [
+  "tests/extensions.rs::k5identity_builtin_through_the_registry",
+  "tests/extensions.rs::k5identity_reads_its_file",
+  "tests/extensions.rs::realm_and_hostname_builtins",
+  "tests/extensions.rs::selection_order_and_priority",
+  "tests/extensions.rs::malformed_selector_output_is_refused",
+  "src/extensions/k5identity_tests.rs::first_matching_line_wins",
+  "src/extensions/k5identity_tests.rs::fnmatch_follows_posix_flags_zero",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "A `.k5identity` line longer than 255 bytes never matches, where MIT's `fgets` splits it (`ccselect_k5identity.c:162`), the file is bounded at 64 KiB, and a principal with an empty realm or a control character never matches. No environment variable is read: the caller names the file."
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 11
@@ -2768,13 +2819,19 @@ id = "MIT-plugin-5"
 area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`profile` configuration provider"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Config value/parse exist, no hierarchical provider interface."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "extensions::ProfileProvider",
+  "extensions::Registry::parse_config",
+]
+test_names = [
+  "tests/extensions.rs::profile_module_directive_uses_the_provider",
+  "tests/extensions.rs::profile_provider_cannot_bypass_the_parser",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "A profile provider returns `krb5.conf` text that passes the same parser, bounds and permanent policy as a file, where MIT profile modules answer tree queries through a vtable (`prof_init.c:97-150`); a provider can therefore neither name another profile module nor reach a D2-rejected relation. In-memory profiles are `Config::parse`."
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 3
@@ -2803,10 +2860,15 @@ area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "GSSAPI mechanism interface and SPNEGO mechanism plugins"
 implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Fixed Kerberos negotiation only; no mechanism trait/registry."
-rust_symbols = []
-test_names = []
+evidence_status = "unit"
+missing = "P2-18/P2-21: context establishment and SPNEGO negotiation through registered mechanisms. P2-3 delivered `extensions::GssMechanism` registration, with object-identifier validation and the built-in mechanisms' identifiers reserved."
+rust_symbols = [
+  "extensions::GssMechanism",
+  "extensions::Registry::gss_mechanism",
+]
+test_names = [
+  "tests/extensions.rs::gss_mechanism_registration_rules",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-16"
