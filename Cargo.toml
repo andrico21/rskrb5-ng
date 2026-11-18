@@ -32,6 +32,12 @@ exclude = [
 [package.metadata.docs.rs]
 features = ["http", "tower"]
 
+# Additive leaf flags (D10, docs/dependency-admission.md): one sub-table per
+# leaf with its `minimal` core features, `modules`, `tests` and `seams`;
+# `scripts/lint-gates/leaf_features.py` and `feature_closures.py` read it.
+# No leaf exists yet.
+[package.metadata.rskrb5-ng.leaf-features]
+
 [lib]
 name = "rskrb5_ng"
 
