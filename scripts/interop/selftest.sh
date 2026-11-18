@@ -139,9 +139,95 @@ interop_self_test() {
   # 4. Redaction of fixture logs.
   "$INTEROP_ROOT/scripts/interop/redact.sh" --self-test >/dev/null || st_fail "redact.sh --self-test failed"
 
+  # 5. Lane 1D-b network fixtures (scripts/interop/net-*/).
+  interop_self_test_net "$scratch" || failures=$((failures + 1))
+
   rm -rf "$scratch"
   if ((failures != 0)); then
     return 1
   fi
   echo "self-test: ok"
+}
+
+# Lane 1D-b: the network fixtures register after mit-kdc with the dns zone
+# last, the derived TEST-side secrets agree between host and provision.d,
+# the zone carries every record type MIT discovery reads, and the self-check
+# helpers fail naming the fixture. No container is started.
+interop_self_test_net() {
+  local scratch="$1" failures=0 order out zone a b
+  net_fail() {
+    echo "self-test FAIL (net): $*" >&2
+    failures=$((failures + 1))
+  }
+  order="$(
+    INTEROP_FIXTURES=()
+    INTEROP_SUITE_NAMES=()
+    INTEROP_SUITE_TARGETS=()
+    INTEROP_SUITE_FIXTURES=()
+    load_fixtures
+    printf '%s\n' "${INTEROP_FIXTURES[*]}"
+    printf '%s\n' "$(cmd_suites)"
+  )" || net_fail "the fixture files do not load"
+  [[ "$order" =~ ^mit-kdc\ .*mit-other\ .*dns$'\n' ]] ||
+    net_fail "mit-kdc must start first and dns last: $order"
+  local fixture
+  for fixture in httpd kcm kdcproxy mit-other; do
+    [[ " ${order%%$'\n'*} " == *" $fixture "* ]] || net_fail "fixture $fixture is not registered: $order"
+  done
+  [[ "$order" == *$'\n'"net interop_net mit-kdc mit-other dns httpd"* ]] ||
+    net_fail "suite net is not registered with its fixtures: $order"
+
+  # shellcheck source=scripts/interop/net-common/net.sh
+  source "$INTEROP_ROOT/scripts/interop/net-common/net.sh"
+  a="$(net_derive_secret cross-realm Abc123)" || net_fail "net_derive_secret refused a valid password"
+  b="$(net_derive_secret kpasswd-old Abc123)"
+  [[ "$a" =~ ^[0-9a-f]{32}$ && "$a" != "$b" ]] || net_fail "derived secrets must be 32 hex characters and differ per label"
+  for label in cross-realm kpasswd-old; do
+    [[ "$(net_derive_secret "$label" Abc123)" == "$(printf 'rskrb5-interop %s v1:%s' "$label" Abc123 | sha256sum | cut -c1-32)" ]] ||
+      net_fail "net_derive_secret $label does not match the provision.d derivation"
+  done
+  if ! grep -qF "printf 'rskrb5-interop %s v1:%s' cross-realm" "$INTEROP_ROOT/scripts/interop/mit/provision.d/50-other-realm.sh" ||
+    ! grep -qF "printf 'rskrb5-interop %s v1:%s' kpasswd-old" "$INTEROP_ROOT/scripts/interop/mit/provision.d/51-net-services.sh"; then
+    net_fail "a provision.d script no longer derives its secret like net_derive_secret"
+  fi
+  if (net_derive_secret cross-realm 'bad value' 2>/dev/null); then
+    net_fail "net_derive_secret accepted a non-alphanumeric password"
+  fi
+
+  zone="$(
+    source "$INTEROP_ROOT/scripts/interop/net-zone/fixture.sh" 2>/dev/null
+    net_zone_file test.rskrb5 TEST.RSKRB5 10.0.0.2 "88 464 749"
+  )" || net_fail "net_zone_file failed"
+  local record
+  for record in '_kerberos                IN TXT  "TEST.RSKRB5"' \
+    '_kerberos._udp           IN SRV  0 0 88 kdc.test.rskrb5.' \
+    '_kerberos._tcp           IN SRV  0 0 88 kdc.test.rskrb5.' \
+    '_kpasswd._udp            IN SRV  0 0 464 kdc.test.rskrb5.' \
+    '_kpasswd._tcp            IN SRV  0 0 464 kdc.test.rskrb5.' \
+    '_kerberos-adm._tcp       IN SRV  0 0 749 kdc.test.rskrb5.' \
+    '_kerberos                IN URI  10 1 "krb5srv:m:udp:kdc.test.rskrb5:88"' \
+    '_kerberos                IN URI  20 1 "krb5srv::tcp:kdc.test.rskrb5:88"' \
+    '_kerberos._udp.lab1._sites IN SRV  0 0 88 kdc-lab1.test.rskrb5.' \
+    '_kerberos.lab1._sites      IN URI  10 1 "krb5srv:m:udp:kdc-lab1.test.rskrb5:88"' \
+    'kdc                      IN A    10.0.0.2'; do
+    [[ "$zone" == *"$record"* ]] || net_fail "the zone lacks: $record"
+  done
+  if (source "$INTEROP_ROOT/scripts/interop/net-zone/fixture.sh" 2>/dev/null &&
+    net_zone_file test.rskrb5 OTHER.RSKRB5 10.0.0.2 "88 464 749" >/dev/null 2>&1); then
+    net_fail "net_zone_file accepted a zone that does not match its realm"
+  fi
+
+  local INTEROP_STATE_DIR="$scratch/net-state"
+  mkdir -p "$INTEROP_STATE_DIR/fx"
+  printf 'Storing x in KCM:0\nkey aes256-cts/1A2B used\n' >"$scratch/net.log"
+  out="$(net_expect fx good "$scratch/net.log" "Storing x in KCM:" 2>&1)" || net_fail "net_expect failed on a present line: $out"
+  out="$(net_expect fx bad "$scratch/net.log" "Received creds" 2>&1)" && net_fail "net_expect passed on a missing line"
+  [[ "$out" == *"fixture fx self-check bad failed"* ]] || net_fail "net_expect did not name the fixture: $out"
+  out="$(net_refuse fx refused "$scratch/net.log" "Storing x" 2>&1)" && net_fail "net_refuse passed on a present line"
+  [[ "$out" == *"fixture fx self-check refused failed"* ]] || net_fail "net_refuse did not name the fixture: $out"
+  [[ "$(net_mask_trace <"$scratch/net.log")" != *1A2B* ]] || net_fail "net_mask_trace left a key hash"
+  [[ "$(cat "$INTEROP_STATE_DIR/fx/selfcheck.txt")" == "good: Storing x in KCM:0" ]] ||
+    net_fail "the self-check summary does not hold exactly the matched line"
+  unset -f net_fail
+  ((failures == 0))
 }
