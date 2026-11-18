@@ -8,7 +8,7 @@ rustdoc, nightly formatting, lint gates and exact-once ID validation passed.
 
 | ID | Status | Tests / commit | Behaviour change for CHANGELOG | Dismissal evidence |
 |---|---|---|---|---|
-| RSK-03EDCC7E | fixed | `configured_endpoint_preserves_bare_ipv6`; commit suffix `(RSK-03EDCC7E)` | Complete bare IP literals retain their complete host and service default port; explicit IPv6 ports require brackets. | — |
+| RSK-03EDCC7E | fixed | `configured_endpoint_preserves_bare_ipv6`; commit suffix `(RSK-03EDCC7E)` | Complete bare IP literals retain their complete host and service default port; brackets give an IPv6 literal an explicit port. | — |
 | RSK-3F13B5FE | fixed | `kpasswd_admin_fallback_preserves_ipv6`; commit suffix `(RSK-3F13B5FE)` | Configured administration fallback retains complete IPv6 hosts and replaces administration ports with 464, including bare and bracketed literals. | — |
 | RSK-0D8D7D97 | fixed | `udp_transport_reaches_ipv6_loopback`; commit suffix `(RSK-0D8D7D97)` | Resolve UDP candidates before binding a matching IPv4/IPv6 wildcard socket; try alternative candidates on bind/connect failure within the existing timeout. No post-send retry is introduced. | — |
 | RSK-484961E9 | fixed | `udp_transport_rejects_truncated_datagram`; commit suffix `(RSK-484961E9)` | UDP response limits reject oversized datagrams with `Client::UdpResponseTooLarge`, never return a truncated prefix. | — |
