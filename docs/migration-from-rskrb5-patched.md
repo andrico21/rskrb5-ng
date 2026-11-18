@@ -221,7 +221,9 @@ discovered once for both protocols (`_kpasswd._udp` and `_kpasswd._tcp` both
 queried into one list, a root SRV target adds no server and the other records
 of its set are kept, `_kerberos-adm._tcp` hosts at port 464 only when neither
 set held a record, root targets only fail with `DnsServiceUnavailable`, and a
-published set none of whose targets resolves, with no endpoint left, fails with
+published set none of whose targets resolves (with `Tokio::with_dns_server`;
+the system resolver keeps target names and looks them up when they are
+contacted), with no endpoint left, fails with
 `KdcEndpointFailures` listing every such set;
 FU-CLI-R29, FU-CLI-R37; v0.2.2 discovered separately for each protocol it tried); explicit `Tcp` and `Udp` discover for
 their own protocol, and a published `_kpasswd` set of that protocol none of

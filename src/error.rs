@@ -479,8 +479,10 @@ pub enum Client {
     #[cfg(feature = "tokio")]
     #[error("DNS resolver configuration failed: {0}")]
     DnsResolverConfig(String),
-    /// A DNS SRV lookup failed, or none of the targets of an SRV answer resolved
-    /// to an address.
+    /// A DNS SRV lookup failed, or, with [`Tokio::with_dns_server`], none of the
+    /// targets of an SRV answer resolved to an address.
+    ///
+    /// [`Tokio::with_dns_server`]: crate::client::transport::Tokio::with_dns_server
     #[cfg(feature = "tokio")]
     #[error("DNS SRV lookup failed for {realm} over {protocol:?}: {message}")]
     DnsSrvLookup {
@@ -520,9 +522,11 @@ pub enum Client {
         /// [`Tokio::send_to_realm`]: crate::client::transport::Tokio::send_to_realm
         protocol: KdcProtocol,
     },
-    /// Every endpoint of the last pass that ran failed, or kpasswd discovery
-    /// found no endpoint and none of the targets of at least one published
-    /// record set resolved.
+    /// Every endpoint of the last pass that ran failed, or, with
+    /// [`Tokio::with_dns_server`], kpasswd discovery found no endpoint and none
+    /// of the targets of at least one published record set resolved.
+    ///
+    /// [`Tokio::with_dns_server`]: crate::client::transport::Tokio::with_dns_server
     #[cfg(feature = "tokio")]
     #[error("all KDC endpoints for {realm} over {protocol:?} failed: {failures:?}")]
     KdcEndpointFailures {

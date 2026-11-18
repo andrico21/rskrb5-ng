@@ -214,7 +214,7 @@ impl KdcEndpoint {
 #[cfg(feature = "tokio")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Tokio {
-    /// Explicit DNS server; otherwise use the system resolver.
+    /// Explicit DNS server for DNS discovery; otherwise use the system resolver.
     dns_server: Option<(IpAddr, u16)>,
     /// Timeout applied to each KDC exchange.
     timeout: Duration,
@@ -265,6 +265,22 @@ impl Tokio {
     /// Blank input selects the system resolver. Bare IP literals use port 53.
     /// An explicit IPv6 port requires brackets, for example `[fd00::1]:5353`.
     /// Bare `fd00::1:5353` is an IPv6 address using the default port 53.
+    ///
+    /// The server is used only for DNS discovery: configured host names and the
+    /// host names of explicit addresses are looked up by the system in either
+    /// mode. The mode decides when the target names of DNS SRV records are
+    /// resolved. With an explicit server, discovery also resolves each target
+    /// name with it (the system hosts file is read first, and an IP literal
+    /// target is kept as it is) and the endpoints carry the addresses found: a
+    /// target that does not resolve gives no endpoint, and the discovery errors
+    /// documented for a record set none of whose targets resolves arise only in
+    /// this mode. With the system resolver (the default),
+    /// discovery keeps the target names as endpoint hosts, and each name is
+    /// looked up like any host name when its endpoint is contacted: a name that
+    /// does not resolve then fails that endpoint before anything is sent to it,
+    /// the call goes on to the next endpoint as it does after any failure before
+    /// a request is sent, and [`Error::KdcEndpointFailures`] lists it as that
+    /// endpoint's entry when it reports that pass.
     ///
     /// # Errors
     ///
@@ -671,8 +687,9 @@ impl Tokio {
     /// Returns [`Error::Config`] for an unsupported or malformed configuration
     /// restriction, [`Error::InvalidKdcEndpoint`] for a malformed server entry,
     /// [`Error::DnsServiceUnavailable`] for a root SRV target,
-    /// [`Error::KdcEndpointFailures`] when the published `_kpasswd` set of the
-    /// protocol has no target that resolves, [`Error::DnsResolverConfig`],
+    /// [`Error::KdcEndpointFailures`] when, with [`Self::with_dns_server`], the
+    /// published `_kpasswd` set of the protocol has no target that resolves (the
+    /// system resolver keeps target names, see there), [`Error::DnsResolverConfig`],
     /// [`Error::DnsSrvLookup`] or [`Error::NoKdcEndpoints`] when DNS SRV
     /// discovery fails or finds nothing, and a configuration error when no
     /// kpasswd server can be derived from the realm's configuration.
@@ -829,8 +846,10 @@ impl Tokio {
     /// adds no server and the other records of its set are kept, and the
     /// `_kerberos-adm._tcp` hosts (port 464, both protocols) are used only when
     /// neither set held a record. A published set none of whose targets
-    /// resolves counts as published, and when no endpoint is left the call fails
-    /// with [`Error::KdcEndpointFailures`] naming every such set. Every TCP
+    /// resolves counts as published, and when, with [`Self::with_dns_server`], no
+    /// endpoint is left the call fails with [`Error::KdcEndpointFailures`] naming
+    /// every such set; the system resolver keeps target names, so such a set
+    /// gives endpoints that fail when they are contacted (see there). Every TCP
     /// endpoint is then tried before any UDP endpoint, and
     /// `udp_preference_limit` does not apply. UDP is tried only after a definite
     /// TCP failure; a UDP refusal
@@ -2143,14 +2162,17 @@ impl Tokio {
     /// back to `_kerberos-adm._tcp` on ordinary lookup failure or no records.
     ///
     /// A root SRV target means service unavailable and stops discovery without
-    /// fallback, and so does a published set none of whose targets resolves.
+    /// fallback. A published set none of whose targets resolves stops it without
+    /// fallback too, with an error only with an explicit DNS server: the system
+    /// resolver keeps the target names as endpoints ([`Self::with_dns_server`]).
     /// This discovers for one protocol; `KdcProtocol::Auto` of
     /// [`Self::send_to_kpasswd_realm`] uses `password_dns::discover_auto` instead.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::KdcEndpointFailures`] when the published `_kpasswd` set
-    /// of `protocol` has no target that resolves, [`Error::DnsResolverConfig`] or
+    /// Returns [`Error::KdcEndpointFailures`] when, with an explicit DNS server,
+    /// the published `_kpasswd` set of `protocol` has no target that resolves,
+    /// [`Error::DnsResolverConfig`] or
     /// [`Error::DnsSrvLookup`] when the `_kerberos-adm` fallback lookup fails,
     /// and [`Error::NoKdcEndpoints`] when it finds no server.
     ///
@@ -2176,7 +2198,8 @@ impl Tokio {
     ///
     /// Returns [`Error::DnsResolverConfig`] when the resolver or the
     /// DNS server option is invalid, and [`Error::DnsSrvLookup`] when
-    /// the SRV lookup fails or no selected target resolves. Returns
+    /// the SRV lookup fails or, with an explicit DNS server, no selected target
+    /// resolves. Returns
     /// [`Error::DnsServiceUnavailable`] when an SRV target is the root name.
     ///
     /// # Cancel safety

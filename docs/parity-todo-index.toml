@@ -6,7 +6,7 @@
 
 [[plan]]
 number = 1
-todos = 183
+todos = 184
 
 [[plan]]
 number = 2
@@ -946,6 +946,11 @@ title = "Final verification findings of pass 3 (F2-01, F2-02, F2-03 of F2 and F3
 plan = 1
 number = 183
 title = "Documents outside src that repeat the `udp_preference_limit` and endpoint-error statements corrected by todos 181 and 182 (CHANGELOG, migration guide, docs/**), and one imprecise test comment (found by the todo 182 worker as out-of-scope notes; category 1 documents and `src/**` comments of any severity)"
+
+[[todo]]
+plan = 1
+number = 184
+title = "Final verification finding F3-03 (pass 4): every rustdoc and document sentence that depends on SRV TARGET RESOLUTION during discovery holds only with `Tokio::with_dns_server`; the default system resolver keeps target names and resolves them when the endpoint is contacted: qualify the class and probe the system resolver"
 
 [[todo]]
 plan = 2
