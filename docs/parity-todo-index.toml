@@ -6,7 +6,7 @@
 
 [[plan]]
 number = 1
-todos = 185
+todos = 186
 
 [[plan]]
 number = 2
@@ -956,6 +956,11 @@ title = "Final verification finding F3-03 (pass 4): every rustdoc and document s
 plan = 1
 number = 185
 title = "Audit the PUBLIC rustdoc of the whole `client::transport` module that todos 181-184 did not derive (every remaining public item of src/client/transport.rs: types, variants, fields, constructors, setters, send_*, exchange_*, s4u*, renew_*, referral and login functions, `kdc_tcp_record_length`), starting with `KdcEndpointSource::DnsSrv` and `Config` (found by todo 184's worker): derive each sentence from the code, probe where input changes the answer, fix only what is inexact"
+
+[[todo]]
+plan = 1
+number = 186
+title = "Final verification finding F2-01 of pass 5: the `# Errors` clauses of `KdcEndpoint::configured_with_default_port` hold only for a value that STARTS with `[`; close the class of string-parsing rules (`configured*`, `with_dns_server`) by an exhaustive differential check of an executable model of the documented rule against the code"
 
 [[todo]]
 plan = 2
