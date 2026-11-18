@@ -4,7 +4,7 @@ use camellia::{Camellia128, Camellia256};
 use cmac::{Cmac, KeyInit, Mac, block_api::CmacCipher, digest::InvalidLength};
 use zeroize::Zeroizing;
 
-use super::etype::CamelliaCtsCmacEtype;
+use super::CtsCmacEtype;
 use crate::error::Crypto as Error;
 
 /// CMAC output and Camellia block size in bytes.
@@ -15,13 +15,13 @@ const BLOCK: usize = 16;
 /// # Errors
 /// Returns [`Error::InvalidKeyLength`] when `key` is not the key size of `etype`.
 pub(super) fn cmac(
-    etype: CamelliaCtsCmacEtype,
+    etype: CtsCmacEtype,
     key: &[u8],
     parts: &[&[u8]],
 ) -> Result<Zeroizing<Vec<u8>>, Error> {
     match etype {
-        CamelliaCtsCmacEtype::Camellia128 => tag::<Camellia128>(key, parts),
-        CamelliaCtsCmacEtype::Camellia256 => tag::<Camellia256>(key, parts),
+        CtsCmacEtype::Camellia128 => tag::<Camellia128>(key, parts),
+        CtsCmacEtype::Camellia256 => tag::<Camellia256>(key, parts),
     }
     .map_err(|InvalidLength| Error::InvalidKeyLength {
         expected: etype.key_len(),
@@ -46,16 +46,11 @@ where
 }
 
 /// Check `expected` against the CMAC of `data` in constant time.
-pub(super) fn verify(
-    etype: CamelliaCtsCmacEtype,
-    key: &[u8],
-    data: &[u8],
-    expected: &[u8],
-) -> bool {
+pub(super) fn verify(etype: CtsCmacEtype, key: &[u8], data: &[u8], expected: &[u8]) -> bool {
     expected.len() == BLOCK
         && match etype {
-            CamelliaCtsCmacEtype::Camellia128 => check::<Camellia128>(key, data, expected),
-            CamelliaCtsCmacEtype::Camellia256 => check::<Camellia256>(key, data, expected),
+            CtsCmacEtype::Camellia128 => check::<Camellia128>(key, data, expected),
+            CtsCmacEtype::Camellia256 => check::<Camellia256>(key, data, expected),
         }
 }
 
@@ -80,7 +75,7 @@ where
 /// Returns [`Error::EmptyUsage`] for an empty `constant` and [`Error::InvalidKeyLength`]
 /// when `key` is not the key size of `etype`.
 pub(super) fn derive(
-    etype: CamelliaCtsCmacEtype,
+    etype: CtsCmacEtype,
     key: &[u8],
     constant: &[u8],
 ) -> Result<Zeroizing<Vec<u8>>, Error> {

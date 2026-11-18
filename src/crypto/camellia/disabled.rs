@@ -1,14 +1,7 @@
 //! The stand-in used when the `camellia` leaf feature is off: a type with no values.
 
-use core::convert::Infallible;
-
+use super::CtsCmacEtype;
 use crate::{crypto::KerberosEtype, error::Crypto as Error};
-
-/// Camellia-CTS-CMAC encryption type of RFC 6803; no value exists without the
-/// `camellia` feature, so [`KerberosEtype::Camellia`] cannot be built.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[non_exhaustive]
-pub struct CamelliaCtsCmacEtype(Infallible);
 
 /// No enctype without the feature.
 pub const ALL: &[KerberosEtype] = &[];
@@ -17,7 +10,7 @@ pub const ONLY_128: &[KerberosEtype] = &[];
 /// No enctype without the feature.
 pub const ONLY_256: &[KerberosEtype] = &[];
 
-impl CamelliaCtsCmacEtype {
+impl CtsCmacEtype {
     /// Unavailable without the feature.
     #[inline]
     #[must_use]

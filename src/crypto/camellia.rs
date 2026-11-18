@@ -1,7 +1,7 @@
 //! Camellia-CTS-CMAC (RFC 6803, enctypes 25 and 26, checksum types 17 and 18).
 //!
 //! The leaf feature `camellia` compiles the implementation; without it the type
-//! [`CamelliaCtsCmacEtype`] has no values, so [`KerberosEtype::Camellia`] cannot be
+//! [`CtsCmacEtype`] has no values, so [`KerberosEtype::Camellia`] cannot be
 //! built and every dispatch arm is unreachable. Names, wire IDs and
 //! [`KerberosEtype::from_etype_id`] then behave as before the leaf existed.
 //!
@@ -14,6 +14,9 @@
 //! enctypes are usable only when named explicitly. See
 //! `docs/security-policy.md#camellia` and the admission record in
 //! `docs/dependency-admission.md`.
+
+#[cfg(not(feature = "camellia"))]
+use core::convert::Infallible;
 
 #[cfg(feature = "camellia")]
 #[path = "camellia/cts.rs"]
@@ -29,9 +32,27 @@ mod etype;
 mod kdf;
 
 #[cfg(not(feature = "camellia"))]
-pub use disabled::{ALL, CamelliaCtsCmacEtype, ONLY_128, ONLY_256};
+pub use disabled::{ALL, ONLY_128, ONLY_256};
 #[cfg(feature = "camellia")]
-pub use etype::{ALL, CamelliaCtsCmacEtype, ONLY_128, ONLY_256};
+pub use etype::{ALL, ONLY_128, ONLY_256};
+
+/// Camellia-CTS-CMAC encryption type of RFC 6803.
+#[cfg(feature = "camellia")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum CtsCmacEtype {
+    /// `camellia128-cts-cmac`, etype 25, checksum type 17.
+    Camellia128,
+    /// `camellia256-cts-cmac`, etype 26, checksum type 18.
+    Camellia256,
+}
+
+/// Camellia-CTS-CMAC encryption type of RFC 6803; no value exists without the
+/// `camellia` feature, so [`KerberosEtype::Camellia`] cannot be built.
+#[cfg(not(feature = "camellia"))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct CtsCmacEtype(Infallible);
 
 /// Whether the `camellia` leaf feature is compiled in.
 pub const AVAILABLE: bool = cfg!(feature = "camellia");

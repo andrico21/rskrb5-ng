@@ -2,7 +2,7 @@
 
 use camellia::{Camellia128, Camellia256};
 
-use super::etype::CamelliaCtsCmacEtype;
+use super::CtsCmacEtype;
 use crate::{
     crypto::{
         AES_BLOCK_SIZE, SecretScratch, cbc_encrypt, cts_decrypt, keyed_cipher,
@@ -19,7 +19,7 @@ use crate::{
 /// Returns [`Error::EmptyPlaintext`] for an empty plaintext and
 /// [`Error::InvalidKeyLength`] when `key` is not the key size of `etype`.
 pub(super) fn encrypt(
-    etype: CamelliaCtsCmacEtype,
+    etype: CtsCmacEtype,
     key: &[u8],
     plaintext: &[u8],
 ) -> Result<(Vec<u8>, Vec<u8>), Error> {
@@ -32,12 +32,8 @@ pub(super) fn encrypt(
     padded.extend_from_slice(plaintext);
     zero_pad(&mut padded, AES_BLOCK_SIZE);
     let (mut ciphertext, last_block) = match etype {
-        CamelliaCtsCmacEtype::Camellia128 => {
-            cbc_encrypt(&keyed_cipher::<Camellia128>(key)?, &padded)
-        }
-        CamelliaCtsCmacEtype::Camellia256 => {
-            cbc_encrypt(&keyed_cipher::<Camellia256>(key)?, &padded)
-        }
+        CtsCmacEtype::Camellia128 => cbc_encrypt(&keyed_cipher::<Camellia128>(key)?, &padded),
+        CtsCmacEtype::Camellia256 => cbc_encrypt(&keyed_cipher::<Camellia256>(key)?, &padded),
     };
     if plaintext.len() > AES_BLOCK_SIZE {
         swap_last_two_blocks(&mut ciphertext);
@@ -52,7 +48,7 @@ pub(super) fn encrypt(
 /// Returns [`Error::CiphertextTooShort`] for less than one block and
 /// [`Error::InvalidKeyLength`] when `key` is not the key size of `etype`.
 pub(super) fn decrypt(
-    etype: CamelliaCtsCmacEtype,
+    etype: CtsCmacEtype,
     key: &[u8],
     ciphertext: &[u8],
 ) -> Result<Vec<u8>, Error> {
@@ -63,11 +59,7 @@ pub(super) fn decrypt(
         });
     }
     Ok(match etype {
-        CamelliaCtsCmacEtype::Camellia128 => {
-            cts_decrypt(&keyed_cipher::<Camellia128>(key)?, ciphertext)
-        }
-        CamelliaCtsCmacEtype::Camellia256 => {
-            cts_decrypt(&keyed_cipher::<Camellia256>(key)?, ciphertext)
-        }
+        CtsCmacEtype::Camellia128 => cts_decrypt(&keyed_cipher::<Camellia128>(key)?, ciphertext),
+        CtsCmacEtype::Camellia256 => cts_decrypt(&keyed_cipher::<Camellia256>(key)?, ciphertext),
     })
 }

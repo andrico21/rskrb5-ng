@@ -22,7 +22,7 @@ mod tests {
         config::{Config, EnctypeExpr, ParseMode, Toggle},
         crypto::{
             CryptoPolicy, KerberosEtype, Use,
-            camellia::{self, CamelliaCtsCmacEtype},
+            camellia::{self, CtsCmacEtype},
             checked,
             prf::{self, CfInput, Key},
             s2k::Family,
@@ -37,9 +37,9 @@ mod tests {
     type TestError = Box<dyn error::Error>;
 
     /// Both enctypes with their key sizes in bits.
-    const ETYPES: [(CamelliaCtsCmacEtype, u32); 2] = [
-        (CamelliaCtsCmacEtype::Camellia128, 128),
-        (CamelliaCtsCmacEtype::Camellia256, 256),
+    const ETYPES: [(CtsCmacEtype, u32); 2] = [
+        (CtsCmacEtype::Camellia128, 128),
+        (CtsCmacEtype::Camellia256, 256),
     ];
 
     /// The RFC 3961 usage constant: the usage in four big-endian octets and `suffix`.
@@ -48,7 +48,7 @@ mod tests {
     }
 
     /// The enctype of a key size in bits.
-    fn etype_of(bits: u32) -> Result<CamelliaCtsCmacEtype, TestError> {
+    fn etype_of(bits: u32) -> Result<CtsCmacEtype, TestError> {
         ETYPES
             .iter()
             .find_map(|(etype, size)| (*size == bits).then_some(*etype))
@@ -69,31 +69,28 @@ mod tests {
     #[test]
     fn reports_metadata_and_dispatch() -> Result<(), TestError> {
         /// Etype ID, checksum type ID, name, key size and enctype.
-        const CASES: [(i32, i32, &str, usize, CamelliaCtsCmacEtype); 2] = [
+        const CASES: [(i32, i32, &str, usize, CtsCmacEtype); 2] = [
             (
                 25,
                 17,
                 "camellia128-cts-cmac",
                 16,
-                CamelliaCtsCmacEtype::Camellia128,
+                CtsCmacEtype::Camellia128,
             ),
             (
                 26,
                 18,
                 "camellia256-cts-cmac",
                 32,
-                CamelliaCtsCmacEtype::Camellia256,
+                CtsCmacEtype::Camellia256,
             ),
         ];
         if !camellia::AVAILABLE {
             return Err("the camellia leaf is not compiled in".into());
         }
         for (id, checksum, name, key_len, etype) in CASES {
-            assert_eq!(CamelliaCtsCmacEtype::from_etype_id(id), Some(etype));
-            assert_eq!(
-                CamelliaCtsCmacEtype::from_checksum_type_id(checksum),
-                Some(etype)
-            );
+            assert_eq!(CtsCmacEtype::from_etype_id(id), Some(etype));
+            assert_eq!(CtsCmacEtype::from_checksum_type_id(checksum), Some(etype));
             assert_eq!(etype.etype_id(), id);
             assert_eq!(etype.checksum_type_id(), checksum);
             assert_eq!(etype.ename(), name);
@@ -114,8 +111,8 @@ mod tests {
             assert_eq!(general.hmac_len(), 16);
             assert_eq!(general.default_s2kparams(), "00008000");
         }
-        assert_eq!(CamelliaCtsCmacEtype::from_etype_id(24), None);
-        assert_eq!(CamelliaCtsCmacEtype::from_checksum_type_id(19), None);
+        assert_eq!(CtsCmacEtype::from_etype_id(24), None);
+        assert_eq!(CtsCmacEtype::from_checksum_type_id(19), None);
         Ok(())
     }
 
@@ -301,8 +298,8 @@ mod tests {
     }
 
     /// The Camellia enctype of an ID.
-    fn etype_of_id(id: i32) -> Result<CamelliaCtsCmacEtype, TestError> {
-        CamelliaCtsCmacEtype::from_etype_id(id).ok_or_else(|| format!("etype {id}").into())
+    fn etype_of_id(id: i32) -> Result<CtsCmacEtype, TestError> {
+        CtsCmacEtype::from_etype_id(id).ok_or_else(|| format!("etype {id}").into())
     }
 
     /// CTS round trips for every length from one byte to five blocks, with a block-aligned tail.
@@ -401,7 +398,7 @@ mod tests {
     /// Peer-supplied string-to-key work is bounded before any PBKDF2 runs.
     #[test]
     fn string_to_key_parameters_are_bounded() {
-        let etype = CamelliaCtsCmacEtype::Camellia256;
+        let etype = CtsCmacEtype::Camellia256;
         assert_eq!(
             etype.string_to_key(b"p", b"s", "00000000").err(),
             Some(Error::UnsupportedIterationCountZero)

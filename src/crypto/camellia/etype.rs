@@ -2,7 +2,7 @@
 
 use sha1::Sha1;
 
-use super::{cts, kdf};
+use super::{CtsCmacEtype, cts, kdf};
 use crate::{
     crypto::{
         KERBEROS_CONSTANT, KerberosEtype, Purpose, SecretScratch, s2kparams_to_iterations,
@@ -18,29 +18,17 @@ const CMAC_SIZE: usize = 16;
 /// RFC 6803 section 6: 32768 iterations.
 const DEFAULT_S2KPARAMS: &str = "00008000";
 
-/// Camellia-CTS-CMAC encryption type of RFC 6803.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[non_exhaustive]
-pub enum CamelliaCtsCmacEtype {
-    /// `camellia128-cts-cmac`, etype 25, checksum type 17.
-    Camellia128,
-    /// `camellia256-cts-cmac`, etype 26, checksum type 18.
-    Camellia256,
-}
-
 /// Both enctypes in MIT's `camellia` family order: 256 first.
 pub const ALL: &[KerberosEtype] = &[
-    KerberosEtype::Camellia(CamelliaCtsCmacEtype::Camellia256),
-    KerberosEtype::Camellia(CamelliaCtsCmacEtype::Camellia128),
+    KerberosEtype::Camellia(CtsCmacEtype::Camellia256),
+    KerberosEtype::Camellia(CtsCmacEtype::Camellia128),
 ];
 /// `camellia128-cts-cmac` alone.
-pub const ONLY_128: &[KerberosEtype] =
-    &[KerberosEtype::Camellia(CamelliaCtsCmacEtype::Camellia128)];
+pub const ONLY_128: &[KerberosEtype] = &[KerberosEtype::Camellia(CtsCmacEtype::Camellia128)];
 /// `camellia256-cts-cmac` alone.
-pub const ONLY_256: &[KerberosEtype] =
-    &[KerberosEtype::Camellia(CamelliaCtsCmacEtype::Camellia256)];
+pub const ONLY_256: &[KerberosEtype] = &[KerberosEtype::Camellia(CtsCmacEtype::Camellia256)];
 
-impl CamelliaCtsCmacEtype {
+impl CtsCmacEtype {
     /// Probe an encryption type ID without selecting use.
     #[inline]
     #[must_use]
