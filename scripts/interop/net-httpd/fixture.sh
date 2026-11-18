@@ -10,7 +10,7 @@
 # mit/provision.d/51-net-services.sh) and answers with the authenticated
 # principal and the mechanism mod_auth_gssapi published, one `key=value` per
 # line (principal=, mechanism=, auth-type=). Plain HTTP only, no TLS, and no
-# channel bindings: mod_auth_gssapi 1.6.5 cannot check them (FU-IOP-P01).
+# channel bindings: mod_auth_gssapi 1.6.5 cannot check them (FU-IOP-P03).
 # Published on 127.0.0.1: INTEROP_HTTPD_PORT (default 19180) -> 80.
 # The service keytab is copied out of mit-kdc into the private state
 # directory and streamed into the container's tmpfs through `exec -i` (the

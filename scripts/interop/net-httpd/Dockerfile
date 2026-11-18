@@ -15,7 +15,7 @@
 #   passes GSS_C_NO_CHANNEL_BINDINGS to gss_accept_sec_context
 #   (src/mod_auth_gssapi.c:1240), and upstream master dbcb637 (2024-09-10) is
 #   the same, so this fixture neither enforces nor checks CBT (register row
-#   FU-IOP-P01 of docs/review/parity-register.md).
+#   FU-IOP-P03 of docs/review/parity-register.md).
 # - curl (Debian, GSS-API enabled) and krb5-user are the client tools of the
 #   fixture's self-check, run from a throwaway container of this image.
 #
