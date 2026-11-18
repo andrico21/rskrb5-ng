@@ -52,17 +52,21 @@ fn parse_response(raw: &[u8]) -> io::Result<Response<Vec<u8>>> {
     let (head, rest) = raw
         .split_at_checked(split)
         .ok_or_else(|| invalid("response head out of range"))?;
-    let body = rest.get(4..).ok_or_else(|| invalid("response body out of range"))?;
+    let body = rest
+        .get(4..)
+        .ok_or_else(|| invalid("response body out of range"))?;
     let text = str::from_utf8(head).map_err(io::Error::other)?;
     let mut lines = text.split("\r\n");
     let status = lines
         .next()
         .and_then(|line| line.split(' ').nth(1))
         .ok_or_else(|| invalid("response has no status line"))?;
-    let mut response =
-        Response::builder().status(StatusCode::from_bytes(status.as_bytes()).map_err(io::Error::other)?);
+    let mut response = Response::builder()
+        .status(StatusCode::from_bytes(status.as_bytes()).map_err(io::Error::other)?);
     for line in lines {
-        let (name, value) = line.split_once(':').ok_or_else(|| invalid("malformed header"))?;
+        let (name, value) = line
+            .split_once(':')
+            .ok_or_else(|| invalid("malformed header"))?;
         response = response.header(name.trim(), value.trim());
     }
     response.body(body.to_vec()).map_err(io::Error::other)

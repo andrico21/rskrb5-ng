@@ -123,7 +123,10 @@ fn srv_discovery_finds_the_test_kdc_through_coredns() -> Result<(), Box<dyn Erro
                     KdcEndpointSource::DnsSrv,
                     "every KDC comes from DNS SRV"
                 );
-                assert_eq!(endpoint.port, kdc_port, "the SRV record carries the published port");
+                assert_eq!(
+                    endpoint.port, kdc_port,
+                    "the SRV record carries the published port"
+                );
             }
             let session = transport
                 .login_tgt_with_password_config(
@@ -200,8 +203,16 @@ fn cross_realm_referral_reaches_the_other_realm_service() -> Result<(), Box<dyn 
                 "one cross-realm TGT, krbtgt/{other}@{realm}"
             );
             let ticket = result.ticket();
-            assert_eq!(ticket.client(), &user, "the service ticket names the TEST user");
-            assert_eq!(ticket.service(), &service, "the service ticket is for the OTHER service");
+            assert_eq!(
+                ticket.client(),
+                &user,
+                "the service ticket names the TEST user"
+            );
+            assert_eq!(
+                ticket.service(),
+                &service,
+                "the service ticket is for the OTHER service"
+            );
             assert_negotiated_enctype(
                 "OTHER service ticket",
                 AES256_SHA2,
@@ -211,7 +222,9 @@ fn cross_realm_referral_reaches_the_other_realm_service() -> Result<(), Box<dyn 
                 .map_err(|error| format!("the initiator could not build the token: {error}"))?;
             let mut validator = Validator::new(&keytab).with_now(SystemTime::now());
             let accepted = spnego::accept_sec_context_header(&mut validator, context.header_ref())
-                .map_err(|error| format!("the OTHER keytab refused the cross-realm ticket: {error}"))?;
+                .map_err(|error| {
+                    format!("the OTHER keytab refused the cross-realm ticket: {error}")
+                })?;
             assert_negotiated_mechanism(
                 ObjectIdentifier::krb5().arcs(),
                 accepted.selected_mechanism().arcs(),
