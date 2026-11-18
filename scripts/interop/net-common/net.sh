@@ -42,7 +42,11 @@ net_container_ip() {
 # net_container_ipv6 CONTAINER: prints the container's global IPv6 address on
 # the interop network, or nothing when the network has no IPv6.
 net_container_ipv6() {
-  interop_rt inspect -f "{{(index .NetworkSettings.Networks \"$INTEROP_NETWORK\").GlobalIPv6Address}}" "$1" 2>/dev/null || true
+  local ip
+  ip="$(interop_rt inspect -f "{{(index .NetworkSettings.Networks \"$INTEROP_NETWORK\").GlobalIPv6Address}}" "$1" 2>/dev/null)" || ip=""
+  # Docker prints "invalid IP" (not an empty string) for a network without IPv6.
+  [[ "$ip" =~ ^[0-9A-Fa-f:]+$ && "$ip" == *:* ]] && printf '%s' "$ip"
+  return 0
 }
 
 # net_derive_secret LABEL ADMIN_PASSWORD: prints a per-run secret derived

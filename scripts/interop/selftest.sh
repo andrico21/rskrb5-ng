@@ -217,6 +217,19 @@ interop_self_test_net() {
     net_fail "net_zone_file accepted a zone that does not match its realm"
   fi
 
+  # Docker prints "invalid IP" for a network without IPv6 (probe run 44305937659).
+  for a in "invalid IP" "<no value>" "" "fd00:89::5"; do
+    b="$(
+      interop_rt() { printf '%s' "$a"; }
+      net_container_ipv6 rskrb5-interop-mit-kdc
+    )"
+    if [[ "$a" == fd00:89::5 ]]; then
+      [[ "$b" == "$a" ]] || net_fail "net_container_ipv6 dropped the address $a"
+    else
+      [[ -z "$b" ]] || net_fail "net_container_ipv6 turned '$a' into an address: $b"
+    fi
+  done
+
   local INTEROP_STATE_DIR="$scratch/net-state"
   mkdir -p "$INTEROP_STATE_DIR/fx"
   printf 'Storing x in KCM:0\nkey aes256-cts/1A2B used\n' >"$scratch/net.log"

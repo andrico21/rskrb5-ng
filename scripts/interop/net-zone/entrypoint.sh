@@ -35,6 +35,7 @@ main() {
     sleep 1
     waited=$((waited + 1))
   done
+  kill -0 "$pid" 2>/dev/null || fail "coredns exited after answering (a zone did not load)"
   : >"$READY"
   log "ready (coredns pid $pid, $(coredns -version | head -n1))"
   local status=0
