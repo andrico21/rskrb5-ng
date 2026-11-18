@@ -9,6 +9,13 @@
 //! idea for the integration tests; a `#[path]` into `tests/` is refused by the lint gates, so
 //! this crate keeps its own. A TCP socket that is bound and does not listen is no substitute:
 //! macOS does not refuse a connect to it.
+//!
+//! Binding the number and dropping the socket does not prove it closed (FU-TST-P07): a test
+//! thread that spawns a child process while another thread holds the proof listener hands the
+//! child a copy of the descriptor, and the copy lives until the child's `exec` closes it (on
+//! macOS std sets close-on-exec in a second call after `socket()`, which widens the window;
+//! Windows handles are not inherited). The proof therefore also connects to the number once and
+//! rejects a number that answers.
 
 use core::{
     error::Error as StdError,
@@ -23,6 +30,13 @@ use tokio::{net::TcpStream, time::timeout};
 
 /// Attempts of [`reserve_closed_tcp_port`] before it gives up.
 const ATTEMPTS: u8 = 64;
+
+/// Longest wait for the answer of the connect that proves a number closed.
+///
+/// A listener answers a loopback connect at once and a closed number is refused at once. Windows
+/// refuses after about two seconds and has no inherited handle to catch, so the bound ends that
+/// wait.
+const ANSWER_BOUND: Duration = Duration::from_millis(100);
 
 /// First port number of the reserved range (8192 numbers, below every ephemeral range).
 const RESERVED_FIRST: u16 = 20_000;
@@ -53,14 +67,48 @@ fn next_reserved_port() -> u16 {
 
 /// A reserved loopback port number whose TCP side is closed.
 ///
-/// Nothing holds the number: the TCP side is bound once to prove it free and dropped. No test
-/// of this crate draws it, because nothing else draws from the reserved range.
+/// Nothing holds the number: the TCP side is bound once to prove it free, dropped, and a connect
+/// to it must not be answered (see [`prove_closed_with`]). No test of this crate draws it,
+/// because nothing else draws from the reserved range.
 ///
 /// # Errors
 /// Returns the error of a bind that is not a collision, and `AddrInUse` when every attempt
 /// collided.
 pub(super) fn reserve_closed_tcp_port() -> io::Result<u16> {
-    reserve_with(|address| net::TcpListener::bind(address).map(drop))
+    reserve_with(|address| {
+        prove_closed_with(
+            address,
+            |bound| net::TcpListener::bind(bound).map(drop),
+            tcp_answers,
+        )
+    })
+}
+
+/// Whether a TCP connect to `address` is answered within [`ANSWER_BOUND`].
+fn tcp_answers(address: SocketAddr) -> bool {
+    net::TcpStream::connect_timeout(&address, ANSWER_BOUND).is_ok()
+}
+
+/// Prove that no listener holds `address`: `bind` takes and frees it, then `answers` must say no.
+///
+/// A bind that succeeds is not enough: a child process that inherited the freed socket (see the
+/// module comment) still answers.
+///
+/// # Errors
+/// Returns the error of `bind`, and `AddrInUse` when the number answers.
+fn prove_closed_with(
+    address: SocketAddr,
+    bind: impl FnOnce(SocketAddr) -> io::Result<()>,
+    answers: impl FnOnce(SocketAddr) -> bool,
+) -> io::Result<()> {
+    bind(address)?;
+    if answers(address) {
+        return Err(io::Error::new(
+            io::ErrorKind::AddrInUse,
+            format!("a TCP connect to {address} is answered"),
+        ));
+    }
+    Ok(())
 }
 
 /// Take the next numbers of the reserved sequence until `probe` accepts one.
@@ -176,5 +224,48 @@ fn only_collisions_are_retried() -> Result<(), Box<dyn StdError>> {
         failed.err().map(|error| error.kind()),
         Some(io::ErrorKind::InvalidInput)
     );
+    Ok(())
+}
+
+/// A number whose connect is answered is not proved closed, whatever its bind says: the search
+/// skips it (FU-TST-P07).
+#[test]
+fn an_answering_number_is_skipped_by_the_search() -> Result<(), Box<dyn StdError>> {
+    // Given a bind that succeeds on every number, as the bind of the proof does next to a leaked
+    // listener, and a connect that the first two numbers drawn answer.
+    let mut drawn = Vec::new();
+    // When the search runs.
+    let found = reserve_with(|address| {
+        prove_closed_with(
+            address,
+            |_bound| Ok(()),
+            |probed| {
+                drawn.push(probed.port());
+                drawn.len() <= 2
+            },
+        )
+    })?;
+    // Then the third number is the one returned.
+    assert_eq!(drawn.len(), 3, "{drawn:?}");
+    assert_eq!(drawn.last(), Some(&found), "{drawn:?}");
+    Ok(())
+}
+
+/// A live listener answers the connect of the proof, so the proof rejects its number with a
+/// collision even when the bind of the proof succeeds.
+#[test]
+fn a_live_listener_is_not_proved_closed() -> Result<(), Box<dyn StdError>> {
+    // Given a listener that is alive for the whole test.
+    let listener = net::TcpListener::bind("127.0.0.1:0")?;
+    let address = listener.local_addr()?;
+    // When the proof runs with the real connect and a bind that succeeds.
+    let proof = prove_closed_with(address, |_bound| Ok(()), tcp_answers);
+    // Then the number answers and the proof reports a collision.
+    assert!(tcp_answers(address), "the listener did not answer");
+    let error = proof
+        .err()
+        .ok_or("the proof accepted an answering number")?;
+    assert_eq!(error.kind(), io::ErrorKind::AddrInUse, "{error}");
+    drop(listener);
     Ok(())
 }
