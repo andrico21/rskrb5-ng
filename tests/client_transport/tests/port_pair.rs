@@ -1,12 +1,16 @@
 //! The loopback port-pair helper retries a collision, spreads its candidates over the dynamic
 //! range and tries both bind orders.
 
+use core::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::{net::UdpSocket as StdUdpSocket, sync::mpsc, thread};
 
 use super::{kpasswd_order::closed_port, *};
 use crate::{
-    closed_port::{RESERVED_FIRST, reserve_closed_tcp_port},
-    loopback_pair::{FIRST_PORT, Order, bind_on, bind_pair_with, hold_wildcard},
+    closed_port::{RESERVED_FIRST, reserve_closed_tcp_port, reserve_closed_tcp_port_with},
+    loopback_pair::{
+        FIRST_PORT, Order, bind_on, bind_pair_with, bind_tcp_and_udp_pair_with, hold_wildcard,
+        hold_wildcard_v6, with_reserved_port,
+    },
 };
 
 /// A UDP socket that holds the number of the first candidate makes the first attempt fail and a
@@ -401,9 +405,10 @@ fn the_sync_and_async_reserved_helpers_never_repeat_a_number() -> Result<(), Tes
     })
 }
 
-/// Whether a wildcard UDP bind on `port` is refused, the way the DNS resolver's bind meets it.
-fn assert_wildcard_bind_collides(port: u16) {
-    let bound = StdUdpSocket::bind(("0.0.0.0", port));
+/// Assert that a wildcard UDP bind on `port` is refused, the way the DNS resolver's bind meets
+/// it (`wildcard` is the unspecified address of the family under test).
+fn assert_wildcard_bind_collides(wildcard: IpAddr, port: u16) {
+    let bound = StdUdpSocket::bind((wildcard, port));
     assert!(
         bound.as_ref().is_err_and(|error| matches!(
             error.kind(),
@@ -424,7 +429,10 @@ fn a_wildcard_bind_collides_with_every_helper_socket() -> Result<(), TestError> 
         let (_listener, paired) = bind_tcp_and_udp_pair().await?;
         for socket in [&reserved, &loopback, &paired] {
             // When a wildcard socket binds the same number, then it collides.
-            assert_wildcard_bind_collides(socket.local_addr()?.port());
+            assert_wildcard_bind_collides(
+                Ipv4Addr::UNSPECIFIED.into(),
+                socket.local_addr()?.port(),
+            );
         }
         Ok::<_, TestError>(())
     })
@@ -442,7 +450,100 @@ fn a_held_wildcard_socket_keeps_a_wildcard_bind_off_the_number() -> Result<(), T
         // When a wildcard socket is held on it.
         hold_wildcard(port);
         // Then a wildcard bind on the number collides.
-        assert_wildcard_bind_collides(port);
+        assert_wildcard_bind_collides(Ipv4Addr::UNSPECIFIED.into(), port);
         Ok::<_, TestError>(())
     })
+}
+
+/// The IPv6 fixture socket keeps a wildcard bind off its number, as the IPv4 sockets do.
+#[test]
+fn an_ipv6_loopback_socket_keeps_a_wildcard_bind_off_its_number() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given the socket that the IPv6 UDP fixture binds.
+        let socket = bind_udp_loopback_v6().await?;
+        let addr = socket.local_addr()?;
+        // Then it is a live socket of the IPv6 loopback address,
+        assert!(addr.is_ipv6() && addr.ip().is_loopback(), "{addr}");
+        // and a wildcard bind of the family on its number collides.
+        assert_wildcard_bind_collides(Ipv6Addr::UNSPECIFIED.into(), addr.port());
+        Ok::<_, TestError>(())
+    })
+}
+
+/// A wildcard socket held on an IPv6 number makes an IPv6 wildcard bind collide, whatever sits
+/// on the number.
+#[test]
+fn a_held_ipv6_wildcard_socket_keeps_a_wildcard_bind_off_the_number() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given a number that nothing holds.
+        let probe = UdpSocket::bind("[::1]:0").await?;
+        let port = probe.local_addr()?.port();
+        drop(probe);
+        // When an IPv6 wildcard socket is held on it.
+        hold_wildcard_v6(port);
+        // Then an IPv6 wildcard bind on the number collides.
+        assert_wildcard_bind_collides(Ipv6Addr::UNSPECIFIED.into(), port);
+        Ok::<_, TestError>(())
+    })
+}
+
+/// The pair helper makes exactly the stated number of attempts before it gives up.
+///
+/// The count is a literal on purpose: the helper's own constant moves with the helper.
+#[test]
+fn the_pair_helper_makes_the_stated_attempts() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given binds that collide on every number.
+        let mut calls = 0_u8;
+        // When the public helper's search runs.
+        let result = bind_tcp_and_udp_pair_with(async |_port, _order| {
+            calls = calls.saturating_add(1);
+            Err(io::Error::from(io::ErrorKind::AddrInUse))
+        })
+        .await;
+        // Then it made 64 attempts and failed with a collision that says so.
+        let error = result.err().ok_or("every attempt collided")?;
+        assert_eq!(calls, 64);
+        assert_eq!(error.kind(), io::ErrorKind::AddrInUse);
+        assert!(error.to_string().contains("in 64 attempts"), "{error}");
+        Ok::<_, TestError>(())
+    })
+}
+
+/// The reserved-number search makes exactly the stated number of attempts.
+#[test]
+fn the_reserved_search_makes_the_stated_attempts() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given binds that collide on every number.
+        let mut calls = 0_u8;
+        // When the search of `bind_udp_with_closed_tcp` and `reserve_closed_port` runs.
+        let result = with_reserved_port(async |_address| {
+            calls = calls.saturating_add(1);
+            Err::<(), _>(io::Error::from(io::ErrorKind::PermissionDenied))
+        })
+        .await;
+        // Then it made 64 attempts and failed with a collision that says so.
+        let error = result.err().ok_or("every attempt collided")?;
+        assert_eq!(calls, 64);
+        assert_eq!(error.kind(), io::ErrorKind::AddrInUse);
+        assert!(error.to_string().contains("in 64 attempts"), "{error}");
+        Ok::<_, TestError>(())
+    })
+}
+
+/// The synchronous reserved-number search makes exactly the stated number of attempts.
+#[test]
+fn the_sync_reserved_search_makes_the_stated_attempts() -> Result<(), TestError> {
+    // Given a probe that collides on every number.
+    let mut calls = 0_u8;
+    // When the search of `reserve_closed_tcp_port` runs.
+    let result = reserve_closed_tcp_port_with(|_address| {
+        calls = calls.saturating_add(1);
+        Err(io::Error::from(io::ErrorKind::AddrInUse))
+    });
+    // Then it made 64 attempts and failed with a collision that says so.
+    let error = result.err().ok_or("every attempt collided")?;
+    assert_eq!(calls, 64);
+    assert_eq!(error.kind(), io::ErrorKind::AddrInUse);
+    Ok(())
 }

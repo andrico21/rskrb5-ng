@@ -53,7 +53,15 @@ fn candidates(pid: u32) -> impl Iterator<Item = u16> {
 /// # Cancel safety
 /// cancel-safe: dropping the future drops the sockets bound so far.
 pub(super) async fn bind_tcp_and_udp_pair() -> io::Result<(TcpListener, UdpSocket)> {
-    first_pair(candidates(process::id()), bind_on).await
+    bind_tcp_and_udp_pair_with(bind_on).await
+}
+
+/// The search of [`bind_tcp_and_udp_pair`] with its candidates and `bind` in place of
+/// [`bind_on`], so that a test observes how many attempts the public helper makes.
+async fn bind_tcp_and_udp_pair_with<T>(
+    bind: impl AsyncFnMut(u16, Order) -> io::Result<T>,
+) -> io::Result<T> {
+    first_pair(candidates(process::id()), bind).await
 }
 
 /// Bind both sockets on `port` of the loopback address in the given order.
@@ -342,6 +350,28 @@ async fn the_pair_shares_a_candidate_number() -> Result<(), Box<dyn StdError>> {
             "{order:?}"
         );
     }
+    Ok(())
+}
+
+/// The public helper makes exactly the stated number of attempts before it gives up.
+///
+/// The count is a literal on purpose: the helper's own constant moves with the helper.
+#[tokio::test]
+async fn the_pair_helper_makes_the_stated_attempts() -> Result<(), Box<dyn StdError>> {
+    // Given binds that collide on every number.
+    let mut calls = 0_u8;
+    // When the helper's search runs.
+    let error = bind_tcp_and_udp_pair_with(async |_port, _order| {
+        calls = calls.saturating_add(1);
+        Err::<(), _>(io::Error::from(io::ErrorKind::AddrInUse))
+    })
+    .await
+    .err()
+    .ok_or("every attempt collided")?;
+    // Then it made 64 attempts and failed with a collision that says so.
+    assert_eq!(calls, 64);
+    assert_eq!(error.kind(), io::ErrorKind::AddrInUse);
+    assert!(error.to_string().contains("in 64 attempts"), "{error}");
     Ok(())
 }
 
