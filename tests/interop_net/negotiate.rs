@@ -1,7 +1,7 @@
 //! HTTP Negotiate of the crate's `NegotiateClient` against Apache httpd with
 //! `mod_auth_gssapi` (fixture `httpd`, service `HTTP/httpd.test.rskrb5`).
 
-use core::error::Error;
+use core::{error::Error, fmt::Write as _, str};
 use std::io;
 
 use http_types::{Request, Response, StatusCode, header::WWW_AUTHENTICATE};
@@ -29,41 +29,43 @@ const RESPONSE_LIMIT: u64 = 64 * 1024;
 /// Sends `request` to the fixture over HTTP/1.0 (one response, no chunked
 /// body, the server closes the connection) and parses the response.
 async fn send(endpoint: String, request: Request<()>) -> io::Result<Response<Vec<u8>>> {
-    let invalid = |what: &str| io::Error::new(io::ErrorKind::InvalidData, what.to_owned());
     let mut head = format!("GET {} HTTP/1.0\r\n", request.uri());
     for (name, value) in request.headers() {
-        let value = value
-            .to_str()
-            .map_err(|_| invalid("request header is not ASCII"))?;
-        head.push_str(&format!("{name}: {value}\r\n"));
+        let text = value.to_str().map_err(io::Error::other)?;
+        write!(head, "{name}: {text}\r\n").map_err(io::Error::other)?;
     }
     head.push_str("\r\n");
     let mut stream = TcpStream::connect(endpoint).await?;
     stream.write_all(head.as_bytes()).await?;
     let mut raw = Vec::new();
-    stream.take(RESPONSE_LIMIT).read_to_end(&mut raw).await?;
+    let _length = stream.take(RESPONSE_LIMIT).read_to_end(&mut raw).await?;
+    parse_response(&raw)
+}
+
+/// Parses a raw HTTP/1.x response (status line, headers, body).
+fn parse_response(raw: &[u8]) -> io::Result<Response<Vec<u8>>> {
+    let invalid = |what: &str| io::Error::new(io::ErrorKind::InvalidData, what.to_owned());
     let split = raw
         .windows(4)
         .position(|window| window == b"\r\n\r\n")
         .ok_or_else(|| invalid("response has no header end"))?;
-    let text =
-        core::str::from_utf8(&raw[..split]).map_err(|_| invalid("response head is not UTF-8"))?;
+    let (head, rest) = raw
+        .split_at_checked(split)
+        .ok_or_else(|| invalid("response head out of range"))?;
+    let body = rest.get(4..).ok_or_else(|| invalid("response body out of range"))?;
+    let text = str::from_utf8(head).map_err(io::Error::other)?;
     let mut lines = text.split("\r\n");
     let status = lines
         .next()
         .and_then(|line| line.split(' ').nth(1))
         .ok_or_else(|| invalid("response has no status line"))?;
-    let mut response = Response::builder()
-        .status(StatusCode::from_bytes(status.as_bytes()).map_err(|_| invalid("bad status"))?);
+    let mut response =
+        Response::builder().status(StatusCode::from_bytes(status.as_bytes()).map_err(io::Error::other)?);
     for line in lines {
-        let (name, value) = line
-            .split_once(':')
-            .ok_or_else(|| invalid("malformed header"))?;
+        let (name, value) = line.split_once(':').ok_or_else(|| invalid("malformed header"))?;
         response = response.header(name.trim(), value.trim());
     }
-    response
-        .body(raw[split + 4..].to_vec())
-        .map_err(|_| invalid("response could not be built"))
+    response.body(body.to_vec()).map_err(io::Error::other)
 }
 
 /// A GET of the protected URL, addressed to the fixture's virtual host.
@@ -142,10 +144,10 @@ fn negotiate_client_authenticates_to_apache_mod_auth_gssapi() -> Result<(), Box<
             .get(WWW_AUTHENTICATE)
             .ok_or("the 200 response carries no Negotiate reply token")?
             .to_str()?;
-        let Token::Resp(reply) = spnego::parse_negotiate_header(reply)? else {
+        let Token::Resp(reply_token) = spnego::parse_negotiate_header(reply)? else {
             return Err("the Negotiate reply is not a SPNEGO NegTokenResp".into());
         };
-        let selected = reply
+        let selected = reply_token
             .supported_mech()
             .ok_or("the SPNEGO reply names no mechanism")?;
         assert_negotiated_mechanism(ObjectIdentifier::krb5().arcs(), selected.arcs())?;

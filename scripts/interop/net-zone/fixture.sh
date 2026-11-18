@@ -38,6 +38,9 @@
 source "$INTEROP_ROOT/scripts/interop/net-common/net.sh"
 
 interop_fixture dns
+# The Rust scenarios of the network fixtures (tests/interop_net.rs); kdcproxy
+# and kcm are proven by their self-checks until todos 16 and 12 add scenarios.
+interop_suite net interop_net mit-kdc mit-other dns httpd
 
 NET_ZONE_SITE=lab1
 

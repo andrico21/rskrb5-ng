@@ -1,5 +1,5 @@
 //! Shared setup and the KDC scenarios of the network fixtures: SRV discovery
-//! through the CoreDNS zone and the cross-realm referral to `OTHER.RSKRB5`.
+//! through the `CoreDNS` zone and the cross-realm referral to `OTHER.RSKRB5`.
 //! The HTTP Negotiate scenario against Apache is in `negotiate.rs`.
 
 use core::{error::Error, time::Duration};
@@ -39,7 +39,7 @@ const MIT_KDC: Fixture = Fixture::new("mit-kdc", "INTEROP_MIT_KDC");
 /// The OTHER.RSKRB5 KDC (fixture `mit-other`).
 const MIT_OTHER_KDC: Fixture = Fixture::new("mit-other", "INTEROP_MIT_OTHER_KDC");
 
-/// The CoreDNS server, host view (fixture `dns`), TCP endpoint.
+/// The `CoreDNS` server, host view (fixture `dns`), TCP endpoint.
 const DNS: Fixture = Fixture::new("dns", "INTEROP_DNS");
 
 /// The current-thread Tokio runtime the scenarios run on.
@@ -91,7 +91,7 @@ fn ticket_etype(ticket: &[u8]) -> Result<i32, Box<dyn Error>> {
     Ok(ticket::decode(ticket)?.enc_part.etype)
 }
 
-/// Discovery through the CoreDNS host view finds the TEST KDC only by DNS SRV
+/// Discovery through the `CoreDNS` host view finds the TEST KDC only by DNS SRV
 /// (no `kdc` relation is configured), at the published fixture port, and a
 /// password login through the discovered endpoint succeeds over UDP and TCP.
 #[test]
