@@ -12,8 +12,9 @@ mod framing;
 ///
 /// # Errors
 /// Returns [`Error::TcpReservedBitSet`] for the RFC 4120 reserved high bit,
-/// [`Error::TcpResponseTooLarge`] above `max`, and [`Error::EmptyKdcResponse`]
-/// for a zero-length record. This validator does not apply to kpasswd framing.
+/// otherwise [`Error::TcpResponseTooLarge`] above `max` and
+/// [`Error::EmptyKdcResponse`] for a zero-length record. This validator does
+/// not apply to kpasswd framing.
 #[inline]
 pub fn kdc_tcp_record_length(header: [u8; 4], max: usize) -> Result<usize, Error> {
     framing::kdc_record_length(header, max)
@@ -115,14 +116,17 @@ enum TcpFraming {
     Kpasswd,
 }
 
-/// KDC wire protocol for Tokio transport operations.
+/// Wire protocol for Tokio transport operations.
 #[cfg(feature = "tokio")]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[non_exhaustive]
 pub enum KdcProtocol {
-    /// RFC 4120 UDP transport with raw DER request and response datagrams.
+    /// UDP: the request and the reply are one datagram each, with no length
+    /// prefix (RFC 4120 for KDC messages, RFC 3244 for password changes).
     Udp,
-    /// RFC 4120 TCP transport with a four-byte big-endian length prefix.
+    /// TCP: each message is preceded by its four-byte big-endian length (RFC
+    /// 4120 section 7.2.2 for KDC messages, whose length's high bit is
+    /// reserved; RFC 3244 for password changes).
     Tcp,
     /// gokrb5-style UDP/TCP fallback for KDC requests: UDP first to an explicit
     /// address ([`Tokio::send`]), and for a realm in the order that
@@ -136,18 +140,21 @@ pub enum KdcProtocol {
     Auto,
 }
 
-/// Source used to discover a KDC endpoint.
+/// Where a [`KdcEndpoint`] came from.
 #[cfg(feature = "tokio")]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[non_exhaustive]
 pub enum KdcEndpointSource {
-    /// Endpoint came from a `[realms]` `kdc = ...` entry.
+    /// Built from a configured value by [`KdcEndpoint::configured`] or
+    /// [`KdcEndpoint::configured_with_default_port`]; discovery uses them for the
+    /// realm's configured KDCs and kpasswd servers.
     Config,
-    /// Endpoint came from `_kerberos._udp` or `_kerberos._tcp` DNS SRV lookup.
+    /// Came from a DNS SRV record found by discovery (`_kerberos`, `_kpasswd`
+    /// or `_kerberos-adm`).
     DnsSrv,
 }
 
-/// One KDC endpoint discovered for a realm.
+/// One endpoint of a KDC or kpasswd server.
 #[cfg(feature = "tokio")]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[non_exhaustive]
@@ -158,19 +165,18 @@ pub struct KdcEndpoint {
     pub host: String,
     /// Kerberos service port.
     pub port: u16,
-    /// How this endpoint was discovered.
+    /// Where this endpoint came from.
     pub source: KdcEndpointSource,
 }
 
 #[cfg(feature = "tokio")]
 impl KdcEndpoint {
-    /// Create a configured endpoint from a `host[:port]` value.
+    /// Create a configured endpoint from a `host[:port]` value with default
+    /// port 88, as [`Self::configured_with_default_port`] does.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidKdcEndpoint`] when `value` is empty, has an
-    /// unterminated or empty `[...]` IPv6 host, has a port that is not a `u16`, or
-    /// has a single `:` without a valid port.
+    /// Returns the errors of [`Self::configured_with_default_port`].
     #[inline]
     pub fn configured(protocol: KdcProtocol, value: &str) -> Result<Self, Error> {
         Self::configured_with_default_port(protocol, value, 88)
@@ -178,11 +184,19 @@ impl KdcEndpoint {
 
     /// Create a configured endpoint from a `host[:port]` value and default port.
     ///
+    /// `value` is trimmed. A value that parses as a `core::net::IpAddr` is the
+    /// host, with `default_port` (so `fd00::1:88` is an IPv6 address); `[host]`
+    /// and `[host]:port` take the host from inside the brackets. Otherwise, when
+    /// the text after the last `:` is one or more ASCII digits and the text before
+    /// it is not empty and does not end in `:`, they are the port and the host;
+    /// without such a port the whole value is the host, with `default_port`.
+    ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidKdcEndpoint`] when `value` is empty, has an
-    /// unterminated or empty `[...]` IPv6 host, has a port that is not a `u16`, or
-    /// has a single `:` without a valid port.
+    /// Returns [`Error::InvalidKdcEndpoint`] when `value` is blank, when a `[` has
+    /// no closing `]` or encloses nothing, when the `]` is followed by text other
+    /// than `:port`, when a port does not parse as a `u16`, or when a value with a
+    /// single `:` has no such port.
     #[inline]
     pub fn configured_with_default_port(
         protocol: KdcProtocol,
@@ -210,7 +224,7 @@ impl KdcEndpoint {
     }
 }
 
-/// Tokio-backed KDC transport for explicit TCP or UDP exchanges.
+/// Tokio-backed KDC and kpasswd transport, with endpoint discovery.
 #[cfg(feature = "tokio")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Tokio {
@@ -235,7 +249,8 @@ impl Default for Tokio {
 #[cfg(feature = "tokio")]
 impl Tokio {
     #[must_use]
-    /// Create a transport with conservative gokrb5-compatible defaults.
+    /// Create a transport with the system resolver, a 5-second timeout, a UDP
+    /// response limit of 65,508 bytes and a TCP response body limit of 16 MiB.
     #[inline]
     pub const fn new() -> Self {
         Self {
@@ -315,10 +330,10 @@ impl Tokio {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::UdpRequestTooLarge`] when `request` exceeds the largest
-    /// UDP datagram, [`Error::UdpResponseTooLarge`] when a reply exceeds the
-    /// configured receive cap (including Windows WSAEMSGSIZE),
-    /// [`Error::Io`] when the socket fails,
+    /// Returns [`Error::UdpRequestTooLarge`] when `request` is longer than 65,507
+    /// bytes (the largest UDP payload over IPv4), [`Error::UdpResponseTooLarge`]
+    /// when a reply exceeds the configured receive cap (including Windows
+    /// WSAEMSGSIZE), [`Error::Io`] when the address lookup or the socket fails,
     /// [`Error::TransportTimeout`] when the exchange exceeds the transport
     /// timeout, and [`Error::EmptyKdcResponse`] for an empty reply.
     ///
@@ -352,7 +367,8 @@ impl Tokio {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Io`] when the connection or the stream fails,
+    /// Returns [`Error::Io`] when the address lookup, the connection or the
+    /// stream fails,
     /// [`Error::TcpReservedBitSet`] when the reply record's reserved high bit is set,
     /// [`Error::TransportTimeout`] when the exchange exceeds the transport
     /// timeout, [`Error::TcpRequestTooLarge`] or [`Error::TcpResponseTooLarge`]
@@ -382,7 +398,8 @@ impl Tokio {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Io`] when the connection or the stream fails,
+    /// Returns [`Error::Io`] when the address lookup, the connection or the
+    /// stream fails,
     /// [`Error::TransportTimeout`] when the exchange exceeds the transport
     /// timeout, and the framing errors of [`Self::exchange_tcp`].
     ///
@@ -830,7 +847,8 @@ impl Tokio {
             .await
     }
 
-    /// Send an encoded kpasswd request to the first reachable configured server.
+    /// Send an encoded kpasswd request to the first reachable kpasswd server
+    /// discovered for `realm`.
     ///
     /// # Errors
     ///
@@ -959,7 +977,8 @@ impl Tokio {
             .map_err(|source| Error::KpasswdOutcomeUnknown(Box::new(Error::from(source))))
     }
 
-    /// Send a framed kpasswd request to a configured kpasswd server and parse the reply.
+    /// Send a framed kpasswd request to a kpasswd server discovered for `realm`
+    /// and parse the reply.
     ///
     /// # Security
     /// This raw API only parses the response. Use
@@ -1033,7 +1052,8 @@ impl Tokio {
         password_result::checked(&reply, request, options, request.crypto_policy())
     }
 
-    /// Send a framed kpasswd request to a configured server and return a checked result.
+    /// Send a framed kpasswd request to a kpasswd server discovered for `realm`
+    /// and return a checked result.
     ///
     /// # Errors
     ///
@@ -1517,12 +1537,8 @@ impl Tokio {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidReferralTicket`] when `tgt` or a returned
-    /// referral is not a usable cross-realm TGT, [`Error::ServicePrincipalMismatch`]
-    /// when the KDC returns neither the requested ticket nor a referral,
-    /// [`Error::MaxReferralDepth`] when more referrals are needed than allowed, and
-    /// the errors of building each TGS-REQ, of [`Self::send_to_realm`] and of
-    /// processing each TGS-REP.
+    /// Returns the errors of [`Self::get_service_ticket_with_referral_trace_limit`]
+    /// with a limit of 5 referrals.
     ///
     /// # Cancel safety
     ///
@@ -1549,12 +1565,8 @@ impl Tokio {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidReferralTicket`] when `tgt` or a returned
-    /// referral is not a usable cross-realm TGT, [`Error::ServicePrincipalMismatch`]
-    /// when the KDC returns neither the requested ticket nor a referral,
-    /// [`Error::MaxReferralDepth`] when more referrals are needed than allowed, and
-    /// the errors of building each TGS-REQ, of [`Self::send_to_realm`] and of
-    /// processing each TGS-REP.
+    /// Returns the errors of [`Self::get_service_ticket_with_referral_trace_limit`]
+    /// with a limit of 5 referrals.
     ///
     /// # Cancel safety
     ///
@@ -1586,12 +1598,7 @@ impl Tokio {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidReferralTicket`] when `tgt` or a returned
-    /// referral is not a usable cross-realm TGT, [`Error::ServicePrincipalMismatch`]
-    /// when the KDC returns neither the requested ticket nor a referral,
-    /// [`Error::MaxReferralDepth`] when more referrals are needed than allowed, and
-    /// the errors of building each TGS-REQ, of [`Self::send_to_realm`] and of
-    /// processing each TGS-REP.
+    /// Returns the errors of [`Self::get_service_ticket_with_referral_trace_limit`].
     ///
     /// # Cancel safety
     ///
@@ -1626,12 +1633,13 @@ impl Tokio {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidReferralTicket`] when `tgt` or a returned
-    /// referral is not a usable cross-realm TGT, [`Error::ServicePrincipalMismatch`]
-    /// when the KDC returns neither the requested ticket nor a referral,
-    /// [`Error::MaxReferralDepth`] when more referrals are needed than allowed, and
-    /// the errors of building each TGS-REQ, of [`Self::send_to_realm`] and of
-    /// processing each TGS-REP.
+    /// Returns [`Error::Config`] or [`Error::Crypto`] when the crypto policy
+    /// refuses the `[libdefaults]` of `config`, [`Error::InvalidReferralTicket`]
+    /// when `tgt` is not a TGT or a returned TGT is for the realm of the KDC that
+    /// returned it, [`Error::ServicePrincipalMismatch`] when the KDC returns
+    /// neither the requested ticket nor a referral, [`Error::MaxReferralDepth`]
+    /// when more referrals are needed than allowed, and the errors of building
+    /// each TGS-REQ, of [`Self::send_to_realm`] and of processing each TGS-REP.
     ///
     /// # Cancel safety
     ///
@@ -1823,8 +1831,10 @@ impl Tokio {
     ///
     /// # Errors
     ///
-    /// Returns an error when the AS-REQ cannot be built from the password, the
-    /// errors of [`Self::send_to_realm`], [`Error::Kdc`] when the KDC rejects the login,
+    /// Returns [`Error::Config`] or [`Error::Crypto`] when the crypto policy
+    /// refuses the `[libdefaults]` of `config`, an error when the AS-REQ cannot
+    /// be built from the password, the errors of [`Self::send_to_realm`],
+    /// [`Error::Kdc`] when the KDC rejects the login,
     /// and an error when the AS-REP cannot be decrypted with the password-derived
     /// key or matched to the request.
     ///
@@ -1865,8 +1875,10 @@ impl Tokio {
     ///
     /// # Errors
     ///
-    /// Returns an error when the AS-REQ cannot be built from the password, the
-    /// errors of [`Self::send_to_realm`], [`Error::Kdc`] when the KDC rejects the login,
+    /// Returns [`Error::Config`] or [`Error::Crypto`] when the crypto policy
+    /// refuses the `[libdefaults]` of `config`, an error when the AS-REQ cannot
+    /// be built from the password, the errors of [`Self::send_to_realm`],
+    /// [`Error::Kdc`] when the KDC rejects the login,
     /// and an error when the AS-REP cannot be decrypted with the password-derived
     /// key or matched to the request.
     ///
@@ -2028,8 +2040,10 @@ impl Tokio {
     ///
     /// # Errors
     ///
-    /// Returns an error when the AS-REQ cannot be built from the keytab, the
-    /// errors of [`Self::send_to_realm`], [`Error::Kdc`] when the KDC rejects the login,
+    /// Returns [`Error::Config`] or [`Error::Crypto`] when the crypto policy
+    /// refuses the `[libdefaults]` of `config`, an error when the AS-REQ cannot
+    /// be built from the keytab, the errors of [`Self::send_to_realm`],
+    /// [`Error::Kdc`] when the KDC rejects the login,
     /// and an error when the AS-REP cannot be decrypted with the keytab-derived
     /// key or matched to the request.
     ///
@@ -2063,8 +2077,10 @@ impl Tokio {
     ///
     /// # Errors
     ///
-    /// Returns an error when the AS-REQ cannot be built from the keytab, the
-    /// errors of [`Self::send_to_realm`], [`Error::Kdc`] when the KDC rejects the login,
+    /// Returns [`Error::Config`] or [`Error::Crypto`] when the crypto policy
+    /// refuses the `[libdefaults]` of `config`, an error when the AS-REQ cannot
+    /// be built from the keytab, the errors of [`Self::send_to_realm`],
+    /// [`Error::Kdc`] when the KDC rejects the login,
     /// and an error when the AS-REP cannot be decrypted with the keytab-derived
     /// key or matched to the request.
     ///
@@ -2170,11 +2186,13 @@ impl Tokio {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::KdcEndpointFailures`] when, with an explicit DNS server,
-    /// the published `_kpasswd` set of `protocol` has no target that resolves,
-    /// [`Error::DnsResolverConfig`] or
-    /// [`Error::DnsSrvLookup`] when the `_kerberos-adm` fallback lookup fails,
-    /// and [`Error::NoKdcEndpoints`] when it finds no server.
+    /// Returns [`Error::DnsResolverConfig`] when the resolver cannot be built,
+    /// [`Error::DnsServiceUnavailable`] for a root SRV target of `_kpasswd` or of
+    /// the `_kerberos-adm` fallback, [`Error::KdcEndpointFailures`] when, with an
+    /// explicit DNS server, the published `_kpasswd` set of `protocol` has no
+    /// target that resolves, [`Error::DnsSrvLookup`] when the `_kerberos-adm`
+    /// fallback lookup fails, and [`Error::NoKdcEndpoints`] when it finds no
+    /// server.
     ///
     /// # Cancel safety
     ///

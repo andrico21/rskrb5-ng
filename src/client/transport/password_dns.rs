@@ -11,7 +11,8 @@ use super::{Error, KdcEndpoint, KdcProtocol, Tokio, dns_resolver, srv_targets};
 /// its sets; the system resolver keeps the target names as endpoints.
 ///
 /// # Errors
-/// Returns [`Error::DnsServiceUnavailable`] for a root target and
+/// Returns [`Error::DnsResolverConfig`] when the resolver cannot be built,
+/// [`Error::DnsServiceUnavailable`] for a root target and
 /// [`Error::KdcEndpointFailures`] when, with an explicit DNS server, the
 /// published set's targets all failed to resolve. When the set is absent: DNS
 /// errors of the administrative lookup, or
@@ -82,7 +83,8 @@ pub(super) async fn discover(
 /// offered on port 464 over both protocols.
 ///
 /// # Errors
-/// Returns [`Error::KdcEndpointFailures`] with one entry per published set none
+/// Returns [`Error::DnsResolverConfig`] when the resolver cannot be built,
+/// [`Error::KdcEndpointFailures`] with one entry per published set none
 /// of whose targets resolved (the UDP set first; with an explicit DNS server
 /// only, the system resolver keeps target names) when no endpoint is left and
 /// there is such a set,
