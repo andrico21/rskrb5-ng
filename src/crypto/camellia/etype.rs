@@ -5,8 +5,8 @@ use sha1::Sha1;
 use super::{CtsCmacEtype, cts, kdf};
 use crate::{
     crypto::{
-        KERBEROS_CONSTANT, KerberosEtype, Purpose, SecretScratch, s2kparams_to_iterations,
-        split_trailing_mac, strip_confounder, usage_constant,
+        KERBEROS_CONSTANT, Purpose, SecretScratch, s2kparams_to_iterations, split_trailing_mac,
+        strip_confounder, usage_constant,
     },
     error::Crypto as Error,
 };
@@ -17,16 +17,6 @@ const CONFOUNDER_SIZE: usize = 16;
 const CMAC_SIZE: usize = 16;
 /// RFC 6803 section 6: 32768 iterations.
 const DEFAULT_S2KPARAMS: &str = "00008000";
-
-/// Both enctypes in MIT's `camellia` family order: 256 first.
-pub const ALL: &[KerberosEtype] = &[
-    KerberosEtype::Camellia(CtsCmacEtype::Camellia256),
-    KerberosEtype::Camellia(CtsCmacEtype::Camellia128),
-];
-/// `camellia128-cts-cmac` alone.
-pub const ONLY_128: &[KerberosEtype] = &[KerberosEtype::Camellia(CtsCmacEtype::Camellia128)];
-/// `camellia256-cts-cmac` alone.
-pub const ONLY_256: &[KerberosEtype] = &[KerberosEtype::Camellia(CtsCmacEtype::Camellia256)];
 
 impl CtsCmacEtype {
     /// Probe an encryption type ID without selecting use.

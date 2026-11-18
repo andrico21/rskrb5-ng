@@ -1,14 +1,7 @@
 //! The stand-in used when the `camellia` leaf feature is off: a type with no values.
 
 use super::CtsCmacEtype;
-use crate::{crypto::KerberosEtype, error::Crypto as Error};
-
-/// No enctype without the feature.
-pub const ALL: &[KerberosEtype] = &[];
-/// No enctype without the feature.
-pub const ONLY_128: &[KerberosEtype] = &[];
-/// No enctype without the feature.
-pub const ONLY_256: &[KerberosEtype] = &[];
+use crate::error::Crypto as Error;
 
 impl CtsCmacEtype {
     /// Unavailable without the feature.

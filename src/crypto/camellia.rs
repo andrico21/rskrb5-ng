@@ -18,6 +18,8 @@
 #[cfg(not(feature = "camellia"))]
 use core::convert::Infallible;
 
+use super::KerberosEtype;
+
 #[cfg(feature = "camellia")]
 #[path = "camellia/cts.rs"]
 mod cts;
@@ -30,11 +32,6 @@ mod etype;
 #[cfg(feature = "camellia")]
 #[path = "camellia/kdf.rs"]
 mod kdf;
-
-#[cfg(not(feature = "camellia"))]
-pub use disabled::{ALL, ONLY_128, ONLY_256};
-#[cfg(feature = "camellia")]
-pub use etype::{ALL, ONLY_128, ONLY_256};
 
 /// Camellia-CTS-CMAC encryption type of RFC 6803.
 #[cfg(feature = "camellia")]
@@ -54,6 +51,28 @@ pub enum CtsCmacEtype {
 #[non_exhaustive]
 pub struct CtsCmacEtype(Infallible);
 
+/// Both enctypes in MIT's `camellia` family order: 256 first; none without the feature.
+#[cfg(feature = "camellia")]
+pub(crate) const ALL: &[KerberosEtype] = &[
+    KerberosEtype::Camellia(CtsCmacEtype::Camellia256),
+    KerberosEtype::Camellia(CtsCmacEtype::Camellia128),
+];
+/// `camellia128-cts-cmac` alone; none without the feature.
+#[cfg(feature = "camellia")]
+pub(crate) const ONLY_128: &[KerberosEtype] = &[KerberosEtype::Camellia(CtsCmacEtype::Camellia128)];
+/// `camellia256-cts-cmac` alone; none without the feature.
+#[cfg(feature = "camellia")]
+pub(crate) const ONLY_256: &[KerberosEtype] = &[KerberosEtype::Camellia(CtsCmacEtype::Camellia256)];
+/// No enctype without the feature.
+#[cfg(not(feature = "camellia"))]
+pub(crate) const ALL: &[KerberosEtype] = &[];
+/// No enctype without the feature.
+#[cfg(not(feature = "camellia"))]
+pub(crate) const ONLY_128: &[KerberosEtype] = &[];
+/// No enctype without the feature.
+#[cfg(not(feature = "camellia"))]
+pub(crate) const ONLY_256: &[KerberosEtype] = &[];
+
 /// Whether the `camellia` leaf feature is compiled in.
 pub const AVAILABLE: bool = cfg!(feature = "camellia");
 
@@ -66,6 +85,3 @@ pub const CONSTANT_TIME: bool = false;
 
 /// Text that names the leaf in the diagnostics of an unavailable Camellia selector.
 pub(crate) const UNAVAILABLE_UNTIL: &str = "the `camellia` Cargo feature is enabled";
-
-#[cfg(doc)]
-use super::KerberosEtype;
