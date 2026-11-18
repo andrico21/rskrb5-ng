@@ -1,6 +1,8 @@
 # shellcheck shell=bash
 # Shared definitions of the Samba AD DC fixture scripts (entrypoint.sh,
-# setup-*.sh, trust.sh, selfcheck.sh), sourced inside the container.
+# setup-*.sh, trust.sh, selfcheck.sh), sourced inside the container. The
+# constants are read by the scripts that source this file (SC2034).
+# shellcheck disable=SC2034
 
 readonly RUN_DIR=/run/interop
 readonly SECRETS="$RUN_DIR/secrets"

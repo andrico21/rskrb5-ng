@@ -171,6 +171,8 @@ interop_self_test_samba() {
     sf "default registration is '$out'"
   out="$(
     INTEROP_FIXTURES=() INTEROP_SUITE_NAMES=()
+    # The opt-out is local to this command substitution on purpose (SC2030).
+    # shellcheck disable=SC2030
     INTEROP_SAMBA=0
     # shellcheck source=scripts/interop/samba/fixture.sh
     source "$INTEROP_ROOT/scripts/interop/samba/fixture.sh"
