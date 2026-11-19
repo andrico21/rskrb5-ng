@@ -4,6 +4,11 @@
 set -euo pipefail
 
 INTEROP_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+# The self-test checks the default names and ports: it ignores a namespace, an
+# offset or a CA directory the caller exported for a real run.
+if [[ "${1:-}" == self-test ]]; then
+  unset INTEROP_NAMESPACE INTEROP_PORT_OFFSET INTEROP_BUILD_CA_DIR INTEROP_SECRET_INVENTORY
+fi
 # shellcheck source=scripts/interop/lib.sh
 source "$INTEROP_ROOT/scripts/interop/lib.sh"
 INTEROP_STATE_DIR="${INTEROP_STATE_DIR:-"$INTEROP_ROOT/target/interop${INTEROP_NAMESPACE:+-$INTEROP_NAMESPACE}"}"

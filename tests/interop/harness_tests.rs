@@ -33,6 +33,8 @@ fn child(
             ("INTEROP_REQUIRED", required.0.map(OsStr::new)),
             ("INTEGRATION_REQUIRED", required.1.map(OsStr::new)),
             (ENDPOINT_KEY, endpoint.map(OsStr::new)),
+            // A namespaced run exports its own prefix; these tests name the default container.
+            ("INTEROP_CONTAINER_PREFIX", None),
         ],
     )
 }
