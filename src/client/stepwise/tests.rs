@@ -111,10 +111,13 @@ fn cancellation_drops_every_secret() -> Result<(), Box<dyn Error>> {
 
 /// An exchange abandoned at its prompt erases an answer it never used.
 #[test]
-fn unanswered_exchange_holds_no_secret() {
+fn unanswered_exchange_holds_no_secret() -> Result<(), Box<dyn Error>> {
     let client = Principal::user("TEST.GOKRB5", "testuser1");
     let erased = Arc::new(AtomicBool::new(false));
-    let request = AsReq::new(UNIX_EPOCH, 7).with_etypes(vec![18_i32]);
+    let now = UNIX_EPOCH
+        .checked_add(Duration::from_secs(1_893_553_447))
+        .ok_or("time")?;
+    let request = AsReq::new(now, 7).with_etypes(vec![18_i32]);
     let exchange = InitCreds::with_password(
         client,
         Some(observed_password(&erased)),
@@ -122,32 +125,53 @@ fn unanswered_exchange_holds_no_secret() {
     );
     drop(exchange);
     assert!(erased.load(Ordering::SeqCst));
+    Ok(())
+}
+
+/// The PA types of `offers` in the order `preferred` puts them.
+fn types_in_order(offers: &[rasn_kerberos::PaData], preferred: &[i32]) -> Vec<i32> {
+    order::sorted(offers, preferred)
+        .iter()
+        .map(|offer| offer.r#type)
+        .collect()
 }
 
 /// MIT `sort_krb5_padata_sequence`: preferred types move to the front in
 /// preference order; the rest keep the KDC's order.
 #[test]
 fn preferred_types_move_to_the_front() {
-    let offers: Vec<rasn_kerberos::PaData> = [2_i32, 136_i32, 17_i32, 133_i32, 16_i32]
-        .iter()
-        .map(|pa_type| rasn_kerberos::PaData {
-            r#type: *pa_type,
-            value: Vec::new().into(),
-        })
-        .collect();
-    let order = |preferred: &[i32]| {
-        order::sorted(&offers, preferred)
-            .iter()
-            .map(|offer| offer.r#type)
-            .collect::<Vec<_>>()
-    };
+    let offers = vec![
+        rasn_kerberos::PaData {
+            r#type: 2_i32,
+            value: Vec::from([0_u8; 0]).into(),
+        },
+        rasn_kerberos::PaData {
+            r#type: 136_i32,
+            value: Vec::from([0_u8; 0]).into(),
+        },
+        rasn_kerberos::PaData {
+            r#type: 17_i32,
+            value: Vec::from([0_u8; 0]).into(),
+        },
+        rasn_kerberos::PaData {
+            r#type: 133_i32,
+            value: Vec::from([0_u8; 0]).into(),
+        },
+        rasn_kerberos::PaData {
+            r#type: 16_i32,
+            value: Vec::from([0_u8; 0]).into(),
+        },
+    ];
     assert_eq!(
-        order(&[17_i32, 16_i32, 15_i32, 14_i32]),
+        types_in_order(&offers, &[17_i32, 16_i32, 15_i32, 14_i32]),
         [17_i32, 16_i32, 2_i32, 136_i32, 133_i32]
     );
-    assert_eq!(order(&[]), [2_i32, 136_i32, 17_i32, 133_i32, 16_i32]);
     assert_eq!(
-        order(&[99_i32, 133_i32]),
+        types_in_order(&offers, &[]),
+        [2_i32, 136_i32, 17_i32, 133_i32, 16_i32]
+    );
+    assert_eq!(
+        types_in_order(&offers, &[99_i32, 133_i32]),
         [133_i32, 2_i32, 136_i32, 17_i32, 16_i32]
     );
 }

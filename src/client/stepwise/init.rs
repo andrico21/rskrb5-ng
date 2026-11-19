@@ -577,10 +577,14 @@ where
 
 /// The Tokio driver: realm discovery for the first request, the open
 /// connection for follow-up requests, as the AS login functions do.
-#[cfg(feature = "tokio")]
 ///
 /// # Errors
 /// Returns the typed failure of the step; the exchange cannot continue after it.
+///
+/// # Cancel safety
+/// Cancel-safe in the sense of [`super::drive_tokio`]: no client or cache state
+/// changes, and the exchange erases its secrets when it is dropped.
+#[cfg(feature = "tokio")]
 pub(super) async fn drive_tokio<E, R>(
     transport: &TokioTransport,
     (config, protocol): (&Config, KdcProtocol),
