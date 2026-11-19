@@ -136,7 +136,13 @@ fn preferred_types_move_to_the_front() {
             .map(|offer| offer.r#type)
             .collect::<Vec<_>>()
     };
-    assert_eq!(order(&[17_i32, 16_i32, 15_i32, 14_i32]), [17_i32, 16_i32, 2_i32, 136_i32, 133_i32]);
+    assert_eq!(
+        order(&[17_i32, 16_i32, 15_i32, 14_i32]),
+        [17_i32, 16_i32, 2_i32, 136_i32, 133_i32]
+    );
     assert_eq!(order(&[]), [2_i32, 136_i32, 17_i32, 133_i32, 16_i32]);
-    assert_eq!(order(&[99_i32, 133_i32]), [133_i32, 2_i32, 136_i32, 17_i32, 16_i32]);
+    assert_eq!(
+        order(&[99_i32, 133_i32]),
+        [133_i32, 2_i32, 136_i32, 17_i32, 16_i32]
+    );
 }

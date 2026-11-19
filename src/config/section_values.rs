@@ -63,7 +63,10 @@ pub struct Plugins {
     pub enable_only: Vec<String>,
     /// Configured module names (`module = <name>:<path>`, the path ignored), in
     /// profile order; they come before the other registered modules (MIT `plugin.c`).
-    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
     pub module: Vec<String>,
 }
 

@@ -203,7 +203,10 @@ mod tests {
             Err(Error::NoRequestAddresses)
         ));
         let default = InitCredsOptions::from_config(&Config::new(), timestamp(1_893_553_447)?, 7)?;
-        assert_eq!(default.request().addresses(), [IpAddr::V4(Ipv4Addr::UNSPECIFIED); 0]);
+        assert_eq!(
+            default.request().addresses(),
+            [IpAddr::V4(Ipv4Addr::UNSPECIFIED); 0]
+        );
         Ok(())
     }
 
