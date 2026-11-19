@@ -85,10 +85,7 @@ mod tests {
         k5login_directory, "plan 2 WP-17", ["/first", "/second"];
         kcm_mach_service, "plan 2 WP-09", ["org.example.kcm", "-"];
         kcm_socket, "plan 2 WP-09", ["/socket", "-"];
-        kdc_timesync, "plan 2 WP-04", ["0", "1", "2"];
-        noaddresses, "plan 2 WP-04", ["true", "yes"];
         plugin_base_dir, "plan 2 WP-16", ["/never-load", "%{LIBDIR}/krb5/plugins"];
-        preferred_preauth_types, "plan 2 WP-04", ["17,16,15,14", "17 16 14 15"];
         qualify_shortname, "plan 2 WP-10", ["", "example.test"];
         rdns, "plan 2 WP-10", ["true", "false"];
         realm_try_domains, "plan 2 WP-10", ["-1", "0", "2"];

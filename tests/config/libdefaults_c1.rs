@@ -94,10 +94,7 @@ mod tests {
     #[test]
     fn stricter_relations_when_compatible() -> Result<(), Box<dyn StdError>> {
         // Given policies stricter than the current replay/address behavior.
-        for assignment in [
-            "default_rcache_name = dfl:",
-            "extra_addresses = 192.0.2.1\n noaddresses = false",
-        ] {
+        for assignment in ["default_rcache_name = dfl:"] {
             // When parsing in the default compatible mode.
             let result = Config::parse(&format!("[libdefaults]\n {assignment}\n"));
             // Then it fails closed rather than pretending to enforce the policy.

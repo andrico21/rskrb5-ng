@@ -819,8 +819,8 @@ pub struct LibDefaults {
     pub kdc_default_options: u32,
     /// KDC time sync setting.
     pub kdc_time_sync: i32,
-    /// Whether addresses should be omitted from tickets.
-    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::addresses"))]
+    /// Whether addresses should be omitted from tickets; when disabled, AS
+    /// requests are bound to [`Self::extra_addresses`].
     pub no_addresses: Toggle,
     /// Permitted enctype names.
     #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::enctypes"))]
