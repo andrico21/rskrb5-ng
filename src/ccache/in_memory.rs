@@ -11,7 +11,9 @@ use std::{
 use super::{
     CCache, Credential, Error, Principal,
     file_store::remove_server,
-    stores::{CacheCollection, CacheCursor, CacheHandle, CredentialStore},
+    stores::{
+        CacheCollection, CacheCursor, CacheHandle, CacheIdentity, CredentialStore, StoreInstance,
+    },
 };
 
 /// A table of named in-memory caches (MIT `MEMORY:`).
@@ -26,10 +28,12 @@ use super::{
 /// # Security
 ///
 /// The caches live only in this process's memory; nothing is written to disk.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct MemoryStore {
     /// The shared table.
     table: Arc<Mutex<Table>>,
+    /// The identity of the table, shared by clones.
+    instance: StoreInstance,
 }
 
 /// The caches of one [`MemoryStore`].
@@ -39,6 +43,16 @@ struct Table {
     caches: Vec<(String, Option<CCache>)>,
     /// The residual [`CacheCollection::switch`] named last.
     primary: Option<String>,
+}
+
+impl Default for MemoryStore {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            table: Arc::default(),
+            instance: StoreInstance::unique(),
+        }
+    }
 }
 
 impl MemoryStore {
@@ -148,17 +162,19 @@ impl CacheCollection for MemoryStore {
         Ok(self.handle(&name))
     }
 
+    /// Make a cache of this store primary; a cache of another store is
+    /// outside, whatever its name.
     #[inline]
     fn switch(&self, cache: &dyn CacheHandle) -> Result<(), Error> {
-        let name = cache.name();
+        let identity = cache.identity();
         let mut table = self.lock();
-        let Some(residual) = name
-            .strip_prefix("MEMORY:")
+        let Some(residual) = identity
+            .residual_in(self.instance)
             .filter(|residual| table.caches.iter().any(|(item, _)| item == residual))
         else {
             drop(table);
             return Err(Error::OutsideCollection {
-                name,
+                name: cache.name(),
                 collection: "MEMORY:".to_owned(),
             });
         };
@@ -232,6 +248,10 @@ impl MemoryCache {
 impl CacheHandle for MemoryCache {
     fn name(&self) -> String {
         format!("MEMORY:{}", self.residual)
+    }
+
+    fn identity(&self) -> CacheIdentity {
+        CacheIdentity::in_instance(self.store.instance, self.residual.as_str())
     }
 
     fn load(&self) -> Result<CCache, Error> {

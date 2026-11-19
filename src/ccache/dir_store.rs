@@ -14,7 +14,9 @@ use super::{
     DIR_DEFAULT_PRIMARY_CACHE, DIR_PRIMARY_FILE, Error,
     file_store::{FileCache, Single},
     parse_dir_primary_name,
-    stores::{CacheCollection, CacheCursor, CacheHandle, CacheVersion, CredentialStore},
+    stores::{
+        CacheCollection, CacheCursor, CacheHandle, CacheIdentity, CacheVersion, CredentialStore,
+    },
     validate_dir_subsidiary_path,
 };
 use crate::file_name::{self, locked};
@@ -139,7 +141,8 @@ impl CacheCollection for DirCollection {
     }
 
     /// The primary cache when it exists, then every other `tkt*` regular file
-    /// in name order; a malformed pointer lists the files only (MIT
+    /// (no directory, symlink, FIFO or device) in name order; a malformed
+    /// pointer lists the files only (MIT
     /// `dcc_ptcursor_new` ignores it, `cc_dir.c:608-612`). Nothing is written.
     fn caches(&self) -> Result<CacheCursor, Error> {
         let primary = self.primary_name().ok().flatten();
@@ -149,10 +152,8 @@ impl CacheCollection for DirCollection {
             let Ok(file) = entry.file_name().into_string() else {
                 continue;
             };
-            let kind = entry.file_type()?;
             if file.starts_with(DIR_DEFAULT_PRIMARY_CACHE)
-                && !kind.is_dir()
-                && !kind.is_symlink()
+                && entry.metadata()?.is_file()
                 && primary.as_deref() != Some(file.as_str())
             {
                 names.push(file);
@@ -160,7 +161,9 @@ impl CacheCollection for DirCollection {
         }
         names.sort_unstable();
         let mut caches: Vec<Box<dyn CacheHandle>> = Vec::new();
-        if let Some(file) = primary.filter(|file| self.directory.join(file).is_file()) {
+        if let Some(file) = primary.filter(|file| {
+            fs::symlink_metadata(self.directory.join(file)).is_ok_and(|entry| entry.is_file())
+        }) {
             caches.push(Box::new(self.cache(&file)));
         }
         caches.extend(
@@ -186,9 +189,9 @@ impl CacheCollection for DirCollection {
         Ok(Box::new(self.cache(&file)))
     }
 
-    /// Point `primary` at `cache`, which must be a `DIR::` cache directly
-    /// inside this directory (MIT `dcc_switch_to`, `cc_dir.c:720-739`); the
-    /// pointer is replaced atomically.
+    /// Point `primary` at `cache`, which must be the `DIR::` cache file it
+    /// names, directly inside this directory (MIT `dcc_switch_to`,
+    /// `cc_dir.c:720-739`); the pointer is replaced atomically.
     fn switch(&self, cache: &dyn CacheHandle) -> Result<(), Error> {
         let name = cache.name();
         let outside = || Error::OutsideCollection {
@@ -199,7 +202,9 @@ impl CacheCollection for DirCollection {
             .strip_prefix("DIR::")
             .and_then(|path| validate_dir_subsidiary_path(path).ok())
             .ok_or_else(outside)?;
-        if path.parent() != Some(self.directory.as_path()) {
+        if path.parent() != Some(self.directory.as_path())
+            || cache.identity() != CacheIdentity::file(path.clone())
+        {
             return Err(outside());
         }
         let file = path
@@ -231,15 +236,22 @@ impl CacheCollection for DirCollection {
 ///
 /// # Errors
 ///
-/// [`Error::InvalidCacheName`] for a malformed pointer, `Io` for a symlink or
-/// a read failure.
+/// [`Error::InvalidCacheName`] for a malformed pointer, `Io` for a symlink,
+/// a FIFO or another non-regular file, and for a read failure.
 pub(super) fn read_primary(pointer: &Path) -> Result<Option<String>, Error> {
-    file_name::reject_symlink(pointer)?;
+    locked::reject_special(pointer)?;
     let file = match File::open(pointer) {
         Ok(file) => file,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error.into()),
     };
+    if !file.metadata()?.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "credential cache primary pointer is not a regular file",
+        )
+        .into());
+    }
     let mut line = Vec::new();
     let _: usize = file.take(64).read_to_end(&mut line)?;
     let end = line

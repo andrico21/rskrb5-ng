@@ -123,6 +123,10 @@ mod messages;
 mod tokens;
 
 #[cfg(test)]
+#[path = "secret_debug_audit/stores.rs"]
+mod stores;
+
+#[cfg(test)]
 #[expect(
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
@@ -164,6 +168,7 @@ mod tests {
         EXERCISED.with_borrow_mut(BTreeSet::clear);
         file_keys_redact_credentials().map_err(io::Error::other)?;
         file_containers_redact_credentials()?;
+        super::stores::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         #[cfg(feature = "messages")]
         super::messages::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         #[cfg(feature = "spnego")]
@@ -762,6 +767,42 @@ mod tests {
     /// Reviewed operations that do not destroy retained secret bytes.
     const REPLACEMENT_EXCEPTIONS: &[(&str, &str)] = &[
         (
+            "src/extensions.rs::Registry::register",
+            "Forwards to src/extensions/order.rs::register, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/extensions/order.rs::register",
+            "Appends one provider to its interface list (Vec::push after the checks); no registered provider, and no credential storage a provider holds, is replaced or dropped. A refused provider stays with its caller's Arc. Its population is exercised by `public_secret_owners_are_audited`.",
+        ),
+        (
+            "src/http.rs::NegotiateLayer::with_response_hardening",
+            "Assigns only the harden_inner flag of the private response options; the ApRepOptions they hold, and its subkey, are not replaced. Detected because those options hold credential storage, which the audit propagates from private owners since Y4-06 (`public_secret_owners_are_audited`).",
+        ),
+        (
+            "src/http.rs::NegotiateLayer::with_ap_rep",
+            "Assigns only the emit_ap_rep flag of the private response options; the ApRepOptions they hold, and its subkey, are not replaced. Detected because those options hold credential storage, which the audit propagates from private owners since Y4-06 (`public_secret_owners_are_audited`).",
+        ),
+        (
+            "src/http.rs::NegotiateLayer::with_reject_invalid",
+            "Assigns only the reject_invalid flag of the private response options; the ApRepOptions they hold, and its subkey, are not replaced. Detected because those options hold credential storage, which the audit propagates from private owners since Y4-06 (`public_secret_owners_are_audited`).",
+        ),
+        (
+            "src/http.rs::NegotiateService::with_ap_rep",
+            "Assigns only the emit_ap_rep flag of the private response options; the ApRepOptions they hold, and its subkey, are not replaced. Detected because those options hold credential storage, which the audit propagates from private owners since Y4-06 (`public_secret_owners_are_audited`).",
+        ),
+        (
+            "src/http.rs::NegotiateService::with_reject_invalid",
+            "Assigns only the reject_invalid flag of the private response options; the ApRepOptions they hold, and its subkey, are not replaced. Detected because those options hold credential storage, which the audit propagates from private owners since Y4-06 (`public_secret_owners_are_audited`).",
+        ),
+        (
+            "src/http.rs::NegotiateLayer::with_ap_rep_options",
+            "Replaces the held ApRepOptions as a whole; the replaced options drop, and their subkey is erased by its EncryptionKey owner's drop, the erasure `service_key_replacements_erase_old_allocations` observes for ApRepOptions subkey replacement. Detected through private-owner propagation (Y4-06).",
+        ),
+        (
+            "src/http.rs::NegotiateService::with_ap_rep_options",
+            "Replaces the held ApRepOptions as a whole; the replaced options drop, and their subkey is erased by its EncryptionKey owner's drop, the erasure `service_key_replacements_erase_old_allocations` observes for ApRepOptions subkey replacement. Detected through private-owner propagation (Y4-06).",
+        ),
+        (
             "src/client.rs::Tokio::remove_cached_service_ticket",
             "BTreeMap::remove transfers the owned session to the caller without destroying its credential storage; the returned session retains its erasure contract.",
         ),
@@ -1184,6 +1225,11 @@ mod tests {
         "src/keytab.rs::Keytab",
         "src/keytab/key_bytes.rs::Bytes",
         "src/keytab/stores.rs::MemoryKeytab",
+        "src/ccache/in_memory.rs::MemoryStore",
+        "src/ccache/selection.rs::Selected",
+        "src/ccache/stores.rs::CacheCursor",
+        "src/extensions.rs::Extension",
+        "src/extensions.rs::Registry",
         "src/ccache.rs::EncryptionKey",
         "src/ccache.rs::Credential",
         "src/ccache.rs::AuthorizationDataEntry",

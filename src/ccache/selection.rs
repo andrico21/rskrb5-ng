@@ -1,6 +1,7 @@
 //! Credential-cache selection over a collection (MIT 1.22.2 `krb5_cc_select`,
 //! `src/lib/krb5/ccache/ccselect.c:121-190`) and the default `.k5identity`.
 
+use core::fmt;
 use std::{env, path::Path};
 
 use super::{
@@ -17,7 +18,8 @@ use crate::{
 const NT_SRV_HST: i32 = 3;
 
 /// What [`select_cache`] chose.
-#[derive(Debug)]
+///
+/// Its `Debug` output names the chosen cache, never its credentials.
 #[non_exhaustive]
 pub enum Selected {
     /// Use this cache.
@@ -27,6 +29,17 @@ pub enum Selected {
     Principal(Principal),
     /// No selector chose (MIT `KRB5_CC_NOTFOUND`).
     NotFound,
+}
+
+impl fmt::Debug for Selected {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Cache(cache) => f.debug_tuple("Cache").field(&cache.name()).finish(),
+            Self::Principal(principal) => f.debug_tuple("Principal").field(principal).finish(),
+            Self::NotFound => f.write_str("NotFound"),
+        }
+    }
 }
 
 /// Choose a cache of `collection` for `server` with the selectors of

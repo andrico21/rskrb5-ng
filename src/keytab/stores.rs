@@ -15,9 +15,12 @@ use std::{
 };
 
 use super::{EncryptionKey, Entry, Error, Keytab, Principal};
-use crate::file_name::{
-    SecretBytes,
-    locked::{self, Change},
+use crate::{
+    extensions,
+    file_name::{
+        SecretBytes,
+        locked::{self, Change},
+    },
 };
 
 /// A keytab of some type (MIT `krb5_keytab`): the client keytab and the
@@ -55,8 +58,11 @@ pub trait KeyStore: fmt::Debug + Send + Sync {
     /// Storage and parse errors.
     fn remove(&self, principal: &Principal, kvno: u32, etype: Option<i32>) -> Result<usize, Error>;
 
-    /// The newest key of `principal` with `kvno` (0: any) and `etype`, and its
-    /// kvno (MIT `krb5_kt_get_entry`; [`Keytab::find_key`]).
+    /// The key of `principal` with `kvno` and `etype`, and its kvno (MIT
+    /// `krb5_kt_get_entry`). A `kvno` of 0 takes the highest kvno the keytab
+    /// holds for the principal and enctype (MIT `kt_memory.c:405-409`), not
+    /// the newest timestamp; among entries of one kvno the newest wins
+    /// ([`Keytab::find_key`]).
     ///
     /// # Errors
     ///
@@ -70,9 +76,54 @@ pub trait KeyStore: fmt::Debug + Send + Sync {
     ) -> Result<(EncryptionKey, u32), Error> {
         let keytab = self.load()?;
         let components: Vec<&str> = principal.components.iter().map(String::as_str).collect();
-        let (key, found) = keytab.find_key(&components, &principal.realm, kvno, etype)?;
+        let wanted = if kvno == 0 {
+            keytab
+                .entries
+                .iter()
+                .filter(|entry| {
+                    entry.principal.realm == principal.realm
+                        && entry.principal.components == principal.components
+                        && entry.key().etype() == etype
+                })
+                .map(|entry| entry.kvno)
+                .max()
+                .unwrap_or(0)
+        } else {
+            kvno
+        };
+        let (key, found) = keytab.find_key(&components, &principal.realm, wanted, etype)?;
         Ok((key.clone(), found))
     }
+}
+
+/// A keytab type (MIT `krb5_kt_ops`): it resolves residuals to keytabs.
+///
+/// A store provider registered through [`crate::extensions::Registry`] offers
+/// one for its prefix.
+pub trait KeytabType: fmt::Debug + Send + Sync {
+    /// The keytab a residual names (MIT `krb5_kt_resolve`).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidKeytabName`] for a residual this type does not accept;
+    /// storage errors.
+    fn resolve(&self, residual: &str) -> Result<Box<dyn KeyStore>, Error>;
+}
+
+/// The keytab `name` names when a store provider installed with
+/// [`crate::extensions::Registry::install_stores`] claims its prefix.
+///
+/// # Errors
+///
+/// The errors of the provider's [`KeytabType::resolve`].
+pub(crate) fn installed_keytab(name: &str) -> Result<Option<Box<dyn KeyStore>>, Error> {
+    let Some((provider, residual)) = extensions::stores::installed(name) else {
+        return Ok(None);
+    };
+    provider
+        .keytab_type()
+        .map(|keytabs| keytabs.resolve(residual))
+        .transpose()
 }
 
 /// Remove matching entries from `keytab`; their keys are erased as they drop.
@@ -117,14 +168,18 @@ struct FileKeytab {
 }
 
 impl FileKeytab {
-    /// Change the keytab under the exclusive lock; an absent file starts empty.
+    /// Change the keytab under the exclusive lock; an absent or zero-length
+    /// file starts empty (the zero-length file another writer has just
+    /// created and not yet locked included).
     ///
     /// # Errors
     ///
     /// Storage, parse and serialization errors.
     fn update<T>(&self, change: impl FnOnce(&mut Keytab) -> T) -> Result<T, Error> {
         locked::rewrite(&self.path, |current| {
-            let mut keytab = current.map_or_else(|| Ok(Keytab::new()), Keytab::parse)?;
+            let mut keytab = current
+                .filter(|bytes| !bytes.is_empty())
+                .map_or_else(|| Ok(Keytab::new()), Keytab::parse)?;
             let result = change(&mut keytab);
             Ok((Change::Write(SecretBytes::new(keytab.to_bytes()?)), result))
         })
@@ -251,9 +306,18 @@ impl KeyStore for MemoryEntry {
         Ok(self.update(|keytab| keytab.clone()))
     }
 
+    /// Add an entry that a keytab file could hold: the FILE store refuses an
+    /// entry its serialization refuses (the A7 shape rules), so MEMORY checks
+    /// the same serialization and keeps its contents on refusal.
     fn add(&self, entry: Entry) -> Result<(), Error> {
-        self.update(|keytab| keytab.entries.push(entry));
-        Ok(())
+        self.update(|keytab| {
+            keytab.entries.push(entry);
+            let admitted = keytab.to_bytes().map(|bytes| drop(SecretBytes::new(bytes)));
+            if admitted.is_err() {
+                drop(keytab.entries.pop());
+            }
+            admitted
+        })
     }
 
     fn remove(&self, principal: &Principal, kvno: u32, etype: Option<i32>) -> Result<usize, Error> {

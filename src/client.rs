@@ -1591,7 +1591,7 @@ impl Tokio {
     #[inline]
     pub fn from_default_ccache_name(config: Config, protocol: KdcProtocol) -> Result<Self, Error> {
         let cache_name = configured_default_ccache_name(&config)?;
-        let cache = ccache::CCache::load(ccache::CCache::resolved_file_path(&cache_name)?)?;
+        let cache = ccache::CCache::load_resolved_name(&cache_name)?;
         Self::try_from_ccache(config, protocol, &cache)
     }
     /// Create a cache-only client from the default credential cache.
@@ -1615,7 +1615,7 @@ impl Tokio {
     #[inline]
     pub fn from_default_ccache(config: Config, protocol: KdcProtocol) -> Result<Self, Error> {
         let cache_name = default_ccache_name(&config)?;
-        let cache = ccache::CCache::load(ccache::CCache::resolved_file_path(&cache_name)?)?;
+        let cache = ccache::CCache::load_resolved_name(&cache_name)?;
         Self::try_from_ccache(config, protocol, &cache)
     }
     /// Create a cache-only client by loading the file ccache named by `KRB5CCNAME`.

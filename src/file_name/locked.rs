@@ -4,8 +4,11 @@
 //! path still names the file it locked (another writer may have replaced it),
 //! and publishes the new contents with [`super::write_private`] (a private
 //! stage renamed over the path), so a reader never sees a partial file and two
-//! writers that respect the lock never lose an update. Readers take a shared
-//! lock. The locks are advisory `flock`-style locks on Unix and byte-range locks
+//! writers that respect the lock never lose an update. A writer that finds no
+//! file creates an empty owner-only one and locks it before it decides, so a
+//! concurrent writer waits for it instead of also starting from nothing (MIT
+//! creates absent keytabs and caches the same way, `kt_file.c:739-749`).
+//! Readers take a shared lock. The locks are advisory `flock`-style locks on Unix and byte-range locks
 //! on Windows; MIT krb5 uses `fcntl` record locks, which do not interact with
 //! them on Linux, so MIT and this crate serialize only through the atomic
 //! rename.
@@ -20,7 +23,12 @@ use std::{
     path::Path,
 };
 
-use super::{SecretBytes, reject_symlink, write_private};
+use super::{SecretBytes, write_private};
+
+/// Creation serialization regressions.
+#[cfg(test)]
+#[path = "locked_tests.rs"]
+mod creation_tests;
 
 /// How often a lock is retaken when the path was replaced while waiting.
 const ATTEMPTS: usize = 16;
@@ -40,7 +48,7 @@ pub(crate) enum Change {
 /// file, and `PermissionDenied` for a file that others may write or (Linux)
 /// that another user owns.
 pub(crate) fn read_shared(path: &Path) -> io::Result<Option<SecretBytes>> {
-    let Some(file) = open_locked(path, false)? else {
+    let Some(file) = open_shared(path)? else {
         return Ok(None);
     };
     read_all(&file).map(Some)
@@ -49,27 +57,42 @@ pub(crate) fn read_shared(path: &Path) -> io::Result<Option<SecretBytes>> {
 /// Rewrite a credential file under an exclusive lock.
 ///
 /// `change` receives the current contents (`None` when the file does not
-/// exist) and returns the new state and a result.
+/// exist) and returns the new state and a result. An absent file is created
+/// empty, owner-only and locked before `change` runs, and removed again when
+/// `change` fails.
 ///
 /// # Errors
-/// Returns the errors of [`read_shared`], the error of `change`, and the
+/// Returns the errors of [`read_shared`], the creation error, the error of
+/// `change` (or the error of removing the file this call created), and the
 /// errors of the publication or removal.
 pub(crate) fn rewrite<T, E, F>(path: &Path, change: F) -> Result<T, E>
 where
     E: From<io::Error>,
     F: FnOnce(Option<&[u8]>) -> Result<(Change, T), E>,
 {
-    let file = open_locked(path, true)?;
-    let current = file.as_ref().map(read_all).transpose()?;
-    let (next, result) = change(current.as_deref().map(Vec::as_slice))?;
-    match (next, file) {
-        (Change::Write(bytes), _) => write_private(path, &bytes)?,
-        (Change::Remove, Some(mut locked)) => {
-            wipe(&mut locked)?;
+    let (mut file, created) = open_for_rewrite(path)?;
+    let current = if created {
+        None
+    } else {
+        Some(read_all(&file)?)
+    };
+    let (next, result) = match change(current.as_deref().map(Vec::as_slice)) {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            if created {
+                fs::remove_file(path)?;
+            }
+            return Err(error);
+        }
+    };
+    match next {
+        Change::Write(bytes) => write_private(path, &bytes)?,
+        Change::Remove => {
+            wipe(&mut file)?;
             fs::remove_file(path)?;
         }
-        (Change::Remove, None) => {}
     }
+    drop(file);
     Ok(result)
 }
 
@@ -78,45 +101,119 @@ where
 /// # Errors
 /// Returns the creation error.
 pub(crate) fn create_empty(path: &Path) -> io::Result<()> {
+    create_private(path)?.sync_all()
+}
+
+/// Create and open a new owner-only file for reading and writing;
+/// `AlreadyExists` when the name is taken.
+///
+/// # Errors
+/// Returns the creation error.
+fn create_private(path: &Path) -> io::Result<File> {
     let mut options = OpenOptions::new();
-    let _: &mut OpenOptions = options.write(true).create_new(true);
+    let _: &mut OpenOptions = options.read(true).write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt as _;
         let _: &mut OpenOptions = options.mode(0o600);
     }
-    options.open(path)?.sync_all()
+    options.open(path)
 }
 
-/// Open and lock the file the path names, retrying while it is being replaced.
+/// Refuse a path that names anything but a regular file before it is opened.
+///
+/// Opening a FIFO blocks, and a symlink may lead elsewhere. An absent path
+/// passes. The opened descriptor is checked again (`check_trusted`); a swap
+/// between the two checks needs write access to the directory, which the
+/// stores exclude (owner-only or sticky directories).
+///
+/// # Errors
+/// Returns `InvalidInput` for a symlink or another non-regular file, and
+/// metadata errors other than absence.
+pub(crate) fn reject_special(path: &Path) -> io::Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "credential destination is a symlink",
+        )),
+        Ok(metadata) if !metadata.is_file() => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "credential file is not a regular file",
+        )),
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+/// Open and share-lock the file the path names, retrying while it is being
+/// replaced; `None` when it does not exist.
 ///
 /// # Errors
 /// Returns open, lock and trust errors.
-fn open_locked(path: &Path, exclusive: bool) -> io::Result<Option<File>> {
+fn open_shared(path: &Path) -> io::Result<Option<File>> {
     for _ in 0..ATTEMPTS {
-        reject_symlink(path)?;
-        let file = match OpenOptions::new().read(true).write(exclusive).open(path) {
+        reject_special(path)?;
+        let file = match OpenOptions::new().read(true).open(path) {
             Ok(file) => file,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error),
         };
-        let locked = file.metadata()?;
-        check_trusted(&locked)?;
-        if exclusive {
-            file.lock()?;
-        } else {
-            file.lock_shared()?;
-        }
-        match fs::symlink_metadata(path) {
-            Ok(current) if same_file(&locked, &current) => return Ok(Some(file)),
-            Ok(_) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error),
+        if let Some(locked) = lock_current(path, file, false)? {
+            return Ok(Some(locked));
         }
     }
-    Err(io::Error::other(
-        "credential file kept changing while it was locked",
-    ))
+    Err(still_changing())
+}
+
+/// Open and exclusively lock the file the path names, creating it empty and
+/// owner-only when absent, retrying while it is being replaced. Returns the
+/// file and whether this call created it.
+///
+/// # Errors
+/// Returns open, creation, lock and trust errors.
+fn open_for_rewrite(path: &Path) -> io::Result<(File, bool)> {
+    for _ in 0..ATTEMPTS {
+        reject_special(path)?;
+        let (file, created) = match OpenOptions::new().read(true).write(true).open(path) {
+            Ok(file) => (file, false),
+            Err(absent) if absent.kind() == io::ErrorKind::NotFound => match create_private(path) {
+                Ok(file) => (file, true),
+                Err(taken) if taken.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(failure) => return Err(failure),
+            },
+            Err(error) => return Err(error),
+        };
+        if let Some(locked) = lock_current(path, file, true)? {
+            return Ok((locked, created));
+        }
+    }
+    Err(still_changing())
+}
+
+/// Check and lock `file`, and keep it only while the path still names it.
+///
+/// # Errors
+/// Returns metadata, trust and lock errors.
+fn lock_current(path: &Path, file: File, exclusive: bool) -> io::Result<Option<File>> {
+    let locked = file.metadata()?;
+    check_trusted(&locked)?;
+    if exclusive {
+        file.lock()?;
+    } else {
+        file.lock_shared()?;
+    }
+    match fs::symlink_metadata(path) {
+        Ok(current) if same_file(&locked, &current) => Ok(Some(file)),
+        Ok(_) => Ok(None),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+/// The error of a path that kept naming another file after every lock.
+fn still_changing() -> io::Error {
+    io::Error::other("credential file kept changing while it was locked")
 }
 
 /// Refuse a file that is not regular, that others may write, or (Linux) that

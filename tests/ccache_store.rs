@@ -289,6 +289,63 @@ mod tests {
         Ok(())
     }
 
+    /// Enumeration skips a `primary` that names a symlink, as it skips every
+    /// other symlink, although the link leads to a regular cache file.
+    #[cfg(unix)]
+    #[test]
+    fn dir_enumeration_skips_a_symlinked_primary() -> Result<(), TestError> {
+        let directory = scratch("dir-primary-link")?;
+        let residual = directory.join("collection");
+        let collection = DirStore::default().collection(&residual.to_string_lossy())?;
+        let member = collection.new_unique()?;
+        member.initialize(&principal("alice", "A.TEST"))?;
+        let target = directory.join("outside");
+        FileStore::default()
+            .resolve(&target.to_string_lossy())?
+            .initialize(&principal("mallory", "A.TEST"))?;
+        symlink(&target, residual.join("tktlink"))?;
+        fs::write(residual.join("primary"), b"tktlink\n")?;
+        let names: Vec<String> = collection.caches()?.map(|cache| cache.name()).collect();
+        assert_eq!(names, [member.name()]);
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
+
+    /// A member whose file name contains a newline cannot become primary: the
+    /// pointer would name another cache. The pointer stays unchanged.
+    #[cfg(unix)]
+    #[test]
+    fn dir_switch_refuses_a_newline_name() -> Result<(), TestError> {
+        let directory = scratch("dir-newline")?;
+        let residual = directory.join("collection");
+        let collection = DirStore::default().collection(&residual.to_string_lossy())?;
+        collection
+            .primary()?
+            .initialize(&principal("alice", "A.TEST"))?;
+        let crafted = residual.join("tkt\nother");
+        FileStore::default()
+            .resolve(&crafted.to_string_lossy())?
+            .initialize(&principal("bob", "A.TEST"))?;
+        let listed = collection
+            .caches()?
+            .find(|cache| cache.name().ends_with("tkt\nother"))
+            .ok_or("the crafted member is listed")?;
+        assert!(matches!(
+            collection.switch(listed.as_ref()),
+            Err(Error::OutsideCollection {
+                name: _,
+                collection: _
+            })
+        ));
+        assert_eq!(fs::read(residual.join("primary"))?, b"tkt\n");
+        assert!(matches!(
+            DirStore::default().resolve(&format!(":{}", crafted.display())),
+            Err(Error::InvalidCacheName)
+        ));
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
+
     /// Concurrent writers of one DIR cache keep every credential, and
     /// concurrent switches leave a whole pointer naming a member.
     #[test]

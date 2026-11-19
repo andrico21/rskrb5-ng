@@ -87,7 +87,7 @@ impl Scope<'_> {
                     concrete_found = true;
                     scope.generics = generics;
                     let segment = syn::PathSegment::from(ident.clone());
-                    scope.private_storage(&segment, depth.saturating_add(1))?;
+                    drop(scope.private_storage(&segment, depth.saturating_add(1))?);
                 }
                 if let Item::Type(alias) = item
                     && alias.ident == name
@@ -153,7 +153,7 @@ impl Scope<'_> {
                     ));
                 }
                 let name = first.ident.to_string();
-                self.known(&path.path, next)?;
+                let private = self.known(&path.path, next)?;
                 let path_names = names(&path.path);
                 if let Some(resolved) = self.graph_alias(&path_names, next)? {
                     return Ok(resolved);
@@ -195,10 +195,9 @@ impl Scope<'_> {
                 for segment in &path.path.segments {
                     output.extend(self.arguments(segment, next)?);
                 }
-                if let Some(resolved) = self.graph_alias(&output, next)? {
-                    return Ok(resolved);
-                }
-                Ok(output)
+                Ok(self
+                    .graph_alias(&output, next)?
+                    .unwrap_or_else(|| output.into_iter().chain(private).collect()))
             }
             Type::Array(array) => self.expand(&array.elem, next),
             Type::Slice(slice) => self.expand(&slice.elem, next),
@@ -232,13 +231,15 @@ impl Scope<'_> {
         }
     }
 
-    /// Unknown local names cannot silently become scalar storage.
-    fn known(&self, path: &syn::Path, depth: usize) -> Result<(), io::Error> {
+    /// Unknown local names cannot silently become scalar storage. Returns the
+    /// storage of a local private type's fields, so a public owner holding it
+    /// holds what it holds.
+    fn known(&self, path: &syn::Path, depth: usize) -> Result<Vec<String>, io::Error> {
         if path.segments.len() != 1 {
-            return Ok(());
+            return Ok(Vec::new());
         }
         let Some(segment) = path.segments.first() else {
-            return Ok(());
+            return Ok(Vec::new());
         };
         let name = segment.ident.to_string();
         if self.binding(&name, depth)?.is_some()
@@ -247,15 +248,15 @@ impl Scope<'_> {
                 .type_params()
                 .any(|parameter| parameter.ident == name)
         {
-            return Ok(());
+            return Ok(Vec::new());
         }
-        self.private_storage(segment, depth)?;
+        let private = self.private_storage(segment, depth)?;
         for item in self.items.iter().flat_map(|items| items.iter()) {
             if matches!(item, Item::Struct(owner) if owner.ident == name)
                 || matches!(item, Item::Enum(owner) if owner.ident == name)
                 || matches!(item, Item::Union(owner) if owner.ident == name)
             {
-                return Ok(());
+                return Ok(private);
             }
         }
         if matches!(
@@ -285,7 +286,7 @@ impl Scope<'_> {
                 | "Self"
                 | "Zeroizing"
         ) {
-            return Ok(());
+            return Ok(private);
         }
         Err(unsupported(
             self.file,
@@ -294,9 +295,17 @@ impl Scope<'_> {
         ))
     }
 
-    /// Referenced private storage must be proven nonsecret before it can remain unlisted.
-    fn private_storage(&self, segment: &syn::PathSegment, depth: usize) -> Result<(), io::Error> {
+    /// Referenced private storage must be proven nonsecret before it can remain
+    /// unlisted. Returns the resolved storage of its fields, so registered
+    /// owners it holds (a private table holding `CCache`s) propagate to the
+    /// public owner.
+    fn private_storage(
+        &self,
+        segment: &syn::PathSegment,
+        depth: usize,
+    ) -> Result<Vec<String>, io::Error> {
         let name = segment.ident.to_string();
+        let mut held = Vec::new();
         for item in self.items.iter().flat_map(|items| items.iter()) {
             let private_fields = match item {
                 Item::Struct(owner)
@@ -366,10 +375,11 @@ impl Scope<'_> {
                             "unclassified private credential owner",
                         ));
                     }
+                    held.extend(storage);
                 }
             }
         }
-        Ok(())
+        Ok(held)
     }
 
     /// Qualified local aliases and concrete associated projections require explicit resolution.

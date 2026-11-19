@@ -970,6 +970,16 @@ pub enum Extensions {
         /// Which rule.
         reason: &'static str,
     },
+    /// A store prefix is built in or held by another provider.
+    ///
+    /// Prefixes are compared without regard to ASCII letter case.
+    #[error("store extension {id} cannot claim the taken prefix {prefix}")]
+    PrefixTaken {
+        /// The provider id.
+        id: String,
+        /// The claimed prefix.
+        prefix: String,
+    },
     /// A provider failed.
     #[error("{interface} extension {id} failed")]
     CallFailed {

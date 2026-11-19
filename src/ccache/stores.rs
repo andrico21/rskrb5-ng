@@ -12,12 +12,16 @@
 //! returns. File-backed methods block on file locks held by other writers.
 
 use alloc::vec;
-use core::fmt;
+use core::{
+    fmt,
+    sync::atomic::{AtomicU64, Ordering},
+};
+use std::path::PathBuf;
 
 use zeroize::Zeroizing;
 
 use super::{CCache, Credential, Error, Principal};
-use crate::config::LibDefaults;
+use crate::{config::LibDefaults, extensions};
 
 /// A credential-cache format version, 1 to 4, written into new caches (MIT
 /// `ccache_type`; `src/lib/krb5/krb/init_ctx.c:292-293`).
@@ -68,6 +72,77 @@ impl Default for CacheVersion {
     }
 }
 
+/// A process-unique token for one store instance whose caches form their own
+/// namespace, such as one [`super::in_memory::MemoryStore`] table.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct StoreInstance(u64);
+
+impl StoreInstance {
+    /// A token no other store instance of this process holds.
+    #[must_use]
+    #[inline]
+    pub fn unique() -> Self {
+        /// The next token.
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        Self(NEXT.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+/// Which cache a handle denotes: its store namespace plus the cache within it,
+/// whatever name the handle shows.
+///
+/// # Security
+///
+/// Moves and switches compare identities, never names, so a handle of
+/// another store that shows a member's name is not that member.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct CacheIdentity(Identity);
+
+/// The namespaces a cache can live in.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum Identity {
+    /// A cache file; the file system is one namespace.
+    File(PathBuf),
+    /// The cache of a residual in one store instance.
+    Instance(StoreInstance, String),
+    /// A cache name in a namespace every store instance shares.
+    Named(String),
+}
+
+impl CacheIdentity {
+    /// A cache named `name` in a namespace that every instance of its store
+    /// shares (a KCM daemon, a kernel keyring); the default of
+    /// [`CacheHandle::identity`].
+    #[must_use]
+    #[inline]
+    pub const fn named(name: String) -> Self {
+        Self(Identity::Named(name))
+    }
+
+    /// The cache `residual` of the store instance `instance`.
+    #[must_use]
+    #[inline]
+    pub fn in_instance<R>(instance: StoreInstance, residual: R) -> Self
+    where
+        R: Into<String>,
+    {
+        Self(Identity::Instance(instance, residual.into()))
+    }
+
+    /// The cache file at `path`.
+    pub(crate) const fn file(path: PathBuf) -> Self {
+        Self(Identity::File(path))
+    }
+
+    /// The residual of a cache of `instance`, `None` for any other cache.
+    pub(crate) fn residual_in(&self, instance: StoreInstance) -> Option<&str> {
+        match &self.0 {
+            Identity::Instance(owner, residual) if *owner == instance => Some(residual),
+            Identity::File(_) | Identity::Instance(..) | Identity::Named(_) => None,
+        }
+    }
+}
+
 /// One credential cache of a store (MIT `krb5_ccache`).
 ///
 /// # Security
@@ -79,6 +154,15 @@ impl Default for CacheVersion {
 pub trait CacheHandle: fmt::Debug + Send + Sync {
     /// The full name, `TYPE:residual` (MIT `krb5_cc_get_full_name`).
     fn name(&self) -> String;
+
+    /// Which cache this is: handles of one cache have equal identities. The
+    /// default is the name, right for stores whose names are process-wide;
+    /// a store with separate instances returns
+    /// [`CacheIdentity::in_instance`].
+    #[inline]
+    fn identity(&self) -> CacheIdentity {
+        CacheIdentity::named(self.name())
+    }
 
     /// The whole cache: default principal, credentials and configuration
     /// entries (MIT `krb5_cc_get_principal` and a credential cursor).
@@ -285,9 +369,27 @@ pub trait CredentialStore: fmt::Debug + Send + Sync {
     fn collection(&self, residual: &str) -> Result<Box<dyn CacheCollection>, Error>;
 }
 
+/// The cache `name` names when a store provider installed with
+/// [`crate::extensions::Registry::install_stores`] claims its prefix.
+///
+/// # Errors
+///
+/// The errors of the provider's [`CredentialStore::resolve`].
+pub(crate) fn installed_cache(name: &str) -> Result<Option<Box<dyn CacheHandle>>, Error> {
+    let Some((provider, residual)) = extensions::stores::installed(name) else {
+        return Ok(None);
+    };
+    provider
+        .credential_store()
+        .map(|store| store.resolve(residual))
+        .transpose()
+}
+
 /// Move the contents of `source` into `destination` and destroy `source`
-/// (MIT `krb5_cc_move`, `src/lib/krb5/ccache/ccbase.c:426-456`). Moving a
-/// cache onto its own name changes nothing, where MIT would destroy it.
+/// (MIT `krb5_cc_move`, `src/lib/krb5/ccache/ccbase.c:426-456`).
+///
+/// Moving a cache onto itself (an equal [`CacheHandle::identity`], whatever
+/// the names) changes nothing, where MIT would destroy it.
 ///
 /// # Errors
 ///
@@ -295,7 +397,7 @@ pub trait CredentialStore: fmt::Debug + Send + Sync {
 /// [`CacheHandle::destroy`]; `source` is kept when the copy fails.
 #[inline]
 pub fn move_cache(source: &dyn CacheHandle, destination: &dyn CacheHandle) -> Result<(), Error> {
-    if source.name() == destination.name() {
+    if source.identity() == destination.identity() {
         return Ok(());
     }
     destination.replace(&source.load()?)?;

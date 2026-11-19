@@ -7,11 +7,16 @@ use super::{
     CCache, Credential, Error, Principal,
     dir_store::{DirStore, create_unique},
     direct_file_path_from_cache_name, file_name_error, is_config_credential,
-    stores::{CacheCollection, CacheCursor, CacheHandle, CacheVersion, CredentialStore},
+    stores::{
+        CacheCollection, CacheCursor, CacheHandle, CacheIdentity, CacheVersion, CredentialStore,
+    },
 };
-use crate::file_name::{
-    self, SecretBytes,
-    locked::{self, Change},
+use crate::{
+    extensions,
+    file_name::{
+        self, SecretBytes,
+        locked::{self, Change},
+    },
 };
 
 /// The `FILE` cache type: one cache per file.
@@ -63,9 +68,11 @@ impl CredentialStore for FileStore {
     }
 }
 
-/// The handle of a built-in file cache name: a bare path, `FILE:`, `WRFILE:`,
-/// `DIR:directory` (its primary cache) or `DIR::path`, after `%{uid}` and
-/// `%{euid}` expansion.
+/// The handle of a cache name, after `%{uid}` and `%{euid}` expansion.
+///
+/// The name is a built-in file name (a bare path, `FILE:`, `WRFILE:`,
+/// `DIR:directory` for its primary cache, or `DIR::path`) or a name of a store
+/// installed with [`crate::extensions::Registry::install_stores`].
 ///
 /// # Errors
 ///
@@ -74,6 +81,11 @@ impl CredentialStore for FileStore {
 #[inline]
 pub fn resolve(name: &str, version: CacheVersion) -> Result<Box<dyn CacheHandle>, Error> {
     let expanded = file_name::expand_path_tokens(name).map_err(file_name_error)?;
+    if let Some((provider, residual)) = extensions::stores::installed(&expanded)
+        && let Some(store) = provider.credential_store()
+    {
+        return store.resolve(residual);
+    }
     match expanded.split_once(':') {
         Some((prefix, residual)) if prefix.eq_ignore_ascii_case("DIR") => {
             DirStore::new(version).resolve(residual)
@@ -83,7 +95,7 @@ pub fn resolve(name: &str, version: CacheVersion) -> Result<Box<dyn CacheHandle>
     }
 }
 
-/// The collection of a built-in file cache name, as [`resolve`] reads it.
+/// The collection of a cache name, as [`resolve`] reads it.
 ///
 /// # Errors
 ///
@@ -91,6 +103,11 @@ pub fn resolve(name: &str, version: CacheVersion) -> Result<Box<dyn CacheHandle>
 #[inline]
 pub fn collection(name: &str, version: CacheVersion) -> Result<Box<dyn CacheCollection>, Error> {
     let expanded = file_name::expand_path_tokens(name).map_err(file_name_error)?;
+    if let Some((provider, residual)) = extensions::stores::installed(&expanded)
+        && let Some(store) = provider.credential_store()
+    {
+        return store.collection(residual);
+    }
     match expanded.split_once(':') {
         Some((prefix, residual)) if prefix.eq_ignore_ascii_case("DIR") => {
             DirStore::new(version).collection(residual)
@@ -165,6 +182,11 @@ impl FileCache {
 impl CacheHandle for FileCache {
     fn name(&self) -> String {
         self.name.clone()
+    }
+
+    /// The file, whichever of `FILE:`, `WRFILE:`, a bare path or `DIR::` names it.
+    fn identity(&self) -> CacheIdentity {
+        CacheIdentity::file(self.path.clone())
     }
 
     fn load(&self) -> Result<CCache, Error> {
@@ -242,7 +264,7 @@ impl CacheCollection for Single {
     /// Switching to the one cache changes nothing (MIT has no `switch_to` for
     /// `FILE`, `ccfns.c:295-300`); any other cache is refused.
     fn switch(&self, cache: &dyn CacheHandle) -> Result<(), Error> {
-        if cache.name() == self.0.name {
+        if cache.identity() == self.0.identity() {
             Ok(())
         } else {
             Err(Error::OutsideCollection {

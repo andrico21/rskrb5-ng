@@ -135,6 +135,17 @@ pub(super) fn inspect(root: &Path, directory: &Path) -> Result<Vec<Owner>, io::E
     Ok(owners)
 }
 
+/// Store traits whose objects may own credentials: a MEMORY cache handle or
+/// collection owns `CCache`s, a key store owns keys, a provider owns stores.
+const CREDENTIAL_TRAITS: [&str; 6] = [
+    "CacheHandle",
+    "CacheCollection",
+    "CredentialStore",
+    "KeyStore",
+    "KeytabType",
+    "StoreProvider",
+];
+
 /// Classify resolved byte storage, known credential and session owners and unconstrained generic storage.
 pub(super) fn secret_field(name: &str, ty: &[String]) -> bool {
     let secret_name = [
@@ -190,6 +201,6 @@ pub(super) fn secret_field(name: &str, ty: &[String]) -> bool {
                     | "AsRepSession"
                     | "TgsRepSession"
                     | "TokioClientCredentials"
-            )
+            ) || CREDENTIAL_TRAITS.contains(&word.as_str())
         })
 }

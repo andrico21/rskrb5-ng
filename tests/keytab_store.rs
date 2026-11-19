@@ -13,6 +13,8 @@ mod tests {
     use core::error;
     use std::{
         env, fs, process,
+        sync::{Barrier, BarrierWaitResult},
+        thread,
         time::{SystemTime, UNIX_EPOCH},
     };
 
@@ -126,6 +128,142 @@ mod tests {
             stores::resolve("MEMORY:client"),
             Err(Error::UnsupportedKeytabType { keytab_type }) if keytab_type == "MEMORY"
         ));
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
+
+    /// Two writers that add the first entries of an absent file keytab at the
+    /// same time keep both entries: creation is serialized like replacement.
+    #[test]
+    fn concurrent_first_adds_keep_both_entries() -> Result<(), TestError> {
+        let directory = env::temp_dir().join(format!(
+            "keytab-store-race-{}-{}",
+            process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        fs::create_dir_all(&directory)?;
+        let path = directory.join("race.keytab");
+        let name = format!("FILE:{}", path.display());
+        let start = Barrier::new(2);
+        thread::scope(|scope| -> Result<(), TestError> {
+            let writers: Vec<_> = [1_u8, 2]
+                .into_iter()
+                .map(|tag| {
+                    let (barrier, keytab_name) = (&start, &name);
+                    scope.spawn(move || -> Result<(), Error> {
+                        let store = stores::resolve(keytab_name)?;
+                        let _: BarrierWaitResult = barrier.wait();
+                        store.add(entry(u32::from(tag), 18, tag))
+                    })
+                })
+                .collect();
+            for writer in writers {
+                writer.join().map_err(|_panic| "a writer panicked")??;
+            }
+            Ok(())
+        })?;
+        assert_eq!(keytab::Keytab::load(&path)?.entries().len(), 2);
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
+
+    /// FILE and MEMORY keytabs refuse the entry shapes a keytab file cannot
+    /// hold (the A7 rules) with the same error, and keep their contents.
+    #[test]
+    fn malformed_entries_are_refused_by_every_store() -> Result<(), TestError> {
+        let directory = env::temp_dir().join(format!(
+            "keytab-store-shapes-{}-{}",
+            process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        fs::create_dir_all(&directory)?;
+        let file = stores::resolve(&format!(
+            "FILE:{}",
+            directory.join("shapes.keytab").display()
+        ))?;
+        let memory = MemoryKeytab::new().resolve("shapes")?;
+        let key = || EncryptionKey::new(18, vec![1; 32]);
+        for store in [file.as_ref(), memory.as_ref()] {
+            store.add(entry(1, 18, 1))?;
+            let cases = [
+                (
+                    "empty realm",
+                    Entry::new(Principal::new("", 1, ["alice"]), 1, 2, key(), 2),
+                    Error::EmptyRealm,
+                ),
+                (
+                    "no component",
+                    Entry::new(
+                        Principal::new("A.TEST", 1, Vec::<String>::new()),
+                        1,
+                        2,
+                        key(),
+                        2,
+                    ),
+                    Error::InvalidPrincipalName,
+                ),
+                (
+                    "empty component",
+                    Entry::new(Principal::new("A.TEST", 1, ["alice", ""]), 1, 2, key(), 2),
+                    Error::InvalidPrincipalName,
+                ),
+                (
+                    "empty key",
+                    Entry::new(client(), 1, 2, EncryptionKey::new(18, Vec::new()), 2),
+                    Error::EmptyKey,
+                ),
+            ];
+            for (label, malformed, expected) in cases {
+                let refused = store.add(malformed).err().map(|error| error.to_string());
+                assert_eq!(
+                    refused,
+                    Some(expected.to_string()),
+                    "{} {label}",
+                    store.name()
+                );
+                assert_eq!(store.load()?.entries().len(), 1, "{} {label}", store.name());
+            }
+        }
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
+
+    /// A wildcard kvno takes the highest kvno (MIT `kt_memory.c:405-409`), not
+    /// the newest timestamp, in FILE and MEMORY keytabs alike.
+    #[test]
+    fn wildcard_kvno_takes_the_highest_kvno() -> Result<(), TestError> {
+        let directory = env::temp_dir().join(format!(
+            "keytab-store-kvno-{}-{}",
+            process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        fs::create_dir_all(&directory)?;
+        let file = stores::resolve(&format!("FILE:{}", directory.join("kvno.keytab").display()))?;
+        let memory = MemoryKeytab::new().resolve("kvno")?;
+        for store in [file.as_ref(), memory.as_ref()] {
+            store.add(Entry::new(
+                client(),
+                200,
+                1,
+                EncryptionKey::new(18, vec![1; 32]),
+                1,
+            ))?;
+            store.add(Entry::new(
+                client(),
+                100,
+                2,
+                EncryptionKey::new(18, vec![2; 32]),
+                2,
+            ))?;
+            let (key, kvno) = store.find(&client(), 0, 18)?;
+            assert_eq!(
+                (kvno, key.value().to_vec()),
+                (2, vec![2; 32]),
+                "{}",
+                store.name()
+            );
+            assert_eq!(store.find(&client(), 1, 18)?.1, 1, "{}", store.name());
+        }
         fs::remove_dir_all(directory)?;
         Ok(())
     }

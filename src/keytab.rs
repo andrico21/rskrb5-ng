@@ -168,16 +168,22 @@ impl Keytab {
 
     /// Load and parse a keytab by MIT-style keytab name.
     ///
-    /// Bare paths, `FILE:path`, and `WRFILE:path` are supported.
+    /// Bare paths, `FILE:path`, and `WRFILE:path` are supported, and the
+    /// names of stores installed with
+    /// [`crate::extensions::Registry::install_stores`].
     ///
     /// # Errors
     ///
-    /// Returns any error of [`Name::parse`] and [`Keytab::load`].
+    /// Returns any error of [`Name::parse`] and [`Keytab::load`], or of the
+    /// installed store.
     #[inline]
     pub fn load_name<P>(name: P) -> Result<Self, Error>
     where
         P: AsRef<str>,
     {
+        if let Some(keytab) = stores::installed_keytab(name.as_ref())? {
+            return keytab.load();
+        }
         Self::load(Name::parse(name)?.into_file_path())
     }
 
@@ -642,6 +648,9 @@ pub(crate) fn configured_keytab(
 ) -> Result<Keytab, Error> {
     let name = credential_names::resolve_credential_template(defaults, selection)
         .map_err(Error::Expansion)?;
+    if let Some(keytab) = stores::installed_keytab(&name)? {
+        return keytab.load();
+    }
     let path =
         file_name::literal_file_path(&name, &["FILE", "WRFILE"]).map_err(|error| match error {
             file_name::Error::Empty => Error::InvalidKeytabName,
