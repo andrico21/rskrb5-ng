@@ -11,8 +11,8 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 48
-partial = 67
+implemented = 59
+partial = 56
 absent = 38
 rejected = 8
 omitted = 1
@@ -24,13 +24,34 @@ id = "MIT-client-1"
 area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "AS exchange / initial TGT acquisition; password, keytab, preauth callback/responder, multi-round-trip step API"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Login/build/process exist, no responder or general multi-round step API."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = [
+  "client::stepwise::InitCreds",
+  "client::stepwise::InitCreds::step",
+  "client::stepwise::InitCreds::with_password",
+  "client::stepwise::InitCreds::with_keytab",
+  "client::stepwise::ExchangeStep",
+  "client::stepwise::StepInput",
+  "client::stepwise::Prompt",
+  "client::stepwise::Answer",
+  "client::stepwise::Responder",
+  "client::stepwise::drive",
+  "client::stepwise::drive_tokio",
+]
+test_names = [
+  "tests/client/stepwise.rs::password_exchange_prompts_once_and_completes",
+  "tests/client/stepwise.rs::drive_answers_prompts_through_the_responder",
+  "tests/client/stepwise.rs::replayed_as_rep_with_another_nonce_is_rejected",
+  "tests/client/stepwise.rs::unexpected_input_keeps_the_exchange",
+  "src/client/stepwise/tests.rs::cancellation_drops_every_secret",
+  "src/client/stepwise/tests.rs::unanswered_exchange_holds_no_secret",
+  "tests/interop_exchange/scenarios.rs::as_exchange_prompts_and_answers_the_preauth_challenge",
+  "tests/interop_exchange/scenarios.rs::keytab_exchange_obtains_the_service_principal_tgt",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Every AS-REP is bound to its request: client, service, nonce and offered enctypes (`NonceMismatch` for a reply to another nonce). An exchange sends at most `MAX_EXCHANGE_ROUNDS` = 16 requests, MIT `MAX_IN_TKT_LOOPS` (`get_in_tkt.c:398`). Prompts carry no secret; a prompted password and every derived key are owned by erasing types and are erased when the exchange is dropped between steps (MIT prompters write into caller buffers). An unarmored AS request never sets `canonicalize`, so no unauthenticated reply changes the client identity (MIT sets it from the profile, `get_in_tkt.c`)."
 disposition = "WP-04"
 closing_plan = 2
 closing_todo = 4
@@ -41,13 +62,26 @@ id = "MIT-client-2"
 area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "TGS service-ticket acquisition and asynchronous step API"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Async acquisition/referral APIs, no transport-neutral tkt-creds step context."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = [
+  "client::stepwise::TicketCreds",
+  "client::stepwise::TicketCreds::step",
+  "client::stepwise::TicketCreds::referral_tgts",
+  "client::stepwise::TicketOptions",
+  "client::stepwise::TicketOptions::with_max_referrals",
+  "client::stepwise::TicketOptions::with_user_to_user",
+  "client::stepwise::drive_tokio",
+]
+test_names = [
+  "tests/client/stepwise.rs::referrals_are_followed_within_their_bound",
+  "tests/client/stepwise.rs::user_to_user_request_carries_the_second_ticket",
+  "tests/interop_exchange/scenarios.rs::ticket_exchange_plain_and_user_to_user",
+  "tests/interop_exchange/scenarios.rs::ticket_exchange_follows_the_referral_within_its_bound",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Every TGS-REP is bound to the TGT session key, the request nonce and the requested service; a referral back to the current realm is refused and the chain is bounded by `TicketOptions::with_max_referrals` (default `DEFAULT_MAX_REFERRALS` = 10, MIT `KRB5_REFERRAL_MAXHOPS`, `get_creds.c:609`). The Tokio referral acquisition (`transport::Tokio::get_service_ticket_with_referral_trace_limit`) runs on this exchange."
 disposition = "WP-04"
 closing_plan = 2
 closing_todo = 4
@@ -60,7 +94,7 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "Client principal referrals and enterprise principal canonicalization"
 implementation_status = "partial"
 evidence_status = "unproven"
-missing = "Unarmored AS canonicalize deliberately stripped and returned client must equal request; no authenticated client-referral/enterprise flow."
+missing = "Unarmored AS canonicalize stays stripped and the returned client must equal the request; P2-4 delivered the stepwise exchange and its `ArmoredExchange` seam; the authenticated client-referral and enterprise flow under FAST is the closing todo P2-7's."
 rust_symbols = []
 test_names = []
 feature_flags = []
@@ -180,13 +214,28 @@ id = "MIT-client-10"
 area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Ticket request flags and lifetimes: forwardable, proxiable, renewable, renewable-ok, address controls, canonicalize, etc."
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Forwardable/proxiable/lifetime relations map to request options; address controls (extra_addresses, noaddresses = false), authenticated canonicalization and a typed per-request options API are missing."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = [
+  "client::stepwise::InitCredsOptions",
+  "client::stepwise::InitCredsOptions::from_config",
+  "client::stepwise::InitCredsOptions::with_forwardable",
+  "client::stepwise::InitCredsOptions::with_proxiable",
+  "client::stepwise::InitCredsOptions::with_ticket_lifetime",
+  "client::stepwise::InitCredsOptions::with_renew_lifetime",
+  "client::stepwise::InitCredsOptions::with_addresses",
+  "client::stepwise::TicketOptions::with_forwardable",
+  "client::stepwise::TicketOptions::with_proxiable",
+]
+test_names = [
+  "tests/client/stepwise.rs::flag_options_set_request_bits",
+  "tests/client/stepwise.rs::addresses_follow_the_options",
+  "tests/client/stepwise.rs::extra_addresses",
+  "tests/interop_exchange/scenarios.rs::profile_flags_reach_the_kdc_and_the_tgt_renews",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "`noaddresses = false` binds requests to `extra_addresses` only and fails closed with `NoRequestAddresses` when that list is empty; MIT adds the host interface addresses (`localaddr.c`), which this library does not enumerate. Unarmored AS requests never set `canonicalize`; the authenticated (FAST) canonicalization is plan 2 todo 7 (MIT-config-4, MIT-client-3)."
 disposition = "WP-04"
 closing_plan = 2
 closing_todo = 4
@@ -198,10 +247,17 @@ area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Initial-credential options and prompting: lifetimes, addresses, enctypes, preauth options, service, anonymous, callbacks/responders"
 implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Options/password/keytab helpers; no responder, automatic password-on-expiry or anonymous flow."
-rust_symbols = []
-test_names = []
+evidence_status = "unit"
+missing = "P2-4 delivered options, prompts, the responder and the password-expiry notice (`Responder::password_expiry`); automatic password change on expiry and the anonymous flow are the closing todo P2-23's."
+rust_symbols = [
+  "client::stepwise::InitCredsOptions",
+  "client::stepwise::Prompt",
+  "client::stepwise::Responder",
+]
+test_names = [
+  "tests/client/stepwise.rs::drive_reports_the_password_expiry",
+  "tests/client/stepwise.rs::drive_answers_prompts_through_the_responder",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-15"
@@ -463,23 +519,30 @@ id = "MIT-preauth-10"
 area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Client preauth (`clpreauth`) and KDC preauth (`kdcpreauth`) plugin interfaces"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "P2-4: the exchange engine and the built-in timestamp preauthentication run through `extensions::ClientPreauth` sessions, with responder and cookies. P2-3 delivered the registry, per-exchange state, the round and output bounds and the outgoing PA-DATA admission of mechanism output. The kdcpreauth subpart is D1-excluded."
+missing = ""
 rust_symbols = [
   "extensions::ClientPreauth",
   "extensions::PreauthState",
   "extensions::PreauthSession",
   "extensions::Registry::preauth_session",
+  "client::stepwise::InitCreds::with_preauth",
+  "client::stepwise::InitCreds::with_armor",
+  "client::stepwise::ArmoredExchange",
+  "client::stepwise::Responder",
 ]
 test_names = [
   "tests/extensions.rs::rejected_enctype_padata_is_refused_by_policy",
   "tests/extensions.rs::mechanism_bounds_and_types",
   "tests/extensions.rs::per_exchange_state_and_round_bound",
   "tests/extensions.rs::session_order_selection_and_conflicts",
+  "tests/client/stepwise.rs::preferred_preauth_types",
+  "tests/client/stepwise.rs::drive_answers_prompts_through_the_responder",
+  "src/client/stepwise/tests.rs::armored_replies_thread_cookies_and_erase_replaced_strengthen_keys",
 ]
 feature_flags = []
-security_divergence = ""
+security_divergence = "The exchange consults the registered `ClientPreauth` mechanisms for the KDC's offers in `preferred_preauth_types` order; encrypted timestamp stays built in and cannot be disabled (FU-EXT-P01). The KDC cookie and strengthen key of an armored reply are threaded through the `ArmoredExchange` seam; the FAST armor itself is plan 2 todo 7. The kdcpreauth subpart is D1-excluded."
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 4
@@ -1045,9 +1108,17 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "Client keytab, automatic initial creds and refresh"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "P2-11 delivered the `KeyStore` lookups the client-keytab refresh uses (`keytab::stores::resolve`, `KeyStore::find`); the client-keytab acquisition and refresh is P2-4's, and the GSS implicit acquisition integration that of the closing todo P2-18."
-rust_symbols = ["keytab::stores::KeyStore", "keytab::stores::resolve"]
-test_names = ["tests/keytab_store.rs::file_keytabs_through_the_store"]
+missing = "P2-11 delivered the `KeyStore` lookups (`keytab::stores::resolve`, `KeyStore::find`); the Tokio client acquires from the default client keytab and re-logs in from it when its TGT needs a refresh (`client::Tokio::with_client_keytab_from_default`, `refresh_tgt_if_needed`), with no new code in P2-4; routing the client keytab name through the store registry is plan 2 todo 32's, and the GSS implicit acquisition integration that of the closing todo P2-18."
+rust_symbols = [
+  "keytab::stores::KeyStore",
+  "keytab::stores::resolve",
+  "client::Tokio::with_client_keytab_from_default",
+  "client::Tokio::refresh_tgt_if_needed",
+]
+test_names = [
+  "tests/keytab_store.rs::file_keytabs_through_the_store",
+  "tests/client/session_cache.rs::tokio_client_refresh_tgt_if_needed_falls_back_to_as_for_expired_renewable_tgt",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-12"
@@ -1126,7 +1197,7 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "`canonicalize`"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "TGS option consumed; AS builders suppress canonicalization, preserving identity; either value diagnostic (consumer: plan 2 WP-04)."
+missing = "TGS option consumed; AS builders suppress canonicalization, preserving identity; either value diagnostic. P2-4 delivered the `ArmoredExchange` seam; the authenticated canonicalization under FAST is the closing todo P2-7's."
 rust_symbols = []
 test_names = ["tests/config/relations_c1.rs::canonicalize"]
 feature_flags = []
@@ -1434,13 +1505,19 @@ id = "MIT-config-20"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`extra_addresses`"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "Ignored when noaddresses=true; nonempty list with noaddresses=false requires unavailable address-bound requests and errors (consumer: plan 2 WP-04)."
-rust_symbols = []
-test_names = ["tests/config/relations_c1.rs::extra_addresses"]
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = [
+  "client::stepwise::InitCredsOptions::from_config",
+  "client::options::AsReq::from_libdefaults",
+]
+test_names = [
+  "tests/client/stepwise.rs::extra_addresses",
+  "tests/client/stepwise.rs::addresses_follow_the_options",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Used only with `noaddresses = false`; without interface enumeration an empty list fails closed with `NoRequestAddresses` (MIT adds the host addresses, `localaddr.c`)."
 disposition = "WP-04"
 closing_plan = 2
 closing_todo = 4
@@ -1451,11 +1528,19 @@ id = "MIT-config-21"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`forwardable`"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "The relation already sets the AS/TGS forwardable bit; the typed per-request option API and KDC-backed proof close in plan-2 todo 4."
-rust_symbols = ["client::options::AsReq::from_libdefaults"]
-test_names = ["tests/config/relations_c1.rs::forwardable"]
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = [
+  "client::options::AsReq::from_libdefaults",
+  "client::stepwise::InitCredsOptions::with_forwardable",
+  "client::stepwise::TicketOptions::with_forwardable",
+]
+test_names = [
+  "tests/config/relations_c1.rs::forwardable",
+  "tests/client/stepwise.rs::flag_options_set_request_bits",
+  "tests/interop_exchange/scenarios.rs::profile_flags_reach_the_kdc_and_the_tgt_renews",
+]
 feature_flags = ["tokio"]
 security_divergence = ""
 disposition = "WP-04"
@@ -1574,13 +1659,17 @@ id = "MIT-config-28"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`kdc_timesync`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "No clock correction occurs; zero satisfied, nonzero does not tighten authentication; diagnostic (consumer: plan 2 WP-04)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::kdc_timesync"]
+missing = ""
+rust_symbols = [
+  "client::stepwise::InitCredsOptions::from_config",
+  "client::stepwise::InitCredsOptions::kdc_timesync",
+  "client::stepwise::InitCreds::kdc_time_offset",
+]
+test_names = ["tests/client/stepwise.rs::kdc_timesync"]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Nonzero adopts the KDC clock offset of a preauthentication error and of the AS-REP for the stepwise exchange (MIT `get_in_tkt.c:260-268`, `:1425-1439`); the offset lives in the exchange, not in a process-wide context. The `AsReq`-taking login functions keep the strict reply start-time check."
 disposition = "WP-04"
 closing_plan = 2
 closing_todo = 4
@@ -1591,13 +1680,19 @@ id = "MIT-config-29"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`noaddresses`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Requests currently omit addresses; false requires unavailable address restriction and errors; true diagnostic (consumer: plan 2 WP-04)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::noaddresses"]
+missing = ""
+rust_symbols = [
+  "client::stepwise::InitCredsOptions::from_config",
+  "client::options::AsReq::from_libdefaults",
+]
+test_names = [
+  "tests/config/restrictive.rs::noaddresses",
+  "tests/client/stepwise.rs::extra_addresses",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "`false` binds requests to `extra_addresses` and fails closed with `NoRequestAddresses` without them; MIT would add the host interface addresses (`localaddr.c`)."
 disposition = "WP-04"
 closing_plan = 2
 closing_todo = 4
@@ -1646,13 +1741,21 @@ id = "MIT-config-32"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`preferred_preauth_types`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Preference ordering is not an allowlist; no new preauth selection, diagnostic; draft-9 IDs 14/15 removed with existing IgnoredPreauthType (consumer: plan 2 WP-04)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::preferred_preauth_types"]
+missing = ""
+rust_symbols = [
+  "client::stepwise::InitCredsOptions::from_config",
+  "client::stepwise::InitCredsOptions::preferred_preauth_types",
+  "client::stepwise::InitCreds::with_preauth",
+]
+test_names = [
+  "tests/client/stepwise.rs::preferred_preauth_types",
+  "src/client/stepwise/tests.rs::preferred_types_move_to_the_front",
+  "tests/policy/protocols.rs::draft9_preferences_are_ignored_with_diagnostics",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "An ordering of the KDC's offers (MIT `sort_krb5_padata_sequence`), not an allowlist; the draft-9 IDs 14 and 15 are dropped with `IgnoredPreauthType`."
 disposition = "WP-04"
 closing_plan = 2
 closing_todo = 4
@@ -1663,11 +1766,18 @@ id = "MIT-config-33"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`proxiable`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "The relation already sets the AS/TGS proxiable bit; the typed per-request option API and KDC-backed proof close in plan-2 todo 4."
-rust_symbols = ["client::options::AsReq::from_libdefaults"]
-test_names = ["tests/config/relations_c2.rs::proxiable"]
+missing = ""
+rust_symbols = [
+  "client::options::AsReq::from_libdefaults",
+  "client::stepwise::InitCredsOptions::with_proxiable",
+  "client::stepwise::TicketOptions::with_proxiable",
+]
+test_names = [
+  "tests/config/relations_c2.rs::proxiable",
+  "tests/client/stepwise.rs::flag_options_set_request_bits",
+]
 feature_flags = ["tokio"]
 security_divergence = ""
 disposition = "WP-04"
@@ -2809,23 +2919,26 @@ id = "MIT-plugin-1"
 area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`clpreauth` client preauthentication"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "P2-4: the exchange engine and the built-in timestamp preauthentication run through `extensions::ClientPreauth` sessions, with responder and cookies. P2-3 delivered the registry, per-exchange state, the round and output bounds and the outgoing PA-DATA admission of mechanism output."
+missing = ""
 rust_symbols = [
   "extensions::ClientPreauth",
   "extensions::PreauthState",
   "extensions::PreauthSession",
   "extensions::Registry::preauth_session",
+  "client::stepwise::InitCreds::with_preauth",
 ]
 test_names = [
   "tests/extensions.rs::rejected_enctype_padata_is_refused_by_policy",
   "tests/extensions.rs::mechanism_bounds_and_types",
   "tests/extensions.rs::per_exchange_state_and_round_bound",
   "tests/extensions.rs::session_order_selection_and_conflicts",
+  "tests/client/stepwise.rs::preferred_preauth_types",
+  "tests/config/plugin_order.rs::configured_module_precedes_registered_ones",
 ]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Mechanisms are statically registered Rust providers (no dynamic modules); the exchange consults them for the KDC's offers in `preferred_preauth_types` order before the built-in encrypted timestamp, and configured `[plugins] clpreauth module` names come first in profile order (MIT `plugin.c:207-252`)."
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 4
