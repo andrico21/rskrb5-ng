@@ -28,6 +28,18 @@ mod support;
 #[path = "ccache_keyring/kernel.rs"]
 mod kernel;
 
+/// MIT's tools against the kernel keyring.
+#[cfg(all(feature = "ccache-keyring", target_os = "linux"))]
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "ccache_keyring/mit.rs"]
+mod mit;
+
 /// Namespace isolation between threads and processes.
 #[cfg(all(feature = "ccache-keyring", target_os = "linux"))]
 #[cfg(test)]
