@@ -1,6 +1,6 @@
 //! Typed, in-process extension points: the Rust form of MIT krb5's plugin interfaces.
 //!
-//! A [`Registry`] holds providers for eight interfaces. Registration is static
+//! A [`Registry`] holds providers for nine interfaces. Registration is static
 //! and in-process: an application constructs its providers and registers them;
 //! nothing is ever loaded from a path, and no C ABI exists (MIT's `dlopen`
 //! modules and symbol interposition are excluded by D3/D7).
@@ -42,9 +42,10 @@ use std::path::PathBuf;
 #[cfg(feature = "messages")]
 use crate::crypto::CryptoPolicy;
 use crate::{
-    ccache::Principal,
+    ccache::{Principal, stores::CredentialStore},
     config::{Config, ParseMode},
     error::Extensions as Error,
+    keytab::stores::KeytabType,
 };
 
 /// Credential-cache selection: the built-in selectors and the selection driver.
@@ -62,6 +63,8 @@ mod order;
 mod preauth;
 /// Profile providers and `module` resolution.
 mod profile;
+/// Store-provider registration and the installed prefixes.
+pub(crate) mod stores;
 
 #[cfg(test)]
 #[path = "extensions/k5identity_tests.rs"]
@@ -111,6 +114,8 @@ pub enum Interface {
     GssMechanism,
     /// Observers of redacted library events (`observer`).
     LibraryObserver,
+    /// Credential-cache and keytab types under their own name prefix (`store`).
+    StoreProvider,
 }
 
 impl Interface {
@@ -127,6 +132,7 @@ impl Interface {
             Self::ServerLocator => "locate",
             Self::GssMechanism => "gssapi",
             Self::LibraryObserver => "observer",
+            Self::StoreProvider => "store",
         }
     }
 
@@ -169,6 +175,8 @@ pub enum Extension {
     GssMechanism(Arc<dyn GssMechanism>),
     /// An observer of redacted events.
     LibraryObserver(Arc<dyn LibraryObserver>),
+    /// A credential-cache and/or keytab type for a name prefix.
+    StoreProvider(Arc<dyn StoreProvider>),
 }
 
 impl fmt::Debug for Extension {
@@ -184,6 +192,7 @@ impl fmt::Debug for Extension {
             Self::ServerLocator(item) => (Interface::ServerLocator, item.id()),
             Self::GssMechanism(item) => (Interface::GssMechanism, item.id()),
             Self::LibraryObserver(item) => (Interface::LibraryObserver, item.id()),
+            Self::StoreProvider(item) => (Interface::StoreProvider, item.id()),
         };
         f.debug_struct("Extension")
             .field("interface", &interface)
@@ -794,6 +803,50 @@ pub trait LibraryObserver: Send + Sync {
     fn observe(&self, event: &Event<'_>);
 }
 
+/// A credential-store provider: a cache type, a keytab type or both under one
+/// name prefix.
+///
+/// It is the Rust form of MIT `krb5_cc_register` and `krb5_kt_register`.
+/// [`Registry::install_stores`] publishes registered providers process-wide;
+/// from then on `PREFIX:residual` names reach the provider through every
+/// name-based route: [`crate::ccache::CCache::load_name`] and
+/// [`crate::ccache::CCache::save_name`], the client's named and default cache
+/// lookups and its cache write-back,
+/// [`crate::ccache::file_store::resolve`] and
+/// [`crate::ccache::file_store::collection`], and
+/// [`crate::keytab::Keytab::load_name`] with the default keytab lookups.
+/// Prefixes match exactly, as MIT's `strcmp` does.
+///
+/// # Security
+///
+/// A provider is trusted code: it receives every credential stored under its
+/// prefix. It can never take a built-in type (`FILE`, `WRFILE`, `DIR`,
+/// `MEMORY`) or a prefix another provider holds, in any letter case, so no
+/// registration can redirect a name that already resolves elsewhere. A
+/// prefix is 2 to [`MAX_ID_BYTES`] bytes of `[A-Za-z0-9_.-]`: it contains no
+/// `:` and is never a one-letter drive name.
+///
+/// # Cancel safety
+///
+/// Store methods are synchronous; see [`crate::ccache::stores`].
+pub trait StoreProvider: Send + Sync {
+    /// Unique id within the interface.
+    fn id(&self) -> &str;
+    /// The type prefix it claims, without the colon.
+    fn prefix(&self) -> &str;
+    /// Its credential-cache type, whose [`CredentialStore::cache_type`] is
+    /// [`Self::prefix`].
+    #[inline]
+    fn credential_store(&self) -> Option<&dyn CredentialStore> {
+        None
+    }
+    /// Its keytab type.
+    #[inline]
+    fn keytab_type(&self) -> Option<&dyn KeytabType> {
+        None
+    }
+}
+
 /// The extension registry.
 #[derive(Clone, Default)]
 #[non_exhaustive]
@@ -815,6 +868,8 @@ pub struct Registry {
     mechanisms: Vec<Arc<dyn GssMechanism>>,
     /// Event observers.
     observers: Vec<Arc<dyn LibraryObserver>>,
+    /// Credential-store providers.
+    stores: Vec<Arc<dyn StoreProvider>>,
 }
 
 impl fmt::Debug for Registry {
@@ -854,8 +909,11 @@ impl Registry {
     /// uses a byte outside `[A-Za-z0-9_.-]`; `DuplicateId` for an id the
     /// interface already has (exact match); `TooManyProviders` beyond
     /// [`MAX_EXTENSIONS`]; `InvalidRegistration` for a preauthentication
-    /// mechanism without PA types or with a D2-rejected one, or a GSS mechanism
-    /// with a malformed, reserved or taken object identifier.
+    /// mechanism without PA types or with a D2-rejected one, a GSS mechanism
+    /// with a malformed, reserved or taken object identifier, or a store
+    /// provider with a malformed prefix, with neither a cache nor a keytab
+    /// type, or whose cache type names another prefix; `PrefixTaken` for a
+    /// store prefix that is built in or registered already (any letter case).
     #[inline]
     pub fn register(&mut self, extension: Extension) -> Result<(), Error> {
         order::register(self, extension)
@@ -967,6 +1025,33 @@ impl Registry {
     #[inline]
     pub fn locate(&self, request: &LocateRequest<'_>) -> Result<Option<Vec<ServerAddress>>, Error> {
         drivers::locate(self, request)
+    }
+
+    /// Publish the registered store providers process-wide, so that names
+    /// with their prefixes resolve through them (MIT `krb5_cc_register` and
+    /// `krb5_kt_register`, which also act process-wide).
+    ///
+    /// Installation is all or nothing and permanent for the process.
+    /// Installing a provider that is installed already changes nothing.
+    ///
+    /// # Security
+    ///
+    /// This is the only process-wide state of the registry: an installed
+    /// prefix cannot be replaced or removed, and another provider claiming it
+    /// (in any letter case) is refused.
+    ///
+    /// # Errors
+    ///
+    /// `PrefixTaken` when another provider holds one of the prefixes, and
+    /// `TooManyProviders` beyond [`MAX_EXTENSIONS`] installed providers; then
+    /// nothing is installed.
+    ///
+    /// # Cancel safety
+    ///
+    /// Not async; it holds a process-wide lock only while it updates the table.
+    #[inline]
+    pub fn install_stores(&self) -> Result<(), Error> {
+        stores::install(&self.stores)
     }
 
     /// The registered GSS-API mechanism with object identifier `oid`.

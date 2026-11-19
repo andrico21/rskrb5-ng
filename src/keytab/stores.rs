@@ -15,9 +15,12 @@ use std::{
 };
 
 use super::{EncryptionKey, Entry, Error, Keytab, Principal};
-use crate::file_name::{
-    SecretBytes,
-    locked::{self, Change},
+use crate::{
+    extensions,
+    file_name::{
+        SecretBytes,
+        locked::{self, Change},
+    },
 };
 
 /// A keytab of some type (MIT `krb5_keytab`): the client keytab and the
@@ -73,6 +76,36 @@ pub trait KeyStore: fmt::Debug + Send + Sync {
         let (key, found) = keytab.find_key(&components, &principal.realm, kvno, etype)?;
         Ok((key.clone(), found))
     }
+}
+
+/// A keytab type (MIT `krb5_kt_ops`): it resolves residuals to keytabs.
+///
+/// A store provider registered through [`crate::extensions::Registry`] offers
+/// one for its prefix.
+pub trait KeytabType: fmt::Debug + Send + Sync {
+    /// The keytab a residual names (MIT `krb5_kt_resolve`).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidKeytabName`] for a residual this type does not accept;
+    /// storage errors.
+    fn resolve(&self, residual: &str) -> Result<Box<dyn KeyStore>, Error>;
+}
+
+/// The keytab `name` names when a store provider installed with
+/// [`crate::extensions::Registry::install_stores`] claims its prefix.
+///
+/// # Errors
+///
+/// The errors of the provider's [`KeytabType::resolve`].
+pub(crate) fn installed_keytab(name: &str) -> Result<Option<Box<dyn KeyStore>>, Error> {
+    let Some((provider, residual)) = extensions::stores::installed(name) else {
+        return Ok(None);
+    };
+    provider
+        .keytab_type()
+        .map(|keytabs| keytabs.resolve(residual))
+        .transpose()
 }
 
 /// Remove matching entries from `keytab`; their keys are erased as they drop.

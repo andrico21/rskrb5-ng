@@ -211,18 +211,33 @@ impl CCache {
     /// Load and parse a credential cache by MIT-style cache name.
     ///
     /// Bare paths, `FILE:path`, `WRFILE:path`, `DIR:directory`, and
-    /// subsidiary `DIR::path` cache names are supported.
+    /// subsidiary `DIR::path` cache names are supported, and the names of
+    /// stores installed with [`crate::extensions::Registry::install_stores`].
     ///
     /// # Errors
     ///
     /// Returns any error of [`CCache::file_path_from_cache_name`] and
-    /// [`CCache::load`].
+    /// [`CCache::load`], or of the installed store.
     #[inline]
     pub fn load_name<P>(name: P) -> Result<Self, Error>
     where
         P: AsRef<str>,
     {
-        Self::load(Self::file_path_from_cache_name(name.as_ref())?)
+        Self::load_resolved_name(
+            &file_name::expand_path_tokens(name.as_ref()).map_err(file_name_error)?,
+        )
+    }
+
+    /// Load an already-expanded name: an installed store's cache, else a file.
+    ///
+    /// # Errors
+    /// Returns the errors of the installed store, or of [`Self::resolved_file_path`]
+    /// and [`Self::load`].
+    pub(crate) fn load_resolved_name(name: &str) -> Result<Self, Error> {
+        match stores::installed_cache(name)? {
+            Some(cache) => cache.load(),
+            None => Self::load(Self::resolved_file_path(name)?),
+        }
     }
 
     /// Save this credential cache to a file.
@@ -267,12 +282,13 @@ impl CCache {
     /// Save this credential cache by MIT-style cache name.
     ///
     /// Bare paths, `FILE:path`, `WRFILE:path`, `DIR:directory`, and
-    /// subsidiary `DIR::path` cache names are supported.
+    /// subsidiary `DIR::path` cache names are supported, and the names of
+    /// stores installed with [`crate::extensions::Registry::install_stores`].
     ///
     /// # Errors
     ///
     /// Returns any error of [`CCache::file_path_from_cache_name`] and
-    /// [`CCache::save`].
+    /// [`CCache::save`], or of the installed store.
     #[inline]
     pub fn save_name<P>(&self, name: P) -> Result<(), Error>
     where
@@ -287,6 +303,9 @@ impl CCache {
     /// # Errors
     /// Returns serialization, path and filesystem failures.
     pub(crate) fn save_resolved_name(&self, cache_name: &str) -> Result<(), Error> {
+        if let Some(cache) = stores::installed_cache(cache_name)? {
+            return cache.replace(self);
+        }
         self.save(Self::resolved_file_path(cache_name)?)?;
         if dir_collection_path(cache_name).is_some() {
             let _published = Self::resolved_file_path(cache_name)?;

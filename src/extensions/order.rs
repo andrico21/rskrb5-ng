@@ -3,12 +3,12 @@
 use alloc::sync::Arc;
 
 use super::{
-    Error, Event, Extension, Interface, LibraryObserver, MAX_EXTENSIONS, Registry, checks,
+    Error, Event, Extension, Interface, LibraryObserver, MAX_EXTENSIONS, Registry, checks, stores,
 };
 use crate::config::Config;
 
 /// Every interface, in the order `Registry`'s `Debug` lists them.
-pub(super) const INTERFACES: [Interface; 8] = [
+pub(super) const INTERFACES: [Interface; 9] = [
     Interface::ClientPreauth,
     Interface::CacheSelector,
     Interface::HostRealm,
@@ -17,6 +17,7 @@ pub(super) const INTERFACES: [Interface; 8] = [
     Interface::ServerLocator,
     Interface::GssMechanism,
     Interface::LibraryObserver,
+    Interface::StoreProvider,
 ];
 
 /// Validate and append one provider.
@@ -77,6 +78,15 @@ pub(super) fn register(registry: &mut Registry, extension: Extension) -> Result<
             Interface::LibraryObserver,
             |entry| entry.id(),
         ),
+        Extension::StoreProvider(item) => {
+            stores::admit(&registry.stores, &*item)?;
+            push(
+                &mut registry.stores,
+                item,
+                Interface::StoreProvider,
+                |entry| entry.id(),
+            )
+        }
     }
 }
 
@@ -179,6 +189,7 @@ pub(super) fn ids<'registry>(
         Interface::ServerLocator => registry.locators.iter().map(|item| item.id()).collect(),
         Interface::GssMechanism => registry.mechanisms.iter().map(|item| item.id()).collect(),
         Interface::LibraryObserver => registry.observers.iter().map(|item| item.id()).collect(),
+        Interface::StoreProvider => registry.stores.iter().map(|item| item.id()).collect(),
     }
 }
 

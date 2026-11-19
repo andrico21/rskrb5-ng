@@ -17,7 +17,7 @@ use core::fmt;
 use zeroize::Zeroizing;
 
 use super::{CCache, Credential, Error, Principal};
-use crate::config::LibDefaults;
+use crate::{config::LibDefaults, extensions};
 
 /// A credential-cache format version, 1 to 4, written into new caches (MIT
 /// `ccache_type`; `src/lib/krb5/krb/init_ctx.c:292-293`).
@@ -283,6 +283,22 @@ pub trait CredentialStore: fmt::Debug + Send + Sync {
     ///
     /// The errors of [`Self::resolve`].
     fn collection(&self, residual: &str) -> Result<Box<dyn CacheCollection>, Error>;
+}
+
+/// The cache `name` names when a store provider installed with
+/// [`crate::extensions::Registry::install_stores`] claims its prefix.
+///
+/// # Errors
+///
+/// The errors of the provider's [`CredentialStore::resolve`].
+pub(crate) fn installed_cache(name: &str) -> Result<Option<Box<dyn CacheHandle>>, Error> {
+    let Some((provider, residual)) = extensions::stores::installed(name) else {
+        return Ok(None);
+    };
+    provider
+        .credential_store()
+        .map(|store| store.resolve(residual))
+        .transpose()
 }
 
 /// Move the contents of `source` into `destination` and destroy `source`
