@@ -288,9 +288,18 @@ impl KeyStore for MemoryEntry {
         Ok(self.update(|keytab| keytab.clone()))
     }
 
+    /// Add an entry that a keytab file could hold: the FILE store refuses an
+    /// entry its serialization refuses (the A7 shape rules), so MEMORY checks
+    /// the same serialization and keeps its contents on refusal.
     fn add(&self, entry: Entry) -> Result<(), Error> {
-        self.update(|keytab| keytab.entries.push(entry));
-        Ok(())
+        self.update(|keytab| {
+            keytab.entries.push(entry);
+            let admitted = keytab.to_bytes().map(|bytes| drop(SecretBytes::new(bytes)));
+            if admitted.is_err() {
+                drop(keytab.entries.pop());
+            }
+            admitted
+        })
     }
 
     fn remove(&self, principal: &Principal, kvno: u32, etype: Option<i32>) -> Result<usize, Error> {

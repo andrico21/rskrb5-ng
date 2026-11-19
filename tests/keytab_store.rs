@@ -166,4 +166,65 @@ mod tests {
         fs::remove_dir_all(directory)?;
         Ok(())
     }
+
+    /// FILE and MEMORY keytabs refuse the entry shapes a keytab file cannot
+    /// hold (the A7 rules) with the same error, and keep their contents.
+    #[test]
+    fn malformed_entries_are_refused_by_every_store() -> Result<(), TestError> {
+        let directory = env::temp_dir().join(format!(
+            "keytab-store-shapes-{}-{}",
+            process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        fs::create_dir_all(&directory)?;
+        let file = stores::resolve(&format!(
+            "FILE:{}",
+            directory.join("shapes.keytab").display()
+        ))?;
+        let memory = MemoryKeytab::new().resolve("shapes")?;
+        let key = || EncryptionKey::new(18, vec![1; 32]);
+        for store in [file.as_ref(), memory.as_ref()] {
+            store.add(entry(1, 18, 1))?;
+            let cases = [
+                (
+                    "empty realm",
+                    Entry::new(Principal::new("", 1, ["alice"]), 1, 2, key(), 2),
+                    Error::EmptyRealm,
+                ),
+                (
+                    "no component",
+                    Entry::new(
+                        Principal::new("A.TEST", 1, Vec::<String>::new()),
+                        1,
+                        2,
+                        key(),
+                        2,
+                    ),
+                    Error::InvalidPrincipalName,
+                ),
+                (
+                    "empty component",
+                    Entry::new(Principal::new("A.TEST", 1, ["alice", ""]), 1, 2, key(), 2),
+                    Error::InvalidPrincipalName,
+                ),
+                (
+                    "empty key",
+                    Entry::new(client(), 1, 2, EncryptionKey::new(18, Vec::new()), 2),
+                    Error::EmptyKey,
+                ),
+            ];
+            for (label, malformed, expected) in cases {
+                let refused = store.add(malformed).err().map(|error| error.to_string());
+                assert_eq!(
+                    refused,
+                    Some(expected.to_string()),
+                    "{} {label}",
+                    store.name()
+                );
+                assert_eq!(store.load()?.entries().len(), 1, "{} {label}", store.name());
+            }
+        }
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
 }
