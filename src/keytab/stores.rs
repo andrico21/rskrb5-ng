@@ -58,8 +58,11 @@ pub trait KeyStore: fmt::Debug + Send + Sync {
     /// Storage and parse errors.
     fn remove(&self, principal: &Principal, kvno: u32, etype: Option<i32>) -> Result<usize, Error>;
 
-    /// The newest key of `principal` with `kvno` (0: any) and `etype`, and its
-    /// kvno (MIT `krb5_kt_get_entry`; [`Keytab::find_key`]).
+    /// The key of `principal` with `kvno` and `etype`, and its kvno (MIT
+    /// `krb5_kt_get_entry`). A `kvno` of 0 takes the highest kvno the keytab
+    /// holds for the principal and enctype (MIT `kt_memory.c:405-409`), not
+    /// the newest timestamp; among entries of one kvno the newest wins
+    /// ([`Keytab::find_key`]).
     ///
     /// # Errors
     ///
@@ -73,7 +76,22 @@ pub trait KeyStore: fmt::Debug + Send + Sync {
     ) -> Result<(EncryptionKey, u32), Error> {
         let keytab = self.load()?;
         let components: Vec<&str> = principal.components.iter().map(String::as_str).collect();
-        let (key, found) = keytab.find_key(&components, &principal.realm, kvno, etype)?;
+        let wanted = if kvno == 0 {
+            keytab
+                .entries
+                .iter()
+                .filter(|entry| {
+                    entry.principal.realm == principal.realm
+                        && entry.principal.components == principal.components
+                        && entry.key().etype() == etype
+                })
+                .map(|entry| entry.kvno)
+                .max()
+                .unwrap_or(0)
+        } else {
+            kvno
+        };
+        let (key, found) = keytab.find_key(&components, &principal.realm, wanted, etype)?;
         Ok((key.clone(), found))
     }
 }

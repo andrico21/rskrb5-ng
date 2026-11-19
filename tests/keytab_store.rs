@@ -227,4 +227,44 @@ mod tests {
         fs::remove_dir_all(directory)?;
         Ok(())
     }
+
+    /// A wildcard kvno takes the highest kvno (MIT `kt_memory.c:405-409`), not
+    /// the newest timestamp, in FILE and MEMORY keytabs alike.
+    #[test]
+    fn wildcard_kvno_takes_the_highest_kvno() -> Result<(), TestError> {
+        let directory = env::temp_dir().join(format!(
+            "keytab-store-kvno-{}-{}",
+            process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        fs::create_dir_all(&directory)?;
+        let file = stores::resolve(&format!("FILE:{}", directory.join("kvno.keytab").display()))?;
+        let memory = MemoryKeytab::new().resolve("kvno")?;
+        for store in [file.as_ref(), memory.as_ref()] {
+            store.add(Entry::new(
+                client(),
+                200,
+                1,
+                EncryptionKey::new(18, vec![1; 32]),
+                1,
+            ))?;
+            store.add(Entry::new(
+                client(),
+                100,
+                2,
+                EncryptionKey::new(18, vec![2; 32]),
+                2,
+            ))?;
+            let (key, kvno) = store.find(&client(), 0, 18)?;
+            assert_eq!(
+                (kvno, key.value().to_vec()),
+                (2, vec![2; 32]),
+                "{}",
+                store.name()
+            );
+            assert_eq!(store.find(&client(), 1, 18)?.1, 1, "{}", store.name());
+        }
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
 }
