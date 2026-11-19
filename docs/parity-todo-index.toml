@@ -10,7 +10,7 @@ todos = 187
 
 [[plan]]
 number = 2
-todos = 31
+todos = 34
 
 [[todo]]
 plan = 1
@@ -1121,6 +1121,21 @@ title = "Independent critic pass on the final tree"
 plan = 2
 number = 31
 title = "Final gates, overlay facts, interop proof, push"
+
+[[todo]]
+plan = 2
+number = 32
+title = "Store foundation corrections (supervisor validation of waves 0-2; ORA-01, ORA-04, Y4-01 to Y4-09)"
+
+[[todo]]
+plan = 2
+number = 33
+title = "Crypto and extension corrections (supervisor validation of waves 0-2; Y3-02 to Y3-06, ORA-03)"
+
+[[todo]]
+plan = 2
+number = 34
+title = "Interop harness, CI and gate corrections (supervisor validation of waves 0-2; Y1-01 to Y1-07, S-01, Y2-01)"
 
 [[todo]]
 plan = 2
