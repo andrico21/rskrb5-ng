@@ -926,7 +926,10 @@ impl WrapToken {
                     .map_err(|_error| Error::InvalidGssFiller)?;
                 self.ec.checked_add(extra).ok_or(Error::InvalidGssFiller)?
             }
-            KerberosEtype::Sha1(_) | KerberosEtype::Sha2(_) | KerberosEtype::Rc4Hmac(_) => self.ec,
+            KerberosEtype::Sha1(_)
+            | KerberosEtype::Sha2(_)
+            | KerberosEtype::Rc4Hmac(_)
+            | KerberosEtype::Camellia(_) => self.ec,
         };
         let mut plaintext = Scratch::new(
             Vec::with_capacity(

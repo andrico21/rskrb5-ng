@@ -34,16 +34,19 @@ Lists use MIT case-insensitive names/aliases, space/tab/CR/LF/comma delimiters,
 Re-adding a present entry retains its position; re-adding a removed one appends.
 Unknown, forbidden and policy-disabled positive terms fail by name, never silently
 narrow. Known removal terms are accepted. Empty results fail. Compatible mode
-skips only secure unimplemented Camellia with a diagnostic; strict mode rejects
-it. No Camellia implementation is included. See
+skips only secure Camellia names whose `camellia` Cargo feature is not compiled
+in, with a diagnostic naming the feature; strict mode rejects them. See
+[Camellia](#camellia) for the feature, the `DEFAULT` list and the reason. See
 [MIT configuration](https://web.mit.edu/kerberos/krb5-1.22/doc/admin/conf_files/krb5_conf.html),
 [encryption types](https://web.mit.edu/kerberos/krb5-1.22/doc/admin/conf_files/kdc_conf.html#encryption-types)
 and [MIT list evaluation](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/krb/init_ctx.c#L411-L492).
 
 KDC-supplied password derivation has minimum **4096** iterations for AES-SHA1
 ([RFC 3962 section 4](https://www.rfc-editor.org/rfc/rfc3962.html#section-4))
-and **32768** for AES-SHA2
-([RFC 8009 section 4](https://www.rfc-editor.org/rfc/rfc8009.html#section-4)).
+**32768** for AES-SHA2
+([RFC 8009 section 4](https://www.rfc-editor.org/rfc/rfc8009.html#section-4)) and
+**32768** for Camellia ([RFC 6803 section 4](https://www.rfc-editor.org/rfc/rfc6803.html#section-4),
+a stricter divergence: MIT has no floor).
 The existing upper bound is 2^24; zero is refused. Trusted application code may
 lower a minimum with `LibDefaults::with_min_s2k_iterations`; doing so weakens
 offline-guess resistance. Text configuration and serde cannot set that override.
@@ -138,6 +141,39 @@ MIT's historical compatibility table: **no blanket MIT removal release is
 claimed**. [RFC 6649](https://www.rfc-editor.org/rfc/rfc6649.html) deprecates it;
 [MIT enctype documentation](https://web.mit.edu/kerberos/krb5-1.22/doc/admin/enctypes.html)
 still describes historical support. Ordinary RC4-HMAC 23 is distinct and opt-in.
+
+<a id="camellia"></a>
+## Camellia
+
+`camellia128-cts-cmac` (25) and `camellia256-cts-cmac` (26), with the checksum types
+`cmac-camellia128` (17) and `cmac-camellia256` (18), are implemented per
+[RFC 6803](https://www.rfc-editor.org/rfc/rfc6803.html) behind the additive Cargo
+feature `camellia` (the RustCrypto `camellia` and `cmac` crates, admitted in
+`docs/dependency-admission.md`). Three rules hold:
+
+- **The feature grants nothing.** Without the feature, Camellia names keep their
+  diagnostic (compatible mode) or error (strict mode), which names the feature.
+  With it, the enctypes are available, but the runtime policy still decides:
+  Camellia must be named in `permitted_enctypes`, and then it is permitted for
+  every use, and also becomes part of the request lists that default from it.
+  A default policy refuses it everywhere (`Use::AcceptorTicket`,
+  `Use::CheckedLowLevel` and the others).
+- **`DEFAULT` never includes Camellia.** The admitted `camellia` crate reads
+  secret-indexed S-box tables (four 256-byte tables, `utils.rs` function `f`), so it
+  is not table-free and not constant-time on CPUs with data caches: a local attacker
+  who shares the cache can observe which table entries a key-dependent round touches.
+  AES is the default for that reason, and
+  `crypto::camellia::CONSTANT_TIME` records `false`. MIT's `DEFAULT` list does
+  include Camellia (a deliberate, stricter divergence). Use Camellia only when
+  a deployment needs it ([RFC 6803 section 8](https://www.rfc-editor.org/rfc/rfc6803.html#section-8)
+  says the same).
+- **Password work is bounded.** Peer-supplied iteration counts are limited to
+  2^24 and, in a policy, to at least 32768 (the RFC default) unless trusted code
+  lowers the floor with `LibDefaults::with_min_s2k_iterations(Family::Camellia, ..)`.
+
+The key schedule and cipher state of the dependency are wiped on drop with its
+`zeroize` feature, which this crate enables; stack and register copies are not
+covered, like elsewhere in this crate.
 
 <a id="unauthenticated-checksum"></a>
 ## Unauthenticated or weak negotiable checksums

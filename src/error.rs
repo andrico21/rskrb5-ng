@@ -901,6 +901,14 @@ pub enum Crypto {
         /// Actual ciphertext length.
         actual: usize,
     },
+    /// A PRF+ output request exceeds what its counter or the local bound allows.
+    #[error("PRF+ output of {requested} bytes exceeds the maximum of {maximum}")]
+    PrfOutputTooLong {
+        /// Largest accepted output length in bytes.
+        maximum: usize,
+        /// Requested output length in bytes.
+        requested: usize,
+    },
 }
 /// Extension registration, provider output and profile-module errors.
 #[derive(Debug, thiserror::Error)]

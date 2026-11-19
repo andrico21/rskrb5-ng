@@ -3,7 +3,7 @@ use core::error::Error;
 use rskrb5_ng::{
     Config,
     config::{ConfigDiagnostic, EnctypeExpr, LibDefaults, ParseMode, Toggle},
-    crypto::{CryptoPolicy, KerberosEtype, Use},
+    crypto::{CryptoPolicy, KerberosEtype, Use, camellia},
     error::{self, Policy, RejectedFeature},
 };
 
@@ -195,13 +195,17 @@ fn profile_rejects_disabled_unknown_and_d2_terms() -> Result<(), Box<dyn Error>>
 /// Compatible parsing exposes secure-unsupported diagnostics; strict parsing refuses.
 #[test]
 fn profile_camellia_diagnostics_are_visible() -> Result<(), Box<dyn Error>> {
+    if camellia::AVAILABLE {
+        // The leaf supports the name, so there is nothing to skip (tests/crypto_camellia.rs).
+        return Ok(());
+    }
     // Given a stock-policy-shaped list with implemented AES and Camellia.
     let text = "[libdefaults]\npermitted_enctypes = aes256-cts camellia";
     // When parsing through the default compatible entry point.
     let config = Config::parse(text)?;
     // Then skipped secure selections are observable and strict mode errors.
     assert!(
-        matches!(config.libdefaults.diagnostics().as_ref(), [ConfigDiagnostic::UnsupportedSecureEnctype { token, until: "plan-2 WP-03" }] if token == "camellia")
+        matches!(config.libdefaults.diagnostics().as_ref(), [ConfigDiagnostic::UnsupportedSecureEnctype { token, until: "the `camellia` Cargo feature is enabled" }] if token == "camellia")
     );
     assert_eq!(config.libdefaults.default_tkt_enctype_ids(), [18_i32]);
     let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)?;
@@ -211,7 +215,7 @@ fn profile_camellia_diagnostics_are_visible() -> Result<(), Box<dyn Error>> {
         .err()
         .ok_or("strict Camellia accepted")?;
     assert!(
-        matches!(failure, error::Config::UnsupportedSecureEnctype { token, until: "plan-2 WP-03" } if token == "camellia")
+        matches!(failure, error::Config::UnsupportedSecureEnctype { token, until: "the `camellia` Cargo feature is enabled" } if token == "camellia")
     );
     Ok(())
 }

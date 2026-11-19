@@ -10,7 +10,7 @@ use rskrb5_ng::{
         transport::KdcProtocol,
     },
     config::{LibDefaults, ParseMode, Toggle},
-    crypto::CryptoPolicy,
+    crypto::{CryptoPolicy, camellia},
     error::{self, Policy, RejectedFeature},
     kdc_req,
     keytab::{EncryptionKey, Keytab},
@@ -130,6 +130,20 @@ fn staged_allowed_requests_preserve_wire_order() -> Result<(), Box<dyn Error>> {
 /// Staged secure unsupported names obey the selected parsing mode.
 #[test]
 fn staged_requests_honor_strict_mode() -> Result<(), Box<dyn Error>> {
+    if camellia::AVAILABLE {
+        // The leaf resolves the name; the default policy then refuses it as not permitted.
+        let mut defaults = LibDefaults::new();
+        defaults.default_tkt_enctypes = vec!["aes128-cts".to_owned(), "camellia".to_owned()];
+        let failure = AsReq::from_libdefaults(SystemTime::UNIX_EPOCH, 42, &defaults)
+            .err()
+            .ok_or("the leaf granted Camellia without permission")?;
+        assert!(matches!(
+            failure,
+            error::Client::Config(error::Config::EnctypeNotPermitted { key: "default_tkt_enctypes", enctype })
+                if enctype.starts_with("camellia")
+        ));
+        return Ok(());
+    }
     let mut defaults = LibDefaults::new();
     defaults.default_tkt_enctypes = vec!["aes128-cts".to_owned(), "camellia".to_owned()];
     drop(AsReq::from_libdefaults(

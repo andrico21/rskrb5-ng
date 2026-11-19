@@ -10,7 +10,10 @@
 mod tests {
     use core::error::Error;
 
-    use rskrb5_ng::config::{Config, ParseMode};
+    use rskrb5_ng::{
+        config::{Config, ParseMode},
+        crypto::camellia,
+    };
 
     /// Unknown headers and paths cannot disappear, including empty subsections.
     #[test]
@@ -48,6 +51,10 @@ mod tests {
             "[logging]\n",
             "[libdefaults]\n preferred_preauth_types = 14,15\n",
         ] {
+            if camellia::AVAILABLE && input.contains("camellia") {
+                // With the leaf the name is supported, so it emits no diagnostic.
+                continue;
+            }
             drop(
                 Config::parse_with_mode(input, ParseMode::Strict)
                     .err()

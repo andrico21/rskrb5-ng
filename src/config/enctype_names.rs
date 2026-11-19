@@ -1,7 +1,9 @@
 //! MIT selector vocabulary; recognition never grants runtime permission.
 
 use crate::{
-    crypto::{AesSha1Etype, AesSha2Etype, Des3CbcSha1KdEtype, KerberosEtype, Rc4HmacEtype},
+    crypto::{
+        AesSha1Etype, AesSha2Etype, Des3CbcSha1KdEtype, KerberosEtype, Rc4HmacEtype, camellia,
+    },
     error::RejectedFeature,
 };
 
@@ -22,8 +24,8 @@ pub(super) enum Selector {
     Des3,
     /// Deprecated RC4-HMAC requiring a runtime opt-in.
     Rc4,
-    /// Secure Camellia is unavailable until plan 2.
-    Camellia,
+    /// Secure Camellia: usable only when named, and empty unless the `camellia` leaf is compiled in.
+    Camellia(&'static [KerberosEtype]),
     /// Known insecure names exist solely for rejection or removal.
     Rejected(RejectedFeature),
 }
@@ -42,10 +44,10 @@ impl Selector {
     /// Return only implemented enctypes; unavailable removals are harmless no-ops.
     pub(super) const fn enctypes(self) -> &'static [KerberosEtype] {
         match self {
-            Self::Secure(enctypes) => enctypes,
+            Self::Secure(enctypes) | Self::Camellia(enctypes) => enctypes,
             Self::Des3 => &[KerberosEtype::Des3CbcSha1Kd(Des3CbcSha1KdEtype)],
             Self::Rc4 => &[KerberosEtype::Rc4Hmac(Rc4HmacEtype)],
-            Self::Camellia | Self::Rejected(_) => &[],
+            Self::Rejected(_) => &[],
         }
     }
 }
@@ -92,15 +94,14 @@ const NAMES: &[(&[&str], Selector)] = &[
         &["rc4", "arcfour-hmac", "rc4-hmac", "arcfour-hmac-md5"],
         Selector::Rc4,
     ),
+    (&["camellia"], Selector::Camellia(camellia::ALL)),
     (
-        &[
-            "camellia",
-            "camellia128-cts-cmac",
-            "camellia128-cts",
-            "camellia256-cts-cmac",
-            "camellia256-cts",
-        ],
-        Selector::Camellia,
+        &["camellia128-cts-cmac", "camellia128-cts"],
+        Selector::Camellia(camellia::ONLY_128),
+    ),
+    (
+        &["camellia256-cts-cmac", "camellia256-cts"],
+        Selector::Camellia(camellia::ONLY_256),
     ),
     (
         &[
@@ -131,5 +132,6 @@ pub(super) const fn canonical_name(etype: KerberosEtype) -> &'static str {
         KerberosEtype::Sha2(AesSha2Etype::Aes256) => "aes256-cts-hmac-sha384-192",
         KerberosEtype::Des3CbcSha1Kd(_) => "des3-cbc-sha1",
         KerberosEtype::Rc4Hmac(_) => "arcfour-hmac",
+        KerberosEtype::Camellia(family) => family.ename(),
     }
 }

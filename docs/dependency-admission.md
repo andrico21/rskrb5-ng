@@ -92,7 +92,25 @@ duplicate-version skips, each with a reason stated in the record.
 
 ## Records
 
-No dependency has been admitted since the baseline.
+### camellia
+- Version: 0.2.1
+- Leaf flags: camellia
+- Licence: MIT OR Apache-2.0 (both already on the `deny.toml` allow list; no change to it).
+- Source review: read in full on 2026-11-18 from the crates.io tarball (sha256 `d3ed33f9863ee76491bbe0d7e16a225c694d8525287e320dc7fbe71ee212254c`, RustCrypto/block-ciphers, edition 2024, MSRV 1.85). Pure Rust, `#![deny(unsafe_code)]`, no `build.rs`, no `links`, no proc macro; its only dependency is `cipher` 0.5, which is already in the graph (`aes`, `des`). It is the block function only: it takes a key and 16-byte blocks and never parses wire data. This crate uses it for RFC 6803 CBC-CTS and as the cipher of CMAC (`cmac`).
+- Constant-time and zeroization: NOT constant-time. `src/utils.rs` `f` reads four 256-byte S-box tables (`SBOXES[i][secret byte]`) once per byte and round; the key schedule (`set_ka`, `set_kb`) calls the same `f`. Table lookups indexed by key- and data-derived bytes leak through the data cache on CPUs that have one (a cache-timing exposure like table-based AES), so the implementation is not table-free. Decision, binding: Camellia enctypes never join the `DEFAULT` expansion, are usable only when named in `permitted_enctypes`, and `docs/security-policy.md#camellia` says why; `crypto::camellia::CONSTANT_TIME` is `false`. Zeroization: the cipher state (the expanded round keys) is wiped on drop only with the crate's `zeroize` feature, which this crate enables (`features = ["zeroize"]`, via `cipher/zeroize`); the key-schedule stack temporaries and register copies are not covered. The Kerberos layer wipes its own derived keys, PBKDF2 intermediates and plaintext scratch.
+- Cargo vet: no upstream audit is imported for it; `supply-chain/config.toml` carries `[[exemptions.camellia]]` version 0.2.1, `safe-to-deploy`, like every other RustCrypto crate of the graph (`aes`, `des`, `cipher`); the exemption is not an independent audit, and the source review above is this record's evidence. `cargo vet --locked` passes.
+- Maintenance: RustCrypto/block-ciphers, repository pushed 2026-11-17; 0.2.0 on 2026-04-10, 0.2.1 on 2026-06-16, about 2.7 million recent downloads. No RustSec advisory (`cargo audit` clean at admission).
+- Features: `zeroize` (this crate's own feature, enabled by the `camellia` leaf)
+
+### cmac
+- Version: 0.8.0
+- Leaf flags: camellia
+- Licence: MIT OR Apache-2.0 (already on the allow list).
+- Source review: read in full on 2026-11-18 from the crates.io tarball (sha256 `ac78aa94ce13e432b332a4d1bf2eff167d3a2520188ee05b337180a42fd2e62e`, RustCrypto/MACs, edition 2024, MSRV 1.85; 185 lines of source: `src/lib.rs` and `src/block_api.rs`). Pure Rust, no `unsafe` (the repository's lint table denies undocumented unsafe; there is none), no build script, no `links`. Dependencies: `cipher` 0.5 and `digest` 0.11 (feature `mac`), both already in the graph, and `dbl` 0.5.0 (RustCrypto/utils, 181 lines, `#![forbid(unsafe_code)]`, new to the graph, used only here: the GF(2^128) doubling of the CMAC subkeys, computed with shift and multiply-by-mask arithmetic, no branch on the data). Inputs are message bytes already in memory; no allocation and no parsing.
+- Constant-time and zeroization: the CMAC loop is data-independent except the branch on the message length (`pos == buf.len()`), which is public. Tag verification goes through `digest::Mac::verify_slice`, which compares with `subtle` in constant time; this crate additionally refuses any tag whose length is not 16 before comparing. The security of the block function is that of `camellia` (above). With the `zeroize` feature, which this crate enables, `CmacCore` wipes its running state on drop (`cipher/zeroize` and `digest/zeroize` follow).
+- Cargo vet: `[[exemptions.cmac]]` 0.8.0 and `[[exemptions.dbl]]` 0.5.0, both `safe-to-deploy`, in `supply-chain/config.toml`; exemptions, not independent audits. `cargo vet --locked` passes.
+- Maintenance: RustCrypto/MACs, repository pushed 2026-11-17; 0.8.0 on 2026-04-10 (release candidates since 2025-05), about 9.6 million recent downloads; `dbl` 0.5.0 on 2025-09-03 with about 9.3 million. No RustSec advisory (`cargo audit` clean at admission).
+- Features: `zeroize` (this crate's own feature, enabled by the `camellia` leaf)
 
 ## Baseline
 
