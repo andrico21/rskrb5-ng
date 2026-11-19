@@ -1338,6 +1338,9 @@ pub enum Kcm {
         /// The limit.
         limit: usize,
     },
+    /// A KCM transport is installed already: the first installation wins.
+    #[error("a KCM transport is installed already")]
+    TransportInstalled,
 }
 
 #[cfg(feature = "messages")]

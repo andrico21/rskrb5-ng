@@ -11,6 +11,7 @@ use std::{
 
 use super::{
     client::Client,
+    seam,
     socket::{self, Deadline, Trust},
     wire::{calls::Call, shape::Shape},
 };
@@ -72,6 +73,8 @@ impl Endpoint {
 pub(super) struct Session {
     /// How to connect.
     endpoint: Endpoint,
+    /// Whether an installed [`seam`] replaces the socket.
+    built_in: bool,
     /// The live connection, if any.
     link: Mutex<Option<Client<Deadline>>>,
 }
@@ -85,12 +88,19 @@ impl fmt::Debug for Session {
 }
 
 impl Session {
-    /// A session that has not connected yet.
-    pub(super) const fn new(endpoint: Endpoint) -> Self {
+    /// A session that has not connected yet; `built_in` lets an installed
+    /// [`seam`] replace the socket.
+    pub(super) const fn new(endpoint: Endpoint, built_in: bool) -> Self {
         Self {
             endpoint,
+            built_in,
             link: Mutex::new(None),
         }
+    }
+
+    /// Whether an installed transport replaces the socket.
+    pub(super) const fn is_built_in(&self) -> bool {
+        self.built_in
     }
 
     /// How the daemon is reached.
@@ -98,16 +108,22 @@ impl Session {
         &self.endpoint
     }
 
-    /// Send `call`, reconnecting once when the daemon closed an idle
+    /// Send `call` through the installed transport of a built-in session, or
+    /// over the socket, reconnecting once when the daemon closed an idle
     /// connection (a write that fails with a broken pipe).
     ///
     /// # Errors
     ///
-    /// The errors of [`Client::call`] and of connecting.
+    /// The errors of [`Client::call`] and of connecting, or of the transport.
     pub(super) fn call<S>(&self, call: &Call<S>) -> Result<S::Output, Error>
     where
         S: Shape,
     {
+        if self.built_in
+            && let Some(installed) = seam::installed()
+        {
+            return seam::exchange(&**installed, call);
+        }
         self.exchange(
             &mut self.link.lock().unwrap_or_else(PoisonError::into_inner),
             call,

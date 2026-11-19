@@ -8,9 +8,12 @@
 //! The socket is `kcm_socket` of `[libdefaults]`
 //! ([`Store::from_libdefaults`]); the built-in name dispatch of
 //! [`file_store::resolve`](super::file_store::resolve) uses the default socket
-//! [`wire::DEFAULT_SOCKET_PATH`]. [`wire`] holds the protocol without any I/O,
-//! [`client`] a blocking client over any stream and, with the `tokio`
-//! feature, [`async_client`] one for Tokio.
+//! [`wire::DEFAULT_SOCKET_PATH`], or the process-wide
+//! [`seam::KcmTransport`] an application installed with
+//! [`seam::install_transport`] (how macOS reaches its Mach service).
+//! [`wire`] holds the protocol without any I/O, [`client`] a blocking client
+//! over any stream and, with the `tokio` feature, [`async_client`] one for
+//! Tokio.
 //!
 //! The macOS Mach transport is not part of this module. On targets without
 //! Unix sockets, [`Store`] reports
@@ -57,6 +60,7 @@ pub mod async_client;
 mod cache;
 pub mod client;
 mod collection;
+pub mod seam;
 mod session;
 pub mod socket;
 pub mod wire;
@@ -82,7 +86,7 @@ impl Store {
     where
         P: Into<PathBuf>,
     {
-        Self::with_endpoint(Endpoint::new(socket.into(), DEFAULT_TIMEOUT))
+        Self::with_endpoint(Endpoint::new(socket.into(), DEFAULT_TIMEOUT), false)
     }
 
     /// A store for the socket `kcm_socket` of `[libdefaults]` names (MIT
@@ -104,14 +108,16 @@ impl Store {
     #[must_use]
     #[inline]
     pub fn with_timeout(self, timeout: Duration) -> Self {
-        Self::with_endpoint(self.session.endpoint().clone().with_timeout(timeout))
+        let endpoint = self.session.endpoint().clone().with_timeout(timeout);
+        Self::with_endpoint(endpoint, self.session.is_built_in())
     }
 
     /// The same store trusting `trust` as owners of the socket.
     #[must_use]
     #[inline]
     pub fn with_trust(self, trust: Trust) -> Self {
-        Self::with_endpoint(self.session.endpoint().clone().with_trust(trust))
+        let endpoint = self.session.endpoint().clone().with_trust(trust);
+        Self::with_endpoint(endpoint, self.session.is_built_in())
     }
 
     /// The socket path.
@@ -121,18 +127,24 @@ impl Store {
         self.session.endpoint().path()
     }
 
-    /// A store reaching the daemon as `endpoint` says.
-    fn with_endpoint(endpoint: Endpoint) -> Self {
+    /// A store reaching the daemon as `endpoint` says; `built_in` lets a
+    /// [`seam::install_transport`] transport replace the socket.
+    fn with_endpoint(endpoint: Endpoint, built_in: bool) -> Self {
         Self {
-            session: Arc::new(Session::new(endpoint)),
+            session: Arc::new(Session::new(endpoint, built_in)),
         }
     }
 }
 
+/// The built-in store: the default socket [`wire::DEFAULT_SOCKET_PATH`], or
+/// the transport [`seam::install_transport`] installed.
 impl Default for Store {
     #[inline]
     fn default() -> Self {
-        Self::new(wire::DEFAULT_SOCKET_PATH)
+        Self::with_endpoint(
+            Endpoint::new(wire::DEFAULT_SOCKET_PATH.into(), DEFAULT_TIMEOUT),
+            true,
+        )
     }
 }
 
