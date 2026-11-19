@@ -49,6 +49,10 @@ Environment:
                         publish side by side.
   INTEROP_LOG_DIR       Where `down` puts redacted fixture logs.
   INTEROP_READY_TIMEOUT Readiness bound per fixture in seconds (default 180).
+  INTEROP_BUILD_CA_DIR  podman only: a directory of extra root certificates
+                        mounted read-only at /usr/local/share/ca-certificates
+                        during image builds (hosts behind a TLS-inspecting
+                        proxy); off by default, the download pins still bind.
   INTEROP_MIT_KDC_PORT, INTEROP_MIT_KPASSWD_PORT, INTEROP_MIT_KADMIN_PORT
                         Host ports of the MIT fixture (18088, 18464, 18749).
 

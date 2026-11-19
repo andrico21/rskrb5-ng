@@ -370,10 +370,25 @@ interop_image_tag() {
 # interop_build_image NAME CONTEXT: builds once per context hash; prints the tag.
 interop_build_image() {
   local name="$1" context="$2" tag size
+  local -a options=()
+  # FU-IOP-P02: INTEROP_BUILD_CA_DIR names a directory of extra root
+  # certificates (*.crt, PEM) for a host behind a TLS-inspecting proxy. It is
+  # mounted read-only at /usr/local/share/ca-certificates during the build, the
+  # directory Debian's ca-certificates package reads; the Dockerfiles' sha256
+  # and PGP checks of the downloads still bind. Off by default (CI never sets
+  # it); `docker build` cannot mount a directory, so it needs podman.
+  if [[ -n "${INTEROP_BUILD_CA_DIR:-}" ]]; then
+    [[ "$INTEROP_RT" == podman ]] ||
+      interop_die "INTEROP_BUILD_CA_DIR needs INTEROP_RUNTIME=podman: docker build cannot mount a directory" || return 1
+    [[ -d "$INTEROP_BUILD_CA_DIR" ]] ||
+      interop_die "INTEROP_BUILD_CA_DIR=$INTEROP_BUILD_CA_DIR is not a directory" || return 1
+    options+=(--volume "$INTEROP_BUILD_CA_DIR:/usr/local/share/ca-certificates:ro")
+  fi
   tag="$(interop_image_tag "$name" "$context")" || return 1
   if ! interop_rt image inspect "$tag" >/dev/null 2>&1; then
     interop_log "building image $tag from ${context#"$INTEROP_ROOT"/}"
-    interop_rt build -t "$tag" "$context" >&2 || interop_die "image build failed for fixture $name" || return 1
+    interop_rt build ${options[@]+"${options[@]}"} -t "$tag" "$context" >&2 ||
+      interop_die "image build failed for fixture $name" || return 1
   fi
   size="$(interop_rt image inspect -f '{{.Size}}' "$tag")"
   interop_log "image $tag size $size bytes"

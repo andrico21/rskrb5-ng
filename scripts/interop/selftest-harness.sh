@@ -5,7 +5,7 @@
 # scripts are single-quoted on purpose (SC2016).
 # shellcheck disable=SC2016,SC2034,SC2153,SC2317
 # Cases of `run.sh self-test` for the harness itself (plan 2 todo 34):
-# the redaction that fails closed (Y1-01); the liveness check of every fixture at the end of `all` (Y1-05); run namespaces and host-port offsets (FU-IOP-P01).
+# the redaction that fails closed (Y1-01); the liveness check of every fixture at the end of `all` (Y1-05); run namespaces and host-port offsets (FU-IOP-P01); the corporate-CA build hook (FU-IOP-P02).
 # No container, network or image is touched. Each group runs in a subshell and prints one line per failed check.
 
 # Y1-01: a missing or unusable secret inventory refuses the log upload.
@@ -155,6 +155,44 @@ interop_self_test_namespace() {
   [[ -z "$out" ]] || bad "fixtures with a literal default port (use interop_port): $out"
 }
 
+# FU-IOP-P02: the corporate-CA build hook is off by default and podman only.
+interop_self_test_build_hook() {
+  local scratch="$1/buildhook" calls cas
+  mkdir -p "$scratch/ctx" "$scratch/cas"
+  printf 'FROM scratch\n' >"$scratch/ctx/Dockerfile"
+  calls="$scratch/calls"
+  cas="$scratch/cas"
+  bad() { printf 'build hook: %s\n' "$*"; }
+  build() {
+    # build RUNTIME [VARIABLE=VALUE...]: runs interop_build_image against a stubbed runtime.
+    local runtime="$1"
+    shift
+    : >"$calls"
+    env "$@" RUNTIME="$runtime" CALLS="$calls" CTX="$scratch/ctx" bash -c '
+      source "$1/scripts/interop/lib.sh"
+      INTEROP_RT="$RUNTIME"
+      interop_rt() {
+        printf "%s\n" "$*" >>"$CALLS"
+        if [[ "$1 $2" == "image inspect" ]]; then
+          [[ "$3" == -f ]] && { printf 42; return 0; }
+          return 1
+        fi
+      }
+      interop_build_image hook "$CTX"
+    ' _ "$INTEROP_ROOT" >/dev/null 2>&1
+  }
+  build podman || bad "the default build failed"
+  grep -qE '^build -t rskrb5-interop/hook:[0-9a-f]{12} ' "$calls" || bad "the default build line changed: $(grep '^build' "$calls")"
+  ! grep -q -- '--volume' "$calls" || bad "the hook is not off by default"
+  build podman "INTEROP_BUILD_CA_DIR=$cas" || bad "the podman build with a CA directory failed"
+  grep -qE "^build --volume $cas:/usr/local/share/ca-certificates:ro -t rskrb5-interop/hook:[0-9a-f]{12} " "$calls" ||
+    bad "the CA directory is not mounted read-only for the build: $(grep '^build' "$calls")"
+  if build docker "INTEROP_BUILD_CA_DIR=$cas"; then bad "docker accepted INTEROP_BUILD_CA_DIR"; fi
+  ! grep -q '^build' "$calls" || bad "docker ran a build with INTEROP_BUILD_CA_DIR"
+  if build podman "INTEROP_BUILD_CA_DIR=$scratch/absent"; then bad "a missing CA directory was accepted"; fi
+  ! grep -q '^build' "$calls" || bad "a build ran with a missing CA directory"
+}
+
 # Y1-05: every registered fixture, and every labelled container, must still run
 # when `all` is about to report success.
 interop_self_test_liveness() {
@@ -196,7 +234,7 @@ interop_self_test_liveness() {
 # Runs the groups above; $1 is the failure reporter of interop_self_test, $2 its scratch directory.
 interop_self_test_harness_groups() {
   local report="$1" group out
-  for group in redaction liveness namespace; do
+  for group in redaction liveness namespace build_hook; do
     out="$("interop_self_test_$group" "$2" 2>&1)" || true
     [[ -z "$out" ]] || "$report" "harness $group:"$'\n'"$out"
   done
