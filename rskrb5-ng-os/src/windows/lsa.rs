@@ -144,7 +144,7 @@ impl Connection {
         #[expect(unsafe_code, reason = "FFI call")]
         let status = unsafe { LsaConnectUntrusted(&raw mut handle) };
         check(status, 0)?;
-        let connection = Self {
+        let mut connection = Self {
             handle: NonNull::new(handle).ok_or(Platform::Lsa {
                 status: 0,
                 sub_status: 0,
@@ -168,10 +168,10 @@ impl Connection {
             )
         };
         check(found, 0)?;
-        Ok(Self {
-            package,
-            ..connection
-        })
+        // `connection` deregisters its handle when dropped: keep it, do not
+        // copy its fields into a new value.
+        connection.package = package;
+        Ok(connection)
     }
 
     /// Send the request `build` lays out for its buffer address.
