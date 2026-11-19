@@ -196,7 +196,7 @@ jobs:
           # A throwaway realm on loopback, owned by this user.
           export KRB5_CONFIG="$RUNNER_TEMP/krb5.conf" KRB5_KDC_PROFILE="$RUNNER_TEMP/kdc.conf"
           mkdir -p "$RUNNER_TEMP/kdb"
-          printf '[libdefaults]\n default_realm = KEYRING.TEST\n dns_lookup_kdc = false\n dns_lookup_realm = false\n rdns = false\n[realms]\n KEYRING.TEST = { kdc = 127.0.0.1:18851 }\n' > "$KRB5_CONFIG"
+          printf '[libdefaults]\n default_realm = KEYRING.TEST\n dns_lookup_kdc = false\n dns_lookup_realm = false\n rdns = false\n[realms]\n KEYRING.TEST = {\n  kdc = 127.0.0.1:18851\n }\n' > "$KRB5_CONFIG"
           printf '[kdcdefaults]\n kdc_ports = 18851\n kdc_tcp_ports = 18851\n[realms]\n KEYRING.TEST = {\n  database_name = %s/kdb/principal\n  key_stash_file = %s/kdb/stash\n  acl_file = %s/kdb/kadm5.acl\n  supported_enctypes = aes256-cts-hmac-sha1-96:normal\n }\n' "$RUNNER_TEMP" "$RUNNER_TEMP" "$RUNNER_TEMP" > "$KRB5_KDC_PROFILE"
           kdb5_util create -s -r KEYRING.TEST -P master
           kadmin.local -r KEYRING.TEST -q "addprinc -pw secret alice"
