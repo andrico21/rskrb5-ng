@@ -1108,7 +1108,7 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "Client keytab, automatic initial creds and refresh"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "P2-11 delivered the `KeyStore` lookups (`keytab::stores::resolve`, `KeyStore::find`); the Tokio client acquires from the default client keytab and re-logs in from it when its TGT needs a refresh (`client::Tokio::with_client_keytab_from_default`, `refresh_tgt_if_needed`), with no new code in P2-4; routing the client keytab name through the store registry is plan 2 todo 32's, and the GSS implicit acquisition integration that of the closing todo P2-18."
+missing = "P2-11 delivered the `KeyStore` lookups (`keytab::stores::resolve`, `KeyStore::find`); the Tokio client acquires from the default client keytab and re-logs in from it when its TGT needs a refresh (`client::Tokio::with_client_keytab_from_default`, `refresh_tgt_if_needed`), with no new code in P2-4; routing the client keytab name through the store registration interface follows the supervisor's store corrections (register FU-CLI-P03), and the GSS implicit acquisition integration that of the closing todo P2-18."
 rust_symbols = [
   "keytab::stores::KeyStore",
   "keytab::stores::resolve",
