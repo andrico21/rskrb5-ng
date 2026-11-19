@@ -308,6 +308,20 @@ impl InitCredsOptions {
     pub const fn request(&self) -> &AsReq {
         &self.request
     }
+
+    /// Whether the exchange adopts the KDC's clock (MIT `kdc_timesync`).
+    #[inline]
+    #[must_use]
+    pub const fn kdc_timesync(&self) -> bool {
+        self.kdc_timesync
+    }
+
+    /// The preferred PA types, most preferred first.
+    #[inline]
+    #[must_use]
+    pub fn preferred_preauth_types(&self) -> &[i32] {
+        &self.preferred_preauth_types
+    }
 }
 
 /// Options of one TGS exchange.

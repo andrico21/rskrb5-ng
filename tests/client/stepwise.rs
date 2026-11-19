@@ -224,6 +224,10 @@ mod tests {
     /// without it the reply start time must be within the clock skew.
     #[test]
     fn kdc_timesync() -> Result<(), TestError> {
+        let now = timestamp(1_893_553_447)?;
+        assert!(InitCredsOptions::from_config(&Config::new(), now, 1)?.kdc_timesync());
+        let off = Config::parse("[libdefaults]\n kdc_timesync = 0\n")?;
+        assert!(!InitCredsOptions::from_config(&off, now, 1)?.kdc_timesync());
         let client = Principal::user("TEST.GOKRB5", "testuser1");
         for timesync in [false, true] {
             let options = InitCredsOptions::new(as_options()?).with_kdc_timesync(timesync);
@@ -393,6 +397,9 @@ mod tests {
     /// encrypted timestamp: the preferred mechanism answers, else the built-in one.
     #[test]
     fn preferred_preauth_types() -> Result<(), TestError> {
+        let profile = Config::parse("[libdefaults]\n preferred_preauth_types = 1000, 2\n")?;
+        let configured = InitCredsOptions::from_config(&profile, timestamp(1_893_553_447)?, 1)?;
+        assert_eq!(configured.preferred_preauth_types(), [1000_i32, 2_i32]);
         let client = Principal::user("TEST.GOKRB5", "testuser1");
         let config = Config::new();
         let policy = CryptoPolicy::from_libdefaults(&config.libdefaults)?;
