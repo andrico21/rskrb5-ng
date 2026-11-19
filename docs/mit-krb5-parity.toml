@@ -2866,9 +2866,7 @@ rust_symbols = [
   "extensions::GssMechanism",
   "extensions::Registry::gss_mechanism",
 ]
-test_names = [
-  "tests/extensions.rs::gss_mechanism_registration_rules",
-]
+test_names = ["tests/extensions.rs::gss_mechanism_registration_rules"]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-16"
