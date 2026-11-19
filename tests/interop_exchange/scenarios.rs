@@ -320,7 +320,8 @@ fn ticket_exchange_plain_and_user_to_user() -> Result<(), Box<dyn Error>> {
             &mut plain,
             &mut NoResponder::default(),
         )
-        .await?;
+        .await
+        .map_err(|error| format!("plain TGS exchange: {error}"))?;
         assert_eq!(service_ticket.service(), &http);
         let wire = ticket::decode(service_ticket.ticket())?;
         assert_negotiated_enctype("HTTP service ticket", AES256_SHA2, wire.enc_part.etype)?;
@@ -337,16 +338,19 @@ fn ticket_exchange_plain_and_user_to_user() -> Result<(), Box<dyn Error>> {
             alice.components.first().map(String::as_bytes)
         );
 
-        let target = user(
+        // The requester is the preauthenticated user: MIT refuses a TGS request whose
+        // TGT lacks the pre-authent flag for a +requires_preauth server
+        // (kdc_tgs.c "NO PREAUTH"), so the requires_preauth user asks for a ticket to
+        // the plain user, encrypted in the plain user's TGT session key.
+        let (requester, requester_password) = user(
             "INTEROP_MIT_PREAUTH_USER",
             "INTEROP_MIT_PREAUTH_USER_PASSWORD",
         )?;
-        let target_name = target.0.clone();
-        let target_tgt = tgt(&config, target, 7).await?;
+        let requester_tgt = tgt(&config, (requester.clone(), requester_password), 7).await?;
         let mut u2u = TicketCreds::new(
-            client,
-            target_name,
-            TicketOptions::new(tgs_options(&config, 8)?).with_user_to_user(target_tgt.ticket())?,
+            requester_tgt,
+            alice,
+            TicketOptions::new(tgs_options(&config, 8)?).with_user_to_user(client.ticket())?,
         )?;
         let user_ticket = drive_tokio(
             &transport(),
@@ -354,9 +358,10 @@ fn ticket_exchange_plain_and_user_to_user() -> Result<(), Box<dyn Error>> {
             &mut u2u,
             &mut NoResponder::default(),
         )
-        .await?;
+        .await
+        .map_err(|error| format!("user-to-user TGS exchange: {error}"))?;
         let user_wire = ticket::decode(user_ticket.ticket())?;
-        let user_opened = ticket::decrypt_ticket_enc_part(&user_wire, target_tgt.session_key())
+        let user_opened = ticket::decrypt_ticket_enc_part(&user_wire, client.session_key())
             .map_err(|error| format!("not encrypted in the target TGT session key: {error}"))?;
         assert_eq!(
             user_opened
@@ -364,7 +369,7 @@ fn ticket_exchange_plain_and_user_to_user() -> Result<(), Box<dyn Error>> {
                 .string
                 .first()
                 .map(GeneralString::as_bytes),
-            alice.components.first().map(String::as_bytes),
+            requester.components.first().map(String::as_bytes),
             "the user-to-user ticket names the requesting user"
         );
         Ok::<_, Box<dyn Error>>(())
