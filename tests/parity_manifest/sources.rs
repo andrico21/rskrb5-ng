@@ -97,12 +97,17 @@ fn starts_with_any(line: &str, prefixes: &[&str]) -> bool {
     prefixes.iter().any(|prefix| line.starts_with(prefix))
 }
 
-/// Checks a `tests/...rs::function` or `src/...rs::function` test name against the checkout.
+/// The roots a named test may live under: this crate's tests and sources, and
+/// the sources and tests of the platform-store companion crate (owner
+/// decision D11), whose CI jobs run its live tests.
+const TEST_ROOTS: [&str; 4] = ["tests/", "src/", "rskrb5-ng-os/src/", "rskrb5-ng-os/tests/"];
+
+/// Checks a `<root>/...rs::function` test name against the checkout.
 pub(crate) fn check_test_name(name: &str) -> Result<(), TestError> {
     let (file, function) = name
         .rsplit_once("::")
         .ok_or_else(|| format!("{name}: not path::function"))?;
-    let rooted = file.starts_with("tests/") || file.starts_with("src/");
+    let rooted = starts_with_any(file, &TEST_ROOTS);
     assert!(
         rooted && has_extension(file, "rs") && !file.contains(".."),
         "{name}: bad path"
