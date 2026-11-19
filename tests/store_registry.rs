@@ -166,6 +166,8 @@ mod tests {
             ("wrfile", "wrfile"),
             ("dir", "Dir"),
             ("memory", "MEMORY"),
+            ("kcm", "KCM"),
+            ("kcm-case", "Kcm"),
             ("again", "FAKEREG"),
             ("again-case", "fakereg"),
         ] {
