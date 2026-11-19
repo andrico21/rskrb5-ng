@@ -59,6 +59,8 @@ pub mod file_store;
 
 pub mod in_memory;
 
+pub mod keyring;
+
 pub mod selection;
 
 pub mod stores;
