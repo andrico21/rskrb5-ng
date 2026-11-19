@@ -197,6 +197,9 @@ cmd_all() {
   for suite in "${INTEROP_SUITE_NAMES[@]}"; do
     (cmd_test "$suite") || status=1
   done
+  # Y1-05: a fixture that died after its startup check fails the run, even
+  # when no scenario asked for it.
+  interop_check_alive || status=1
   trap - EXIT
   cmd_down || status=1
   if ((status != 0)); then

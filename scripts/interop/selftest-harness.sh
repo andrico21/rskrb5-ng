@@ -5,7 +5,7 @@
 # scripts are single-quoted on purpose (SC2016).
 # shellcheck disable=SC2016,SC2034,SC2153,SC2317
 # Cases of `run.sh self-test` for the harness itself (plan 2 todo 34):
-# the redaction that fails closed (Y1-01).
+# the redaction that fails closed (Y1-01); the liveness check of every fixture at the end of `all` (Y1-05).
 # No container, network or image is touched. Each group runs in a subshell and prints one line per failed check.
 
 # Y1-01: a missing or unusable secret inventory refuses the log upload.
@@ -97,10 +97,48 @@ interop_self_test_redaction() {
   [[ "$out" == *"samba-tool said: bad password <redacted>"* ]] || bad "lib-dc.sh did not show the scrubbed tail"
 }
 
+# Y1-05: every registered fixture, and every labelled container, must still run
+# when `all` is about to report success.
+interop_self_test_liveness() {
+  local out state
+  bad() { printf 'liveness: %s\n' "$*"; }
+  INTEROP_RT=stub
+  INTEROP_FIXTURES=(alpha beta)
+  INTEROP_SUITE_NAMES=(one)
+  declare -A states=()
+  interop_rt() {
+    case "$1" in
+      ps) printf '%s\n' "${!states[@]}" ;;
+      inspect)
+        [[ -n "${states[${*: -1}]:-}" ]] || return 1
+        printf '%s' "${states[${*: -1}]}"
+        ;;
+    esac
+  }
+  cmd_up() { :; }
+  cmd_test() { :; }
+  cmd_down() { :; }
+  states=([rskrb5-interop-alpha]=running [rskrb5-interop-beta]=running [rskrb5-interop-beta-iso]=running)
+  out="$( (cmd_all) 2>&1)" || bad "all failed with every container running: $out"
+  [[ "$out" == *"all suites passed"* ]] || bad "all did not report success with every container running"
+  for state in exited missing; do
+    case "$state" in
+      exited) states=([rskrb5-interop-alpha]=running [rskrb5-interop-beta]=exited [rskrb5-interop-beta-iso]=running) ;;
+      missing) states=([rskrb5-interop-alpha]=running [rskrb5-interop-beta-iso]=running) ;;
+    esac
+    out="$( (cmd_all) 2>&1)" && bad "all passed with the beta fixture $state"
+    [[ "$out" != *"all suites passed"* ]] || bad "all reported success with the beta fixture $state"
+    [[ "$out" == *"fixture beta"* ]] || bad "the failure with beta $state did not name the fixture: $out"
+  done
+  states=([rskrb5-interop-alpha]=running [rskrb5-interop-beta]=running [rskrb5-interop-beta-iso]=exited)
+  out="$( (cmd_all) 2>&1)" && bad "all passed with a stopped labelled container"
+  [[ "$out" == *"rskrb5-interop-beta-iso"* ]] || bad "the failure did not name the stopped container: $out"
+}
+
 # Runs the groups above; $1 is the failure reporter of interop_self_test, $2 its scratch directory.
 interop_self_test_harness_groups() {
   local report="$1" group out
-  for group in redaction; do
+  for group in redaction liveness; do
     out="$("interop_self_test_$group" "$2" 2>&1)" || true
     [[ -z "$out" ]] || "$report" "harness $group:"$'\n'"$out"
   done

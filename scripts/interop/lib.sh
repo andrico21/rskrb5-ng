@@ -62,6 +62,9 @@
 #   is a test failure whose message names the fixture, its endpoint and its
 #   container. Every scenario asserts the negotiated mechanism or protocol
 #   (harness::assert_negotiated_* helpers) so a fallback cannot pass.
+# Liveness. After the last suite `run.sh all` calls interop_check_alive: every
+#   registered fixture's container and every other labelled container must
+#   still run, or the run fails naming it (Y1-05).
 # Suites. `run.sh test <suite>` runs `cargo test --all-features --locked
 #   --test <target> -- --nocapture --test-threads=1` and, in required mode,
 #   fails unless every listed `scenarios::` test printed `interop: ran` and
@@ -466,4 +469,27 @@ interop_run_container() {
   interop_rt run -d --name "$(interop_container_name "$fixture")" \
     --label "$INTEROP_LABEL=1" --network "$INTEROP_NETWORK" \
     --tmpfs /run/interop:rw,mode=0700 "$@" "$image" >/dev/null
+}
+
+# interop_check_alive: fails, naming each one, unless every registered
+# fixture's container and every other container this run labelled is still
+# running (Y1-05). `all` calls it after the last suite and before it reports
+# success, so a fixture that died after its own startup check cannot pass.
+interop_check_alive() {
+  local fixture name state status=0
+  for fixture in "${INTEROP_FIXTURES[@]}"; do
+    state="$(interop_container_state "$(interop_container_name "$fixture")")"
+    if [[ "$state" != running ]]; then
+      interop_log "fixture $fixture (container $(interop_container_name "$fixture")) is not running at the end of the run (state: $state)"
+      status=1
+    fi
+  done
+  for name in $(interop_rt ps -a --filter "label=$INTEROP_LABEL" --format '{{.Names}}' 2>/dev/null); do
+    state="$(interop_container_state "$name")"
+    if [[ "$state" != running ]]; then
+      interop_log "container $name is not running at the end of the run (state: $state)"
+      status=1
+    fi
+  done
+  return "$status"
 }
