@@ -133,7 +133,10 @@ everything else is timeless or a dated record.
    dependency enters only through `docs/dependency-admission.md` (`dep_admission.py`).
 8. **CI is the core Section 12 list plus rmcp-server-kit's stricter practice,** all
    blocking: `fmt`; clippy and tests in every feature closure (`closures`);
-   `clippy-windows`; `lib-feature-sets`; `readme-commands`; `test` on Linux, macOS and
+   `clippy-windows`; `clippy-macos`; `platform-macos`, `platform-windows` and `miri-os`
+   (the platform stores of the companion crate against real services, Miri and its
+   unsafe audit);
+   `lib-feature-sets`; `readme-commands`; `test` on Linux, macOS and
    Windows; `i686`; `docs` (rustdoc `-D warnings` on stable and the dated nightly);
    `msrv`; `semver-checks`; `publish-dryrun`; `consumer` (the packaged crate as a path
    dependency with warnings denied, in the consumer's feature set and with default
