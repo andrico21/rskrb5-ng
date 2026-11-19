@@ -472,7 +472,7 @@ def self_test() -> int:
     full = {field: "recorded" for field in FIELDS}
     records = {
         "camellia": full | {"Version": "0.2.0"},
-        "rustix": full | {"Version": "1.0.0", "Features": "fs, process"},
+        "rustix": full | {"Version": "1.0.0", "Features": "process"},
         "newcrate": full | {"Version": "1.0.0"},
     }
     baseline = frozenset({("normal", "aes")})
@@ -487,8 +487,17 @@ def self_test() -> int:
     exception = {
         "version": "1",
         "default-features": False,
-        "features": ["fs", "process"],
+        "features": ["process"],
     }
+    # The accepted fixture is the production declaration (Y2-01): a feature set
+    # the manifest does not declare must not be what the self-test accepts.
+    production = tomllib.loads(
+        (Path(__file__).resolve().parents[2] / "Cargo.toml").read_text(encoding="utf-8")
+    )["target"][RUSTIX_TABLE]["dependencies"]["rustix"]
+    assert exception["features"] == production["features"], (
+        f"self-test accepts rustix features {exception['features']}, "
+        f"Cargo.toml declares {production['features']}"
+    )
 
     def variant(path: tuple[str, ...], name: str, spec: object, source: dict = base) -> dict:
         manifest = copy.deepcopy(source)
@@ -531,7 +540,8 @@ def self_test() -> int:
     expect(variant(("dependencies",), "rustix", dict(exception)), "non-optional rustix", "rustix in [dependencies]")
     expect(variant(("target", "cfg(unix)", "dependencies"), "rustix", dict(exception)), "non-optional rustix", "rustix in another target table")
     expect(variant(("target", 'cfg(target_os = "linux")', "dependencies"), "rustix", dict(exception)), "non-optional rustix", "rustix in the Linux table")
-    expect(variant(table, "rustix", exception | {"features": ["fs", "process", "net"]}), "unlisted: ['net']", "rustix with an unlisted feature")
+    expect(variant(table, "rustix", exception | {"features": ["process", "fs"]}), "unlisted: ['fs']", "rustix with the obsolete fs feature")
+    expect(variant(table, "rustix", exception | {"features": ["process", "net"]}), "unlisted: ['net']", "rustix with an unlisted feature")
     expect(variant(table, "rustix", exception | {"default-features": True}), "default-features = false", "rustix with default features")
     expect(variant(table, "newcrate", "1", variant(table, "rustix", exception)), "non-optional new dependency `newcrate`", "a second non-optional dependency")
     expect(variant(("dev-dependencies",), "rustix", "1"), None, "a dev rustix needs only its record")
