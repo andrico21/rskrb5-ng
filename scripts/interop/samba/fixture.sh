@@ -145,8 +145,11 @@ samba_env() {
 
 fixture_samba_res_up() {
   local image prefix=INTEROP_SAMBA_RES out="$INTEROP_STATE_DIR/samba-res"
-  local kdc="${INTEROP_SAMBA_RES_KDC_PORT:-19310}" kpasswd="${INTEROP_SAMBA_RES_KPASSWD_PORT:-19311}"
-  local ldap="${INTEROP_SAMBA_RES_LDAP_PORT:-19312}" ldaps="${INTEROP_SAMBA_RES_LDAPS_PORT:-19313}"
+  local kdc kpasswd ldap ldaps
+  kdc="$(interop_port INTEROP_SAMBA_RES_KDC_PORT 19310)" || return 1
+  kpasswd="$(interop_port INTEROP_SAMBA_RES_KPASSWD_PORT 19311)" || return 1
+  ldap="$(interop_port INTEROP_SAMBA_RES_LDAP_PORT 19312)" || return 1
+  ldaps="$(interop_port INTEROP_SAMBA_RES_LDAPS_PORT 19313)" || return 1
   image="$(interop_build_image samba "$INTEROP_ROOT/scripts/interop/samba")" || return 1
   interop_env "${prefix}_IMAGE" "$image"
   interop_env "${prefix}_ADMIN_PASSWORD" "$(samba_new_admin_password)"
@@ -167,8 +170,11 @@ fixture_samba_res_up() {
 
 fixture_samba_user_up() {
   local image prefix=INTEROP_SAMBA_USER out="$INTEROP_STATE_DIR/samba-user" name
-  local kdc="${INTEROP_SAMBA_USER_KDC_PORT:-19300}" kpasswd="${INTEROP_SAMBA_USER_KPASSWD_PORT:-19301}"
-  local ldap="${INTEROP_SAMBA_USER_LDAP_PORT:-19302}" ldaps="${INTEROP_SAMBA_USER_LDAPS_PORT:-19303}"
+  local kdc kpasswd ldap ldaps
+  kdc="$(interop_port INTEROP_SAMBA_USER_KDC_PORT 19300)" || return 1
+  kpasswd="$(interop_port INTEROP_SAMBA_USER_KPASSWD_PORT 19301)" || return 1
+  ldap="$(interop_port INTEROP_SAMBA_USER_LDAP_PORT 19302)" || return 1
+  ldaps="$(interop_port INTEROP_SAMBA_USER_LDAPS_PORT 19303)" || return 1
   local -a secrets=()
   [[ -n "${INTEROP_SAMBA_RES_ADMIN_PASSWORD:-}" ]] ||
     interop_die "fixture samba-user needs samba-res (its trust partner) started first" || return 1

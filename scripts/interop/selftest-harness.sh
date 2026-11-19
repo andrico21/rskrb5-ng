@@ -5,7 +5,7 @@
 # scripts are single-quoted on purpose (SC2016).
 # shellcheck disable=SC2016,SC2034,SC2153,SC2317
 # Cases of `run.sh self-test` for the harness itself (plan 2 todo 34):
-# the redaction that fails closed (Y1-01); the liveness check of every fixture at the end of `all` (Y1-05).
+# the redaction that fails closed (Y1-01); the liveness check of every fixture at the end of `all` (Y1-05); run namespaces and host-port offsets (FU-IOP-P01).
 # No container, network or image is touched. Each group runs in a subshell and prints one line per failed check.
 
 # Y1-01: a missing or unusable secret inventory refuses the log upload.
@@ -97,6 +97,64 @@ interop_self_test_redaction() {
   [[ "$out" == *"samba-tool said: bad password <redacted>"* ]] || bad "lib-dc.sh did not show the scrubbed tail"
 }
 
+# FU-IOP-P01: a namespace scopes every name; host ports move by an offset.
+interop_self_test_namespace() {
+  local scratch="$1/namespace" out calls
+  mkdir -p "$scratch"
+  calls="$scratch/calls"
+  bad() { printf 'namespace: %s\n' "$*"; }
+  probe() {
+    # probe NAMESPACE: prints the derived names (or fails to source lib.sh).
+    env -u INTEROP_PORT_OFFSET INTEROP_NAMESPACE="$1" bash -c \
+      'source "$1/scripts/interop/lib.sh" && printf "%s|%s|%s" "$INTEROP_NETWORK" "$INTEROP_LABEL" "$(interop_container_name mit-kdc)"' \
+      _ "$INTEROP_ROOT" 2>/dev/null
+  }
+  [[ "$(probe "")" == "rskrb5-interop|rskrb5-interop|rskrb5-interop-mit-kdc" ]] ||
+    bad "the default names changed: $(probe "")"
+  out="$(probe abc2)"
+  [[ "$out" == "rskrb5-interop--abc2|rskrb5-interop--abc2|rskrb5-interop--abc2-mit-kdc" ]] ||
+    bad "namespace abc2 gave '$out'"
+  for out in Bad a-b 1x abcdefghijklmnopq 'a b'; do
+    if probe "$out" >/dev/null; then
+      bad "the namespace '$out' was accepted"
+    fi
+  done
+
+  # up and down of a namespace only look at, create and remove its own labelled resources.
+  : >"$calls"
+  env INTEROP_NAMESPACE=abc2 CALLS="$calls" bash -c '
+    source "$1/scripts/interop/lib.sh"
+    INTEROP_RT=stub
+    interop_rt() { printf "%s\n" "$*" >>"$CALLS"; }
+    interop_remove_all >/dev/null 2>&1
+    interop_create_network
+    interop_run_container mit-kdc image:tag
+  ' _ "$INTEROP_ROOT" || bad "the namespaced stub run failed"
+  grep -q -- '--filter label=rskrb5-interop--abc2$' "$calls" || bad "remove_all did not filter on the namespace label"
+  ! grep -- '--filter' "$calls" | grep -qv -- '--filter label=rskrb5-interop--abc2$' ||
+    bad "remove_all filtered on another label: $(grep -- '--filter' "$calls" | tr '\n' '|')"
+  grep -q -- 'network create --label rskrb5-interop--abc2=1 rskrb5-interop--abc2' "$calls" ||
+    bad "the network and its label are not namespaced"
+  grep -q -- 'run -d --name rskrb5-interop--abc2-mit-kdc --label rskrb5-interop--abc2=1 --network rskrb5-interop--abc2 ' "$calls" ||
+    bad "the container name, label and network are not namespaced: $(grep -- 'run -d' "$calls")"
+
+  # Ports: explicit variable, default, offset, and refusals.
+  port() {
+    # port OFFSET VARIABLE-VALUE: INTEROP_T_PORT=<value> interop_port INTEROP_T_PORT 18088
+    env INTEROP_PORT_OFFSET="$1" INTEROP_T_PORT="$2" bash -c \
+      'source "$1/scripts/interop/lib.sh" && interop_port INTEROP_T_PORT 18088' _ "$INTEROP_ROOT" 2>/dev/null
+  }
+  [[ "$(port 0 "")" == 18088 ]] || bad "the default port moved without an offset: $(port 0 "")"
+  [[ "$(port 100 "")" == 18188 ]] || bad "the offset was not added: $(port 100 "")"
+  [[ "$(port 100 20000)" == 20000 ]] || bad "an explicit port lost against the offset"
+  if port 60000 "" >/dev/null; then bad "a port above 65535 was accepted"; fi
+  if port abc "" >/dev/null; then bad "a non-numeric offset was accepted"; fi
+  if port 0 "x1" >/dev/null; then bad "a non-numeric explicit port was accepted"; fi
+  # A fixture that publishes a default port through a literal skips the offset.
+  out="$(grep -n '_PORT:-[0-9]' "$INTEROP_ROOT"/scripts/interop/*/fixture.sh || true)"
+  [[ -z "$out" ]] || bad "fixtures with a literal default port (use interop_port): $out"
+}
+
 # Y1-05: every registered fixture, and every labelled container, must still run
 # when `all` is about to report success.
 interop_self_test_liveness() {
@@ -138,7 +196,7 @@ interop_self_test_liveness() {
 # Runs the groups above; $1 is the failure reporter of interop_self_test, $2 its scratch directory.
 interop_self_test_harness_groups() {
   local report="$1" group out
-  for group in redaction liveness; do
+  for group in redaction liveness namespace; do
     out="$("interop_self_test_$group" "$2" 2>&1)" || true
     [[ -z "$out" ]] || "$report" "harness $group:"$'\n'"$out"
   done

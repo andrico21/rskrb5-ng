@@ -76,6 +76,34 @@ fn required_unreachable_fixture_fails_naming_it() -> Result<(), Box<dyn Error>> 
     Ok(())
 }
 
+/// A run namespace (`INTEROP_CONTAINER_PREFIX` in the env file) puts its own
+/// container name into the failure, so the report points at the right container.
+#[test]
+fn required_failure_names_the_namespaced_container() -> Result<(), Box<dyn Error>> {
+    const PATH: &str = "harness::tests::required_failure_names_the_namespaced_container";
+    if child_env::in_child(PATH) {
+        return require_in_child();
+    }
+    let endpoint = closed_endpoint()?;
+    let report = child_env::try_run_in_child(
+        PATH,
+        &[
+            ("INTEROP", Some(OsStr::new("1"))),
+            ("INTEROP_REQUIRED", Some(OsStr::new("1"))),
+            ("INTEGRATION_REQUIRED", None),
+            ("INTEROP_CONTAINER_PREFIX", Some(OsStr::new("rskrb5-interop--t34"))),
+            (ENDPOINT_KEY, Some(OsStr::new(&endpoint))),
+        ],
+    )
+    .err()
+    .ok_or("required mode passed with an unreachable fixture")?;
+    assert!(
+        report.contains("(container rskrb5-interop--t34-mit-kdc)"),
+        "the failure does not name the namespaced container: {report}"
+    );
+    Ok(())
+}
+
 /// Plan 1's `INTEGRATION_REQUIRED=1` makes the interop suite required too.
 #[test]
 fn integration_required_implies_interop_required() -> Result<(), Box<dyn Error>> {

@@ -56,7 +56,7 @@ fixture_radius_up() {
   local fixture=radius container image dir port
   container="$(interop_container_name "$fixture")"
   local host=127.0.0.1
-  port="${INTEROP_RADIUS_PORT:-19001}"
+  port="$(interop_port INTEROP_RADIUS_PORT 19001)" || return 1
   dir="$INTEROP_ROOT/scripts/interop/radius"
   [[ -n "${INTEROP_RADIUS_SHARED_SECRET:-}" && -n "${INTEROP_MIT_OTP_TOKEN:-}" ]] ||
     interop_die "fixture $fixture needs the secrets of fixture mit-kdc: start mit-kdc first" || return 1

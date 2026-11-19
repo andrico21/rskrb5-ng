@@ -4,10 +4,10 @@
 set -euo pipefail
 
 INTEROP_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-INTEROP_STATE_DIR="${INTEROP_STATE_DIR:-"$INTEROP_ROOT/target/interop"}"
-INTEROP_ENV_FILE="$INTEROP_STATE_DIR/interop.env"
 # shellcheck source=scripts/interop/lib.sh
 source "$INTEROP_ROOT/scripts/interop/lib.sh"
+INTEROP_STATE_DIR="${INTEROP_STATE_DIR:-"$INTEROP_ROOT/target/interop${INTEROP_NAMESPACE:+-$INTEROP_NAMESPACE}"}"
+INTEROP_ENV_FILE="$INTEROP_STATE_DIR/interop.env"
 
 usage() {
   cat <<'EOF'
@@ -37,8 +37,16 @@ Environment:
   INTEROP_RUNTIME       docker | podman (default: docker if its daemon answers,
                         else podman). Plain run/exec, user-defined network, no
                         compose, no privileged containers.
-  INTEROP_STATE_DIR     Private per-run directory (default target/interop):
-                        env file, keytabs and caches, mode 0700/0600.
+  INTEROP_STATE_DIR     Private per-run directory (default target/interop, or
+                        target/interop-<namespace>): env file, secret inventory,
+                        keytabs and caches, mode 0700/0600.
+  INTEROP_NAMESPACE     Optional run namespace ([a-z][a-z0-9]*, at most 16
+                        characters). Every container, network and label of the
+                        run is named rskrb5-interop--<namespace>..., so `up` and
+                        `down` of two namespaces never touch each other.
+  INTEROP_PORT_OFFSET   Number added to every default host port (the fixtures'
+                        *_PORT variables still win), so two concurrent runs can
+                        publish side by side.
   INTEROP_LOG_DIR       Where `down` puts redacted fixture logs.
   INTEROP_READY_TIMEOUT Readiness bound per fixture in seconds (default 180).
   INTEROP_MIT_KDC_PORT, INTEROP_MIT_KPASSWD_PORT, INTEROP_MIT_KADMIN_PORT
@@ -81,6 +89,7 @@ cmd_up() {
   interop_env INTEROP 1
   interop_env INTEROP_RUNTIME "$INTEROP_RT"
   interop_env INTEROP_STATE_DIR "$INTEROP_STATE_DIR"
+  interop_env INTEROP_CONTAINER_PREFIX "$INTEROP_PREFIX"
   interop_create_network
   local fixture id
   for fixture in "${INTEROP_FIXTURES[@]}"; do

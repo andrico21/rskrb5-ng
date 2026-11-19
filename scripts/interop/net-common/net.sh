@@ -124,7 +124,7 @@ net_check_run() {
   done
   [[ "${1:-}" == -- ]] || interop_die "net_check_run $name: missing -- before the command" || return 1
   shift
-  interop_rt run --rm --name "rskrb5-interop-check-$name" --label "$INTEROP_LABEL=1" \
+  interop_rt run --rm --name "$INTEROP_PREFIX-check-$name" --label "$INTEROP_LABEL=1" \
     --network "$INTEROP_NETWORK" --entrypoint /bin/bash "${options[@]}" "$image" -c "$@" 2>&1
 }
 

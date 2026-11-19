@@ -19,7 +19,13 @@
 #                                                 e.g. interop_suite mit interop_mit mit-kdc
 #   Names: container `rskrb5-interop-<name>` (interop_container_name), on the
 #   user-defined network `rskrb5-interop`, labelled `rskrb5-interop=1` (down
-#   removes every labelled container, network and volume). Images are tagged
+#   removes every labelled container, network and volume). All three derive
+#   from INTEROP_PREFIX, which INTEROP_NAMESPACE=<ns> turns into
+#   `rskrb5-interop--<ns>` (FU-IOP-P01): build every name from INTEROP_PREFIX,
+#   INTEROP_NETWORK, INTEROP_LABEL and interop_container_name, never a literal.
+#   Host ports: `interop_port VARIABLE DEFAULT` (the variable wins, else the
+#   default plus INTEROP_PORT_OFFSET); a literal `${VARIABLE:-1234}` fails the
+#   self-test. Images are tagged
 #   `rskrb5-interop/<name>:<12 hex of the build context sha256>` (fixture.sh
 #   excluded, also through .dockerignore), never latest;
 #   base images are pinned by digest in the Dockerfile. Ports are published on
@@ -71,8 +77,31 @@
 #   none printed SKIP; on failure it prints the state of the suite's fixtures.
 # =============================================================================
 
-readonly INTEROP_NETWORK=rskrb5-interop
-readonly INTEROP_LABEL=rskrb5-interop
+# Run namespace (FU-IOP-P01). INTEROP_NAMESPACE (default empty) scopes every
+# name this run creates: the label key, the network (and the isolated peer
+# network), the containers and the check containers all start with
+# INTEROP_PREFIX, so `up` and `down` of one namespace never touch the
+# resources of another run on the same container runtime. With no namespace
+# the prefix is `rskrb5-interop` (today's names). A namespace is [a-z][a-z0-9]*
+# of at most 16 characters and joins as `rskrb5-interop--<namespace>`: the
+# double hyphen cannot occur right after the prefix of an un-namespaced
+# container (`rskrb5-interop-<fixture>`, fixture names start with a letter),
+# so two namespaces, or one namespace and the default, cannot collide.
+# INTEROP_PORT_OFFSET (default 0) moves every default host port by a number
+# (interop_port); the state directory is target/interop[-<namespace>].
+if [[ -n "${INTEROP_NAMESPACE:-}" && ! "${INTEROP_NAMESPACE}" =~ ^[a-z][a-z0-9]{0,15}$ ]]; then
+  printf 'interop: ERROR: INTEROP_NAMESPACE must match [a-z][a-z0-9]* (at most 16 characters), not "%s"\n' \
+    "$INTEROP_NAMESPACE" >&2
+  return 1
+fi
+if [[ -n "${INTEROP_PORT_OFFSET:-}" && ! "${INTEROP_PORT_OFFSET}" =~ ^[0-9]{1,5}$ ]]; then
+  printf 'interop: ERROR: INTEROP_PORT_OFFSET must be a number of at most five digits, not "%s"\n' \
+    "$INTEROP_PORT_OFFSET" >&2
+  return 1
+fi
+readonly INTEROP_PREFIX="rskrb5-interop${INTEROP_NAMESPACE:+--$INTEROP_NAMESPACE}"
+readonly INTEROP_NETWORK="$INTEROP_PREFIX"
+readonly INTEROP_LABEL="$INTEROP_PREFIX"
 INTEROP_FIXTURES=()
 INTEROP_SUITE_NAMES=()
 INTEROP_SUITE_TARGETS=()
@@ -126,7 +155,19 @@ interop_fixture_id() {
 }
 
 interop_container_name() {
-  printf 'rskrb5-interop-%s' "$1"
+  printf '%s-%s' "$INTEROP_PREFIX" "$1"
+}
+
+# interop_port VARIABLE DEFAULT: prints the host port a fixture publishes: the
+# value of VARIABLE when set, else DEFAULT plus INTEROP_PORT_OFFSET.
+interop_port() {
+  local port="${!1:-}"
+  if [[ -z "$port" ]]; then
+    port=$(($2 + 10#${INTEROP_PORT_OFFSET:-0}))
+  fi
+  [[ "$port" =~ ^[0-9]+$ ]] && ((port >= 1 && port <= 65535)) ||
+    interop_die "host port for $1 is '$port', not a port number" || return 1
+  printf '%s' "$port"
 }
 
 interop_fixture() {

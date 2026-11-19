@@ -21,7 +21,9 @@ use std::{
 /// A container fixture a scenario needs.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Fixture {
-    /// Fixture name; its container is `rskrb5-interop-<name>`.
+    /// Fixture name; its container is `<prefix>-<name>`, the prefix being
+    /// `rskrb5-interop` unless the run has a namespace (see
+    /// [`container_prefix`]).
     name: &'static str,
     /// Env-file key holding the fixture's TCP endpoint (`host:port`).
     endpoint_key: &'static str,
@@ -47,12 +49,23 @@ pub(crate) struct FixtureUnavailable {
     reason: String,
 }
 
+/// The container-name prefix of this run: `INTEROP_CONTAINER_PREFIX` from the
+/// env file (`rskrb5-interop--<namespace>` in a namespaced run), else
+/// `rskrb5-interop`.
+fn container_prefix() -> String {
+    env::var("INTEROP_CONTAINER_PREFIX").unwrap_or_else(|_| "rskrb5-interop".to_owned())
+}
+
 impl fmt::Display for FixtureUnavailable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "required interop fixture unreachable: {} at {} (container rskrb5-interop-{}): {}",
-            self.fixture, self.endpoint, self.fixture, self.reason
+            "required interop fixture unreachable: {} at {} (container {}-{}): {}",
+            self.fixture,
+            self.endpoint,
+            container_prefix(),
+            self.fixture,
+            self.reason
         )
     }
 }

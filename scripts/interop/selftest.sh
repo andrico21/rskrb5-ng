@@ -303,8 +303,8 @@ interop_preauth_self_test() {
       [[ -z "$(find "$dir/mit/$file" -maxdepth 1 -type f -name '[0-9][0-9]-*' -printf '%f\n' | cut -c1-2 | sort | uniq -d)" ]] ||
         bad "mit/$file holds two drop-ins with the same prefix"
     done
-    prefix="$(grep -o 'INTEROP_RADIUS_PORT:-[0-9]*' "$dir/radius/fixture.sh" | head -1)"
-    prefix="${prefix##*-}"
+    prefix="$(grep -o 'interop_port INTEROP_RADIUS_PORT [0-9]*' "$dir/radius/fixture.sh" | head -1)"
+    prefix="${prefix##* }"
     ((prefix >= 19000 && prefix <= 19099)) || bad "the radius host port ${prefix:-unset} is outside 19000-19099"
 
     # Every image of the fixture is pinned by digest.

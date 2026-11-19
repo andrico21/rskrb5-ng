@@ -88,9 +88,10 @@ fixture_mit_kdc_up() {
   local fixture=mit-kdc container image dir out
   container="$(interop_container_name "$fixture")"
   local host=127.0.0.1
-  local kdc_port="${INTEROP_MIT_KDC_PORT:-18088}"
-  local kpasswd_port="${INTEROP_MIT_KPASSWD_PORT:-18464}"
-  local kadmin_port="${INTEROP_MIT_KADMIN_PORT:-18749}"
+  local kdc_port kpasswd_port kadmin_port
+  kdc_port="$(interop_port INTEROP_MIT_KDC_PORT 18088)" || return 1
+  kpasswd_port="$(interop_port INTEROP_MIT_KPASSWD_PORT 18464)" || return 1
+  kadmin_port="$(interop_port INTEROP_MIT_KADMIN_PORT 18749)" || return 1
   dir="$INTEROP_ROOT/scripts/interop/mit"
   out="$INTEROP_STATE_DIR/mit"
 

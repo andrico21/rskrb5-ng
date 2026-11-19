@@ -52,7 +52,8 @@ EOF
 
 fixture_httpd_up() {
   local fixture=httpd container dir out image host=127.0.0.1
-  local port="${INTEROP_HTTPD_PORT:-19180}"
+  local port
+  port="$(interop_port INTEROP_HTTPD_PORT 19180)" || return 1
   container="$(interop_container_name "$fixture")"
   dir="$INTEROP_ROOT/scripts/interop/net-httpd"
   out="$INTEROP_STATE_DIR/httpd"

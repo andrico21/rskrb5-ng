@@ -27,7 +27,7 @@
 interop_fixture mit-peer
 interop_suite peer interop_peer mit-kdc mit-peer mit-peer-iso
 
-readonly PEER_ISO_NETWORK=rskrb5-interop-iso
+readonly PEER_ISO_NETWORK="$INTEROP_PREFIX-iso"
 readonly PEER_HOSTNAME=mit-peer.test.rskrb5
 readonly PEER_KDC_ALIAS=kdc.test.rskrb5
 readonly PEER_SELFCHECK=/opt/interop/peer/selfcheck.sh
@@ -147,7 +147,9 @@ peer_selfcheck_gss() {
 
 fixture_mit_peer_up() {
   local fixture=mit-peer main iso image dir out kdc kdc_ip host=127.0.0.1
-  local port="${INTEROP_MIT_PEER_PORT:-19401}" iso_port="${INTEROP_MIT_PEER_ISO_PORT:-19402}"
+  local port iso_port
+  port="$(interop_port INTEROP_MIT_PEER_PORT 19401)" || return 1
+  iso_port="$(interop_port INTEROP_MIT_PEER_ISO_PORT 19402)" || return 1
   main="$(interop_container_name mit-peer)"
   iso="$(interop_container_name mit-peer-iso)"
   kdc="$(interop_container_name mit-kdc)"
