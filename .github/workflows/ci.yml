@@ -129,6 +129,8 @@ jobs:
           - "--features evaluation,tower"
           - "--features camellia"
           - "--no-default-features --features camellia"
+          - "--features ccache-keyring"
+          - "--no-default-features --features ccache-keyring"
           - "--all-features"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -142,6 +144,36 @@ jobs:
         run: cargo clippy --all-targets ${{ matrix.closures }} -- -D warnings
       - name: Test (${{ matrix.closures }})
         run: cargo test ${{ matrix.closures }}
+
+  keyring:
+    name: keyring
+    # The Linux kernel keyring cache type (`ccache-keyring`) against a real
+    # kernel. An `ubuntu-latest` VM has the key-management facility, so the
+    # tests run in required mode: ENOSYS or EPERM from keyctl fails them here
+    # instead of skipping (the tests print `keyring: SKIP` only outside it).
+    runs-on: ubuntu-latest
+    env:
+      RSKRB5_KEYRING_REQUIRED: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Kernel keyring tests (required mode, none skipped)
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --locked --no-default-features --features ccache-keyring --lib --test ccache_keyring keyring -- --nocapture 2>&1 | tee keyring-test.log
+          if grep -q 'keyring: SKIP' keyring-test.log; then
+            echo "::error::a keyring test skipped in required mode"
+            exit 1
+          fi
+          unit=$(grep -c '^test ccache::keyring::.* ok$' keyring-test.log || true)
+          real=$(grep -c '^test \(kernel\|namespaces\)::.* ok$' keyring-test.log || true)
+          echo "unit tests ok: $unit, kernel tests ok: $real"
+          if [ "$unit" -lt 43 ] || [ "$real" -lt 8 ]; then
+            echo "::error::expected at least 43 unit and 8 kernel keyring tests, got $unit and $real"
+            exit 1
+          fi
 
   clippy-windows:
     name: clippy-windows
