@@ -45,6 +45,11 @@ tests = [
   "tests/interop_camellia/",
 ]
 
+# The platform-store companion crate (owner decision D11); it depends on this
+# crate, never the reverse, and is not published.
+[workspace]
+members = ["rskrb5-ng-os"]
+
 [lib]
 name = "rskrb5_ng"
 
