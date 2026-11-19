@@ -3,7 +3,7 @@
 # sourced by scripts/interop/run.sh. See the layout contract in
 # scripts/interop/lib.sh.
 #
-# Topology (one image, rskrb5-interop/samba:<hash>, Debian trixie Samba 4.22):
+# Topology (one image, rskrb5-interop/samba:<hash>, Debian trixie Samba 4.22.11 from a pinned snapshot):
 #
 #   rskrb5-interop-samba-user                rskrb5-interop-samba-res
 #   DC dcuser.user.rskrb5                    DC dcres.res.rskrb5
@@ -91,6 +91,17 @@ samba_start() {
   done
 }
 
+# samba_record_version IMAGE: logs the exact Samba package version the image
+# was built with (its label, set from the Dockerfile's SAMBA_VERSION pin) and
+# records it as INTEROP_SAMBA_VERSION.
+samba_record_version() {
+  local version
+  version="$(interop_rt image inspect -f '{{index .Config.Labels "org.rskrb5.interop.samba-version"}}' "$1")" || version=""
+  [[ -n "$version" ]] || interop_die "image $1 carries no org.rskrb5.interop.samba-version label" || return 1
+  interop_log "image $1 carries Samba $version (pinned snapshot)"
+  interop_env INTEROP_SAMBA_VERSION "$version"
+}
+
 # Prints a fresh secret with a lower-case letter, an upper-case letter and a
 # digit: `samba-tool domain provision` checks the administrator password
 # against the default complexity rule (probe run 44307280845 drew one
@@ -151,6 +162,7 @@ fixture_samba_res_up() {
   ldap="$(interop_port INTEROP_SAMBA_RES_LDAP_PORT 19312)" || return 1
   ldaps="$(interop_port INTEROP_SAMBA_RES_LDAPS_PORT 19313)" || return 1
   image="$(interop_build_image samba "$INTEROP_ROOT/scripts/interop/samba")" || return 1
+  samba_record_version "$image" || return 1
   interop_env "${prefix}_IMAGE" "$image"
   interop_env "${prefix}_ADMIN_PASSWORD" "$(samba_new_admin_password)"
   interop_env "${prefix}_HTTP_ACCOUNT_PASSWORD" "$(interop_new_secret)"
@@ -179,6 +191,7 @@ fixture_samba_user_up() {
   [[ -n "${INTEROP_SAMBA_RES_ADMIN_PASSWORD:-}" ]] ||
     interop_die "fixture samba-user needs samba-res (its trust partner) started first" || return 1
   image="$(interop_build_image samba "$INTEROP_ROOT/scripts/interop/samba")" || return 1
+  samba_record_version "$image" || return 1
   interop_env "${prefix}_IMAGE" "$image"
   interop_env "${prefix}_ADMIN_PASSWORD" "$(samba_new_admin_password)"
   secrets+=("${prefix}_ADMIN_PASSWORD")

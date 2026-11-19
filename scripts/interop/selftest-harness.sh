@@ -2,10 +2,13 @@
 # Sourced by selftest.sh: the INTEROP_* globals the stubs set are read by the
 # lib.sh/run.sh functions they replace (SC2034), the stubs are invoked
 # indirectly (SC2317), INTEROP_ROOT comes from run.sh (SC2153) and the `bash -c`
-# scripts are single-quoted on purpose (SC2016).
-# shellcheck disable=SC2016,SC2034,SC2153,SC2317
+# scripts are single-quoted on purpose (SC2016); INTEROP_STATE_DIR is set inside
+# subshells on purpose, to leave no state behind (SC2030).
+# shellcheck disable=SC2016,SC2030,SC2034,SC2153,SC2317
 # Cases of `run.sh self-test` for the harness itself (plan 2 todo 34):
-# the redaction that fails closed (Y1-01); the liveness check of every fixture at the end of `all` (Y1-05); run namespaces and host-port offsets (FU-IOP-P01); the corporate-CA build hook (FU-IOP-P02).
+# the redaction that fails closed (Y1-01); the liveness check of every fixture at the end of `all` (Y1-05);
+# run namespaces and host-port offsets (FU-IOP-P01); the corporate-CA build hook (FU-IOP-P02); the Samba
+# package pin (Y1-03).
 # No container, network or image is touched. Each group runs in a subshell and prints one line per failed check.
 
 # Y1-01: a missing or unusable secret inventory refuses the log upload.
@@ -231,10 +234,37 @@ interop_self_test_liveness() {
   [[ "$out" == *"rskrb5-interop-beta-iso"* ]] || bad "the failure did not name the stopped container: $out"
 }
 
+# Y1-03: the Samba packages come from an immutable snapshot at a recorded exact
+# version, and the fixture records that version.
+interop_self_test_samba_pin() {
+  local dockerfile="$INTEROP_ROOT/scripts/interop/samba/Dockerfile" snapshot version base out
+  bad() { printf 'samba pin: %s\n' "$*"; }
+  snapshot="$(sed -n 's/^ARG SAMBA_SNAPSHOT=\(.*\)$/\1/p' "$dockerfile")"
+  version="$(sed -n 's/^ARG SAMBA_VERSION=\(.*\)$/\1/p' "$dockerfile")"
+  base="$(sed -n 's/^ARG BASE_IMAGE=docker.io\/library\/debian:trixie-\([0-9]\{8\}\)-slim@.*$/\1/p' "$dockerfile")"
+  [[ "$snapshot" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || bad "the Dockerfile has no ARG SAMBA_SNAPSHOT=<YYYYMMDDTHHMMSSZ> ('$snapshot')"
+  [[ "$version" =~ ^2:4\.[0-9]+\.[0-9]+\+dfsg-.+$ ]] || bad "the Dockerfile has no exact ARG SAMBA_VERSION ('$version')"
+  [[ -n "$base" && "${snapshot:0:8}" == "$base" ]] ||
+    bad "the snapshot date '${snapshot:0:8}' is not the date of the pinned base image '$base'"
+  grep -q 'snapshot.debian.org/archive/debian/${SAMBA_SNAPSHOT}/' "$dockerfile" || bad "apt does not read the snapshot"
+  grep -q 'samba=${SAMBA_VERSION}' "$dockerfile" || bad "samba is not installed at the exact version"
+  grep -q "dpkg-query -W -f '\${Version}' samba" "$dockerfile" || bad "the build does not check the installed samba version"
+  # The fixture records the version the image carries.
+  out="$(
+    INTEROP_ENV_NAMES=()
+    interop_rt() { [[ "$*" == *"image inspect"*"samba-version"* ]] && printf '2:4.22.0+dfsg-test'; }
+    # shellcheck source=scripts/interop/samba/fixture.sh
+    source "$INTEROP_ROOT/scripts/interop/samba/fixture.sh"
+    samba_record_version image:tag 2>&1 || exit 1
+    printf '|%s' "${INTEROP_SAMBA_VERSION:-unset}"
+  )" || bad "samba_record_version failed or is missing: $out"
+  [[ "$out" == *"2:4.22.0+dfsg-test"* && "$out" == *"|2:4.22.0+dfsg-test" ]] || bad "the version was not logged and recorded: $out"
+}
+
 # Runs the groups above; $1 is the failure reporter of interop_self_test, $2 its scratch directory.
 interop_self_test_harness_groups() {
   local report="$1" group out
-  for group in redaction liveness namespace build_hook; do
+  for group in redaction liveness namespace build_hook samba_pin; do
     out="$("interop_self_test_$group" "$2" 2>&1)" || true
     [[ -z "$out" ]] || "$report" "harness $group:"$'\n'"$out"
   done
