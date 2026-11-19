@@ -14,9 +14,12 @@ mod tests {
 
     use rasn::der;
     use rskrb5_ng::{
-        client::stepwise::{
-            Answer, ExchangeStep, InitCreds, InitCredsOptions, Prompt, Responder, StepInput,
-            TicketCreds, TicketOptions, drive,
+        client::{
+            AsRepSession,
+            stepwise::{
+                Answer, Exchange, ExchangeStep, InitCreds, InitCredsOptions, Prompt, Responder,
+                StepInput, TicketCreds, TicketOptions, drive,
+            },
         },
         crypto::CryptoPolicy,
         extensions::{
@@ -434,6 +437,48 @@ mod tests {
                 .collect();
             assert_eq!(types, [expected]);
         }
+        Ok(())
+    }
+
+    /// An exchange that completes at once and reports a key expiration.
+    struct Expiring(Option<AsRepSession>);
+
+    impl Exchange for Expiring {
+        fn advance(&mut self, _input: StepInput<'_>) -> Result<ExchangeStep, Error> {
+            let session = self.0.take().ok_or(Error::NoTgtSession)?;
+            Ok(ExchangeStep::Complete(Box::new(session)))
+        }
+
+        fn key_expiration(&self) -> Option<SystemTime> {
+            timestamp(1_893_600_000).ok()
+        }
+    }
+
+    /// A responder that records password-expiry notices.
+    struct ExpiryResponder(Vec<SystemTime>);
+
+    impl Responder for ExpiryResponder {
+        fn respond(&mut self, prompt: &Prompt) -> Result<Answer, ProviderError> {
+            Err(format!("unexpected {prompt:?}").into())
+        }
+
+        fn password_expiry(&mut self, expires: SystemTime) {
+            self.0.push(expires);
+        }
+    }
+
+    /// The driver hands a finished exchange's key expiration to the responder
+    /// (MIT `krb5_get_init_creds_opt_set_expire_callback`).
+    #[test]
+    fn drive_reports_the_password_expiry() -> Result<(), TestError> {
+        let mut responder = ExpiryResponder(Vec::new());
+        let mut exchange = Expiring(Some(sample_tgt_session()?));
+        let mut kdc = PreauthTransport::new(EncryptionKey::new(18, vec![0_u8; 32]), None);
+
+        drop(drive(&mut kdc, &mut exchange, &mut responder)?);
+
+        assert_eq!(responder.0, [timestamp(1_893_600_000)?]);
+        assert_eq!(kdc.calls, 0, "a finished exchange sends nothing");
         Ok(())
     }
 }
