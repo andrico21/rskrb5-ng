@@ -600,6 +600,7 @@ where
                 reply = Some(if let Some(bytes) = reused {
                     bytes
                 } else {
+                    drop(pinned.take());
                     let (bytes, connection) = transport
                         .send_to_realm_pinned(
                             config,
