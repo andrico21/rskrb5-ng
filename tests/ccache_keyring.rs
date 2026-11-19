@@ -8,6 +8,7 @@
 //! namespace tests start this test binary again as a child process.
 
 /// Probing, required mode and shared helpers.
+#[cfg(all(feature = "ccache-keyring", target_os = "linux"))]
 #[cfg(test)]
 #[expect(
     clippy::missing_errors_doc,
@@ -56,11 +57,9 @@ mod namespaces;
 #[cfg(not(all(feature = "ccache-keyring", target_os = "linux")))]
 #[cfg(test)]
 #[expect(
-    clippy::missing_errors_doc,
     clippy::missing_panics_doc,
     reason = "test code is not rendered API documentation"
 )]
-#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod inert {
     use rskrb5_ng::{
         ccache::{
@@ -71,15 +70,13 @@ mod inert {
         error::Ccache as Error,
     };
 
-    use crate::support::TestError;
-
     /// The unsupported-store error stays when the leaf is off.
     #[test]
-    fn keyring_names_stay_unsupported() -> Result<(), TestError> {
+    fn keyring_names_stay_unsupported() {
         assert!(
             matches!(
                 file_store::resolve("KEYRING:process:krb", CacheVersion::V4),
-                Err(Error::UnsupportedCacheType { ref cache_type }) if cache_type == "KEYRING"
+                Err(Error::UnsupportedCacheType { cache_type }) if cache_type == "KEYRING"
             ),
             "resolve"
         );
@@ -97,6 +94,5 @@ mod inert {
             ),
             "store"
         );
-        Ok(())
     }
 }
