@@ -141,7 +141,8 @@ impl CacheCollection for DirCollection {
     }
 
     /// The primary cache when it exists, then every other `tkt*` regular file
-    /// in name order; a malformed pointer lists the files only (MIT
+    /// (no directory, symlink, FIFO or device) in name order; a malformed
+    /// pointer lists the files only (MIT
     /// `dcc_ptcursor_new` ignores it, `cc_dir.c:608-612`). Nothing is written.
     fn caches(&self) -> Result<CacheCursor, Error> {
         let primary = self.primary_name().ok().flatten();
@@ -151,10 +152,8 @@ impl CacheCollection for DirCollection {
             let Ok(file) = entry.file_name().into_string() else {
                 continue;
             };
-            let kind = entry.file_type()?;
             if file.starts_with(DIR_DEFAULT_PRIMARY_CACHE)
-                && !kind.is_dir()
-                && !kind.is_symlink()
+                && entry.metadata()?.is_file()
                 && primary.as_deref() != Some(file.as_str())
             {
                 names.push(file);
@@ -235,15 +234,22 @@ impl CacheCollection for DirCollection {
 ///
 /// # Errors
 ///
-/// [`Error::InvalidCacheName`] for a malformed pointer, `Io` for a symlink or
-/// a read failure.
+/// [`Error::InvalidCacheName`] for a malformed pointer, `Io` for a symlink,
+/// a FIFO or another non-regular file, and for a read failure.
 pub(super) fn read_primary(pointer: &Path) -> Result<Option<String>, Error> {
-    file_name::reject_symlink(pointer)?;
+    locked::reject_special(pointer)?;
     let file = match File::open(pointer) {
         Ok(file) => file,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error.into()),
     };
+    if !file.metadata()?.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "credential cache primary pointer is not a regular file",
+        )
+        .into());
+    }
     let mut line = Vec::new();
     let _: usize = file.take(64).read_to_end(&mut line)?;
     let end = line

@@ -23,7 +23,7 @@ use std::{
     path::Path,
 };
 
-use super::{SecretBytes, reject_symlink, write_private};
+use super::{SecretBytes, write_private};
 
 /// Creation serialization regressions.
 #[cfg(test)]
@@ -120,6 +120,32 @@ fn create_private(path: &Path) -> io::Result<File> {
     options.open(path)
 }
 
+/// Refuse a path that names anything but a regular file before it is opened.
+///
+/// Opening a FIFO blocks, and a symlink may lead elsewhere. An absent path
+/// passes. The opened descriptor is checked again (`check_trusted`); a swap
+/// between the two checks needs write access to the directory, which the
+/// stores exclude (owner-only or sticky directories).
+///
+/// # Errors
+/// Returns `InvalidInput` for a symlink or another non-regular file, and
+/// metadata errors other than absence.
+pub(crate) fn reject_special(path: &Path) -> io::Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "credential destination is a symlink",
+        )),
+        Ok(metadata) if !metadata.is_file() => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "credential file is not a regular file",
+        )),
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
 /// Open and share-lock the file the path names, retrying while it is being
 /// replaced; `None` when it does not exist.
 ///
@@ -127,7 +153,7 @@ fn create_private(path: &Path) -> io::Result<File> {
 /// Returns open, lock and trust errors.
 fn open_shared(path: &Path) -> io::Result<Option<File>> {
     for _ in 0..ATTEMPTS {
-        reject_symlink(path)?;
+        reject_special(path)?;
         let file = match OpenOptions::new().read(true).open(path) {
             Ok(file) => file,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -148,7 +174,7 @@ fn open_shared(path: &Path) -> io::Result<Option<File>> {
 /// Returns open, creation, lock and trust errors.
 fn open_for_rewrite(path: &Path) -> io::Result<(File, bool)> {
     for _ in 0..ATTEMPTS {
-        reject_symlink(path)?;
+        reject_special(path)?;
         let (file, created) = match OpenOptions::new().read(true).write(true).open(path) {
             Ok(file) => (file, false),
             Err(absent) if absent.kind() == io::ErrorKind::NotFound => match create_private(path) {

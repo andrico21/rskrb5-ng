@@ -742,15 +742,15 @@ fn validate_dir_subsidiary_path(path: &str) -> Result<PathBuf, Error> {
 /// # Errors
 ///
 /// Returns [`Error::InvalidCacheName`] for an empty directory or a malformed
-/// `primary` file, and [`Error::Io`] when the `primary` file cannot be read
-/// or created.
+/// `primary` file, and [`Error::Io`] when the `primary` file is a symlink, a
+/// FIFO or another non-regular file, or cannot be read or created.
 fn dir_collection_primary_path(directory: &str) -> Result<PathBuf, Error> {
     if directory.is_empty() {
         return Err(Error::InvalidCacheName);
     }
     let collection = PathBuf::from(directory);
     let primary_path = collection.join(DIR_PRIMARY_FILE);
-    file_name::reject_symlink(&primary_path)?;
+    file_name::locked::reject_special(&primary_path)?;
     let primary = match fs::read_to_string(&primary_path) {
         Ok(contents) => parse_dir_primary_name(&contents)?,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
