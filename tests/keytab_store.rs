@@ -13,6 +13,8 @@ mod tests {
     use core::error;
     use std::{
         env, fs, process,
+        sync::{Barrier, BarrierWaitResult},
+        thread,
         time::{SystemTime, UNIX_EPOCH},
     };
 
@@ -126,6 +128,41 @@ mod tests {
             stores::resolve("MEMORY:client"),
             Err(Error::UnsupportedKeytabType { keytab_type }) if keytab_type == "MEMORY"
         ));
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
+
+    /// Two writers that add the first entries of an absent file keytab at the
+    /// same time keep both entries: creation is serialized like replacement.
+    #[test]
+    fn concurrent_first_adds_keep_both_entries() -> Result<(), TestError> {
+        let directory = env::temp_dir().join(format!(
+            "keytab-store-race-{}-{}",
+            process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        fs::create_dir_all(&directory)?;
+        let path = directory.join("race.keytab");
+        let name = format!("FILE:{}", path.display());
+        let start = Barrier::new(2);
+        thread::scope(|scope| -> Result<(), TestError> {
+            let writers: Vec<_> = [1_u8, 2]
+                .into_iter()
+                .map(|tag| {
+                    let (barrier, keytab_name) = (&start, &name);
+                    scope.spawn(move || -> Result<(), Error> {
+                        let store = stores::resolve(keytab_name)?;
+                        let _: BarrierWaitResult = barrier.wait();
+                        store.add(entry(u32::from(tag), 18, tag))
+                    })
+                })
+                .collect();
+            for writer in writers {
+                writer.join().map_err(|_panic| "a writer panicked")??;
+            }
+            Ok(())
+        })?;
+        assert_eq!(keytab::Keytab::load(&path)?.entries().len(), 2);
         fs::remove_dir_all(directory)?;
         Ok(())
     }

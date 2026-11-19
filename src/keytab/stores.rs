@@ -150,14 +150,18 @@ struct FileKeytab {
 }
 
 impl FileKeytab {
-    /// Change the keytab under the exclusive lock; an absent file starts empty.
+    /// Change the keytab under the exclusive lock; an absent or zero-length
+    /// file starts empty (the zero-length file another writer has just
+    /// created and not yet locked included).
     ///
     /// # Errors
     ///
     /// Storage, parse and serialization errors.
     fn update<T>(&self, change: impl FnOnce(&mut Keytab) -> T) -> Result<T, Error> {
         locked::rewrite(&self.path, |current| {
-            let mut keytab = current.map_or_else(|| Ok(Keytab::new()), Keytab::parse)?;
+            let mut keytab = current
+                .filter(|bytes| !bytes.is_empty())
+                .map_or_else(|| Ok(Keytab::new()), Keytab::parse)?;
             let result = change(&mut keytab);
             Ok((Change::Write(SecretBytes::new(keytab.to_bytes()?)), result))
         })
