@@ -1,7 +1,9 @@
-//! MIT's own tools against the kernel keyring: a cache `kinit` wrote is read
-//! by this crate, a cache this crate wrote is read and destroyed by `klist` and
-//! `kdestroy`. The steps of the `keyring` job in `.github/workflows/ci.yml`
-//! set the variables; without them the tests print a skip notice.
+//! MIT's own tools against the kernel keyring.
+//!
+//! A cache `kinit` wrote is read by this crate, a cache this crate wrote is read
+//! and destroyed by `klist` and `kdestroy`. The steps of the `keyring` job in
+//! `.github/workflows/ci.yml` set the variables; without them the tests print a
+//! skip notice.
 
 use std::{
     env,

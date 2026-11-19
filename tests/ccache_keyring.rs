@@ -1,5 +1,6 @@
-//! The `KEYRING` cache type (the `ccache-keyring` leaf, MIT 1.22.2
-//! `cc_keyring.c`) against the kernel of this machine.
+//! The `KEYRING` cache type against the kernel of this machine.
+//!
+//! This is the `ccache-keyring` leaf, MIT 1.22.2 `cc_keyring.c`.
 //!
 //! A kernel or sandbox that filters the key calls answers `ENOSYS` or `EPERM`;
 //! the tests then print `keyring: SKIP <test>: <reason>` and pass. With
