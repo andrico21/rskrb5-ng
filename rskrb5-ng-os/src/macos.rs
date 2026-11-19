@@ -105,7 +105,10 @@ impl CacheHandle for ApiCache {
 
     fn load(&self) -> Result<CCache, Error> {
         let cache = self.open()?;
-        let mut loaded = CCache::new(cache.principal()?);
+        let principal = cache
+            .principal()
+            .map_err(|error| api_error(&self.name(), error))?;
+        let mut loaded = CCache::new(principal);
         let (credentials, _) = cache.credentials(|_| true)?;
         loaded.credentials_mut().extend(credentials);
         Ok(loaded)

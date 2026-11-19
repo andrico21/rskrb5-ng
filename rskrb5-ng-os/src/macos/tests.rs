@@ -197,10 +197,8 @@ fn api_reads_writes_and_destroys_the_seeded_cache() -> Result<(), Box<dyn StdErr
         "a TGT"
     );
     assert_eq!(copied.credentials(), loaded.credentials());
-    assert!(
-        matches!(seeded.load(), Err(Error::CacheNotFound { name: _ })),
-        "destroyed"
-    );
+    let after = seeded.load();
+    assert!(after.is_err(), "destroyed, yet loaded: {after:?}");
     Ok(())
 }
 

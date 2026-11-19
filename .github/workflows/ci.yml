@@ -219,11 +219,15 @@ jobs:
         run: cargo test -p rskrb5-ng-os --locked
       - name: Tests against the seeded caches (rskrb5-ng-os, --ignored)
         run: cargo test -p rskrb5-ng-os --locked -- --ignored --test-threads=1
-      - name: MIT reads the cache the API store wrote
+      - name: MIT reads the cache the API store wrote, not the one it destroyed
         shell: bash
         run: |
           set -euo pipefail
           "$RSKRB5_NG_OS_MIT_BIN/klist" -c "API:$RSKRB5_NG_OS_API_COPY"
+          if "$RSKRB5_NG_OS_MIT_BIN/klist" -s -c "API:$RSKRB5_NG_OS_API_CACHE"; then
+            echo "::error::the destroyed API cache still holds tickets"
+            exit 1
+          fi
           "$RSKRB5_NG_OS_MIT_BIN/kdestroy" -c "API:$RSKRB5_NG_OS_API_COPY"
           "$RSKRB5_NG_OS_MIT_BIN/kdestroy" -c "KCM:$RSKRB5_NG_OS_KCM_CACHE"
 
