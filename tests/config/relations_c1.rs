@@ -262,7 +262,7 @@ mod tests {
     /// version of new caches (`CacheVersion::from_libdefaults`) is 1 to 4 only.
     #[test]
     fn ccache_type() -> Result<(), Box<dyn Error>> {
-        use rskrb5_ng::ccache::CacheVersion;
+        use rskrb5_ng::ccache::stores::CacheVersion;
         for (value, expected) in [
             ("4", Some(4_u8)),
             ("+3", Some(3)),

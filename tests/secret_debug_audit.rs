@@ -1183,7 +1183,7 @@ mod tests {
         "src/keytab.rs::Entry",
         "src/keytab.rs::Keytab",
         "src/keytab/key_bytes.rs::Bytes",
-        "src/keytab/store.rs::MemoryKeytab",
+        "src/keytab/stores.rs::MemoryKeytab",
         "src/ccache.rs::EncryptionKey",
         "src/ccache.rs::Credential",
         "src/ccache.rs::AuthorizationDataEntry",
@@ -1625,7 +1625,7 @@ mod tests {
                 .ok_or_else(|| io::Error::other("keytab entry"))?,
             &[&key],
         );
-        let memory = keytab::MemoryKeytab::new();
+        let memory = keytab::stores::MemoryKeytab::new();
         let entry = tab
             .entries()
             .first()

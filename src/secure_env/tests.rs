@@ -231,7 +231,7 @@ mod tests {
             assert_eq!(open.k5login_directory, "/hostile/home");
             #[cfg(not(windows))]
             {
-                use crate::{ccache::default_k5identity, extensions::K5Identity};
+                use crate::{ccache::selection::default_k5identity, extensions::K5Identity};
                 assert_eq!(
                     with_decision(Decision::Restricted, default_k5identity),
                     None

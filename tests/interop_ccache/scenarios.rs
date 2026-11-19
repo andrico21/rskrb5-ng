@@ -9,8 +9,10 @@ use std::{
 
 use rskrb5_ng::{
     ccache::{
-        CCache, CacheVersion, CredentialStore as _, DirStore, FileStore,
-        Principal as CachePrincipal,
+        CCache, Principal as CachePrincipal,
+        dir_store::DirStore,
+        file_store::FileStore,
+        stores::{CacheVersion, CredentialStore as _},
     },
     client::{
         AsRepSession, Tokio,

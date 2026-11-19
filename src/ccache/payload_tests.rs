@@ -132,7 +132,7 @@ mod tests {
     /// MEMORY removals, replacements and destruction erase the payloads they drop.
     #[test]
     fn memory_store_removals_erase_payloads() -> Result<(), Box<dyn Error>> {
-        use crate::ccache::{CredentialStore as _, MemoryStore};
+        use crate::ccache::{in_memory::MemoryStore, stores::CredentialStore as _};
         // Given a MEMORY cache holding one credential with a 31-byte payload.
         let principal = Principal::new("R", 1, vec!["alice".to_owned()]);
         let server = Principal::new("R", 1, vec!["svc".to_owned()]);

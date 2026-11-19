@@ -28,9 +28,12 @@ mod tests {
 
     use rskrb5_ng::{
         ccache::{
-            self, CCache, CacheCollection as _, CacheHandle, CacheVersion, Credential,
-            CredentialStore as _, CredentialTimes, DirStore, EncryptionKey, FileStore, MemoryStore,
-            Principal, Selected,
+            CCache, Credential, CredentialTimes, EncryptionKey, Principal,
+            dir_store::DirStore,
+            file_store::{self, FileStore},
+            in_memory::MemoryStore,
+            selection::{self, Selected},
+            stores::{self, CacheCollection as _, CacheHandle, CacheVersion, CredentialStore as _},
         },
         config::Config,
         error::Ccache as Error,
@@ -149,7 +152,7 @@ mod tests {
         assert_eq!(cache.load()?.entries().len(), 1);
         // Moving to another store copies everything and destroys the source.
         let other = MemoryStore::new();
-        ccache::move_cache(cache.as_ref(), other.resolve("two")?.as_ref())?;
+        stores::move_cache(cache.as_ref(), other.resolve("two")?.as_ref())?;
         assert!(matches!(
             cache.load(),
             Err(Error::CacheNotFound { name: _ })
@@ -157,7 +160,7 @@ mod tests {
         assert_eq!(other.resolve("two")?.load()?.entries().len(), 1);
         // Moving a cache onto its own name keeps it.
         let two = other.resolve("two")?;
-        ccache::move_cache(two.as_ref(), two.as_ref())?;
+        stores::move_cache(two.as_ref(), two.as_ref())?;
         assert_eq!(two.load()?.entries().len(), 1);
         two.destroy()?;
         assert!(matches!(
@@ -420,20 +423,21 @@ mod tests {
     fn built_in_names_resolve_and_destroy() -> Result<(), TestError> {
         let directory = scratch("names")?;
         let collection = directory.join("collection");
-        let primary = ccache::resolve(&format!("DIR:{}", collection.display()), CacheVersion::V4)?;
+        let primary =
+            file_store::resolve(&format!("DIR:{}", collection.display()), CacheVersion::V4)?;
         assert_eq!(
             primary.name(),
             format!("DIR::{}", collection.join("tkt").display())
         );
         primary.initialize(&principal("alice", "A.TEST"))?;
         assert_eq!(
-            ccache::collection(&format!("DIR:{}", collection.display()), CacheVersion::V4)?
+            file_store::collection(&format!("DIR:{}", collection.display()), CacheVersion::V4)?
                 .caches()?
                 .count(),
             1
         );
         let file = directory.join("file");
-        let cache = ccache::resolve(&format!("FILE:{}", file.display()), CacheVersion::V4)?;
+        let cache = file_store::resolve(&format!("FILE:{}", file.display()), CacheVersion::V4)?;
         cache.initialize(&principal("bob", "B.TEST"))?;
         assert_eq!(CCache::load(&file)?.client_name(), "bob");
         cache.destroy()?;
@@ -443,7 +447,7 @@ mod tests {
             Err(Error::CacheNotFound { name: _ })
         ));
         assert!(matches!(
-            ccache::resolve("KCM:", CacheVersion::V4),
+            file_store::resolve("KCM:", CacheVersion::V4),
             Err(Error::UnsupportedCacheType { cache_type }) if cache_type == "KCM"
         ));
         fs::remove_dir_all(directory)?;
@@ -467,7 +471,7 @@ mod tests {
         };
         for realm in ["B.TEST", ""] {
             let Selected::Cache(cache) =
-                ccache::select_cache(&registry, &config, &store, &server(realm))?
+                selection::select_cache(&registry, &config, &store, &server(realm))?
             else {
                 return Err(format!("no cache for realm {realm:?}").into());
             };
@@ -475,7 +479,7 @@ mod tests {
         }
         let unknown = Config::parse("[libdefaults]\n")?;
         assert!(matches!(
-            ccache::select_cache(&registry, &unknown, &store, &server(""))?,
+            selection::select_cache(&registry, &unknown, &store, &server(""))?,
             Selected::NotFound
         ));
         Ok(())

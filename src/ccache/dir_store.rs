@@ -11,10 +11,11 @@ use std::{
 };
 
 use super::{
-    CacheCollection, CacheCursor, CacheHandle, CacheVersion, CredentialStore,
     DIR_DEFAULT_PRIMARY_CACHE, DIR_PRIMARY_FILE, Error,
     file_store::{FileCache, Single},
-    parse_dir_primary_name, validate_dir_subsidiary_path,
+    parse_dir_primary_name,
+    stores::{CacheCollection, CacheCursor, CacheHandle, CacheVersion, CredentialStore},
+    validate_dir_subsidiary_path,
 };
 use crate::file_name::{self, locked};
 

@@ -9,8 +9,9 @@ use std::{
 };
 
 use super::{
-    CCache, CacheCollection, CacheCursor, CacheHandle, Credential, CredentialStore, Error,
-    Principal, file_store::remove_server,
+    CCache, Credential, Error, Principal,
+    file_store::remove_server,
+    stores::{CacheCollection, CacheCursor, CacheHandle, CredentialStore},
 };
 
 /// A table of named in-memory caches (MIT `MEMORY:`).

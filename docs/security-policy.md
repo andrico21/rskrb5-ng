@@ -277,8 +277,8 @@ divergences and bounds) lists the MIT sources.
 
 ## Credential stores
 
-The store API (`ccache::CredentialStore`, `ccache::CacheCollection`,
-`ccache::CacheHandle`, `keytab::KeyStore`) writes cache and keytab files
+The store API (`ccache::stores::CredentialStore`, `ccache::stores::CacheCollection`,
+`ccache::stores::CacheHandle`, `keytab::stores::KeyStore`) writes cache and keytab files
 owner-only (mode 0600, collection directories 0700) and replaces them whole by
 atomic rename, and it refuses a file that is a symlink, not a regular file,
 writable by group or others, or (Linux) owned by another user, and a `DIR`

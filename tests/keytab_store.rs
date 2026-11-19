@@ -18,7 +18,10 @@ mod tests {
 
     use rskrb5_ng::{
         error::Keytab as Error,
-        keytab::{self, EncryptionKey, Entry, KeyStore, MemoryKeytab, Principal},
+        keytab::{
+            self, EncryptionKey, Entry, Principal,
+            stores::{self, KeyStore, MemoryKeytab},
+        },
     };
 
     /// Error type of the `Result`-returning tests.
@@ -109,7 +112,7 @@ mod tests {
         ));
         fs::create_dir_all(&directory)?;
         let path = directory.join("client.keytab");
-        let store = keytab::resolve(&format!("FILE:{}", path.display()))?;
+        let store = stores::resolve(&format!("FILE:{}", path.display()))?;
         assert!(matches!(store.load(), Err(Error::Io(_))));
         lookups(store.as_ref())?;
         store.add(entry(7, 18, 7))?;
@@ -120,7 +123,7 @@ mod tests {
             assert_eq!(fs::metadata(&path)?.permissions().mode() & 0o777, 0o600);
         }
         assert!(matches!(
-            keytab::resolve("MEMORY:client"),
+            stores::resolve("MEMORY:client"),
             Err(Error::UnsupportedKeytabType { keytab_type }) if keytab_type == "MEMORY"
         ));
         fs::remove_dir_all(directory)?;

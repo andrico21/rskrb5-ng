@@ -4,10 +4,10 @@
 use std::path::{Path, PathBuf};
 
 use super::{
-    CCache, CacheCollection, CacheCursor, CacheHandle, CacheVersion, Credential, CredentialStore,
-    Error, Principal,
+    CCache, Credential, Error, Principal,
     dir_store::{DirStore, create_unique},
     direct_file_path_from_cache_name, file_name_error, is_config_credential,
+    stores::{CacheCollection, CacheCursor, CacheHandle, CacheVersion, CredentialStore},
 };
 use crate::file_name::{
     self, SecretBytes,

@@ -1659,7 +1659,7 @@ impl Tokio {
     #[inline]
     pub fn to_ccache(&self) -> Result<ccache::CCache, Error> {
         let mut cache = ccache::CCache::new(ccache_principal(&self.client));
-        cache.set_version(ccache::CacheVersion::from_libdefaults(
+        cache.set_version(ccache::stores::CacheVersion::from_libdefaults(
             &self.config.libdefaults,
         )?);
         for credential in self.ccache_credentials()? {
@@ -1771,7 +1771,7 @@ impl Tokio {
             Ok(cache) => cache,
             Err(error::Ccache::Io(error)) if error.kind() == io::ErrorKind::NotFound => {
                 let mut created = ccache::CCache::new(ccache_principal(&self.client));
-                created.set_version(ccache::CacheVersion::from_libdefaults(
+                created.set_version(ccache::stores::CacheVersion::from_libdefaults(
                     &self.config.libdefaults,
                 )?);
                 created

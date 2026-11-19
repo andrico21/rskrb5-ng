@@ -17,7 +17,11 @@ use std::{
 };
 
 use libfuzzer_sys::fuzz_target;
-use rskrb5_ng::ccache::{CacheVersion, CredentialStore as _, DirStore, FileStore};
+use rskrb5_ng::ccache::{
+    dir_store::DirStore,
+    file_store::FileStore,
+    stores::{CacheVersion, CredentialStore as _},
+};
 
 /// The private scratch collection of this fuzzing process.
 fn collection() -> &'static Path {

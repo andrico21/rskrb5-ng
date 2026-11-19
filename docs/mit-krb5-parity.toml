@@ -792,7 +792,7 @@ evidence_status = "fixture"
 missing = ""
 rust_symbols = [
   "ccache::dir_store::DirStore",
-  "ccache::store::CacheCollection",
+  "ccache::stores::CacheCollection",
   "ccache::file_store::collection",
 ]
 test_names = [
@@ -851,7 +851,7 @@ capability = "MEMORY cache"
 implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
-rust_symbols = ["ccache::memory::MemoryStore"]
+rust_symbols = ["ccache::in_memory::MemoryStore"]
 test_names = [
   "tests/ccache_store.rs::memory_stores_are_isolated",
   "tests/ccache_store.rs::memory_concurrent_stores_keep_every_credential",
@@ -910,12 +910,12 @@ implementation_status = "implemented"
 evidence_status = "fixture"
 missing = ""
 rust_symbols = [
-  "ccache::store::CredentialStore",
-  "ccache::store::CacheHandle",
-  "ccache::store::CacheCursor",
-  "ccache::store::move_cache",
+  "ccache::stores::CredentialStore",
+  "ccache::stores::CacheHandle",
+  "ccache::stores::CacheCursor",
+  "ccache::stores::move_cache",
   "ccache::file_store::resolve",
-  "ccache::select::select_cache",
+  "ccache::selection::select_cache",
 ]
 test_names = [
   "tests/ccache_store.rs::memory_collection_switches_and_enumerates",
@@ -962,8 +962,8 @@ implementation_status = "implemented"
 evidence_status = "fixture"
 missing = ""
 rust_symbols = [
-  "ccache::store::CacheVersion",
-  "ccache::store::CacheVersion::from_libdefaults",
+  "ccache::stores::CacheVersion",
+  "ccache::stores::CacheVersion::from_libdefaults",
   "ccache::CCache::set_version",
 ]
 test_names = [
@@ -1026,9 +1026,9 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = [
-  "keytab::store::MemoryKeytab",
-  "keytab::store::MemoryKeytab::resolve",
-  "keytab::store::KeyStore",
+  "keytab::stores::MemoryKeytab",
+  "keytab::stores::MemoryKeytab::resolve",
+  "keytab::stores::KeyStore",
 ]
 test_names = ["tests/keytab_store.rs::memory_keytabs_are_named_and_isolated"]
 feature_flags = []
@@ -1045,8 +1045,8 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "Client keytab, automatic initial creds and refresh"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "P2-11 delivered the `KeyStore` lookups the client-keytab refresh uses (`keytab::resolve`, `KeyStore::find`); the client-keytab acquisition and refresh is P2-4's, and the GSS implicit acquisition integration that of the closing todo P2-18."
-rust_symbols = ["keytab::store::KeyStore", "keytab::store::resolve"]
+missing = "P2-11 delivered the `KeyStore` lookups the client-keytab refresh uses (`keytab::stores::resolve`, `KeyStore::find`); the client-keytab acquisition and refresh is P2-4's, and the GSS implicit acquisition integration that of the closing todo P2-18."
+rust_symbols = ["keytab::stores::KeyStore", "keytab::stores::resolve"]
 test_names = ["tests/keytab_store.rs::file_keytabs_through_the_store"]
 feature_flags = []
 security_divergence = ""
@@ -1145,7 +1145,7 @@ implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
 rust_symbols = [
-  "ccache::store::CacheVersion::from_libdefaults",
+  "ccache::stores::CacheVersion::from_libdefaults",
   "client::Tokio::to_ccache",
 ]
 test_names = [
@@ -2845,8 +2845,8 @@ rust_symbols = [
   "extensions::K5Identity",
   "extensions::RealmSelector",
   "extensions::HostnameSelector",
-  "ccache::select::select_cache",
-  "ccache::select::default_k5identity",
+  "ccache::selection::select_cache",
+  "ccache::selection::default_k5identity",
 ]
 test_names = [
   "tests/extensions.rs::k5identity_builtin_through_the_registry",
@@ -2860,7 +2860,7 @@ test_names = [
   "src/secure_env/tests.rs::home_is_ignored_when_restricted",
 ]
 feature_flags = []
-security_divergence = "A `.k5identity` line longer than 255 bytes never matches, where MIT's `fgets` splits it (`ccselect_k5identity.c:162`), the file is bounded at 64 KiB, and a principal with an empty realm or a control character never matches. `K5Identity` reads no environment variable: the caller names the file; `ccache::default_k5identity` reads `HOME` (not in a restricted process) and has no passwd fallback, where MIT uses the passwd home of the effective user (`ccselect_k5identity.c:128-150`). A referral-realm server takes the first host-realm fallback answer, else the default realm (`hostrealm.c:401-446`); its host is lower-cased and loses a trailing dot, without MIT's hostname canonicalization."
+security_divergence = "A `.k5identity` line longer than 255 bytes never matches, where MIT's `fgets` splits it (`ccselect_k5identity.c:162`), the file is bounded at 64 KiB, and a principal with an empty realm or a control character never matches. `K5Identity` reads no environment variable: the caller names the file; `ccache::selection::default_k5identity` reads `HOME` (not in a restricted process) and has no passwd fallback, where MIT uses the passwd home of the effective user (`ccselect_k5identity.c:128-150`). A referral-realm server takes the first host-realm fallback answer, else the default realm (`hostrealm.c:401-446`); its host is lower-cased and loses a trailing dot, without MIT's hostname canonicalization."
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 11

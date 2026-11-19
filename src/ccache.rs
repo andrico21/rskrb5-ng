@@ -53,28 +53,22 @@ pub enum CacheName {
 /// Redaction of credential-bearing diagnostics.
 mod credential_debug;
 
-/// `DIR` collections behind the store traits.
-mod dir_store;
+/// The `DIR` cache type: collections of `tkt*` caches with a `primary` pointer.
+pub mod dir_store;
 
-/// `FILE` caches behind the store traits.
-mod file_store;
+/// The `FILE` cache type and the built-in file cache names.
+pub mod file_store;
 
 /// The `MEMORY` cache type.
-mod memory;
+pub mod in_memory;
 
 /// Cache selection over a collection.
-mod select;
+pub mod selection;
 
 /// The credential-store traits.
-mod store;
+pub mod stores;
 
-pub use self::{
-    dir_store::DirStore,
-    file_store::{FileStore, collection, resolve},
-    memory::MemoryStore,
-    select::{Selected, default_k5identity, select_cache},
-    store::{CacheCollection, CacheCursor, CacheHandle, CacheVersion, CredentialStore, move_cache},
-};
+use self::stores::CacheVersion;
 
 /// Erasure of retained credential payloads.
 mod payload;

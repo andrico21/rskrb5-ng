@@ -3,7 +3,10 @@
 
 use std::{env, path::Path};
 
-use super::{CacheCollection, CacheHandle, Error, Principal};
+use super::{
+    Error, Principal,
+    stores::{CacheCollection, CacheHandle},
+};
 use crate::{
     config::Config,
     extensions::{CacheCandidate, K5Identity, RealmQuery, Registry, Selection},
