@@ -21,6 +21,12 @@ mod ccapi;
 mod mach;
 /// Tests against the real CCAPI and Mach services.
 #[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests;
 
 /// MIT's default `kcm_mach_service` (`DEFAULT_KCM_MACH_SERVICE`, `kcm.h`).

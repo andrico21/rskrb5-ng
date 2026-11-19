@@ -36,6 +36,12 @@ use crate::{Secret, error::Platform, lsa_wire::CacheInfo};
 mod lsa;
 /// The store against an in-memory LSA.
 #[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests;
 
 /// The cache type.

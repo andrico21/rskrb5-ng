@@ -1,12 +1,5 @@
 //! The KCM store against the in-memory KCM server.
 
-#![expect(
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
-    reason = "test code is not rendered API documentation"
-)]
-#![expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-
 use rskrb5_ng::{
     ccache::{CCache, Credential, CredentialTimes, EncryptionKey, Principal},
     error::Ccache as Error,

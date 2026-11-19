@@ -1,13 +1,6 @@
 //! The `MSLSA:` store against an in-memory LSA, and, in the Windows CI job
 //! (`--ignored`), against the runner's own logon session.
 
-#![expect(
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
-    reason = "test code is not rendered API documentation"
-)]
-#![expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-
 use alloc::sync::Arc;
 use core::error::Error as StdError;
 use std::sync::{Mutex, PoisonError};
