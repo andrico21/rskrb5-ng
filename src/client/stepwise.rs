@@ -55,6 +55,12 @@ mod order;
 /// Deterministic fake-KDC exchanges.
 #[cfg(test)]
 #[path = "stepwise/tests.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests;
 /// The TGS state machine with referral chasing.
 #[path = "stepwise/ticket.rs"]

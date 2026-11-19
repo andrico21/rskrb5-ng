@@ -22,6 +22,7 @@ mod tests {
         extensions::{
             ClientPreauth, Extension, PreauthInput, PreauthState, ProviderError, Registry,
         },
+        ticket::encode as encode_ticket,
     };
 
     use super::*;
@@ -48,14 +49,14 @@ mod tests {
 
     /// The outbound request of `step`, or a test failure.
     fn outbound(step: ExchangeStep) -> Result<(String, Vec<u8>, bool), TestError> {
-        match step {
-            ExchangeStep::Outbound(outbound) => Ok((
+        if let ExchangeStep::Outbound(outbound) = step {
+            return Ok((
                 outbound.realm().to_owned(),
                 outbound.message().to_vec(),
                 outbound.follow_up(),
-            )),
-            other => Err(format!("expected an outbound request, got {other:?}").into()),
+            ));
         }
+        Err(format!("expected an outbound request, got {step:?}").into())
     }
 
     /// Multi-round password exchange: probe, prompt, preauthenticated request, AS-REP.
@@ -78,12 +79,13 @@ mod tests {
         assert_eq!(asked, client);
         let answer = Answer::Password(Password::from_vec(TESTUSER_PASSWORD.to_vec()));
         assert_eq!(format!("{answer:?}"), "Answer::Password([REDACTED])");
-        let (realm, second, follow_up) = outbound(exchange.step(StepInput::Answer(answer))?)?;
+        let (second_realm, second, continued) =
+            outbound(exchange.step(StepInput::Answer(answer))?)?;
         assert!(
-            follow_up,
+            continued,
             "the preauthenticated request continues the exchange"
         );
-        let reply = kdc.send(&realm, &second)?;
+        let reply = kdc.send(&second_realm, &second)?;
         let ExchangeStep::Complete(session) = exchange.step(StepInput::Reply(&reply))? else {
             return Err("expected the finished credential".into());
         };
@@ -201,7 +203,7 @@ mod tests {
             Err(Error::NoRequestAddresses)
         ));
         let default = InitCredsOptions::from_config(&Config::new(), timestamp(1_893_553_447)?, 7)?;
-        assert!(default.request().addresses().is_empty());
+        assert_eq!(default.request().addresses(), [IpAddr::V4(Ipv4Addr::UNSPECIFIED); 0]);
         Ok(())
     }
 
@@ -291,12 +293,12 @@ mod tests {
                 );
                 continue;
             }
-            let (realm, second, _) = outbound(next.map_err(|error| error.to_string())?)?;
-            assert_eq!(realm, "OTHER.GOKRB5");
-            let decoded: rasn_kerberos::TgsReq = der::decode(&second)?;
-            let mut built = built_tgs_request_from_der(decoded, &second)?;
-            built.set_client(tgt.client().clone());
-            let reply = synthetic_tgs_rep(&built, built.nonce(), &referral_key)?;
+            let (referred_realm, second, _) = outbound(next.map_err(|error| error.to_string())?)?;
+            assert_eq!(referred_realm, "OTHER.GOKRB5");
+            let referred: rasn_kerberos::TgsReq = der::decode(&second)?;
+            let mut referred_built = built_tgs_request_from_der(referred, &second)?;
+            referred_built.set_client(tgt.client().clone());
+            let reply = synthetic_tgs_rep(&referred_built, referred_built.nonce(), &referral_key)?;
             let ExchangeStep::Complete(ticket) = exchange
                 .step(StepInput::Reply(&reply))
                 .map_err(|error| error.to_string())?
@@ -333,14 +335,16 @@ mod tests {
             .ok_or("additional tickets")?;
         assert_eq!(tickets.len(), 1);
         assert_eq!(
-            rskrb5_ng::ticket::encode(tickets.first().ok_or("ticket")?)?,
+            encode_ticket(tickets.first().ok_or("ticket")?)?,
             server_tgt.ticket().as_slice()
         );
-        assert!(
-            TicketOptions::new(TgsReq::new(UNIX_EPOCH, 1))
-                .with_user_to_user(b"not a ticket")
-                .is_err()
-        );
+        assert!(matches!(
+            TicketOptions::new(TgsReq::new(UNIX_EPOCH, 1)).with_user_to_user(b"not a ticket"),
+            Err(Error::Decode {
+                target: _,
+                message: _
+            })
+        ));
         Ok(())
     }
 
@@ -360,7 +364,7 @@ mod tests {
     }
 
     impl ClientPreauth for Marker {
-        fn id(&self) -> &str {
+        fn id(&self) -> &'static str {
             "marker"
         }
 
@@ -373,7 +377,7 @@ mod tests {
         }
     }
 
-    /// A PREAUTH_REQUIRED error offering encrypted timestamp, ETYPE-INFO2 and PA type 1000.
+    /// A `PREAUTH_REQUIRED` error offering encrypted timestamp, ETYPE-INFO2 and PA type 1000.
     fn challenge_offering_the_marker() -> Result<Vec<u8>, TestError> {
         let mut error: rasn_kerberos::KrbError = der::decode(&synthetic_preauth_required_error()?)?;
         let mut offers: rasn_kerberos::MethodData =
