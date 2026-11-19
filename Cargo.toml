@@ -103,6 +103,14 @@ tower_layer = { package = "tower-layer", version = "0.3", optional = true }
 tower_service = { package = "tower-service", version = "0.3", optional = true }
 zeroize = { version = "1", features = ["derive"] }
 
+# The one non-optional dependency (owner exception 2026-11-18, plan 2 D10):
+# the secure-environment check of src/secure_env.rs compares real and
+# effective ids on Unix systems other than Linux and Android, which read
+# AT_SECURE from /proc/self/auxv instead. Admission record:
+# docs/dependency-admission.md#rustix.
+[target.'cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))'.dependencies]
+rustix = { version = "1.1.6", default-features = false, features = ["process"] }
+
 # `md-5` is imported under its library name `md5` (`use md5::Md5;` in
 # src/crypto.rs), which cargo-machete's name-based scan does not match.
 [package.metadata.cargo-machete]

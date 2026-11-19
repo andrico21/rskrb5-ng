@@ -1532,6 +1532,7 @@ dependencies = [
  "rasn",
  "rasn-kerberos",
  "rc4",
+ "rustix",
  "serde",
  "serde_json",
  "sha1",

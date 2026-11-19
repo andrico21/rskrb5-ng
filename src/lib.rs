@@ -102,6 +102,7 @@ pub mod krb_safe;
 #[cfg(feature = "messages")]
 pub mod messages;
 pub mod pac;
+mod secure_env;
 #[cfg(feature = "messages")]
 pub mod service;
 #[cfg(feature = "spnego")]

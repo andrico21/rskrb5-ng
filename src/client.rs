@@ -44,6 +44,7 @@ use crate::{
     config::{credential_names, parameters::DefaultName},
     file_name,
     keytab::configured_keytab,
+    secure_env,
 };
 /// Identity-bound cache insertion.
 #[cfg(feature = "tokio")]
@@ -1374,9 +1375,9 @@ impl Tokio {
     /// Expands templates using `TMPDIR`, `TEMP`, `APPDATA` and process identity.
     /// Use `with_keytab_name` with a literal name to avoid this discovery.
     ///
-    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
-    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
-    /// constructors.
+    /// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
+    /// ignores them (`secure_getenv`); see the secure-environment decision of
+    /// `docs/security-policy.md`.
     ///
     /// # Errors
     ///
@@ -1400,9 +1401,9 @@ impl Tokio {
     /// `KRB5_CLIENT_KTNAME` takes precedence when set. Otherwise this falls
     /// back to `config.libdefaults.default_client_keytab_name`.
     ///
-    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
-    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
-    /// constructors.
+    /// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
+    /// ignores them (`secure_getenv`); see the secure-environment decision of
+    /// `docs/security-policy.md`.
     ///
     /// # Errors
     ///
@@ -1422,9 +1423,9 @@ impl Tokio {
     /// # Ambient input
     /// Reads `KRB5_CLIENT_KTNAME`; use `with_keytab_name` for an explicit name.
     ///
-    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
-    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
-    /// constructors.
+    /// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
+    /// ignores them (`secure_getenv`); see the secure-environment decision of
+    /// `docs/security-policy.md`.
     ///
     /// # Errors
     ///
@@ -1436,8 +1437,8 @@ impl Tokio {
         protocol: KdcProtocol,
         client: Principal,
     ) -> Result<Self, Error> {
-        let keytab_name =
-            env::var(KRB5_CLIENT_KTNAME_ENV).map_err(Error::DefaultClientKeytabName)?;
+        let keytab_name = secure_env::ambient(|| env::var(KRB5_CLIENT_KTNAME_ENV))
+            .map_err(Error::DefaultClientKeytabName)?;
         Self::with_keytab_name(config, protocol, client, keytab_name)
     }
     /// Create a keytab-backed client by loading the file keytab named by `KRB5_KTNAME`.
@@ -1445,9 +1446,9 @@ impl Tokio {
     /// # Ambient input
     /// Reads `KRB5_KTNAME`; use `with_keytab_name` for an explicit name.
     ///
-    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
-    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
-    /// constructors.
+    /// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
+    /// ignores them (`secure_getenv`); see the secure-environment decision of
+    /// `docs/security-policy.md`.
     ///
     /// # Errors
     ///
@@ -1579,9 +1580,9 @@ impl Tokio {
     /// Expands templates using `TMPDIR`, `TEMP`, `APPDATA` and process identity.
     /// Use `from_ccache_name` with a literal name to avoid this discovery.
     ///
-    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
-    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
-    /// constructors.
+    /// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
+    /// ignores them (`secure_getenv`); see the secure-environment decision of
+    /// `docs/security-policy.md`.
     ///
     /// # Errors
     ///
@@ -1603,9 +1604,9 @@ impl Tokio {
     /// `KRB5CCNAME` takes precedence when set. Otherwise this falls back to
     /// `config.libdefaults.default_ccache_name`.
     ///
-    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
-    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
-    /// constructors.
+    /// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
+    /// ignores them (`secure_getenv`); see the secure-environment decision of
+    /// `docs/security-policy.md`.
     ///
     /// # Errors
     ///
@@ -1622,9 +1623,9 @@ impl Tokio {
     /// # Ambient input
     /// Reads `KRB5CCNAME`; use `from_ccache_name` for an explicit name.
     ///
-    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
-    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
-    /// constructors.
+    /// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
+    /// ignores them (`secure_getenv`); see the secure-environment decision of
+    /// `docs/security-policy.md`.
     ///
     /// # Errors
     ///
@@ -1706,9 +1707,9 @@ impl Tokio {
     /// Expands templates using `TMPDIR`, `TEMP`, `APPDATA` and process identity.
     /// Use `save_ccache` with a literal path to avoid this discovery.
     ///
-    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
-    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
-    /// constructors.
+    /// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
+    /// ignores them (`secure_getenv`); see the secure-environment decision of
+    /// `docs/security-policy.md`.
     ///
     /// # Errors
     ///
@@ -1732,9 +1733,9 @@ impl Tokio {
     /// `KRB5CCNAME` takes precedence when set. Otherwise this falls back to
     /// `config.libdefaults.default_ccache_name`.
     ///
-    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
-    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
-    /// constructors.
+    /// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
+    /// ignores them (`secure_getenv`); see the secure-environment decision of
+    /// `docs/security-policy.md`.
     ///
     /// # Errors
     ///
@@ -1794,9 +1795,9 @@ impl Tokio {
     /// Expands templates using `TMPDIR`, `TEMP`, `APPDATA` and process identity.
     /// Use `update_ccache_file` with a literal path to avoid this discovery.
     ///
-    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
-    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
-    /// constructors.
+    /// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
+    /// ignores them (`secure_getenv`); see the secure-environment decision of
+    /// `docs/security-policy.md`.
     ///
     /// # Errors
     ///
@@ -1820,9 +1821,9 @@ impl Tokio {
     /// `KRB5CCNAME` takes precedence when set. Otherwise this falls back to
     /// `config.libdefaults.default_ccache_name`.
     ///
-    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
-    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
-    /// constructors.
+    /// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
+    /// ignores them (`secure_getenv`); see the secure-environment decision of
+    /// `docs/security-policy.md`.
     ///
     /// # Errors
     ///
@@ -5492,8 +5493,9 @@ fn configured_default_ccache_name(config: &Config) -> Result<String, Error> {
 /// # Ambient input
 /// Reads `KRB5CCNAME` before the configured cache name.
 ///
-/// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
-/// ignores the same variables (`secure_getenv`); such programs must use the explicit constructors.
+/// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
+/// ignores them (`secure_getenv`); see the secure-environment decision of
+/// `docs/security-policy.md`.
 ///
 /// # Errors
 ///
@@ -5501,7 +5503,7 @@ fn configured_default_ccache_name(config: &Config) -> Result<String, Error> {
 /// [`Error::NoDefaultCCacheName`] when neither source names a cache.
 #[cfg(feature = "tokio")]
 fn default_ccache_name(config: &Config) -> Result<String, Error> {
-    match env::var(KRB5CCNAME_ENV) {
+    match secure_env::ambient(|| env::var(KRB5CCNAME_ENV)) {
         Ok(cache_name) => file_name::expand_path_tokens(&cache_name)
             .map_err(|_source| error::Ccache::IdentityUnavailable.into()),
         Err(env::VarError::NotPresent) => configured_default_ccache_name(config),
@@ -5515,8 +5517,9 @@ fn default_ccache_name(config: &Config) -> Result<String, Error> {
 /// # Ambient input
 /// Reads `KRB5_CLIENT_KTNAME` before the configured client-keytab name.
 ///
-/// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
-/// ignores the same variables (`secure_getenv`); such programs must use the explicit constructors.
+/// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
+/// ignores them (`secure_getenv`); see the secure-environment decision of
+/// `docs/security-policy.md`.
 ///
 /// # Errors
 ///
@@ -5524,7 +5527,7 @@ fn default_ccache_name(config: &Config) -> Result<String, Error> {
 /// valid Unicode.
 #[cfg(feature = "tokio")]
 fn default_client_keytab_name(config: &Config) -> Result<Keytab, Error> {
-    match env::var(KRB5_CLIENT_KTNAME_ENV) {
+    match secure_env::ambient(|| env::var(KRB5_CLIENT_KTNAME_ENV)) {
         Ok(keytab_name) => Ok(Keytab::load_name(keytab_name)?),
         Err(env::VarError::NotPresent) => Ok(configured_keytab(
             &config.libdefaults,

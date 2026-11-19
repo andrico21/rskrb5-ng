@@ -246,18 +246,34 @@ or an ownership-preserving replacement, not just wrapping the first input copy.
 ## Set-uid and set-gid processes
 
 The functions with an `# Ambient input` rustdoc section read `KRB5_CONFIG`,
-`KRB5CCNAME`, `KRB5_KTNAME`, `KRB5_CLIENT_KTNAME` and `TMPDIR` on Unix in
-set-uid and set-gid processes too. MIT 1.22.2 reads them through
-`secure_getenv`, which returns nothing there, so in such a process the
-invoking user chooses the configuration, credential cache and keytab that this
-crate trusts. A program that runs with an elevated identity must use the
-explicit constructors (`Config::load_paths`, `CCache::load_name`,
-`Keytab::load_name`, a literal name) and not the ambient readers.
-`LibDefaults::from_env` also reads `HOME` for `k5login_directory`; MIT never
-reads `HOME` for it (it uses the home directory of the target user's passwd
-entry) and this crate only stores the value. Windows has no set-uid or set-gid
-processes. `docs/config-profile.md` (Deliberate divergences and bounds) lists
-the MIT sources.
+`KRB5CCNAME`, `KRB5_KTNAME`, `KRB5_CLIENT_KTNAME`, `TMPDIR` and `HOME` only
+when the process environment may be trusted. One shared secure-environment
+decision (`src/secure_env.rs`), derived once per process from the operating
+system and never from an environment variable, is consulted before each such
+read; in a restricted process the reader behaves as if the variable were
+unset, as MIT 1.22.2 does through `secure_getenv`
+(`src/util/support/secure_getenv.c:105-111`):
+
+- Linux and Android: the process is restricted when `AT_SECURE` of its
+  auxiliary vector (`/proc/self/auxv`, the value glibc's `secure_getenv`
+  uses) is nonzero. A vector that cannot be read or parsed, or one without
+  `AT_SECURE`, is restricted too (fail closed); such programs use the explicit
+  constructors (`Config::load_paths`, `CCache::load_name`,
+  `Keytab::load_name`, a literal name).
+- Other Unix systems: the process is restricted when its real and effective
+  user or group ids differ, through `rustix::process` (the one non-optional
+  dependency, owner exception 2026-11-18, `docs/dependency-admission.md`).
+  This is MIT's fallback (`secure_getenv.c:83-99`) without the saved ids that
+  `getresuid`/`getresgid` add there, and without `issetugid`, which rustix
+  does not offer: a set-id program that has switched its effective ids back to
+  the real ones before the first ambient read is not detected
+  (`docs/review/parity-register.md`, FU-SEC-P02).
+- Windows has no set-uid or set-gid processes: never restricted.
+
+`LibDefaults::from_env` reads `HOME` for `k5login_directory`; MIT never reads
+`HOME` for it (it uses the home directory of the target user's passwd entry)
+and this crate only stores the value. `docs/config-profile.md` (Deliberate
+divergences and bounds) lists the MIT sources.
 
 <a id="windows-api-ccache"></a>
 ## Windows API credential cache

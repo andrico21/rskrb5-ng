@@ -6,7 +6,7 @@ use super::{
     LibDefaults,
     parameters::{DefaultName, ExpansionContext, Failure},
 };
-use crate::file_name;
+use crate::{file_name, secure_env};
 
 #[cfg(test)]
 #[path = "credential_names_tests.rs"]
@@ -19,8 +19,9 @@ mod tests;
 /// procfs identities when requested. Use `parameters::expand` with an explicit
 /// context, then literal-path `load`/`save`, to avoid discovery.
 ///
-/// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
-/// ignores the same variables (`secure_getenv`); such programs must use the explicit constructors.
+/// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
+/// ignores them (`secure_getenv`); see the secure-environment decision of
+/// `docs/security-policy.md`.
 ///
 /// # Errors
 /// Returns typed missing-fact, invalid-environment and template failures.
@@ -47,7 +48,7 @@ pub(crate) fn resolve_credential_template(
     }
     #[cfg(not(windows))]
     let temp = if template.contains("%{TEMP}") {
-        match env::var("TMPDIR") {
+        match secure_env::ambient(|| env::var("TMPDIR")) {
             Ok(value) => Some(value),
             Err(env::VarError::NotPresent) => Some("/tmp".to_owned()),
             Err(env::VarError::NotUnicode(_value)) => return Err(Failure::Unavailable("TMPDIR")),
