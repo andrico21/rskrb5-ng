@@ -164,7 +164,7 @@ where
 
 impl Client<UnixStream> {
     /// Connect to the daemon at `path`: the socket must pass the trust check
-    /// of [`socket`](super::socket) and the connected peer must run as a
+    /// of [`socket`] and the connected peer must run as a
     /// trusted user.
     ///
     /// # Errors
