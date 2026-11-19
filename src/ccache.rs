@@ -53,19 +53,14 @@ pub enum CacheName {
 /// Redaction of credential-bearing diagnostics.
 mod credential_debug;
 
-/// The `DIR` cache type: collections of `tkt*` caches with a `primary` pointer.
 pub mod dir_store;
 
-/// The `FILE` cache type and the built-in file cache names.
 pub mod file_store;
 
-/// The `MEMORY` cache type.
 pub mod in_memory;
 
-/// Cache selection over a collection.
 pub mod selection;
 
-/// The credential-store traits.
 pub mod stores;
 
 use self::stores::CacheVersion;
