@@ -1,15 +1,13 @@
 //! Credential-cache selection over a collection (MIT 1.22.2 `krb5_cc_select`,
 //! `src/lib/krb5/ccache/ccselect.c:121-190`) and the default `.k5identity`.
 
-#[cfg(not(windows))]
 use std::{env, path::Path};
 
 use super::{CacheCollection, CacheHandle, Error, Principal};
-#[cfg(not(windows))]
-use crate::secure_env;
 use crate::{
     config::Config,
     extensions::{CacheCandidate, K5Identity, RealmQuery, Registry, Selection},
+    secure_env,
 };
 
 /// MIT's host-based service name type, `KRB5_NT_SRV_HST`.
@@ -119,11 +117,9 @@ fn fallback_server(
 #[must_use]
 #[inline]
 pub fn default_k5identity() -> Option<K5Identity> {
-    #[cfg(not(windows))]
-    {
-        let home = secure_env::ambient(|| env::var_os("HOME"))?;
-        Some(K5Identity::new(Path::new(&home).join(".k5identity")))
+    if cfg!(windows) {
+        return None;
     }
-    #[cfg(windows)]
-    None
+    let home = secure_env::ambient(|| env::var_os("HOME"))?;
+    Some(K5Identity::new(Path::new(&home).join(".k5identity")))
 }
