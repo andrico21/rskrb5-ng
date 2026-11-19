@@ -31,15 +31,21 @@ readonly PEER_ISO_NETWORK="$INTEROP_PREFIX-iso"
 readonly PEER_HOSTNAME=mit-peer.test.rskrb5
 readonly PEER_KDC_ALIAS=kdc.test.rskrb5
 readonly PEER_SELFCHECK=/opt/interop/peer/selfcheck.sh
+# The isolated container must give up on the KDC well inside the 10 s read
+# deadline of the Rust adapter client (tests/interop/peer_frame.rs): the IAKERB
+# negative control acquires a krb5 credential there and waits for the answer
+# (Y1-06, FU-IOP-P16). The self-check fails `up` above this many seconds.
+readonly PEER_ISO_FAIL_BOUND=5
 
-# peer_run NAME NETWORK PORT HOSTNAME IMAGE: starts one adapter container.
+# peer_run NAME NETWORK PORT HOSTNAME IMAGE [run options...]: starts one adapter container.
 peer_run() {
   local name="$1" network="$2" port="$3" hostname="$4" image="$5"
+  shift 5
   interop_rt run -d --name "$(interop_container_name "$name")" \
     --label "$INTEROP_LABEL=1" --network "$network" --hostname "$hostname" \
     --cap-drop ALL --security-opt no-new-privileges \
     --tmpfs /run/interop:rw,mode=1777 --tmpfs /run/peer:rw,mode=1777 \
-    --env "INTEROP_PEER_FIXTURE=$name" \
+    --env "INTEROP_PEER_FIXTURE=$name" "$@" \
     -p "127.0.0.1:$port:4401/tcp" "$image" >/dev/null ||
     interop_die "fixture mit-peer: container $name did not start"
 }
@@ -112,10 +118,14 @@ peer_selfcheck_network() {
   fi
   peer_exec "kinit from the connected container" "$main" kinit -k -t /run/peer/keytabs/peeruser.keytab \
     -c FILE:/run/peer/cc-kinit peeruser || return 1
+  local started="$SECONDS" elapsed
   if interop_rt exec "$iso" kinit -k -t /run/peer/keytabs/peeruser.keytab -c FILE:/run/peer/cc-kinit peeruser >/dev/null 2>&1; then
     interop_die "fixture mit-peer: kinit succeeded from the isolated container"
     return 1
   fi
+  elapsed=$((SECONDS - started))
+  ((elapsed < PEER_ISO_FAIL_BOUND)) ||
+    interop_die "fixture mit-peer: the isolated container needed ${elapsed} s to give up on the KDC (bound ${PEER_ISO_FAIL_BOUND} s, below the 10 s adapter deadline)" || return 1
   interop_log "self-check ok: isolated container: $PEER_KDC_ALIAS unresolvable, $kdc_ip:88 unreachable, kinit fails; connected container: resolves, connects, kinit succeeds"
 }
 
@@ -174,7 +184,11 @@ fixture_mit_peer_up() {
   peer_run mit-peer "$INTEROP_NETWORK" "$port" "$PEER_HOSTNAME" "$image" || return 1
   interop_rt network connect --alias "$PEER_HOSTNAME" "$PEER_ISO_NETWORK" "$main" >/dev/null ||
     interop_die "fixture $fixture: could not connect $main to $PEER_ISO_NETWORK" || return 1
-  peer_run mit-peer-iso "$PEER_ISO_NETWORK" "$iso_port" mit-peer-iso.test.rskrb5 "$image" || return 1
+  # The isolated network's DNS server does not answer, so a name lookup would
+  # run through the host's search domains with the default 5 s timeouts (the KDC
+  # name took 11 s to fail, Y1-06): no search domains, one 1 s attempt.
+  peer_run mit-peer-iso "$PEER_ISO_NETWORK" "$iso_port" mit-peer-iso.test.rskrb5 "$image" \
+    --dns-search . --dns-option timeout:1 --dns-option attempts:1 || return 1
   interop_wait_ready mit-peer || return 1
   interop_wait_ready mit-peer-iso || return 1
   interop_wait_tcp "$fixture" "$host" "$port" || return 1
