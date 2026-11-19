@@ -29,6 +29,10 @@ mod password;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod reservation_tests;
 
+/// The keytab-store traits and the file and `MEMORY` keytab types.
+mod store;
+
+pub use self::store::{KeyStore, MemoryKeytab, resolve};
 #[cfg(feature = "messages")]
 use crate::config::{LibDefaults, credential_names, parameters::DefaultName};
 use crate::{crypto::selection, file_name, secure_env};
