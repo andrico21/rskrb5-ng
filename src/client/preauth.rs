@@ -126,6 +126,7 @@ fn challenge(bytes: &[u8], requested: &AsReq) -> Result<KdcError, Error> {
 ///
 /// Returns [`Error::Kdc`] for any other KDC error, and errors from key-info
 /// selection, password key derivation and request building.
+#[cfg(any(feature = "tokio", test))]
 pub(super) fn password_preauth_request(
     client: Principal,
     service: Principal,
@@ -174,6 +175,7 @@ pub(super) fn password_preauth_request_at(
 ///
 /// Returns [`Error::Kdc`] for any other KDC error, and errors from key-info
 /// selection, keytab lookup and request building.
+#[cfg(feature = "tokio")]
 pub(super) fn keytab_preauth_request(
     client: Principal,
     service: Principal,

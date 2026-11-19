@@ -9,6 +9,8 @@ use super::*;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
+    extern crate alloc;
+
     use alloc::sync::Arc;
     use core::net::{IpAddr, Ipv4Addr};
 
@@ -445,7 +447,10 @@ mod tests {
 
     impl Exchange for Expiring {
         fn advance(&mut self, _input: StepInput<'_>) -> Result<ExchangeStep, Error> {
-            let session = self.0.take().ok_or(Error::NoTgtSession)?;
+            let session = self
+                .0
+                .take()
+                .ok_or(Error::UnexpectedStepInput { expected: "start" })?;
             Ok(ExchangeStep::Complete(Box::new(session)))
         }
 

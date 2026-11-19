@@ -35,9 +35,8 @@ use super::{
     options::{AsReq, TgsReq},
     principal::Principal,
 };
-#[cfg(feature = "tokio")]
-use crate::config::Config;
 use crate::{
+    config::Config,
     error::Client as Error,
     extensions::{PreauthSession, ProviderError},
     keytab::{EncryptionKey, Keytab},
