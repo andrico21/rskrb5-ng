@@ -7,7 +7,9 @@ use super::{
     CCache, Credential, Error, Principal,
     dir_store::{DirStore, create_unique},
     direct_file_path_from_cache_name, file_name_error, is_config_credential,
-    stores::{CacheCollection, CacheCursor, CacheHandle, CacheVersion, CredentialStore},
+    stores::{
+        CacheCollection, CacheCursor, CacheHandle, CacheIdentity, CacheVersion, CredentialStore,
+    },
 };
 use crate::{
     extensions,
@@ -182,6 +184,11 @@ impl CacheHandle for FileCache {
         self.name.clone()
     }
 
+    /// The file, whichever of `FILE:`, `WRFILE:`, a bare path or `DIR::` names it.
+    fn identity(&self) -> CacheIdentity {
+        CacheIdentity::file(self.path.clone())
+    }
+
     fn load(&self) -> Result<CCache, Error> {
         let bytes = locked::read_shared(&self.path)?;
         self.parse(bytes.as_deref().map(Vec::as_slice))
@@ -257,7 +264,7 @@ impl CacheCollection for Single {
     /// Switching to the one cache changes nothing (MIT has no `switch_to` for
     /// `FILE`, `ccfns.c:295-300`); any other cache is refused.
     fn switch(&self, cache: &dyn CacheHandle) -> Result<(), Error> {
-        if cache.name() == self.0.name {
+        if cache.identity() == self.0.identity() {
             Ok(())
         } else {
             Err(Error::OutsideCollection {

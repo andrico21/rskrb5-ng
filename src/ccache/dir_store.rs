@@ -14,7 +14,9 @@ use super::{
     DIR_DEFAULT_PRIMARY_CACHE, DIR_PRIMARY_FILE, Error,
     file_store::{FileCache, Single},
     parse_dir_primary_name,
-    stores::{CacheCollection, CacheCursor, CacheHandle, CacheVersion, CredentialStore},
+    stores::{
+        CacheCollection, CacheCursor, CacheHandle, CacheIdentity, CacheVersion, CredentialStore,
+    },
     validate_dir_subsidiary_path,
 };
 use crate::file_name::{self, locked};
@@ -186,9 +188,9 @@ impl CacheCollection for DirCollection {
         Ok(Box::new(self.cache(&file)))
     }
 
-    /// Point `primary` at `cache`, which must be a `DIR::` cache directly
-    /// inside this directory (MIT `dcc_switch_to`, `cc_dir.c:720-739`); the
-    /// pointer is replaced atomically.
+    /// Point `primary` at `cache`, which must be the `DIR::` cache file it
+    /// names, directly inside this directory (MIT `dcc_switch_to`,
+    /// `cc_dir.c:720-739`); the pointer is replaced atomically.
     fn switch(&self, cache: &dyn CacheHandle) -> Result<(), Error> {
         let name = cache.name();
         let outside = || Error::OutsideCollection {
@@ -199,7 +201,9 @@ impl CacheCollection for DirCollection {
             .strip_prefix("DIR::")
             .and_then(|path| validate_dir_subsidiary_path(path).ok())
             .ok_or_else(outside)?;
-        if path.parent() != Some(self.directory.as_path()) {
+        if path.parent() != Some(self.directory.as_path())
+            || cache.identity() != CacheIdentity::file(path.clone())
+        {
             return Err(outside());
         }
         let file = path
