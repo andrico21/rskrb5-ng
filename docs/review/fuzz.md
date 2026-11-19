@@ -7,7 +7,7 @@ itself reaches the parsers mapped to it.
 
 ## Targets
 
-`cargo +nightly-2026-10-03 fuzz list` prints these fourteen targets. All take
+`cargo +nightly-2026-10-03 fuzz list` prints these fifteen targets. All take
 arbitrary bytes; most use the first byte as a selector and pass the rest to
 the chosen entry point, so one target covers a family of related decoders.
 
@@ -26,6 +26,7 @@ the chosen entry point, so one target covers a family of related decoders.
 | `der_oid` | DER and OID bytes | the crate's SPNEGO DER reader and OID decoder (decode, re-encode, decode again must give the same value), `ObjectIdentifier::from_arcs`, and a decrypted Authenticator whose fuzzed plaintext reaches the zero-padding trimmer and the complete-message decoder |
 | `krb5_conf` | `krb5.conf` text (UTF-8-lossy) | `Config::parse` and includes, then the enctype-list accessors `default_tkt_enctype_ids`, `default_tgs_enctype_ids` and `permitted_enctype_ids` on an accepted configuration |
 | `extensions` | `.k5identity` contents, or `krb5.conf` text parsed through an extension registry | `K5Identity::from_bytes` and `CacheSelector::choose` (the `.k5identity` grammar and its `fnmatch` patterns, for a host-based and a plain server), and `Registry::parse_config` (the `module <id>:<residual>` profile directive and `[plugins]` module resolution) in both parse modes |
+| `ccache_collection` | a `DIR` collection's `primary` pointer and its `tkt` cache file, split at the first byte | `DirStore` collection enumeration, primary resolution and loads (`read_primary`, the locked reads and `FileCache::parse`), and the `FILE` store load of the same file |
 | `name_parse` | names and values as text | `Principal::parse_user`, `Principal::parse_service`, `CacheName::parse`, `keytab::Name::parse`, `KdcEndpoint::configured`, `Tokio::with_dns_server`, `config::parse_duration`, `config::parse_boolean`, `crypto::s2kparams_to_iterations` |
 
 The keys, keytabs, tickets and templates the targets use are the synthetic
@@ -91,6 +92,7 @@ timeout artifact:
 | `krb5_conf` | 140,698 (todo 15 F, 2026-11-01) | 121 s | 0 |
 | `name_parse` | 2,629,623 | 121 s | 0 |
 | `extensions` | 651,170 (todo 3 of plan 2, 2026-11-18) | 121 s | 0 |
+| `ccache_collection` | 163,889 (todo 11 of plan 2, 2026-11-19) | 121 s | 0 |
 
 ### Round-2 session admission repair (FU-FUZ-R02)
 
@@ -178,6 +180,12 @@ of that target, then `coverage_index` and `check_coverage` on the `extensions`
 rows (4 of 4 mappings; record `task-3-extensions-coverage.tsv` in the
 execution evidence). The other targets were not rebuilt in that lane.
 
+Plan 2 todo 11 added the `ccache_collection` target for the `DIR` collection
+readers and proved its four rows the same way (4 of 4 mappings; record
+`task-11-ccache-collection-coverage.tsv` in the execution evidence). The
+auxiliary-vector parser of the secure-environment decision has no target: it
+reads only this process's kernel-written `/proc/self/auxv`, and its row says so.
+
 ## Round-trip properties
 
 | Encoder and parser | Property | Where |
@@ -234,6 +242,8 @@ does.
 | `rskrb5_ng::ccache::read_u16` | `src/ccache.rs` | `ccache_parse` |  |
 | `rskrb5_ng::ccache::read_u32` | `src/ccache.rs` | `ccache_parse` |  |
 | `rskrb5_ng::ccache::read_u8` | `src/ccache.rs` | `ccache_parse` |  |
+| `rskrb5_ng::ccache::dir_store::read_primary` | `src/ccache/dir_store.rs` | `ccache_collection` |  |
+| `rskrb5_ng::ccache::file_store::FileCache::parse` | `src/ccache/file_store.rs` | `ccache_collection` |  |
 | `rskrb5_ng::client::decode` | `src/client.rs` | `kdc_reply` |  |
 | `rskrb5_ng::client::kerberos_string_to_string` | `src/client.rs` | `kdc_reply` |  |
 | `rskrb5_ng::client::preauth_key_info_from_method_data` | `src/client.rs` | `kdc_reply` |  |
@@ -336,6 +346,8 @@ does.
 | `rskrb5_ng::file_name::expand_path_tokens` | `src/file_name.rs` | `name_parse` |  |
 | `rskrb5_ng::file_name::file_path_from_name` | `src/file_name.rs` | `name_parse` |  |
 | `rskrb5_ng::file_name::is_windows_drive_path` | `src/file_name.rs` | `name_parse` |  |
+| `rskrb5_ng::file_name::locked::read_all` | `src/file_name/locked.rs` | `ccache_collection` |  |
+| `rskrb5_ng::file_name::locked::read_shared` | `src/file_name/locked.rs` | `ccache_collection` |  |
 | `<rskrb5_ng::http::WwwAuthenticateSegments as core::iter::traits::iterator::Iterator>::next` | `src/http.rs` | `http_negotiate` |  |
 | `rskrb5_ng::http::WwwAuthenticateSegments::new` | `src/http.rs` | `http_negotiate` |  |
 | `rskrb5_ng::http::NegotiateFuture::ready` | `src/http.rs` | - | constructs an already-completed Tower future from a response the layer built; matches the search only through the `read` prefix of `ready` and parses nothing |
@@ -476,6 +488,7 @@ does.
 | `rskrb5_ng::pac::reader::Reader::read_u32` | `src/pac/reader.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::reader::Reader::read_u64` | `src/pac/reader.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::reader::Reader::read_u8` | `src/pac/reader.rs` | `pac_parse` |  |
+| `rskrb5_ng::secure_env::parse_auxv` | `src/secure_env.rs` | - | reads this process's auxiliary vector, which the kernel writes (`/proc/self/auxv`), not bytes an attacker supplies; a malformed vector is restricted (fail closed); covered by `auxv_fixtures_decide_without_the_os` (AT_SECURE 0, 1, absent, truncated) |
 | `rskrb5_ng::service::ValidatedApReq::verify_ap_rep` | `src/service.rs` | `spnego_token` |  |
 | `rskrb5_ng::service::Validator::validate_ap_req` | `src/service.rs` | `spnego_token` |  |
 | `rskrb5_ng::service::Validator::validate_client_address` | `src/service.rs` | `spnego_token` |  |

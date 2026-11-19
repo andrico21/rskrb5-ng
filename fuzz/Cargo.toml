@@ -110,3 +110,10 @@ path = "fuzz_targets/extensions.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "ccache_collection"
+path = "fuzz_targets/ccache_collection.rs"
+test = false
+doc = false
+bench = false
