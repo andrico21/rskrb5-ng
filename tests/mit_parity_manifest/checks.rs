@@ -4,7 +4,7 @@ use crate::{
     Spec, TestError,
     audit::{check_evidence, check_markdown, check_shape, check_summary},
     markdown::markdown,
-    model::{manifest, todo_index},
+    model::{manifest, read, todo_index},
     rules::check_rules,
 };
 
@@ -79,4 +79,40 @@ fn markdown_matches_manifest() -> Result<(), TestError> {
     // When the Markdown is generated again.
     // Then any drift fails and leaves the regenerated file for review.
     check_markdown(&MIT, &table, &features)
+}
+
+/// The `[plugins]` selection row is not `implemented` while a consumer is still deferred.
+#[test]
+fn plugin_selection_row_is_not_implemented_while_a_consumer_is_deferred() -> Result<(), TestError> {
+    // Given the manifest row and the generated catalogue of the two selection relations.
+    let (_, features) = manifest(MIT.manifest)?;
+    let catalogue = read("docs/config-relations.md")?;
+    let consumers: Vec<&str> = catalogue
+        .lines()
+        .filter(|line| {
+            ["| plugins | disable |", "| plugins | enable_only |"]
+                .iter()
+                .any(|prefix| line.starts_with(prefix))
+        })
+        .filter_map(|line| line.split('|').nth(5).map(str::trim))
+        .collect();
+    assert_eq!(
+        consumers.len(),
+        2,
+        "catalogue rows of disable and enable_only"
+    );
+    // When a catalogue consumer is a later plan-2 package.
+    let deferred = consumers
+        .iter()
+        .any(|consumer| consumer.starts_with("plan "));
+    let row = features
+        .iter()
+        .find(|feature| feature.id == "MIT-config-54")
+        .ok_or("MIT-config-54 row")?;
+    // Then the row cannot claim completion.
+    assert!(
+        !deferred || row.status != "implemented",
+        "MIT-config-54 is implemented while a consumer is deferred: {consumers:?}"
+    );
+    Ok(())
 }
