@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 48
+implemented = 49
 partial = 67
-absent = 38
+absent = 37
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -814,13 +814,42 @@ id = "MIT-ccache-3"
 area = "ccache"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Linux KEYRING: process/thread/user/session/persistent"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "KEYRING: names fail with a typed UnsupportedCacheType error; no kernel keyring backend."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "ccache::keyring::Keyring",
+  "ccache::keyring::Fault",
+  "ccache::keyring::KernelError",
+  "ccache::file_store::resolve",
+  "ccache::file_store::collection",
+]
+test_names = [
+  "src/ccache/keyring/tests/operations.rs::resolve_creates_the_collection_and_primary_name",
+  "src/ccache/keyring/tests/operations.rs::initialize_writes_the_principal_key",
+  "src/ccache/keyring/tests/operations.rs::store_adds_one_key_per_credential",
+  "src/ccache/keyring/tests/operations.rs::remove_unlinks_matching_credentials",
+  "src/ccache/keyring/tests/legacy.rs::legacy_cache_is_visible_to_old_code",
+  "src/ccache/keyring/tests/collections.rs::anchors_place_the_collection",
+  "src/ccache/keyring/tests/collections.rs::persistent_keyring_of_another_user_is_refused",
+  "src/ccache/keyring/tests/collections.rs::new_unique_reserves_a_name",
+  "src/ccache/keyring/tests/collections.rs::switch_changes_the_primary",
+  "src/ccache/keyring/tests/failures.rs::enosys_is_unavailable",
+  "src/ccache/keyring/tests/failures.rs::permission_errors_are_typed",
+  "src/ccache/keyring/tests/failures.rs::quota_is_not_retried",
+  "src/ccache/keyring/tests/failures.rs::unreadable_credentials_are_skipped",
+  "src/ccache/keyring/tests/failures.rs::revoked_collection_is_reported",
+  "src/ccache/keyring/kernel/tests.rs::errno_values_map_to_typed_failures",
+  "tests/ccache_keyring/kernel.rs::every_anchor_round_trips",
+  "tests/ccache_keyring/kernel.rs::collection_lists_switches_and_creates",
+  "tests/ccache_keyring/kernel.rs::another_users_persistent_keyring_is_refused",
+  "tests/ccache_keyring/kernel.rs::credential_over_the_key_quota_is_refused",
+  "tests/ccache_keyring/namespaces.rs::process_keyring_is_private_to_the_process",
+  "tests/ccache_keyring/namespaces.rs::thread_keyring_is_private_to_the_thread",
+  "tests/ccache_keyring/namespaces.rs::session_and_user_keyrings_are_shared",
+]
+feature_flags = ["ccache-keyring"]
+security_divergence = "Compiled only with the `ccache-keyring` leaf on Linux; without it `KEYRING:` names keep failing with `UnsupportedCacheType`. The persistent keyring of another user goes to the kernel, which refuses it without `CAP_SETUID` (`EPERM`, typed `KernelError::PermissionDenied`), where MIT's fallback (`cc_keyring.c:182-195`) is the same for a kernel without persistent keyrings and a user id that is not the caller's. The persistent collection name is decimal digits only, where MIT's `strtol` also takes blanks and signs (`cc_keyring.c:456-473`). A key lookup treats only a missing, expired or revoked key as absent and reports `EACCES`, `EPERM` and quota errors, where MIT reads every failure as absent (`cc_keyring.c:229-250,664-668`). A credential key with bytes after the credential, and a primary-name key with an empty name, are refused. Errors setting a key timeout and linking the legacy cache into the session keyring are reported, where MIT ignores them (`cc_keyring.c:350-353,758-760`). A cache is not replaced atomically, as in MIT. Credentials are written in the version 4 file encoding in zeroizing buffers; the `ccache_type` version does not apply, as in MIT (`cc_keyring.c:1215`). No MIT 1.22.2 container run: Docker's default seccomp profile blocks the key calls, see docs/review/parity-register.md."
 disposition = "WP-09"
 closing_plan = 2
 closing_todo = 13
