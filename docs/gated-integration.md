@@ -56,6 +56,25 @@ scripts/run-gated-integration.sh test --test client_integration
 scripts/run-gated-integration.sh stop
 ```
 
+## Live Interop Harness
+
+`scripts/interop/run.sh` (the `interop` workflow runs it on every `main` push)
+builds the pinned MIT krb5 and Samba AD fixtures and runs the live suites in
+Docker or Podman. Three optional variables serve local runs:
+
+- `INTEROP_NAMESPACE=<name>` scopes the label, the networks and the container
+  names of one run (`rskrb5-interop--<name>-...`), so `up` and `down` of one run
+  never remove another run's fixtures. `INTEROP_PORT_OFFSET=<n>` shifts every
+  default host port, so two runs can publish side by side. Unset, the names and
+  ports are the ones CI uses.
+- `INTEROP_BUILD_CA_DIR=<dir>` (Podman only) mounts a directory of extra root
+  certificates read-only during image builds, for a host behind a proxy that
+  inspects TLS. The download pins (sha256 and PGP) of the Dockerfiles still
+  bind, and CI never sets it.
+- `INTEROP_LOG_DIR=<dir>` collects the fixture logs with every generated secret
+  redacted. The run records its secrets before using them; when that record is
+  missing or redaction fails, the directory holds only `LOG-UPLOAD-REFUSED.txt`.
+
 ## Resolver Behavior
 
 The DNS-SRV test uses the OS resolver through the Rust DNS resolver stack, so
