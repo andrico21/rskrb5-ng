@@ -111,7 +111,6 @@ pub mod options;
 /// Kerberos principal names used by the client.
 pub mod principal;
 
-/// Transport-neutral, stepwise AS and TGS exchanges.
 pub mod stepwise;
 #[cfg(feature = "tokio")]
 /// KDC endpoint discovery and asynchronous transport.
