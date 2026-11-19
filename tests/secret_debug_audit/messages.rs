@@ -59,6 +59,7 @@ pub(super) mod tests {
         kdc_diagnostics_redact_credential_payloads()?;
         sessions_and_validators_redact_credentials()?;
         message_wrappers_redact_credentials()?;
+        extension_preauth_input_redacts_padata()?;
         #[cfg(feature = "tokio")]
         tokio_clients_redact_passwords()?;
         authenticated_service_owners_redact_credentials()
@@ -460,6 +461,28 @@ pub(super) mod tests {
         redacted(
             &verify_kpasswd_ap_rep(&reply, &built)?.ok_or("verified reply")?,
             &[&acceptor],
+        );
+        Ok(())
+    }
+
+    /// A preauthentication round's input names sizes, never PA-DATA or request bytes.
+    #[test]
+    fn extension_preauth_input_redacts_padata() -> Result<(), Box<dyn Error>> {
+        use rskrb5_ng::extensions::PreauthInput;
+        let padata = pattern(65);
+        let body = pattern(81);
+        let encrypted = der::encode(&rasn_kerberos::EncryptedData {
+            etype: 18,
+            kvno: None,
+            cipher: padata.clone().into(),
+        })?;
+        let method_data = [rasn_kerberos::PaData {
+            r#type: 2,
+            value: encrypted.into(),
+        }];
+        redacted(
+            &PreauthInput::new(2, &method_data, &body, 1),
+            &[&padata, &body],
         );
         Ok(())
     }

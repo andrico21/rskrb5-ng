@@ -116,6 +116,7 @@ mod tests {
     };
     use rskrb5_ng::{
         config::{Config, Realm, parse_duration},
+        crypto::camellia,
         error::Config as Error,
     };
     #[cfg(feature = "serde")]
@@ -387,11 +388,14 @@ mod tests {
         // When parsing the distro configuration.
         let config = Config::parse(input)?;
         // Then only implemented enctypes remain, in the configured order.
-        assert_eq!(
-            config.libdefaults.permitted_enctype_ids(),
-            [20_i32, 19_i32, 18_i32, 17_i32]
-        );
-        assert_eq!(config.libdefaults.permitted_enctypes.len(), 4);
+        // And Camellia, named explicitly, is kept only when the leaf is compiled in.
+        let expected: &[i32] = if camellia::AVAILABLE {
+            &[20, 19, 18, 17, 26, 25]
+        } else {
+            &[20, 19, 18, 17]
+        };
+        assert_eq!(config.libdefaults.permitted_enctype_ids(), expected);
+        assert_eq!(config.libdefaults.permitted_enctypes.len(), expected.len());
         Ok(())
     }
 
@@ -403,11 +407,26 @@ mod tests {
         // When parsing the explicit request list.
         let config = Config::parse(input)?;
         // Then the name list and derived wire IDs agree.
-        assert_eq!(
-            config.libdefaults.default_tgs_enctypes,
-            ["aes128-cts-hmac-sha1-96"]
-        );
-        assert_eq!(config.libdefaults.default_tgs_enctype_ids(), [17_i32]);
+        if camellia::AVAILABLE {
+            assert_eq!(
+                config.libdefaults.default_tgs_enctypes,
+                [
+                    "camellia128-cts-cmac",
+                    "aes128-cts-hmac-sha1-96",
+                    "camellia256-cts-cmac"
+                ]
+            );
+            assert_eq!(
+                config.libdefaults.default_tgs_enctype_ids(),
+                [25_i32, 17_i32, 26_i32]
+            );
+        } else {
+            assert_eq!(
+                config.libdefaults.default_tgs_enctypes,
+                ["aes128-cts-hmac-sha1-96"]
+            );
+            assert_eq!(config.libdefaults.default_tgs_enctype_ids(), [17_i32]);
+        }
         Ok(())
     }
 
@@ -449,6 +468,10 @@ mod tests {
                 "DEFAULT -rc4" => assert_eq!(
                     result?.libdefaults.default_tgs_enctype_ids(),
                     [20_i32, 19_i32, 18_i32, 17_i32]
+                ),
+                "camellia" if camellia::AVAILABLE => assert_eq!(
+                    result?.libdefaults.default_tgs_enctype_ids(),
+                    [26_i32, 25_i32, 18_i32]
                 ),
                 "camellia" => assert_eq!(result?.libdefaults.default_tgs_enctype_ids(), [18_i32]),
                 _ => {
@@ -1775,6 +1798,10 @@ mod tests {
             "des3-cbc-raw",
             "des-cbc-md5 camellia128-cts-cmac",
         ] {
+            if camellia::AVAILABLE && names == "camellia256-cts-cmac" {
+                // The leaf supports it: tests/crypto_camellia.rs covers the named list.
+                continue;
+            }
             let error = Config::parse(&format!(
                 "
 [libdefaults]

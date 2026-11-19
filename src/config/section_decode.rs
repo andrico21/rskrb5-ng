@@ -38,7 +38,7 @@ pub(crate) const SECTION_RELATIONS: [(&str, &str, &str, &str, &str, &str); 6] = 
         "repeated module names",
         "empty",
         "plan 2 WP-16",
-        "Restrictions affecting current timestamp preauth fail; nonexistent plugin behavior only diagnosed",
+        "extensions::Registry::enabled filters registered providers; diagnosed until built-in consumers use it; excluding timestamp preauth fails",
         "disable",
     ),
     (
@@ -46,15 +46,15 @@ pub(crate) const SECTION_RELATIONS: [(&str, &str, &str, &str, &str, &str); 6] = 
         "repeated module names",
         "all built-ins",
         "plan 2 WP-16",
-        "Excluding current timestamp preauth fails; nonexistent plugin behavior only diagnosed",
+        "extensions::Registry::enabled keeps and orders registered providers; diagnosed until built-in consumers use it; excluding timestamp preauth fails",
         "enable_only",
     ),
     (
         "module",
-        "rejected module descriptor",
+        "registered extension id and ignored path",
         "empty",
-        "profile_syntax::State::line",
-        "Dynamic modules always rejected before composition",
+        "extensions::Registry::parse_config",
+        "A registered provider id of the interface resolves; any other module is rejected before composition",
         "module",
     ),
 ];

@@ -35,14 +35,22 @@ features = ["http", "tower"]
 # Additive leaf flags (D10, docs/dependency-admission.md): one sub-table per
 # leaf with its `minimal` core features, `modules`, `tests` and `seams`;
 # `scripts/lint-gates/leaf_features.py` and `feature_closures.py` read it.
-# No leaf exists yet.
-[package.metadata.rskrb5-ng.leaf-features]
+[package.metadata.rskrb5-ng.leaf-features.camellia]
+minimal = []
+modules = ["src/crypto/camellia.rs", "src/crypto/camellia/"]
+tests = [
+  "tests/crypto_camellia.rs",
+  "tests/crypto_camellia/",
+  "tests/interop_camellia.rs",
+  "tests/interop_camellia/",
+]
 
 [lib]
 name = "rskrb5_ng"
 
 [features]
 default = ["spnego", "tokio", "serde"]
+camellia = ["dep:camellia", "dep:cmac"]
 evaluation = ["spnego", "dep:hex"]
 messages = ["dep:chrono", "dep:rasn", "dep:rasn-kerberos"]
 spnego = ["messages", "dep:base64"]
@@ -54,9 +62,11 @@ serde = ["dep:serde", "dep:serde_json"]
 [dependencies]
 aes = "0.9.1"
 base64 = { version = "0.23", optional = true }
+camellia = { version = "0.2.1", features = ["zeroize"], optional = true }
 chrono = { version = "0.4", default-features = false, features = [
   "std",
 ], optional = true }
+cmac = { version = "0.8.0", features = ["zeroize"], optional = true }
 compcol = { version = "0.7", default-features = false, features = [
   "lznt1",
   "xpress",

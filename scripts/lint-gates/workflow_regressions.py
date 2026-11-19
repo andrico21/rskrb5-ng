@@ -19,7 +19,7 @@ def self_test() -> int:
     ci = (root / ".github/workflows/ci.yml").read_text()
     prek = (root / "prek.toml").read_text()
     assert workflow_gate.wiring_errors(ci, prek) == []
-    assert len(feature_closures.ci_matrix(ci)) == 36
+    assert len(feature_closures.ci_matrix(ci)) == len(feature_closures.load_all(root))
     with TemporaryDirectory() as directory:
         scratch = Path(directory)
         workflows = scratch / ".github/workflows"

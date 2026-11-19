@@ -223,6 +223,9 @@ mod tests {
         if identity == "src/error/any.rs::Any" {
             return cfg!(feature = "messages");
         }
+        if identity == "src/extensions.rs::PreauthInput" {
+            return cfg!(feature = "messages");
+        }
         if identity.starts_with("src/service") {
             return cfg!(feature = "messages");
         }
@@ -1233,6 +1236,7 @@ mod tests {
         "src/error.rs::Client",
         "src/error.rs::Http",
         "src/error.rs::Spnego",
+        "src/extensions.rs::PreauthInput",
         "src/spnego.rs::Krb5MechToken",
         "src/spnego.rs::NegTokenInit",
         "src/spnego.rs::NegTokenResp",

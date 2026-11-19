@@ -32,9 +32,15 @@ pub type CryptoPolicy = policy::Policy;
 /// Intended consumer use checked against runtime policy.
 pub type Use = policy::Use;
 
+/// Camellia-CTS-CMAC of RFC 6803 behind the additive `camellia` leaf feature.
+#[path = "crypto/camellia.rs"]
+pub mod camellia;
 /// Policy-authorized low-level cryptographic operations.
 #[path = "crypto/checked.rs"]
 pub mod checked;
+/// Kerberos PRF primitives: RFC 6113 `PRF+` and `KRB-FX-CF2`, RFC 4402 `PRF+`.
+#[path = "crypto/prf.rs"]
+pub mod prf;
 /// Trusted per-family string-to-key work-factor policy.
 #[path = "crypto/s2k.rs"]
 pub mod s2k;
@@ -1457,6 +1463,8 @@ pub enum KerberosEtype {
     Des3CbcSha1Kd(Des3CbcSha1KdEtype),
     /// RFC4757 RC4-HMAC etype.
     Rc4Hmac(Rc4HmacEtype),
+    /// RFC6803 Camellia-CTS-CMAC etype; no value exists without the `camellia` feature.
+    Camellia(camellia::CtsCmacEtype),
 }
 
 impl KerberosEtype {
@@ -1469,6 +1477,7 @@ impl KerberosEtype {
             .or_else(|| AesSha2Etype::from_etype_id(etype_id).map(Self::Sha2))
             .or_else(|| Des3CbcSha1KdEtype::from_etype_id(etype_id).map(Self::Des3CbcSha1Kd))
             .or_else(|| Rc4HmacEtype::from_etype_id(etype_id).map(Self::Rc4Hmac))
+            .or_else(|| camellia::CtsCmacEtype::from_etype_id(etype_id).map(Self::Camellia))
     }
 
     /// Probe checksum capability without selecting use (for opaque metadata).
@@ -1481,7 +1490,12 @@ impl KerberosEtype {
             16 => Some(Self::Sha1(AesSha1Etype::Aes256)),
             19 => Some(Self::Sha2(AesSha2Etype::Aes128)),
             20 => Some(Self::Sha2(AesSha2Etype::Aes256)),
-            _ => Rc4HmacEtype::from_checksum_type_id(checksum_type_id).map(Self::Rc4Hmac),
+            _ => Rc4HmacEtype::from_checksum_type_id(checksum_type_id)
+                .map(Self::Rc4Hmac)
+                .or_else(|| {
+                    camellia::CtsCmacEtype::from_checksum_type_id(checksum_type_id)
+                        .map(Self::Camellia)
+                }),
         }
     }
 
@@ -1494,6 +1508,7 @@ impl KerberosEtype {
             Self::Sha2(etype) => etype.etype_id(),
             Self::Des3CbcSha1Kd(_) => Des3CbcSha1KdEtype::etype_id(),
             Self::Rc4Hmac(_) => Rc4HmacEtype::etype_id(),
+            Self::Camellia(etype) => etype.etype_id(),
         }
     }
 
@@ -1506,6 +1521,7 @@ impl KerberosEtype {
             Self::Sha2(etype) => etype.checksum_type_id(),
             Self::Des3CbcSha1Kd(_) => Des3CbcSha1KdEtype::checksum_type_id(),
             Self::Rc4Hmac(_) => Rc4HmacEtype::checksum_type_id(),
+            Self::Camellia(etype) => etype.checksum_type_id(),
         }
     }
 
@@ -1518,6 +1534,7 @@ impl KerberosEtype {
             Self::Sha2(etype) => etype.key_len(),
             Self::Des3CbcSha1Kd(_) => Des3CbcSha1KdEtype::key_len(),
             Self::Rc4Hmac(_) => Rc4HmacEtype::key_len(),
+            Self::Camellia(etype) => etype.key_len(),
         }
     }
 
@@ -1530,6 +1547,7 @@ impl KerberosEtype {
             Self::Sha2(_) => AesSha2Etype::confounder_len(),
             Self::Des3CbcSha1Kd(_) => Des3CbcSha1KdEtype::confounder_len(),
             Self::Rc4Hmac(_) => Rc4HmacEtype::confounder_len(),
+            Self::Camellia(_) => camellia::CtsCmacEtype::confounder_len(),
         }
     }
 
@@ -1542,6 +1560,7 @@ impl KerberosEtype {
             Self::Sha2(etype) => etype.hmac_len(),
             Self::Des3CbcSha1Kd(_) => Des3CbcSha1KdEtype::hmac_len(),
             Self::Rc4Hmac(_) => Rc4HmacEtype::hmac_len(),
+            Self::Camellia(_) => camellia::CtsCmacEtype::hmac_len(),
         }
     }
 
@@ -1554,6 +1573,7 @@ impl KerberosEtype {
             Self::Sha2(_) => AesSha2Etype::default_s2kparams(),
             Self::Des3CbcSha1Kd(_) => Des3CbcSha1KdEtype::default_s2kparams(),
             Self::Rc4Hmac(_) => Rc4HmacEtype::default_s2kparams(),
+            Self::Camellia(_) => camellia::CtsCmacEtype::default_s2kparams(),
         }
     }
 
@@ -1575,6 +1595,7 @@ impl KerberosEtype {
             Self::Sha2(etype) => etype.string_to_key(secret, salt, s2kparams),
             Self::Des3CbcSha1Kd(_) => Des3CbcSha1KdEtype::string_to_key(secret, salt, s2kparams),
             Self::Rc4Hmac(_) => Rc4HmacEtype::string_to_key(secret, salt, s2kparams),
+            Self::Camellia(etype) => etype.string_to_key(secret, salt, s2kparams),
         }
     }
 
@@ -1591,6 +1612,7 @@ impl KerberosEtype {
             Self::Sha2(etype) => etype.checksum(protocol_key, data, usage),
             Self::Des3CbcSha1Kd(_) => Des3CbcSha1KdEtype::checksum(protocol_key, data, usage),
             Self::Rc4Hmac(_) => Rc4HmacEtype::checksum(protocol_key, data, usage),
+            Self::Camellia(etype) => etype.checksum(protocol_key, data, usage),
         }
     }
 
@@ -1611,6 +1633,7 @@ impl KerberosEtype {
                 Des3CbcSha1KdEtype::verify_checksum(protocol_key, data, checksum, usage)
             }
             Self::Rc4Hmac(_) => Rc4HmacEtype::verify_checksum(protocol_key, data, checksum, usage),
+            Self::Camellia(etype) => etype.verify_checksum(protocol_key, data, checksum, usage),
         }
     }
 
@@ -1647,6 +1670,9 @@ impl KerberosEtype {
                 usage,
                 confounder,
             ),
+            Self::Camellia(etype) => {
+                etype.encrypt_message_with_confounder(protocol_key, message, usage, confounder)
+            }
         }
     }
 
@@ -1670,6 +1696,7 @@ impl KerberosEtype {
                 Des3CbcSha1KdEtype::decrypt_message(protocol_key, ciphertext, usage)
             }
             Self::Rc4Hmac(_) => Rc4HmacEtype::decrypt_message(protocol_key, ciphertext, usage),
+            Self::Camellia(etype) => etype.decrypt_message(protocol_key, ciphertext, usage),
         }
     }
 }

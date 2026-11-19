@@ -4773,6 +4773,20 @@ pub fn select_keytab_reply_key(
 
 use crate::error::Client as Error;
 
+/// The outgoing PA-DATA admission, for the PA-DATA a registered
+/// `extensions::ClientPreauth` mechanism returns: the same check
+/// caller-supplied PA-DATA passes.
+///
+/// # Errors
+///
+/// Returns the policy or protocol refusal of the admission.
+pub(crate) fn admit_padata(
+    policy: &CryptoPolicy,
+    data: &[rasn_kerberos::PaData],
+) -> Result<(), Error> {
+    crypto_policy::padata(policy, data)
+}
+
 /// DER-decode `bytes` as `T`, naming `target` in the error.
 ///
 /// # Errors

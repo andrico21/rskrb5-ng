@@ -2,9 +2,12 @@ use core::error::Error;
 
 use rskrb5_ng::{
     config::{ConfigDiagnostic, EnctypeExpr, ParseMode, Toggle},
-    crypto::KerberosEtype,
+    crypto::{KerberosEtype, camellia},
     error::{self, Policy, RejectedFeature},
 };
+
+/// What the unavailable-Camellia diagnostics name as the way to make the enctypes available.
+const UNTIL: &str = "the `camellia` Cargo feature is enabled";
 
 /// Convert the resolved public values into wire IDs for exact comparisons.
 fn ids(text: &str) -> Result<Vec<i32>, error::Config> {
@@ -190,6 +193,10 @@ fn insecure_names_are_typed_rejections() -> Result<(), Box<dyn Error>> {
 /// Only secure unimplemented Camellia names receive compatible-mode diagnostics.
 #[test]
 fn camellia_modes() -> Result<(), Box<dyn Error>> {
+    if camellia::AVAILABLE {
+        // The leaf resolves these names (tests/crypto_camellia.rs); nothing is skipped.
+        return Ok(());
+    }
     // Given each Camellia family/name/alias as originally spelled by an operator.
     for token in [
         "camellia",
@@ -214,14 +221,14 @@ fn camellia_modes() -> Result<(), Box<dyn Error>> {
             [18_i32]
         );
         assert!(
-            matches!(resolved.diagnostics(), [ConfigDiagnostic::UnsupportedSecureEnctype { token: actual, until: "plan-2 WP-03" }] if actual == token)
+            matches!(resolved.diagnostics(), [ConfigDiagnostic::UnsupportedSecureEnctype { token: actual, until: UNTIL }] if actual == token)
         );
         let failure = expression
             .resolve(Toggle::Disabled, Toggle::Disabled, ParseMode::Strict)
             .err()
             .ok_or("strict Camellia accepted")?;
         assert!(
-            matches!(failure, error::Config::UnsupportedSecureEnctype { token: actual, until: "plan-2 WP-03" } if actual == token)
+            matches!(failure, error::Config::UnsupportedSecureEnctype { token: actual, until: UNTIL } if actual == token)
         );
     }
     Ok(())
@@ -271,6 +278,10 @@ fn empty_results_fail_closed() -> Result<(), Box<dyn Error>> {
         "-rc4",
         "camellia",
     ] {
+        if camellia::AVAILABLE && text == "camellia" {
+            // The leaf resolves the name, so the list is not empty (tests/crypto_camellia.rs).
+            continue;
+        }
         // When resolving with secure defaults.
         let failure = ids(text).err().ok_or("empty policy accepted")?;
         // Then no empty success can reach a caller.

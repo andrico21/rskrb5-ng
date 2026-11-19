@@ -13,8 +13,12 @@ mod tests {
 
     use rskrb5_ng::{
         config::{Config, ConfigDiagnostic, ParseMode},
+        crypto::camellia,
         error::Config as Failure,
     };
+
+    /// Number of secure Camellia names the fixtures list that the build skips.
+    const SKIPPED_CAMELLIA: usize = if camellia::AVAILABLE { 0 } else { 2 };
 
     /// Host profile plus a Fedora-shaped include preserves usable AES policy.
     #[test]
@@ -25,10 +29,12 @@ mod tests {
             .replace("@INCLUDEDIR@", &directory.to_string_lossy());
         let config = Config::parse(&input)?;
         assert_eq!(config.libdefaults.default_realm, "0.0.0.0");
-        assert_eq!(
-            config.libdefaults.permitted_enctype_ids(),
-            [20_i32, 19_i32, 18_i32, 17_i32]
-        );
+        let permitted: &[i32] = if camellia::AVAILABLE {
+            &[20, 19, 18, 17, 26, 25]
+        } else {
+            &[20, 19, 18, 17]
+        };
+        assert_eq!(config.libdefaults.permitted_enctype_ids(), permitted);
         assert_eq!(config.configured_kdcs("ATHENA.MIT.EDU")?.len(), 3);
         for relation in ["rdns", "default_domain", "kdc_timesync", "ccache_type"] {
             assert!(config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation: name, package: _ } if *name == relation)));
@@ -43,7 +49,7 @@ mod tests {
                     ConfigDiagnostic::UnsupportedSecureEnctype { token: _, until: _ }
                 ))
                 .count(),
-            2
+            SKIPPED_CAMELLIA
         );
         drop(
             Config::parse_with_mode(&input, ParseMode::Strict)
@@ -58,15 +64,17 @@ mod tests {
     fn fedora_crypto_policy_has_only_diagnostics() -> Result<(), Box<dyn Error>> {
         let input = include_str!("../fixtures/profile/host-e.d/crypto-policies");
         let config = Config::parse(input)?;
-        assert_eq!(config.diagnostics().len(), 2);
+        assert_eq!(config.diagnostics().len(), SKIPPED_CAMELLIA);
         assert!(config.diagnostics().iter().all(|item| matches!(
             item,
             ConfigDiagnostic::UnsupportedSecureEnctype { token: _, until: _ }
         )));
-        assert_eq!(
-            config.libdefaults.default_tkt_enctype_ids(),
-            [20_i32, 19_i32, 18_i32, 17_i32]
-        );
+        let requested: &[i32] = if camellia::AVAILABLE {
+            &[20, 19, 18, 17, 26, 25]
+        } else {
+            &[20, 19, 18, 17]
+        };
+        assert_eq!(config.libdefaults.default_tkt_enctype_ids(), requested);
         Ok(())
     }
 
