@@ -8,7 +8,7 @@ pub(super) const FIELDS: &[(&str, &str, &str)] = &[
         "Principal selector components, not retained keytab credentials.",
     ),
     (
-        "src/config/enctype_expr.rs::EnctypeTerm",
+        "src/config.rs::EnctypeTerm",
         "token",
         "Configuration enctype expression spelling, not an authentication token.",
     ),
