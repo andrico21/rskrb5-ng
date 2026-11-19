@@ -113,41 +113,54 @@ mod tests {
 
     /// `AT_SECURE` 0 is unrestricted; 1, absent, truncated and malformed vectors are restricted.
     #[test]
-    fn auxv_fixtures_decide_without_the_os() -> Result<(), Box<dyn Error>> {
-        // Given vectors with AT_PAGESZ (6) before AT_SECURE and an AT_NULL end.
-        let open = auxv(&[(6, 4096), (AT_SECURE, 0), (AT_NULL, 0)]);
-        let secure = auxv(&[(6, 4096), (AT_SECURE, 1), (AT_NULL, 0)]);
-        let absent = auxv(&[(6, 4096), (AT_NULL, 0)]);
-        let after_null = auxv(&[(AT_NULL, 0), (AT_SECURE, 0)]);
-        let mut truncated = open.clone();
-        let _: Option<u8> = truncated.pop();
-        // Then only AT_SECURE 0 before AT_NULL is unrestricted.
-        assert_eq!(parse_auxv(&open), Decision::Unrestricted);
-        assert_eq!(parse_auxv(&secure), Decision::Restricted);
-        assert_eq!(parse_auxv(&absent), Decision::Restricted);
-        assert_eq!(parse_auxv(&after_null), Decision::Restricted);
-        assert_eq!(parse_auxv(&truncated), Decision::Restricted);
+    fn auxv_fixtures_decide_without_the_os() {
+        // Given vectors with AT_PAGESZ (6) before AT_SECURE and an AT_NULL end,
+        // then only AT_SECURE 0 before AT_NULL is unrestricted.
+        assert_eq!(
+            parse_auxv(&auxv(&[(6, 4096), (AT_SECURE, 0), (AT_NULL, 0)])),
+            Decision::Unrestricted
+        );
+        assert_eq!(
+            parse_auxv(&auxv(&[(6, 4096), (AT_SECURE, 1), (AT_NULL, 0)])),
+            Decision::Restricted
+        );
+        assert_eq!(
+            parse_auxv(&auxv(&[(6, 4096), (AT_NULL, 0)])),
+            Decision::Restricted
+        );
+        assert_eq!(
+            parse_auxv(&auxv(&[(AT_NULL, 0), (AT_SECURE, 0)])),
+            Decision::Restricted
+        );
+        assert_eq!(
+            parse_auxv(
+                auxv(&[(AT_SECURE, 0), (AT_NULL, 0)])
+                    .split_last()
+                    .map_or(&[][..], |(_, truncated)| truncated)
+            ),
+            Decision::Restricted
+        );
         assert_eq!(parse_auxv(&[]), Decision::Restricted);
         assert_eq!(
             parse_auxv(&auxv(&[(AT_SECURE, 2), (AT_NULL, 0)])),
             Decision::Restricted
         );
-        Ok(())
     }
 
     /// The real OS decision of this test process. A normal run is unrestricted;
     /// the probe runs a set-id copy with `RSKRB5_EXPECT_DECISION=restricted`.
     #[test]
-    fn os_decision_of_this_process() -> Result<(), Box<dyn Error>> {
-        let expected = match env::var("RSKRB5_EXPECT_DECISION").as_deref() {
-            Ok("restricted") => Decision::Restricted,
-            _ => Decision::Unrestricted,
-        };
-        assert_eq!(os_decision(), expected);
-        Ok(())
+    fn os_decision_of_this_process() {
+        assert_eq!(
+            os_decision(),
+            match env::var("RSKRB5_EXPECT_DECISION").as_deref() {
+                Ok("restricted") => Decision::Restricted,
+                _ => Decision::Unrestricted,
+            }
+        );
     }
 
-    /// A restricted decision never runs the read.
+    /// A restricted decision never runs the read; an unrestricted one does.
     #[test]
     fn restricted_decision_never_reads() -> Result<(), Box<dyn Error>> {
         let read = Cell::new(false);
@@ -156,13 +169,16 @@ mod tests {
                 read.set(true);
                 Ok("x".to_owned())
             })
-        });
-        assert_eq!(unset, Err(env::VarError::NotPresent));
+        })
+        .err()
+        .ok_or("a restricted process read the variable")?;
+        assert_eq!(unset, env::VarError::NotPresent);
         assert!(!read.get(), "a restricted process ran the read");
         let open = with_decision(Decision::Unrestricted, || {
             ambient(|| Some(OsString::from("x")))
-        });
-        assert_eq!(open, Some(OsString::from("x")));
+        })
+        .ok_or("an unrestricted process read nothing")?;
+        assert_eq!(open, OsString::from("x"));
         Ok(())
     }
 
@@ -170,7 +186,7 @@ mod tests {
     #[test]
     fn krb5_config_is_ignored_when_restricted() -> Result<(), Box<dyn Error>> {
         use crate::{config::Config, error::Config as ConfigError};
-        let test = "secure_env::tests::tests::krb5_config_is_ignored_when_restricted";
+        let test = "secure_env::decision_tests::tests::krb5_config_is_ignored_when_restricted";
         if in_child(test) {
             let named = |config: &Config| config.libdefaults.default_realm == "ENVFILE.TEST";
             let embedded = "[libdefaults]\n default_realm = EMBEDDED.TEST\n";
@@ -202,16 +218,31 @@ mod tests {
         result
     }
 
-    /// `HOME`: `LibDefaults::from_env` does not take `k5login_directory` from it when restricted.
+    /// `HOME`: `LibDefaults::from_env` does not take `k5login_directory` from it,
+    /// and there is no default `.k5identity`, when restricted.
     #[test]
     fn home_is_ignored_when_restricted() -> Result<(), Box<dyn Error>> {
         use crate::config::LibDefaults;
-        let test = "secure_env::tests::tests::home_is_ignored_when_restricted";
+        let test = "secure_env::decision_tests::tests::home_is_ignored_when_restricted";
         if in_child(test) {
             let restricted = with_decision(Decision::Restricted, LibDefaults::from_env);
             assert_eq!(restricted.k5login_directory, "");
             let open = with_decision(Decision::Unrestricted, LibDefaults::from_env);
             assert_eq!(open.k5login_directory, "/hostile/home");
+            #[cfg(not(windows))]
+            {
+                use crate::{ccache::default_k5identity, extensions::K5Identity};
+                assert_eq!(
+                    with_decision(Decision::Restricted, default_k5identity),
+                    None
+                );
+                assert_eq!(
+                    with_decision(Decision::Unrestricted, default_k5identity),
+                    Some(K5Identity::new(
+                        PathBuf::from("/hostile/home").join(".k5identity")
+                    ))
+                );
+            }
             return Ok(());
         }
         run_child(test, &[("HOME", OsStr::new("/hostile/home"))])
@@ -224,7 +255,7 @@ mod tests {
             ccache::{CCache, Principal},
             error::Ccache as CacheError,
         };
-        let test = "secure_env::tests::tests::krb5ccname_is_ignored_when_restricted";
+        let test = "secure_env::decision_tests::tests::krb5ccname_is_ignored_when_restricted";
         if in_child(test) {
             let cache = CCache::new(Principal::new("R", 1, vec!["env".to_owned()]));
             let unset = |result| {
@@ -288,7 +319,7 @@ mod tests {
     #[test]
     fn krb5_ktname_is_ignored_when_restricted() -> Result<(), Box<dyn Error>> {
         use crate::{error::Keytab as KeytabError, keytab::Keytab};
-        let test = "secure_env::tests::tests::krb5_ktname_is_ignored_when_restricted";
+        let test = "secure_env::decision_tests::tests::krb5_ktname_is_ignored_when_restricted";
         if in_child(test) {
             let keytab = Keytab::new();
             let unset = |result| {
@@ -342,7 +373,8 @@ mod tests {
             error::Client as ClientError,
             keytab::Keytab,
         };
-        let test = "secure_env::tests::tests::krb5_client_ktname_is_ignored_when_restricted";
+        let test =
+            "secure_env::decision_tests::tests::krb5_client_ktname_is_ignored_when_restricted";
         if in_child(test) {
             let mut config = Config::new();
             config.libdefaults.default_client_keytab_name =
@@ -395,7 +427,7 @@ mod tests {
         use crate::config::{
             LibDefaults, credential_names::resolve_credential_template, parameters::DefaultName,
         };
-        let test = "secure_env::tests::tests::tmpdir_is_ignored_when_restricted";
+        let test = "secure_env::decision_tests::tests::tmpdir_is_ignored_when_restricted";
         if in_child(test) {
             let mut defaults = LibDefaults::new();
             defaults.default_ccache_name = "FILE:%{TEMP}/cc".to_owned();

@@ -128,4 +128,43 @@ mod tests {
         assert_eq!(CCache::parse(&encoded)?, cache);
         Ok(())
     }
+
+    /// MEMORY removals, replacements and destruction erase the payloads they drop.
+    #[test]
+    fn memory_store_removals_erase_payloads() -> Result<(), Box<dyn Error>> {
+        use crate::ccache::{CredentialStore as _, MemoryStore};
+        // Given a MEMORY cache holding one credential with a 31-byte payload.
+        let principal = Principal::new("R", 1, vec!["alice".to_owned()]);
+        let server = Principal::new("R", 1, vec!["svc".to_owned()]);
+        let stored = || {
+            let mut credential =
+                Credential::config_entry(principal.clone(), "x", None, vec![0x5a; 31].into());
+            credential.set_server(server.clone());
+            credential
+        };
+        let store = MemoryStore::new();
+        let cache = store.resolve("one")?;
+        cache.initialize(&principal)?;
+        for operation in 0_u8..3 {
+            cache.store(stored())?;
+            EVENTS.with_borrow_mut(Vec::clear);
+            // When the credential is removed, replaced, or the cache destroyed.
+            match operation {
+                0 => assert_eq!(cache.remove(&server)?, 1),
+                1 => cache.store(stored())?,
+                _ => {
+                    cache.destroy()?;
+                    cache.initialize(&principal)?;
+                }
+            }
+            // Then the dropped payload was observed erased in live storage.
+            EVENTS.with_borrow(|events| {
+                assert!(
+                    events.contains(&(31, true)),
+                    "operation {operation}: {events:?}"
+                );
+            });
+        }
+        Ok(())
+    }
 }

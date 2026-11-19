@@ -22,7 +22,7 @@ use std::{env, ffi::OsString, sync::OnceLock};
 
 #[cfg(test)]
 #[path = "secure_env/tests.rs"]
-mod tests;
+mod decision_tests;
 
 /// Whether the environment of this process may be trusted.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -72,7 +72,7 @@ static DECISION: OnceLock<Decision> = OnceLock::new();
 /// The decision of this process: the injected one in tests, else the OS one.
 fn decision() -> Decision {
     #[cfg(test)]
-    if let Some(injected) = tests::injected() {
+    if let Some(injected) = decision_tests::injected() {
         return injected;
     }
     *DECISION.get_or_init(os_decision)

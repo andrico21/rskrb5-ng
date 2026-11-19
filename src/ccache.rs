@@ -53,6 +53,29 @@ pub enum CacheName {
 /// Redaction of credential-bearing diagnostics.
 mod credential_debug;
 
+/// `DIR` collections behind the store traits.
+mod dir_store;
+
+/// `FILE` caches behind the store traits.
+mod file_store;
+
+/// The `MEMORY` cache type.
+mod memory;
+
+/// Cache selection over a collection.
+mod select;
+
+/// The credential-store traits.
+mod store;
+
+pub use self::{
+    dir_store::DirStore,
+    file_store::{FileStore, collection, resolve},
+    memory::MemoryStore,
+    select::{Selected, default_k5identity, select_cache},
+    store::{CacheCollection, CacheCursor, CacheHandle, CacheVersion, CredentialStore, move_cache},
+};
+
 /// Erasure of retained credential payloads.
 mod payload;
 
@@ -415,6 +438,16 @@ impl CCache {
     #[inline]
     pub const fn version(&self) -> u8 {
         self.version
+    }
+
+    /// Set the format version [`CCache::to_bytes`] writes; versions before 4
+    /// have no header, so the header is cleared for them.
+    #[inline]
+    pub fn set_version(&mut self, version: CacheVersion) {
+        self.version = version.get();
+        if self.version < 4 {
+            self.header = Header::default();
+        }
     }
 
     #[must_use]

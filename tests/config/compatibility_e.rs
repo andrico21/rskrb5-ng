@@ -36,9 +36,10 @@ mod tests {
         };
         assert_eq!(config.libdefaults.permitted_enctype_ids(), permitted);
         assert_eq!(config.configured_kdcs("ATHENA.MIT.EDU")?.len(), 3);
-        for relation in ["rdns", "default_domain", "kdc_timesync", "ccache_type"] {
+        for relation in ["rdns", "default_domain", "kdc_timesync"] {
             assert!(config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation: name, package: _ } if *name == relation)));
         }
+        assert!(!config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == "ccache_type")));
         assert!(config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::UnknownRelation { path } if path == &["libdefaults", "fcc-mit-ticketflags"])));
         assert_eq!(
             config

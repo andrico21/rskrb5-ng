@@ -1650,14 +1650,18 @@ impl Tokio {
         }
         kerberos
     }
-    /// Export current TGT and service-ticket state to a fresh MIT ccache.
+    /// Export current TGT and service-ticket state to a fresh MIT ccache, in
+    /// the format version `ccache_type` configures (MIT `fcc_default_format`).
     /// # Errors
     ///
     /// Returns [`Error::TimeOverflow`] when a session time does not fit the ccache
-    /// time format.
+    /// time format, and [`Error::CCache`] for a `ccache_type` outside 1 to 4.
     #[inline]
     pub fn to_ccache(&self) -> Result<ccache::CCache, Error> {
         let mut cache = ccache::CCache::new(ccache_principal(&self.client));
+        cache.set_version(ccache::CacheVersion::from_libdefaults(
+            &self.config.libdefaults,
+        )?);
         for credential in self.ccache_credentials()? {
             drop(cache.upsert_credential(credential));
         }
@@ -1766,7 +1770,11 @@ impl Tokio {
         let mut cache = match ccache::CCache::load(cache_path) {
             Ok(cache) => cache,
             Err(error::Ccache::Io(error)) if error.kind() == io::ErrorKind::NotFound => {
-                ccache::CCache::new(ccache_principal(&self.client))
+                let mut created = ccache::CCache::new(ccache_principal(&self.client));
+                created.set_version(ccache::CacheVersion::from_libdefaults(
+                    &self.config.libdefaults,
+                )?);
+                created
             }
             Err(error) => return Err(error.into()),
         };
