@@ -17,7 +17,7 @@ use super::{
     user_kdc, user_realm,
 };
 use crate::harness::{
-    self, assert_negotiated_enctype, assert_negotiated_padata, assert_ticket_flag,
+    self, assert_negotiated_enctype, assert_negotiated_padata, assert_ticket_flag, kdc_tap::KdcTap,
 };
 
 /// PA-DATA type of PA-ENC-TIMESTAMP (RFC 4120).
@@ -39,9 +39,10 @@ const KDC_ERR_PREAUTH_REQUIRED: i32 = 25;
 const FLAG_INITIAL: u32 = 9;
 
 /// Samba demands pre-authentication from testuser1 and offers
-/// PA-ENC-TIMESTAMP with PA-ETYPE-INFO2 over UDP and TCP; the password login
-/// then carries the encrypted timestamp, and the TGT has the pre-authent and
-/// initial flags and an aes256-cts-hmac-sha1-96 session key.
+/// PA-ENC-TIMESTAMP with PA-ETYPE-INFO2 over UDP and TCP; the AS-REQ of the
+/// password login that obtains the TGT (recorded by a relay) carries
+/// PA-ENC-TIMESTAMP, and the TGT has the pre-authent and initial flags and an
+/// aes256-cts-hmac-sha1-96 session key.
 #[test]
 fn samba_requires_and_accepts_encrypted_timestamp_preauth() -> Result<(), Box<dyn Error>> {
     if !harness::require(
@@ -79,10 +80,12 @@ fn samba_requires_and_accepts_encrypted_timestamp_preauth() -> Result<(), Box<dy
                     .collect::<Vec<_>>();
                 assert_negotiated_padata("KDC_ERR_PREAUTH_REQUIRED", PA_ENC_TIMESTAMP, &offered)?;
                 assert_negotiated_padata("KDC_ERR_PREAUTH_REQUIRED", PA_ETYPE_INFO2, &offered)?;
+                // The password login runs through a relay that records its AS-REQs.
+                let tap = KdcTap::start(KdcProtocol::Tcp, kdc.as_str()).await?;
                 let session = transport()
                     .login_tgt_with_password(
                         KdcProtocol::Tcp,
-                        kdc.as_str(),
+                        tap.endpoint(),
                         client.clone(),
                         &password("INTEROP_SAMBA_USER_USER_PASSWORD")?,
                         as_options(
@@ -92,6 +95,15 @@ fn samba_requires_and_accepts_encrypted_timestamp_preauth() -> Result<(), Box<dy
                         )?,
                     )
                     .await?;
+                let sent = tap.as_req_padata()?;
+                let answered = sent
+                    .last()
+                    .ok_or("the login sent no AS-REQ through the relay")?;
+                assert_negotiated_padata(
+                    "the AS-REQ that obtained the TGT",
+                    PA_ENC_TIMESTAMP,
+                    answered,
+                )?;
                 assert_ticket_flag("pre-authent", FLAG_PRE_AUTHENT, session.ticket_flags())?;
                 assert_ticket_flag("initial", FLAG_INITIAL, session.ticket_flags())?;
                 assert_negotiated_enctype(

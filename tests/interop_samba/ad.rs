@@ -164,11 +164,15 @@ fn keytab_login_gets_a_preauthenticated_aes256_tgt() -> Result<(), Box<dyn Error
 
 /// `active_directory_keytab_login_without_preauth`: testuser3, which has
 /// `DONT_REQUIRE_PREAUTH`, logs in with its keytab and gets an
-/// aes256-cts-hmac-sha1-96 TGT.
+/// aes256-cts-hmac-sha1-96 TGT. Samba still requires pre-authentication from
+/// this account (FU-IOP-P15), so what the scenario proves is the account-flag
+/// login with a keytab and the pre-authenticated TGT, not a login without
+/// pre-authentication.
 #[test]
-fn keytab_login_without_preauth_gets_an_aes256_tgt() -> Result<(), Box<dyn Error>> {
+fn dont_require_preauth_account_logs_in_with_a_keytab_and_is_preauthenticated()
+-> Result<(), Box<dyn Error>> {
     if !harness::require(
-        "keytab_login_without_preauth_gets_an_aes256_tgt",
+        "dont_require_preauth_account_logs_in_with_a_keytab_and_is_preauthenticated",
         &[SAMBA_USER],
     )? {
         return Ok(());

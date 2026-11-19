@@ -18,7 +18,7 @@ use super::{
     password, realm, runtime, service, tgs_options, ticket_etype, transport, user,
 };
 use crate::harness::{
-    self, assert_negotiated_enctype, assert_negotiated_padata, assert_ticket_flag,
+    self, assert_negotiated_enctype, assert_negotiated_padata, assert_ticket_flag, kdc_tap::KdcTap,
 };
 
 /// PA-DATA type of PA-ENC-TIMESTAMP (RFC 4120).
@@ -52,8 +52,9 @@ const SHA2_LIBDEFAULTS: &str = " default_tkt_enctypes = aes256-cts-hmac-sha384-1
  default_tgs_enctypes = aes128-cts-hmac-sha256-128";
 
 /// The KDC demands pre-authentication from `preauthuser` and offers
-/// PA-ENC-TIMESTAMP with PA-ETYPE-INFO2; the password login then carries the
-/// encrypted timestamp, and the TGT has the pre-authent and initial flags.
+/// PA-ENC-TIMESTAMP with PA-ETYPE-INFO2; the AS-REQ of the password login that
+/// obtains the TGT (recorded by a relay) carries PA-ENC-TIMESTAMP, and the TGT
+/// has the pre-authent and initial flags.
 #[test]
 fn preauth_required_principal_negotiates_encrypted_timestamp() -> Result<(), Box<dyn Error>> {
     if !harness::require(
@@ -92,16 +93,29 @@ fn preauth_required_principal_negotiates_encrypted_timestamp() -> Result<(), Box
                 .collect::<Vec<_>>();
             assert_negotiated_padata("KDC_ERR_PREAUTH_REQUIRED", PA_ENC_TIMESTAMP, &offered)?;
             assert_negotiated_padata("KDC_ERR_PREAUTH_REQUIRED", PA_ETYPE_INFO2, &offered)?;
-            // When the password login answers it, then the TGT is pre-authenticated.
+            // When the password login runs through a relay that records its AS-REQs,
+            // then the request the KDC answered with the TGT carried the encrypted
+            // timestamp, and the TGT is pre-authenticated.
+            let tap = KdcTap::start(protocol, kdc.as_str()).await?;
             let session = transport()
                 .login_tgt_with_password(
                     protocol,
-                    kdc.as_str(),
+                    tap.endpoint(),
                     client.clone(),
                     &password("INTEROP_MIT_PREAUTH_USER_PASSWORD")?,
                     as_options(protocol, sequence.wrapping_add(1), vec![AES256_SHA2])?,
                 )
-                .await?;
+                .await
+                .map_err(|failure| format!("password login through the relay: {failure}"))?;
+            let sent = tap.as_req_padata()?;
+            let answered = sent
+                .last()
+                .ok_or("the login sent no AS-REQ through the relay")?;
+            assert_negotiated_padata(
+                "the AS-REQ that obtained the TGT",
+                PA_ENC_TIMESTAMP,
+                answered,
+            )?;
             assert_ticket_flag("pre-authent", FLAG_PRE_AUTHENT, session.ticket_flags())?;
             assert_ticket_flag("initial", FLAG_INITIAL, session.ticket_flags())?;
             assert_negotiated_enctype(

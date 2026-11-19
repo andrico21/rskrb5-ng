@@ -279,6 +279,16 @@ pub(crate) fn assert_ticket_flag(
     })
 }
 
+/// A relay that records the AS-REQs a client sends, so a scenario asserts the
+/// pre-authentication of the exchange it ran (Y1-04).
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[path = "kdc_tap.rs"]
+pub(crate) mod kdc_tap;
+
 /// Harness regressions; the environment-dependent ones run in child processes.
 #[cfg(test)]
 #[expect(
