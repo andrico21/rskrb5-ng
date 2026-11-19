@@ -6,15 +6,20 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
-use std::time::UNIX_EPOCH;
+use std::{sync::Mutex, time::UNIX_EPOCH};
 
 use rasn::{der, types::Integer};
+use zeroize::Zeroizing;
 
 use super::{
     super::{KDC_ERR_PREAUTH_REQUIRED, PA_ETYPE_INFO2, Password, options::AsReq},
-    Answer, ExchangeStep, InitCreds, InitCredsOptions, Principal, StepInput, order,
+    Answer, ArmorRequest, ArmoredExchange, ArmoredReply, ExchangeStep, InitCreds, InitCredsOptions,
+    Principal, StepInput, order,
 };
-use crate::keytab::key_bytes::EVENTS as KEY_EVENTS;
+use crate::{
+    extensions::ProviderError,
+    keytab::{self, EncryptionKey, Keytab, key_bytes::EVENTS as KEY_EVENTS},
+};
 
 /// A KDC time as a Kerberos time.
 fn kerberos_time(seconds: u64) -> Result<rasn_kerberos::KerberosTime, Box<dyn Error>> {
@@ -145,4 +150,101 @@ fn preferred_types_move_to_the_front() {
         order(&[99_i32, 133_i32]),
         [133_i32, 2_i32, 136_i32, 17_i32, 16_i32]
     );
+}
+
+/// A fake armor: requests pass through unchanged, the cookie each request is
+/// asked to echo is recorded, and each reply comes back with the next scripted
+/// cookie and strengthen key.
+struct ScriptedArmor {
+    /// The cookie of each armored request, in order.
+    echoed: Arc<Mutex<Vec<Option<Vec<u8>>>>>,
+    /// `(cookie, strengthen key)` of the replies still to unwrap, last first.
+    replies: Vec<(Vec<u8>, EncryptionKey)>,
+}
+
+impl ArmoredExchange for ScriptedArmor {
+    fn armor_request(
+        &mut self,
+        request: &ArmorRequest<'_>,
+    ) -> Result<Zeroizing<Vec<u8>>, ProviderError> {
+        self.echoed
+            .lock()
+            .map_err(|_poisoned| "poisoned")?
+            .push(request.cookie.map(<[u8]>::to_vec));
+        Ok(Zeroizing::new(request.request.to_vec()))
+    }
+
+    fn unwrap_reply(&mut self, reply: &[u8]) -> Result<ArmoredReply, ProviderError> {
+        let (cookie, key) = self.replies.pop().ok_or("no scripted reply")?;
+        Ok(ArmoredReply::new(
+            Zeroizing::new(reply.to_vec()),
+            Some(key),
+            Some(cookie),
+        ))
+    }
+}
+
+/// The FAST seam threads the KDC's newest cookie into the next armored request,
+/// and a newer strengthen key erases the one it replaces.
+#[test]
+fn armored_replies_thread_cookies_and_erase_replaced_strengthen_keys() -> Result<(), Box<dyn Error>>
+{
+    let client = Principal::user("TEST.GOKRB5", "testuser1");
+    let mut keytab = Keytab::new();
+    keytab.entries_mut().push(keytab::Entry::new(
+        keytab::Principal::new("TEST.GOKRB5", 1, ["testuser1"]),
+        0,
+        1,
+        EncryptionKey::new(18, vec![7_u8; 32]),
+        1,
+    ));
+    let echoed = Arc::new(Mutex::new(Vec::new()));
+    let armor = ScriptedArmor {
+        echoed: Arc::clone(&echoed),
+        replies: vec![
+            (
+                b"second-cookie".to_vec(),
+                EncryptionKey::new(18, vec![9_u8; 32]),
+            ),
+            (
+                b"first-cookie".to_vec(),
+                EncryptionKey::new(17, vec![8_u8; 16]),
+            ),
+        ],
+    };
+    let request = AsReq::new(UNIX_EPOCH, 7).with_etypes(vec![18_i32]);
+    let mut exchange =
+        InitCreds::with_keytab(client, keytab, InitCredsOptions::new(request)).with_armor(armor);
+
+    assert!(matches!(
+        exchange.step(StepInput::Start)?,
+        ExchangeStep::Outbound(_)
+    ));
+    assert!(matches!(
+        exchange.step(StepInput::Reply(&preauth_required()?))?,
+        ExchangeStep::Outbound(_)
+    ));
+    KEY_EVENTS.with_borrow_mut(Vec::clear);
+    let finished = exchange.step(StepInput::Reply(&preauth_required()?));
+
+    assert!(
+        finished.is_err(),
+        "a KRB-ERROR does not finish the exchange"
+    );
+    assert_eq!(
+        *echoed.lock().map_err(|_poisoned| "poisoned")?,
+        [None, Some(b"first-cookie".to_vec())]
+    );
+    KEY_EVENTS.with_borrow(|events| {
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.0 == 16)
+                .collect::<Vec<_>>(),
+            [&(16, true)],
+            "the replaced 16-byte strengthen key is erased once: {events:?}"
+        );
+        assert!(events.iter().all(|event| event.1), "{events:?}");
+    });
+    Ok(())
 }
