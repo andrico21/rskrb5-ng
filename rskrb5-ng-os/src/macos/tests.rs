@@ -34,10 +34,10 @@ use rskrb5_ng::{
 
 use super::{
     ApiStore, DEFAULT_KCM_MACH_SERVICE, KcmMachStore,
-    mach::{Mach, Service},
+    mach::{MachTransport, Service},
 };
 use crate::{
-    Secret, error::Platform, kcm_fixture::Fixture, kcm_store::Exchange as _, principal_text,
+    Secret, error::Platform, kcm_fixture::Fixture, kcm_store::KcmTransport as _, principal_text,
     register,
 };
 
@@ -76,7 +76,7 @@ fn stop(
     name: &str,
     server: thread::JoinHandle<Result<(), Platform>>,
 ) -> Result<(), Box<dyn StdError>> {
-    let _reply = Mach::new(name.to_owned()).call(&STOP)?;
+    let _reply = MachTransport::new(name.to_owned()).call(&STOP)?;
     server.join().map_err(|_panic| "server panicked")??;
     Ok(())
 }

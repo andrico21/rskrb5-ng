@@ -1,12 +1,14 @@
 //! The KCM store against the in-memory KCM server.
 
+use alloc::sync::Arc;
+
 use rskrb5_ng::{
     ccache::{CCache, Credential, CredentialTimes, EncryptionKey, Principal},
     error::Ccache as Error,
 };
 
-use super::{Exchange, Kcm};
-use crate::{Secret, error::Platform, kcm_fixture::Fixture};
+use super::{Kcm, KcmTransport};
+use crate::{error::Platform, kcm_fixture::Fixture};
 
 /// A principal of `EXAMPLE.ORG`.
 fn principal(components: &[&str]) -> Principal {
@@ -32,7 +34,7 @@ fn credential(server: &[&str]) -> Credential {
 #[test]
 fn cache_operations_round_trip() -> Result<(), Error> {
     // Given a KCM server and the primary cache.
-    let kcm = Kcm::new(Fixture::default());
+    let kcm = Kcm::new(Arc::new(Fixture::default()));
     let cache = kcm.resolve("")?;
     assert_eq!(cache.name(), "KCM:fixture");
     assert!(
@@ -77,7 +79,7 @@ fn cache_operations_round_trip() -> Result<(), Error> {
 #[test]
 fn replace_rewrites_the_cache() -> Result<(), Error> {
     // Given a cache holding one credential and a replacement.
-    let kcm = Kcm::new(Fixture::default());
+    let kcm = Kcm::new(Arc::new(Fixture::default()));
     let cache = kcm.resolve("work")?;
     cache.initialize(&principal(&["bob"]))?;
     cache.store(credential(&["HTTP", "old"]))?;
@@ -98,7 +100,7 @@ fn replace_rewrites_the_cache() -> Result<(), Error> {
 #[test]
 fn collection_switch_and_new_unique() -> Result<(), Error> {
     // Given a server with the primary cache initialized.
-    let kcm = Kcm::new(Fixture::default());
+    let kcm = Kcm::new(Arc::new(Fixture::default()));
     kcm.resolve("")?.initialize(&principal(&["alice"]))?;
     let collection = kcm.collection();
     // When a unique cache is created and made primary.
@@ -130,9 +132,9 @@ fn collection_switch_and_new_unique() -> Result<(), Error> {
 #[derive(Debug)]
 struct Canned(&'static [u8]);
 
-impl Exchange for Canned {
-    fn call(&self, _request: &[u8]) -> Result<Secret, Platform> {
-        Ok(Secret::from(self.0.to_vec()))
+impl KcmTransport for Canned {
+    fn call(&self, _request: &[u8]) -> Result<Vec<u8>, Error> {
+        Ok(self.0.to_vec())
     }
 }
 
@@ -140,9 +142,9 @@ impl Exchange for Canned {
 #[test]
 fn malformed_replies_are_refused() -> Result<(), Error> {
     // Given servers with a short reply, an unterminated name and an error status.
-    let short = Kcm::new(Canned(&[0, 0]));
-    let unterminated = Kcm::new(Canned(&[0, 0, 0, 0, b'x']));
-    let failing = Kcm::new(Canned(&[0x96, 0xc7, 0x3a, 0xc4]));
+    let short = Kcm::new(Arc::new(Canned(&[0, 0])));
+    let unterminated = Kcm::new(Arc::new(Canned(&[0, 0, 0, 0, b'x'])));
+    let failing = Kcm::new(Arc::new(Canned(&[0x96, 0xc7, 0x3a, 0xc4])));
     // When they are used.
     // Then each failure is typed.
     for result in [short.resolve(""), unterminated.resolve("")] {
@@ -161,10 +163,46 @@ fn malformed_replies_are_refused() -> Result<(), Error> {
         matches!(&error, Error::Io(io) if io.get_ref().and_then(|inner| inner.downcast_ref::<Platform>()) == Some(&Platform::Kcm { code: -1_765_328_188_i32 })),
         "{error}"
     );
-    let empty = Kcm::new(Canned(&[0, 0, 0, 0])).resolve("c")?.load();
+    let empty = Kcm::new(Arc::new(Canned(&[0, 0, 0, 0])))
+        .resolve("c")?
+        .load();
     assert!(
         matches!(empty, Err(Error::CacheNotFound { name: _ })),
         "empty principal"
+    );
+    Ok(())
+}
+
+/// A transport whose every call fails.
+#[derive(Debug)]
+struct Unreachable;
+
+impl KcmTransport for Unreachable {
+    fn call(&self, _request: &[u8]) -> Result<Vec<u8>, Error> {
+        Err(Error::CacheNotFound {
+            name: "unreachable transport".to_owned(),
+        })
+    }
+}
+
+/// The store runs over `KcmTransport` objects, the shape the built-in `KCM:`
+/// store of `rskrb5-ng` takes, and returns a transport failure unchanged.
+#[test]
+fn store_runs_over_transport_objects() -> Result<(), Error> {
+    // Given the in-memory server and a failing transport as transport objects.
+    let fixture: Arc<dyn KcmTransport> = Arc::new(Fixture::default());
+    let failing: Arc<dyn KcmTransport> = Arc::new(Unreachable);
+    // When a cache is initialized and loaded over the one and resolved over
+    // the other.
+    let cache = Kcm::new(fixture).resolve("")?;
+    cache.initialize(&principal(&["alice"]))?;
+    let loaded = cache.load()?;
+    let refused = Kcm::new(failing).resolve("").err();
+    // Then the round trip worked and the failure is the transport's own.
+    assert_eq!(loaded.default_principal(), &principal(&["alice"]));
+    assert!(
+        matches!(&refused, Some(Error::CacheNotFound { name }) if name == "unreachable transport"),
+        "{refused:?}"
     );
     Ok(())
 }

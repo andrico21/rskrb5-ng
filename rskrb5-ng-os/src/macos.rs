@@ -4,6 +4,8 @@
 //! They are separate implementations with their own type,
 //! errors and tests; neither falls back to the other.
 
+use alloc::sync::Arc;
+
 use rskrb5_ng::{
     ccache::{
         CCache, Credential, Principal,
@@ -231,14 +233,16 @@ impl CacheCollection for ApiCollection {
 /// Every call has its own reply port and a 30-second bound; replies are
 /// checked as MIG checks them and bounded before they are parsed.
 #[derive(Clone, Debug)]
-pub struct KcmMachStore(Kcm<mach::Mach>);
+pub struct KcmMachStore(Kcm);
 
 impl KcmMachStore {
     /// The store talking to the Mach service `service`.
     #[must_use]
     #[inline]
     pub fn new(service: &str) -> Self {
-        Self(Kcm::new(mach::Mach::new(service.to_owned())))
+        Self(Kcm::new(Arc::new(mach::MachTransport::new(
+            service.to_owned(),
+        ))))
     }
 
     /// The store of `[libdefaults] kcm_mach_service` (default

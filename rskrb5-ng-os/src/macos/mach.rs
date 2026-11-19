@@ -11,7 +11,9 @@
 use alloc::ffi::CString;
 use core::{ffi::c_char, ptr, slice};
 
-use crate::{Secret, error::Platform, kcm_store::Exchange, mig};
+use rskrb5_ng::error::Ccache as CacheError;
+
+use crate::{Secret, error::Platform, kcm_store::KcmTransport, mig};
 
 /// A Mach port name.
 type Port = u32;
@@ -266,23 +268,32 @@ fn call(service: &str, request: &[u8]) -> Result<Secret, Platform> {
     })
 }
 
-/// KCM over Mach RPC to a named service (`kcm_mach_service`).
+/// The KCM transport over Mach RPC to a named service (`kcm_mach_service`,
+/// MIT 1.22.2 `kcmio_mach_connect` and `kcmio_mach_call`, `cc_kcm.c:189-281`).
+///
+/// It implements the transport seam of the `KCM:` store; once `rskrb5-ng`
+/// offers `ccache::kcm::install_transport`, `register` installs it there.
+///
+/// # Security
+///
+/// The reply leaves the zeroizing buffer as the transport signature's
+/// `Vec<u8>` and is wrapped again by its caller before it is parsed.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Mach(String);
+pub(crate) struct MachTransport(String);
 
-impl Mach {
-    /// The exchange with `service`; `-` disables Mach RPC as in MIT.
+impl MachTransport {
+    /// The transport to `service`; `-` disables Mach RPC as in MIT.
     pub(crate) const fn new(service: String) -> Self {
         Self(service)
     }
 }
 
-impl Exchange for Mach {
-    fn call(&self, request: &[u8]) -> Result<Secret, Platform> {
+impl KcmTransport for MachTransport {
+    fn call(&self, request: &[u8]) -> Result<Vec<u8>, CacheError> {
         if self.0 == "-" {
-            return Err(Platform::MachDisabled);
+            return Err(Platform::MachDisabled.into());
         }
-        call(&self.0, request)
+        Ok(call(&self.0, request)?.to_vec())
     }
 }
 

@@ -12,8 +12,8 @@
 //!
 //! `KCM:` is a built-in cache type of `rskrb5-ng` (plan todo 12), so this
 //! crate never registers it. `macos::KcmMachStore` is its Mach backend,
-//! usable directly; its transport `macos::MachTransport` becomes the
-//! transport of the built-in `KCM:` store once `rskrb5-ng` offers
+//! usable directly; its crate-private Mach transport becomes the transport
+//! of the built-in `KCM:` store once `rskrb5-ng` offers
 //! `ccache::kcm::install_transport`.
 //!
 //! # Security

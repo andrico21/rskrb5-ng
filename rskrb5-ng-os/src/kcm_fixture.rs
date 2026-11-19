@@ -6,9 +6,9 @@
 
 use std::sync::{Mutex, PoisonError};
 
-use rskrb5_ng::ccache::Credential;
+use rskrb5_ng::{ccache::Credential, error::Ccache as CacheError};
 
-use crate::{Secret, error::Platform, kcm_store::Exchange, kcm_wire::UUID_LEN, marshal};
+use crate::{Secret, kcm_store::KcmTransport, kcm_wire::UUID_LEN, marshal};
 
 /// `KRB5_FCC_NOFILE`.
 const NO_CACHE: i32 = -1_765_328_189;
@@ -246,8 +246,8 @@ impl Fixture {
     }
 }
 
-impl Exchange for Fixture {
-    fn call(&self, request: &[u8]) -> Result<Secret, Platform> {
-        Ok(self.reply(request))
+impl KcmTransport for Fixture {
+    fn call(&self, request: &[u8]) -> Result<Vec<u8>, CacheError> {
+        Ok(self.reply(request).to_vec())
     }
 }

@@ -37,30 +37,31 @@ const NO_CACHE: i32 = -1_765_328_189;
 /// `KRB5_CC_NOTFOUND`: no matching credential.
 const NOT_FOUND: i32 = -1_765_328_243;
 
-/// One request-reply round trip to a KCM server.
-pub(crate) trait Exchange: fmt::Debug + Send + Sync {
+/// One KCM request-reply round trip.
+///
+/// It is a private stand-in, with the identical signature, for the public
+/// `KcmTransport` that plan todo 12 adds to `rskrb5_ng::ccache::kcm`:
+/// `request` is the complete unframed KCM request (version, opcode, payload,
+/// what MIT `kcmio_call` takes) and the reply is the complete reply (status
+/// and payload). When that trait is on `main`, this declaration becomes the
+/// one line `pub(crate) use rskrb5_ng::ccache::kcm::KcmTransport;`.
+pub(crate) trait KcmTransport: fmt::Debug + Send + Sync {
     /// Send `request` and return the whole reply, status included.
     ///
     /// # Errors
     ///
     /// Transport failures.
-    fn call(&self, request: &[u8]) -> Result<Secret, Platform>;
+    fn call(&self, request: &[u8]) -> Result<Vec<u8>, Error>;
 }
 
-/// A KCM client over an exchange.
-#[derive(Debug)]
-pub(crate) struct Kcm<E>(Arc<E>);
+/// A KCM client over a transport.
+#[derive(Clone, Debug)]
+pub(crate) struct Kcm(Arc<dyn KcmTransport>);
 
-impl<E> Clone for Kcm<E> {
-    fn clone(&self) -> Self {
-        Self(Arc::clone(&self.0))
-    }
-}
-
-impl<E: Exchange + 'static> Kcm<E> {
-    /// A client over `exchange`.
-    pub(crate) fn new(exchange: E) -> Self {
-        Self(Arc::new(exchange))
+impl Kcm {
+    /// A client over `transport`.
+    pub(crate) fn new(transport: Arc<dyn KcmTransport>) -> Self {
+        Self(transport)
     }
 
     /// One operation; a missing cache is [`Error::CacheNotFound`] for `name`.
@@ -68,7 +69,7 @@ impl<E: Exchange + 'static> Kcm<E> {
     /// Returns transport failures and the server's status.
     fn rpc(&self, opcode: Opcode, name: Option<&str>, args: &[u8]) -> Result<Vec<u8>, Error> {
         let request = kcm_wire::request(opcode, name, args)?;
-        let reply = self.0.call(&request)?;
+        let reply = Secret::from(self.0.call(&request)?);
         match kcm_wire::result(&reply) {
             Ok(result) => Ok(result.to_vec()),
             Err(Platform::Kcm { code: NO_CACHE }) => Err(Error::CacheNotFound {
@@ -109,14 +110,14 @@ impl<E: Exchange + 'static> Kcm<E> {
 
 /// One KCM cache.
 #[derive(Debug)]
-struct Cache<E> {
+struct Cache {
     /// The residual name.
     name: String,
     /// The client.
-    kcm: Kcm<E>,
+    kcm: Kcm,
 }
 
-impl<E: Exchange + 'static> Cache<E> {
+impl Cache {
     /// A cache operation on this cache.
     /// # Errors
     /// Returns the errors of [`Kcm::rpc`].
@@ -125,7 +126,7 @@ impl<E: Exchange + 'static> Cache<E> {
     }
 }
 
-impl<E: Exchange + 'static> CacheHandle for Cache<E> {
+impl CacheHandle for Cache {
     fn name(&self) -> String {
         format!("KCM:{}", self.name)
     }
@@ -203,9 +204,9 @@ impl<E: Exchange + 'static> CacheHandle for Cache<E> {
 
 /// The caches of a KCM server, primary first (`kcm_ptcursor_*`).
 #[derive(Debug)]
-struct Collection<E>(Kcm<E>);
+struct Collection(Kcm);
 
-impl<E: Exchange + 'static> CacheCollection for Collection<E> {
+impl CacheCollection for Collection {
     fn name(&self) -> String {
         "KCM:".to_owned()
     }
