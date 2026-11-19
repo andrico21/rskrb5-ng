@@ -97,3 +97,81 @@ mod inert {
         );
     }
 }
+
+/// `KEYRING` is a built-in cache type with the leaf on or off, so no store
+/// provider can claim it.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+mod reserved {
+    extern crate alloc;
+
+    use alloc::sync::Arc;
+
+    use rskrb5_ng::{
+        ccache::{
+            in_memory::MemoryStore,
+            stores::{CacheCollection, CacheHandle, CredentialStore},
+        },
+        error::{Ccache as CacheError, Extensions as ExtensionError},
+        extensions::{Extension, Registry, StoreProvider},
+    };
+
+    /// A provider whose cache type claims `prefix`.
+    #[derive(Debug)]
+    struct Claim {
+        /// The claimed prefix.
+        prefix: &'static str,
+        /// Where its caches would live.
+        caches: MemoryStore,
+    }
+
+    impl CredentialStore for Claim {
+        fn cache_type(&self) -> &'static str {
+            self.prefix
+        }
+
+        fn resolve(&self, residual: &str) -> Result<Box<dyn CacheHandle>, CacheError> {
+            self.caches.resolve(residual)
+        }
+
+        fn collection(&self, residual: &str) -> Result<Box<dyn CacheCollection>, CacheError> {
+            self.caches.collection(residual)
+        }
+    }
+
+    impl StoreProvider for Claim {
+        fn id(&self) -> &'static str {
+            "keyring-claim"
+        }
+
+        fn prefix(&self) -> &str {
+            self.prefix
+        }
+
+        fn credential_store(&self) -> Option<&dyn CredentialStore> {
+            Some(self)
+        }
+    }
+
+    /// A claim of `KEYRING`, in any letter case, is refused as taken.
+    #[test]
+    fn providers_cannot_claim_the_keyring_prefix() -> Result<(), String> {
+        for prefix in ["KEYRING", "keyring", "KeyRing"] {
+            let mut registry = Registry::new();
+            match registry.register(Extension::StoreProvider(Arc::new(Claim {
+                prefix,
+                caches: MemoryStore::new(),
+            }))) {
+                Err(ExtensionError::PrefixTaken {
+                    prefix: taken,
+                    id: _,
+                }) if taken == prefix => {}
+                other => return Err(format!("{prefix}: {other:?}")),
+            }
+        }
+        Ok(())
+    }
+}
