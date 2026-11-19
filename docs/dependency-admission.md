@@ -112,6 +112,16 @@ duplicate-version skips, each with a reason stated in the record.
 - Maintenance: RustCrypto/MACs, repository pushed 2026-11-17; 0.8.0 on 2026-04-10 (release candidates since 2025-05), about 9.6 million recent downloads; `dbl` 0.5.0 on 2025-09-03 with about 9.3 million. No RustSec advisory (`cargo audit` clean at admission).
 - Features: `zeroize` (this crate's own feature, enabled by the `camellia` leaf)
 
+### libc
+- Version: 0.2.191
+- Leaf flags: ccache-keyring
+- Licence: MIT OR Apache-2.0 (both already on the `deny.toml` allow list; no change to it).
+- Source review: read on 2026-11-19 from the crates.io tarball (sha256 `65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a`, rust-lang/libc, the lock's version). This crate calls no function of it: it names eleven `errno` constants (`ENOSYS`, `EOPNOTSUPP`, `EPERM`, `EACCES`, `EDQUOT`, `ENOKEY`, `EKEYREVOKED`, `EKEYEXPIRED`, `EINVAL`, `ENODEV`, `EILSEQ`) to map the kernel's refusals of the key calls to typed errors in `src/ccache/keyring/kernel.rs`. The numbers differ between Linux architectures (`EDQUOT` is 122 on x86 and 1133 on mips, `ENOKEY` 126 and 161: `src/unix/linux_like/linux/uclibc/mips/mod.rs:131-137` against `musl/b32/x86/mod.rs:380-385`), which is why the constants come from `libc` and are not written down here. `libc` is already in the graph (tokio, mio, socket2 and `keyutils-raw`); this record makes it a direct, optional, Linux-only dependency of the `ccache-keyring` leaf. It has a `build.rs` (cfg probing, no `links` key); D6 and rule 4 list `libc` as an OS wrapper.
+- Constant-time and zeroization: not a cryptographic crate; this crate reads constants only.
+- Cargo vet: `supply-chain/config.toml` already has `[[exemptions.libc]]` 0.2.191, `safe-to-deploy`; no change. `cargo vet --locked` passes.
+- Maintenance: rust-lang/libc, 0.2.191 is the lock's release and the newest stable one; the crate is among the most downloaded of crates.io. No RustSec advisory for it (`cargo audit` clean at admission).
+- Features: none beyond the defaults (`default-features = false` here; `keyutils-raw` enables `std`, which cargo unifies)
+
 ### rustix
 - Version: 1.1.6
 - Leaf flags: none. The one non-optional exception of rule 2 (owner exception 2026-11-18, plan 2 D10, todo 11): `[target.'cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))'.dependencies]` with `default-features = false`, used only by the shared secure-environment check (`src/secure_env.rs`), which compares the real and effective user and group ids as MIT 1.22.2 `src/util/support/secure_getenv.c:83-99` does when `getresuid` is unavailable. Linux and Android read `AT_SECURE` from `/proc/self/auxv` with `std` and do not use it; Windows has no set-id processes.
