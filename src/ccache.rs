@@ -1061,7 +1061,7 @@ pub struct Credential {
     times: CredentialTimes,
     /// Whether the ticket is encrypted in the session key.
     is_skey: bool,
-    /// Kerberos ticket flags as the raw four bytes stored in ccache.
+    /// Kerberos ticket flags in network byte order, whatever the file version.
     ticket_flags: [u8; 4],
     /// Client addresses.
     addresses: Vec<HostAddress>,
@@ -1115,7 +1115,8 @@ impl Credential {
     pub const fn is_skey(&self) -> bool {
         self.is_skey
     }
-    /// Return ticket flag bytes.
+    /// Ticket flag bytes in network byte order (RFC 4120 flag 0 is the high
+    /// bit of the first byte); versions 1 and 2 store them in host order.
     #[inline]
     #[must_use]
     pub const fn ticket_flags(&self) -> [u8; 4] {
@@ -1142,7 +1143,7 @@ impl Credential {
     pub const fn set_times(&mut self, value: CredentialTimes) {
         self.times = value;
     }
-    /// Replace ticket flags.
+    /// Replace ticket flags, given in network byte order.
     #[inline]
     pub const fn set_ticket_flags(&mut self, value: [u8; 4]) {
         self.ticket_flags = value;
@@ -1340,7 +1341,9 @@ impl Credential {
             renew_till: read_u32(bytes, offset, endian)?,
         };
         let is_skey = read_u8(bytes, offset)? != 0;
-        let ticket_flags = read_array::<4>(bytes, offset)?;
+        // Flags are an integer in the file's byte order (MIT 1.22.2
+        // `ccmarshal.c:301` `get32`): host order before version 3.
+        let ticket_flags = read_u32(bytes, offset, endian)?.to_be_bytes();
 
         // Every address entry is at least a six-byte counted record.
         let address_count = read_count(bytes, offset, endian, 6)?;
@@ -1394,7 +1397,7 @@ impl Credential {
         write_u32(out, self.times.end_time, endian);
         write_u32(out, self.times.renew_till, endian);
         out.push(u8::from(self.is_skey));
-        out.extend_from_slice(&self.ticket_flags);
+        write_u32(out, u32::from_be_bytes(self.ticket_flags), endian);
 
         write_i32_len_checked(out, self.addresses.len(), endian)?;
         for address in &self.addresses {
@@ -1439,7 +1442,7 @@ pub struct CredentialMetadata {
     pub times: CredentialTimes,
     /// Whether the ticket is encrypted in the session key.
     pub is_skey: bool,
-    /// Kerberos ticket flags as raw bytes.
+    /// Kerberos ticket flags in network byte order.
     pub ticket_flags: [u8; 4],
     /// Number of client addresses.
     pub address_count: usize,
