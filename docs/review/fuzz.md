@@ -7,7 +7,7 @@ itself reaches the parsers mapped to it.
 
 ## Targets
 
-`cargo +nightly-2026-10-03 fuzz list` prints these thirteen targets. All take
+`cargo +nightly-2026-10-03 fuzz list` prints these fourteen targets. All take
 arbitrary bytes; most use the first byte as a selector and pass the rest to
 the chosen entry point, so one target covers a family of related decoders.
 
@@ -25,6 +25,7 @@ the chosen entry point, so one target covers a family of related decoders.
 | `krb_messages` | Kerberos messages | AP-REQ, Authenticator, AP-REP, `EncAPRepPart`, KRB-CRED, `EncKrbCredPart`, KRB-PRIV, `EncKrbPrivPart`, KRB-SAFE, Ticket, `EncTicketPart`, KRB-ERROR, `KDC-REQ-BODY`, AS-REQ, TGS-REQ, the PA-DATA messages and the kpasswd `ChangePasswdData` and KRB-PRIV codecs; the decrypt functions under a fixed key; and a sealed mode that encrypts the fuzzed plaintext into a message template so the decoders behind decryption see it |
 | `der_oid` | DER and OID bytes | the crate's SPNEGO DER reader and OID decoder (decode, re-encode, decode again must give the same value), `ObjectIdentifier::from_arcs`, and a decrypted Authenticator whose fuzzed plaintext reaches the zero-padding trimmer and the complete-message decoder |
 | `krb5_conf` | `krb5.conf` text (UTF-8-lossy) | `Config::parse` and includes, then the enctype-list accessors `default_tkt_enctype_ids`, `default_tgs_enctype_ids` and `permitted_enctype_ids` on an accepted configuration |
+| `extensions` | `.k5identity` contents, or `krb5.conf` text parsed through an extension registry | `K5Identity::from_bytes` and `CacheSelector::choose` (the `.k5identity` grammar and its `fnmatch` patterns, for a host-based and a plain server), and `Registry::parse_config` (the `module <id>:<residual>` profile directive and `[plugins]` module resolution) in both parse modes |
 | `name_parse` | names and values as text | `Principal::parse_user`, `Principal::parse_service`, `CacheName::parse`, `keytab::Name::parse`, `KdcEndpoint::configured`, `Tokio::with_dns_server`, `config::parse_duration`, `config::parse_boolean`, `crypto::s2kparams_to_iterations` |
 
 The keys, keytabs, tickets and templates the targets use are the synthetic
@@ -89,6 +90,7 @@ timeout artifact:
 | `der_oid` | 348,348 | 121 s | 0 |
 | `krb5_conf` | 140,698 (todo 15 F, 2026-11-01) | 121 s | 0 |
 | `name_parse` | 2,629,623 | 121 s | 0 |
+| `extensions` | 651,170 (todo 3 of plan 2, 2026-11-18) | 121 s | 0 |
 
 ### Round-2 session admission repair (FU-FUZ-R02)
 
@@ -169,6 +171,12 @@ all 37 mappings, including the five new helpers (record:
 `m1-spnego-coverage.tsv` in the execution evidence). The all-target coverage
 record was not regenerated: the other eleven targets were unchanged and were
 not rebuilt in this lane. A full refresh uses the commands above for all targets.
+
+Plan 2 todo 3 added the `extensions` target and proved its four rows the same
+way: `cargo fuzz coverage extensions` on the committed seeds, `llvm-cov export`
+of that target, then `coverage_index` and `check_coverage` on the `extensions`
+rows (4 of 4 mappings; record `task-3-extensions-coverage.tsv` in the
+execution evidence). The other targets were not rebuilt in that lane.
 
 ## Round-trip properties
 
@@ -321,6 +329,10 @@ does.
 | `rskrb5_ng::der::decode_complete` | `src/der.rs` | `der_oid` |  |
 | `rskrb5_ng::der::top_level_der_end` | `src/der.rs` | `der_oid` |  |
 | `rskrb5_ng::der::trim_zero_padded_der` | `src/der.rs` | `der_oid` |  |
+| `rskrb5_ng::extensions::K5Identity::from_bytes` | `src/extensions.rs` | `extensions` |  |
+| `rskrb5_ng::extensions::Registry::parse_config` | `src/extensions.rs` | `extensions` |  |
+| `rskrb5_ng::extensions::k5identity::parse_line` | `src/extensions/k5identity.rs` | `extensions` |  |
+| `rskrb5_ng::extensions::k5identity::parse_principal` | `src/extensions/k5identity.rs` | `extensions` |  |
 | `rskrb5_ng::file_name::expand_path_tokens` | `src/file_name.rs` | `name_parse` |  |
 | `rskrb5_ng::file_name::file_path_from_name` | `src/file_name.rs` | `name_parse` |  |
 | `rskrb5_ng::file_name::is_windows_drive_path` | `src/file_name.rs` | `name_parse` |  |

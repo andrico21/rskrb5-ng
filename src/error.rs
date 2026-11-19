@@ -15,9 +15,12 @@ use rasn::types::Integer;
 use crate::client::KdcError;
 #[cfg(feature = "tokio")]
 use crate::client::transport::KdcProtocol;
-use crate::config::parameters::Failure as ExpansionFailure;
 #[cfg(feature = "spnego")]
 use crate::spnego::oid::ObjectIdentifier;
+use crate::{
+    config::parameters::Failure as ExpansionFailure,
+    extensions::{Interface, ProviderError},
+};
 include!("error/any.rs");
 include!("error/policy.rs");
 mod credential_debug;
@@ -898,6 +901,92 @@ pub enum Crypto {
         /// Actual ciphertext length.
         actual: usize,
     },
+}
+/// Extension registration, provider output and profile-module errors.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum Extensions {
+    /// A provider id is empty, too long or uses a byte outside `[A-Za-z0-9_.-]`.
+    #[error("invalid {interface} extension id {id}")]
+    InvalidId {
+        /// The interface.
+        interface: Interface,
+        /// The refused id.
+        id: String,
+    },
+    /// The interface already has a provider with this id.
+    #[error("{interface} extension {id} is already registered")]
+    DuplicateId {
+        /// The interface.
+        interface: Interface,
+        /// The duplicate id.
+        id: String,
+    },
+    /// The interface already holds its maximum number of providers.
+    #[error("more than {limit} {interface} extensions")]
+    TooManyProviders {
+        /// The interface.
+        interface: Interface,
+        /// The bound.
+        limit: usize,
+    },
+    /// A provider's registration data breaks the interface's rules.
+    #[error("{interface} extension {id} cannot be registered: {reason}")]
+    InvalidRegistration {
+        /// The interface.
+        interface: Interface,
+        /// The provider id.
+        id: String,
+        /// Which rule.
+        reason: &'static str,
+    },
+    /// A provider failed.
+    #[error("{interface} extension {id} failed")]
+    CallFailed {
+        /// The interface.
+        interface: Interface,
+        /// The provider id.
+        id: String,
+        /// The provider's error.
+        source: ProviderError,
+    },
+    /// A provider's output breaks the interface's shape.
+    #[error("{interface} extension {id} returned malformed output: {reason}")]
+    MalformedOutput {
+        /// The interface.
+        interface: Interface,
+        /// The provider id.
+        id: String,
+        /// Which rule.
+        reason: &'static str,
+    },
+    /// A provider's output exceeds a bound.
+    #[error("{interface} extension {id} output exceeds its bound of {limit}")]
+    OutputTooLarge {
+        /// The interface.
+        interface: Interface,
+        /// The provider id.
+        id: String,
+        /// The bound.
+        limit: usize,
+    },
+    /// A preauthentication session ran out of rounds.
+    #[error("client preauthentication exceeded {limit} rounds")]
+    TooManyRounds {
+        /// The bound.
+        limit: usize,
+    },
+    /// The permanent or runtime enctype policy refused a mechanism's PA-DATA.
+    #[error("clpreauth extension {id} output refused: {source}")]
+    PolicyRefused {
+        /// The mechanism id.
+        id: String,
+        /// The policy refusal.
+        source: Policy,
+    },
+    /// The configuration a profile names is invalid, or `module` is unresolved.
+    #[error("config error: {0}")]
+    Config(#[from] Config),
 }
 #[cfg(feature = "http")]
 /// HTTP Negotiate adapter error.

@@ -79,6 +79,7 @@ pub mod cryptography;
 /// DER helpers: trimming zero padding after a top-level DER value.
 mod der;
 pub mod error;
+pub mod extensions;
 /// Credential-cache and keytab file-name parsing with path-token expansion.
 mod file_name;
 #[cfg(feature = "http")]

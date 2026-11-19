@@ -30,9 +30,10 @@ and `P2-N` is plan 2 todo N, listed in `docs/parity-todo-index.toml`.
 ## Rust extension points
 
 MIT loads C plugin modules from `plugin_base_dir` and `module` directives. This
-crate loads no code: `module` is `Config::UnsupportedDynamicModule` in every
-mode, and plan 2 todo 3 adds statically registered Rust providers in place of
-the C plugin interfaces.
+crate loads no code: providers are Rust values registered in an
+`extensions::Registry`, and `Registry::parse_config` resolves a `module` that
+names a registered provider. Any other `module` is
+`Config::UnsupportedDynamicModule` in every mode.
 ";
 
 /// Generates `docs/mit-krb5-parity.md` from the parsed manifest.

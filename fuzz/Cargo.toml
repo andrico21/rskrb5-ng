@@ -103,3 +103,10 @@ path = "fuzz_targets/kdc_tcp_frame.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "extensions"
+path = "fuzz_targets/extensions.rs"
+test = false
+doc = false
+bench = false
