@@ -7,7 +7,7 @@ itself reaches the parsers mapped to it.
 
 ## Targets
 
-`cargo +nightly-2026-10-03 fuzz list` prints these fifteen targets. All take
+`cargo +nightly-2026-10-03 fuzz list` prints these sixteen targets. All take
 arbitrary bytes; most use the first byte as a selector and pass the rest to
 the chosen entry point, so one target covers a family of related decoders.
 
@@ -27,6 +27,7 @@ the chosen entry point, so one target covers a family of related decoders.
 | `krb5_conf` | `krb5.conf` text (UTF-8-lossy) | `Config::parse` and includes, then the enctype-list accessors `default_tkt_enctype_ids`, `default_tgs_enctype_ids` and `permitted_enctype_ids` on an accepted configuration |
 | `extensions` | `.k5identity` contents, or `krb5.conf` text parsed through an extension registry | `K5Identity::from_bytes` and `CacheSelector::choose` (the `.k5identity` grammar and its `fnmatch` patterns, for a host-based and a plain server), and `Registry::parse_config` (the `module <id>:<residual>` profile directive and `[plugins]` module resolution) in both parse modes |
 | `ccache_collection` | a `DIR` collection's `primary` pointer and its `tkt` cache file, split at the first byte | `DirStore` collection enumeration, primary resolution and loads (`read_primary`, the locked reads and `FileCache::parse`), and the `FILE` store load of the same file |
+| `keyring_index` | the payload of the `krb_ccache:primary` key of a `KEYRING:` collection | `ccache::keyring::index::parse`, then `encode` and `parse` again on accepted input (the version, the length and the name of the primary cache; MIT `cc_keyring.c:541-571`) |
 | `name_parse` | names and values as text | `Principal::parse_user`, `Principal::parse_service`, `CacheName::parse`, `keytab::Name::parse`, `KdcEndpoint::configured`, `Tokio::with_dns_server`, `config::parse_duration`, `config::parse_boolean`, `crypto::s2kparams_to_iterations` |
 
 The keys, keytabs, tickets and templates the targets use are the synthetic
@@ -93,6 +94,7 @@ timeout artifact:
 | `name_parse` | 2,629,623 | 121 s | 0 |
 | `extensions` | 651,170 (todo 3 of plan 2, 2026-11-18) | 121 s | 0 |
 | `ccache_collection` | 163,889 (todo 11 of plan 2, 2026-11-19) | 121 s | 0 |
+| `keyring_index` | 6,296,962 (todo 13 of plan 2, 2026-11-19) | 121 s | 0 |
 
 ### Round-2 session admission repair (FU-FUZ-R02)
 
@@ -129,6 +131,20 @@ AP-REP/TGS mappings affected by this finding: `process_tgs_rep` 53,
 reachability proof, not a refreshed whole-inventory proof: checking all 71
 mappings of those four targets matched 51 and reported 20 unmatched mappings
 (including moved source owners and deeper reply-validation paths).
+
+### KEYRING collection index (todo 13 of plan 2)
+
+`keyring_index` fuzzes the one new parser of bytes that another process of the
+same user can write, the payload of the `krb_ccache:primary` key
+(`ccache::keyring::index::parse`). The run of 2026-11-19 made 6,296,962
+executions in 121 s from the eight committed seeds with no artifact. The
+coverage export of the target's own binary from the seeds alone reaches the
+mapped function (`scripts/lint-gates/fuzz_coverage.py --inventory --coverage`
+with only this target's export: `rskrb5_ng::ccache::keyring::index::parse` in
+`src/ccache/keyring/index.rs`, count 10). The other functions of the keyring
+module that the inventory search finds are reason-only rows: they hand bytes to
+parsers that other rows already cover, split text the application or the kernel
+produced, or are the key calls themselves.
 
 ### Earlier campaign crashes
 
@@ -243,6 +259,16 @@ does.
 | `rskrb5_ng::ccache::read_u32` | `src/ccache.rs` | `ccache_parse` |  |
 | `rskrb5_ng::ccache::read_u8` | `src/ccache.rs` | `ccache_parse` |  |
 | `rskrb5_ng::ccache::dir_store::read_primary` | `src/ccache/dir_store.rs` | `ccache_collection` |  |
+| `rskrb5_ng::ccache::keyring::index::parse` | `src/ccache/keyring/index.rs` | `keyring_index` |  |
+| `rskrb5_ng::ccache::keyring::payload::parse_credential` | `src/ccache/keyring/payload.rs` | - | Hands a key payload to `Credential::parse` (row `ccache_parse`) and refuses bytes after the credential; it reads no bytes itself. |
+| `rskrb5_ng::ccache::keyring::payload::parse_principal` | `src/ccache/keyring/payload.rs` | - | Hands a key payload to `Principal::parse` (row `ccache_parse`) and refuses bytes after the principal; it reads no bytes itself. |
+| `rskrb5_ng::ccache::keyring::residual::Residual::parse` | `src/ccache/keyring/residual.rs` | - | Splits the cache name the application passes in (`anchor:collection:subsidiary`) at two colons; text of the caller, not bytes read from outside the process. |
+| `rskrb5_ng::ccache::keyring::residual::parse_description` | `src/ccache/keyring/residual.rs` | - | Splits the text the kernel prints for `keyctl_describe` (`type;uid;gid;permissions;description`) at four semicolons; one bounded split, the kernel formats every field but the description. |
+| `rskrb5_ng::ccache::keyring::residual::parse_owner` | `src/ccache/keyring/residual.rs` | - | Reads the owner field of the same kernel text: one split and an integer parse. |
+| `rskrb5_ng::ccache::keyring::residual::parse_serials` | `src/ccache/keyring/residual.rs` | - | Chunks the array of 4-byte key serial numbers the kernel returns for a keyring read; no length field, a partial tail is dropped. |
+| `rskrb5_ng::ccache::keyring::backend::read` | `src/ccache/keyring/backend.rs` | - | The `keyctl_read` call as a trait method: it returns the caller's buffer and parses nothing. |
+| `<rskrb5_ng::ccache::keyring::kernel::Kernel as Backend>::read` | `src/ccache/keyring/kernel.rs` | - | The `keyctl_read` call of the kernel backend: one system call into a zeroizing buffer, no parsing. |
+| `<rskrb5_ng::ccache::keyring::fake::calls::Fake as Backend>::read` | `src/ccache/keyring/fake/calls.rs` | - | The in-memory kernel of the unit tests (`cfg(test)`), no parsing. |
 | `rskrb5_ng::ccache::file_store::FileCache::parse` | `src/ccache/file_store.rs` | `ccache_collection` |  |
 | `rskrb5_ng::client::decode` | `src/client.rs` | `kdc_reply` |  |
 | `rskrb5_ng::client::kerberos_string_to_string` | `src/client.rs` | `kdc_reply` |  |
