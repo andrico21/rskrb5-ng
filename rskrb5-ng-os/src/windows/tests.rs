@@ -7,9 +7,15 @@ use std::sync::{Mutex, PoisonError};
 #[cfg(windows)]
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(windows)]
+use rskrb5_ng::extensions::Interface;
 use rskrb5_ng::{
-    ccache::{Credential, CredentialTimes, EncryptionKey, Principal, stores::CredentialStore as _},
+    ccache::{
+        CCache, Credential, CredentialTimes, EncryptionKey, Principal, file_store,
+        stores::{CacheVersion, CredentialStore as _},
+    },
     error::Ccache as Error,
+    extensions::{Extension, Registry},
     keytab, krb_cred,
 };
 
@@ -240,6 +246,30 @@ fn remove_and_destroy_purge() -> Result<(), Box<dyn StdError>> {
     Ok(())
 }
 
+/// An installed `MSLSA` provider serves `MSLSA:` names on the name routes of
+/// `rskrb5-ng` (todo 32's `StoreProvider`).
+#[test]
+#[cfg_attr(
+    miri,
+    ignore = "KRB-CRED encoding reaches bitvec 1.1.1 through rasn, whose Miri findings are third-party"
+)]
+fn installed_provider_serves_mslsa_names() -> Result<(), Box<dyn StdError>> {
+    // Given an authorized store over an in-memory LSA, installed as the
+    // process's `MSLSA` provider.
+    let (writable, memory) = store(true);
+    let mut registry = Registry::new();
+    registry.register(Extension::StoreProvider(Arc::new(writable)))?;
+    registry.install_stores()?;
+    // When a ticket is stored through a resolved name and the name is loaded.
+    file_store::resolve("MSLSA:", CacheVersion::V4)?.store(credential(&[5; 32], 1000))?;
+    let loaded = CCache::load_name("MSLSA:")?;
+    // Then the provider's LSA got the ticket and the name route read it back.
+    assert_eq!(memory.tickets().len(), 1);
+    let read = loaded.credentials().first().ok_or("no ticket")?;
+    assert_eq!(read.key().value().as_ref(), [5; 32]);
+    Ok(())
+}
+
 /// The collection is the one cache; new caches are not supported (MIT).
 #[test]
 #[cfg_attr(
@@ -268,30 +298,54 @@ fn collection_of_one_cache() -> Result<(), Box<dyn StdError>> {
     Ok(())
 }
 
-/// The runner's own LSA: a fixture ticket submitted with
-/// `KerbSubmitTicketMessage` reads back through `MSLSA:` and is purged.
+/// The runner's own LSA, reached through installed `MSLSA:` names.
+///
+/// The default read-only store refuses a change; a fixture ticket submitted
+/// with `KerbSubmitTicketMessage` through an installed authorized provider
+/// reads back by name and is purged.
 #[cfg(windows)]
 #[test]
 #[ignore = "changes the logon session's ticket cache: run in the Windows CI job"]
 fn system_lsa_round_trip() -> Result<(), Box<dyn StdError>> {
-    // Given an authorized store and a fresh fixture ticket.
-    let store = MslsaStore::with_mutation(true);
-    let cache = store.resolve("")?;
+    // Given the default read-only store, an authorized store installed as the
+    // process's `MSLSA` provider, and a fresh fixture ticket.
     let now = u32::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())?;
     let key: [u8; 32] = now
         .to_be_bytes()
         .repeat(8)
         .try_into()
         .map_err(|_size| "key")?;
-    // When it is submitted, read back, and removed.
+    let mut defaults = Registry::new();
+    crate::register(&mut defaults)?;
+    let mut registry = Registry::new();
+    registry.register(Extension::StoreProvider(Arc::new(
+        MslsaStore::with_mutation(true),
+    )))?;
+    registry.install_stores()?;
+    let cache = file_store::resolve("MSLSA:", CacheVersion::V4)?;
+    // When the read-only store is asked to store it, then the installed one
+    // stores it, the name is loaded, and the ticket is removed.
+    let refused = MslsaStore::new()
+        .resolve("")?
+        .store(credential(&key, now))
+        .err()
+        .ok_or("the read-only store accepted a change")?;
     cache.store(credential(&key, now))?;
-    let loaded = cache.load()?;
+    let loaded = CCache::load_name("MSLSA:")?;
     let removed = cache.remove(&server())?;
     let after = cache
         .load()
         .map_or_else(|_absent| Vec::new(), |value| value.credentials().to_vec());
-    // Then the LSA returned the ticket with its session key, and the removal
-    // purged exactly it.
+    // Then the refusal is the typed authorization error, the LSA returned the
+    // ticket with its session key, and the removal purged exactly it.
+    assert_eq!(
+        platform(&refused),
+        Some(Platform::MutationNotAuthorized {
+            cache_type: "MSLSA"
+        }),
+        "{refused}"
+    );
+    assert_eq!(defaults.ids(Interface::StoreProvider), ["MSLSA"]);
     let read = loaded
         .credentials()
         .iter()

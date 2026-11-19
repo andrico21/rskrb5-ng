@@ -11,6 +11,7 @@ use rskrb5_ng::{
     },
     config::LibDefaults,
     error::Ccache as Error,
+    extensions::StoreProvider,
 };
 
 use crate::{error::Platform, kcm_store::Kcm, principal_text};
@@ -86,6 +87,24 @@ impl CredentialStore for ApiStore {
     #[inline]
     fn collection(&self, _residual: &str) -> Result<Box<dyn CacheCollection>, Error> {
         Ok(Box::new(ApiCollection))
+    }
+}
+
+/// The `API` provider: install it to reach `API:` names by name.
+impl StoreProvider for ApiStore {
+    #[inline]
+    fn id(&self) -> &'static str {
+        "API"
+    }
+
+    #[inline]
+    fn prefix(&self) -> &'static str {
+        "API"
+    }
+
+    #[inline]
+    fn credential_store(&self) -> Option<&dyn CredentialStore> {
+        Some(self)
     }
 }
 

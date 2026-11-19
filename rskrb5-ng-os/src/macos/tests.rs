@@ -24,12 +24,12 @@ use std::{
 
 use rskrb5_ng::{
     ccache::{
-        Credential, CredentialTimes, EncryptionKey, Principal,
+        CCache, Credential, CredentialTimes, EncryptionKey, Principal, file_store,
         stores::{CacheVersion, CredentialStore as _},
     },
     config::{Config, ParseMode},
     error::Ccache as Error,
-    extensions::Registry,
+    extensions::{Interface, Registry},
 };
 
 use super::{
@@ -158,27 +158,22 @@ fn kcm_mach_disabled_and_absent() -> Result<(), Box<dyn StdError>> {
 #[test]
 #[ignore = "needs the macOS CI fixture: a CCAPI cache seeded by MIT kinit"]
 fn api_reads_writes_and_destroys_the_seeded_cache() -> Result<(), Box<dyn StdError>> {
-    // Given the seeded cache, resolved through the registry.
+    // Given the seeded cache, reached by name through the installed `API`
+    // provider of `register`.
     let mut registry = Registry::new();
     register(&mut registry)?;
+    registry.install_stores()?;
     let principal = principal_text::parse(&var("RSKRB5_NG_OS_PRINCIPAL")?).ok_or("principal")?;
-    let seeded = registry.resolve_cache(
-        &format!("API:{}", var("RSKRB5_NG_OS_API_CACHE")?),
-        CacheVersion::default(),
-    )?;
-    // When it is read, copied to a new cache and destroyed.
-    let loaded = seeded.load()?;
+    let name = format!("API:{}", var("RSKRB5_NG_OS_API_CACHE")?);
+    let seeded = file_store::resolve(&name, CacheVersion::default())?;
+    // When it is read by name, copied to a new cache and destroyed.
+    let loaded = CCache::load_name(&name)?;
     let copy = ApiStore.resolve(&var("RSKRB5_NG_OS_API_COPY")?)?;
     copy.replace(&loaded)?;
     let copied = copy.load()?;
     seeded.destroy()?;
     // Then the API backend read the MIT tickets and wrote them back.
-    assert_eq!(
-        registry
-            .credential_store("API")
-            .map(|store| store.cache_type()),
-        Some("API")
-    );
+    assert_eq!(registry.ids(Interface::StoreProvider), ["API"]);
     assert!(seeded.name().starts_with("API:"), "{}", seeded.name());
     assert_eq!(loaded.default_principal().components, principal.components);
     assert!(

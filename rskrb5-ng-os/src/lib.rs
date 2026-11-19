@@ -4,9 +4,17 @@
 //! cache (Kerberos.framework CCAPI) and `KCM:` over Mach RPC.
 //!
 //! `rskrb5-ng` itself has no `unsafe` code and never depends on this crate.
-//! An application that wants the platform stores adds this crate and calls
-//! [`register`]; names of these types then resolve through
-//! `Registry::resolve_cache`.
+//! An application that wants the platform stores adds this crate, calls
+//! [`register`] and then `Registry::install_stores`; from then on `MSLSA:`
+//! and `API:` names resolve through every name route of `rskrb5-ng`
+//! (`CCache::load_name` and `save_name`, `file_store::resolve` and
+//! `collection`, the client's named and default cache lookups).
+//!
+//! `KCM:` is a built-in cache type of `rskrb5-ng` (plan todo 12), so this
+//! crate never registers it. `macos::KcmMachStore` is its Mach backend,
+//! usable directly; its transport `macos::MachTransport` becomes the
+//! transport of the built-in `KCM:` store once `rskrb5-ng` offers
+//! `ccache::kcm::install_transport`.
 //!
 //! # Security
 //!
@@ -32,9 +40,8 @@ use alloc::sync::Arc;
 #[cfg(any(target_os = "macos", windows, test))]
 use rskrb5_ng::keytab::key_bytes::Bytes;
 use rskrb5_ng::{
-    ccache::stores::CredentialStore,
     error::Extensions,
-    extensions::{Extension, Registry},
+    extensions::{Extension, Registry, StoreProvider},
 };
 
 pub mod error;
@@ -57,33 +64,31 @@ mod principal_text;
 #[cfg(any(windows, test))]
 pub mod windows;
 
-/// The stores of this platform with their default settings.
-fn stores() -> Vec<Arc<dyn CredentialStore>> {
+/// The store providers of this platform with their default settings.
+fn providers() -> Vec<Arc<dyn StoreProvider>> {
     vec![
         #[cfg(windows)]
         Arc::new(windows::MslsaStore::new()),
         #[cfg(target_os = "macos")]
         Arc::new(macos::ApiStore::new()),
-        #[cfg(target_os = "macos")]
-        Arc::new(macos::KcmMachStore::new(macos::DEFAULT_KCM_MACH_SERVICE)),
     ]
 }
 
-/// Register the platform stores in `registry` with their default settings.
+/// Register the platform store providers in `registry` with their default
+/// settings; `Registry::install_stores` then publishes them process-wide.
 ///
-/// They are `MSLSA` (read-only) on Windows, `API` and `KCM` (Mach service
-/// `org.h5l.kcm`) on macOS, and none elsewhere. Register a store yourself
-/// for other settings, for example `MslsaStore::with_mutation(true)` or
-/// `KcmMachStore::from_libdefaults`.
+/// They are `MSLSA` (read-only) on Windows, `API` on macOS, and none
+/// elsewhere. For other settings register a provider yourself, for example
+/// `Extension::StoreProvider(Arc::new(MslsaStore::with_mutation(true)))`.
 ///
 /// # Errors
 ///
 /// The registration errors of [`Registry::register`], for example
-/// `DuplicateId` when a store of the same type is already registered.
+/// `DuplicateId` when a provider of the same id is already registered.
 #[inline]
 pub fn register(registry: &mut Registry) -> Result<(), Extensions> {
-    for store in stores() {
-        registry.register(Extension::CredentialStore(store))?;
+    for provider in providers() {
+        registry.register(Extension::StoreProvider(provider))?;
     }
     Ok(())
 }
@@ -103,7 +108,7 @@ mod tests {
 
     use super::register;
 
-    /// Each platform registers its own stores, once.
+    /// Each platform registers its own store providers, once.
     #[test]
     fn registers_the_platform_stores() -> Result<(), Extensions> {
         // Given an empty registry.
@@ -111,16 +116,16 @@ mod tests {
         // When the platform stores are registered, twice.
         register(&mut registry)?;
         let again = register(&mut registry);
-        // Then the platform's types are listed, and a second registration of
-        // a type is refused.
+        // Then the platform's prefixes are listed, and a second registration
+        // of a prefix is refused.
         let expected: &[&str] = if cfg!(windows) {
             &["MSLSA"]
         } else if cfg!(target_os = "macos") {
-            &["API", "KCM"]
+            &["API"]
         } else {
             &[]
         };
-        assert_eq!(registry.ids(Interface::CredentialStore), expected);
+        assert_eq!(registry.ids(Interface::StoreProvider), expected);
         assert_eq!(again.is_err(), !expected.is_empty());
         Ok(())
     }

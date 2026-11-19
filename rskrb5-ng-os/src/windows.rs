@@ -25,6 +25,7 @@ use rskrb5_ng::{
         stores::{CacheCollection, CacheCursor, CacheHandle, CredentialStore},
     },
     error::Ccache as Error,
+    extensions::StoreProvider,
     keytab::EncryptionKey,
     krb_cred,
 };
@@ -155,6 +156,24 @@ impl CredentialStore for MslsaStore {
     #[inline]
     fn collection(&self, residual: &str) -> Result<Box<dyn CacheCollection>, Error> {
         Ok(Box::new(Collection(self.cache(residual))))
+    }
+}
+
+/// The `MSLSA` provider: install it to reach `MSLSA:` names by name.
+impl StoreProvider for MslsaStore {
+    #[inline]
+    fn id(&self) -> &str {
+        CACHE_TYPE
+    }
+
+    #[inline]
+    fn prefix(&self) -> &str {
+        CACHE_TYPE
+    }
+
+    #[inline]
+    fn credential_store(&self) -> Option<&dyn CredentialStore> {
+        Some(self)
     }
 }
 
