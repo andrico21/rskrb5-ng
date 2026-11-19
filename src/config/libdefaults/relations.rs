@@ -4,9 +4,24 @@
 //! Grammar: `src/util/profile/prof_get.c` and `src/lib/krb5/krb/x-deltat.y` at that tag.
 //! All entries are scalar profile lookups, including the list-valued relations.
 
+/// The rows `ignore_acceptor_hostname` through `client_aware_channel_bindings`.
+#[path = "relations/tail.rs"]
+mod tail;
+
 /// Columns: name, value kind, MIT default, consumer/package, classification, test.
-/// Step F reads these literal rows to generate and check the relation document.
-pub(crate) const RELATIONS: [(&str, &str, &str, &str, &str, &str); 43] = [
+///
+/// Step F reads the literal rows of [`RELATIONS_HEAD`] and `tail::RELATIONS_TAIL`, in
+/// that order, to generate and check the relation document.
+pub(crate) const RELATIONS: [(&str, &str, &str, &str, &str, &str); 43] = {
+    let mut rows = [("", "", "", "", "", ""); 43];
+    let (head, tail) = rows.split_at_mut(RELATIONS_HEAD.len());
+    head.copy_from_slice(&RELATIONS_HEAD);
+    tail.copy_from_slice(&tail::RELATIONS_TAIL);
+    rows
+};
+
+/// The rows `allow_des3` through `forwardable`, in catalogue order.
+pub(crate) const RELATIONS_HEAD: [(&str, &str, &str, &str, &str, &str); 21] = [
     (
         "allow_des3",
         "boolean",
@@ -174,181 +189,5 @@ pub(crate) const RELATIONS: [(&str, &str, &str, &str, &str, &str); 43] = [
         "AsReq::from_libdefaults; TgsReq::from_libdefaults",
         "Effective forwardable bit; explicit false overrides raw KDC option bit",
         "forwardable",
-    ),
-    (
-        "ignore_acceptor_hostname",
-        "boolean",
-        "false",
-        "plan 2 WP-12",
-        "No GSS acceptor-name relaxation; strict service/keytab identity checks retained; either value diagnostic",
-        "ignore_acceptor_hostname",
-    ),
-    (
-        "k5login_authoritative",
-        "boolean",
-        "true",
-        "plan 2 WP-17",
-        "No local-login authorization exists; neither value grants login; diagnostic",
-        "k5login_authoritative",
-    ),
-    (
-        "k5login_directory",
-        "string",
-        "unset: user home/.k5login",
-        "plan 2 WP-17",
-        "No local-login authorization or file lookup occurs; diagnostic",
-        "k5login_directory",
-    ),
-    (
-        "kcm_mach_service",
-        "string",
-        "org.h5l.kcm",
-        "plan 2 WP-09",
-        "No KCM connection exists, including when - disables Mach RPC; diagnostic",
-        "kcm_mach_service",
-    ),
-    (
-        "kcm_socket",
-        "string",
-        "/var/run/.heim_org.h5l.kcm-socket",
-        "plan 2 WP-09",
-        "No KCM connection exists, including when - disables Unix sockets; diagnostic",
-        "kcm_socket",
-    ),
-    (
-        "kdc_default_options",
-        "signed decimal i32 bits; explicit 0x extension",
-        "16 (KDC_OPT_RENEWABLE_OK)",
-        "AsReq::from_libdefaults; TgsReq::from_libdefaults",
-        "Effective except security-preserving AS canonicalize suppression and boolean option overrides; scalar first-wins",
-        "kdc_default_options",
-    ),
-    (
-        "kdc_timesync",
-        "signed decimal i32",
-        "1",
-        "plan 2 WP-04",
-        "No clock correction occurs; zero satisfied, nonzero does not tighten authentication; diagnostic",
-        "kdc_timesync",
-    ),
-    (
-        "noaddresses",
-        "boolean",
-        "true",
-        "plan 2 WP-04",
-        "Requests currently omit addresses; false requires unavailable address restriction and errors; true diagnostic",
-        "noaddresses",
-    ),
-    (
-        "permitted_enctypes",
-        "enctype expression",
-        "aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96 aes256-cts-hmac-sha384-192 aes128-cts-hmac-sha256-128 des3-cbc-sha1 arcfour-hmac-md5 camellia256-cts-cmac camellia128-cts-cmac",
-        "CryptoPolicy::from_libdefaults",
-        "Effective everywhere via WP-02; crate AES SHA2-first default, explicit forbidden positives rejected",
-        "permitted_enctypes",
-    ),
-    (
-        "plugin_base_dir",
-        "parameter template",
-        "%{LIBDIR}/krb5/plugins",
-        "plan 2 WP-16",
-        "Inert template, no expansion/discovery or executable code loading; diagnostic",
-        "plugin_base_dir",
-    ),
-    (
-        "preferred_preauth_types",
-        "signed decimal i32 list",
-        "17,16,15,14",
-        "plan 2 WP-04",
-        "Preference ordering is not an allowlist; no new preauth selection, diagnostic; draft-9 IDs 14/15 removed with existing IgnoredPreauthType",
-        "preferred_preauth_types",
-    ),
-    (
-        "proxiable",
-        "boolean",
-        "false",
-        "AsReq::from_libdefaults; TgsReq::from_libdefaults",
-        "Effective proxiable bit; false clears conflicting raw bit",
-        "proxiable",
-    ),
-    (
-        "qualify_shortname",
-        "optional string",
-        "first system DNS search domain",
-        "plan 2 WP-10",
-        "No automatic qualification exists; empty disables and nonempty requests unavailable name rewriting; diagnostic",
-        "qualify_shortname",
-    ),
-    (
-        "rdns",
-        "boolean",
-        "true",
-        "plan 2 WP-10",
-        "No reverse DNS occurs; false satisfied, true cannot relax current behavior; diagnostic",
-        "rdns",
-    ),
-    (
-        "realm_try_domains",
-        "signed decimal i32",
-        "-1",
-        "plan 2 WP-10",
-        "No domain realm probing occurs; negative disables, nonnegative does not tighten behavior; diagnostic",
-        "realm_try_domains",
-    ),
-    (
-        "renew_lifetime",
-        "duration",
-        "0",
-        "AsReq::from_libdefaults; TgsReq::from_libdefaults",
-        "Effective optional renewable lifetime, zero disables renewal; checked MIT intervals",
-        "renew_lifetime",
-    ),
-    (
-        "request_timeout",
-        "duration",
-        "0",
-        "plan 2 WP-10",
-        "Existing per-attempt timeouts are not a total budget; every nonzero value errors; zero diagnostic",
-        "request_timeout",
-    ),
-    (
-        "spake_preauth_groups",
-        "SPAKE group name list",
-        "edwards25519 (client)",
-        "plan 2 WP-07",
-        "No SPAKE group is used; allowed-group lists do not require SPAKE; diagnostic; unknown names rejected rather than skipped",
-        "spake_preauth_groups",
-    ),
-    (
-        "ticket_lifetime",
-        "duration",
-        "1 day",
-        "AsReq::from_libdefaults; TgsReq::from_libdefaults",
-        "Effective request lifetime; checked MIT intervals",
-        "ticket_lifetime",
-    ),
-    (
-        "udp_preference_limit",
-        "signed decimal i32",
-        "1465",
-        "client::transport::auto_uses_udp_first",
-        "Effective only in Auto transport; negative uses MIT default, large values capped at 32700",
-        "udp_preference_limit",
-    ),
-    (
-        "verify_ap_req_nofail",
-        "boolean",
-        "false",
-        "plan 2 WP-11",
-        "true requires unavailable verify-init-creds orchestration and errors; false diagnostic",
-        "verify_ap_req_nofail",
-    ),
-    (
-        "client_aware_channel_bindings",
-        "boolean",
-        "false",
-        "plan 2 WP-12",
-        "true requires unavailable GSS channel-binding-aware signaling and errors; false diagnostic",
-        "client_aware_channel_bindings",
     ),
 ];
