@@ -30,7 +30,13 @@
 #   profile fragments in /etc/krb5.conf.d/ and /etc/krb5kdc/kdc.conf.d/.
 # Secrets. Generated per run on the host (interop_new_secret), delivered into
 #   the container's tmpfs /run/interop/secrets (interop_deliver_secrets, NAME=
-#   value lines, values [A-Za-z0-9]), never passed as `-e`, never COPY'd.
+#   value lines, values [A-Za-z0-9]), never passed as `-e`, never COPY'd. Every
+#   secret is appended to the run's secret inventory (interop_inventory_init in
+#   `up`, before any secret-bearing step) the moment it is drawn or recorded
+#   with `interop_env KEY` under a secret key; log redaction reads the inventory
+#   and refuses (no log is copied, LOG-UPLOAD-REFUSED.txt says why) when it is
+#   missing or unusable (Y1-01). Container scripts that print tool output
+#   scrub it with the secrets they loaded (samba/lib-dc.sh scrub).
 # Readiness. The container writes /run/interop/ready when it serves;
 #   interop_wait_ready waits for it with a bound (INTEROP_READY_TIMEOUT,
 #   default 180 s) and fails naming the fixture and its container, with the
@@ -159,6 +165,9 @@ interop_env() {
   local name="$1" known
   [[ "$name" =~ ^(INTEROP|INTEGRATION)_[A-Z0-9_]+$ || "$name" == INTEROP ]] ||
     interop_die "invalid env-file key '$name'" || return 1
+  if interop_is_secret_name "$name"; then
+    interop_inventory_add "$2" || return 1
+  fi
   printf -v "$name" '%s' "$2"
   for known in "${INTEROP_ENV_NAMES[@]}"; do
     [[ "$known" == "$name" ]] && return 0
@@ -238,9 +247,11 @@ interop_print_env() {
 }
 
 # Prints the non-empty secret values of FILE, one per line (for redaction).
+# Fails when FILE is missing or cannot be sourced: a redaction without its
+# secrets must not look like a redaction (Y1-01).
 interop_secret_values() {
   local file="$1"
-  [[ -f "$file" ]] || return 0
+  [[ -f "$file" ]] || interop_die "no secret inventory at $file" || return 1
   (
     local name
     local -a names=()
@@ -262,7 +273,34 @@ interop_new_secret() {
   local value
   value="$(head -c 96 /dev/urandom | base64 -w0 | tr -dc 'A-Za-z0-9')"
   ((${#value} >= 24)) || interop_die "could not generate a secret" || return 1
+  interop_inventory_add "${value:0:24}" || return 1
   printf '%s' "${value:0:24}"
+}
+
+# Secret inventory (Y1-01). `up` creates a private append-only file before any
+# secret-bearing step (interop_inventory_init); every secret value is appended
+# to it the moment it is drawn (interop_new_secret) or recorded under a secret
+# key (interop_env), one `export INTEROP_INVENTORY_<n>_SECRET=<%q value>` line
+# each, so the redaction of fixture logs knows every secret even when `up`
+# fails before it writes the env file. The inventory is optional only while
+# INTEROP_SECRET_INVENTORY is unset (self-tests, redact.sh); once it is set, a
+# vanished file is an error.
+interop_inventory_init() {
+  local file="$1"
+  interop_prepare_private_dir "$(dirname -- "$file")" || return 1
+  (umask 077 && : >"$file") || interop_die "could not create the secret inventory $file" || return 1
+  chmod 600 "$file" || return 1
+  INTEROP_SECRET_INVENTORY="$file"
+}
+
+# interop_inventory_add VALUE: appends a secret value; a no-op for an empty
+# value or while no inventory is active.
+interop_inventory_add() {
+  [[ -n "$1" && -n "${INTEROP_SECRET_INVENTORY:-}" ]] || return 0
+  [[ -f "$INTEROP_SECRET_INVENTORY" ]] ||
+    interop_die "the secret inventory $INTEROP_SECRET_INVENTORY is missing" || return 1
+  printf 'export INTEROP_INVENTORY_%d_SECRET=%q\n' "$(($(wc -l <"$INTEROP_SECRET_INVENTORY") + 1))" "$1" \
+    >>"$INTEROP_SECRET_INVENTORY"
 }
 
 # interop_deliver_secrets CONTAINER KEY...: streams `KEY=value` lines into the
@@ -329,11 +367,20 @@ interop_redact_stream() {
 # Prints the last lines of a container log with the secrets recorded so far
 # in this run (interop_env) redacted.
 interop_log_tail() {
-  local name
+  local name value inventory
   local -a secrets=()
   for name in "${INTEROP_ENV_NAMES[@]}"; do
     interop_is_secret_name "$name" && secrets+=("${!name:-}")
   done
+  if [[ -n "${INTEROP_SECRET_INVENTORY:-}" ]]; then
+    if ! inventory="$(interop_secret_values "$INTEROP_SECRET_INVENTORY")"; then
+      interop_log "log tail of $1 withheld: the secret inventory is unusable"
+      return 0
+    fi
+    while IFS= read -r value; do
+      [[ -n "$value" ]] && secrets+=("$value")
+    done <<<"$inventory"
+  fi
   interop_rt logs --tail 40 "$1" 2>&1 | interop_redact_stream "${secrets[@]}" >&2 || true
 }
 

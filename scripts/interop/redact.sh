@@ -6,24 +6,29 @@
 #   redact.sh ENV_FILE FILE...   rewrite each FILE in place
 #   redact.sh --stdin ENV_FILE   filter stdin to stdout
 #   redact.sh --self-test        check the redaction on a marker secret
+# ENV_FILE is the env file or the secret inventory (scripts/interop/lib.sh); a
+# missing or unusable one is an error (exit 1, nothing written or printed).
 set -euo pipefail
 
 INTEROP_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=scripts/interop/lib.sh
 source "$INTEROP_ROOT/scripts/interop/lib.sh"
 
+# load_secrets ENV_FILE: reads the secret values; fails (so nothing is
+# redacted or printed) when the file is missing or unusable (Y1-01).
 load_secrets() {
-  local value
+  local value values
   SECRETS=()
+  values="$(interop_secret_values "$1")" || return 1
   while IFS= read -r value; do
     [[ -n "$value" ]] && SECRETS+=("$value")
-  done < <(interop_secret_values "$1")
+  done <<<"$values"
 }
 
 redact_files() {
   local env_file="$1" file staged
   shift
-  load_secrets "$env_file"
+  load_secrets "$env_file" || return 1
   for file in "$@"; do
     staged="$(mktemp "$file.redact.XXXXXX")"
     interop_redact_stream "${SECRETS[@]}" <"$file" >"$staged"
@@ -71,11 +76,11 @@ main() {
     --self-test) self_test ;;
     --stdin)
       [[ $# -eq 2 ]] || { echo "usage: redact.sh --stdin ENV_FILE" >&2; exit 2; }
-      load_secrets "$2"
+      load_secrets "$2" || exit 1
       interop_redact_stream "${SECRETS[@]}"
       ;;
     "" | -h | --help)
-      sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
       ;;
     *)
       [[ $# -ge 2 ]] || { echo "usage: redact.sh ENV_FILE FILE..." >&2; exit 2; }

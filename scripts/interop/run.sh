@@ -75,6 +75,8 @@ cmd_up() {
   interop_remove_all >/dev/null 2>&1 || true
   rm -rf "$INTEROP_STATE_DIR"
   interop_prepare_private_dir "$INTEROP_STATE_DIR"
+  # The secret inventory exists before the first secret-bearing step (Y1-01).
+  interop_inventory_init "$INTEROP_STATE_DIR/secrets.inventory" || return 1
   INTEROP_ENV_NAMES=()
   interop_env INTEROP 1
   interop_env INTEROP_RUNTIME "$INTEROP_RT"
@@ -91,8 +93,21 @@ cmd_up() {
   interop_print_env "$INTEROP_ENV_FILE" >&2
 }
 
+# refuse_log_upload DEST REASON: leaves only a refusal note in DEST (Y1-01).
+refuse_log_upload() {
+  mkdir -p "$1"
+  printf 'interop: the fixture logs were not uploaded: %s\n' "$2" >"$1/LOG-UPLOAD-REFUSED.txt"
+  interop_die "log upload refused: $2"
+}
+
+# Writes the redacted logs of the run to DEST, or refuses (Y1-01): the logs are
+# redacted in the private state directory with the secret inventory first, and
+# only fully redacted files are copied to DEST. A missing inventory or a failed
+# redaction leaves DEST with LOG-UPLOAD-REFUSED.txt and no log, and fails.
 collect_logs() {
-  local dest="$1" container fixture id raw
+  local dest="$1" container fixture id raw inventory file
+  inventory="$INTEROP_STATE_DIR/secrets.inventory"
+  [[ -f "$inventory" ]] || refuse_log_upload "$dest" "no secret inventory at $inventory" || return 1
   raw="$INTEROP_STATE_DIR/raw-logs"
   interop_prepare_private_dir "$raw" || return 1
   for container in $(interop_rt ps -a --filter "label=$INTEROP_LABEL" --format '{{.Names}}' 2>/dev/null); do
@@ -104,11 +119,14 @@ collect_logs() {
       "fixture_${id}_logs" "$raw" || true
     fi
   done
-  mkdir -p "$dest"
-  local file
   for file in "$raw"/*; do
     [[ -f "$file" ]] || continue
-    "$INTEROP_ROOT/scripts/interop/redact.sh" "$INTEROP_ENV_FILE" "$file"
+    "$INTEROP_ROOT/scripts/interop/redact.sh" "$inventory" "$file" ||
+      refuse_log_upload "$dest" "redacting $(basename -- "$file") failed" || return 1
+  done
+  mkdir -p "$dest"
+  for file in "$raw"/*; do
+    [[ -f "$file" ]] || continue
     cp "$file" "$dest/"
   done
   interop_log "redacted fixture logs in $dest"
@@ -116,10 +134,13 @@ collect_logs() {
 
 cmd_down() {
   interop_detect_runtime
-  if [[ -n "${INTEROP_LOG_DIR:-}" ]]; then
-    collect_logs "$INTEROP_LOG_DIR" || interop_log "log collection failed"
-  fi
   local status=0
+  if [[ -n "${INTEROP_LOG_DIR:-}" ]]; then
+    collect_logs "$INTEROP_LOG_DIR" || {
+      interop_log "log collection failed"
+      status=1
+    }
+  fi
   interop_remove_all || status=1
   rm -rf "$INTEROP_STATE_DIR"
   interop_log "cleanup receipt: state directory $INTEROP_STATE_DIR removed"
