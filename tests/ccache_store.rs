@@ -499,4 +499,33 @@ mod tests {
         }
         Ok(())
     }
+
+    /// MIT 1.22.2 fixtures parse and serialize back byte for byte.
+    ///
+    /// `tests/fixtures/ccache-mit/mit-v1` to `mit-v4` were written by `kinit` of
+    /// the pinned interop image `rskrb5-interop/mit:cd33b737de3f` with
+    /// `ccache_type` 1 to 4, and `dir/` by `kinit` into `DIR:` plus `kswitch`
+    /// (plan 2 todo 11, `ccache` interop suite, 2026-11-19).
+    #[test]
+    fn mit_written_caches_round_trip() -> Result<(), TestError> {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ccache-mit");
+        for number in 1_u8..=4 {
+            let bytes = fs::read(root.join(format!("mit-v{number}")))?;
+            let cache = CCache::parse(&bytes)?;
+            assert_eq!(
+                (cache.version(), cache.client_name(), cache.client_realm()),
+                (number, "testuser1".to_owned(), "TEST.RSKRB5")
+            );
+            assert!(cache.contains_server(&["krbtgt", "TEST.RSKRB5"]));
+            assert_eq!(cache.to_bytes()?, bytes, "version {number}");
+        }
+        let collection = DirStore::default().collection(&root.join("dir").to_string_lossy())?;
+        let listed: Vec<String> = collection
+            .caches()?
+            .map(|cache| Ok(cache.load()?.client_name()))
+            .collect::<Result<_, TestError>>()?;
+        assert_eq!(listed, ["preauthuser", "testuser1"]);
+        assert_eq!(fs::read(root.join("dir/primary"))?, b"tktsecond\n");
+        Ok(())
+    }
 }
