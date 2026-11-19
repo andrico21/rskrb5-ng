@@ -223,6 +223,9 @@ mod tests {
         if identity == "src/error/any.rs::Any" {
             return cfg!(feature = "messages");
         }
+        if identity == "src/extensions.rs::PreauthInput" {
+            return cfg!(feature = "messages");
+        }
         if identity.starts_with("src/service") {
             return cfg!(feature = "messages");
         }
