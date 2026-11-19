@@ -7,10 +7,8 @@ use super::{
     backend::{Backend, Kind, Ring, Serial},
     cache::Handle,
     collection::{Collection, Single},
-    residual::{
-        Anchor, PERSISTENT_KEYRING, PRIMARY_KEY, Residual, parse_owner, parse_primary,
-        parse_serials, primary_payload,
-    },
+    index,
+    residual::{Anchor, PERSISTENT_KEYRING, PRIMARY_KEY, Residual, parse_owner, parse_serials},
 };
 use crate::ccache::{
     Error,
@@ -265,7 +263,7 @@ impl Engine {
             return Ok(name);
         };
         let payload = Self::call("keyctl_read", self.backend.read(Ring::Key(primary)))?;
-        parse_primary(&payload)
+        index::parse(&payload)
     }
 
     /// Make `name` the primary cache of a collection (MIT `set_primary_name`).
@@ -280,7 +278,7 @@ impl Engine {
                 Ring::Key(collection),
                 Kind::User,
                 PRIMARY_KEY,
-                &primary_payload(name),
+                &index::encode(name),
             ),
         )
         .map(drop)

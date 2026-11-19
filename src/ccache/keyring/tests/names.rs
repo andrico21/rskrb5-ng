@@ -5,22 +5,20 @@ use crate::ccache::{
     Error, Principal,
     keyring::{
         Fault,
-        residual::{
-            Anchor, Residual, parse_description, parse_owner, parse_primary, parse_serials,
-            primary_payload, unparse,
-        },
+        index::{encode as primary_payload, parse as parse_primary},
+        residual::{Anchor, Residual, parse_description, parse_owner, parse_serials, unparse},
     },
 };
 
 /// Parse a residual that must be valid.
-fn parsed(text: &str) -> Result<Residual, Error> {
+fn residual_of(text: &str) -> Result<Residual, Error> {
     Residual::parse(text)
 }
 
 /// A bare collection name uses the legacy anchor (`cc_keyring.c:285-292`).
 #[test]
 fn bare_collection_is_legacy() -> Result<(), TestError> {
-    let residual = parsed("login")?;
+    let residual = residual_of("login")?;
     assert_eq!(residual.anchor, Anchor::Legacy, "anchor");
     assert_eq!(residual.collection, "login", "collection");
     assert_eq!(residual.subsidiary, None, "subsidiary");
@@ -39,7 +37,7 @@ fn anchors_are_recognised() -> Result<(), TestError> {
         ("user:krb", Anchor::User),
         ("legacy:krb", Anchor::Legacy),
     ] {
-        let residual = parsed(text)?;
+        let residual = residual_of(text)?;
         assert_eq!(residual.anchor, anchor, "{text}");
         assert_eq!(residual.subsidiary, None, "{text}");
     }
@@ -50,10 +48,10 @@ fn anchors_are_recognised() -> Result<(), TestError> {
 /// (`cc_keyring.c:299-306`); an empty collection is allowed.
 #[test]
 fn subsidiary_keeps_later_colons() -> Result<(), TestError> {
-    let residual = parsed("thread:krb:a:b")?;
+    let residual = residual_of("thread:krb:a:b")?;
     assert_eq!(residual.collection, "krb", "collection");
     assert_eq!(residual.subsidiary.as_deref(), Some("a:b"), "subsidiary");
-    let empty = parsed("process:")?;
+    let empty = residual_of("process:")?;
     assert_eq!(empty.collection, "", "empty collection");
     Ok(())
 }

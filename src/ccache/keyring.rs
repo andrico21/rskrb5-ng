@@ -53,6 +53,8 @@ mod engine;
 /// The in-memory kernel of the unit tests.
 #[cfg(test)]
 mod fake;
+/// The collection index key.
+pub mod index;
 /// The real kernel.
 #[cfg(all(feature = "ccache-keyring", target_os = "linux"))]
 mod kernel;

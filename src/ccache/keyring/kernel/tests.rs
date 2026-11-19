@@ -51,8 +51,9 @@ fn missing_key() -> Result<(), KernelError> {
     Kernel.read(Ring::Key(NonZeroI32::MAX)).map(drop)
 }
 
-/// The kernel's own answer for a key that does not exist is `ENOKEY`; a
-/// sandbox that filters the key calls answers `ENOSYS` or `EPERM`, and the
+/// The kernel answers `ENOKEY` for a key that does not exist.
+///
+/// A sandbox that filters the key calls answers `ENOSYS` or `EPERM`, and the
 /// integration tests of `tests/ccache_keyring.rs` fail on that in required
 /// mode.
 #[test]

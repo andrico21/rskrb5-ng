@@ -5,7 +5,7 @@ use crate::ccache::{
     CCache, Error,
     keyring::{
         backend::{Kind, Ring},
-        residual::primary_payload,
+        index::encode as primary_payload,
     },
 };
 

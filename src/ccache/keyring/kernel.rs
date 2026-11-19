@@ -157,5 +157,4 @@ impl Backend for Kernel {
     clippy::missing_panics_doc,
     reason = "test code is not rendered API documentation"
 )]
-#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests;
