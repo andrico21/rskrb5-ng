@@ -289,6 +289,28 @@ mod tests {
         Ok(())
     }
 
+    /// Enumeration skips a `primary` that names a symlink, as it skips every
+    /// other symlink, although the link leads to a regular cache file.
+    #[cfg(unix)]
+    #[test]
+    fn dir_enumeration_skips_a_symlinked_primary() -> Result<(), TestError> {
+        let directory = scratch("dir-primary-link")?;
+        let residual = directory.join("collection");
+        let collection = DirStore::default().collection(&residual.to_string_lossy())?;
+        let member = collection.new_unique()?;
+        member.initialize(&principal("alice", "A.TEST"))?;
+        let target = directory.join("outside");
+        FileStore::default()
+            .resolve(&target.to_string_lossy())?
+            .initialize(&principal("mallory", "A.TEST"))?;
+        symlink(&target, residual.join("tktlink"))?;
+        fs::write(residual.join("primary"), b"tktlink\n")?;
+        let names: Vec<String> = collection.caches()?.map(|cache| cache.name()).collect();
+        assert_eq!(names, [member.name()]);
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
+
     /// Concurrent writers of one DIR cache keep every credential, and
     /// concurrent switches leave a whole pointer naming a member.
     #[test]

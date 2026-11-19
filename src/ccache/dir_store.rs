@@ -161,7 +161,9 @@ impl CacheCollection for DirCollection {
         }
         names.sort_unstable();
         let mut caches: Vec<Box<dyn CacheHandle>> = Vec::new();
-        if let Some(file) = primary.filter(|file| self.directory.join(file).is_file()) {
+        if let Some(file) = primary.filter(|file| {
+            fs::symlink_metadata(self.directory.join(file)).is_ok_and(|entry| entry.is_file())
+        }) {
             caches.push(Box::new(self.cache(&file)));
         }
         caches.extend(
