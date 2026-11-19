@@ -425,7 +425,7 @@ mod tests {
         assert!(
             matches!(
                 failure,
-                Failure::ProviderFailed {
+                Failure::CallFailed {
                     interface: _,
                     id: _,
                     source: _
@@ -582,7 +582,7 @@ mod tests {
         assert!(
             matches!(
                 provider_failure,
-                Failure::ProviderFailed {
+                Failure::CallFailed {
                     interface: Interface::ProfileProvider,
                     id: _,
                     source: _,
@@ -885,7 +885,7 @@ mod tests {
         use rskrb5_ng::{
             config::Config,
             crypto::CryptoPolicy,
-            error::{Client, Crypto, Extensions as Failure, Policy},
+            error::{Extensions as Failure, Policy},
             extensions::{
                 ClientPreauth, Event, Extension, Interface, MAX_PREAUTH_ROUNDS, PreauthInput,
                 PreauthState, ProviderError, Refusal, Registry,
@@ -992,24 +992,19 @@ mod tests {
                     .respond(2, &[], b"body")
                     .err()
                     .ok_or("forbidden enctype admitted")?;
-                let Failure::PadataRefused { id, source } = &failure else {
+                let Failure::PolicyRefused { id, source } = &failure else {
                     return Err(format!("{etype}: {failure}").into());
                 };
                 assert_eq!(id, "rogue", "mechanism named");
                 let rejected = matches!(
-                    source.as_ref(),
-                    Client::Crypto(Crypto::Policy(Policy::RejectedFeature {
+                    source,
+                    Policy::RejectedFeature {
                         feature: _,
                         reason: _
-                    }))
+                    }
                 );
-                let not_permitted = matches!(
-                    source.as_ref(),
-                    Client::Crypto(Crypto::Policy(Policy::EnctypeNotPermitted {
-                        etype: _,
-                        usage: _
-                    }))
-                );
+                let not_permitted =
+                    matches!(source, Policy::EnctypeNotPermitted { etype: _, usage: _ });
                 assert!(
                     if single_des { rejected } else { not_permitted },
                     "{etype}: {source}"
@@ -1087,6 +1082,24 @@ mod tests {
                     "{failure}"
                 );
             }
+            let mut unsupported = Registry::new();
+            unsupported.register(mechanism("fast", &[136_i32], vec![(136_i32, vec![0x01])]))?;
+            let mut session = unsupported.preauth_session(&config, &policy);
+            let refusal = session
+                .respond(136, &[], b"body")
+                .err()
+                .ok_or("unsupported PA type admitted")?;
+            assert!(
+                matches!(
+                    refusal,
+                    Failure::MalformedOutput {
+                        interface: _,
+                        id: _,
+                        reason: _
+                    }
+                ),
+                "{refusal}"
+            );
             Ok(())
         }
 
@@ -1130,7 +1143,7 @@ mod tests {
             assert!(
                 matches!(
                     failure,
-                    Failure::ProviderFailed {
+                    Failure::CallFailed {
                         interface: _,
                         id: _,
                         source: _

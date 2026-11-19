@@ -9,7 +9,12 @@ use super::{
     MAX_PREAUTH_ROUNDS, PreauthInput, PreauthSession, PreauthState, Refusal, Registry, checks,
     order,
 };
-use crate::{client, config::Config, crypto::CryptoPolicy};
+use crate::{
+    client,
+    config::Config,
+    crypto::CryptoPolicy,
+    error::{Client as ClientError, Crypto},
+};
 
 /// One session mechanism and its lazily started per-exchange state.
 pub(super) type Mechanism = (Arc<dyn ClientPreauth>, Option<Box<dyn PreauthState>>);
@@ -86,18 +91,13 @@ pub(super) fn respond(
             },
         );
     };
-    let input = PreauthInput {
-        pa_type,
-        method_data,
-        request_body,
-        round: session.rounds,
-    };
+    let input = PreauthInput::new(pa_type, method_data, request_body, session.rounds);
     let output = state
         .get_or_insert_with(|| mechanism.start())
         .process(&input)
         .map_err(|source| {
             refused(Refusal::Failed);
-            Error::ProviderFailed {
+            Error::CallFailed {
                 interface,
                 id: id.to_owned(),
                 source,
@@ -126,12 +126,25 @@ pub(super) fn respond(
             "PA type the mechanism did not register",
         ));
     }
-    client::admit_padata(&session.policy, &output)
-        .map_err(|source| Error::PadataRefused {
-            id: id.to_owned(),
-            source: Box::new(source),
-        })
-        .inspect_err(|_refusal| refused(Refusal::Policy))?;
+    if let Err(refusal) = client::admit_padata(&session.policy, &output) {
+        let policy = if let ClientError::Crypto(Crypto::Policy(source)) = refusal {
+            Some(source)
+        } else {
+            None
+        };
+        refused(if policy.is_some() {
+            Refusal::Policy
+        } else {
+            Refusal::Malformed
+        });
+        return Err(policy.map_or_else(
+            || checks::malformed(interface, id, "PA-DATA the outgoing admission refuses"),
+            |source| Error::PolicyRefused {
+                id: id.to_owned(),
+                source,
+            },
+        ));
+    }
     order::notify(observers, &Event::Chosen { interface, id });
     Ok(Some(output))
 }

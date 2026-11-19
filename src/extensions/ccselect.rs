@@ -69,7 +69,7 @@ pub(super) fn select(
             };
             let selection = selector.choose(&request).map_err(|source| {
                 refused(Refusal::Failed);
-                Error::ProviderFailed {
+                Error::CallFailed {
                     interface,
                     id: id.to_owned(),
                     source,

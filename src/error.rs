@@ -942,7 +942,7 @@ pub enum Extensions {
     },
     /// A provider failed.
     #[error("{interface} extension {id} failed")]
-    ProviderFailed {
+    CallFailed {
         /// The interface.
         interface: Interface,
         /// The provider id.
@@ -976,14 +976,13 @@ pub enum Extensions {
         /// The bound.
         limit: usize,
     },
-    /// The outgoing PA-DATA admission refused a mechanism's output.
-    #[cfg(feature = "messages")]
+    /// The permanent or runtime enctype policy refused a mechanism's PA-DATA.
     #[error("clpreauth extension {id} output refused: {source}")]
-    PadataRefused {
+    PolicyRefused {
         /// The mechanism id.
         id: String,
-        /// The admission's refusal.
-        source: Box<Client>,
+        /// The policy refusal.
+        source: Policy,
     },
     /// The configuration a profile names is invalid, or `module` is unresolved.
     #[error("config error: {0}")]

@@ -42,7 +42,7 @@ fn failed(
     source: super::ProviderError,
 ) -> Error {
     refuse(registry, interface, id, Refusal::Failed);
-    Error::ProviderFailed {
+    Error::CallFailed {
         interface,
         id: id.to_owned(),
         source,

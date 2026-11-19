@@ -32,7 +32,7 @@ pub(super) fn compose(registry: &Registry, text: &str, mode: ParseMode) -> Resul
                 reason: Refusal::Failed,
             },
         );
-        Error::ProviderFailed {
+        Error::CallFailed {
             interface,
             id: id.to_owned(),
             source,

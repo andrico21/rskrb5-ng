@@ -88,7 +88,7 @@ pub const MAX_K5IDENTITY_BYTES: usize = 0x0001_0000;
 pub const MAX_OID_BYTES: usize = 64;
 
 /// An error a provider returns; the driver wraps it in
-/// [`crate::error::Extensions::ProviderFailed`].
+/// [`crate::error::Extensions::CallFailed`].
 pub type ProviderError = Box<dyn StdError + Send + Sync>;
 
 /// One extension interface.
@@ -217,7 +217,7 @@ pub trait PreauthState: Send {
     /// # Errors
     ///
     /// Returns the mechanism's failure; the session reports it as
-    /// [`crate::error::Extensions::ProviderFailed`].
+    /// [`crate::error::Extensions::CallFailed`].
     fn process(
         &mut self,
         input: &PreauthInput<'_>,
@@ -225,8 +225,11 @@ pub trait PreauthState: Send {
 }
 
 /// What a [`PreauthState`] sees in one round.
+///
+/// Its `Debug` output names the PA type, the round and the sizes only, never
+/// PA-DATA or request bytes.
 #[cfg(feature = "messages")]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 #[non_exhaustive]
 pub struct PreauthInput<'input> {
     /// The PA type being answered.
@@ -237,6 +240,39 @@ pub struct PreauthInput<'input> {
     pub request_body: &'input [u8],
     /// The session round, starting at one.
     pub round: usize,
+}
+
+#[cfg(feature = "messages")]
+impl<'input> PreauthInput<'input> {
+    /// One round's input, for a session or for testing a mechanism directly.
+    #[must_use]
+    #[inline]
+    pub const fn new(
+        pa_type: i32,
+        method_data: &'input [rasn_kerberos::PaData],
+        request_body: &'input [u8],
+        round: usize,
+    ) -> Self {
+        Self {
+            pa_type,
+            method_data,
+            request_body,
+            round,
+        }
+    }
+}
+
+#[cfg(feature = "messages")]
+impl fmt::Debug for PreauthInput<'_> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PreauthInput")
+            .field("pa_type", &self.pa_type)
+            .field("method_data_entries", &self.method_data.len())
+            .field("request_body_bytes", &self.request_body.len())
+            .field("round", &self.round)
+            .finish()
+    }
 }
 
 /// A preauthentication session: the enabled mechanisms, their per-exchange
@@ -280,9 +316,10 @@ impl PreauthSession<'_> {
     /// # Errors
     ///
     /// [`crate::error::Extensions::TooManyRounds`] after
-    /// [`MAX_PREAUTH_ROUNDS`] rounds, `ProviderFailed` for a mechanism failure,
-    /// `MalformedOutput` or `OutputTooLarge` for output outside the bounds, and
-    /// `PadataRefused` for output the outgoing PA-DATA admission refuses.
+    /// [`MAX_PREAUTH_ROUNDS`] rounds, `CallFailed` for a mechanism failure,
+    /// `MalformedOutput` or `OutputTooLarge` for output outside the bounds or
+    /// refused by the outgoing PA-DATA admission, and `PolicyRefused` when the
+    /// enctype or PA-type policy refuses it.
     ///
     /// # Cancel safety
     ///
@@ -851,7 +888,7 @@ impl Registry {
     /// # Errors
     ///
     /// The [`Config::parse_with_mode`] errors (an unresolved `module` is still
-    /// `UnsupportedDynamicModule`), `ProviderFailed` when the profile provider
+    /// `UnsupportedDynamicModule`), `CallFailed` when the profile provider
     /// fails, and `OutputTooLarge` when its text exceeds
     /// [`crate::config::MAX_INCLUDE_BYTES`].
     #[inline]
@@ -864,7 +901,7 @@ impl Registry {
     ///
     /// # Errors
     ///
-    /// `ProviderFailed` for a selector failure and `MalformedOutput` for an
+    /// `CallFailed` for a selector failure and `MalformedOutput` for an
     /// index outside `caches` or an invalid principal.
     #[inline]
     pub fn select_cache(
@@ -880,7 +917,7 @@ impl Registry {
     ///
     /// # Errors
     ///
-    /// `ProviderFailed` for a mapper failure, `MalformedOutput` for an empty
+    /// `CallFailed` for a mapper failure, `MalformedOutput` for an empty
     /// answer or an invalid realm, and `OutputTooLarge` for more than
     /// [`MAX_NAMES`] realms.
     #[inline]
@@ -909,7 +946,7 @@ impl Registry {
     ///
     /// # Errors
     ///
-    /// `ProviderFailed` for a mapper failure and `MalformedOutput` for an
+    /// `CallFailed` for a mapper failure and `MalformedOutput` for an
     /// empty, oversized or control-character name, or one containing `/`.
     #[inline]
     pub fn local_name(
@@ -924,7 +961,7 @@ impl Registry {
     ///
     /// # Errors
     ///
-    /// `ProviderFailed` for a locator failure, `MalformedOutput` for an empty
+    /// `CallFailed` for a locator failure, `MalformedOutput` for an empty
     /// answer, an invalid host or port zero, and `OutputTooLarge` for more than
     /// [`MAX_NAMES`] addresses.
     #[inline]
