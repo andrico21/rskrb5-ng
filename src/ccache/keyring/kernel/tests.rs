@@ -1,7 +1,6 @@
 //! The `errno` mapping of the key calls and the checks before them.
 
 use core::num::NonZeroI32;
-use std::env;
 
 use super::{Kernel, failure};
 use crate::ccache::keyring::{
@@ -52,23 +51,19 @@ fn missing_key() -> Result<(), KernelError> {
     Kernel.read(Ring::Key(NonZeroI32::MAX)).map(drop)
 }
 
-/// Whether a sandbox that filters the key calls is a failure here.
-fn required() -> bool {
-    env::var("RSKRB5_KEYRING_REQUIRED").as_deref() == Ok("1")
-}
-
 /// The kernel's own answer for a key that does not exist is `ENOKEY`; a
-/// sandbox that filters the key calls answers `ENOSYS` or `EPERM`, which is a
-/// failure only with `RSKRB5_KEYRING_REQUIRED=1`.
+/// sandbox that filters the key calls answers `ENOSYS` or `EPERM`, and the
+/// integration tests of `tests/ccache_keyring.rs` fail on that in required
+/// mode.
 #[test]
 fn the_kernel_answers_enokey_for_a_missing_key() {
     assert!(
-        matches!(missing_key(), Err(KernelError::KeyNotFound))
-            || (!required()
-                && matches!(
-                    missing_key(),
-                    Err(KernelError::Unavailable | KernelError::PermissionDenied)
-                )),
+        matches!(
+            missing_key(),
+            Err(KernelError::KeyNotFound
+                | KernelError::Unavailable
+                | KernelError::PermissionDenied)
+        ),
         "{:?}",
         missing_key()
     );

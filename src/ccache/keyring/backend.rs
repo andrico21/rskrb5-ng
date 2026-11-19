@@ -31,6 +31,7 @@ pub(super) enum Ring {
 
 impl Ring {
     /// The kernel's number for this operand.
+    #[cfg(all(feature = "ccache-keyring", target_os = "linux"))]
     pub(super) const fn raw(self) -> i32 {
         match self {
             Self::Thread => -1,
