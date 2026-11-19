@@ -110,8 +110,11 @@ where
     Ok(())
 }
 
-/// The providers of `items` in consultation order: `disable` removes, then a
-/// non-empty `enable_only` keeps and reorders (MIT `plugin.c:255-299`).
+/// The providers of `items` in consultation order (MIT `plugin.c:302-347`).
+///
+/// Configured `module` names come in profile order, then the other providers in
+/// registration order; `disable` removes, then a non-empty `enable_only` keeps
+/// and reorders.
 pub(super) fn enabled<'item, T>(
     items: &'item [Arc<T>],
     interface: Interface,
@@ -127,8 +130,18 @@ where
     let Some(plugins) = restrictions else {
         return items.iter().collect();
     };
-    let kept: Vec<&Arc<T>> = items
+    let configured = plugins
+        .module
         .iter()
+        .filter_map(|name| items.iter().find(|item| id(item) == name));
+    let mut full: Vec<&Arc<T>> = Vec::new();
+    for item in configured.chain(items) {
+        if !full.iter().any(|chosen| Arc::ptr_eq(chosen, item)) {
+            full.push(item);
+        }
+    }
+    let kept: Vec<&Arc<T>> = full
+        .into_iter()
         .filter(|item| !plugins.disable.iter().any(|name| name == id(item)))
         .collect();
     if plugins.enable_only.is_empty() {

@@ -49,6 +49,9 @@ mod diagnostics_e;
 #[path = "config/plugin_case.rs"]
 mod plugin_case;
 
+#[path = "config/plugin_order.rs"]
+mod plugin_order;
+
 #[path = "config/name_case.rs"]
 mod name_case;
 

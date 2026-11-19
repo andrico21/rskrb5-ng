@@ -101,5 +101,5 @@ both modes. Parsed values do not imply an implemented mechanism.
 | appdefaults | appdefaults | hierarchical string/boolean lookup | application-defined | Config::appdefault; Config::appdefault_boolean | Caller chooses type and consumes result; no implicit behavior | appdefaults |
 | plugins | disable | repeated module names | empty | plan 2 WP-16 | extensions::Registry::enabled filters registered providers; diagnosed until built-in consumers use it; excluding timestamp preauth fails | disable |
 | plugins | enable_only | repeated module names | all built-ins | plan 2 WP-16 | extensions::Registry::enabled keeps and orders registered providers; diagnosed until built-in consumers use it; excluding timestamp preauth fails | enable_only |
-| plugins | module | registered extension id and ignored path | empty | extensions::Registry::parse_config | A registered provider id of the interface resolves; any other module is rejected before composition | module |
+| plugins | module | registered extension id and ignored path | empty | extensions::Registry::parse_config; extensions::Registry::enabled | A registered provider id of the interface resolves and comes first in profile order, before the other registered providers (MIT plugin.c); any other module is rejected before composition | module |
 
