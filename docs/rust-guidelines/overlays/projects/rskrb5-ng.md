@@ -75,15 +75,15 @@ everything else is timeless or a dated record.
   `--all-features` entry. `feature_closures.py check-ci` keeps the matrix complete.
 - **CI jobs:** the blocking and the advisory sets are the ones named in project rule 8;
   `overlay_facts.py` compares them with the jobs of `.github/workflows/ci.yml`.
-- **Fuzz targets:** `fuzz/fuzz_targets/` holds 15 `.rs` files and `fuzz/Cargo.toml` declares
-  14 `[[bin]]` targets. `session_ticket.rs` is a shared helper module, not a target.
+- **Fuzz targets:** `fuzz/fuzz_targets/` holds 16 `.rs` files and `fuzz/Cargo.toml` declares
+  15 `[[bin]]` targets. `session_ticket.rs` is a shared helper module, not a target.
 - **Review backlog:** closed. The row and key totals are in `docs/review/README.md`
   "Totals".
-- **Ambient inputs:** 13 audited reader functions (15 reader/variable inventory entries
+- **Ambient inputs:** 14 audited reader functions (16 reader/variable inventory entries
   over `KRB5_CONFIG`, `KRB5CCNAME`, `KRB5_KTNAME`, `KRB5_CLIENT_KTNAME`, `HOME`, `TMPDIR`,
   `TEMP` and `APPDATA`), listed in `READERS` of
   `tests/ambient_guard.rs` and enforced by `cargo test --all-features --test
-  ambient_guard`. `src` has 37 `# Ambient input` sections (`rg '# Ambient input' src | wc
+  ambient_guard`. `src` has 38 `# Ambient input` sections (`rg '# Ambient input' src | wc
   -l`). `LibDefaults::new()` reads nothing; `LibDefaults::from_env()` is the explicit
   constructor that reads `HOME` (`src/config.rs`).
 - **Vendored rules:** `docs/rust-guidelines/` holds the core, the two domain overlays and

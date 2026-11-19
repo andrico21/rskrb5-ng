@@ -67,6 +67,12 @@ pub(crate) mod tests {
             "KRB5CCNAME_ENV",
         ),
         (
+            "src/ccache/selection.rs",
+            "default_k5identity",
+            "HOME",
+            "HOME",
+        ),
+        (
             "src/keytab.rs",
             "Keytab::load_from_env",
             "KRB5_KTNAME",

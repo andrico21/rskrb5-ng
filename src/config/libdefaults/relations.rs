@@ -43,8 +43,8 @@ pub(crate) const RELATIONS: [(&str, &str, &str, &str, &str, &str); 43] = [
         "ccache_type",
         "signed decimal i32",
         "4",
-        "plan 2 WP-09",
-        "New caches remain v4; version choice does not strengthen credential protection; diagnostic",
+        "CacheVersion::from_libdefaults; TokioClient::to_ccache",
+        "Effective: caches the stores and the client write-back create or replace use versions 1 to 4; another value is InvalidCacheType at use, where MIT writes a file no reader accepts",
         "ccache_type",
     ),
     (

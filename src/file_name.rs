@@ -12,6 +12,9 @@ use std::{
 
 use zeroize::{Zeroize as _, Zeroizing};
 
+/// Locked reads and atomic rewrites shared by the credential stores.
+pub(crate) mod locked;
+
 #[cfg(test)]
 #[path = "file_name/mutation_tests.rs"]
 mod mutation_tests;

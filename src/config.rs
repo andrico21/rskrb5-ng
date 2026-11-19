@@ -24,9 +24,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::crypto::{
-    s2k::{Family, Minima},
-    selection,
+use crate::{
+    crypto::{
+        s2k::{Family, Minima},
+        selection,
+    },
+    secure_env,
 };
 /// Removed protocol mode selection boundaries.
 #[path = "config/protocol.rs"]
@@ -231,9 +234,9 @@ impl Config {
     /// # Ambient input
     /// Reads `KRB5_CONFIG`; use [`Config::load_paths`] for explicit paths.
     ///
-    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
-    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
-    /// constructors.
+    /// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
+    /// ignores them (`secure_getenv`); see the secure-environment decision of
+    /// `docs/security-policy.md`.
     ///
     /// # Errors
     ///
@@ -241,7 +244,8 @@ impl Config {
     /// the [`Config::load_paths`] errors for the list it names.
     #[inline]
     pub fn load_from_env() -> Result<Self, Error> {
-        let value = env::var_os(KRB5_CONFIG_ENV).ok_or(Error::DefaultConfigName)?;
+        let value =
+            secure_env::ambient(|| env::var_os(KRB5_CONFIG_ENV)).ok_or(Error::DefaultConfigName)?;
         Self::load_paths(env::split_paths(&value))
     }
 
@@ -254,9 +258,9 @@ impl Config {
     /// Reads `KRB5_CONFIG` and discovers platform files; use [`Config::load`]
     /// or [`Config::parse`] to choose the source explicitly.
     ///
-    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
-    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
-    /// constructors.
+    /// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
+    /// ignores them (`secure_getenv`); see the secure-environment decision of
+    /// `docs/security-policy.md`.
     ///
     /// # Errors
     ///
@@ -265,7 +269,7 @@ impl Config {
     /// [`Config::load_paths`] errors for the files that do.
     #[inline]
     pub fn load_default() -> Result<Self, Error> {
-        if env::var_os(KRB5_CONFIG_ENV).is_some() {
+        if secure_env::ambient(|| env::var_os(KRB5_CONFIG_ENV)).is_some() {
             return Self::load_from_env();
         }
         Self::load_default_paths(PLATFORM_DEFAULT_CONFIG_PATHS.iter().copied())
@@ -281,9 +285,9 @@ impl Config {
     /// Reads `KRB5_CONFIG` and discovers platform files before using the fallback.
     /// Use [`Config::parse`] to use only caller-supplied text.
     ///
-    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
-    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
-    /// constructors.
+    /// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
+    /// ignores them (`secure_getenv`); see the secure-environment decision of
+    /// `docs/security-policy.md`.
     ///
     /// # Errors
     ///
@@ -292,7 +296,7 @@ impl Config {
     /// and the [`Config::parse`] errors for the embedded text.
     #[inline]
     pub fn load_default_or_parse(embedded_krb5_conf: &str) -> Result<Self, Error> {
-        if env::var_os(KRB5_CONFIG_ENV).is_some() {
+        if secure_env::ambient(|| env::var_os(KRB5_CONFIG_ENV)).is_some() {
             return Self::load_from_env();
         }
         Self::load_default_or_parse_paths(
@@ -1081,13 +1085,14 @@ impl LibDefaults {
     /// The keytab identity template never reads `UID`.
     /// Use [`Self::new`] and set `k5login_directory` explicitly to avoid discovery.
     ///
-    /// In a set-uid or set-gid process `HOME` is still read. MIT 1.22.2 never reads `HOME` for
-    /// `k5login_directory` (`localauth_k5login.c:106` uses the passwd home directory of the target
-    /// user) and this crate only stores the value; such programs should use [`Self::new`].
+    /// In a set-uid or set-gid process `HOME` is ignored and `k5login_directory` is empty
+    /// (see the secure-environment decision of `docs/security-policy.md`). MIT 1.22.2 never
+    /// reads `HOME` for `k5login_directory` (`localauth_k5login.c:106` uses the passwd home
+    /// directory of the target user) and this crate only stores the value.
     #[inline]
     #[must_use]
     pub fn from_env() -> Self {
-        Self::with_home(env::var("HOME").ok())
+        Self::with_home(secure_env::ambient(|| env::var("HOME")).ok())
     }
 
     /// Create defaults from an optional, already-read home directory.

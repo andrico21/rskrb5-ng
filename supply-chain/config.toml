@@ -214,7 +214,8 @@ criteria = "safe-to-deploy"
 
 [[exemptions.errno]]
 version = "0.3.14"
-criteria = "safe-to-run"
+criteria = "safe-to-deploy"
+notes = "owner exception 2026-11-18 (plan 2 D10, todo 11): rustix is the one non-optional dependency of non-Linux Unix targets, for the secure-environment check; docs/dependency-admission.md#rustix"
 
 [[exemptions.fastrand]]
 version = "2.5.0"
@@ -414,7 +415,8 @@ criteria = "safe-to-deploy"
 
 [[exemptions.linux-raw-sys]]
 version = "0.12.1"
-criteria = "safe-to-run"
+criteria = "safe-to-deploy"
+notes = "owner exception 2026-11-18 (plan 2 D10, todo 11): rustix is the one non-optional dependency of non-Linux Unix targets, for the secure-environment check; docs/dependency-admission.md#rustix"
 
 [[exemptions.litemap]]
 version = "0.8.3"
@@ -626,7 +628,8 @@ criteria = "safe-to-deploy"
 
 [[exemptions.rustix]]
 version = "1.1.6"
-criteria = "safe-to-run"
+criteria = "safe-to-deploy"
+notes = "owner exception 2026-11-18 (plan 2 D10, todo 11): rustix is the one non-optional dependency of non-Linux Unix targets, for the secure-environment check; docs/dependency-admission.md#rustix"
 
 [[exemptions.rustversion]]
 version = "1.0.23"

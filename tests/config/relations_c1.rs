@@ -22,7 +22,6 @@ mod tests {
             let defaults = &config.libdefaults;
             match name {
                 "canonicalize" => assert_eq!(defaults.canonicalize.is_enabled(), *value == "true"),
-                "ccache_type" => assert_eq!(defaults.ccache_type, value.parse::<i32>()?),
                 "default_rcache_name" => assert_eq!(defaults.default_rcache_name, *value),
                 "dns_lookup_realm" => {
                     assert_eq!(defaults.dns_lookup_realm.is_enabled(), *value == "true");
@@ -67,7 +66,6 @@ mod tests {
 
     deferred_cases! {
         canonicalize, "plan 2 WP-04", ["true", "false"];
-        ccache_type, "plan 2 WP-09", ["4", "+3", "-1", "2147483647"];
         default_rcache_name, "plan 2 WP-20", ["none:"];
         dns_canonicalize_hostname, "plan 2 WP-10", ["true", "false", "FaLlBaCk"];
         dns_lookup_realm, "plan 2 WP-10", ["true", "false"];
@@ -256,6 +254,27 @@ mod tests {
         for (value, expected) in [("on", true), ("nil", false)] {
             let config = Config::parse(&format!("[libdefaults]\n forwardable = {value}\n"))?;
             assert_eq!(config.libdefaults.forwardable.is_enabled(), expected);
+        }
+        Ok(())
+    }
+
+    /// `ccache_type` is effective: undiagnosed in both modes, and the output
+    /// version of new caches (`CacheVersion::from_libdefaults`) is 1 to 4 only.
+    #[test]
+    fn ccache_type() -> Result<(), Box<dyn Error>> {
+        use rskrb5_ng::ccache::stores::CacheVersion;
+        for (value, expected) in [
+            ("4", Some(4_u8)),
+            ("+3", Some(3)),
+            ("1", Some(1)),
+            ("-1", None),
+            ("2147483647", None),
+        ] {
+            let text = format!("[libdefaults]\n ccache_type = {value}\n");
+            let config = Config::parse_with_mode(&text, ParseMode::Strict)?;
+            assert!(config.diagnostics().is_empty(), "{value} was diagnosed");
+            let version = CacheVersion::from_libdefaults(&config.libdefaults).ok();
+            assert_eq!(version.map(CacheVersion::get), expected, "{value}");
         }
         Ok(())
     }

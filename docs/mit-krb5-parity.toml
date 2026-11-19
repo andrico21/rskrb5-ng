@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 41
-partial = 73
-absent = 39
+implemented = 48
+partial = 67
+absent = 38
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -778,7 +778,7 @@ test_names = [
   "tests/ccache.rs::resolves_file_cache_names",
 ]
 feature_flags = []
-security_divergence = "Saved caches are private to the owner and symlinked destinations are rejected. `CCache::load_from_env` and `CCache::save_to_env` read KRB5CCNAME in set-uid and set-gid processes too, where MIT uses `secure_getenv` (ccdefname.c:303); such programs must use the explicit constructors."
+security_divergence = "Saved caches are private to the owner and symlinked destinations are rejected. `CCache::load_from_env` and `CCache::save_to_env` ignore KRB5CCNAME in a process the secure-environment decision restricts (set-id), as MIT does through `secure_getenv` (ccdefname.c:303)."
 disposition = "ALREADY"
 contributors = []
 
@@ -787,13 +787,23 @@ id = "MIT-ccache-2"
 area = "ccache"
 upstream_ref = "krb5-1.22.2-final"
 capability = "DIR cache and collections"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Primary and DIR:: load/save exist; enumeration/switch/new-unique/locking API missing."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = [
+  "ccache::dir_store::DirStore",
+  "ccache::stores::CacheCollection",
+  "ccache::file_store::collection",
+]
+test_names = [
+  "tests/ccache_store.rs::dir_collection_switches_and_enumerates",
+  "tests/ccache_store.rs::dir_switch_outside_the_collection_is_rejected",
+  "tests/ccache_store.rs::dir_contention_keeps_every_update",
+  "tests/ccache_store.rs::mit_written_caches_round_trip",
+  "tests/ccache_store.rs::built_in_names_resolve_and_destroy",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "A collection directory that others may write is refused unless it is sticky, and a cache file that is a symlink, not a regular file, writable by group or others, or (Linux) owned by another user is refused; MIT checks none of these (`cc_dir.c:204-224`, `cc_file.c:330-360`). `switch` refuses a cache outside the collection directory, where MIT writes the pointer of the cache's own directory (`cc_dir.c:720-739`). Enumeration lists `tkt*` regular files in name order, MIT in `readdir` order (`cc_dir.c:635-677`). Writers take `std::fs::File::lock` (`flock` on Unix), which does not interact with MIT's `fcntl` locks on Linux; both sides publish whole files by atomic rename, so neither sees a partial file."
 disposition = "WP-09"
 closing_plan = 2
 closing_todo = 11
@@ -838,13 +848,19 @@ id = "MIT-ccache-5"
 area = "ccache"
 upstream_ref = "krb5-1.22.2-final"
 capability = "MEMORY cache"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "In-memory CCache value is not a named MEMORY backend."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["ccache::in_memory::MemoryStore"]
+test_names = [
+  "tests/ccache_store.rs::memory_stores_are_isolated",
+  "tests/ccache_store.rs::memory_concurrent_stores_keep_every_credential",
+  "tests/ccache_store.rs::memory_remove_config_destroy_and_move",
+  "tests/ccache_store.rs::memory_collection_switches_and_enumerates",
+  "src/ccache/payload_tests.rs::memory_store_removals_erase_payloads",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Each `MemoryStore` is its own table (clones share it), where MIT keeps one table per process (`cc_memory.c:131`); a MEMORY collection keeps a primary that `switch` sets, where MIT has no `switch_to` for MEMORY and `krb5_cc_switch` does nothing (`ccfns.c:295-300`)."
 disposition = "WP-09"
 closing_plan = 2
 closing_todo = 11
@@ -890,13 +906,26 @@ id = "MIT-ccache-8"
 area = "ccache"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Credential-cache collections, primary selection, switching and cursor APIs"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Primary name resolution only, no collection/cursor/select API."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = [
+  "ccache::stores::CredentialStore",
+  "ccache::stores::CacheHandle",
+  "ccache::stores::CacheCursor",
+  "ccache::stores::move_cache",
+  "ccache::file_store::resolve",
+  "ccache::selection::select_cache",
+]
+test_names = [
+  "tests/ccache_store.rs::memory_collection_switches_and_enumerates",
+  "tests/ccache_store.rs::dir_collection_switches_and_enumerates",
+  "tests/ccache_store.rs::memory_remove_config_destroy_and_move",
+  "tests/ccache_store.rs::selection_runs_over_a_collection",
+  "tests/ccache_store.rs::mit_written_caches_round_trip",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "`move_cache` of a cache onto its own name changes nothing, where MIT `krb5_cc_move` destroys it (`ccbase.c:426-456`); `switch` checks collection membership."
 disposition = "WP-09"
 closing_plan = 2
 closing_todo = 11
@@ -929,13 +958,21 @@ id = "MIT-ccache-10"
 area = "ccache"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Ccache file format versions 1–4; configurable `ccache_type`"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Versions parse/serialize, configured ccache_type not applied to new caches."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = [
+  "ccache::stores::CacheVersion",
+  "ccache::stores::CacheVersion::from_libdefaults",
+  "ccache::CCache::set_version",
+]
+test_names = [
+  "tests/ccache_store.rs::configured_version_applies_to_new_caches",
+  "tests/ccache_store.rs::mit_written_caches_round_trip",
+  "tests/ccache_store.rs::client_write_back_uses_the_configured_version",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "A `ccache_type` outside 1 to 4 is `InvalidCacheType` when a cache is written, where MIT writes the number unchecked (`init_ctx.c:292-293`, `cc_file.c:442-466`) and no reader accepts the file."
 disposition = "WP-09"
 closing_plan = 2
 closing_todo = 11
@@ -961,7 +998,7 @@ test_names = [
   "tests/keytab.rs::rejects_empty_key_entries",
 ]
 feature_flags = []
-security_divergence = "Saved keytabs are private to the owner and symlinked destinations are rejected. An entry with no principal name components, a zero-length name component, an empty realm or a zero-length key ends the table in MIT (`kt_file.c:949-950`, `:973-975`, `:1003`, `:1065-1067`); this crate rejects it as malformed (`InvalidPrincipalName`, `EmptyRealm`, `EmptyKey`) on read and refuses to write it, so the entries after it are never silently dropped. `Keytab::load_from_env` and `Keytab::save_to_env` read KRB5_KTNAME in set-uid and set-gid processes too, where MIT uses `secure_getenv` (ktdefname.c:45); such programs must use the explicit constructors."
+security_divergence = "Saved keytabs are private to the owner and symlinked destinations are rejected. An entry with no principal name components, a zero-length name component, an empty realm or a zero-length key ends the table in MIT (`kt_file.c:949-950`, `:973-975`, `:1003`, `:1065-1067`); this crate rejects it as malformed (`InvalidPrincipalName`, `EmptyRealm`, `EmptyKey`) on read and refuses to write it, so the entries after it are never silently dropped. `Keytab::load_from_env` and `Keytab::save_to_env` ignore KRB5_KTNAME in a process the secure-environment decision restricts (set-id), as MIT does through `secure_getenv` (ktdefname.c:45)."
 disposition = "ALREADY"
 contributors = []
 
@@ -985,13 +1022,17 @@ id = "MIT-keytab-3"
 area = "keytab"
 upstream_ref = "krb5-1.22.2-final"
 capability = "MEMORY keytab"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Owned in-memory Keytab/entry mutation exists, no named MEMORY registry."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "keytab::stores::MemoryKeytab",
+  "keytab::stores::MemoryKeytab::resolve",
+  "keytab::stores::KeyStore",
+]
+test_names = ["tests/keytab_store.rs::memory_keytabs_are_named_and_isolated"]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Each `MemoryKeytab` is its own table of named keytabs (clones share it), where MIT keeps one table per process (`kt_memory.c`)."
 disposition = "WP-09"
 closing_plan = 2
 closing_todo = 11
@@ -1003,10 +1044,10 @@ area = "keytab"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Client keytab, automatic initial creds and refresh"
 implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Explicit client-keytab and renewal/relogin exist, no full GSS implicit acquisition/refresh integration."
-rust_symbols = []
-test_names = []
+evidence_status = "unit"
+missing = "P2-11 delivered the `KeyStore` lookups the client-keytab refresh uses (`keytab::stores::resolve`, `KeyStore::find`); the client-keytab acquisition and refresh is P2-4's, and the GSS implicit acquisition integration that of the closing todo P2-18."
+rust_symbols = ["keytab::stores::KeyStore", "keytab::stores::resolve"]
+test_names = ["tests/keytab_store.rs::file_keytabs_through_the_store"]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-12"
@@ -1100,11 +1141,18 @@ id = "MIT-config-5"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`ccache_type`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "New caches remain v4; version choice does not strengthen credential protection; diagnostic (consumer: plan 2 WP-09)."
-rust_symbols = []
-test_names = ["tests/config/relations_c1.rs::ccache_type"]
+missing = ""
+rust_symbols = [
+  "ccache::stores::CacheVersion::from_libdefaults",
+  "client::Tokio::to_ccache",
+]
+test_names = [
+  "tests/config/relations_c1.rs::ccache_type",
+  "tests/ccache_store.rs::configured_version_applies_to_new_caches",
+  "tests/ccache_store.rs::client_write_back_uses_the_configured_version",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-09"
@@ -1149,7 +1197,7 @@ test_names = [
   "tests/config/expansion.rs::unknown_tokens_fail_when_not_exactly_named",
 ]
 feature_flags = ["tokio"]
-security_divergence = "Unknown tokens and missing facts are errors at resolution, never a credential fallback; %{uid}/%{euid} are Linux-only. A template reads TMPDIR in set-uid and set-gid processes too, where MIT uses `secure_getenv` (expand_path.c:283); such programs must use the explicit constructors."
+security_divergence = "Unknown tokens and missing facts are errors at resolution, never a credential fallback; %{uid}/%{euid} are Linux-only. A template ignores TMPDIR in a process the secure-environment decision restricts (set-id), as MIT does through `secure_getenv` (expand_path.c:283)."
 disposition = "WP-01"
 closing_plan = 1
 closing_todo = 15
@@ -1172,7 +1220,7 @@ test_names = [
   "tests/config/expansion.rs::profile_names_expand_when_selected_with_context",
 ]
 feature_flags = ["tokio"]
-security_divergence = "Unknown tokens and missing facts are errors at resolution, never a credential fallback; %{uid}/%{euid} are Linux-only. A template reads TMPDIR in set-uid and set-gid processes too, where MIT uses `secure_getenv` (expand_path.c:283); such programs must use the explicit constructors."
+security_divergence = "Unknown tokens and missing facts are errors at resolution, never a credential fallback; %{uid}/%{euid} are Linux-only. A template ignores TMPDIR in a process the secure-environment decision restricts (set-id), as MIT does through `secure_getenv` (expand_path.c:283)."
 disposition = "WP-01"
 closing_plan = 1
 closing_todo = 15
@@ -1195,7 +1243,7 @@ test_names = [
   "tests/config/expansion.rs::identity_tokens_expand_when_linux",
 ]
 feature_flags = ["messages"]
-security_divergence = "Unknown tokens and missing facts are errors at resolution, never a credential fallback; %{uid}/%{euid} are Linux-only. A template reads TMPDIR in set-uid and set-gid processes too, where MIT uses `secure_getenv` (expand_path.c:283); such programs must use the explicit constructors."
+security_divergence = "Unknown tokens and missing facts are errors at resolution, never a credential fallback; %{uid}/%{euid} are Linux-only. A template ignores TMPDIR in a process the secure-environment decision restricts (set-id), as MIT does through `secure_getenv` (expand_path.c:283)."
 disposition = "WP-01"
 closing_plan = 1
 closing_todo = 15
@@ -2082,7 +2130,7 @@ test_names = [
   "src/config/name_case_tests.rs::wrong_case_twins_of_every_section_are_unknown",
 ]
 feature_flags = []
-security_divergence = "Section headers and relation names are case-sensitive, as in MIT (prof_tree.c:588,615), but an enabled removed-protocol selector is refused whatever its case, and a module relation is refused whatever its case outside `[plugins]`, where only the exact lowercase `module` is refused (tests/config/plugin_case.rs::upper_module_is_unknown_relation). A missing or unreadable KRB5_CONFIG entry is an error (MIT skips it). The value-suffix final marker is kept as a gokrb5 extension beside MIT's tag* and [section]* forms. The profile reader is stricter than MIT in these cases, all listed in docs/config-profile.md (Deliberate divergences and bounds): non-comment content before the first section header, a BOM line included, is an InvalidLine (MIT ignores every line before the first one that starts with [, prof_parse.c:326, and so loses the first section behind a BOM; tests/config/mutation_profile.rs::profile_syntax_rejects_malformed_components); a relation whose name is empty after the final * marker is removed, such as * = A, is an InvalidLine (MIT accepts it as an unmatchable empty-name node: the empty-name check at prof_parse.c:152-153 runs before the marker is stripped at :203; a bare = A is an error in MIT too, PROF_RELATION_SYNTAX); an unclosed subsection at the end of a file is an InvalidRealmsSection in every section (MIT accepts it, prof_parse.c:418-436); a closing quote may be followed only by C-locale whitespace (MIT ignores the rest of the line; tests/config/value_whitespace_sites.rs::closing_quote_tail_uses_c_locale); a plugins disable or enable_only value that is empty or holds whitespace is an InvalidLine (MIT keeps it as one module name that matches nothing; tests/config/value_whitespace_sites.rs::capath_and_plugin_names_use_c_locale); every section is parsed and an enabled removed-protocol selector (krb4_*, v4_*, pkinit_win2k and the like) is a Policy::RejectedFeature in every section except domain_realm and the auth_to_local_names entries, which MIT's library does not read for it. The reader is more lenient than MIT in these cases, also listed in docs/config-profile.md: a comment after blanks may follow the opening brace of a subsection, so a value of the form A = { # c opens one where MIT reads the plain value { # c (prof_parse.c:177); a comment after C-locale whitespace may follow an unquoted value (profile_syntax.rs, comments), so default_realm = A #B is A here and A #B in MIT, which strips only trailing whitespace of an unquoted value and recognizes a comment only at the start of a line (prof_parse.c:179-183, :86); and an empty assignment with no { on the next line is an empty value, the same as name = \"\", in libdefaults, domain_realm, logging, kdcdefaults, dbmodules and an unknown section, where MIT answers PROF_MISSING_OBRACE when a line other than { follows (prof_parse.c:174-176, :331-334); so [domain_realm] .example.test = maps the domain to the empty realm and [libdefaults] default_realm = sets an empty default realm. A `~/` at the start of a KRB5_CONFIG entry is not expanded to the home directory (prof_file.c:188-207). KRB5_CONFIG is read in set-uid and set-gid processes too, where MIT uses `secure_getenv` (init_os_ctx.c:300); such programs must use the explicit constructors."
+security_divergence = "Section headers and relation names are case-sensitive, as in MIT (prof_tree.c:588,615), but an enabled removed-protocol selector is refused whatever its case, and a module relation is refused whatever its case outside `[plugins]`, where only the exact lowercase `module` is refused (tests/config/plugin_case.rs::upper_module_is_unknown_relation). A missing or unreadable KRB5_CONFIG entry is an error (MIT skips it). The value-suffix final marker is kept as a gokrb5 extension beside MIT's tag* and [section]* forms. The profile reader is stricter than MIT in these cases, all listed in docs/config-profile.md (Deliberate divergences and bounds): non-comment content before the first section header, a BOM line included, is an InvalidLine (MIT ignores every line before the first one that starts with [, prof_parse.c:326, and so loses the first section behind a BOM; tests/config/mutation_profile.rs::profile_syntax_rejects_malformed_components); a relation whose name is empty after the final * marker is removed, such as * = A, is an InvalidLine (MIT accepts it as an unmatchable empty-name node: the empty-name check at prof_parse.c:152-153 runs before the marker is stripped at :203; a bare = A is an error in MIT too, PROF_RELATION_SYNTAX); an unclosed subsection at the end of a file is an InvalidRealmsSection in every section (MIT accepts it, prof_parse.c:418-436); a closing quote may be followed only by C-locale whitespace (MIT ignores the rest of the line; tests/config/value_whitespace_sites.rs::closing_quote_tail_uses_c_locale); a plugins disable or enable_only value that is empty or holds whitespace is an InvalidLine (MIT keeps it as one module name that matches nothing; tests/config/value_whitespace_sites.rs::capath_and_plugin_names_use_c_locale); every section is parsed and an enabled removed-protocol selector (krb4_*, v4_*, pkinit_win2k and the like) is a Policy::RejectedFeature in every section except domain_realm and the auth_to_local_names entries, which MIT's library does not read for it. The reader is more lenient than MIT in these cases, also listed in docs/config-profile.md: a comment after blanks may follow the opening brace of a subsection, so a value of the form A = { # c opens one where MIT reads the plain value { # c (prof_parse.c:177); a comment after C-locale whitespace may follow an unquoted value (profile_syntax.rs, comments), so default_realm = A #B is A here and A #B in MIT, which strips only trailing whitespace of an unquoted value and recognizes a comment only at the start of a line (prof_parse.c:179-183, :86); and an empty assignment with no { on the next line is an empty value, the same as name = \"\", in libdefaults, domain_realm, logging, kdcdefaults, dbmodules and an unknown section, where MIT answers PROF_MISSING_OBRACE when a line other than { follows (prof_parse.c:174-176, :331-334); so [domain_realm] .example.test = maps the domain to the empty realm and [libdefaults] default_realm = sets an empty default realm. A `~/` at the start of a KRB5_CONFIG entry is not expanded to the home directory (prof_file.c:188-207). KRB5_CONFIG is ignored in a process the secure-environment decision restricts (set-id), as MIT does through `secure_getenv` (init_os_ctx.c:300)."
 disposition = "WP-01"
 closing_plan = 1
 closing_todo = 15
@@ -2788,15 +2836,17 @@ id = "MIT-plugin-2"
 area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`ccselect` credential-cache selection"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "P2-11: selection over a credential-cache collection (`krb5_cc_select` with the fallback host realm of a referral-realm server) and the default `$HOME/.k5identity`. P2-3 delivered `extensions::CacheSelector`, `Registry::select_cache` and the `k5identity`, `realm` and `hostname` built-ins."
+missing = ""
 rust_symbols = [
   "extensions::CacheSelector",
   "extensions::Registry::select_cache",
   "extensions::K5Identity",
   "extensions::RealmSelector",
   "extensions::HostnameSelector",
+  "ccache::selection::select_cache",
+  "ccache::selection::default_k5identity",
 ]
 test_names = [
   "tests/extensions.rs::k5identity_builtin_through_the_registry",
@@ -2806,9 +2856,11 @@ test_names = [
   "tests/extensions.rs::malformed_selector_output_is_refused",
   "src/extensions/k5identity_tests.rs::first_matching_line_wins",
   "src/extensions/k5identity_tests.rs::fnmatch_follows_posix_flags_zero",
+  "tests/ccache_store.rs::selection_runs_over_a_collection",
+  "src/secure_env/tests.rs::home_is_ignored_when_restricted",
 ]
 feature_flags = []
-security_divergence = "A `.k5identity` line longer than 255 bytes never matches, where MIT's `fgets` splits it (`ccselect_k5identity.c:162`), the file is bounded at 64 KiB, and a principal with an empty realm or a control character never matches. No environment variable is read: the caller names the file."
+security_divergence = "A `.k5identity` line longer than 255 bytes never matches, where MIT's `fgets` splits it (`ccselect_k5identity.c:162`), the file is bounded at 64 KiB, and a principal with an empty realm or a control character never matches. `K5Identity` reads no environment variable: the caller names the file; `ccache::selection::default_k5identity` reads `HOME` (not in a restricted process) and has no passwd fallback, where MIT uses the passwd home of the effective user (`ccselect_k5identity.c:128-150`). A referral-realm server takes the first host-realm fallback answer, else the default realm (`hostrealm.c:401-446`); its host is lower-cased and loses a trailing dot, without MIT's hostname canonicalization."
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 11

@@ -112,6 +112,16 @@ duplicate-version skips, each with a reason stated in the record.
 - Maintenance: RustCrypto/MACs, repository pushed 2026-11-17; 0.8.0 on 2026-04-10 (release candidates since 2025-05), about 9.6 million recent downloads; `dbl` 0.5.0 on 2025-09-03 with about 9.3 million. No RustSec advisory (`cargo audit` clean at admission).
 - Features: `zeroize` (this crate's own feature, enabled by the `camellia` leaf)
 
+### rustix
+- Version: 1.1.6
+- Leaf flags: none. The one non-optional exception of rule 2 (owner exception 2026-11-18, plan 2 D10, todo 11): `[target.'cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))'.dependencies]` with `default-features = false`, used only by the shared secure-environment check (`src/secure_env.rs`), which compares the real and effective user and group ids as MIT 1.22.2 `src/util/support/secure_getenv.c:83-99` does when `getresuid` is unavailable. Linux and Android read `AT_SECURE` from `/proc/self/auxv` with `std` and do not use it; Windows has no set-id processes.
+- Licence: `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT`; this crate takes it under MIT (already on the `deny.toml` allow list; no change to it).
+- Source review: read on 2026-11-19 from the crates.io tarball (sha256 `e5e76742e5294153d4dde1207dbec5bdd81eef6fabdc0d2118babadabfd858aa`, bytecodealliance/rustix, edition 2021, MSRV 1.65): `src/process/id.rs` (`getuid`, `geteuid`, `getgid`, `getegid`, stable since 0.x, no experimental or hash-named module) and the backend each one calls, `src/backend/libc/ugid/syscalls.rs:1-45` on the targets this table selects (macOS and the BSDs build the libc backend): one `unsafe` call of the libc function with no argument, the result wrapped in `Uid`/`Gid`. These calls cannot fail and take no input, so nothing untrusted reaches the crate. Dependencies on the targets of the table: `libc` 0.2.191 and `bitflags` 2.13.2 (both already `safe-to-deploy` in the graph) and `errno` 0.3.14 (rustix's `libc_errno`, MIT OR Apache-2.0, already in the lock through the test-only `tempfile`). It has a `build.rs` (cfg probing only; no `links`, no `cc`), allowed for OS wrappers by rule 4. D6: `rustix` and `libc` are on the OS-wrapper allow list; `errno` and `bitflags` carry no `links` key and no build dependency on `cc`, `cmake` or `pkg-config`.
+- Constant-time and zeroization: not a cryptographic crate; it handles no secret. The decision it feeds is a boolean derived once per process.
+- Cargo vet: `supply-chain/config.toml` raised `[[exemptions.rustix]]` 1.1.6 from `safe-to-run` to `safe-to-deploy`, and with it the two dependencies that become production edges, `[[exemptions.errno]]` 0.3.14 and `[[exemptions.linux-raw-sys]]` 0.12.1 (rustix's Linux backend, reached in the vet graph although this crate never enables rustix on Linux), each with `notes = "owner exception 2026-11-18 ..."`. Exemptions, not independent audits; the source review above is this record's evidence. `cargo vet --locked` passes.
+- Maintenance: bytecodealliance/rustix, repository pushed 2026-11-12; 1.1.6 published 2026-10-27, the newest stable release, about 377 million recent downloads of the crate. No RustSec advisory for 1.1.6 (`cargo audit` clean at admission).
+- Features: process
+
 ## Baseline
 
 One line per direct dependency at the baseline commit, `<package> <kind>

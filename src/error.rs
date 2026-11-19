@@ -201,6 +201,28 @@ pub enum Ccache {
     /// The v4 header length did not match parsed fields.
     #[error("invalid credential cache header length")]
     InvalidHeaderLength,
+    /// The named cache does not exist or holds no default principal yet
+    /// (MIT `KRB5_FCC_NOFILE`).
+    #[error("credential cache {name} does not exist or is not initialized")]
+    CacheNotFound {
+        /// The full cache name.
+        name: String,
+    },
+    /// A cache named for a collection operation is not a member of the
+    /// collection, such as a `DIR` subsidiary outside the collection directory.
+    #[error("credential cache {name} is not a member of collection {collection}")]
+    OutsideCollection {
+        /// The full cache name.
+        name: String,
+        /// The collection.
+        collection: String,
+    },
+    /// The configured `ccache_type` is not a cache format version (1 to 4).
+    #[error("ccache_type {0} is not a credential cache format version (1 to 4)")]
+    InvalidCacheType(i32),
+    /// Cache selection failed in a selector or host-realm mapper.
+    #[error("credential cache selection failed: {0}")]
+    Selection(#[source] Extensions),
 }
 #[cfg(feature = "messages")]
 /// Kerberos client exchange error.

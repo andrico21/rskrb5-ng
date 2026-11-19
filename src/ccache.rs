@@ -18,7 +18,7 @@ use std::{
 use serde::de::Error as _;
 use zeroize::Zeroizing;
 
-use crate::{file_name, keytab::key_bytes::Bytes as KeyBytes};
+use crate::{file_name, keytab::key_bytes::Bytes as KeyBytes, secure_env};
 
 /// First byte of every MIT credential cache file.
 const CCACHE_FIRST_BYTE: u8 = 5;
@@ -52,6 +52,18 @@ pub enum CacheName {
 
 /// Redaction of credential-bearing diagnostics.
 mod credential_debug;
+
+pub mod dir_store;
+
+pub mod file_store;
+
+pub mod in_memory;
+
+pub mod selection;
+
+pub mod stores;
+
+use self::stores::CacheVersion;
 
 /// Erasure of retained credential payloads.
 mod payload;
@@ -181,9 +193,9 @@ impl CCache {
     /// names. Platform stores such as `KCM:`, `KEYRING:`, and `API:` are
     /// rejected explicitly.
     ///
-    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
-    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
-    /// constructors.
+    /// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
+    /// ignores them (`secure_getenv`); see the secure-environment decision of
+    /// `docs/security-policy.md`.
     ///
     /// # Errors
     ///
@@ -191,7 +203,8 @@ impl CCache {
     /// valid Unicode, and any error of [`CCache::load_name`].
     #[inline]
     pub fn load_from_env() -> Result<Self, Error> {
-        let name = env::var(KRB5CCNAME_ENV).map_err(Error::DefaultCacheName)?;
+        let name =
+            secure_env::ambient(|| env::var(KRB5CCNAME_ENV)).map_err(Error::DefaultCacheName)?;
         Self::load_name(name)
     }
 
@@ -236,9 +249,9 @@ impl CCache {
     /// # Ambient input
     /// Reads `KRB5CCNAME`; use [`CCache::save_name`] for an explicit name.
     ///
-    /// In a set-uid or set-gid process the variables named here are still read, where MIT 1.22.2
-    /// ignores the same variables (`secure_getenv`); such programs must use the explicit
-    /// constructors.
+    /// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
+    /// ignores them (`secure_getenv`); see the secure-environment decision of
+    /// `docs/security-policy.md`.
     ///
     /// # Errors
     ///
@@ -246,7 +259,8 @@ impl CCache {
     /// valid Unicode, and any error of [`CCache::save_name`].
     #[inline]
     pub fn save_to_env(&self) -> Result<(), Error> {
-        let name = env::var(KRB5CCNAME_ENV).map_err(Error::DefaultCacheName)?;
+        let name =
+            secure_env::ambient(|| env::var(KRB5CCNAME_ENV)).map_err(Error::DefaultCacheName)?;
         self.save_name(name)
     }
 
@@ -413,6 +427,16 @@ impl CCache {
     #[inline]
     pub const fn version(&self) -> u8 {
         self.version
+    }
+
+    /// Set the format version [`CCache::to_bytes`] writes; versions before 4
+    /// have no header, so the header is cleared for them.
+    #[inline]
+    pub fn set_version(&mut self, version: CacheVersion) {
+        self.version = version.get();
+        if self.version < 4 {
+            self.header = Header::default();
+        }
     }
 
     #[must_use]

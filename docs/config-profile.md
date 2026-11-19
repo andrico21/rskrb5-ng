@@ -119,13 +119,15 @@ value are value data.
   ([prof_file.c:188–207](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/util/profile/prof_file.c#L188-L207)).
 - The environment variables that the functions with an `# Ambient input`
   rustdoc section read on Unix (`KRB5_CONFIG`, `KRB5CCNAME`, `KRB5_KTNAME`,
-  `KRB5_CLIENT_KTNAME` and `TMPDIR`) are read in set-uid and set-gid processes
-  too. MIT 1.22.2 reads them through `secure_getenv` and so ignores them there
+  `KRB5_CLIENT_KTNAME`, `TMPDIR` and `HOME`) are ignored in a process that the
+  secure-environment decision of `docs/security-policy.md` restricts (Linux:
+  `AT_SECURE`; other Unix: differing real and effective ids), as MIT 1.22.2
+  ignores them through `secure_getenv`
   ([init_os_ctx.c:300](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/init_os_ctx.c#L300),
   [ccdefname.c:303](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/ccdefname.c#L303),
   [ktdefname.c:45,66](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/ktdefname.c#L45-L66),
   [expand_path.c:283](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/expand_path.c#L283)).
-  Such programs must use the explicit constructors (`Config::load_paths`,
+  Such programs use the explicit constructors (`Config::load_paths`,
   `CCache::load_name`, `Keytab::load_name`, a literal name).
   `LibDefaults::from_env` reads `HOME` for `k5login_directory`, which MIT never
   reads from the environment: it uses the home directory of the target user's
