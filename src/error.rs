@@ -18,6 +18,7 @@ use crate::client::transport::KdcProtocol;
 #[cfg(feature = "spnego")]
 use crate::spnego::oid::ObjectIdentifier;
 use crate::{
+    ccache::keyring::Fault as KeyringFault,
     config::parameters::Failure as ExpansionFailure,
     extensions::{Interface, ProviderError},
 };
@@ -220,6 +221,9 @@ pub enum Ccache {
     /// The configured `ccache_type` is not a cache format version (1 to 4).
     #[error("ccache_type {0} is not a credential cache format version (1 to 4)")]
     InvalidCacheType(i32),
+    /// The Linux kernel keyring cache type failed (`KEYRING:`, `ccache-keyring`).
+    #[error("kernel keyring cache error: {0}")]
+    Keyring(#[from] KeyringFault),
     /// Cache selection failed in a selector or host-realm mapper.
     #[error("credential cache selection failed: {0}")]
     Selection(#[source] Extensions),

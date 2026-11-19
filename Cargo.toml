@@ -47,7 +47,7 @@ tests = [
 
 [package.metadata.rskrb5-ng.leaf-features.ccache-keyring]
 minimal = []
-modules = ["src/ccache/keyring.rs"]
+modules = ["src/ccache/keyring.rs", "src/ccache/keyring/"]
 tests = ["tests/ccache_keyring.rs"]
 
 [lib]
