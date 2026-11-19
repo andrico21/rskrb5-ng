@@ -71,12 +71,15 @@ use tokio::{
 
 use super::{
     AsRepSession, AsReq, BuiltAsReq, BuiltTgsReq, Error, KRB_ERR_RESPONSE_TOO_BIG, KRB_NT_SRV_INST,
-    Principal, ReferralTgsResult, TgsRepSession, TgsReq, build_s4u2proxy_req, build_s4u2self_req,
-    build_tgs_req_for_realm, build_tgt_renewal_req, build_ticket_renewal_req,
-    keytab_initial_as_rep_session, keytab_initial_as_req, keytab_preauth_request,
-    password_initial_as_rep_session, password_initial_as_req, password_preauth_request,
+    Password, Principal, ReferralTgsResult, TgsRepSession, TgsReq, build_s4u2proxy_req,
+    build_s4u2self_req, build_tgs_req_for_realm, build_tgt_renewal_req, build_ticket_renewal_req,
+    keytab_initial_as_rep_session, keytab_initial_as_req, password_initial_as_rep_session,
+    password_initial_as_req,
+    preauth::{keytab_preauth_request, password_preauth_request},
     principal_matches, process_as_rep, process_tgs_rep, process_tgs_rep_with_referral,
-    service_realm, tgt_realm,
+    service_realm,
+    stepwise::{InitCreds, InitCredsOptions, NoResponder, drive_tokio},
+    tgt_realm,
 };
 use crate::{
     client::kpasswd::{BuiltKpasswdRequest, RequestOptions},
@@ -606,7 +609,7 @@ impl Tokio {
     /// NOT cancel-safe for the pinned stream: dropping the future mid-exchange can leave a
     /// partial record written to or unread from the stream. Discard the stream
     /// then instead of reusing it.
-    async fn send_follow_up(
+    pub(super) async fn send_follow_up(
         &self,
         pinned: Option<&mut TcpStream>,
         request: &[u8],
@@ -800,7 +803,7 @@ impl Tokio {
     /// cancel-safe: it takes `&self` and changes no client state. Dropping the
     /// future closes any socket it opened and abandons the request, which the
     /// caller can send again.
-    async fn send_to_realm_pinned(
+    pub(super) async fn send_to_realm_pinned(
         &self,
         config: &Config,
         protocol: KdcProtocol,
@@ -1931,41 +1934,10 @@ impl Tokio {
     ) -> Result<AsRepSession, Error> {
         restrictions::config(config)?;
         options.set_crypto_policy(Ok(super::crypto_policy::configured(&config.libdefaults)?));
-        let initial_request =
-            password_initial_as_req(client.clone(), service.clone(), password, options.clone())?;
-        let (mut initial_response, mut pinned) = self
-            .send_to_realm_pinned(config, protocol, &client.realm, &initial_request.der)
-            .await?;
-        if let Some(session) =
-            password_initial_as_rep_session(&initial_request, &initial_response, &client, password)?
-        {
-            return Ok(session);
-        }
-        if let Some(probe) =
-            super::preauth::discovery_request(&initial_request, &options, &initial_response)?
-        {
-            initial_response =
-                if let Some(response) = self.send_follow_up(pinned.as_mut(), &probe.der).await? {
-                    response
-                } else {
-                    let (response, connection) = self
-                        .send_to_realm_pinned(config, protocol, &client.realm, &probe.der)
-                        .await?;
-                    pinned = connection;
-                    response
-                };
-            super::preauth::validate_discovery(&initial_response, &options)?;
-        }
-        let (request, reply_key) =
-            password_preauth_request(client, service, password, options, &initial_response)?;
-        let response = match self.send_follow_up(pinned.as_mut(), &request.der).await? {
-            Some(response) => response,
-            None => {
-                self.send_to_realm(config, protocol, &request.client.realm, &request.der)
-                    .await?
-            }
-        };
-        process_as_rep(&request, &response, &reply_key)
+        let engine_options = InitCredsOptions::new(options).with_service(service);
+        let owned = Password::from_vec(password.to_vec());
+        let mut exchange = InitCreds::with_password(client, Some(owned), engine_options);
+        drive_tokio(self, (config, protocol), &mut exchange, &mut NoResponder).await
     }
 
     /// Perform a TGT AS login using keytab credentials and KDC preauth hints.
@@ -2133,41 +2105,9 @@ impl Tokio {
     ) -> Result<AsRepSession, Error> {
         restrictions::config(config)?;
         options.set_crypto_policy(Ok(super::crypto_policy::configured(&config.libdefaults)?));
-        let initial_request =
-            keytab_initial_as_req(client.clone(), service.clone(), keytab, options.clone())?;
-        let (mut initial_response, mut pinned) = self
-            .send_to_realm_pinned(config, protocol, &client.realm, &initial_request.der)
-            .await?;
-        if let Some(session) =
-            keytab_initial_as_rep_session(&initial_request, &initial_response, &client, keytab)?
-        {
-            return Ok(session);
-        }
-        if let Some(probe) =
-            super::preauth::discovery_request(&initial_request, &options, &initial_response)?
-        {
-            initial_response =
-                if let Some(response) = self.send_follow_up(pinned.as_mut(), &probe.der).await? {
-                    response
-                } else {
-                    let (response, connection) = self
-                        .send_to_realm_pinned(config, protocol, &client.realm, &probe.der)
-                        .await?;
-                    pinned = connection;
-                    response
-                };
-            super::preauth::validate_discovery(&initial_response, &options)?;
-        }
-        let (request, reply_key) =
-            keytab_preauth_request(client, service, keytab, options, &initial_response)?;
-        let response = match self.send_follow_up(pinned.as_mut(), &request.der).await? {
-            Some(response) => response,
-            None => {
-                self.send_to_realm(config, protocol, &request.client.realm, &request.der)
-                    .await?
-            }
-        };
-        process_as_rep(&request, &response, &reply_key)
+        let engine_options = InitCredsOptions::new(options).with_service(service);
+        let mut exchange = InitCreds::with_keytab(client, keytab.clone(), engine_options);
+        drive_tokio(self, (config, protocol), &mut exchange, &mut NoResponder).await
     }
 
     /// Discover KDC endpoints through `_kerberos` DNS SRV records.
