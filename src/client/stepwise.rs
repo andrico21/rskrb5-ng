@@ -72,7 +72,6 @@ pub const MAX_EXCHANGE_ROUNDS: usize = 16;
 pub const DEFAULT_MAX_REFERRALS: usize = 10;
 
 /// What the caller hands to the next [`InitCreds::step`] or [`TicketCreds::step`].
-#[derive(Debug)]
 #[non_exhaustive]
 pub enum StepInput<'input> {
     /// Begin the exchange.
@@ -83,8 +82,18 @@ pub enum StepInput<'input> {
     Answer(Answer),
 }
 
-/// What the exchange needs next.
-#[derive(Debug)]
+impl fmt::Debug for StepInput<'_> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Start => f.write_str("Start"),
+            Self::Reply(reply) => write!(f, "Reply({} bytes)", reply.len()),
+            Self::Answer(answer) => f.debug_tuple("Answer").field(answer).finish(),
+        }
+    }
+}
+
+/// What the exchange needs next. Its `Debug` output is redacted.
 #[non_exhaustive]
 pub enum ExchangeStep {
     /// Send this request to a KDC of its realm and pass the reply back.
@@ -93,6 +102,17 @@ pub enum ExchangeStep {
     Prompt(Prompt),
     /// The exchange finished with this credential.
     Complete(Box<AsRepSession>),
+}
+
+impl fmt::Debug for ExchangeStep {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Outbound(outbound) => f.debug_tuple("Outbound").field(outbound).finish(),
+            Self::Prompt(prompt) => f.debug_tuple("Prompt").field(prompt).finish(),
+            Self::Complete(session) => f.debug_tuple("Complete").field(session).finish(),
+        }
+    }
 }
 
 /// One encoded KDC request and the realm whose KDC must receive it.
@@ -213,7 +233,7 @@ pub trait Exchange {
 }
 
 /// Options of one AS exchange, from the profile or per request.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct InitCredsOptions {
     /// The request template: lifetimes, flags, enctypes, nonce and clock.
     request: AsReq,
@@ -223,6 +243,18 @@ pub struct InitCredsOptions {
     kdc_timesync: bool,
     /// MIT `preferred_preauth_types`, most preferred first.
     preferred_preauth_types: Vec<i32>,
+}
+
+impl fmt::Debug for InitCredsOptions {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("InitCredsOptions")
+            .field("request", &self.request)
+            .field("service", &self.service)
+            .field("kdc_timesync", &self.kdc_timesync)
+            .field("preferred_preauth_types", &self.preferred_preauth_types)
+            .finish()
+    }
 }
 
 impl InitCredsOptions {
@@ -331,7 +363,7 @@ impl InitCredsOptions {
 }
 
 /// Options of one TGS exchange.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct TicketOptions {
     /// The request template.
     request: TgsReq,
@@ -339,6 +371,17 @@ pub struct TicketOptions {
     max_referrals: usize,
     /// The ticket of the user-to-user target, encrypted in its session key.
     second_ticket: Option<rasn_kerberos::Ticket>,
+}
+
+impl fmt::Debug for TicketOptions {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TicketOptions")
+            .field("request", &self.request)
+            .field("max_referrals", &self.max_referrals)
+            .field("user_to_user", &self.second_ticket.is_some())
+            .finish()
+    }
 }
 
 impl TicketOptions {
@@ -395,20 +438,18 @@ impl TicketOptions {
     }
 }
 
-/// The long-term credential of an AS exchange.
-enum Credential {
-    /// A password, possibly still to be prompted for.
-    Password(Option<Password>),
-    /// A keytab holding the client's keys.
-    Keytab(Keytab),
-}
-
 /// A stepwise AS exchange (MIT `krb5_init_creds_context`).
 pub struct InitCreds<'registry> {
     /// The requesting client.
     client: Principal,
-    /// The long-term credential.
-    credential: Credential,
+    /// The password of a password exchange, `None` until given or prompted for.
+    password: Option<Password>,
+    /// The keytab of a keytab exchange.
+    keytab: Option<Keytab>,
+    /// A KDC reply held while the exchange waits for the password to process it.
+    held_reply: Option<Zeroizing<Vec<u8>>>,
+    /// The reply key of the preauthenticated request that is out.
+    reply_key: Option<EncryptionKey>,
     /// Request options.
     options: InitCredsOptions,
     /// Where the exchange stands.
@@ -446,14 +487,14 @@ impl<'registry> InitCreds<'registry> {
         password: Option<Password>,
         options: InitCredsOptions,
     ) -> Self {
-        init::new(client, Credential::Password(password), options)
+        init::new(client, (password, None), options)
     }
 
     /// A keytab exchange for `client`.
     #[inline]
     #[must_use]
     pub fn with_keytab(client: Principal, keytab: Keytab, options: InitCredsOptions) -> Self {
-        init::new(client, Credential::Keytab(keytab), options)
+        init::new(client, (None, Some(keytab)), options)
     }
 
     /// Consult `session`'s registered mechanisms for the PA types the KDC offers,

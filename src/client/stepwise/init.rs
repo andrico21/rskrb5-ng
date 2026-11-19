@@ -13,19 +13,19 @@ use super::super::transport::{KdcProtocol, Tokio as TokioTransport};
 use super::{
     super::{
         AsRepSession, BuiltAsReq, Error, KDC_ERR_PREAUTH_REQUIRED, KdcError, KdcTransport,
-        PA_ENC_TIMESTAMP, Principal, as_rep_reply_key_info, build_as_req, crypto_policy, encode,
-        keytab_initial_as_rep_session, keytab_initial_as_req, password_derivation,
+        PA_ENC_TIMESTAMP, Password, Principal, as_rep_reply_key_info, build_as_req, crypto_policy,
+        encode, keytab_initial_as_rep_session, keytab_initial_as_req, password_derivation,
         password_initial_as_rep_session, password_initial_as_req, preauth, preauth_retry_options,
         process_as_rep, process_kdc_error, select_preauth_key_info,
     },
-    Answer, ArmorRequest, ArmoredReply, Credential, Exchange, ExchangeStep, InitCreds,
-    InitCredsOptions, MAX_EXCHANGE_ROUNDS, Outbound, Prompt, Responder, StepInput, order,
+    Answer, ArmorRequest, ArmoredReply, Exchange, ExchangeStep, InitCreds, InitCredsOptions,
+    MAX_EXCHANGE_ROUNDS, Outbound, Prompt, Responder, StepInput, order,
 };
 #[cfg(feature = "tokio")]
 use crate::config::Config;
 use crate::{
     crypto::{KerberosEtype, Use, prf},
-    keytab::EncryptionKey,
+    keytab::{EncryptionKey, Keytab},
 };
 
 /// Where an AS exchange stands.
@@ -36,14 +36,16 @@ pub(super) enum State {
     PasswordForInitial,
     /// The first request is out.
     Initial(Box<BuiltAsReq>),
-    /// An AS-REP answered the first request; decrypting it needs the password.
-    PasswordForReply(Box<BuiltAsReq>, Zeroizing<Vec<u8>>),
+    /// An AS-REP (held in `held_reply`) answered the first request; decrypting
+    /// it needs the password.
+    PasswordForReply(Box<BuiltAsReq>),
     /// The cookie-only discovery request is out.
     Discovery,
-    /// The KDC asked for preauthentication; answering needs the password.
-    PasswordForChallenge(Zeroizing<Vec<u8>>),
-    /// The preauthenticated request is out.
-    Final(Box<BuiltAsReq>, EncryptionKey),
+    /// The KDC asked for preauthentication (the error held in `held_reply`);
+    /// answering needs the password.
+    PasswordForChallenge,
+    /// The preauthenticated request is out; its key is in `reply_key`.
+    Final(Box<BuiltAsReq>),
     /// Finished or failed; no further step is possible.
     Done,
 }
@@ -51,12 +53,15 @@ pub(super) enum State {
 /// A new exchange in its start state.
 pub(super) fn new(
     client: Principal,
-    credential: Credential,
+    (password, keytab): (Option<Password>, Option<Keytab>),
     options: InitCredsOptions,
 ) -> InitCreds<'static> {
     InitCreds {
         client,
-        credential,
+        password,
+        keytab,
+        held_reply: None,
+        reply_key: None,
         options,
         state: State::Start,
         rounds: 0,
@@ -89,9 +94,9 @@ pub(super) fn debug(engine: &InitCreds<'_>, formatter: &mut fmt::Formatter<'_>) 
 const fn state_name(state: &State) -> &'static str {
     match state {
         State::Start => "start",
-        State::PasswordForInitial
-        | State::PasswordForReply(..)
-        | State::PasswordForChallenge(_) => "a password answer",
+        State::PasswordForInitial | State::PasswordForReply(_) | State::PasswordForChallenge => {
+            "a password answer"
+        }
         State::Initial(_) | State::Discovery | State::Final(..) => "a KDC reply",
         State::Done => "nothing (the exchange is finished)",
     }
@@ -124,19 +129,22 @@ pub(super) fn step(
             start(engine)
         }
         (State::Initial(request), StepInput::Reply(reply)) => initial_reply(engine, request, reply),
-        (State::PasswordForReply(request, reply), StepInput::Answer(answer)) => {
+        (State::PasswordForReply(request), StepInput::Answer(answer)) => {
             accept(engine, answer)?;
+            let reply = held(engine.held_reply.take())?;
             initial_as_rep(engine, &request, &reply)
         }
         (State::Discovery, StepInput::Reply(reply)) => {
             preauth::validate_discovery(reply, &engine.options.request)?;
             challenge(engine, reply)
         }
-        (State::PasswordForChallenge(reply), StepInput::Answer(answer)) => {
+        (State::PasswordForChallenge, StepInput::Answer(answer)) => {
             accept(engine, answer)?;
+            let reply = held(engine.held_reply.take())?;
             challenge(engine, &reply)
         }
-        (State::Final(request, reply_key), StepInput::Reply(reply)) => {
+        (State::Final(request), StepInput::Reply(reply)) => {
+            let reply_key = held(engine.reply_key.take())?;
             let session = process_as_rep(&request, reply, &strengthened(engine, reply_key)?)?;
             Ok(finish(engine, &request, session))
         }
@@ -153,22 +161,20 @@ pub(super) fn step(
 /// Returns the typed failure of the step; the exchange cannot continue after it.
 fn start(engine: &mut InitCreds<'_>) -> Result<ExchangeStep, Error> {
     let service = service(engine);
-    let request = match &engine.credential {
-        Credential::Password(None) if engine.options.request.assume_preauthentication() => {
-            return Ok(prompt(engine, State::PasswordForInitial));
-        }
-        Credential::Password(password) => password_initial_as_req(
-            engine.client.clone(),
-            service,
-            password
-                .as_ref()
-                .map_or(&[][..], |secret| secret.as_bytes()),
-            engine.options.request.clone(),
-        )?,
-        Credential::Keytab(keytab) => keytab_initial_as_req(
+    if awaiting_password(engine) && engine.options.request.assume_preauthentication() {
+        return Ok(prompt(engine, State::PasswordForInitial));
+    }
+    let request = match &engine.keytab {
+        Some(keytab) => keytab_initial_as_req(
             engine.client.clone(),
             service,
             keytab,
+            engine.options.request.clone(),
+        )?,
+        None => password_initial_as_req(
+            engine.client.clone(),
+            service,
+            password_bytes(engine),
             engine.options.request.clone(),
         )?,
     };
@@ -185,9 +191,9 @@ fn initial_reply(
     reply: &[u8],
 ) -> Result<ExchangeStep, Error> {
     if as_rep_reply_key_info(reply).is_some() {
-        if matches!(engine.credential, Credential::Password(None)) {
-            let pending = State::PasswordForReply(request, Zeroizing::new(reply.to_vec()));
-            return Ok(prompt(engine, pending));
+        if awaiting_password(engine) {
+            engine.held_reply = Some(Zeroizing::new(reply.to_vec()));
+            return Ok(prompt(engine, State::PasswordForReply(request)));
         }
         return initial_as_rep(engine, &request, reply);
     }
@@ -207,17 +213,10 @@ fn initial_as_rep(
     request: &BuiltAsReq,
     reply: &[u8],
 ) -> Result<ExchangeStep, Error> {
-    let session = match &engine.credential {
-        Credential::Password(password) => password_initial_as_rep_session(
-            request,
-            reply,
-            &engine.client,
-            password
-                .as_ref()
-                .map_or(&[][..], |secret| secret.as_bytes()),
-        )?,
-        Credential::Keytab(keytab) => {
-            keytab_initial_as_rep_session(request, reply, &engine.client, keytab)?
+    let session = match &engine.keytab {
+        Some(keytab) => keytab_initial_as_rep_session(request, reply, &engine.client, keytab)?,
+        None => {
+            password_initial_as_rep_session(request, reply, &engine.client, password_bytes(engine))?
         }
     };
     let completed = session.ok_or_else(|| Error::UnexpectedStepInput {
@@ -234,38 +233,36 @@ fn initial_as_rep(
 /// # Errors
 /// Returns the typed failure of the step; the exchange cannot continue after it.
 fn challenge(engine: &mut InitCreds<'_>, reply: &[u8]) -> Result<ExchangeStep, Error> {
-    if matches!(engine.credential, Credential::Password(None)) {
-        let pending = State::PasswordForChallenge(Zeroizing::new(reply.to_vec()));
-        return Ok(prompt(engine, pending));
+    if awaiting_password(engine) {
+        engine.held_reply = Some(Zeroizing::new(reply.to_vec()));
+        return Ok(prompt(engine, State::PasswordForChallenge));
     }
     let at = preauth_time(engine)?;
     if let Some(error) = registered_challenge(engine, reply)? {
         let key = challenge_key(engine, &error)?;
         let options = preauth_retry_options(engine.options.request.clone(), error.method_data());
         let request = build_as_req(engine.client.clone(), service(engine), options)?;
-        return send(engine, request, true, move |built| State::Final(built, key));
+        engine.reply_key = Some(key);
+        return send(engine, request, true, State::Final);
     }
-    let (request, reply_key) = match &engine.credential {
-        Credential::Password(password) => preauth::password_preauth_request_at(
-            (engine.client.clone(), service(engine)),
-            password
-                .as_ref()
-                .map_or(&[][..], |secret| secret.as_bytes()),
-            engine.options.request.clone(),
-            reply,
-            at,
-        )?,
-        Credential::Keytab(keytab) => preauth::keytab_preauth_request_at(
+    let (request, reply_key) = match &engine.keytab {
+        Some(keytab) => preauth::keytab_preauth_request_at(
             (engine.client.clone(), service(engine)),
             keytab,
             engine.options.request.clone(),
             reply,
             at,
         )?,
+        None => preauth::password_preauth_request_at(
+            (engine.client.clone(), service(engine)),
+            password_bytes(engine),
+            engine.options.request.clone(),
+            reply,
+            at,
+        )?,
     };
-    send(engine, request, true, move |built| {
-        State::Final(built, reply_key)
-    })
+    engine.reply_key = Some(reply_key);
+    send(engine, request, true, State::Final)
 }
 
 /// When a registered mechanism answers an offered PA type that the preferred
@@ -327,17 +324,39 @@ fn prompt(engine: &mut InitCreds<'_>, pending: State) -> ExchangeStep {
 /// # Errors
 /// Returns the typed failure of the step; the exchange cannot continue after it.
 fn accept(engine: &mut InitCreds<'_>, answer: Answer) -> Result<(), Error> {
-    match (&mut engine.credential, answer) {
-        (Credential::Password(slot @ None), Answer::Password(password)) => {
-            *slot = Some(password);
+    match answer {
+        Answer::Password(password) if awaiting_password(engine) => {
+            engine.password = Some(password);
             Ok(())
         }
-        (Credential::Password(Some(_)) | Credential::Keytab(_), Answer::Password(_)) => {
-            Err(Error::UnexpectedStepInput {
-                expected: "a KDC reply",
-            })
-        }
+        Answer::Password(_) => Err(Error::UnexpectedStepInput {
+            expected: "a KDC reply",
+        }),
     }
+}
+
+/// Whether this is a password exchange still without its password.
+const fn awaiting_password(engine: &InitCreds<'_>) -> bool {
+    engine.keytab.is_none() && engine.password.is_none()
+}
+
+/// The password bytes of a password exchange (empty before it is known).
+fn password_bytes<'engine>(engine: &'engine InitCreds<'_>) -> &'engine [u8] {
+    engine
+        .password
+        .as_ref()
+        .map_or(&[][..], |secret| secret.as_bytes())
+}
+
+/// A value the current state guarantees, taken from its slot.
+///
+/// # Errors
+/// Returns [`Error::UnexpectedStepInput`] when the slot is empty, which the
+/// state machine never allows.
+fn held<T>(slot: Option<T>) -> Result<T, Error> {
+    slot.ok_or(Error::UnexpectedStepInput {
+        expected: "a KDC reply",
+    })
 }
 
 /// Count, armor and emit one request; the next state keeps the request.
@@ -487,20 +506,13 @@ fn strengthened(engine: &InitCreds<'_>, reply_key: EncryptionKey) -> Result<Encr
 /// Returns the key selection and derivation errors of the encrypted-timestamp path.
 fn challenge_key(engine: &InitCreds<'_>, error: &KdcError) -> Result<EncryptionKey, Error> {
     let etypes = engine.options.request.etypes();
-    match &engine.credential {
-        Credential::Password(password) => {
-            let policy = crypto_policy::request(engine.options.request.crypto_policy(), etypes)?;
-            let info = select_preauth_key_info(error, etypes)?;
-            policy.check_use(info.etype, Use::ReplyKey)?;
-            let secret = password
-                .as_ref()
-                .map_or(&[][..], |secret| secret.as_bytes());
-            password_derivation::derive(&policy, &engine.client, secret, &info)
-        }
-        Credential::Keytab(keytab) => {
-            preauth::challenge_key(keytab, &engine.client, error, etypes).map(|(key, _)| key)
-        }
+    if let Some(keytab) = &engine.keytab {
+        return preauth::challenge_key(keytab, &engine.client, error, etypes).map(|(key, _)| key);
     }
+    let policy = crypto_policy::request(engine.options.request.crypto_policy(), etypes)?;
+    let info = select_preauth_key_info(error, etypes)?;
+    policy.check_use(info.etype, Use::ReplyKey)?;
+    password_derivation::derive(&policy, &engine.client, password_bytes(engine), &info)
 }
 
 /// `KRB-FX-CF2(strengthen, reply, "strengthenkey", "replykey")` (RFC 6113 section 5.4.3).
