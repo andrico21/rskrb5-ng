@@ -170,6 +170,20 @@ impl Deadline {
     }
 }
 
+/// macOS refuses to set a socket timeout with `EINVAL` once the peer has
+/// closed the connection; the read or write that follows cannot block then,
+/// and reports the closed peer itself.
+///
+/// # Errors
+///
+/// Any other failure of `result`.
+fn tolerate_closed_peer(result: io::Result<()>) -> io::Result<()> {
+    match result {
+        Err(error) if error.kind() == io::ErrorKind::InvalidInput => Ok(()),
+        other => other,
+    }
+}
+
 /// An expired socket timeout reads as `WouldBlock` on Unix; call it a timeout.
 fn timed_out(error: io::Error) -> io::Error {
     if error.kind() == io::ErrorKind::WouldBlock {
@@ -182,7 +196,7 @@ fn timed_out(error: io::Error) -> io::Error {
 impl io::Read for Deadline {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let left = self.remaining()?;
-        self.stream.set_read_timeout(left)?;
+        tolerate_closed_peer(self.stream.set_read_timeout(left))?;
         self.stream.read(buf).map_err(timed_out)
     }
 }
@@ -190,7 +204,7 @@ impl io::Read for Deadline {
 impl io::Write for Deadline {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let left = self.remaining()?;
-        self.stream.set_write_timeout(left)?;
+        tolerate_closed_peer(self.stream.set_write_timeout(left))?;
         self.stream.write(buf).map_err(timed_out)
     }
 

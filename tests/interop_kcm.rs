@@ -10,7 +10,7 @@
 //! the daemon socket the fixture exports, so a file cache cannot stand in.
 //! Gated by `INTEROP=1`; `INTEROP_REQUIRED=1` turns an unreachable fixture
 //! into a failure naming it.
-#![cfg(feature = "tokio")]
+#![cfg(all(unix, feature = "tokio"))]
 
 /// Child-process runner for the tests that change the environment.
 #[path = "support/env.rs"]
