@@ -117,3 +117,10 @@ path = "fuzz_targets/ccache_collection.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "kcm_reply"
+path = "fuzz_targets/kcm_reply.rs"
+test = false
+doc = false
+bench = false
