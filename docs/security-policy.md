@@ -275,6 +275,23 @@ unset, as MIT 1.22.2 does through `secure_getenv`
 and this crate only stores the value. `docs/config-profile.md` (Deliberate
 divergences and bounds) lists the MIT sources.
 
+## Credential stores
+
+The store API (`ccache::CredentialStore`, `ccache::CacheCollection`,
+`ccache::CacheHandle`, `keytab::KeyStore`) writes cache and keytab files
+owner-only (mode 0600, collection directories 0700) and replaces them whole by
+atomic rename, and it refuses a file that is a symlink, not a regular file,
+writable by group or others, or (Linux) owned by another user, and a `DIR`
+collection directory that others may write unless it is sticky. Writers hold
+an exclusive `std::fs::File::lock` and readers a shared one; MIT's `fcntl`
+locks do not interact with them on Linux, so concurrent MIT and crate writers
+serialize only through the atomic rename. `switch` accepts only a cache of the
+collection. `MEMORY` caches and keytabs live in one store or table value and
+its clones, never in a process-wide table; removed, replaced and destroyed
+credentials and keys are erased as they drop. `ccache_type` selects the format
+version of new caches and must be 1 to 4. The plan-2 register rows FU-STO-P01
+to P06 list where this differs from MIT 1.22.2.
+
 <a id="windows-api-ccache"></a>
 ## Windows API credential cache
 

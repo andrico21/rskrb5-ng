@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 41
-partial = 73
-absent = 39
+implemented = 48
+partial = 67
+absent = 38
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -787,13 +787,23 @@ id = "MIT-ccache-2"
 area = "ccache"
 upstream_ref = "krb5-1.22.2-final"
 capability = "DIR cache and collections"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Primary and DIR:: load/save exist; enumeration/switch/new-unique/locking API missing."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = [
+  "ccache::dir_store::DirStore",
+  "ccache::store::CacheCollection",
+  "ccache::file_store::collection",
+]
+test_names = [
+  "tests/ccache_store.rs::dir_collection_switches_and_enumerates",
+  "tests/ccache_store.rs::dir_switch_outside_the_collection_is_rejected",
+  "tests/ccache_store.rs::dir_contention_keeps_every_update",
+  "tests/ccache_store.rs::mit_written_caches_round_trip",
+  "tests/ccache_store.rs::built_in_names_resolve_and_destroy",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "A collection directory that others may write is refused unless it is sticky, and a cache file that is a symlink, not a regular file, writable by group or others, or (Linux) owned by another user is refused; MIT checks none of these (`cc_dir.c:204-224`, `cc_file.c:330-360`). `switch` refuses a cache outside the collection directory, where MIT writes the pointer of the cache's own directory (`cc_dir.c:720-739`). Enumeration lists `tkt*` regular files in name order, MIT in `readdir` order (`cc_dir.c:635-677`). Writers take `std::fs::File::lock` (`flock` on Unix), which does not interact with MIT's `fcntl` locks on Linux; both sides publish whole files by atomic rename, so neither sees a partial file."
 disposition = "WP-09"
 closing_plan = 2
 closing_todo = 11
@@ -838,13 +848,19 @@ id = "MIT-ccache-5"
 area = "ccache"
 upstream_ref = "krb5-1.22.2-final"
 capability = "MEMORY cache"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "In-memory CCache value is not a named MEMORY backend."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["ccache::memory::MemoryStore"]
+test_names = [
+  "tests/ccache_store.rs::memory_stores_are_isolated",
+  "tests/ccache_store.rs::memory_concurrent_stores_keep_every_credential",
+  "tests/ccache_store.rs::memory_remove_config_destroy_and_move",
+  "tests/ccache_store.rs::memory_collection_switches_and_enumerates",
+  "src/ccache/payload_tests.rs::memory_store_removals_erase_payloads",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Each `MemoryStore` is its own table (clones share it), where MIT keeps one table per process (`cc_memory.c:131`); a MEMORY collection keeps a primary that `switch` sets, where MIT has no `switch_to` for MEMORY and `krb5_cc_switch` does nothing (`ccfns.c:295-300`)."
 disposition = "WP-09"
 closing_plan = 2
 closing_todo = 11
@@ -890,13 +906,26 @@ id = "MIT-ccache-8"
 area = "ccache"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Credential-cache collections, primary selection, switching and cursor APIs"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Primary name resolution only, no collection/cursor/select API."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = [
+  "ccache::store::CredentialStore",
+  "ccache::store::CacheHandle",
+  "ccache::store::CacheCursor",
+  "ccache::store::move_cache",
+  "ccache::file_store::resolve",
+  "ccache::select::select_cache",
+]
+test_names = [
+  "tests/ccache_store.rs::memory_collection_switches_and_enumerates",
+  "tests/ccache_store.rs::dir_collection_switches_and_enumerates",
+  "tests/ccache_store.rs::memory_remove_config_destroy_and_move",
+  "tests/ccache_store.rs::selection_runs_over_a_collection",
+  "tests/ccache_store.rs::mit_written_caches_round_trip",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "`move_cache` of a cache onto its own name changes nothing, where MIT `krb5_cc_move` destroys it (`ccbase.c:426-456`); `switch` checks collection membership."
 disposition = "WP-09"
 closing_plan = 2
 closing_todo = 11
@@ -929,13 +958,21 @@ id = "MIT-ccache-10"
 area = "ccache"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Ccache file format versions 1–4; configurable `ccache_type`"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Versions parse/serialize, configured ccache_type not applied to new caches."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = [
+  "ccache::store::CacheVersion",
+  "ccache::store::CacheVersion::from_libdefaults",
+  "ccache::CCache::set_version",
+]
+test_names = [
+  "tests/ccache_store.rs::configured_version_applies_to_new_caches",
+  "tests/ccache_store.rs::mit_written_caches_round_trip",
+  "tests/ccache_store.rs::client_write_back_uses_the_configured_version",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "A `ccache_type` outside 1 to 4 is `InvalidCacheType` when a cache is written, where MIT writes the number unchecked (`init_ctx.c:292-293`, `cc_file.c:442-466`) and no reader accepts the file."
 disposition = "WP-09"
 closing_plan = 2
 closing_todo = 11
@@ -985,13 +1022,17 @@ id = "MIT-keytab-3"
 area = "keytab"
 upstream_ref = "krb5-1.22.2-final"
 capability = "MEMORY keytab"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Owned in-memory Keytab/entry mutation exists, no named MEMORY registry."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "keytab::store::MemoryKeytab",
+  "keytab::store::MemoryKeytab::resolve",
+  "keytab::store::KeyStore",
+]
+test_names = ["tests/keytab_store.rs::memory_keytabs_are_named_and_isolated"]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Each `MemoryKeytab` is its own table of named keytabs (clones share it), where MIT keeps one table per process (`kt_memory.c`)."
 disposition = "WP-09"
 closing_plan = 2
 closing_todo = 11
@@ -1003,10 +1044,10 @@ area = "keytab"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Client keytab, automatic initial creds and refresh"
 implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Explicit client-keytab and renewal/relogin exist, no full GSS implicit acquisition/refresh integration."
-rust_symbols = []
-test_names = []
+evidence_status = "unit"
+missing = "P2-11 delivered the `KeyStore` lookups the client-keytab refresh uses (`keytab::resolve`, `KeyStore::find`); the client-keytab acquisition and refresh is P2-4's, and the GSS implicit acquisition integration that of the closing todo P2-18."
+rust_symbols = ["keytab::store::KeyStore", "keytab::store::resolve"]
+test_names = ["tests/keytab_store.rs::file_keytabs_through_the_store"]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-12"
@@ -1100,11 +1141,18 @@ id = "MIT-config-5"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`ccache_type`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "New caches remain v4; version choice does not strengthen credential protection; diagnostic (consumer: plan 2 WP-09)."
-rust_symbols = []
-test_names = ["tests/config/relations_c1.rs::ccache_type"]
+missing = ""
+rust_symbols = [
+  "ccache::store::CacheVersion::from_libdefaults",
+  "client::Tokio::to_ccache",
+]
+test_names = [
+  "tests/config/relations_c1.rs::ccache_type",
+  "tests/ccache_store.rs::configured_version_applies_to_new_caches",
+  "tests/ccache_store.rs::client_write_back_uses_the_configured_version",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-09"
@@ -2788,15 +2836,17 @@ id = "MIT-plugin-2"
 area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`ccselect` credential-cache selection"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "P2-11: selection over a credential-cache collection (`krb5_cc_select` with the fallback host realm of a referral-realm server) and the default `$HOME/.k5identity`. P2-3 delivered `extensions::CacheSelector`, `Registry::select_cache` and the `k5identity`, `realm` and `hostname` built-ins."
+missing = ""
 rust_symbols = [
   "extensions::CacheSelector",
   "extensions::Registry::select_cache",
   "extensions::K5Identity",
   "extensions::RealmSelector",
   "extensions::HostnameSelector",
+  "ccache::select::select_cache",
+  "ccache::select::default_k5identity",
 ]
 test_names = [
   "tests/extensions.rs::k5identity_builtin_through_the_registry",
@@ -2806,9 +2856,11 @@ test_names = [
   "tests/extensions.rs::malformed_selector_output_is_refused",
   "src/extensions/k5identity_tests.rs::first_matching_line_wins",
   "src/extensions/k5identity_tests.rs::fnmatch_follows_posix_flags_zero",
+  "tests/ccache_store.rs::selection_runs_over_a_collection",
+  "src/secure_env/tests.rs::home_is_ignored_when_restricted",
 ]
 feature_flags = []
-security_divergence = "A `.k5identity` line longer than 255 bytes never matches, where MIT's `fgets` splits it (`ccselect_k5identity.c:162`), the file is bounded at 64 KiB, and a principal with an empty realm or a control character never matches. No environment variable is read: the caller names the file."
+security_divergence = "A `.k5identity` line longer than 255 bytes never matches, where MIT's `fgets` splits it (`ccselect_k5identity.c:162`), the file is bounded at 64 KiB, and a principal with an empty realm or a control character never matches. `K5Identity` reads no environment variable: the caller names the file; `ccache::default_k5identity` reads `HOME` (not in a restricted process) and has no passwd fallback, where MIT uses the passwd home of the effective user (`ccselect_k5identity.c:128-150`). A referral-realm server takes the first host-realm fallback answer, else the default realm (`hostrealm.c:401-446`); its host is lower-cased and loses a trailing dot, without MIT's hostname canonicalization."
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 11
