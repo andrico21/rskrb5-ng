@@ -151,6 +151,9 @@ jobs:
     # kernel. An `ubuntu-latest` VM has the key-management facility, so the
     # tests run in required mode: ENOSYS or EPERM from keyctl fails them here
     # instead of skipping (the tests print `keyring: SKIP` only outside it).
+    # Docker's default seccomp profile blocks the key calls, so the interop
+    # containers cannot carry this scenario; the second step runs MIT's own
+    # kinit, klist, kvno and kdestroy against `KEYRING:` natively on this VM.
     runs-on: ubuntu-latest
     env:
       RSKRB5_KEYRING_REQUIRED: "1"
@@ -162,18 +165,68 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          cargo test --locked --no-default-features --features ccache-keyring --lib --test ccache_keyring keyring -- --nocapture 2>&1 | tee keyring-test.log
-          if grep -q 'keyring: SKIP' keyring-test.log; then
+          cargo test --locked --no-default-features --features ccache-keyring --lib keyring:: -- --nocapture 2>&1 | tee keyring-unit.log
+          cargo test --locked --no-default-features --features ccache-keyring --test ccache_keyring -- --nocapture --skip mit:: 2>&1 | tee keyring-kernel.log
+          if grep -q 'keyring: SKIP' keyring-unit.log keyring-kernel.log; then
             echo "::error::a keyring test skipped in required mode"
             exit 1
           fi
-          unit=$(grep -c '^test ccache::keyring::.* ok$' keyring-test.log || true)
-          real=$(grep -c '^test \(kernel\|namespaces\)::.* ok$' keyring-test.log || true)
+          unit=$(grep -c '^test ccache::keyring::.* ok$' keyring-unit.log || true)
+          real=$(grep -c '^test \(kernel\|namespaces\)::.* ok$' keyring-kernel.log || true)
           echo "unit tests ok: $unit, kernel tests ok: $real"
           if [ "$unit" -lt 43 ] || [ "$real" -lt 8 ]; then
             echo "::error::expected at least 43 unit and 8 kernel keyring tests, got $unit and $real"
             exit 1
           fi
+      - name: MIT kinit, klist, kvno and kdestroy against the kernel keyring
+        shell: bash
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          RSKRB5_KEYRING_MIT: "1"
+          RSKRB5_KEYRING_MIT_SOURCE: "KEYRING:user:rskrb5-mit"
+          RSKRB5_KEYRING_MIT_COPY: "KEYRING:user:rskrb5-copy"
+          RSKRB5_KEYRING_MIT_PRINCIPAL: "alice@KEYRING.TEST"
+          RSKRB5_KEYRING_MIT_WRITE: "KEYRING:user:rskrb5-ours"
+          RSKRB5_KEYRING_MIT_DESTROYED: "KEYRING:user:rskrb5-copy"
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq krb5-user krb5-kdc krb5-admin-server
+          sudo systemctl stop krb5-kdc krb5-admin-server || true
+          # A throwaway realm on loopback, owned by this user.
+          export KRB5_CONFIG="$RUNNER_TEMP/krb5.conf" KRB5_KDC_PROFILE="$RUNNER_TEMP/kdc.conf"
+          mkdir -p "$RUNNER_TEMP/kdb"
+          printf '[libdefaults]\n default_realm = KEYRING.TEST\n dns_lookup_kdc = false\n dns_lookup_realm = false\n rdns = false\n[realms]\n KEYRING.TEST = { kdc = 127.0.0.1:18851 }\n' > "$KRB5_CONFIG"
+          printf '[kdcdefaults]\n kdc_ports = 18851\n kdc_tcp_ports = 18851\n[realms]\n KEYRING.TEST = {\n  database_name = %s/kdb/principal\n  key_stash_file = %s/kdb/stash\n  acl_file = %s/kdb/kadm5.acl\n  supported_enctypes = aes256-cts-hmac-sha1-96:normal\n }\n' "$RUNNER_TEMP" "$RUNNER_TEMP" "$RUNNER_TEMP" > "$KRB5_KDC_PROFILE"
+          kdb5_util create -s -r KEYRING.TEST -P master
+          kadmin.local -r KEYRING.TEST -q "addprinc -pw secret alice"
+          kadmin.local -r KEYRING.TEST -q "addprinc -randkey host/service.test"
+          krb5kdc -n -P "$RUNNER_TEMP/kdc.pid" &
+          kdc=$!
+          trap 'kill "$kdc" || true' EXIT
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if echo secret | kinit -c "$RSKRB5_KEYRING_MIT_SOURCE" alice; then break; fi
+            if [ "$attempt" = 10 ]; then echo "::error::kinit never reached the throwaway KDC"; exit 1; fi
+            sleep 1
+          done
+          klist -c "$RSKRB5_KEYRING_MIT_SOURCE" | tee mit-source.txt
+          # This crate reads what kinit wrote and copies it into a cache of its own.
+          cargo test --locked --no-default-features --features ccache-keyring --test ccache_keyring mit_written_cache_is_read_and_copied -- --nocapture
+          klist -c "$RSKRB5_KEYRING_MIT_COPY" | tee mit-copy.txt
+          diff <(tail -n +2 mit-source.txt) <(tail -n +2 mit-copy.txt)
+          # MIT uses the copied ticket-granting ticket for a service ticket.
+          KRB5CCNAME="$RSKRB5_KEYRING_MIT_COPY" kvno host/service.test@KEYRING.TEST
+          klist -c "$RSKRB5_KEYRING_MIT_COPY" | grep -q 'host/service.test@KEYRING.TEST'
+          # MIT lists the cache this crate writes, and destroys the copy.
+          cargo test --locked --no-default-features --features ccache-keyring --test ccache_keyring cache_written_here_is_listed_by_klist -- --nocapture
+          klist -c "$RSKRB5_KEYRING_MIT_WRITE" | tee mit-ours.txt
+          grep -q 'Default principal: alice@EXAMPLE.COM' mit-ours.txt
+          grep -q 'krbtgt/EXAMPLE.COM@EXAMPLE.COM' mit-ours.txt
+          grep -q 'host/service.example.com@EXAMPLE.COM' mit-ours.txt
+          kdestroy -c "$RSKRB5_KEYRING_MIT_COPY"
+          cargo test --locked --no-default-features --features ccache-keyring --test ccache_keyring mit_destroyed_cache_is_not_found -- --nocapture
+          kdestroy -c "$RSKRB5_KEYRING_MIT_WRITE"
+          kdestroy -c "$RSKRB5_KEYRING_MIT_SOURCE"
 
   clippy-windows:
     name: clippy-windows
