@@ -27,11 +27,11 @@ use tokio::{
 use zeroize::Zeroizing;
 
 use super::{
-    client::lost,
-    socket::{self, Trust},
+    client::{READ, WRITE, lost},
+    socket::{self, CONNECT, Trust},
     wire::{self, MAX_REPLY_SIZE, Reply, calls::Call, shape::Shape},
 };
-use crate::error::{Kcm as Error, KcmRefusal, KcmStage};
+use crate::error::{Kcm as Error, KcmRefusal};
 
 /// A KCM connection over one Tokio stream.
 #[derive(Debug)]
@@ -95,6 +95,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
     ///
     /// The errors of [`KcmClient::call`](super::client::Client::call); a call
     /// that outlives the time limit fails with a timed-out [`Error::Io`].
+    ///
+    /// # Cancel safety
+    ///
+    /// Dropping the future leaves the client refusing further calls
+    /// ([`Error::Broken`]); no later request is paired with a stale reply.
     #[inline]
     pub async fn call<R>(&mut self, call: &Call<R>) -> Result<R::Output, Error>
     where
@@ -113,7 +118,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
                 .await
                 .unwrap_or_else(|_elapsed| {
                     Err(Error::Io {
-                        stage: KcmStage::Read,
+                        stage: READ,
                         source: io::ErrorKind::TimedOut.into(),
                     })
                 }),
@@ -130,6 +135,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
 /// # Errors
 ///
 /// [`Error::Io`] and [`Error::ReplyTooBig`].
+///
+/// # Cancel safety
+///
+/// Not cancel safe by itself: a dropped future leaves a partly written request
+/// or a partly read reply on the stream, which is why [`Client::call`] marks
+/// the client broken before it starts.
 async fn exchange<S>(
     stream: &mut S,
     frame: &[u8],
@@ -139,11 +150,8 @@ where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let io_error = |stage| move |source| Error::Io { stage, source };
-    stream
-        .write_all(frame)
-        .await
-        .map_err(io_error(KcmStage::Write))?;
-    stream.flush().await.map_err(io_error(KcmStage::Write))?;
+    stream.write_all(frame).await.map_err(io_error(WRITE))?;
+    stream.flush().await.map_err(io_error(WRITE))?;
     let mut header = [0_u8; 4];
     fill(stream, &mut header).await?;
     let length = wire::reply_length(header, limit)?;
@@ -162,6 +170,10 @@ impl Client<UnixStream> {
     /// # Errors
     ///
     /// [`Error::NoServer`], [`Error::Untrusted`] and [`Error::Io`].
+    ///
+    /// # Cancel safety
+    ///
+    /// Cancel safe: a dropped future leaves no connection behind.
     #[inline]
     pub async fn connect(path: &Path, trust: &Trust) -> Result<Self, Error> {
         socket::validate(path, trust)?;
@@ -169,7 +181,7 @@ impl Client<UnixStream> {
             .await
             .map_err(socket::connect_error)?;
         let peer = stream.peer_cred().map_err(|source| Error::Io {
-            stage: KcmStage::Connect,
+            stage: CONNECT,
             source,
         })?;
         socket::judge(
@@ -186,6 +198,11 @@ impl Client<UnixStream> {
 /// # Errors
 ///
 /// [`Error::Io`] for a failed or short read.
+///
+/// # Cancel safety
+///
+/// Not cancel safe by itself (a dropped future leaves a partly read reply);
+/// see [`exchange`].
 async fn fill<S>(stream: &mut S, buffer: &mut [u8]) -> Result<(), Error>
 where
     S: AsyncRead + Unpin,
@@ -195,7 +212,7 @@ where
         .await
         .map(|_read| ())
         .map_err(|source| Error::Io {
-            stage: KcmStage::Read,
+            stage: READ,
             source,
         })
 }

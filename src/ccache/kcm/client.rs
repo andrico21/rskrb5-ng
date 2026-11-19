@@ -20,6 +20,11 @@ use zeroize::Zeroizing;
 use super::wire::{self, MAX_REPLY_SIZE, Opcode, Reply, calls::Call, shape::Shape};
 use crate::error::{Kcm as Error, KcmStage};
 
+/// The stage of a failed write.
+pub(super) const WRITE: KcmStage = KcmStage::Write;
+/// The stage of a failed read.
+pub(super) const READ: KcmStage = KcmStage::Read;
+
 /// A KCM connection over one stream.
 #[derive(Debug)]
 pub struct Client<S> {
@@ -95,7 +100,7 @@ impl<S: Read + Write> Client<S> {
             .write_all(&frame)
             .and_then(|()| self.stream.flush())
             .map_err(|source| Error::Io {
-                stage: KcmStage::Write,
+                stage: WRITE,
                 source,
             })?;
         let (code, body) = self.read_frame().map_err(|error| lost(opcode, error))?;
@@ -126,7 +131,7 @@ impl<S: Read + Write> Client<S> {
     /// [`Error::Io`] for a failed or short read.
     fn read_exact(&mut self, buffer: &mut [u8]) -> Result<(), Error> {
         self.stream.read_exact(buffer).map_err(|source| Error::Io {
-            stage: KcmStage::Read,
+            stage: READ,
             source,
         })
     }

@@ -27,6 +27,9 @@ use crate::{
     file_name,
 };
 
+/// The stage of a failed connect.
+pub(super) const CONNECT: KcmStage = KcmStage::Connect;
+
 /// Which users may own the daemon socket or run the daemon: root, this
 /// process's effective user, and the users named here.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -70,11 +73,15 @@ impl Trust {
 pub(super) fn validate(path: &Path, trust: &Trust) -> Result<(), Error> {
     let metadata = fs::symlink_metadata(path).map_err(connect_error)?;
     let kind = metadata.file_type();
-    if kind.is_symlink() {
-        return Err(Error::Untrusted(KcmRefusal::Symlink));
-    }
-    if !kind.is_socket() {
-        return Err(Error::Untrusted(KcmRefusal::NotASocket));
+    let wrong_kind = if kind.is_symlink() {
+        Some(KcmRefusal::Symlink)
+    } else if !kind.is_socket() {
+        Some(KcmRefusal::NotASocket)
+    } else {
+        None
+    };
+    if let Some(refusal) = wrong_kind {
+        return Err(Error::Untrusted(refusal));
     }
     judge(
         trust,
@@ -93,12 +100,14 @@ pub(super) fn validate(path: &Path, trust: &Trust) -> Result<(), Error> {
 /// [`Error::Untrusted`].
 pub(super) fn judge(trust: &Trust, uid: u32, untrusted: KcmRefusal) -> Result<(), Error> {
     if trust.allows(uid) {
-        Ok(())
-    } else if file_name::process_identity().is_err() {
-        Err(Error::Untrusted(KcmRefusal::IdentityUnavailable))
-    } else {
-        Err(Error::Untrusted(untrusted))
+        return Ok(());
     }
+    let refusal = if file_name::process_identity().is_err() {
+        KcmRefusal::IdentityUnavailable
+    } else {
+        untrusted
+    };
+    Err(Error::Untrusted(refusal))
 }
 
 /// The error of a failed connect: a missing socket is no server (MIT maps
@@ -108,7 +117,7 @@ pub(super) fn connect_error(source: io::Error) -> Error {
         Error::NoServer
     } else {
         Error::Io {
-            stage: KcmStage::Connect,
+            stage: CONNECT,
             source,
         }
     }

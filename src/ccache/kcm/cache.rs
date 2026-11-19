@@ -80,7 +80,7 @@ impl KcmCache {
             Err(error) if wire::is_unsupported(&error) => {
                 let uuids = self.call(&calls::get_cred_uuid_list(&self.residual))?;
                 if uuids.len() > MAX_ENTRIES {
-                    return Err(Error::Kcm(Kcm::TooManyEntries { limit: MAX_ENTRIES }));
+                    return Err(Kcm::TooManyEntries { limit: MAX_ENTRIES }.into());
                 }
                 uuids
                     .into_iter()

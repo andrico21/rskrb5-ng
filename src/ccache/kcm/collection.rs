@@ -92,7 +92,7 @@ impl CacheCollection for KcmCollection {
             Err(other) => return Err(Error::Kcm(other)),
         };
         if uuids.len() > MAX_CACHES {
-            return Err(Error::Kcm(Kcm::TooManyEntries { limit: MAX_CACHES }));
+            return Err(Kcm::TooManyEntries { limit: MAX_CACHES }.into());
         }
         let primary = self.primary_name()?;
         let mut caches = Vec::new();
