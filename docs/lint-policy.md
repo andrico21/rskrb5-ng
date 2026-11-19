@@ -303,3 +303,10 @@ full transition record (the authorized upstream-line rewrites (a) to (p), the
 removed gates and the divergence from the upstream PR branches) is
 `docs/lint-baseline.md` at commit `856da18`:
 `git show 856da18:docs/lint-baseline.md`.
+
+Plan 2 todo 4 split `src/config.rs` by responsibility without changing the
+lint profile (register row FU-CFG-P01): the file keeps the module
+declarations, the type definitions and one inherent `impl` per type, so
+`clippy::multiple_inherent_impl` and the facade rule stay as they are; every
+method body there delegates to a private helper in a submodule under
+`src/config/`.
