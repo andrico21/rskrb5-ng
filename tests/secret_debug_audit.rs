@@ -222,6 +222,9 @@ mod tests {
     }
 
     fn active(identity: &str) -> bool {
+        if identity.starts_with("src/ccache/kcm") {
+            return cfg!(unix);
+        }
         if identity.starts_with("src/pac") {
             return cfg!(feature = "messages");
         }
@@ -1230,6 +1233,9 @@ mod tests {
         "src/ccache/stores.rs::CacheCursor",
         "src/extensions.rs::Extension",
         "src/extensions.rs::Registry",
+        "src/ccache/kcm/wire.rs::Request",
+        "src/ccache/kcm/wire.rs::Reply",
+        "src/ccache/kcm/wire/calls.rs::Call",
         "src/ccache.rs::EncryptionKey",
         "src/ccache.rs::Credential",
         "src/ccache.rs::AuthorizationDataEntry",
@@ -1683,6 +1689,31 @@ mod tests {
             .add(entry)
             .map_err(io::Error::other)?;
         redacted(&memory, &[&key]);
+        #[cfg(unix)]
+        redacted_kcm(&cache, &key)?;
+        Ok(())
+    }
+
+    /// KCM requests and replies redact the keys and tickets they carry.
+    #[cfg(unix)]
+    fn redacted_kcm(cache: &ccache::CCache, key: &[u8]) -> Result<(), io::Error> {
+        use rskrb5_ng::ccache::kcm::wire::{Opcode, Reply, Residual, calls};
+        use zeroize::Zeroizing;
+        let credential = cache
+            .credentials()
+            .first()
+            .ok_or_else(|| io::Error::other("credential"))?;
+        let name = Residual::new("0:1").ok_or_else(|| io::Error::other("name"))?;
+        let call = calls::store(&name, credential).map_err(io::Error::other)?;
+        redacted(&call, &[key]);
+        redacted(call.request(), &[key]);
+        let reply = Reply::from_frame(
+            Opcode::GetCredByUuid,
+            0,
+            Zeroizing::new([&[0_u8; 4], key].concat()),
+        )
+        .map_err(io::Error::other)?;
+        redacted(&reply, &[key]);
         Ok(())
     }
 }

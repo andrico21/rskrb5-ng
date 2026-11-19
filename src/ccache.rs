@@ -59,6 +59,12 @@ pub mod file_store;
 
 pub mod in_memory;
 
+#[cfg(unix)]
+pub mod kcm;
+#[cfg(not(unix))]
+#[path = "ccache/kcm/unsupported.rs"]
+pub mod kcm;
+
 pub mod selection;
 
 pub mod stores;
