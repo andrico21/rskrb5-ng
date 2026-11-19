@@ -717,8 +717,9 @@ fn dir_collection_path(name: &str) -> Option<&str> {
 /// # Errors
 ///
 /// Returns [`Error::InvalidCacheName`] when the path is empty, has no parent
-/// directory, or its file name is not valid Unicode or does not start with
-/// `tkt`.
+/// directory, or its file name is not valid Unicode, does not start with
+/// `tkt` or contains a newline (the one-line `primary` pointer could not name
+/// it).
 fn validate_dir_subsidiary_path(path: &str) -> Result<PathBuf, Error> {
     if path.is_empty() {
         return Err(Error::InvalidCacheName);
@@ -730,7 +731,7 @@ fn validate_dir_subsidiary_path(path: &str) -> Result<PathBuf, Error> {
     let Some(filename) = expanded.file_name().and_then(|filename| filename.to_str()) else {
         return Err(Error::InvalidCacheName);
     };
-    if !has_parent || !filename.starts_with(DIR_DEFAULT_PRIMARY_CACHE) {
+    if !has_parent || !filename.starts_with(DIR_DEFAULT_PRIMARY_CACHE) || filename.contains('\n') {
         return Err(Error::InvalidCacheName);
     }
     Ok(expanded)
