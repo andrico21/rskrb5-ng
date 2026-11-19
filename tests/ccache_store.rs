@@ -12,15 +12,18 @@
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use core::{error, iter};
-    #[cfg(unix)]
-    use std::os::unix::fs::{PermissionsExt as _, symlink};
     use std::{
-        env, fs, io,
+        env, fs,
         path::{Path, PathBuf},
         process,
         sync::Barrier,
         thread,
         time::{SystemTime, UNIX_EPOCH},
+    };
+    #[cfg(unix)]
+    use std::{
+        io,
+        os::unix::fs::{PermissionsExt as _, symlink},
     };
 
     use rskrb5_ng::{

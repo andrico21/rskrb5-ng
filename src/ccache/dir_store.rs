@@ -262,12 +262,15 @@ fn verify_dir(directory: &Path) -> Result<(), Error> {
     let metadata = match fs::metadata(directory) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            let mut builder = DirBuilder::new();
             #[cfg(unix)]
-            {
+            let builder = {
                 use std::os::unix::fs::DirBuilderExt as _;
-                let _: &mut DirBuilder = builder.mode(0o700);
-            }
+                let mut owner_only = DirBuilder::new();
+                let _: &mut DirBuilder = owner_only.mode(0o700);
+                owner_only
+            };
+            #[cfg(not(unix))]
+            let builder = DirBuilder::new();
             builder.create(directory)?;
             return Ok(());
         }

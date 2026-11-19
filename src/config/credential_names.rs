@@ -6,7 +6,9 @@ use super::{
     LibDefaults,
     parameters::{DefaultName, ExpansionContext, Failure},
 };
-use crate::{file_name, secure_env};
+use crate::file_name;
+#[cfg(not(windows))]
+use crate::secure_env;
 
 #[cfg(test)]
 #[path = "credential_names_tests.rs"]

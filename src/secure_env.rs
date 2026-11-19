@@ -33,6 +33,17 @@ pub(crate) enum Decision {
     Unrestricted,
 }
 
+impl Decision {
+    /// The decision for a process that does, or does not, run elevated.
+    const fn from_elevated(elevated: bool) -> Self {
+        if elevated {
+            Self::Restricted
+        } else {
+            Self::Unrestricted
+        }
+    }
+}
+
 /// A value an ambient read returns when the variable is unset.
 pub(crate) trait Unset {
     /// The result of reading an unset variable.
@@ -89,17 +100,13 @@ fn os_decision() -> Decision {
 #[cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))]
 fn os_decision() -> Decision {
     use rustix::process::{getegid, geteuid, getgid, getuid};
-    if getuid() == geteuid() && getgid() == getegid() {
-        Decision::Unrestricted
-    } else {
-        Decision::Restricted
-    }
+    Decision::from_elevated(getuid() != geteuid() || getgid() != getegid())
 }
 
 /// Platforms without set-id processes are never restricted.
 #[cfg(not(unix))]
 const fn os_decision() -> Decision {
-    Decision::Unrestricted
+    Decision::from_elevated(false)
 }
 
 /// The auxiliary vector entry type of `AT_NULL`, which ends the vector.
@@ -131,8 +138,7 @@ fn parse_auxv(auxv: &[u8]) -> Decision {
         };
         match (word(*kind), word(*value)) {
             (AT_NULL, _) => break,
-            (AT_SECURE, 0) => return Decision::Unrestricted,
-            (AT_SECURE, _) => return Decision::Restricted,
+            (AT_SECURE, secure) => return Decision::from_elevated(secure != 0),
             _ => {}
         }
     }
