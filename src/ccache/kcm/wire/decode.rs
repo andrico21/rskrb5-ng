@@ -6,7 +6,7 @@
 
 use core::str;
 
-use super::{MAX_NAME_LENGTH, Reply, Residual, UUID_LENGTH, Uuid};
+use super::{Reply, Residual, UUID_LENGTH, Uuid};
 use crate::{
     ccache::{Credential, Endian, Principal},
     error::Kcm as Error,
@@ -54,11 +54,8 @@ pub(super) fn name(reply: &Reply) -> Result<Residual, Error> {
         .payload()
         .strip_suffix(&[0])
         .ok_or_else(|| malformed(reply, "name is not zero-terminated"))?;
-    if raw.contains(&0) || raw.len() > MAX_NAME_LENGTH {
-        return Err(malformed(reply, "name has an embedded NUL or is too long"));
-    }
     let text = str::from_utf8(raw).map_err(|_utf8| malformed(reply, "name is not UTF-8"))?;
-    Residual::new(text).ok_or_else(|| malformed(reply, "name is not valid"))
+    Residual::new(text).ok_or_else(|| malformed(reply, "name holds a NUL byte or is too long"))
 }
 
 /// A UUID list, which is not delimited and so fills the payload
