@@ -223,6 +223,17 @@ pub enum Ccache {
     /// Cache selection failed in a selector or host-realm mapper.
     #[error("credential cache selection failed: {0}")]
     Selection(#[source] Extensions),
+    /// The KCM daemon client failed.
+    #[error("KCM credential cache failed: {0}")]
+    Kcm(#[from] Kcm),
+    /// The cache type needs an operating system service this platform lacks.
+    #[error("credential cache type {cache_type} is not supported on {platform}")]
+    UnsupportedPlatform {
+        /// The cache type prefix.
+        cache_type: &'static str,
+        /// The platform.
+        platform: &'static str,
+    },
 }
 #[cfg(feature = "messages")]
 /// Kerberos client exchange error.
@@ -1212,6 +1223,123 @@ pub enum Kadmin {
         actual: usize,
     },
 }
+/// Which half of a KCM exchange failed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum KcmStage {
+    /// Connecting to the daemon socket.
+    Connect,
+    /// Sending the request frame.
+    Write,
+    /// Receiving the reply frame.
+    Read,
+}
+
+/// Why a KCM daemon socket or peer was refused.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum KcmRefusal {
+    /// The path is a symbolic link, not the socket itself.
+    Symlink,
+    /// The path is not a Unix domain socket.
+    NotASocket,
+    /// The socket file belongs to a user that is neither root, this process's
+    /// effective user, nor an explicitly trusted user.
+    UntrustedOwner {
+        /// The owning user id.
+        uid: u32,
+    },
+    /// The connected peer runs as a user that is neither root, this
+    /// process's effective user, nor an explicitly trusted user.
+    UntrustedPeer {
+        /// The peer's user id.
+        uid: u32,
+    },
+    /// This process's effective user id cannot be read on this platform, so
+    /// only root-owned sockets and explicitly trusted users are accepted.
+    IdentityUnavailable,
+}
+
+/// KCM credential-cache daemon client error (MIT `KRB5_KCM_*` and the daemon's
+/// status codes).
+///
+/// Reply bytes are never copied into an error: only lengths, opcodes and
+/// status codes.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum Kcm {
+    /// No daemon is configured (`kcm_socket = -`) or none listens on the
+    /// socket (MIT `KRB5_KCM_NO_SERVER`).
+    #[error("no KCM server found")]
+    NoServer,
+    /// The daemon socket or peer failed the trust check.
+    #[error("KCM socket refused: {0:?}")]
+    Untrusted(KcmRefusal),
+    /// A socket operation failed.
+    #[error("KCM {stage:?} failed: {source}")]
+    Io {
+        /// The failed half of the exchange.
+        stage: KcmStage,
+        /// The operating-system error.
+        #[source]
+        source: io::Error,
+    },
+    /// The daemon announced a reply larger than the cap (MIT
+    /// `KRB5_KCM_REPLY_TOO_BIG`); nothing was allocated for it.
+    #[error("KCM reply of {length} bytes exceeds the limit of {limit} bytes")]
+    ReplyTooBig {
+        /// The announced length.
+        length: u32,
+        /// The enforced limit.
+        limit: usize,
+    },
+    /// The request does not fit the four-byte frame length or the request limit.
+    #[error("KCM request of {length} bytes is too large")]
+    RequestTooBig {
+        /// The request length.
+        length: usize,
+    },
+    /// A reply that cannot be parsed (MIT `KRB5_KCM_MALFORMED_REPLY`).
+    #[error("malformed KCM reply to opcode {opcode}: {what}")]
+    MalformedReply {
+        /// The request opcode.
+        opcode: u16,
+        /// What was wrong.
+        what: &'static str,
+    },
+    /// The daemon answered with a nonzero status code.
+    #[error("KCM daemon refused opcode {opcode} with status {code}")]
+    Daemon {
+        /// The request opcode.
+        opcode: u16,
+        /// The status code, an MIT `krb5_error_code`.
+        code: i32,
+    },
+    /// A mutating request was sent but its reply never arrived: the daemon
+    /// may or may not have applied it.
+    #[error("outcome unknown: KCM opcode {opcode} was sent and no reply arrived")]
+    OutcomeUnknown {
+        /// The request opcode.
+        opcode: u16,
+        /// Why the reply is missing.
+        #[source]
+        cause: Box<Self>,
+    },
+    /// The connection failed earlier and cannot carry another request.
+    #[error("KCM connection is unusable after an earlier failure")]
+    Broken,
+    /// A request holds a value the wire encoding cannot represent (a length
+    /// that does not fit its field).
+    #[error("KCM request cannot be encoded: a length does not fit its field")]
+    Unencodable,
+    /// More entries than this client enumerates.
+    #[error("KCM list holds more than {limit} entries")]
+    TooManyEntries {
+        /// The limit.
+        limit: usize,
+    },
+}
+
 #[cfg(feature = "messages")]
 /// KDC reply helper error.
 #[derive(Debug, thiserror::Error)]
