@@ -62,7 +62,9 @@ pub fn select_cache(
         }
     }
     let target = fallback_server(registry, config, server)?;
-    let choice = registry.select_cache(config, target.as_ref().unwrap_or(server), &candidates)?;
+    let choice = registry
+        .select_cache(config, target.as_ref().unwrap_or(server), &candidates)
+        .map_err(Error::Selection)?;
     Ok(match choice {
         Selection::Cache(index) if index < handles.len() => {
             Selected::Cache(handles.swap_remove(index))
@@ -91,7 +93,8 @@ fn fallback_server(
     }
     let host = named.trim_end_matches('.').to_ascii_lowercase();
     let mapped = registry
-        .realms(config, &RealmQuery::Fallback(&host))?
+        .realms(config, &RealmQuery::Fallback(&host))
+        .map_err(Error::Selection)?
         .and_then(|realms| realms.into_iter().next());
     let fallback = mapped.or_else(|| {
         Some(config.libdefaults.default_realm.clone()).filter(|default| !default.is_empty())

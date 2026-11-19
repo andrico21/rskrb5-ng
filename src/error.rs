@@ -222,7 +222,7 @@ pub enum Ccache {
     InvalidCacheType(i32),
     /// Cache selection failed in a selector or host-realm mapper.
     #[error("credential cache selection failed: {0}")]
-    Selection(#[from] Extensions),
+    Selection(#[source] Extensions),
 }
 #[cfg(feature = "messages")]
 /// Kerberos client exchange error.
