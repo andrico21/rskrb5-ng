@@ -149,3 +149,13 @@ impl Backend for Kernel {
         keyctl_set_timeout(serial(key)?, seconds).map_err(errno_of)
     }
 }
+
+/// The `errno` mapping and the checks before the key calls.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests;
