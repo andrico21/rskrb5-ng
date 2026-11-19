@@ -10,7 +10,7 @@
 //! [`file_store::resolve`](super::file_store::resolve) uses the default socket
 //! [`wire::DEFAULT_SOCKET_PATH`]. [`wire`] holds the protocol without any I/O,
 //! [`client`] a blocking client over any stream and, with the `tokio`
-//! feature, `async_client` one for Tokio.
+//! feature, [`async_client`] one for Tokio.
 //!
 //! The macOS Mach transport is not part of this module. On targets without
 //! Unix sockets, [`Store`] reports
@@ -52,6 +52,8 @@ use super::{
 };
 use crate::{config::LibDefaults, error::Kcm};
 
+#[cfg(feature = "tokio")]
+pub mod async_client;
 mod cache;
 pub mod client;
 mod collection;

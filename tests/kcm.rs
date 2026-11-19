@@ -63,3 +63,14 @@ mod store;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 #[path = "kcm/trust.rs"]
 mod trust;
+
+#[cfg(test)]
+#[cfg(feature = "tokio")]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "kcm/tokio_client.rs"]
+mod tokio_client;
