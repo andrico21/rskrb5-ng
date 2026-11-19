@@ -280,6 +280,76 @@ jobs:
       - name: Check (--all-features, i686)
         run: cargo check --all-features --target i686-unknown-linux-gnu
 
+  # The real secure-environment decision (`secure_env`) of a set-id process.
+  # A copy of the library test binary gets a file capability on Linux (the
+  # kernel then sets AT_SECURE, as for a set-uid program) or set-uid root on
+  # macOS (the real and effective user ids differ); the test
+  # `os_decision_of_this_process` must then decide `Restricted`
+  # (`RSKRB5_EXPECT_DECISION=restricted`). The plain copy is the control: it
+  # decides `Unrestricted`, so the restricted expectation fails there. This
+  # ran only in a deleted probe workflow before (probe run 44481485134, S-01);
+  # `workflow_gate.py` requires this job and refuses to let it be skipped.
+  setid:
+    name: setid
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The same Homebrew Rust removal as the `test` job (see its comment).
+      - name: Remove the image's Homebrew Rust (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          for formula in rustup rust; do
+            if brew list --formula "$formula" >/dev/null 2>&1; then
+              brew uninstall --ignore-dependencies --formula "$formula"
+            fi
+          done
+          for bin in cargo cargo-clippy cargo-fmt clippy-driver rustc rustdoc rustfmt rustup rustup-init; do
+            rm -f "/opt/homebrew/bin/$bin"
+          done
+          rm -rf "$HOME/.rustup"
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - name: Build the library test binary
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --all-features --locked --no-run --lib 2>&1 | tee build.log | tail -3
+          bin=$(grep -a "Executable" build.log | sed -E 's/.*\((.*)\)/\1/' | head -1)
+          cp "$bin" "$RUNNER_TEMP/plain"
+          cp "$bin" "$RUNNER_TEMP/elevated"
+      - name: "Elevate a copy (Linux file capability, AT_SECURE; macOS set-uid root)"
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo setcap cap_net_bind_service+ep "$RUNNER_TEMP/elevated"
+            getcap "$RUNNER_TEMP/elevated"
+          else
+            sudo chown root:wheel "$RUNNER_TEMP/elevated"
+            sudo chmod u+s "$RUNNER_TEMP/elevated"
+          fi
+          ls -l "$RUNNER_TEMP/elevated" "$RUNNER_TEMP/plain"
+      - name: The real OS decision in the elevated copy is restricted
+        shell: bash
+        run: |
+          set -o pipefail
+          RSKRB5_EXPECT_DECISION=restricted "$RUNNER_TEMP/elevated" secure_env::decision_tests::tests::os_decision_of_this_process --exact --nocapture 2>&1 | tee elevated.log
+          grep -q "test result: ok. 1 passed" elevated.log
+          echo "SETID-RESULT ${RUNNER_OS}: elevated copy decided Restricted"
+      - name: Control - the plain copy is unrestricted, so the same expectation fails
+        shell: bash
+        run: |
+          set +e
+          RSKRB5_EXPECT_DECISION=restricted "$RUNNER_TEMP/plain" secure_env::decision_tests::tests::os_decision_of_this_process --exact 2>&1 | tee plain.log
+          rc=$?
+          "$RUNNER_TEMP/plain" secure_env::decision_tests::tests::os_decision_of_this_process --exact 2>&1 | tee plain-open.log
+          rc2=$?
+          echo "CONTROL-RESULT ${RUNNER_OS}: expecting restricted rc=$rc (must be nonzero), expecting unrestricted rc=$rc2 (must be 0)"
+          [ "$rc" -ne 0 ] && [ "$rc2" -eq 0 ]
+
   docs:
     name: docs
     runs-on: ubuntu-latest
