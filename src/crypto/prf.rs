@@ -1,9 +1,10 @@
 //! Kerberos PRF primitives over the shared per-enctype PRF.
 //!
 //! RFC 6113 section 5.1 defines `PRF+` with a one-octet counter that starts at one
-//! ([`fast_prf_plus`], [`krb_fx_cf2`]); RFC 4402 section 2 defines the GSS
+//! (`fast_prf_plus`,
+//! `krb_fx_cf2`); RFC 4402 section 2 defines the GSS
 //! `pseudo_random` stream with a four-octet big-endian counter that starts at zero
-//! ([`gss_prf_plus`]). They are different functions with different output.
+//! (`gss_prf_plus`). They are different functions with different output.
 //!
 //! Every function takes the key as a [`Key`], a borrowed view that names the
 //! enctype, so the key bytes are never copied into a long-lived owner here.

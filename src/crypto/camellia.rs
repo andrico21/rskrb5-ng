@@ -1,16 +1,18 @@
 //! Camellia-CTS-CMAC (RFC 6803, enctypes 25 and 26, checksum types 17 and 18).
 //!
 //! The leaf feature `camellia` compiles the implementation; without it the type
-//! [`CtsCmacEtype`] has no values, so [`KerberosEtype::Camellia`] cannot be
+//! `CtsCmacEtype` has no values, so
+//! [`KerberosEtype::Camellia`] cannot be
 //! built and every dispatch arm is unreachable. Names, wire IDs and
-//! [`KerberosEtype::from_etype_id`] then behave as before the leaf existed.
+//! [`KerberosEtype::from_etype_id`]
+//! then behave as before the leaf existed.
 //!
 //! # Security
 //! Enabling the feature never grants runtime permission: an application still names
 //! Camellia in `permitted_enctypes` (see [`crate::crypto::CryptoPolicy`]). The
 //! implementation is the RustCrypto `camellia` crate, which reads secret-indexed
 //! S-box tables on every round, so it is **not** constant-time on CPUs with data
-//! caches ([`CONSTANT_TIME`]). `DEFAULT` therefore never expands to Camellia and the
+//! caches (`CONSTANT_TIME`). `DEFAULT` therefore never expands to Camellia and the
 //! enctypes are usable only when named explicitly. See
 //! `docs/security-policy.md#camellia` and the admission record in
 //! `docs/dependency-admission.md`.
