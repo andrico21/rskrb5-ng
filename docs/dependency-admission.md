@@ -122,6 +122,41 @@ duplicate-version skips, each with a reason stated in the record.
 - Maintenance: bytecodealliance/rustix, repository pushed 2026-11-12; 1.1.6 published 2026-10-27, the newest stable release, about 377 million recent downloads of the crate. No RustSec advisory for 1.1.6 (`cargo audit` clean at admission).
 - Features: process
 
+<a id="rskrb5-ng-os"></a>
+## The platform stores: `rskrb5-ng-os` (owner decision D11)
+
+Plan 2 todo 14 looked for a vetted crate with a safe API for the Windows LSA
+ticket cache, the macOS native cache (`API:`, Kerberos.framework CCAPI) and
+KCM over Mach RPC, on 2026-11-19 (crates.io searches and source review; the
+evidence log of todo 14 has the details). None qualifies:
+
+- `windows-lsa` 0.2.1 (MIT, 74 downloads, one author, first release
+  2026-08-08) retrieves only the TGT as a KRB-CRED, has no
+  `KerbRetrieveEncodedTicketMessage` for service tickets and no
+  `KerbPurgeTicketCacheExMessage`, writes a `#[repr(C)]` request through a
+  `Vec<u8>` pointer with `ptr::write` (`src/sys.rs:331`, an unaligned typed
+  write) and carries no vet audit. Rejected.
+- `windows` and `windows-sys` are raw bindings: every call stays `unsafe` in
+  the caller. `sspi`, `cross-krb5` and similar crates implement Kerberos
+  through SSPI or GSS, which the plan forbids.
+- No crate wraps CCAPI or the KCM Mach routine (`kcmrpc.defs`); `mach2` is raw
+  bindings.
+
+So, per D11, the stores live in the workspace member `rskrb5-ng-os`:
+
+- it depends on `rskrb5-ng` and nothing else (rule 5): it uses the main
+  crate's zeroizing owner instead of `zeroize`, and needs no record, no leaf
+  flag and no vet entry;
+- `rskrb5-ng` never depends on it, and it is `publish = false`;
+- it declares the few OS functions it calls itself (secur32 on Windows;
+  libSystem and Kerberos.framework on macOS, linked with `#[link]`, no
+  wrapper crate, so rule 4's macOS framework wrapper is not used);
+- its manifest takes the core lint profile with the one override of the
+  vendored guidelines' unsafe-ffi overlay, `unsafe_code = "deny"`: every
+  unsafe block and declaration carries `#[expect(unsafe_code, reason)]`, and
+  every unsafe block a `SAFETY` comment. The OS replies are copied out and
+  parsed by safe code that Miri checks.
+
 ## Baseline
 
 One line per direct dependency at the baseline commit, `<package> <kind>
