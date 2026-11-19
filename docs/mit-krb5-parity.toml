@@ -821,10 +821,14 @@ rust_symbols = [
   "ccache::keyring::Keyring",
   "ccache::keyring::Fault",
   "ccache::keyring::KernelError",
+  "ccache::keyring::index::parse",
+  "ccache::keyring::index::encode",
   "ccache::file_store::resolve",
   "ccache::file_store::collection",
 ]
 test_names = [
+  "src/ccache/keyring/tests/names.rs::primary_payload_matches_mit",
+  "src/ccache/keyring/tests/names.rs::malformed_primary_payloads_are_rejected",
   "src/ccache/keyring/tests/operations.rs::resolve_creates_the_collection_and_primary_name",
   "src/ccache/keyring/tests/operations.rs::initialize_writes_the_principal_key",
   "src/ccache/keyring/tests/operations.rs::store_adds_one_key_per_credential",
@@ -847,6 +851,8 @@ test_names = [
   "tests/ccache_keyring/namespaces.rs::process_keyring_is_private_to_the_process",
   "tests/ccache_keyring/namespaces.rs::thread_keyring_is_private_to_the_thread",
   "tests/ccache_keyring/namespaces.rs::session_and_user_keyrings_are_shared",
+  "tests/ccache_keyring/mit.rs::cache_written_here_is_listed_by_klist",
+  "tests/ccache_keyring/mit.rs::mit_written_cache_is_read_and_copied",
 ]
 feature_flags = ["ccache-keyring"]
 security_divergence = "Compiled only with the `ccache-keyring` leaf on Linux; without it `KEYRING:` names keep failing with `UnsupportedCacheType`. The persistent keyring of another user goes to the kernel, which refuses it without `CAP_SETUID` (`EPERM`, typed `KernelError::PermissionDenied`), where MIT's fallback (`cc_keyring.c:182-195`) is the same for a kernel without persistent keyrings and a user id that is not the caller's. The persistent collection name is decimal digits only, where MIT's `strtol` also takes blanks and signs (`cc_keyring.c:456-473`). A key lookup treats only a missing, expired or revoked key as absent and reports `EACCES`, `EPERM` and quota errors, where MIT reads every failure as absent (`cc_keyring.c:229-250,664-668`). A credential key with bytes after the credential, and a primary-name key with an empty name, are refused. Errors setting a key timeout and linking the legacy cache into the session keyring are reported, where MIT ignores them (`cc_keyring.c:350-353,758-760`). A cache is not replaced atomically, as in MIT. Credentials are written in the version 4 file encoding in zeroizing buffers; the `ccache_type` version does not apply, as in MIT (`cc_keyring.c:1215`). No MIT 1.22.2 container run: Docker's default seccomp profile blocks the key calls, see docs/review/parity-register.md."
