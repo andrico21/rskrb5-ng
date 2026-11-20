@@ -17,6 +17,8 @@ use crate::{
     messages,
 };
 
+/// Password and account expiry as a KDC reports it.
+pub mod expiry;
 /// Request authenticator construction and KRB-PRIV options.
 mod request;
 use request::{build_kpasswd_ap_req_with_confounder, kpasswd_krb_priv_options};

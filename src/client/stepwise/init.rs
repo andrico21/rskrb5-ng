@@ -520,7 +520,7 @@ fn finish(engine: &mut InitCreds<'_>, request: &BuiltAsReq, session: AsRepSessio
     if engine.options.kdc_timesync {
         engine.time_offset = Some(offset(session.auth_time, request.reply_clock().0));
     }
-    engine.key_expiration = session.key_expiration;
+    engine.key_expiration = session.expiry_notice().password();
     engine.state = State::Done;
     ExchangeStep::Complete(Box::new(session))
 }

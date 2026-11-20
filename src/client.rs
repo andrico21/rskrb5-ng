@@ -119,7 +119,9 @@ pub mod stepwise;
 /// KDC endpoint discovery and asynchronous transport.
 pub mod transport;
 #[cfg(feature = "tokio")]
-use self::kpasswd::{RequestOptions, build_kpasswd_request, validated_result};
+use self::kpasswd::{
+    RequestOptions, build_kpasswd_request, expiry::ExpiryNotice, validated_result,
+};
 #[cfg(feature = "tokio")]
 use self::transport::{KdcEndpoint, KdcProtocol, Tokio as TokioKdcTransport};
 use self::{
@@ -657,6 +659,8 @@ pub struct AsRepSession {
     renew_till: Option<SystemTime>,
     /// Session key expiration time, when supplied.
     key_expiration: Option<SystemTime>,
+    /// Password and account expiry from the reply's `last-req` and `key-expiration`.
+    expiry: ExpiryNotice,
 }
 impl AsRepSession {
     /// Borrow the client identity.
@@ -770,7 +774,21 @@ impl AsRepSession {
             end_time,
             renew_till: None,
             key_expiration: None,
+            expiry: ExpiryNotice::DEFAULT,
         }
+    }
+    /// Password and account expiry the KDC reported in the reply.
+    #[inline]
+    #[must_use]
+    pub const fn expiry_notice(&self) -> &ExpiryNotice {
+        &self.expiry
+    }
+    /// Sets the reported expiry, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_expiry_notice(mut self, value: ExpiryNotice) -> Self {
+        self.expiry = value;
+        self
     }
     /// Sets `start_time`, preserving the other fields.
     #[must_use]
@@ -4469,6 +4487,7 @@ pub fn process_as_rep(
             .as_ref()
             .map(system_time_from_kerberos_time)
             .transpose()?,
+        expiry: ExpiryNotice::from_enc_part(&enc_part)?,
     })
 }
 
@@ -4674,6 +4693,7 @@ fn process_tgs_rep_inner(
             .as_ref()
             .map(system_time_from_kerberos_time)
             .transpose()?,
+        expiry: ExpiryNotice::DEFAULT,
     })
 }
 
@@ -5659,6 +5679,7 @@ fn ccache_credential_session(credential: &ccache::Credential) -> AsRepSession {
         renew_till: (credential.times().renew_till != 0)
             .then(|| system_time_from_u32_seconds(credential.times().renew_till)),
         key_expiration: None,
+        expiry: ExpiryNotice::DEFAULT,
     }
 }
 
@@ -5855,6 +5876,7 @@ mod tests {
             end_time: now,
             renew_till: None,
             key_expiration: None,
+            expiry: ExpiryNotice::DEFAULT,
         })
     }
 

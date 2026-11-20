@@ -14,9 +14,15 @@ use tokio::runtime::{Builder, Runtime};
 /// The error a fallible test returns; returning it fails the test.
 type TestError = Box<dyn Error + Send + Sync>;
 
+/// The expiry the KDC reports in last-req and key-expiration.
+#[path = "kpasswd_expiry/notice.rs"]
+mod notice;
 /// The same `[libdefaults]` refusal on the AS, TGS and kpasswd paths.
 #[path = "kpasswd_expiry/policy_kinds.rs"]
 mod policy_kinds;
+/// A fake realm.
+#[path = "kpasswd_expiry/realm.rs"]
+mod realm;
 /// A self-service change carries no RFC 3244 target fields.
 #[path = "kpasswd_expiry/self_change.rs"]
 mod self_change;
