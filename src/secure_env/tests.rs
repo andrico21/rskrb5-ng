@@ -53,11 +53,12 @@ mod tests {
     /// Marks the child process and names the one test it runs.
     const CHILD: &str = "RSKRB5_SECURE_ENV_CHILD";
     /// The variables every ambient reader reads; a child starts without them.
-    const AMBIENT: [&str; 6] = [
+    const AMBIENT: [&str; 7] = [
         "KRB5_CONFIG",
         "KRB5CCNAME",
         "KRB5_KTNAME",
         "KRB5_CLIENT_KTNAME",
+        "KRB5_TRACE",
         "TMPDIR",
         "HOME",
     ];
@@ -416,6 +417,28 @@ mod tests {
         Keytab::new().save(&path)?;
         let name = format!("FILE:{}", path.display());
         let result = run_child(test, &[("KRB5_CLIENT_KTNAME", OsStr::new(&name))]);
+        fs::remove_dir_all(directory)?;
+        result
+    }
+
+    /// `KRB5_TRACE`: `Options::from_env` ignores it when restricted.
+    #[test]
+    fn krb5_trace_is_ignored_when_restricted() -> Result<(), Box<dyn Error>> {
+        use crate::trace::Options;
+        let test = "secure_env::decision_tests::tests::krb5_trace_is_ignored_when_restricted";
+        if in_child(test) {
+            let restricted = with_decision(Decision::Restricted, Options::from_env)?;
+            assert_eq!(restricted.destination(), None);
+            let open = with_decision(Decision::Unrestricted, Options::from_env)?;
+            assert_eq!(
+                open.destination().map(|path| path.as_os_str().to_owned()),
+                env::var_os("KRB5_TRACE")
+            );
+            return Ok(());
+        }
+        let directory = scratch("trace")?;
+        let path = directory.join("trace.log");
+        let result = run_child(test, &[("KRB5_TRACE", path.as_os_str())]);
         fs::remove_dir_all(directory)?;
         result
     }

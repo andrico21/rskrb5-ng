@@ -1074,6 +1074,32 @@ pub enum Extensions {
     #[error("config error: {0}")]
     Config(#[from] Config),
 }
+/// Trace destination and sink errors.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum Trace {
+    /// A trace destination (`KRB5_TRACE` or a caller's path) is not usable as given.
+    #[error("trace destination refused: {reason}")]
+    InvalidDestination {
+        /// Why the destination was refused.
+        reason: &'static str,
+    },
+    /// The trace file could not be opened for appending.
+    #[error("cannot open the trace file {path}: {source}")]
+    Open {
+        /// The destination path.
+        path: PathBuf,
+        /// The operating system's failure.
+        #[source]
+        source: io::Error,
+    },
+    /// A sink could not write an event.
+    #[error("trace output failed: {0}")]
+    Write(#[from] io::Error),
+    /// A sink declined an event.
+    #[error("the trace sink refused the event")]
+    Refused,
+}
 #[cfg(feature = "http")]
 /// HTTP Negotiate adapter error.
 #[derive(thiserror::Error)]
