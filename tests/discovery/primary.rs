@@ -166,9 +166,10 @@ async fn a_replica_failure_is_retried_on_the_primary() -> Result<(), TestError> 
     Ok(())
 }
 
-/// With `disable_encrypted_timestamp` a replica's error is still the KDC's error and is retried
-/// on the primary: the timestamp refusal applies to a preauthentication challenge only (MIT
-/// `preauth_encts.c:68-73`).
+/// A replica's error is retried on the primary also when encrypted timestamp is disabled.
+///
+/// The timestamp refusal applies to a preauthentication challenge only (MIT
+/// `preauth_encts.c:68-73`); any other KDC error stays the KDC's error.
 #[tokio::test]
 async fn a_replica_failure_is_retried_on_the_primary_when_timestamps_are_disabled()
 -> Result<(), TestError> {
