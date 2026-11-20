@@ -373,9 +373,11 @@ impl Response {
     /// Add the token's PIN.
     #[inline]
     #[must_use]
-    pub fn with_pin(mut self, pin: String) -> Self {
-        self.pin = Some(Zeroizing::new(pin));
-        self
+    pub fn with_pin(self, pin: String) -> Self {
+        Self {
+            pin: Some(Zeroizing::new(pin)),
+            ..self
+        }
     }
 
     /// The chosen token's index.
@@ -411,7 +413,6 @@ pub trait Responder {
 
 /// A stepwise `Responder` that answers `Prompt::Otp` with a [`Responder`] and every
 /// other prompt with the wrapped one.
-#[derive(Debug)]
 pub struct Responders<R, O> {
     /// The responder of the other prompts.
     inner: R,
@@ -432,6 +433,13 @@ impl<R, O> Responders<R, O> {
     #[must_use]
     pub const fn otp(&self) -> &O {
         &self.otp
+    }
+}
+
+impl<R, O> fmt::Debug for Responders<R, O> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Responders").finish_non_exhaustive()
     }
 }
 

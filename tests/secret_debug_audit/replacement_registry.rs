@@ -143,6 +143,11 @@ pub(super) const CONTRACTS: &[(&str, &str, &str)] = &[
         "Appends a registered mechanism's PA-DATA to the request template in place; no credential value is replaced or dropped.",
     ),
     (
+        "src/client/stepwise/otp.rs::answer",
+        "otp_answer_redacts_credentials",
+        "Builds the request from a clone of the request template (the template itself is not replaced) and fills the empty reply-key slot with the armor key; nothing held is replaced. The answer's OTP value and PIN are moved into the request builder and erased when the answer is dropped (Zeroizing's Drop contract), and the armor key's erasure when the exchange is abandoned relies on EncryptionKey's Drop contract.",
+    ),
+    (
         "src/client/stepwise/spake.rs::offer",
         "spake_exchange_completes_with_the_strengthened_reply_key",
         "Reads a clone of the SPAKE policy and the preferred order from the options and hands the exchange to advance; no option, credential or template field is replaced, and the reply-key slot is filled only by advance, empty before.",
