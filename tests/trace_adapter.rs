@@ -14,7 +14,7 @@ mod tests {
 
     use alloc::sync::Arc;
     use core::{error::Error, fmt, mem};
-    use std::sync::Mutex;
+    use std::sync::{Mutex, PoisonError};
 
     use rskrb5_ng::trace::{
         Event, ExchangeKind, Guard, Identity, Options, Sink as _, adapter::Forward,
@@ -26,6 +26,14 @@ mod tests {
         span::{Attributes, Id, Record},
         subscriber::{NoSubscriber, with_default},
     };
+
+    /// Serializes the tests of this file.
+    ///
+    /// tracing-core registers a callsite without a lock while only one
+    /// dispatcher exists, so a callsite first used without a subscriber on one
+    /// thread while another thread registers a scoped dispatcher can keep a
+    /// stale `never` interest and drop the event (a 2-core runner shows it).
+    static SERIAL: Mutex<()> = Mutex::new(());
 
     /// One event a subscriber saw.
     #[derive(Debug)]
@@ -135,6 +143,7 @@ mod tests {
     /// Events reach the scoped subscriber, with the severity of their kind.
     #[test]
     fn events_reach_the_applications_subscriber() -> Result<(), Box<dyn Error>> {
+        let _serial = SERIAL.lock().unwrap_or_else(PoisonError::into_inner);
         let collector = Collector::default();
         let guard = Guard::new(Forward::new(), Options::new());
         with_default(collector.clone(), || {
@@ -165,6 +174,7 @@ mod tests {
     /// Without a subscriber the adapter is a no-op, and the library installs none.
     #[test]
     fn no_subscriber_is_a_no_op_and_none_is_installed() -> Result<(), Box<dyn Error>> {
+        let _serial = SERIAL.lock().unwrap_or_else(PoisonError::into_inner);
         let guard = Guard::new(Forward::new(), Options::new());
         guard.emit(&started());
         assert_eq!(guard.stats().emitted, 1);
