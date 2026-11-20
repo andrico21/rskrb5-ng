@@ -69,8 +69,6 @@ pub enum ExchangeKind {
     Initial,
     /// A TGS exchange: a service ticket.
     Ticket,
-    /// A renewal of a ticket-granting ticket.
-    Renewal,
 }
 
 /// A principal, realm or endpoint name. It is sensitive: a guard withholds it

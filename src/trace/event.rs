@@ -13,7 +13,6 @@ impl ExchangeKind {
         match self {
             Self::Initial => "initial",
             Self::Ticket => "ticket",
-            Self::Renewal => "renewal",
         }
     }
 }
