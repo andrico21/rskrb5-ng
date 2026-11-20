@@ -25,6 +25,7 @@ use crate::{
     error,
     keytab::{self, EncryptionKey, Keytab},
     pac::{self, Pac},
+    trace::Guard,
 };
 
 /// Default AP-REQ acceptance window: five minutes, MIT's default `clockskew`.
@@ -797,9 +798,22 @@ pub struct Validator<'keytab> {
     shared_replay_cache: Option<SharedReplayCache>,
     /// Explicit policy for cross-realm tickets not checked by the KDC.
     transit_policy: Option<Arc<dyn TransitValidator>>,
+    /// Redacted trace events of the validations.
+    trace: Guard,
 }
 
 impl<'keytab> Validator<'keytab> {
+    /// Trace every AP-REQ this validator decides on to `guard`: one accepted or
+    /// rejected event each, redacted by their types (the rejection reason is
+    /// not named; the returned error carries it). A failing sink never changes
+    /// a decision or the replay cache.
+    #[inline]
+    #[must_use]
+    pub fn with_trace(mut self, guard: Guard) -> Self {
+        self.trace = guard;
+        self
+    }
+
     /// Set explicit enctype permission; defaults permit only the secure DEFAULT list.
     #[inline]
     #[must_use]
@@ -863,6 +877,7 @@ impl<'keytab> Validator<'keytab> {
             replay_cache: ReplayCache::new(),
             shared_replay_cache: None,
             transit_policy: None,
+            trace: Guard::disabled(),
         }
     }
 

@@ -88,6 +88,7 @@ impl fmt::Debug for Validator<'_> {
             replay_cache,
             shared_replay_cache,
             transit_policy,
+            trace,
         } = self;
         f.debug_struct("Validator")
             .field("crypto_policy", crypto_policy)
@@ -100,6 +101,7 @@ impl fmt::Debug for Validator<'_> {
             .field("replay_cache", replay_cache)
             .field("shared_replay_cache", shared_replay_cache)
             .field("transit_policy", transit_policy)
+            .field("trace", trace)
             .finish()
     }
 }
