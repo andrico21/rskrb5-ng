@@ -23,6 +23,9 @@ mod policy_kinds;
 /// A fake realm.
 #[path = "kpasswd_expiry/realm.rs"]
 mod realm;
+/// Password-policy mapping of a kpasswd result.
+#[path = "kpasswd_expiry/result_policy.rs"]
+mod result_policy;
 /// A self-service change carries no RFC 3244 target fields.
 #[path = "kpasswd_expiry/self_change.rs"]
 mod self_change;

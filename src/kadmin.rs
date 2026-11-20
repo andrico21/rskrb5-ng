@@ -14,6 +14,8 @@ mod credential_debug;
 pub mod password;
 /// Password payload ownership and encoding.
 mod payload;
+/// Password-policy mapping of a result.
+pub mod policy;
 /// Reply parsing and result handling.
 mod reply;
 /// Request frame and option implementations.
