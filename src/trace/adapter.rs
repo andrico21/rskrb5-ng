@@ -1,6 +1,6 @@
 //! The adapter from trace events to the `tracing` crate (the `tracing` leaf).
 //!
-//! `Forward` is a [`Sink`] that emits each event to whatever
+//! `Forward` is a [`Sink`](trait@crate::trace::Sink) that emits each event to whatever
 //! `tracing` subscriber the application has set. It never sets one: the
 //! application owns its subscriber, and with none every call is a no-op.
 //!
