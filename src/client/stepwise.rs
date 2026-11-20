@@ -467,6 +467,8 @@ pub struct InitCreds<'registry> {
     cookie: Option<Vec<u8>>,
     /// The strengthen key of the newest armored reply.
     strengthen_key: Option<EncryptionKey>,
+    /// The client the armor authenticated in the newest reply.
+    authenticated_client: Option<Principal>,
 }
 
 impl fmt::Debug for InitCreds<'_> {
@@ -643,6 +645,14 @@ pub trait ArmoredExchange: Send {
     /// Returns the armor's failure, for example a reply that is not armored or
     /// fails its integrity check; the exchange stops with [`Error::Armor`].
     fn unwrap_reply(&mut self, reply: &[u8]) -> Result<ArmoredReply, ProviderError>;
+
+    /// The armor key of an armored conversation, which the encrypted-challenge
+    /// factor combines with the reply key (RFC 6113 section 5.4.6). The
+    /// default has none, so the engine never answers an encrypted challenge.
+    #[inline]
+    fn armor_key(&self) -> Option<&EncryptionKey> {
+        None
+    }
 }
 
 /// What an [`ArmoredExchange`] wraps: the unarmored request and its parts.
@@ -655,6 +665,9 @@ pub struct ArmorRequest<'request> {
     pub body: &'request [u8],
     /// The KDC's last cookie (PA-FX-COOKIE value), echoed in the armored request.
     pub cookie: Option<&'request [u8]>,
+    /// Whether the caller asked for client canonicalization, which the engine
+    /// strips from unarmored requests and only an armor may request.
+    pub canonicalize: bool,
 }
 
 impl fmt::Debug for ArmorRequest<'_> {
@@ -664,6 +677,7 @@ impl fmt::Debug for ArmorRequest<'_> {
             .field("request_bytes", &self.request.len())
             .field("body_bytes", &self.body.len())
             .field("cookie", &self.cookie.is_some())
+            .field("canonicalize", &self.canonicalize)
             .finish()
     }
 }
@@ -677,6 +691,9 @@ pub struct ArmoredReply {
     strengthen_key: Option<EncryptionKey>,
     /// The KDC's new cookie, echoed in the next request.
     cookie: Option<Vec<u8>>,
+    /// The client the armor authenticated (`KrbFastFinished`), which may differ
+    /// from the requested one under canonicalization.
+    authenticated_client: Option<Principal>,
 }
 
 impl ArmoredReply {
@@ -692,7 +709,16 @@ impl ArmoredReply {
             reply,
             strengthen_key,
             cookie,
+            authenticated_client: None,
         }
+    }
+
+    /// The same reply, with the client the armor authenticated.
+    #[inline]
+    #[must_use]
+    pub fn with_authenticated_client(mut self, client: Principal) -> Self {
+        self.authenticated_client = Some(client);
+        self
     }
 }
 
@@ -703,6 +729,7 @@ impl fmt::Debug for ArmoredReply {
             .field("reply_bytes", &self.reply.len())
             .field("strengthen_key", &self.strengthen_key.is_some())
             .field("cookie", &self.cookie.is_some())
+            .field("authenticated_client", &self.authenticated_client)
             .finish()
     }
 }

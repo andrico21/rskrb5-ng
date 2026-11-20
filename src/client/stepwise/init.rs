@@ -12,11 +12,14 @@ use zeroize::Zeroizing;
 use super::super::transport::{KdcProtocol, Tokio as TokioTransport};
 use super::{
     super::{
-        AsRepSession, BuiltAsReq, Error, KDC_ERR_PREAUTH_REQUIRED, KdcError, KdcTransport,
-        PA_ENC_TIMESTAMP, Password, Principal, as_rep_reply_key_info, build_as_req, crypto_policy,
-        encode, keytab_initial_as_rep_session, keytab_initial_as_req, password_derivation,
-        password_initial_as_rep_session, password_initial_as_req, preauth, preauth_retry_options,
-        process_as_rep, process_kdc_error, select_preauth_key_info,
+        AsRepSession, BuiltAsReq, Error, KDC_ERR_PREAUTH_REQUIRED, KDC_OPTION_CANONICALIZE,
+        KdcError, KdcTransport, PA_ENC_TIMESTAMP, Password, PreauthKeyInfo, Principal,
+        as_rep_reply_key_info, build_as_req, crypto_policy, decode, encode,
+        enforce_requested_enctypes, keytab_initial_as_rep_session, keytab_initial_as_req,
+        padata_contains, password_derivation, password_initial_as_rep_session,
+        password_initial_as_req, preauth, preauth_key_info_from_method_data, preauth_retry_options,
+        process_as_rep, process_kdc_error, select_keytab_reply_key_for_etype,
+        select_preauth_key_info,
     },
     Answer, ArmorRequest, ArmoredReply, Exchange, ExchangeStep, InitCreds, InitCredsOptions,
     MAX_EXCHANGE_ROUNDS, Outbound, Prompt, Responder, StepInput, order,
@@ -25,7 +28,9 @@ use super::{
 use crate::config::Config;
 use crate::{
     crypto::{KerberosEtype, Use, prf},
+    error::Fast,
     keytab::{EncryptionKey, Keytab},
+    preauth::{encrypted_challenge::EncryptedChallenge, fast::PA_ENCRYPTED_CHALLENGE},
 };
 
 /// Where an AS exchange stands.
@@ -71,6 +76,7 @@ pub(super) fn new(
         key_expiration: None,
         cookie: None,
         strengthen_key: None,
+        authenticated_client: None,
     }
 }
 
@@ -145,7 +151,13 @@ pub(super) fn step(
         }
         (State::Final(request), StepInput::Reply(reply)) => {
             let reply_key = held(engine.reply_key.take())?;
-            let session = process_as_rep(&request, reply, &strengthened(engine, reply_key)?)?;
+            verify_kdc_challenge(engine, &request, reply, &reply_key)?;
+            let canonical = canonical_request(engine, &request);
+            let session = process_as_rep(
+                canonical.as_ref().unwrap_or(&request),
+                reply,
+                &strengthened(engine, reply_key)?,
+            )?;
             Ok(finish(engine, &request, session))
         }
         (unexpected, _) => {
@@ -213,16 +225,61 @@ fn initial_as_rep(
     request: &BuiltAsReq,
     reply: &[u8],
 ) -> Result<ExchangeStep, Error> {
+    let canonical = canonical_request(engine, request);
+    let checked = canonical.as_ref().unwrap_or(request);
+    if engine.strengthen_key.is_some() {
+        let key = initial_reply_key(engine, checked, reply)?;
+        let session = process_as_rep(checked, reply, &strengthened(engine, key)?)?;
+        return Ok(finish(engine, request, session));
+    }
     let session = match &engine.keytab {
-        Some(keytab) => keytab_initial_as_rep_session(request, reply, &engine.client, keytab)?,
+        Some(keytab) => keytab_initial_as_rep_session(checked, reply, &engine.client, keytab)?,
         None => {
-            password_initial_as_rep_session(request, reply, &engine.client, password_bytes(engine))?
+            password_initial_as_rep_session(checked, reply, &engine.client, password_bytes(engine))?
         }
     };
     let completed = session.ok_or_else(|| Error::UnexpectedStepInput {
         expected: "an AS-REP",
     })?;
     Ok(finish(engine, request, completed))
+}
+
+/// The unstrengthened reply key of an armored AS-REP that needed no
+/// preauthentication: the keytab key, or the password key from the reply's
+/// ETYPE-INFO2 (MIT `fast.c:569-592` strengthens it).
+///
+/// # Errors
+/// Returns the enctype, policy, keytab and derivation errors.
+fn initial_reply_key(
+    engine: &InitCreds<'_>,
+    request: &BuiltAsReq,
+    reply: &[u8],
+) -> Result<EncryptionKey, Error> {
+    let (etype, kvno) = as_rep_reply_key_info(reply).ok_or(Error::UnexpectedStepInput {
+        expected: "an AS-REP",
+    })?;
+    request.crypto_policy.check_use(etype, Use::ReplyKey)?;
+    enforce_requested_enctypes(&request.message.0.req_body.etype, etype)?;
+    if let Some(keytab) = &engine.keytab {
+        return select_keytab_reply_key_for_etype(
+            keytab,
+            &engine.client,
+            kvno.unwrap_or_default(),
+            etype,
+        )
+        .map(|(key, _)| key);
+    }
+    let rasn_kerberos::AsRep(as_rep) = decode("AS-REP", reply)?;
+    let info = preauth_key_info_from_method_data(as_rep.padata.as_deref().unwrap_or_default())?
+        .into_iter()
+        .find(|info| info.etype == etype)
+        .unwrap_or_else(|| PreauthKeyInfo::new(etype));
+    password_derivation::derive(
+        &request.crypto_policy,
+        &engine.client,
+        password_bytes(engine),
+        &info,
+    )
 }
 
 /// Answer the KDC's preauthentication challenge.
@@ -244,6 +301,9 @@ fn challenge(engine: &mut InitCreds<'_>, reply: &[u8]) -> Result<ExchangeStep, E
         let request = build_as_req(engine.client.clone(), service(engine), options)?;
         engine.reply_key = Some(key);
         return send(engine, request, true, State::Final);
+    }
+    if let Some(step) = encrypted_challenge(engine, reply, at)? {
+        return Ok(step);
     }
     let (request, reply_key) = match &engine.keytab {
         Some(keytab) => preauth::keytab_preauth_request_at(
@@ -382,16 +442,23 @@ where
         let (now, _) = request.reply_clock();
         request.set_reply_clock((now, Duration::MAX));
     }
+    let canonicalize = canonicalize_requested(engine);
     let message = match engine.armor.as_mut() {
         Some(armor) => {
             let body = encode("KDC-REQ-BODY", &request.message.0.req_body)?;
-            armor
+            let armored = armor
                 .armor_request(&ArmorRequest {
                     request: &request.der,
                     body: &body,
                     cookie: engine.cookie.as_deref(),
+                    canonicalize,
                 })
-                .map_err(Error::Armor)?
+                .map_err(Error::Armor)?;
+            crypto_policy::armored(&request.crypto_policy, &armored)?;
+            // RFC 6806 section 11 checksums the request as sent (MIT
+            // `fast.c:634-675` over `encoded_previous_request`): the armored one.
+            request.der.clone_from(&armored);
+            armored
         }
         None => request.der.clone(),
     };
@@ -477,8 +544,11 @@ fn unwrap(
     armor.unwrap_reply(reply).map_err(Error::Armor)
 }
 
-/// Keep the newest cookie and strengthen key of an armored reply.
+/// Keep the newest cookie, strengthen key and authenticated client of an armored reply.
 fn remember_cookie(engine: &mut InitCreds<'_>, reply: &ArmoredReply) {
+    engine
+        .authenticated_client
+        .clone_from(&reply.authenticated_client);
     if let Some(cookie) = &reply.cookie {
         engine.cookie = Some(cookie.clone());
     }
@@ -498,6 +568,117 @@ fn strengthened(engine: &InitCreds<'_>, reply_key: EncryptionKey) -> Result<Encr
         Some(strengthen) => strengthen_key(strengthen, &reply_key),
         None => Ok(reply_key),
     }
+}
+
+/// Whether the caller asked for client canonicalization (`canonicalize`).
+const fn canonicalize_requested(engine: &InitCreds<'_>) -> bool {
+    engine.options.request.kdc_option_bits() & KDC_OPTION_CANONICALIZE != 0
+}
+
+/// The request with the client FAST authenticated.
+///
+/// Only when it differs and the caller asked for canonicalization: only a
+/// protected reply may change the client name (RFC 6806 section 7; RFC 6113
+/// section 5.4.3 `cname`).
+fn canonical_request(engine: &InitCreds<'_>, request: &BuiltAsReq) -> Option<BuiltAsReq> {
+    let client = engine.authenticated_client.as_ref()?;
+    (canonicalize_requested(engine) && *client != request.client).then(|| {
+        let mut canonical = request.clone();
+        canonical.client = client.clone();
+        canonical
+    })
+}
+
+/// Answer an armored KDC's encrypted-challenge offer (RFC 6113 section 5.4.6,
+/// MIT `preauth_ec.c:96-142`), in the KDC's time under `kdc_timesync`.
+///
+/// # Errors
+/// Returns the key selection, challenge and request-building errors.
+fn encrypted_challenge(
+    engine: &mut InitCreds<'_>,
+    reply: &[u8],
+    at: Option<(SystemTime, u32)>,
+) -> Result<Option<ExchangeStep>, Error> {
+    let Some(armor_key) = engine
+        .armor
+        .as_ref()
+        .and_then(|armor| armor.armor_key().cloned())
+    else {
+        return Ok(None);
+    };
+    let error = process_kdc_error(reply)?;
+    if error.error_code() != KDC_ERR_PREAUTH_REQUIRED
+        || !padata_contains(error.method_data(), PA_ENCRYPTED_CHALLENGE)
+    {
+        return Ok(None);
+    }
+    let key = challenge_key(engine, &error)?;
+    let time = match at {
+        Some(kdc_time) => kdc_time,
+        None => now()?,
+    };
+    let padata = EncryptedChallenge::new(&armor_key, &key)
+        .and_then(|challenge| challenge.padata(time))
+        .map_err(armor_failure)?;
+    let mut options = preauth_retry_options(engine.options.request.clone(), error.method_data());
+    options.padata_mut().push(padata);
+    let request = build_as_req(engine.client.clone(), service(engine), options)?;
+    engine.reply_key = Some(key);
+    send(engine, request, true, State::Final).map(Some)
+}
+
+/// After an encrypted challenge, the KDC's challenge must decrypt and the
+/// reply key must have been strengthened (RFC 6113 section 5.4.6).
+///
+/// # Errors
+/// Returns [`Error::Armor`] with [`Fast::ChallengeReply`] otherwise.
+fn verify_kdc_challenge(
+    engine: &InitCreds<'_>,
+    request: &BuiltAsReq,
+    reply: &[u8],
+    reply_key: &EncryptionKey,
+) -> Result<(), Error> {
+    let answered = request
+        .message
+        .0
+        .padata
+        .as_deref()
+        .is_some_and(|data| padata_contains(data, PA_ENCRYPTED_CHALLENGE));
+    let armor_key = engine.armor.as_ref().and_then(|armor| armor.armor_key());
+    let (true, Some(key)) = (answered, armor_key) else {
+        return Ok(());
+    };
+    let Ok(rasn_kerberos::AsRep(as_rep)) = decode::<rasn_kerberos::AsRep>("AS-REP", reply) else {
+        return Ok(());
+    };
+    EncryptedChallenge::new(key, reply_key)
+        .and_then(|challenge| challenge.verify_reply(as_rep.padata.as_deref().unwrap_or_default()))
+        .map_err(armor_failure)?;
+    if engine.strengthen_key.is_none() {
+        return Err(armor_failure(Fast::ChallengeReply {
+            what: "a strengthen key",
+        }));
+    }
+    Ok(())
+}
+
+/// A FAST failure as the exchange's armor error.
+fn armor_failure(error: Fast) -> Error {
+    Error::Armor(Box::new(error))
+}
+
+/// The current time in whole seconds and microseconds.
+///
+/// # Errors
+/// Returns [`Error::TimeOverflow`] before the Unix epoch.
+fn now() -> Result<(SystemTime, u32), Error> {
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_before| Error::TimeOverflow)?;
+    let whole = UNIX_EPOCH
+        .checked_add(Duration::from_secs(elapsed.as_secs()))
+        .ok_or(Error::TimeOverflow)?;
+    Ok((whole, elapsed.subsec_micros()))
 }
 
 /// The reply key for a challenge a registered mechanism answered.

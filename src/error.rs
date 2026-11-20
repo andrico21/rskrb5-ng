@@ -1074,6 +1074,112 @@ pub enum Extensions {
     #[error("config error: {0}")]
     Config(#[from] Config),
 }
+#[cfg(feature = "messages")]
+/// RFC 6113 FAST armor and encrypted-challenge failures. The stepwise AS
+/// exchange reports them as [`Client::Armor`].
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum Fast {
+    /// FAST is required and no armor ticket for the realm is available.
+    #[error("FAST is required but no armor ticket for realm {realm} is available")]
+    ArmorUnavailable {
+        /// The realm of the request.
+        realm: String,
+    },
+    /// The armor ticket is not the ticket-granting ticket of the request's realm.
+    #[error("the armor ticket is for {actual}, not the TGS of realm {realm}")]
+    ArmorTicket {
+        /// The realm of the request.
+        realm: String,
+        /// The armor ticket's service.
+        actual: String,
+    },
+    /// The anonymous-armor provider failed.
+    #[error("the anonymous armor provider failed")]
+    AnonymousArmor(#[source] ProviderError),
+    /// A reply to an armored request carries no PA-FX-FAST.
+    #[error("the KDC reply to an armored request is not armored")]
+    Unarmored,
+    /// An armored request was answered by a KRB-ERROR without PA-FX-FAST.
+    #[error("the KDC answered an armored request with unarmored error {code}")]
+    UnarmoredError {
+        /// The unauthenticated error code.
+        code: i32,
+    },
+    /// The armored AS-REP carries no `KrbFastFinished`.
+    #[error("the armored KDC reply has no KrbFastFinished")]
+    MissingFinished,
+    /// The finished ticket checksum does not verify.
+    #[error("the FAST ticket checksum does not verify: the ticket was modified")]
+    TicketChecksum,
+    /// A FAST checksum is not the armor key's mandatory checksum type.
+    #[error("the FAST checksum has type {actual}, not the armor key's type {expected}")]
+    ChecksumType {
+        /// The armor key's mandatory checksum type.
+        expected: i32,
+        /// The received type.
+        actual: i32,
+    },
+    /// The `KrbFastResponse` answers another request.
+    #[error("the FAST response nonce {actual} does not match the request nonce {expected}")]
+    NonceMismatch {
+        /// The request nonce.
+        expected: u32,
+        /// The response nonce.
+        actual: u32,
+    },
+    /// A FAST structure breaks an RFC 6113 rule.
+    #[error("malformed FAST {structure}: {reason}")]
+    Malformed {
+        /// The structure.
+        structure: &'static str,
+        /// The broken rule.
+        reason: &'static str,
+    },
+    /// A KDC cookie exceeds the bound.
+    #[error("the KDC cookie exceeds {limit} bytes")]
+    CookieTooLarge {
+        /// The bound in bytes.
+        limit: usize,
+    },
+    /// The armored exchange exceeded its round bound.
+    #[error("the FAST exchange exceeded {limit} rounds")]
+    TooManyRounds {
+        /// The bound.
+        limit: usize,
+    },
+    /// The reply to an encrypted challenge lacks what RFC 6113 section 5.4.6 requires.
+    #[error("the KDC reply to the encrypted challenge lacks {what}")]
+    ChallengeReply {
+        /// The missing or invalid element.
+        what: &'static str,
+    },
+    /// The exchange ran without armor where armor is required.
+    #[error("the exchange ran without FAST armor")]
+    NotArmored,
+    /// A DER encoding or decoding failed.
+    #[error("failed to {action} {target}: {message}")]
+    Codec {
+        /// `encode` or `decode`.
+        action: &'static str,
+        /// The structure.
+        target: &'static str,
+        /// The codec's message.
+        message: String,
+    },
+    /// A FAST key has an enctype this library does not implement.
+    #[error("FAST key enctype {0} is not implemented")]
+    UnsupportedEtype(i32),
+    /// The armor ticket or the armor AP-REQ could not be built.
+    #[error("the FAST armor AP-REQ failed: {0}")]
+    ArmorRequest(#[source] Box<Client>),
+    /// A key, checksum or cipher operation failed, or policy refused its enctype.
+    #[error("FAST cryptography failed: {0}")]
+    Crypto(#[from] Crypto),
+    /// The OS random source failed.
+    #[error("random generation failed: {0}")]
+    Random(#[from] getrandom::Error),
+}
 #[cfg(feature = "http")]
 /// HTTP Negotiate adapter error.
 #[derive(thiserror::Error)]

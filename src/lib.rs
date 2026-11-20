@@ -102,6 +102,8 @@ pub mod krb_safe;
 #[cfg(feature = "messages")]
 pub mod messages;
 pub mod pac;
+#[cfg(feature = "messages")]
+pub mod preauth;
 mod secure_env;
 #[cfg(feature = "messages")]
 pub mod service;
