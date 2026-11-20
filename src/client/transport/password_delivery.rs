@@ -26,6 +26,9 @@ pub(super) async fn send_to_endpoints(
 ) -> Result<Vec<u8>, Error> {
     let mut failures = Vec::new();
     for endpoint in endpoints {
+        if let Some(expired) = transport.budget_exhausted() {
+            return Err(expired);
+        }
         let result = transport
             .send_password_once(
                 endpoint.protocol,

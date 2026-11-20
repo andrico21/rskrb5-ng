@@ -40,6 +40,8 @@ use crate::{
     error::Client as Error,
     extensions::{PreauthSession, ProviderError},
     keytab::{EncryptionKey, Keytab},
+    preauth::spake::Policy as SpakePolicy,
+    trace::{ExchangeKind, Guard},
 };
 
 /// The AS state machine.
@@ -64,6 +66,9 @@ mod tests;
 /// The TGS state machine with referral chasing.
 #[path = "stepwise/ticket.rs"]
 mod ticket;
+/// Redacted trace events of the exchanges.
+#[path = "stepwise/trace.rs"]
+pub(super) mod trace;
 
 /// The most KDC round trips one exchange may take (MIT `MAX_IN_TKT_LOOPS`).
 pub const MAX_EXCHANGE_ROUNDS: usize = 16;
@@ -229,6 +234,13 @@ pub trait Exchange {
 
     /// The key expiration the finished exchange reported, if any.
     fn key_expiration(&self) -> Option<SystemTime>;
+
+    /// Adopt the profile's per-exchange settings before the first step;
+    /// [`drive_tokio`] calls it with its configuration. The default does nothing.
+    #[inline]
+    fn configure(&mut self, config: &Config) {
+        let _: &Config = config;
+    }
 }
 
 /// Options of one AS exchange, from the profile or per request.
@@ -242,6 +254,10 @@ pub struct InitCredsOptions {
     kdc_timesync: bool,
     /// MIT `preferred_preauth_types`, most preferred first.
     preferred_preauth_types: Vec<i32>,
+    /// `spake_preauth_groups`; `None` until set or adopted from a profile.
+    spake: Option<SpakePolicy>,
+    /// Realms whose `disable_encrypted_timestamp` is set (MIT `encts_disabled`).
+    timestamp_disabled: Vec<String>,
 }
 
 impl fmt::Debug for InitCredsOptions {
@@ -252,6 +268,8 @@ impl fmt::Debug for InitCredsOptions {
             .field("service", &self.service)
             .field("kdc_timesync", &self.kdc_timesync)
             .field("preferred_preauth_types", &self.preferred_preauth_types)
+            .field("spake", &self.spake)
+            .field("timestamp_disabled", &self.timestamp_disabled)
             .finish()
     }
 }
@@ -269,7 +287,9 @@ impl InitCredsOptions {
     /// Options from the parsed `[libdefaults]`: request lifetimes and flags
     /// (`ticket_lifetime`, `renew_lifetime`, `forwardable`, `proxiable`,
     /// `kdc_default_options`), request addresses (`noaddresses`,
-    /// `extra_addresses`), `kdc_timesync` and `preferred_preauth_types`.
+    /// `extra_addresses`), `kdc_timesync`, `preferred_preauth_types`,
+    /// `spake_preauth_groups` and the realms whose `disable_encrypted_timestamp`
+    /// is set.
     ///
     /// # Errors
     ///
@@ -358,6 +378,23 @@ impl InitCredsOptions {
     #[must_use]
     pub fn preferred_preauth_types(&self) -> &[i32] {
         &self.preferred_preauth_types
+    }
+
+    /// Run SPAKE (RFC 9588) with `policy`'s groups when the KDC offers it; an
+    /// empty policy disables SPAKE. Without this call the exchange uses the
+    /// profile's `spake_preauth_groups` under [`drive_tokio`] and MIT's client
+    /// default, edwards25519, otherwise.
+    #[inline]
+    #[must_use]
+    pub fn with_spake_policy(self, policy: SpakePolicy) -> Self {
+        options::with_spake(self, policy)
+    }
+
+    /// The SPAKE policy, when set or adopted from a profile.
+    #[inline]
+    #[must_use]
+    pub const fn spake_policy(&self) -> Option<&SpakePolicy> {
+        self.spake.as_ref()
     }
 }
 
@@ -467,6 +504,10 @@ pub struct InitCreds<'registry> {
     cookie: Option<Vec<u8>>,
     /// The strengthen key of the newest armored reply.
     strengthen_key: Option<EncryptionKey>,
+    /// The trace of the exchange, when a guard is attached.
+    trace: Option<trace::Tracer>,
+    /// The client the armor authenticated in the newest reply.
+    authenticated_client: Option<Principal>,
 }
 
 impl fmt::Debug for InitCreds<'_> {
@@ -502,6 +543,16 @@ impl<'registry> InitCreds<'registry> {
     #[must_use]
     pub fn with_preauth(mut self, session: PreauthSession<'registry>) -> Self {
         self.preauth = Some(session);
+        self
+    }
+
+    /// Trace this exchange to `guard`: its start, each request and reply, a
+    /// prompt, and its completion or failure, as redacted [`crate::trace::Event`]s.
+    /// A failing sink never changes the exchange.
+    #[inline]
+    #[must_use]
+    pub fn with_trace(mut self, guard: Guard) -> Self {
+        self.trace = Some(trace::Tracer::new(guard, ExchangeKind::Initial));
         self
     }
 
@@ -549,6 +600,11 @@ impl Exchange for InitCreds<'_> {
     fn key_expiration(&self) -> Option<SystemTime> {
         self.key_expiration
     }
+
+    #[inline]
+    fn configure(&mut self, config: &Config) {
+        init::configure(self, config);
+    }
 }
 
 /// A stepwise TGS exchange with referral chasing (MIT `krb5_tkt_creds_context`).
@@ -563,6 +619,8 @@ pub struct TicketCreds {
     state: ticket::State,
     /// Cross-realm TGTs obtained on the way, in hop order.
     referral_tgts: Vec<TgsRepSession>,
+    /// The trace of the exchange, when a guard is attached.
+    trace: Option<trace::Tracer>,
 }
 
 impl fmt::Debug for TicketCreds {
@@ -586,6 +644,14 @@ impl TicketCreds {
         options: TicketOptions,
     ) -> Result<Self, Error> {
         ticket::new(tgt, service, options)
+    }
+
+    /// Trace this exchange to `guard` (see [`InitCreds::with_trace`]).
+    #[inline]
+    #[must_use]
+    pub fn with_trace(mut self, guard: Guard) -> Self {
+        self.trace = Some(trace::Tracer::new(guard, ExchangeKind::Ticket));
+        self
     }
 
     /// Advance the exchange.
@@ -643,6 +709,14 @@ pub trait ArmoredExchange: Send {
     /// Returns the armor's failure, for example a reply that is not armored or
     /// fails its integrity check; the exchange stops with [`Error::Armor`].
     fn unwrap_reply(&mut self, reply: &[u8]) -> Result<ArmoredReply, ProviderError>;
+
+    /// The armor key of an armored conversation, which the encrypted-challenge
+    /// factor combines with the reply key (RFC 6113 section 5.4.6). The
+    /// default has none, so the engine never answers an encrypted challenge.
+    #[inline]
+    fn armor_key(&self) -> Option<&EncryptionKey> {
+        None
+    }
 }
 
 /// What an [`ArmoredExchange`] wraps: the unarmored request and its parts.
@@ -655,6 +729,9 @@ pub struct ArmorRequest<'request> {
     pub body: &'request [u8],
     /// The KDC's last cookie (PA-FX-COOKIE value), echoed in the armored request.
     pub cookie: Option<&'request [u8]>,
+    /// Whether the caller asked for client canonicalization, which the engine
+    /// strips from unarmored requests and only an armor may request.
+    pub canonicalize: bool,
 }
 
 impl fmt::Debug for ArmorRequest<'_> {
@@ -664,6 +741,7 @@ impl fmt::Debug for ArmorRequest<'_> {
             .field("request_bytes", &self.request.len())
             .field("body_bytes", &self.body.len())
             .field("cookie", &self.cookie.is_some())
+            .field("canonicalize", &self.canonicalize)
             .finish()
     }
 }
@@ -677,6 +755,9 @@ pub struct ArmoredReply {
     strengthen_key: Option<EncryptionKey>,
     /// The KDC's new cookie, echoed in the next request.
     cookie: Option<Vec<u8>>,
+    /// The client the armor authenticated (`KrbFastFinished`), which may differ
+    /// from the requested one under canonicalization.
+    authenticated_client: Option<Principal>,
 }
 
 impl ArmoredReply {
@@ -692,7 +773,16 @@ impl ArmoredReply {
             reply,
             strengthen_key,
             cookie,
+            authenticated_client: None,
         }
+    }
+
+    /// The same reply, with the client the armor authenticated.
+    #[inline]
+    #[must_use]
+    pub fn with_authenticated_client(mut self, client: Principal) -> Self {
+        self.authenticated_client = Some(client);
+        self
     }
 }
 
@@ -703,6 +793,7 @@ impl fmt::Debug for ArmoredReply {
             .field("reply_bytes", &self.reply.len())
             .field("strengthen_key", &self.strengthen_key.is_some())
             .field("cookie", &self.cookie.is_some())
+            .field("authenticated_client", &self.authenticated_client)
             .finish()
     }
 }

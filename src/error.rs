@@ -525,8 +525,15 @@ pub enum Client {
     #[cfg(feature = "tokio")]
     #[error("DNS resolver configuration failed: {0}")]
     DnsResolverConfig(String),
-    /// A DNS SRV lookup failed, or, with [`Tokio::with_dns_server`], none of the
-    /// targets of an SRV answer resolved to an address.
+    /// A registered server locator or host-realm mapper failed or gave a
+    /// refused answer.
+    #[cfg(feature = "tokio")]
+    #[error("server location extension failed: {0}")]
+    Locate(#[source] Box<Extensions>),
+    /// A DNS SRV lookup failed (not merely found no record, except for the last
+    /// resort lookups of the KDC and `_kerberos-adm` services), or, with
+    /// [`Tokio::with_dns_server`], the lookup of an SRV target failed for another
+    /// reason than the name having no address data.
     ///
     /// [`Tokio::with_dns_server`]: crate::client::transport::Tokio::with_dns_server
     #[cfg(feature = "tokio")]
@@ -538,12 +545,14 @@ pub enum Client {
         /// and `Auto` query `_udp`, `Tcp` queries `_tcp`. It is not always the
         /// requested protocol: a KDC request with `Auto` reports its second pass
         /// (see [`Tokio::send_to_realm`]), and the `_kerberos-adm._tcp` fallback
-        /// of a kpasswd call reports `Tcp` whatever was requested.
+        /// of a kpasswd call reports `Tcp`, the label it queried, whatever
+        /// protocol was requested (the failure of that fallback's targets is a
+        /// [`Client::KdcEndpointFailures`] of the requested protocol).
         ///
         /// [`Tokio::send_to_realm`]: crate::client::transport::Tokio::send_to_realm
         protocol: KdcProtocol,
-        /// The resolver's error for the SRV lookup, or one entry per failed
-        /// target lookup, joined by `; `.
+        /// The resolver's error for the SRV lookup, or for the lookup of one
+        /// SRV target (`target <name>: <error>`).
         message: String,
     },
     /// A root SRV target declares the service named in `service` unavailable.
@@ -569,8 +578,9 @@ pub enum Client {
         protocol: KdcProtocol,
     },
     /// Every endpoint of the last pass that ran failed, or, with
-    /// [`Tokio::with_dns_server`], kpasswd discovery found no endpoint and none
-    /// of the targets of at least one published record set resolved.
+    /// [`Tokio::with_dns_server`], discovery found no endpoint and none of the
+    /// targets of at least one published record set resolved (MIT:
+    /// `KRB5_KDC_UNREACH`).
     ///
     /// [`Tokio::with_dns_server`]: crate::client::transport::Tokio::with_dns_server
     #[cfg(feature = "tokio")]
@@ -588,8 +598,9 @@ pub enum Client {
         /// [`Tokio::send_to_kpasswd_realm`]: crate::client::transport::Tokio::send_to_kpasswd_realm
         protocol: KdcProtocol,
         /// One `authority: error` entry per endpoint of that pass, in the order
-        /// tried; for a kpasswd discovery failure, one entry per published
-        /// record set none of whose targets resolved, the UDP set first.
+        /// tried; for a discovery failure, one entry per published record set
+        /// none of whose targets resolved (`target <name>: <reason>` joined by
+        /// `; `), the UDP set first.
         failures: Vec<String>,
     },
     /// Tokio transport exchange timed out.
@@ -660,6 +671,18 @@ pub enum Client {
     /// The FAST armor failed to wrap a request or unwrap a reply.
     #[error("the FAST armor failed")]
     Armor(#[source] ProviderError),
+    /// SPAKE preauthentication failed (RFC 9588); there is no fallback to
+    /// another mechanism after it (MIT `disable_fallback`).
+    #[error("SPAKE preauthentication failed")]
+    Spake(#[from] Spake),
+    /// Encrypted timestamp is disabled for the client realm
+    /// (`[realms] disable_encrypted_timestamp`), and the KDC offered no other
+    /// usable mechanism.
+    #[error("encrypted timestamp is disabled for realm {realm}")]
+    EncryptedTimestampDisabled {
+        /// The client realm.
+        realm: String,
+    },
     /// `noaddresses = false` needs request addresses, and interface addresses
     /// are not enumerated: configure `extra_addresses`.
     #[error("noaddresses = false requires extra_addresses; interface addresses are not enumerated")]
@@ -700,6 +723,15 @@ pub enum Config {
         relation: &'static str,
         /// Work package owning its runtime consumer.
         package: &'static str,
+    },
+    /// A relation's consumer needs a leaf Cargo feature this build lacks
+    /// (strict mode).
+    #[error("relation {relation} needs the `{feature}` Cargo feature")]
+    FeatureUnavailable {
+        /// Selected relation.
+        relation: &'static str,
+        /// The leaf feature.
+        feature: &'static str,
     },
     /// A local-address list contains a malformed IP address.
     #[error("invalid extra address: {0}")]
@@ -1073,6 +1105,135 @@ pub enum Extensions {
     /// The configuration a profile names is invalid, or `module` is unresolved.
     #[error("config error: {0}")]
     Config(#[from] Config),
+}
+#[cfg(feature = "messages")]
+/// RFC 6113 FAST armor and encrypted-challenge failures. The stepwise AS
+/// exchange reports them as [`Client::Armor`].
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum Fast {
+    /// FAST is required and no armor ticket for the realm is available.
+    #[error("FAST is required but no armor ticket for realm {realm} is available")]
+    ArmorUnavailable {
+        /// The realm of the request.
+        realm: String,
+    },
+    /// The armor ticket is not the ticket-granting ticket of the request's realm.
+    #[error("the armor ticket is for {actual}, not the TGS of realm {realm}")]
+    ArmorTicket {
+        /// The realm of the request.
+        realm: String,
+        /// The armor ticket's service.
+        actual: String,
+    },
+    /// The anonymous-armor provider failed.
+    #[error("the anonymous armor provider failed")]
+    AnonymousArmor(#[source] ProviderError),
+    /// A reply to an armored request carries no PA-FX-FAST.
+    #[error("the KDC reply to an armored request is not armored")]
+    Unarmored,
+    /// An armored request was answered by a KRB-ERROR without PA-FX-FAST.
+    #[error("the KDC answered an armored request with unarmored error {code}")]
+    UnarmoredError {
+        /// The unauthenticated error code.
+        code: i32,
+    },
+    /// The armored AS-REP carries no `KrbFastFinished`.
+    #[error("the armored KDC reply has no KrbFastFinished")]
+    MissingFinished,
+    /// The finished ticket checksum does not verify.
+    #[error("the FAST ticket checksum does not verify: the ticket was modified")]
+    TicketChecksum,
+    /// A FAST checksum is not the armor key's mandatory checksum type.
+    #[error("the FAST checksum has type {actual}, not the armor key's type {expected}")]
+    ChecksumType {
+        /// The armor key's mandatory checksum type.
+        expected: i32,
+        /// The received type.
+        actual: i32,
+    },
+    /// The `KrbFastResponse` answers another request.
+    #[error("the FAST response nonce {actual} does not match the request nonce {expected}")]
+    NonceMismatch {
+        /// The request nonce.
+        expected: u32,
+        /// The response nonce.
+        actual: u32,
+    },
+    /// A FAST structure breaks an RFC 6113 rule.
+    #[error("malformed FAST {structure}: {reason}")]
+    Malformed {
+        /// The structure.
+        structure: &'static str,
+        /// The broken rule.
+        reason: &'static str,
+    },
+    /// A KDC cookie exceeds the bound.
+    #[error("the KDC cookie exceeds {limit} bytes")]
+    CookieTooLarge {
+        /// The bound in bytes.
+        limit: usize,
+    },
+    /// The armored exchange exceeded its round bound.
+    #[error("the FAST exchange exceeded {limit} rounds")]
+    TooManyRounds {
+        /// The bound.
+        limit: usize,
+    },
+    /// The reply to an encrypted challenge lacks what RFC 6113 section 5.4.6 requires.
+    #[error("the KDC reply to the encrypted challenge lacks {what}")]
+    ChallengeReply {
+        /// The missing or invalid element.
+        what: &'static str,
+    },
+    /// The exchange ran without armor where armor is required.
+    #[error("the exchange ran without FAST armor")]
+    NotArmored,
+    /// A DER encoding or decoding failed.
+    #[error("failed to {action} {target}: {message}")]
+    Codec {
+        /// `encode` or `decode`.
+        action: &'static str,
+        /// The structure.
+        target: &'static str,
+        /// The codec's message.
+        message: String,
+    },
+    /// A FAST key has an enctype this library does not implement.
+    #[error("FAST key enctype {0} is not implemented")]
+    UnsupportedEtype(i32),
+    /// A key, checksum or cipher operation failed, or policy refused its enctype.
+    #[error("FAST cryptography failed: {0}")]
+    Crypto(#[from] Crypto),
+    /// The OS random source failed.
+    #[error("random generation failed: {0}")]
+    Random(#[from] getrandom::Error),
+}
+/// Trace destination and sink errors.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum Trace {
+    /// A trace destination (`KRB5_TRACE` or a caller's path) is not usable as given.
+    #[error("trace destination refused: {reason}")]
+    InvalidDestination {
+        /// Why the destination was refused.
+        reason: &'static str,
+    },
+    /// The trace file could not be opened for appending.
+    #[error("cannot open the trace file {path}: {source}")]
+    Open {
+        /// The destination path.
+        path: PathBuf,
+        /// The operating system's failure.
+        #[source]
+        source: io::Error,
+    },
+    /// A sink could not write an event.
+    #[error("trace output failed: {0}")]
+    Write(#[from] io::Error),
+    /// A sink declined an event.
+    #[error("the trace sink refused the event")]
+    Refused,
 }
 #[cfg(feature = "http")]
 /// HTTP Negotiate adapter error.
@@ -2346,6 +2507,55 @@ pub enum Service {
     /// A Kerberos time could not be represented as a `SystemTime`.
     #[error("Kerberos time overflows SystemTime")]
     TimeOverflow,
+}
+#[cfg(feature = "messages")]
+/// SPAKE preauthentication error (RFC 9588, `preauth::spake`).
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum Spake {
+    /// No configured SPAKE group is available in this build (MIT: the module
+    /// is not enabled without a permitted group).
+    #[error("no SPAKE group is permitted and available")]
+    NoGroups,
+    /// The KDC's challenge names a group the policy does not permit, after the
+    /// client already sent its support message (MIT `KRB5KDC_ERR_PREAUTH_FAILED`).
+    #[error("SPAKE group {group} is not permitted")]
+    GroupNotPermitted {
+        /// The group number of the challenge.
+        group: i32,
+    },
+    /// The challenge offers no second factor this client supports (only `SF-NONE`).
+    #[error("the SPAKE challenge offers no supported second factor")]
+    NoSupportedFactor,
+    /// A public key is not a valid, canonically encoded group element, or the
+    /// shared element is the identity.
+    #[error("invalid SPAKE group element for group {group}")]
+    InvalidElement {
+        /// The group number.
+        group: i32,
+    },
+    /// A PA-SPAKE value is not a valid DER message or exceeds a bound.
+    #[error("malformed PA-SPAKE message: {message}")]
+    Malformed {
+        /// What is wrong, without message bytes.
+        message: String,
+    },
+    /// The KDC sent a PA-SPAKE message this client does not expect now.
+    #[error("unexpected PA-SPAKE message: {message}")]
+    Unexpected {
+        /// What was received.
+        message: &'static str,
+    },
+    /// A second-factor exchange (`encdata`) was requested; only `SF-NONE` is
+    /// supported, as in MIT 1.22.2.
+    #[error("SPAKE second-factor rounds are not supported")]
+    SecondFactorUnsupported,
+    /// The initial reply key cannot feed the SPAKE derivations.
+    #[error("SPAKE key derivation failed")]
+    Crypto(#[from] Crypto),
+    /// The random generator failed.
+    #[error("random generator failed")]
+    Random(#[from] getrandom::Error),
 }
 #[cfg(feature = "spnego")]
 /// SPNEGO/GSS token processing error.

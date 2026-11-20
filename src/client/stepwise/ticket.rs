@@ -48,6 +48,7 @@ pub(super) fn new(
         options,
         state: State::Start,
         referral_tgts: Vec::new(),
+        trace: None,
     })
 }
 
@@ -93,6 +94,21 @@ pub(super) fn with_flag(mut options: TicketOptions, bit: u32, set: bool) -> Tick
 /// # Errors
 /// Returns the typed failure of the step; the exchange cannot continue after it.
 pub(super) fn step(engine: &mut TicketCreds, input: StepInput<'_>) -> Result<ExchangeStep, Error> {
+    if let Some(tracer) = &engine.trace {
+        tracer.input(&input, (&engine.tgt.client, &engine.service));
+    }
+    let result = advance(engine, input);
+    if let Some(tracer) = &mut engine.trace {
+        tracer.output(&result);
+    }
+    result
+}
+
+/// Advance the exchange without tracing.
+///
+/// # Errors
+/// Returns the typed failure of the step; the exchange cannot continue after it.
+fn advance(engine: &mut TicketCreds, input: StepInput<'_>) -> Result<ExchangeStep, Error> {
     match (mem::replace(&mut engine.state, State::Done), input) {
         (State::Start, StepInput::Start) => request(engine),
         (State::Await(pending), StepInput::Reply(reply)) => {

@@ -14,7 +14,6 @@ mod tests {
     use rskrb5_ng::{
         config::{Config, ConfigDiagnostic, ParseMode},
         crypto::camellia,
-        error::Config as Failure,
     };
 
     /// Number of secure Camellia names the fixtures list that the build skips.
@@ -36,9 +35,21 @@ mod tests {
         };
         assert_eq!(config.libdefaults.permitted_enctype_ids(), permitted);
         assert_eq!(config.configured_kdcs("ATHENA.MIT.EDU")?.len(), 3);
-        for relation in ["rdns", "default_domain"] {
-            assert!(config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation: name, package: _ } if *name == relation)));
-        }
+        assert!(config.diagnostics().iter().any(|item| matches!(
+            item,
+            ConfigDiagnostic::NotYetEffective {
+                relation: "default_domain",
+                package: _
+            }
+        )));
+        // `rdns` is effective since the discovery work package, so it has no diagnostic.
+        assert!(!config.diagnostics().iter().any(|item| matches!(
+            item,
+            ConfigDiagnostic::NotYetEffective {
+                relation: "rdns",
+                package: _
+            }
+        )));
         assert!(!config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == "ccache_type")));
         assert!(config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::UnknownRelation { path } if path == &["libdefaults", "fcc-mit-ticketflags"])));
         assert_eq!(
@@ -79,22 +90,26 @@ mod tests {
         Ok(())
     }
 
-    /// The plan's exact realm policy fails in Compatible mode with its package.
+    /// The plan's exact realm policy is effective (plan 2 todo 9): both modes admit
+    /// it without a deferred-consumer diagnostic, and the exchange engine honours it.
     #[test]
-    fn plan_timestamp_qa_fails_closed() -> Result<(), Box<dyn Error>> {
-        let failure = Config::parse_with_mode(
-            "[realms]\n TEST.RSKRB5 = {\n disable_encrypted_timestamp = true\n }\n",
-            ParseMode::Compatible,
-        )
-        .err()
-        .ok_or("timestamp policy ignored")?;
-        assert!(matches!(
-            failure,
-            Failure::NotYetEffective {
-                relation: "disable_encrypted_timestamp",
-                package: "plan 2 WP-07"
-            }
-        ));
+    fn plan_timestamp_qa_is_effective() -> Result<(), Box<dyn Error>> {
+        for mode in [ParseMode::Compatible, ParseMode::Strict] {
+            let config = Config::parse_with_mode(
+                "[realms]\n TEST.RSKRB5 = {\n disable_encrypted_timestamp = true\n }\n",
+                mode,
+            )?;
+            assert!(
+                !config.diagnostics().iter().any(|item| matches!(
+                    item,
+                    ConfigDiagnostic::NotYetEffective {
+                        relation: "disable_encrypted_timestamp",
+                        package: _
+                    }
+                )),
+                "{mode:?}"
+            );
+        }
         Ok(())
     }
 }

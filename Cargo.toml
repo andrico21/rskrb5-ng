@@ -50,6 +50,24 @@ minimal = []
 modules = ["src/ccache/keyring.rs", "src/ccache/keyring/"]
 tests = ["tests/ccache_keyring.rs", "tests/ccache_keyring/"]
 
+[package.metadata.rskrb5-ng.leaf-features.spake]
+minimal = ["messages"]
+modules = ["src/preauth/spake.rs", "src/preauth/spake/"]
+tests = [
+  "tests/interop_spake.rs",
+  "tests/interop_spake/",
+  "tests/spake.rs",
+  "tests/spake/",
+]
+seams = [
+  { file = "src/config/libdefaults.rs", item = "fn missing_leaf", call = "then_some" },
+]
+
+[package.metadata.rskrb5-ng.leaf-features.tracing]
+minimal = []
+modules = ["src/trace/adapter.rs"]
+tests = ["tests/trace_adapter.rs"]
+
 # The platform-store companion crate (owner decision D11); it depends on this
 # crate, never the reverse, and is not published.
 [workspace]
@@ -64,11 +82,13 @@ camellia = ["dep:camellia", "dep:cmac"]
 ccache-keyring = ["dep:keyutils-raw", "dep:libc"]
 evaluation = ["spnego", "dep:hex"]
 messages = ["dep:chrono", "dep:rasn", "dep:rasn-kerberos"]
+spake = ["dep:curve25519-dalek", "dep:p256", "dep:p384", "dep:p521"]
 spnego = ["messages", "dep:base64"]
 http = ["spnego", "dep:http_types"]
 tower = ["http", "dep:tower_layer", "dep:tower_service"]
 tokio = ["messages", "dep:hickory-resolver", "dep:tokio"]
 serde = ["dep:serde", "dep:serde_json"]
+tracing = ["dep:tracing"]
 
 [dependencies]
 aes = "0.9.1"
@@ -83,6 +103,10 @@ compcol = { version = "0.7", default-features = false, features = [
   "xpress",
   "xpress_huffman",
 ] }
+curve25519-dalek = { version = "5.0.0", default-features = false, features = [
+  "precomputed-tables",
+  "zeroize",
+], optional = true }
 des = "0.9.0"
 hex = { version = "0.4", optional = true }
 getrandom = { version = "0.4", features = ["std"] }
@@ -94,6 +118,15 @@ http_types = { package = "http", version = "1", optional = true }
 hmac = "0.13.0"
 md-5 = "0.11.0"
 md4 = "0.11.0"
+p256 = { version = "0.14.0", default-features = false, features = [
+  "arithmetic",
+], optional = true }
+p384 = { version = "0.14.0", default-features = false, features = [
+  "arithmetic",
+], optional = true }
+p521 = { version = "0.14.0", default-features = false, features = [
+  "arithmetic",
+], optional = true }
 pbkdf2 = "0.13"
 rasn = { version = "0.29", optional = true }
 rasn-kerberos = { version = "0.29", features = ["otp"], optional = true }
@@ -112,6 +145,12 @@ tokio = { version = "1.47", features = [
 ], optional = true }
 tower_layer = { package = "tower-layer", version = "0.3", optional = true }
 tower_service = { package = "tower-service", version = "0.3", optional = true }
+# The adapter to the application's `tracing` subscriber (the `tracing` leaf). Only
+# the `std` feature: no span macros, no proc macro. Admission record:
+# docs/dependency-admission.md#tracing.
+tracing = { version = "0.1.44", default-features = false, features = [
+  "std",
+], optional = true }
 zeroize = { version = "1", features = ["derive"] }
 
 # The one non-optional dependency (owner exception 2026-11-18, plan 2 D10):

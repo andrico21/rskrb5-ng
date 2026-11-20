@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 61
-partial = 57
-absent = 35
+implemented = 83
+partial = 44
+absent = 26
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -92,13 +92,20 @@ id = "MIT-client-3"
 area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Client principal referrals and enterprise principal canonicalization"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Unarmored AS canonicalize stays stripped and the returned client must equal the request; P2-4 delivered the stepwise exchange and its `ArmoredExchange` seam; the authenticated client-referral and enterprise flow under FAST is the closing todo P2-7's."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "client::stepwise::InitCreds::with_armor",
+  "preauth::fast::Exchange",
+  "preauth::fast::ArmorSource",
+]
+test_names = [
+  "tests/fast/exchange.rs::client_referrals_are_followed_only_when_armored_and_asked_for",
+  "tests/fast/exchange.rs::canonicalization_is_accepted_only_under_fast",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Client referrals and canonicalized client names are accepted only from FAST-authenticated replies when the caller asked for canonicalization: an armored KDC_ERR_WRONG_REALM or C_PRINCIPAL_UNKNOWN restarts the exchange in the named realm (re-armored for it, Required fails closed without armor), and a changed client is taken only from `KrbFastFinished`. MIT 1.22.2 also follows unarmored referrals and accepts a changed client from an unarmored AS-REP (get_in_tkt.c:227-238,1745-1762). The live MIT fixture has no cross-realm client alias, so the referral is proven against the deterministic FAST KDC only."
 disposition = "WP-05"
 closing_plan = 2
 closing_todo = 7
@@ -383,13 +390,37 @@ id = "MIT-preauth-2"
 area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "FAST negotiation, armor-ticket use, request/response protection, cookies, encrypted challenges"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Request-integrity advertisement/check and cookies are not full FAST armor."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "preauth::fast::Exchange",
+  "preauth::fast::Policy",
+  "preauth::fast::Outcome",
+  "preauth::fast::ArmorSource",
+  "preauth::fast::ArmorCache",
+  "preauth::fast::AnonymousArmor",
+  "client::stepwise::ArmoredExchange",
+  "client::stepwise::InitCreds::with_armor",
+]
+test_names = [
+  "tests/fast/exchange.rs::required_fast_logs_in_with_the_encrypted_challenge",
+  "tests/fast/exchange.rs::tampered_replies_are_rejected",
+  "tests/fast/exchange.rs::tampered_reply_keys_are_rejected",
+  "tests/fast/exchange.rs::required_rejects_a_reply_without_finished",
+  "tests/fast/exchange.rs::required_without_armor_sends_nothing",
+  "tests/fast/exchange.rs::unarmored_exchanges_report_their_outcome",
+  "tests/fast/exchange.rs::opportunistic_with_armor_is_armored_and_strict",
+  "tests/fast/exchange.rs::the_armor_cache_yields_the_realm_tgt",
+  "tests/fast/admission.rs::armor_output_enctypes_are_policy_checked",
+  "src/preauth/fast/tests.rs::mit_fast_response_encoding_round_trips",
+  "src/preauth/fast/tests.rs::mit_pa_fx_fast_reply_encoding_round_trips",
+  "src/preauth/fast/tests.rs::armored_rounds_are_bounded",
+  "tests/fast/vectors.rs::fast_key_derivations_match_the_independent_vectors",
+  "tests/interop_fast/scenarios.rs::encrypted_challenge_login_is_armored",
+]
 feature_flags = []
-security_divergence = "The PA-REQ-ENC-PA-REP checksum of a reply must have the type that the reply key's encryption type requires (RFC 6806 section 11); MIT 1.22.2 `krb5int_fast_verify_nego` (fast.c:635-668) passes any checksum type to `krb5_c_verify_checksum`, whose `verify_key` (crypto_int.h:598-607) only compares encryption providers: the AES128 and AES256 providers are shared by the SHA1 and SHA2 enctypes (etypes.c:88,132) and checksum types (cksumtypes.c:70,100), and HMAC-MD5 (-138) has no provider (cksumtypes.c:61-66), so it passes under a key of any enctype with a valid length."
+security_divergence = "The PA-REQ-ENC-PA-REP checksum of a reply must have the type that the reply key's encryption type requires (RFC 6806 section 11), also under FAST, where it covers the armored request as sent; MIT 1.22.2 `krb5int_fast_verify_nego` (fast.c:635-668) passes any checksum type to `krb5_c_verify_checksum`, whose `verify_key` (crypto_int.h:598-607) only compares encryption providers: the AES128 and AES256 providers are shared by the SHA1 and SHA2 enctypes (etypes.c:88,132) and checksum types (cksumtypes.c:70,100), and HMAC-MD5 (-138) has no provider (cksumtypes.c:61-66), so it passes under a key of any enctype with a valid length. The `KrbFastFinished` ticket checksum must equally be the armor key's mandatory type (MIT fast.c:543-547 verifies any type). An armored exchange never accepts an unarmored reply or error (MIT treats an undecryptable FAST error as the KDC's fatal error, fast.c:445-460, and so does this crate, reporting it as `error::Fast::UnarmoredError`). TGS requests are not FAST-armored: MIT 1.22.2 armors every TGS request implicitly (send_tgs.c:178, fast.c:110-142) and accepts an unarmored reply from a KDC without FAST; executor decision recorded as FU-FST-P01."
 disposition = "WP-05"
 closing_plan = 2
 closing_todo = 7
@@ -400,11 +431,13 @@ id = "MIT-preauth-3"
 area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "FAST anonymous armor via anonymous PKINIT"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "No PKINIT/armor exchange."
-rust_symbols = []
-test_names = []
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "P2-7 delivered the anonymous-armor hook (`preauth::fast::AnonymousArmor`, `ArmorSource::Anonymous`, asked for each realm the exchange armors); anonymous PKINIT behind it is the closing todo P2-8's."
+rust_symbols = ["preauth::fast::AnonymousArmor", "preauth::fast::ArmorSource"]
+test_names = [
+  "tests/fast/exchange.rs::client_referrals_are_followed_only_when_armored_and_asked_for",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-06"
@@ -417,13 +450,24 @@ id = "MIT-preauth-4"
 area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Encrypted challenge FAST factor"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "Timestamp helper is distinct from armored challenge."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "preauth::encrypted_challenge::EncryptedChallenge",
+  "preauth::encrypted_challenge::EncryptedChallenge::new",
+  "preauth::encrypted_challenge::EncryptedChallenge::padata",
+  "preauth::encrypted_challenge::EncryptedChallenge::verify_reply",
+]
+test_names = [
+  "tests/fast/vectors.rs::fast_key_derivations_match_the_independent_vectors",
+  "tests/fast/exchange.rs::required_fast_logs_in_with_the_encrypted_challenge",
+  "tests/fast/exchange.rs::tampered_replies_are_rejected",
+  "tests/fast/exchange.rs::the_challenge_travels_only_inside_the_armor",
+  "tests/interop_fast/scenarios.rs::fast_required_service_needs_the_fast_ec_indicator",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "The client requires the KDC's PA-ENCRYPTED-CHALLENGE to decrypt in the KDC challenge key and the reply key to be strengthened before it releases the credential (RFC 6113 section 5.4.6); MIT 1.22.2 checks the KDC's challenge only when one is present (preauth_ec.c:64-95) and does not require the strengthen key."
 disposition = "WP-05"
 closing_plan = 2
 closing_todo = 7
@@ -468,13 +512,37 @@ id = "MIT-preauth-7"
 area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "SPAKE password-authenticated key exchange"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "Built-in timestamp/key-hint flow only."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "preauth::spake::Client",
+  "preauth::spake::Group",
+  "preauth::spake::Policy",
+  "preauth::spake::Message",
+  "preauth::spake::Step",
+  "client::stepwise::InitCreds",
+  "client::stepwise::InitCredsOptions::with_spake_policy",
+  "error::Spake",
+]
+test_names = [
+  "src/preauth/spake/vectors.rs::rfc9588_vectors_replay_through_the_client",
+  "src/preauth/spake/vectors.rs::rfc9588_sha1_vector_derives_two_hash_blocks",
+  "tests/spake/scenarios.rs::spake_exchange_completes_with_the_strengthened_reply_key",
+  "tests/spake/scenarios.rs::keytab_exchange_runs_spake",
+  "tests/spake/scenarios.rs::optimistic_challenge_is_answered_without_support",
+  "tests/spake/scenarios.rs::challenge_outside_the_policy_is_rejected",
+  "tests/spake/scenarios.rs::challenge_without_a_supported_factor_is_rejected",
+  "tests/spake/scenarios.rs::tampered_transcript_fails_closed_without_fallback",
+  "tests/spake/scenarios.rs::spake_failure_does_not_fall_back",
+  "tests/spake/scenarios.rs::invalid_kdc_elements_are_rejected",
+  "tests/spake/scenarios.rs::malformed_challenges_are_rejected",
+  "tests/spake/profile.rs::outgoing_spake_is_admitted_exactly",
+  "tests/interop_spake/scenarios.rs::spake_login_meets_the_spake_requirement",
+  "tests/interop_spake/scenarios.rs::spake_login_in_each_nist_group",
+]
+feature_flags = ["spake"]
+security_divergence = "Stricter than MIT 1.22.2: non-canonical KDC elements and an identity shared element are refused for every group, the edwards25519 private scalar is drawn uniformly (64 bytes, wide reduction), and the exchange never falls back to another mechanism once SPAKE has started, also after a KDC failure answering the support message (MIT get_in_tkt.c:1318-1345 tries the remaining mechanisms there). Only SF-NONE is supported, as in MIT (spake_client.c:300-320)."
 disposition = "WP-07"
 closing_plan = 2
 closing_todo = 9
@@ -1280,13 +1348,20 @@ id = "MIT-config-4"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`canonicalize`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "TGS option consumed; AS builders suppress canonicalization, preserving identity; either value diagnostic. P2-4 delivered the `ArmoredExchange` seam; the authenticated canonicalization under FAST is the closing todo P2-7's."
-rust_symbols = []
-test_names = ["tests/config/relations_c1.rs::canonicalize"]
+missing = ""
+rust_symbols = [
+  "client::options::AsReq::from_libdefaults",
+  "client::stepwise::ArmorRequest",
+  "preauth::fast::Exchange",
+]
+test_names = [
+  "tests/config/relations_c1.rs::canonicalize",
+  "tests/fast/exchange.rs::canonicalization_is_accepted_only_under_fast",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "`canonicalize` takes effect only under FAST armor; an unarmored AS request drops the option, so no unauthenticated reply changes the client identity (MIT sets it from the profile in every AS request, get_in_tkt.c:921-930)."
 disposition = "WP-05"
 closing_plan = 2
 closing_todo = 7
@@ -1492,15 +1567,20 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "`dns_canonicalize_hostname`"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "No DNS canonicalization occurs; all values diagnostic, including fallback per todo 15 (consumer: plan 2 WP-10)."
-rust_symbols = []
-test_names = ["tests/config/relations_c1.rs::dns_canonicalize_hostname"]
+missing = "CanonicalizationPolicy (todo 15) is the effective consumer, but no client route canonicalizes a host name implicitly: Principal::host_based_service and the GSS and HTTP name import still only lower-case the host (consumers: todo 18 for the GSS name import, todo 26 for the HTTP client)"
+rust_symbols = ["discovery::hostname::CanonicalizationPolicy"]
+test_names = [
+  "tests/config/relations_c1.rs::dns_canonicalize_hostname",
+  "tests/discovery/hostnames.rs::the_three_modes_order_their_forms",
+  "tests/discovery/hostnames.rs::dns_canonicalization_follows_the_name_and_then_the_address",
+  "tests/discovery/hostnames.rs::fallback_candidates_are_distinct_and_ordered",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
-contributors = []
+contributors = ["P2-18", "P2-26"]
 
 [[feature]]
 id = "MIT-config-15"
@@ -1522,13 +1602,21 @@ id = "MIT-config-16"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`dns_lookup_realm`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "No TXT realm discovery occurs; false satisfied, true cannot relax behavior; diagnostic (consumer: plan 2 WP-10)."
-rust_symbols = []
-test_names = ["tests/config/relations_c1.rs::dns_lookup_realm"]
+missing = ""
+rust_symbols = [
+  "discovery::realm::HostRealmResolver",
+  "client::transport::Tokio::host_realms",
+]
+test_names = [
+  "tests/config/relations_c1.rs::dns_lookup_realm",
+  "tests/discovery/realms.rs::txt_lookup_is_off_by_default",
+  "tests/discovery/realms.rs::txt_lookup_walks_the_parents_and_distrusts_the_answer",
+  "tests/discovery/realms.rs::the_service_realm_prefers_an_opted_in_txt_record_to_the_default",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "TXT lookup needs dns_lookup_realm (default false, as MIT); a failing TXT lookup is an error instead of a silent step to the parent name (MIT ignores every failure, dnsglue.c:449-497), and the answer is accepted only as a plain realm name"
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
@@ -1539,13 +1627,21 @@ id = "MIT-config-17"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`dns_uri_lookup`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "No URI discovery occurs; false satisfied, true cannot relax behavior; diagnostic; crate default false (consumer: plan 2 WP-10)."
-rust_symbols = []
-test_names = ["tests/config/relations_c1.rs::dns_uri_lookup"]
+missing = ""
+rust_symbols = [
+  "discovery::locate::ServerLocator",
+  "discovery::locate::EndpointRole",
+  "client::transport::Tokio::locator",
+]
+test_names = [
+  "tests/config/relations_c1.rs::dns_uri_lookup",
+  "tests/discovery/servers.rs::uri_records_are_used_before_srv_records",
+  "tests/discovery/servers.rs::uri_lookup_is_off_unless_enabled",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "crate default false (MIT true); URI lookup also needs dns_lookup_kdc, which is off by default; for a primary KDC only records flagged m are used (MIT's locate_uri takes primary_only and never uses it, locate_kdc.c:645-713)"
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
@@ -1573,13 +1669,24 @@ id = "MIT-config-19"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`err_fmt`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Formatting does not alter typed errors or authentication policy; diagnostic (consumer: plan 2 WP-18)."
-rust_symbols = []
-test_names = ["tests/config/relations_c1.rs::err_fmt"]
+missing = ""
+rust_symbols = [
+  "trace::err_fmt::ErrFmt",
+  "trace::err_fmt::ErrFmt::from_config",
+  "trace::err_fmt::ErrFmt::format",
+  "trace::err_fmt::ErrFmt::report",
+  "trace::err_fmt::Report",
+]
+test_names = [
+  "tests/trace.rs::err_fmt",
+  "tests/trace.rs::report_preserves_the_typed_error_and_code",
+  "src/trace/tests.rs::err_fmt_matches_mit_vectors",
+  "tests/config/relations_c1.rs::canonicalize",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "`ErrFmt::format` expands `%M`, `%C`, `%%` and keeps any other `%c` as MIT `err_fmt_fmt` does (`kerrs.c:140-169`; the vectors of `src/tests/t_errmsg.py:8-26` pass). MIT applies the template inside `krb5_get_error_message` for every message of a context; here the caller asks: `ErrFmt::from_config(&config).report(&error)` returns a `Report` whose `Display` is the formatted text, whose `error()` is the unchanged typed error and whose `source()` is that error, so typed variants, codes and sources survive. `%C` is the `com_err` code of a KDC refusal (`-1765328384` + the KRB-ERROR number) and 0 for an error that carries no Kerberos protocol code (the library has no `com_err` table for its other errors); an empty relation counts as unset (MIT would print an empty message). The relation no longer yields `NotYetEffective`, also in strict mode."
 disposition = "WP-18"
 closing_plan = 2
 closing_todo = 6
@@ -1886,15 +1993,19 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "`qualify_shortname`"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "No automatic qualification exists; empty disables and nonempty requests unavailable name rewriting; diagnostic (consumer: plan 2 WP-10)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::qualify_shortname"]
+missing = "CanonicalizationPolicy (todo 15) applies the suffix, but no client route canonicalizes a host name implicitly: Principal::host_based_service and the GSS and HTTP name import still only lower-case the host (consumers: todo 18 for the GSS name import, todo 26 for the HTTP client)"
+rust_symbols = ["discovery::hostname::CanonicalizationPolicy"]
+test_names = [
+  "tests/config/relations_c2.rs::qualify_shortname",
+  "tests/discovery/hostnames.rs::qualify_shortname_adds_a_suffix_to_one_label_names",
+  "tests/discovery/hostnames.rs::a_failed_lookup_keeps_the_name",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "unset adds no suffix (MIT uses the first search domain of the system resolver configuration, sn2princ.c:62-74; the library does not read that configuration to name a service)"
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
-contributors = []
+contributors = ["P2-18", "P2-26"]
 
 [[feature]]
 id = "MIT-config-35"
@@ -1903,28 +2014,39 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "`rdns`"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "No reverse DNS occurs; false satisfied, true cannot relax current behavior; diagnostic (consumer: plan 2 WP-10)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::rdns"]
+missing = "CanonicalizationPolicy (todo 15) makes the reverse lookup, but no client route canonicalizes a host name implicitly: Principal::host_based_service and the GSS and HTTP name import still only lower-case the host (consumers: todo 18 for the GSS name import, todo 26 for the HTTP client)"
+rust_symbols = ["discovery::hostname::CanonicalizationPolicy"]
+test_names = [
+  "tests/config/relations_c2.rs::rdns",
+  "tests/discovery/hostnames.rs::dns_canonicalization_follows_the_name_and_then_the_address",
+  "tests/discovery/hostnames.rs::an_address_literal_is_named_only_by_the_reverse_lookup",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
-contributors = []
+contributors = ["P2-18", "P2-26"]
 
 [[feature]]
 id = "MIT-config-36"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`realm_try_domains`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "No domain realm probing occurs; negative disables, nonnegative does not tighten behavior; diagnostic (consumer: plan 2 WP-10)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::realm_try_domains"]
+missing = ""
+rust_symbols = [
+  "discovery::realm::HostRealmResolver",
+  "client::transport::Tokio::host_realms",
+]
+test_names = [
+  "tests/config/relations_c2.rs::realm_try_domains",
+  "tests/discovery/realms.rs::realm_try_domains_is_bounded_and_needs_a_realm",
+  "tests/discovery/realms.rs::realm_try_domains_stops_before_a_one_label_name",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "the search starts at the host's domain, as MIT documents; MIT's code also tries the whole host name as a realm first (hostrealm_domain.c:86), which an attacker-chosen DNS name could use"
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
@@ -1953,13 +2075,20 @@ id = "MIT-config-38"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`request_timeout`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Existing per-attempt timeouts are not a total budget; every nonzero value errors; zero diagnostic (consumer: plan 2 WP-10)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::request_timeout"]
+missing = ""
+rust_symbols = [
+  "client::transport::Tokio::send_to_realm",
+  "client::transport::Tokio::send_to_kpasswd_realm",
+]
+test_names = [
+  "tests/config/relations_c2.rs::request_timeout",
+  "tests/discovery/budget.rs::the_budget_covers_every_dns_lookup_together",
+  "tests/discovery/budget.rs::the_budget_is_shared_by_the_endpoints_and_cuts_the_wait_for_a_reply",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "the budget also covers DNS discovery (MIT's request_timeout bounds sendto only, sendto_kdc.c:1510-1525); a kpasswd request whose budget ends after it was sent is KpasswdOutcomeUnknown"
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
@@ -1970,13 +2099,24 @@ id = "MIT-config-39"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`spake_preauth_groups`"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "No SPAKE group is used; allowed-group lists do not require SPAKE; diagnostic; unknown names rejected rather than skipped (consumer: plan 2 WP-07)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::spake_preauth_groups"]
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "preauth::spake::Policy::from_libdefaults",
+  "client::stepwise::InitCredsOptions::from_config",
+  "client::stepwise::Exchange",
+  "config::ConfigDiagnostic::FeatureUnavailable",
+]
+test_names = [
+  "tests/spake/profile.rs::spake_preauth_groups",
+  "tests/spake/profile.rs::policy_follows_the_profile",
+  "tests/spake/scenarios.rs::configure_adopts_the_profile",
+  "tests/spake/scenarios.rs::empty_group_list_disables_spake",
+  "tests/interop_spake/scenarios.rs::spake_login_in_each_nist_group",
+]
+feature_flags = ["spake"]
+security_divergence = "Unknown group names are rejected at parse time rather than skipped (MIT groups.c:192-196 skips them). Without the spake leaf the relation is reported as ConfigDiagnostic::FeatureUnavailable (strict mode refuses it) and SPAKE is never answered."
 disposition = "WP-07"
 closing_plan = 2
 closing_todo = 9
@@ -2078,17 +2218,25 @@ id = "MIT-config-45"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`[realms]`: `primary_kdc` (formerly `master_kdc`)"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Primary-KDC retry after a bad password against a replica; primary_kdc and master_kdc are parsed (primary_kdc wins) with a diagnostic."
-rust_symbols = []
+missing = ""
+rust_symbols = [
+  "client::transport::Tokio::login_tgt_with_password_config",
+  "discovery::locate::EndpointRole",
+]
 test_names = [
   "tests/config/section_composition_d.rs::primary_kdc_precedence",
   "tests/config/realm_relations_d.rs::primary_kdc",
   "tests/config/realm_relations_d.rs::master_kdc",
+  "tests/discovery/primary.rs::a_replica_failure_is_retried_on_the_primary",
+  "tests/discovery/primary.rs::a_primary_failure_is_not_retried",
+  "tests/discovery/primary.rs::a_realm_without_primaries_is_not_retried",
+  "tests/discovery/primary.rs::an_unreachable_primary_keeps_the_replicas_error",
+  "tests/discovery/primary.rs::master_kdc_names_the_primary_when_primary_kdc_is_absent",
 ]
 feature_flags = []
-security_divergence = ""
+security_divergence = "the retry applies to a failure that a replica answered with a KDC error or an undecryptable reply, as MIT's does for any error but unreachability; it is made by the password and keytab login functions of Tokio"
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
@@ -2099,11 +2247,19 @@ id = "MIT-config-46"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`[realms]`: `sitename`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Site-local DNS discovery; the relation is parsed with a diagnostic."
-rust_symbols = []
-test_names = ["tests/config/realm_relations_d.rs::sitename"]
+missing = ""
+rust_symbols = [
+  "discovery::locate::ServerLocator",
+  "discovery::locate::EndpointRole",
+  "client::transport::Tokio::locator",
+]
+test_names = [
+  "tests/config/realm_relations_d.rs::sitename",
+  "tests/discovery/servers.rs::the_site_is_asked_before_the_realm",
+  "tests/discovery/servers.rs::a_site_without_an_answer_falls_back_to_the_realm",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-10"
@@ -2158,16 +2314,24 @@ id = "MIT-config-49"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`[realms]`: `disable_encrypted_timestamp`"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "SPAKE consumer; true is rejected (fail closed) because the current client may still send encrypted timestamp."
-rust_symbols = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "client::stepwise::InitCredsOptions::from_config",
+  "client::stepwise::Exchange",
+  "error::Client::EncryptedTimestampDisabled",
+]
 test_names = [
-  "tests/config/sections_d.rs::encrypted_timestamp_disable_fails_closed",
-  "tests/config/realm_relations_d.rs::disable_encrypted_timestamp",
+  "tests/spake/scenarios.rs::disable_encrypted_timestamp",
+  "tests/spake/scenarios.rs::disabled_timestamp_moves_on_to_spake",
+  "tests/spake/scenarios.rs::configure_adopts_the_profile",
+  "tests/config/sections_d.rs::encrypted_timestamp_disable_is_a_typed_boolean",
+  "tests/config/compatibility_e.rs::plan_timestamp_qa_is_effective",
+  "tests/interop_spake/scenarios.rs::without_spake_the_requirement_is_not_met",
 ]
 feature_flags = []
-security_divergence = ""
+security_divergence = "As MIT (get_in_tkt.c:758-772,815-818; preauth_encts.c:68-73) for every exchange the library runs: the encrypted-timestamp mechanism refuses for the client realm and the optimistic timestamp is suppressed. A caller-built AS-REQ sent through transport::Tokio::exchange_as_req_with_config carries the caller's PA-DATA unchanged (register row FU-SPK-P01)."
 disposition = "WP-07"
 closing_plan = 2
 closing_todo = 9
@@ -2345,13 +2509,24 @@ id = "MIT-dns-1"
 area = "dns"
 upstream_ref = "krb5-1.22.2-final"
 capability = "KDC/admin/password server DNS SRV discovery"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "KDC/kpasswd and admin-to-kpasswd fallback exist; distinct remote-admin endpoint discovery missing."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "discovery::locate::ServerLocator",
+  "discovery::locate::EndpointRole",
+  "client::transport::Tokio::locator",
+]
+test_names = [
+  "tests/discovery/residuals.rs::kdc_set_with_a_root_target_keeps_the_real_records",
+  "tests/discovery/residuals.rs::kpasswd_set_with_a_root_target_keeps_the_real_records",
+  "tests/discovery/residuals.rs::kdc_target_that_does_not_resolve_is_an_endpoint_failure",
+  "tests/discovery/residuals.rs::a_target_servfail_aborts_discovery_with_a_single_prefix",
+  "tests/discovery/residuals.rs::a_servfail_for_kpasswd_does_not_fall_back_to_the_admin_service",
+  "tests/discovery/roles.rs::the_admin_role_uses_its_own_profile_key_and_dns_labels",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "an SRV or target lookup failure other than absence propagates (MIT swallows an SRV error, locate_kdc.c:370-374, and aborts only on a target error, sendto_kdc.c:764-766); the plan-1 baseline of A8 for kpasswd is kept"
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
@@ -2362,13 +2537,25 @@ id = "MIT-dns-2"
 area = "dns"
 upstream_ref = "krb5-1.22.2-final"
 capability = "KDC/KPASSWD DNS URI discovery"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "SRV-only discovery."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "discovery::locate::ServerLocator",
+  "discovery::locate::EndpointRole",
+  "client::transport::Tokio::locator",
+  "discovery::uri::parse",
+]
+test_names = [
+  "tests/discovery/servers.rs::uri_records_are_used_before_srv_records",
+  "tests/discovery/servers.rs::a_uri_record_with_an_unknown_transport_is_ignored",
+  "tests/discovery/servers.rs::uri_transport_follows_the_request",
+  "tests/discovery/servers.rs::kpasswd_discovery_uses_uri_records_first",
+  "tests/discovery/uri.rs::the_fields_follow_parse_uri_fields",
+  "tests/discovery/uri.rs::other_records_are_ignored",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "records for the MS-KKDCP transport are ignored until the proxy transport exists (todo 16)"
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
@@ -2379,13 +2566,20 @@ id = "MIT-dns-3"
 area = "dns"
 upstream_ref = "krb5-1.22.2-final"
 capability = "DNS TXT realm lookup"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "Flag only; resolver paths do not issue TXT."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "discovery::realm::HostRealmResolver",
+  "client::transport::Tokio::host_realms",
+]
+test_names = [
+  "tests/discovery/realms.rs::txt_lookup_is_off_by_default",
+  "tests/discovery/realms.rs::txt_lookup_skips_addresses_and_reports_failures",
+  "tests/discovery/uri.rs::a_txt_realm_must_be_a_plain_realm_name",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "off by default; no default-realm lookup of the local host name, because the library has no source for it (the caller passes it); see MIT-config-16"
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
@@ -2397,16 +2591,21 @@ area = "dns"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Hostname canonicalization with DNS, `fallback`, short-name qualification and reverse DNS"
 implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Host component lowercase normalization only; DNS/PTR/fallback policy absent."
-rust_symbols = []
-test_names = []
+evidence_status = "unit"
+missing = "CanonicalizationPolicy (todo 15) is the effective consumer, but no client route canonicalizes a host name implicitly: Principal::host_based_service and the GSS and HTTP name import still only lower-case the host (consumers: todo 18 for the GSS name import, todo 26 for the HTTP client)"
+rust_symbols = ["discovery::hostname::CanonicalizationPolicy"]
+test_names = [
+  "tests/discovery/hostnames.rs::the_three_modes_order_their_forms",
+  "tests/discovery/hostnames.rs::dns_canonicalization_follows_the_name_and_then_the_address",
+  "tests/discovery/hostnames.rs::fallback_candidates_are_distinct_and_ordered",
+  "tests/discovery/hostnames.rs::qualify_shortname_adds_a_suffix_to_one_label_names",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
-contributors = []
+contributors = ["P2-18", "P2-26"]
 
 [[feature]]
 id = "MIT-dns-5"
@@ -2430,11 +2629,18 @@ id = "MIT-dns-6"
 area = "dns"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Site-local KDC discovery (`sitename`)"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "No site-local DNS queries; sitename is parsed with a diagnostic."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "discovery::locate::ServerLocator",
+  "discovery::locate::EndpointRole",
+  "client::transport::Tokio::locator",
+]
+test_names = [
+  "tests/discovery/servers.rs::the_site_is_asked_before_the_realm",
+  "tests/discovery/servers.rs::a_site_without_an_answer_falls_back_to_the_realm",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-10"
@@ -2447,11 +2653,20 @@ id = "MIT-dns-7"
 area = "dns"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Primary KDC retry after invalid password"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "Master metadata not a primary retry workflow."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "client::transport::Tokio::login_tgt_with_password_config",
+  "discovery::locate::EndpointRole",
+]
+test_names = [
+  "tests/discovery/primary.rs::a_replica_failure_is_retried_on_the_primary",
+  "tests/discovery/primary.rs::a_primary_failure_is_not_retried",
+  "tests/discovery/primary.rs::a_realm_without_primaries_is_not_retried",
+  "tests/discovery/primary.rs::an_unreachable_primary_keeps_the_replicas_error",
+  "tests/discovery/roles.rs::the_primary_role_needs_the_m_flag",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-10"
@@ -2464,13 +2679,16 @@ id = "MIT-dns-8"
 area = "dns"
 upstream_ref = "krb5-1.22.2-final"
 capability = "KDC transport ordering, failover, timeout and TCP/UDP fallback"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Bounded UDP/TCP fallback/endpoint retries exist; request_timeout config/whole discovery budget absent."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["client::transport::Tokio::send_to_realm"]
+test_names = [
+  "tests/discovery/budget.rs::the_budget_covers_every_dns_lookup_together",
+  "tests/discovery/budget.rs::the_budget_is_shared_by_the_endpoints_and_cuts_the_wait_for_a_reply",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "the total budget covers DNS, connect, retries and read of each request (MIT's covers sendto only)"
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
@@ -2997,16 +3215,21 @@ area = "authz"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Host-to-realm plugin interface"
 implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Built-in profile realm resolution, no trait/provider chain."
-rust_symbols = []
-test_names = []
+evidence_status = "unit"
+missing = "Registered providers are consulted when a registry is passed to ServerLocator::locate and to the HostRealmResolver methods (todo 15); the Tokio exchange routes (send_to_realm, get_service_ticket*) carry no registry, so a registered provider does not influence them (closer: todo 28, configuration consumers)"
+rust_symbols = [
+  "discovery::realm::HostRealmResolver",
+  "client::transport::Tokio::host_realms",
+]
+test_names = [
+  "tests/discovery/realms.rs::the_provider_chain_is_registry_then_profile_then_default",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 15
-contributors = []
+contributors = ["P2-28"]
 
 [[feature]]
 id = "MIT-plugin-1"
@@ -3079,16 +3302,21 @@ area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`hostrealm` hostname/default-realm mapping"
 implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Profile resolve exists, DNS/domain provider chain incomplete."
-rust_symbols = []
-test_names = []
+evidence_status = "unit"
+missing = "Registered providers are consulted when a registry is passed to ServerLocator::locate and to the HostRealmResolver methods (todo 15); the Tokio exchange routes (send_to_realm, get_service_ticket*) carry no registry, so a registered provider does not influence them (closer: todo 28, configuration consumers)"
+rust_symbols = [
+  "discovery::realm::HostRealmResolver",
+  "client::transport::Tokio::host_realms",
+]
+test_names = [
+  "tests/discovery/realms.rs::the_provider_chain_is_registry_then_profile_then_default",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 15
-contributors = []
+contributors = ["P2-28"]
 
 [[feature]]
 id = "MIT-plugin-4"
@@ -3136,16 +3364,23 @@ area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`locate` server-location interface"
 implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Built-in transport discovery, no provider registry."
-rust_symbols = []
-test_names = []
+evidence_status = "unit"
+missing = "Registered providers are consulted when a registry is passed to ServerLocator::locate and to the HostRealmResolver methods (todo 15); the Tokio exchange routes (send_to_realm, get_service_ticket*) carry no registry, so a registered provider does not influence them (closer: todo 28, configuration consumers)"
+rust_symbols = [
+  "discovery::locate::ServerLocator",
+  "discovery::locate::EndpointRole",
+  "client::transport::Tokio::locator",
+]
+test_names = [
+  "tests/discovery/roles.rs::a_registered_locator_answers_before_the_profile_and_dns",
+  "tests/discovery/roles.rs::a_failing_locator_stops_the_lookup",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 15
-contributors = []
+contributors = ["P2-28"]
 
 [[feature]]
 id = "MIT-plugin-7"
@@ -3189,13 +3424,23 @@ id = "MIT-plugin-9"
 area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Interposer modules"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "No safe extension/observer API; C symbol interposition mechanics excluded, Rust equivalent required."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "extensions::LibraryObserver",
+  "extensions::Event",
+  "extensions::Extension",
+  "trace::Guard",
+  "trace::Sink",
+]
+test_names = [
+  "tests/trace.rs::guard_observes_registry_events",
+  "tests/trace.rs::provider_refusal_never_carries_the_provider_error_text",
+  "tests/extensions.rs::observers_receive_redacted_events",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "The Rust equivalent of an MIT interposer module (`src/lib/krb5/krb/plugin.c`, mechanics of C symbol interposition) is an in-process `LibraryObserver` registered through the extension registry (todo 3, no `dlopen`, D3/D7) and its trace implementation `trace::Guard`: observers receive redacted events that carry interface names, provider ids and static reasons only, never a principal, key or protocol bytes, and cannot change an outcome. C symbol interposition itself is excluded."
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 6
@@ -3270,13 +3515,54 @@ id = "MIT-trace-1"
 area = "trace"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`KRB5_TRACE` diagnostic trace logging and programmatic trace controls"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "Diagnostics JSON exists but no event sink/env trace controls."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = [
+  "trace::Event",
+  "trace::Sink",
+  "trace::Guard",
+  "trace::Guard::emit",
+  "trace::Options",
+  "trace::Options::from_env",
+  "trace::Options::with_file",
+  "trace::file::Append",
+  "trace::capture::Memory",
+  "trace::adapter::Forward",
+  "client::stepwise::InitCreds::with_trace",
+  "client::stepwise::TicketCreds::with_trace",
+  "client::Tokio::with_trace",
+  "service::Validator::with_trace",
+]
+test_names = [
+  "tests/trace.rs::guard_delivers_the_event_with_its_name_first",
+  "tests/trace.rs::identities_are_withheld_unless_opted_in",
+  "tests/trace.rs::identity_text_is_escaped_and_stays_on_one_line",
+  "tests/trace.rs::debug_of_an_event_is_redacted",
+  "tests/trace.rs::event_text_is_capped_at_a_character_boundary",
+  "tests/trace.rs::event_count_cap_drops_and_counts",
+  "tests/trace.rs::total_byte_cap_stops_the_output",
+  "tests/trace.rs::failing_sink_is_counted_and_swallowed",
+  "tests/trace.rs::file_sink_appends_mit_framed_lines",
+  "tests/trace.rs::krb5_trace_names_the_destination",
+  "tests/trace.rs::oversized_krb5_trace_is_refused",
+  "tests/trace.rs::every_event_type_withholds_and_redacts_marker_text",
+  "tests/client/trace_events.rs::initial_exchange_traces_each_step_without_secrets",
+  "tests/client/trace_events.rs::kdc_refusal_is_traced_with_its_code",
+  "tests/client/trace_events.rs::failing_sink_leaves_the_credential_unchanged",
+  "tests/client/trace_events.rs::ticket_exchange_is_traced",
+  "tests/client/trace_events.rs::tokio_client_traces_login",
+  "tests/service/trace_events.rs::accept_and_reject_are_traced_without_secrets",
+  "tests/trace_adapter.rs::events_reach_the_applications_subscriber",
+  "tests/trace_adapter.rs::no_subscriber_is_a_no_op_and_none_is_installed",
+  "src/secure_env/tests.rs::krb5_trace_is_ignored_when_restricted",
+  "tests/ambient_guard.rs::production_environment_reads_are_explicit",
+  "tests/interop_trace/scenarios.rs::auth_success_trace_contains_no_secrets",
+  "tests/interop_trace/scenarios.rs::auth_failure_trace_contains_no_secrets",
+  "tests/interop_trace/scenarios.rs::krb5_trace_file_records_a_login_without_secrets",
+]
+feature_flags = ["tracing"]
+security_divergence = "`KRB5_TRACE` names a file (MIT `trace.c:389`, `secure_getenv`: ignored in a set-id process), read only by `trace::Options::from_env` (an opt-in constructor, in the ambient-guard inventory); the file is opened for append, mode 0600 on Unix, and each line is `[pid] seconds.micros: text` (`trace.c:411`, `:449-464`). Divergences, all on the secure side or documented: nothing is traced unless the application attaches a `trace::Guard` (`with_trace` of the exchange, the Tokio client and the acceptor; no process-wide context, no global subscriber is ever installed); principals, realms and endpoints are withheld unless `with_identities(true)`; events carry counts, numeric codes and static names only (MIT prints key hashes and message contents), so no password, key, ticket, OTP or authorization header can reach a sink; output is bounded by event, per-event byte and total-byte caps; a failing sink is counted and never changes an exchange. Events: the stepwise AS and TGS exchanges (start, request, reply, prompt, completion, failure), the Tokio client login and service-ticket calls, extension-provider events and the acceptor decision. NOT traced yet: the transport endpoint attempts (resolution, per-endpoint send), whose files todo 15 owns in this wave (register FU-TRC-P01). The `tracing` leaf forwards the same text to the application subscriber at DEBUG, failures and rejections at WARN."
 disposition = "WP-18"
 closing_plan = 2
 closing_todo = 6

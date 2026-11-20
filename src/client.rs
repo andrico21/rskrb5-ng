@@ -28,6 +28,8 @@ use tokio::{sync::Mutex, time::sleep};
 use zeroize::{Zeroize as _, Zeroizing};
 
 #[cfg(feature = "tokio")]
+use self::stepwise::trace::Tracer;
+#[cfg(feature = "tokio")]
 use crate::config::Config;
 #[cfg(all(feature = "spnego", feature = "tokio"))]
 use crate::spnego;
@@ -45,6 +47,7 @@ use crate::{
     file_name,
     keytab::configured_keytab,
     secure_env,
+    trace::{ExchangeKind, Guard},
 };
 /// Identity-bound cache insertion.
 #[cfg(feature = "tokio")]
@@ -1270,6 +1273,8 @@ pub struct Tokio {
     assume_preauthentication: bool,
     /// Request FAST negotiation (PA-REQ-ENC-PA-REP) in AS-REQs.
     fast_negotiation: bool,
+    /// Redacted trace events of this client's logins and ticket requests.
+    trace: Guard,
 }
 #[cfg(feature = "tokio")]
 impl fmt::Debug for Tokio {
@@ -1287,6 +1292,7 @@ impl fmt::Debug for Tokio {
             service_tickets,
             assume_preauthentication,
             fast_negotiation,
+            trace,
         } = self;
         f.debug_struct("TokioClient")
             .field("import_policy_error", import_policy_error)
@@ -1300,6 +1306,7 @@ impl fmt::Debug for Tokio {
             .field("cached_service_tickets", &service_tickets.len())
             .field("assume_preauthentication", assume_preauthentication)
             .field("fast_negotiation", fast_negotiation)
+            .field("trace", trace)
             .finish()
     }
 }
@@ -1865,6 +1872,7 @@ impl Tokio {
             service_tickets: BTreeMap::new(),
             assume_preauthentication: false,
             fast_negotiation: true,
+            trace: Guard::disabled(),
         }
     }
     #[must_use]
@@ -1879,6 +1887,16 @@ impl Tokio {
     #[inline]
     pub const fn with_assume_preauthentication(mut self, assume_preauthentication: bool) -> Self {
         self.assume_preauthentication = assume_preauthentication;
+        self
+    }
+    /// Trace this client's [`Self::login`] and [`Self::get_service_ticket`] calls
+    /// to `guard`: a start event and a completion or failure event for each, as
+    /// redacted [`crate::trace::Event`]s that carry no secret. A failing sink never
+    /// changes the client.
+    #[inline]
+    #[must_use]
+    pub fn with_trace(mut self, guard: Guard) -> Self {
+        self.trace = guard;
         self
     }
     #[must_use]
@@ -2278,6 +2296,27 @@ impl Tokio {
     /// place and the call can be repeated. No server-side state is committed.
     #[inline]
     pub async fn login(&mut self) -> Result<&AsRepSession, Error> {
+        let tracer = Tracer::new(self.trace.clone(), ExchangeKind::Initial);
+        tracer.started(
+            &self.client,
+            &Principal::tgt_service(self.client.realm.clone()),
+        );
+        let result = self.login_untraced().await;
+        match &result {
+            Ok(session) => tracer.completed(session.session_key().etype()),
+            Err(error) => tracer.failed(error),
+        }
+        result
+    }
+    /// The AS login of [`Self::login`], without its trace events.
+    /// # Errors
+    ///
+    /// Returns the errors of [`Self::login`].
+    /// # Cancel safety
+    ///
+    /// cancel-safe, as [`Self::login`]: the caches are replaced only after the
+    /// exchange completes.
+    async fn login_untraced(&mut self) -> Result<&AsRepSession, Error> {
         crypto_policy::ready(self)?;
         let Some(credentials) = self.credentials.clone() else {
             let Some(tgt) = self.tgt.clone() else {
@@ -2410,8 +2449,16 @@ impl Tokio {
         &mut self,
         requested: Principal,
     ) -> Result<TgsRepSession, Error> {
-        self.get_service_ticket_with_clock(requested, SystemTime::now)
-            .await
+        let tracer = Tracer::new(self.trace.clone(), ExchangeKind::Ticket);
+        tracer.started(&self.client, &requested);
+        let result = self
+            .get_service_ticket_with_clock(requested, SystemTime::now)
+            .await;
+        match &result {
+            Ok(ticket) => tracer.completed(ticket.session_key().etype()),
+            Err(error) => tracer.failed(error),
+        }
+        result
     }
 
     /// Acquire a service ticket with a clock shared by the cache-selection decisions.

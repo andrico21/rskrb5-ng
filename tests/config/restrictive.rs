@@ -13,7 +13,6 @@ mod tests {
         error::Error,
         pin::pin,
         task::{Context, Poll, Waker},
-        time::Duration,
     };
     use std::time::UNIX_EPOCH;
 
@@ -57,14 +56,12 @@ mod tests {
     fn restrictive_defaults_fail_before_requests() -> Result<(), Box<dyn Error>> {
         let runtime = Builder::new_current_thread().enable_all().build()?;
         for field in [
-            "request_timeout",
             "verify_ap_req_nofail",
             "client_aware_channel_bindings",
             "default_rcache_name",
         ] {
             let mut config = Config::new();
             match field {
-                "request_timeout" => config.libdefaults.request_timeout = Duration::from_secs(1),
                 "verify_ap_req_nofail" => config.libdefaults.verify_ap_req_nofail = Toggle::Enabled,
                 "client_aware_channel_bindings" => {
                     config.libdefaults.client_aware_channel_bindings = Toggle::Enabled;
@@ -87,7 +84,6 @@ mod tests {
                 "request accepted {field}"
             );
             let (relation, package) = match field {
-                "request_timeout" => ("request_timeout", "plan 2 WP-10"),
                 "verify_ap_req_nofail" => ("verify_ap_req_nofail", "plan 2 WP-11"),
                 "client_aware_channel_bindings" => {
                     ("client_aware_channel_bindings", "plan 2 WP-12")
@@ -126,7 +122,7 @@ mod tests {
             Value::Boolean(Toggle::Enabled),
             Value::Boolean(Toggle::Disabled),
         ] {
-            let accepted = value == Value::Boolean(Toggle::Disabled);
+            let accepted = matches!(value, Value::Boolean(_));
             let mut config = Config::parse("[realms]\nR = {\nkdc = 127.0.0.1:1\n}\n")?;
             drop(
                 config
@@ -146,12 +142,11 @@ mod tests {
                 .relations
                 .get("disable_encrypted_timestamp")
             {
-                Some(Value::Boolean(Toggle::Disabled)) => assert_eq!(discovery?.len(), 1),
-                Some(Value::Boolean(Toggle::Enabled)) => assert!(matches!(
-                    discovery,
-                    Err(Client::Config(ConfigError::NotYetEffective { relation, package }))
-                        if relation == "disable_encrypted_timestamp" && package == "plan 2 WP-07"
-                )),
+                // Both Boolean values are effective since plan 2 todo 9: the exchange
+                // engine honours `true`, and neither value blocks discovery.
+                Some(Value::Boolean(Toggle::Disabled | Toggle::Enabled)) => {
+                    assert_eq!(discovery?.len(), 1);
+                }
                 Some(Value::Text(_) | Value::Choice(_) | Value::List(_) | Value::Locations(_)) => {
                     assert!(
                         matches!(discovery, Err(Client::Config(ConfigError::InvalidBoolean(name)))
@@ -168,26 +163,20 @@ mod tests {
         Ok(())
     }
 
-    /// Realm and plugin restrictions reject independently of defaults and credentials.
+    /// Plugin restrictions reject independently of defaults and credentials (the realm
+    /// timestamp prohibition is effective since plan 2 todo 9 and admitted).
     #[test]
     fn restrictive_scopes_fail_before_login() -> Result<(), Box<dyn Error>> {
         let runtime = Builder::new_current_thread().enable_all().build()?;
-        for scope in ["realm", "disable", "enable_only"] {
+        for scope in ["disable", "enable_only"] {
             let mut config = Config::parse("[realms]\nR = {\nkdc = 127.0.0.1:1\n}\n")?;
-            if scope == "realm" {
-                drop(config.realms.first_mut().ok_or("realm")?.relations.insert(
-                    "disable_encrypted_timestamp".to_owned(),
-                    Value::Boolean(Toggle::Enabled),
-                ));
+            let mut plugins = Plugins::default();
+            if scope == "disable" {
+                plugins.disable.push("encrypted_timestamp".to_owned());
             } else {
-                let mut plugins = Plugins::default();
-                if scope == "disable" {
-                    plugins.disable.push("encrypted_timestamp".to_owned());
-                } else {
-                    plugins.enable_only.push("other".to_owned());
-                }
-                drop(config.plugins.insert("clpreauth".to_owned(), plugins));
+                plugins.enable_only.push("other".to_owned());
             }
+            drop(config.plugins.insert("clpreauth".to_owned(), plugins));
             assert!(
                 serde_json::from_value::<Config>(serde_json::to_value(&config)?).is_err(),
                 "serde accepted {scope}"
@@ -207,16 +196,7 @@ mod tests {
                         None,
                     )?]);
             let checked = build_tgt_as_req(principal.clone(), checked_options)?;
-            let expected = if scope == "realm" {
-                "disable_encrypted_timestamp"
-            } else {
-                scope
-            };
-            let package = if scope == "realm" {
-                "plan 2 WP-07"
-            } else {
-                "plan 2 WP-16"
-            };
+            let (expected, package) = (scope, "plan 2 WP-16");
             for result in [
                 runtime.block_on(transport.exchange_as_req_with_config(
                     &config,

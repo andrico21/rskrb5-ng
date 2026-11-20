@@ -48,25 +48,22 @@ mod password_discovery;
 mod password_dns;
 /// Password result consumption after a transport exchange.
 mod password_result;
+/// The primary-KDC retry of an initial login.
+mod primary;
 /// Configured realm protocol preference.
 mod realm_auto;
 /// Ordered SRV target address resolution.
-mod srv_targets;
+pub(crate) mod srv_targets;
 /// Bounded UDP socket primitives.
 mod udp;
 use framing::tcp_request_length;
 #[cfg(test)]
 use framing::validate_tcp_length;
-use hickory_resolver::{
-    TokioResolver,
-    config::{ConnectionConfig, NameServerConfig, ResolverConfig},
-    net::runtime,
-    proto::rr,
-};
+use hickory_resolver::{TokioResolver, proto::rr};
 use tokio::{
     io::{AsyncReadExt as _, AsyncWriteExt as _},
     net::{TcpStream, ToSocketAddrs},
-    time::timeout,
+    time::{Instant, timeout_at},
 };
 
 use super::{
@@ -75,13 +72,18 @@ use super::{
     build_tgt_renewal_req, build_ticket_renewal_req, keytab_initial_as_rep_session,
     keytab_initial_as_req, password_initial_as_rep_session, password_initial_as_req,
     preauth::{keytab_preauth_request, password_preauth_request},
-    process_as_rep, process_tgs_rep, service_realm,
+    process_as_rep, process_tgs_rep,
     stepwise::{InitCreds, InitCredsOptions, NoResponder, TicketCreds, TicketOptions, drive_tokio},
     tgt_realm,
 };
 use crate::{
     client::kpasswd::{BuiltKpasswdRequest, RequestOptions},
     config::{Config, restrictions},
+    discovery::{
+        locate::{EndpointRole, ServerLocator},
+        realm::HostRealmResolver,
+        records::{dns_resolver, lookup_name},
+    },
     error::Config as ConfigError,
     kadmin,
     keytab::{EncryptionKey, Keytab},
@@ -163,6 +165,10 @@ pub enum KdcEndpointSource {
     /// Came from a DNS SRV record found by discovery (`_kerberos`, `_kpasswd`
     /// or `_kerberos-adm`).
     DnsSrv,
+    /// Came from a DNS URI record (`krb5srv:` target) found by discovery.
+    DnsUri,
+    /// Came from a registered server locator.
+    Provider,
 }
 
 /// One endpoint of a KDC or kpasswd server.
@@ -198,8 +204,8 @@ impl KdcEndpoint {
     /// `value` is trimmed with `str::trim`. A value that parses as a
     /// `core::net::IpAddr` is the host, with `default_port` (so `fd00::1:88` is
     /// an IPv6 address). A value that starts with `[` takes the host from between
-    /// that `[` and the first `]`, and after that `]` has either nothing (the port
-    /// is `default_port`) or a `:` and the port. Otherwise, when the text after
+    /// that `[` and the first `]` (which must not contain another `[`), and after that `]` has either nothing (the port
+    /// is `default_port`) or a `:` and the port, which is ASCII digits only. Otherwise, when the text after
     /// the last `:` is one or more ASCII digits and the text before it is not
     /// empty and does not end in `:`, they are the port and the host; without
     /// such a port the whole value is the host, with `default_port`. In a value
@@ -208,9 +214,9 @@ impl KdcEndpoint {
     /// # Errors
     ///
     /// Returns [`Error::InvalidKdcEndpoint`] when the trimmed `value` is empty;
-    /// when it starts with `[` and has no `]`, has nothing between the `[` and the
-    /// first `]`, or has text after that `]` that does not start with `:`; when a
-    /// port does not parse as a `u16`; or when a value that does not start with
+    /// when it starts with `[` and has no `]`, has nothing or another `[`
+    /// between the `[` and the first `]`, or has text after that `]` that does not
+    /// start with `:`; when a port is not ASCII digits of a `u16`; or when a value that does not start with
     /// `[` has a single `:` and no such port.
     #[inline]
     pub fn configured_with_default_port(
@@ -240,6 +246,16 @@ impl KdcEndpoint {
     }
 }
 
+/// The total time one request may take, set from `request_timeout`.
+#[cfg(feature = "tokio")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Budget {
+    /// The instant the request must be over.
+    deadline: Instant,
+    /// The configured total, reported when the budget ends the request.
+    total: Duration,
+}
+
 /// Tokio-backed KDC and kpasswd transport, with endpoint discovery.
 #[cfg(feature = "tokio")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -252,6 +268,12 @@ pub struct Tokio {
     udp_response_limit: usize,
     /// Maximum accepted TCP response body size.
     tcp_response_limit: usize,
+    /// Locate only primary KDCs: the retry after a replica's failure.
+    primary_only: bool,
+    /// The total budget of the request in progress, none outside one.
+    budget: Option<Budget>,
+    /// The key under which the login in progress records the KDCs that answer.
+    watch: Option<u64>,
 }
 
 #[cfg(feature = "tokio")]
@@ -274,7 +296,95 @@ impl Tokio {
             timeout: DEFAULT_KDC_TIMEOUT,
             udp_response_limit: MAX_UDP_DATAGRAM + 1,
             tcp_response_limit: DEFAULT_TCP_RESPONSE_LIMIT,
+            primary_only: false,
+            budget: None,
+            watch: None,
         }
+    }
+
+    /// This transport with the total budget `total` for the request it is about to make.
+    ///
+    /// Zero is no budget (MIT `request_timeout = 0`). Under a budget that is already
+    /// running the earlier deadline stays, so nested calls share one budget.
+    pub(crate) fn with_request_budget(mut self, total: Duration) -> Self {
+        if total.is_zero() {
+            return self;
+        }
+        let begun = Instant::now();
+        let deadline = begun.checked_add(total).unwrap_or(begun);
+        if self
+            .budget
+            .is_none_or(|running| deadline < running.deadline)
+        {
+            self.budget = Some(Budget { deadline, total });
+        }
+        self
+    }
+
+    /// Run `operation` within the request budget, if there is one.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::TransportTimeout`] with the configured total when the
+    /// budget ends first, and otherwise the error of `operation`.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe exactly when `operation` is.
+    pub(crate) async fn within_budget<F, T>(&self, operation: F) -> Result<T, Error>
+    where
+        F: Future<Output = Result<T, Error>>,
+    {
+        match self.budget {
+            None => operation.await,
+            Some(budget) => timeout_at(budget.deadline, operation)
+                .await
+                .unwrap_or(Err(Error::TransportTimeout(budget.total))),
+        }
+    }
+
+    /// The error that ends a request whose budget has run out, if it has.
+    pub(crate) fn budget_exhausted(&self) -> Option<Error> {
+        self.budget
+            .filter(|budget| Instant::now() >= budget.deadline)
+            .map(|budget| Error::TransportTimeout(budget.total))
+    }
+
+    /// This transport, reporting the KDCs that answer under the login `key`.
+    pub(crate) const fn with_watch(mut self, key: u64) -> Self {
+        self.watch = Some(key);
+        self
+    }
+
+    /// This transport, locating primary KDCs only.
+    pub(crate) const fn with_primary_kdcs(mut self) -> Self {
+        self.primary_only = true;
+        self
+    }
+
+    /// The explicit DNS server of [`Self::with_dns_server`], if any.
+    pub(crate) const fn dns_server(&self) -> Option<(IpAddr, u16)> {
+        self.dns_server
+    }
+
+    /// A host-to-realm resolver over `config` that asks DNS through this transport.
+    #[must_use]
+    #[inline]
+    pub const fn host_realms<'config>(
+        &self,
+        config: &'config Config,
+    ) -> HostRealmResolver<'config> {
+        HostRealmResolver::new(*self, config)
+    }
+
+    /// A server locator over `config` that asks DNS through this transport.
+    ///
+    /// Pass a registry to [`ServerLocator::locate`] to ask its locators first; the
+    /// exchange methods of this transport do not consult a registry.
+    #[must_use]
+    #[inline]
+    pub const fn locator<'config>(&self, config: &'config Config) -> ServerLocator<'config> {
+        ServerLocator::new(*self, config)
     }
 
     #[must_use]
@@ -285,6 +395,13 @@ impl Tokio {
     /// With [`KdcProtocol::Auto`] and an explicit address the name is also
     /// resolved under a budget of its own and a definite TCP failure can be
     /// followed by a UDP attempt, so a call can take up to four times it.
+    ///
+    /// The profile's `request_timeout` is a separate, total budget: a call that
+    /// takes a configuration ends with [`Error::TransportTimeout`] carrying that
+    /// total once DNS lookups, connects, retries and the wait for the reply have
+    /// used it up, whatever this timeout says. Zero (the default) is no budget.
+    /// A kpasswd request whose budget ends after it was sent is
+    /// [`Error::KpasswdOutcomeUnknown`], as for this timeout.
     #[inline]
     pub const fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -300,11 +417,10 @@ impl Tokio {
     /// parses as a `core::net::IpAddr` gives its address with port 53. An
     /// explicit IPv6 port therefore requires brackets: bare `fd00::1:5353` is an
     /// IPv6 address using port 53, and `[fd00::1]` without a port is refused.
-    /// In `[address]:port` a zone id may follow an IPv6 address: a `%` and
-    /// ASCII digits whose value fits in a `u32`, as in `[fe80::1%2]:5353`. The
-    /// zone id is dropped, so that value selects `fe80::1` port 5353 with no
-    /// zone; any other zone id, and a zone id in a value without brackets
-    /// (`fe80::1%2`), is refused.
+    /// A zone id (`%`, as in `[fe80::1%2]:5353`) is refused: the resolver's
+    /// server address has no scope field, so it cannot be honoured, and
+    /// dropping it would query a different link-local peer. The port is ASCII
+    /// digits only, the rule of [`KdcEndpoint::configured`] too.
     ///
     /// The server is used only for DNS discovery: configured host names and the
     /// host names of explicit addresses are looked up by the system in either
@@ -325,7 +441,8 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns [`Error::DnsResolverConfig`] when the trimmed `value` is not empty
-    /// and parses as neither a `core::net::SocketAddr` nor a `core::net::IpAddr`.
+    /// and has a zone id or parses as neither a `core::net::SocketAddr` nor a
+    /// `core::net::IpAddr`.
     #[inline]
     pub fn with_dns_server(mut self, value: &str) -> Result<Self, Error> {
         self.dns_server = if value.trim().is_empty() {
@@ -667,16 +784,18 @@ impl Tokio {
 
     /// Discover KDC endpoints for a realm using `krb5.conf` semantics.
     ///
-    /// Configured `[realms]` KDCs are preferred. DNS SRV lookup is attempted
-    /// only when no KDCs are configured and `dns_lookup_kdc = true`.
+    /// Configured `[realms]` KDCs are preferred. DNS is asked only when no KDCs
+    /// are configured and `dns_lookup_kdc = true`: URI records first when
+    /// `dns_uri_lookup = true`, then SRV records, each under the realm's
+    /// `sitename` first when it has one (see [`ServerLocator`]).
     /// Whole-configuration restrictions are admitted before endpoint selection or DNS.
     ///
     /// # Errors
     ///
     /// Returns [`Error::Config`] for an unsupported or malformed configuration restriction,
     /// [`Error::InvalidKdcEndpoint`] for a malformed configured KDC
-    /// entry, [`Error::DnsResolverConfig`] or [`Error::DnsSrvLookup`] when DNS SRV
-    /// discovery fails, [`Error::DnsServiceUnavailable`] for a root SRV target,
+    /// entry, [`Error::DnsResolverConfig`] or [`Error::DnsSrvLookup`] when DNS
+    /// discovery fails, [`Error::DnsServiceUnavailable`] for a lone root SRV target,
     /// [`Error::NoKdcEndpoints`] when the realm is configured
     /// without KDCs or DNS finds none, and a configuration error when the realm is
     /// unknown and DNS lookup is disabled.
@@ -692,22 +811,21 @@ impl Tokio {
         realm: &str,
         protocol: KdcProtocol,
     ) -> Result<Vec<KdcEndpoint>, Error> {
-        restrictions::config(config)?;
-        if let Some(realm_entry) = config.realm(realm)
-            && !realm_entry.kdc.is_empty()
-        {
-            return realm_entry
-                .kdc
-                .iter()
-                .map(|value| KdcEndpoint::configured(protocol, value))
-                .collect();
+        let this = self.with_request_budget(config.libdefaults.request_timeout);
+        let role = if this.primary_only {
+            EndpointRole::PrimaryKdc
+        } else {
+            EndpointRole::Kdc
+        };
+        let endpoints = this
+            .within_budget(Box::pin(
+                this.locator(config).locate(None, realm, role, protocol),
+            ))
+            .await?;
+        if !endpoints.is_empty() {
+            return Ok(endpoints);
         }
-
-        if config.libdefaults.dns_lookup_kdc.is_enabled() {
-            return self.discover_kdcs_with_dns(realm, protocol).await;
-        }
-
-        if config.realm(realm).is_some() {
+        if config.realm(realm).is_some() || config.libdefaults.dns_lookup_kdc.is_enabled() {
             Err(Error::NoKdcEndpoints {
                 realm: realm.to_owned(),
                 protocol,
@@ -721,9 +839,13 @@ impl Tokio {
     ///
     /// Configured `[realms]` kpasswd servers are preferred. DNS SRV lookup is
     /// attempted only when no password-change servers are configured and
-    /// `dns_lookup_kdc = true`. It discovers for the one `protocol` given;
-    /// [`Self::send_to_kpasswd_realm`] with [`KdcProtocol::Auto`] discovers once
-    /// for both protocols instead.
+    /// `dns_lookup_kdc = true` (URI records first when `dns_uri_lookup = true`). It
+    /// discovers for the one `protocol` given; [`Self::send_to_kpasswd_realm`] with
+    /// [`KdcProtocol::Auto`] discovers once for both protocols instead. An explicit
+    /// [`KdcProtocol::Tcp`] (or `Udp`) asks only the `_kpasswd._tcp` (`._udp`) set
+    /// before the `_kerberos-adm` fallback: that is a crate extension, since MIT has
+    /// no explicit transport for a password change; `changepw.c:66-85` locates the
+    /// servers for both transports and tries TCP first.
     ///
     /// # Errors
     ///
@@ -748,7 +870,11 @@ impl Tokio {
         realm: &str,
         protocol: KdcProtocol,
     ) -> Result<Vec<KdcEndpoint>, Error> {
-        password_discovery::discover(self, config, realm, protocol).await
+        let this = self.with_request_budget(config.libdefaults.request_timeout);
+        this.within_budget(Box::pin(password_discovery::discover(
+            &this, config, realm, protocol,
+        )))
+        .await
     }
 
     /// Send an encoded request to the first reachable KDC discovered from config.
@@ -808,12 +934,16 @@ impl Tokio {
         realm: &str,
         request: &[u8],
     ) -> Result<(Vec<u8>, Option<TcpStream>), Error> {
-        if protocol == KdcProtocol::Auto {
-            return self.send_to_realm_auto(config, realm, request).await;
-        }
-        let endpoints = self.discover_kdcs(config, realm, protocol).await?;
-        self.send_to_endpoints_pinned(realm, protocol, endpoints, request)
-            .await
+        let this = self.with_request_budget(config.libdefaults.request_timeout);
+        this.within_budget(async {
+            if protocol == KdcProtocol::Auto {
+                return this.send_to_realm_auto(config, realm, request).await;
+            }
+            let endpoints = this.discover_kdcs(config, realm, protocol).await?;
+            this.send_to_endpoints_pinned(realm, protocol, endpoints, request)
+                .await
+        })
+        .await
     }
 
     /// Send to password endpoints with RFC 3244 framing.
@@ -923,13 +1053,11 @@ impl Tokio {
         realm: &str,
         request: &[u8],
     ) -> Result<Vec<u8>, Error> {
+        let this = self.with_request_budget(config.libdefaults.request_timeout);
         if protocol == KdcProtocol::Auto {
-            return self
-                .send_to_kpasswd_realm_auto(config, realm, request)
-                .await;
+            return Box::pin(this.send_to_kpasswd_realm_auto(config, realm, request)).await;
         }
-        self.send_to_kpasswd_realm_explicit(config, protocol, realm, request)
-            .await
+        Box::pin(this.send_to_kpasswd_realm_explicit(config, protocol, realm, request)).await
     }
 
     /// Send an encoded kpasswd request over one explicit protocol to the first
@@ -1033,9 +1161,8 @@ impl Tokio {
     ) -> Result<kadmin::Reply, Error> {
         restrictions::config(config)?;
         let frame = SecretDer::new(request.encode()?, "kpasswd request frame");
-        let response = self
-            .send_to_kpasswd_realm(config, protocol, realm, &frame)
-            .await?;
+        let response =
+            Box::pin(self.send_to_kpasswd_realm(config, protocol, realm, &frame)).await?;
         kadmin::Reply::parse(&response)
             .map_err(|source| Error::KpasswdOutcomeUnknown(Box::new(Error::from(source))))
     }
@@ -1657,9 +1784,15 @@ impl Tokio {
 
     /// Acquire a service ticket with an explicit referral limit, returning the referral trace.
     ///
+    /// A `service` without a realm takes the realm of its host from
+    /// [`HostRealmResolver::service_realm`] (`[domain_realm]`, then, only when
+    /// `dns_lookup_realm` or `realm_try_domains` allow it, DNS, then
+    /// `default_realm`), else the realm of `tgt`.
+    ///
     /// # Errors
     ///
-    /// Returns [`Error::Config`] or [`Error::Crypto`] when the crypto policy
+    /// Returns [`Error::Locate`] or [`Error::DnsSrvLookup`] when that lookup fails,
+    /// [`Error::Config`] or [`Error::Crypto`] when the crypto policy
     /// refuses the `[libdefaults]` of `config`, [`Error::InvalidReferralTicket`]
     /// when `tgt` is not a TGT or a returned TGT is for the realm of the KDC that
     /// returned it, [`Error::ServicePrincipalMismatch`] when the KDC returns
@@ -1688,7 +1821,12 @@ impl Tokio {
             service: tgt.service.name(),
         })?;
         if service.realm.is_empty() {
-            service.realm = service_realm(config, &service).unwrap_or(current_realm);
+            // `[domain_realm]`, then the opt-in TXT record and domain search, then `default_realm`.
+            let mapped = match service.components.last() {
+                Some(host) => self.host_realms(config).service_realm(None, host).await?,
+                None => None,
+            };
+            service.realm = mapped.unwrap_or(current_realm);
         }
         let mut exchange = TicketCreds::new(
             tgt.clone(),
@@ -1890,9 +2028,12 @@ impl Tokio {
         restrictions::config(config)?;
         options.set_crypto_policy(Ok(super::crypto_policy::configured(&config.libdefaults)?));
         let engine_options = InitCredsOptions::new(options).with_service(service);
-        let owned = Password::from_vec(password.to_vec());
-        let mut exchange = InitCreds::with_password(client, Some(owned), engine_options);
-        drive_tokio(self, (config, protocol), &mut exchange, &mut NoResponder).await
+        let realm = client.realm.clone();
+        primary::login(self, (config, protocol, &realm), || {
+            let owned = Password::from_vec(password.to_vec());
+            InitCreds::with_password(client.clone(), Some(owned), engine_options.clone())
+        })
+        .await
     }
 
     /// Perform a TGT AS login using keytab credentials and KDC preauth hints.
@@ -2061,37 +2202,11 @@ impl Tokio {
         restrictions::config(config)?;
         options.set_crypto_policy(Ok(super::crypto_policy::configured(&config.libdefaults)?));
         let engine_options = InitCredsOptions::new(options).with_service(service);
-        let mut exchange = InitCreds::with_keytab(client, keytab.clone(), engine_options);
-        drive_tokio(self, (config, protocol), &mut exchange, &mut NoResponder).await
-    }
-
-    /// Discover KDC endpoints through `_kerberos` DNS SRV records.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::DnsResolverConfig`] or [`Error::DnsSrvLookup`] when the
-    /// lookup fails, and [`Error::NoKdcEndpoints`] when it finds no KDC.
-    ///
-    /// # Cancel safety
-    ///
-    /// cancel-safe: DNS lookups change no state. Dropping the future abandons
-    /// the lookup, which the caller can repeat.
-    async fn discover_kdcs_with_dns(
-        &self,
-        realm: &str,
-        protocol: KdcProtocol,
-    ) -> Result<Vec<KdcEndpoint>, Error> {
-        let endpoints = self
-            .discover_srv_endpoints("_kerberos", realm, protocol)
-            .await?;
-        if endpoints.is_empty() {
-            Err(Error::NoKdcEndpoints {
-                realm: realm.to_owned(),
-                protocol,
-            })
-        } else {
-            Ok(endpoints)
-        }
+        let realm = client.realm.clone();
+        primary::login(self, (config, protocol, &realm), || {
+            InitCreds::with_keytab(client.clone(), keytab.clone(), engine_options.clone())
+        })
+        .await
     }
 
     /// Discover kpasswd endpoints through `_kpasswd` DNS SRV records, falling
@@ -2120,39 +2235,56 @@ impl Tokio {
     /// the lookup, which the caller can repeat.
     async fn discover_kpasswd_servers_with_dns(
         &self,
+        config: &Config,
         realm: &str,
         protocol: KdcProtocol,
     ) -> Result<Vec<KdcEndpoint>, Error> {
-        password_dns::discover(self, realm, protocol).await
+        password_dns::discover(self, config, realm, protocol).await
     }
 
     /// Look up the `<service>._udp` or `._tcp` SRV records of `realm` and order
     /// them by priority, then weighted selection without replacement.
     ///
-    /// With an explicit DNS server set, each target is also resolved
-    /// to an IP address through the same resolver.
+    /// A root target stands for "no such service" only when it is the whole
+    /// set: in a set that also holds real records it drops only itself (MIT adds
+    /// every record, and the root entry never resolves,
+    /// `src/lib/krb5/os/locate_kdc.c:376-390`). With an explicit DNS server set,
+    /// each target is also resolved to an IP address through the same resolver.
     ///
     /// # Errors
     ///
     /// Returns [`Error::DnsResolverConfig`] when the resolver or the
     /// DNS server option is invalid, and [`Error::DnsSrvLookup`] when
-    /// the SRV lookup fails or, with an explicit DNS server, no selected target
-    /// resolves. Returns
-    /// [`Error::DnsServiceUnavailable`] when an SRV target is the root name.
+    /// the SRV lookup fails or finds no record, or an explicit DNS server fails to
+    /// resolve a target for another reason than a name with no address data.
+    /// Returns [`Error::KdcEndpointFailures`] when, with an explicit DNS server,
+    /// no target of the set resolves (MIT skips such hosts and then cannot
+    /// contact any KDC, `src/lib/krb5/os/sendto_kdc.c:758-786,1603`), and
+    /// [`Error::DnsServiceUnavailable`] when the set is a lone root target.
     ///
     /// # Cancel safety
     ///
     /// cancel-safe: DNS lookups change no state. Dropping the future abandons
     /// the lookup, which the caller can repeat.
-    async fn discover_srv_endpoints(
+    pub(crate) async fn discover_srv_endpoints(
         &self,
         service: &str,
         realm: &str,
         protocol: KdcProtocol,
+        site: Option<&str>,
     ) -> Result<Vec<KdcEndpoint>, Error> {
         let resolver = dns_resolver(self.dns_server)?;
-        let answer = self.srv_answer(&resolver, service, realm, protocol).await?;
-        if answer.root {
+        let Some(answer) = self
+            .srv_answer(&resolver, (service, site), realm, protocol)
+            .await?
+        else {
+            return Err(Error::DnsSrvLookup {
+                realm: realm.to_owned(),
+                protocol,
+                message: format!("no {service} SRV records"),
+            });
+        };
+        if answer.root && answer.records.is_empty() {
             return Err(Error::DnsServiceUnavailable {
                 service: service.to_owned(),
                 realm: realm.to_owned(),
@@ -2165,40 +2297,79 @@ impl Tokio {
             answer.records,
             self.dns_server.is_some(),
         )
-        .await
+        .await?
+        .endpoints_or_failures(realm, protocol)
     }
 
     /// Look up one SRV name and order its non-root records as
     /// [`Self::discover_srv_endpoints`] does, without resolving their targets.
     ///
+    /// `Ok(None)` means the name holds no SRV set: NXDOMAIN or an empty NOERROR
+    /// answer, the only two answers that mean absent. Every other failure of the
+    /// lookup, a SERVFAIL, a refusal or a timeout among them, is an error, so a
+    /// broken resolver never reads as an absent set (MIT swallows it,
+    /// `src/lib/krb5/os/locate_kdc.c:370-374`).
+    ///
     /// # Errors
     ///
-    /// Returns [`Error::DnsSrvLookup`] when the SRV lookup fails.
+    /// Returns [`Error::DnsSrvLookup`] when the SRV lookup fails for a reason
+    /// other than absence, and the error of the weighted draw.
     ///
     /// # Cancel safety
     ///
     /// cancel-safe: a DNS lookup changes no state. Dropping the future
     /// abandons it, which the caller can repeat.
-    async fn srv_answer(
+    pub(crate) async fn srv_answer(
         &self,
         resolver: &TokioResolver,
-        service: &str,
+        (service, site): (&str, Option<&str>),
         realm: &str,
         protocol: KdcProtocol,
-    ) -> Result<srv_targets::SrvAnswer, Error> {
-        let transport = match protocol {
+    ) -> Result<Option<srv_targets::SrvAnswer>, Error> {
+        let label = match protocol {
             KdcProtocol::Udp | KdcProtocol::Auto => "_udp",
             KdcProtocol::Tcp => "_tcp",
         };
-        let query = format!("{service}.{transport}.{realm}.");
-        let lookup = resolver
-            .srv_lookup(query.as_str())
-            .await
-            .map_err(|source| Error::DnsSrvLookup {
-                realm: realm.to_owned(),
-                protocol,
-                message: source.to_string(),
-            })?;
+        if let Some(named) = site {
+            // A site's answer is preferred; any failure of that query falls back to the
+            // realm's own name, as MIT does (`dnssrv.c:289-294`).
+            let query = lookup_name(service, Some(label), Some(named), realm);
+            if let Ok(Some(answer)) = Self::srv_at(resolver, &query, realm, protocol).await
+                && answer.published
+            {
+                return Ok(Some(answer));
+            }
+        }
+        let query = lookup_name(service, Some(label), None, realm);
+        Self::srv_at(resolver, &query, realm, protocol).await
+    }
+
+    /// Look up one fully qualified SRV name.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`Self::srv_answer`].
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: a DNS lookup changes no state.
+    async fn srv_at(
+        resolver: &TokioResolver,
+        query: &str,
+        realm: &str,
+        protocol: KdcProtocol,
+    ) -> Result<Option<srv_targets::SrvAnswer>, Error> {
+        let lookup = match resolver.srv_lookup(query).await {
+            Ok(lookup) => lookup,
+            Err(source) if source.is_no_records_found() => return Ok(None),
+            Err(source) => {
+                return Err(Error::DnsSrvLookup {
+                    realm: realm.to_owned(),
+                    protocol,
+                    message: source.to_string(),
+                });
+            }
+        };
 
         let root = lookup
             .answers()
@@ -2225,11 +2396,11 @@ impl Tokio {
             .filter(|(_, _, target, _)| !target.is_empty() && target != ".")
             .collect::<Vec<_>>();
         order_srv_records(&mut records, srv_draw)?;
-        Ok(srv_targets::SrvAnswer {
+        Ok(Some(srv_targets::SrvAnswer {
             published: root || !records.is_empty(),
             root,
             records,
-        })
+        }))
     }
 
     /// Try each endpoint in turn and return the first response.
@@ -2287,6 +2458,9 @@ impl Tokio {
 
         let mut failures = Vec::new();
         for endpoint in endpoints {
+            if let Some(expired) = self.budget_exhausted() {
+                return Err(expired);
+            }
             match self
                 .send_pinned(
                     endpoint.protocol,
@@ -2295,7 +2469,10 @@ impl Tokio {
                 )
                 .await
             {
-                Ok(outcome) => return Ok(outcome),
+                Ok(outcome) => {
+                    primary::record_answer(self.watch, &endpoint.host, endpoint.port);
+                    return Ok(outcome);
+                }
                 Err(error) => failures.push(format!("{}: {error}", endpoint.authority())),
             }
         }
@@ -2358,12 +2535,13 @@ impl Tokio {
         password_auto::send(self, config, realm, request).await
     }
 
-    /// Run `operation` under the transport timeout.
+    /// Run `operation` under the transport timeout and the request budget.
     ///
     /// # Errors
     ///
     /// Returns [`Error::TransportTimeout`] when `operation` does not finish within
-    /// the timeout, and otherwise the error of `operation`.
+    /// the timeout (with the configured total when the request budget ends first),
+    /// and otherwise the error of `operation`.
     ///
     /// # Cancel safety
     ///
@@ -2373,9 +2551,16 @@ impl Tokio {
     where
         F: Future<Output = Result<T, Error>>,
     {
-        match timeout(self.timeout, operation).await {
+        let attempt = Instant::now()
+            .checked_add(self.timeout)
+            .unwrap_or_else(Instant::now);
+        let (deadline, expiry) = match self.budget {
+            Some(budget) if budget.deadline < attempt => (budget.deadline, budget.total),
+            Some(_) | None => (attempt, self.timeout),
+        };
+        match timeout_at(deadline, operation).await {
             Ok(result) => result,
-            Err(_elapsed) => Err(Error::TransportTimeout(self.timeout)),
+            Err(_elapsed) => Err(Error::TransportTimeout(expiry)),
         }
     }
 }
@@ -2488,7 +2673,7 @@ fn parse_kdc_endpoint(value: &str, default_port: u16) -> Result<(String, u16), E
         let Some((host, suffix)) = rest.split_once(']') else {
             return Err(Error::InvalidKdcEndpoint(endpoint.to_owned()));
         };
-        if host.is_empty() {
+        if host.is_empty() || host.contains('[') {
             return Err(Error::InvalidKdcEndpoint(endpoint.to_owned()));
         }
         let port = if let Some(port) = suffix.strip_prefix(':') {
@@ -2519,54 +2704,35 @@ fn parse_kdc_endpoint(value: &str, default_port: u16) -> Result<(String, u16), E
 
 /// Parse a KDC port, quoting `endpoint` in the error.
 ///
+/// The one port rule of endpoint literals and DNS server literals: ASCII digits
+/// only. MIT takes the port with `strtoul` (`src/lib/krb5/krb/parse_host_string.c:106`),
+/// which also accepts a sign and leading white space; neither is a port.
+///
 /// # Errors
 ///
-/// Returns [`Error::InvalidKdcEndpoint`] for `endpoint` when `port` is not a
-/// `u16`.
+/// Returns [`Error::InvalidKdcEndpoint`] for `endpoint` when `port` is not
+/// ASCII digits of a `u16`.
 #[cfg(feature = "tokio")]
 fn parse_kdc_port(endpoint: &str, port: &str) -> Result<u16, Error> {
+    if !port.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(Error::InvalidKdcEndpoint(endpoint.to_owned()));
+    }
     port.parse::<u16>()
         .ok()
         .ok_or_else(|| Error::InvalidKdcEndpoint(endpoint.to_owned()))
 }
 
-/// Build the DNS resolver using the explicitly selected server, if any.
-///
-/// # Errors
-///
-/// Returns [`Error::DnsResolverConfig`] when the override is invalid or the
-/// resolver cannot be built.
-#[cfg(feature = "tokio")]
-fn dns_resolver(server: Option<(IpAddr, u16)>) -> Result<TokioResolver, Error> {
-    if let Some((ip, port)) = server {
-        let mut udp = ConnectionConfig::udp();
-        udp.port = port;
-        let mut tcp = ConnectionConfig::tcp();
-        tcp.port = port;
-
-        let mut config = ResolverConfig::default();
-        config.name_servers = vec![NameServerConfig::new(ip, true, vec![udp, tcp])];
-
-        return TokioResolver::builder_with_config(
-            config,
-            runtime::TokioRuntimeProvider::default(),
-        )
-        .build()
-        .map_err(|source| Error::DnsResolverConfig(source.to_string()));
-    }
-
-    TokioResolver::builder_tokio()
-        .map_err(|source| Error::DnsResolverConfig(source.to_string()))?
-        .build()
-        .map_err(|source| Error::DnsResolverConfig(source.to_string()))
-}
-
 /// Resolve every address of an SRV target; IP literals pass through.
 ///
+/// A name that does not exist or has no address data gives an empty list: the
+/// target is skipped, as MIT skips an entry whose lookup gives `EAI_NONAME` or
+/// `EAI_NODATA` (`src/lib/krb5/os/sendto_kdc.c:773-779`).
+///
 /// # Errors
 ///
-/// Returns [`Error::DnsSrvLookup`] when the address lookup fails or finds no
-/// address record.
+/// Returns [`Error::DnsSrvLookup`] when the address lookup fails for any other
+/// reason (a SERVFAIL, a refusal, a timeout), which aborts discovery as MIT's
+/// `EAI_AGAIN` does (`src/lib/krb5/os/sendto_kdc.c:764-766,1542-1545`).
 ///
 /// # Cancel safety
 ///
@@ -2588,40 +2754,39 @@ async fn resolve_dns_endpoint_host(
     } else {
         format!("{target}.")
     };
-    let lookup = resolver
-        .lookup_ip(lookup_name.as_str())
-        .await
-        .map_err(|source| Error::DnsSrvLookup {
+    match resolver.lookup_ip(lookup_name.as_str()).await {
+        Ok(lookup) => Ok(lookup.iter().map(|ip| ip.to_string()).collect()),
+        Err(source) if source.is_no_records_found() => Ok(Vec::new()),
+        Err(source) => Err(Error::DnsSrvLookup {
             realm: realm.to_owned(),
             protocol,
             message: format!("target {target}: {source}"),
-        })?;
-    let hosts: Vec<_> = lookup.iter().map(|ip| ip.to_string()).collect();
-    if hosts.is_empty() {
-        return Err(Error::DnsSrvLookup {
-            realm: realm.to_owned(),
-            protocol,
-            message: format!("target {target}: no address records found"),
-        });
+        }),
     }
-    Ok(hosts)
 }
 
 /// Parse a DNS server literal by the rule that [`Tokio::with_dns_server`]
 /// documents, after trimming `value` with `str::trim`.
 ///
-/// A `core::net::SocketAddr` gives its address and port, without its zone
-/// id; else a `core::net::IpAddr` gives its address with port 53.
+/// A `core::net::SocketAddr` gives its address and port; else a
+/// `core::net::IpAddr` gives its address with port 53. A zone id (`%` in the
+/// text) is refused: the resolver's server address has no scope, so dropping it
+/// would send queries to another interface's link-local peer.
 ///
 /// # Errors
 ///
-/// Returns a description of the problem when the trimmed `value` is empty or
-/// parses as neither a `core::net::SocketAddr` nor a `core::net::IpAddr`.
+/// Returns a description of the problem when the trimmed `value` is empty, has a
+/// zone id, or parses as neither a `core::net::SocketAddr` nor a
+/// `core::net::IpAddr`.
 #[cfg(feature = "tokio")]
 fn parse_dns_server(value: &str) -> Result<(IpAddr, u16), String> {
     let server = value.trim();
     if server.is_empty() {
         return Err("empty DNS server override".to_owned());
+    }
+
+    if server.contains('%') {
+        return Err(format!("a zone id is not supported in {server:?}"));
     }
 
     if let Ok(addr) = server.parse::<SocketAddr>() {
@@ -2671,6 +2836,7 @@ mod tests {
     use tokio::{
         io::{AsyncReadExt as _, AsyncWriteExt as _},
         net::UdpSocket,
+        time::timeout,
     };
 
     use self::loopback_pair::bind_tcp_and_udp_pair;
@@ -2788,7 +2954,7 @@ mod tests {
         let peer = async {
             let mut request = [0; 32];
             let (_, client) =
-                super::timeout(Duration::from_secs(10), socket.recv_from(&mut request)).await??;
+                timeout(Duration::from_secs(10), socket.recv_from(&mut request)).await??;
             let _: usize = socket.send_to(b"ordinary", client).await?;
             Ok::<_, Box<dyn StdError>>(())
         };
@@ -2837,13 +3003,12 @@ mod tests {
         let peer = async {
             let mut request = [0; 32];
             let (_, client) =
-                super::timeout(Duration::from_secs(10), socket.recv_from(&mut request)).await??;
+                timeout(Duration::from_secs(10), socket.recv_from(&mut request)).await??;
             let _: usize = socket.send_to(&response, client).await?;
-            let (mut stream, _) =
-                super::timeout(Duration::from_secs(10), listener.accept()).await??;
+            let (mut stream, _) = timeout(Duration::from_secs(10), listener.accept()).await??;
             let mut framed = [0; 11];
             let _: usize =
-                super::timeout(Duration::from_secs(10), stream.read_exact(&mut framed)).await??;
+                timeout(Duration::from_secs(10), stream.read_exact(&mut framed)).await??;
             stream.write_all(&[0, 0, 0, 1, 42]).await?;
             Ok::<_, Box<dyn StdError>>(stream)
         };

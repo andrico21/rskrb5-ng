@@ -10,7 +10,7 @@
 mod tests {
     use core::error::Error;
 
-    use rskrb5_ng::config::{Config, ConfigDiagnostic, ParseMode};
+    use rskrb5_ng::config::{Config, ConfigDiagnostic, ParseMode, hostname::Canonicalization};
 
     /// Exercise production diagnostics, strict promotion, and first-value selection.
     fn deferred(name: &str, values: &[&str], package: &str) -> Result<(), Box<dyn Error>> {
@@ -21,19 +21,11 @@ mod tests {
             let config = Config::parse(&text)?;
             let defaults = &config.libdefaults;
             match name {
-                "canonicalize" => assert_eq!(defaults.canonicalize.is_enabled(), *value == "true"),
                 "default_rcache_name" => assert_eq!(defaults.default_rcache_name, *value),
-                "dns_lookup_realm" => {
-                    assert_eq!(defaults.dns_lookup_realm.is_enabled(), *value == "true");
-                }
-                "dns_uri_lookup" => {
-                    assert_eq!(defaults.dns_uri_lookup.is_enabled(), *value == "on");
-                }
                 "enforce_ok_as_delegate" => assert_eq!(
                     defaults.enforce_ok_as_delegate.is_enabled(),
                     *value == "true"
                 ),
-                "err_fmt" => assert_eq!(defaults.err_fmt, *value),
                 "ignore_acceptor_hostname" => assert_eq!(
                     defaults.ignore_acceptor_hostname.is_enabled(),
                     *value == "true"
@@ -53,6 +45,77 @@ mod tests {
         Ok(())
     }
 
+    /// Effective relations: the first value is decoded into the typed field, later duplicates are
+    /// ignored, and no deferred-consumer diagnostic is raised, so strict mode accepts them.
+    fn effective(name: &str, values: &[&str]) -> Result<(), Box<dyn Error>> {
+        for value in values {
+            // Given a selected scalar followed by a value that must not override it.
+            let text = format!("[libdefaults]\n {name} = {value}\n {name} = invalid-later\n");
+            // When the profile is parsed in both modes.
+            let config = Config::parse(&text)?;
+            let strict = Config::parse_with_mode(&text, ParseMode::Strict)?;
+            let defaults = &config.libdefaults;
+            match name {
+                "dns_canonicalize_hostname" => assert_eq!(
+                    defaults.dns_canonicalize_hostname,
+                    Canonicalization::parse(value)?
+                ),
+                "dns_lookup_realm" => {
+                    assert_eq!(defaults.dns_lookup_realm.is_enabled(), *value == "true");
+                }
+                "dns_uri_lookup" => {
+                    assert_eq!(defaults.dns_uri_lookup.is_enabled(), *value == "on");
+                }
+                _ => return Err(format!("unreviewed effective relation {name}").into()),
+            }
+            // Then no diagnostic names the relation.
+            for parsed in [&config, &strict] {
+                assert!(!parsed.diagnostics().iter().any(|item| matches!(item,
+                    ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == name)));
+            }
+        }
+        Ok(())
+    }
+
+    /// `canonicalize` is effective (WP-05): it parses, raises no deferred
+    /// diagnostic and strict mode accepts it; the armored AS request asks for
+    /// it (tests/fast.rs `canonicalization_is_accepted_only_under_fast`).
+    #[test]
+    fn canonicalize() -> Result<(), Box<dyn Error>> {
+        for (value, enabled) in [("true", true), ("false", false)] {
+            let text = format!("[libdefaults]\n canonicalize = {value}\n");
+            let config = Config::parse_with_mode(&text, ParseMode::Strict)?;
+            assert_eq!(
+                config.libdefaults.canonicalize.is_enabled(),
+                enabled,
+                "{value}"
+            );
+            assert!(
+                !config.diagnostics().iter().any(|item| matches!(item,
+                    ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == "canonicalize")),
+                "{value}"
+            );
+        }
+        Ok(())
+    }
+
+    /// Declare independent test cases over the effective relations.
+    macro_rules! effective_cases {
+        ($($name:ident, [$($value:literal),+];)+) => {$ (
+            /// Typed scalar contract for the named effective relation.
+            #[test]
+            fn $name() -> Result<(), Box<dyn Error>> {
+                effective(stringify!($name), &[$($value),+])
+            }
+        )+};
+    }
+
+    effective_cases! {
+        dns_canonicalize_hostname, ["true", "false", "FaLlBaCk"];
+        dns_lookup_realm, ["true", "false"];
+        dns_uri_lookup, ["on", "nil"];
+    }
+
     /// Declare independent test cases over the same diagnostic contract.
     macro_rules! deferred_cases {
         ($($name:ident, $package:literal, [$($value:literal),+];)+) => {$ (
@@ -65,13 +128,8 @@ mod tests {
     }
 
     deferred_cases! {
-        canonicalize, "plan 2 WP-05", ["true", "false"];
         default_rcache_name, "plan 2 WP-20", ["none:"];
-        dns_canonicalize_hostname, "plan 2 WP-10", ["true", "false", "FaLlBaCk"];
-        dns_lookup_realm, "plan 2 WP-10", ["true", "false"];
-        dns_uri_lookup, "plan 2 WP-10", ["on", "nil"];
         enforce_ok_as_delegate, "plan 2 WP-12", ["true", "false"];
-        err_fmt, "plan 2 WP-18", ["%C: %M", "custom"];
         ignore_acceptor_hostname, "plan 2 WP-12", ["true", "false"];
     }
 

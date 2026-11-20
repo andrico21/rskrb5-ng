@@ -122,6 +122,10 @@ mod messages;
 #[path = "secret_debug_audit/stepwise.rs"]
 mod stepwise;
 
+#[cfg(all(test, feature = "messages"))]
+#[path = "secret_debug_audit/fast.rs"]
+mod fast;
+
 #[cfg(all(test, feature = "spnego"))]
 #[path = "secret_debug_audit/tokens.rs"]
 mod tokens;
@@ -177,6 +181,8 @@ mod tests {
         super::messages::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         #[cfg(feature = "messages")]
         super::stepwise::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
+        #[cfg(feature = "messages")]
+        super::fast::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         #[cfg(feature = "spnego")]
         super::tokens::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -240,7 +246,7 @@ mod tests {
         if identity == "src/extensions.rs::PreauthInput" {
             return cfg!(feature = "messages");
         }
-        if identity.starts_with("src/service") {
+        if identity.starts_with("src/service") || identity.starts_with("src/preauth") {
             return cfg!(feature = "messages");
         }
         if identity.starts_with("src/http.rs") {
@@ -1041,6 +1047,10 @@ mod tests {
             "login_replacement_erases_live_cached_key",
         ),
         (
+            "src/client.rs::Tokio::login_untraced",
+            "login_replacement_erases_live_cached_key",
+        ),
+        (
             "src/client.rs::Tokio::affirm_login",
             "login_replacement_erases_live_cached_key",
         ),
@@ -1273,6 +1283,12 @@ mod tests {
         "src/client/stepwise.rs::InitCreds",
         "src/client/stepwise.rs::TicketCreds",
         "src/client/stepwise.rs::ArmoredReply",
+        "src/preauth/fast.rs::ArmorCache",
+        "src/preauth/fast.rs::ArmorSource",
+        "src/preauth/fast.rs::Exchange",
+        "src/preauth/encrypted_challenge.rs::EncryptedChallenge",
+        "src/preauth/spake.rs::Message",
+        "src/preauth/spake.rs::Step",
         "src/client/password.rs::Secret",
         "src/client/kpasswd.rs::BuiltKpasswdRequest",
         "src/client/kpasswd.rs::VerifiedKpasswdApRep",

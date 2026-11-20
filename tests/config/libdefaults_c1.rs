@@ -68,11 +68,7 @@ mod tests {
     fn deferred_relations_when_strict() -> Result<(), Box<dyn StdError>> {
         // Given recognized but not implemented behavior.
         for assignment in [
-            "dns_canonicalize_hostname = false",
-            "dns_lookup_realm = false",
-            "dns_uri_lookup = false",
             "enforce_ok_as_delegate = true",
-            "err_fmt = %C: %M",
             "ignore_acceptor_hostname = false",
         ] {
             // When parsing in strict mode.

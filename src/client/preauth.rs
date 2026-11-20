@@ -107,7 +107,7 @@ pub(super) fn validate_discovery(response: &[u8], requested: &AsReq) -> Result<(
 /// this helper never loops or changes the encrypted-timestamp mechanism.
 /// # Errors
 /// Returns the original KDC error for nonoptimistic, hint-free or unusable failures.
-fn challenge(bytes: &[u8], requested: &AsReq) -> Result<KdcError, Error> {
+pub(super) fn challenge(bytes: &[u8], requested: &AsReq) -> Result<KdcError, Error> {
     let error = process_kdc_error(bytes)?;
     let guided_failure = error.error_code == PREAUTH_FAILED
         && requested.assume_preauthentication()

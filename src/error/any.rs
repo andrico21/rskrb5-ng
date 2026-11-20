@@ -24,6 +24,9 @@ pub enum Any {
     /// Extension registration, provider output or profile-module resolution failed.
     #[error("extension error: {0}")]
     Extensions(#[from] Extensions),
+    /// A trace destination or sink failed.
+    #[error("trace error: {0}")]
+    Trace(#[from] Trace),
     /// PAC parsing or verification failed.
     #[error("PAC error: {0}")]
     Pac(#[from] Pac),

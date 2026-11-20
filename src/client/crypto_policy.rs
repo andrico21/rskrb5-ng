@@ -13,6 +13,7 @@ use crate::{
     crypto::{CryptoPolicy, Use, selection},
     error::{Config as ConfigError, Policy},
     keytab::EncryptionKey,
+    preauth::{fast, spake},
     ticket,
 };
 
@@ -32,6 +33,19 @@ pub(super) fn padata(policy: &CryptoPolicy, data: &[rasn_kerberos::PaData]) -> R
                 let encrypted: rasn_kerberos::EncryptedData =
                     super::decode("PA-ENC-TIMESTAMP", &entry.value)?;
                 policy.check_use(encrypted.etype, Use::ReplyKey)?;
+            }
+            super::PA_FX_FAST => fast_request(policy, &entry.value)?,
+            fast::PA_ENCRYPTED_CHALLENGE => {
+                let encrypted: rasn_kerberos::EncryptedData =
+                    super::decode("PA-ENCRYPTED-CHALLENGE", &entry.value)?;
+                policy.check_use(encrypted.etype, Use::ReplyKey)?;
+            }
+            // RFC 9588: a client sends only a support message or a response; the
+            // response's factor is sealed in a key of the reply key's enctype.
+            spake::PA_SPAKE => {
+                if let Some(etype) = spake::outgoing(&entry.value)? {
+                    policy.check_use(etype, Use::ReplyKey)?;
+                }
             }
             // A client does not send enctype hints; the KDC and the peer do.
             11_i32 | 19_i32 | 23_i32 | 165_i32 => {
@@ -64,10 +78,9 @@ pub(super) fn padata(policy: &CryptoPolicy, data: &[rasn_kerberos::PaData]) -> R
             | 30..=31
             | 41_i32
             | 130_i32
-            | 134..=136
-            | 138_i32
+            | 134..=135
             | 141..=148
-            | 151..=153 => {
+            | 152..=153 => {
                 return Err(Error::Encode {
                     target: "PA-DATA",
                     message: format!("outgoing PA type {} is not supported", entry.r#type),
@@ -75,6 +88,40 @@ pub(super) fn padata(policy: &CryptoPolicy, data: &[rasn_kerberos::PaData]) -> R
             }
             _ => {}
         }
+    }
+    Ok(())
+}
+
+/// Check every encryption a `PA-FX-FAST` request carries (RFC 6113 section
+/// 5.4.2): the armor AP-REQ's ticket and authenticator, the keyed request
+/// checksum and the armor-key encryption of the inner request.
+/// # Errors
+/// Returns a decoding error, an unknown armor type, or the policy refusal.
+fn fast_request(policy: &CryptoPolicy, value: &[u8]) -> Result<(), Error> {
+    let fast::asn1::PaFxFastRequest::ArmoredData(armored) = super::decode("PA-FX-FAST", value)?;
+    selection::reject_checksum(armored.req_checksum.r#type)?;
+    policy.check_use(armored.enc_fast_req.etype, Use::SessionKey)?;
+    if let Some(armor) = &armored.armor {
+        (armor.armor_type == fast::ARMOR_AP_REQUEST).ok_or_else(|| Error::Encode {
+            target: "PA-DATA",
+            message: format!("FAST armor type {} is not supported", armor.armor_type),
+        })?;
+        let request = ap_req::decode(&armor.armor_value).map_err(super::ap_req_error)?;
+        policy.check_use(request.ticket.enc_part.etype, Use::TicketKey)?;
+        policy.check_use(request.authenticator.etype, Use::SessionKey)?;
+    }
+    Ok(())
+}
+
+/// Admit what an armor sends in place of the unarmored request: an AS-REQ
+/// whose padata and enctype list pass the same checks.
+/// # Errors
+/// Returns a decoding error or the first policy refusal.
+pub(super) fn armored(policy: &CryptoPolicy, message: &[u8]) -> Result<(), Error> {
+    let rasn_kerberos::AsReq(request) = super::decode("AS-REQ", message)?;
+    padata(policy, request.padata.as_deref().unwrap_or_default())?;
+    for &etype in &request.req_body.etype {
+        policy.check_use(etype, Use::RequestList)?;
     }
     Ok(())
 }

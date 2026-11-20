@@ -37,6 +37,14 @@ pub enum Diagnostic {
         /// Work package implementing the missing behavior.
         package: &'static str,
     },
+    /// A relation's consumer lives behind a leaf Cargo feature this build lacks;
+    /// the value has no effect.
+    FeatureUnavailable {
+        /// Selected relation name.
+        relation: &'static str,
+        /// The leaf feature that compiles its consumer.
+        feature: &'static str,
+    },
     /// A removed draft-9 mechanism was ignored in a preference list.
     IgnoredPreauthType {
         /// Ignored PA type, never selected for an outgoing exchange.
@@ -62,6 +70,9 @@ impl Diagnostic {
                 Error::NotYetEffective { relation, package }
             }
             Self::ServerOnly { section } => Error::ServerOnly { section },
+            Self::FeatureUnavailable { relation, feature } => {
+                Error::FeatureUnavailable { relation, feature }
+            }
             Self::IgnoredPreauthType { id } => Error::IgnoredPreauthType { id },
             Self::UnsupportedSecureEnctype { token, until } => {
                 Error::UnsupportedSecureEnctype { token, until }

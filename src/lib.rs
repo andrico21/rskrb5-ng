@@ -78,6 +78,8 @@ pub mod cryptography;
 #[cfg(feature = "messages")]
 /// DER helpers: trimming zero padding after a top-level DER value.
 mod der;
+#[cfg(feature = "tokio")]
+pub mod discovery;
 pub mod error;
 pub mod extensions;
 /// Credential-cache and keytab file-name parsing with path-token expansion.
@@ -102,6 +104,8 @@ pub mod krb_safe;
 #[cfg(feature = "messages")]
 pub mod messages;
 pub mod pac;
+#[cfg(feature = "messages")]
+pub mod preauth;
 mod secure_env;
 #[cfg(feature = "messages")]
 pub mod service;
@@ -109,6 +113,7 @@ pub mod service;
 pub mod spnego;
 #[cfg(feature = "messages")]
 pub mod ticket;
+pub mod trace;
 
 #[cfg(feature = "tokio")]
 pub use client::Tokio as TokioClient;

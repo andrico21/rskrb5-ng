@@ -20,7 +20,11 @@ pub(super) async fn send(
     realm: &str,
     request: &[u8],
 ) -> Result<Vec<u8>, Error> {
-    let endpoints = password_discovery::discover_auto(transport, config, realm).await?;
+    let endpoints = transport
+        .within_budget(Box::pin(password_discovery::discover_auto(
+            transport, config, realm,
+        )))
+        .await?;
     let (tcp, udp): (Vec<_>, Vec<_>) = endpoints
         .into_iter()
         .partition(|endpoint| endpoint.protocol == KdcProtocol::Tcp);
