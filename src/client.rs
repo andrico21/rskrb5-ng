@@ -2312,6 +2312,10 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns the errors of [`Self::login`].
+    /// # Cancel safety
+    ///
+    /// cancel-safe, as [`Self::login`]: the caches are replaced only after the
+    /// exchange completes.
     async fn login_untraced(&mut self) -> Result<&AsRepSession, Error> {
         crypto_policy::ready(self)?;
         let Some(credentials) = self.credentials.clone() else {

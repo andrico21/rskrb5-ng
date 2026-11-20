@@ -27,6 +27,8 @@ pub(super) struct Inner {
     failed: AtomicU64,
 }
 
+/// Drop audit: flushes the sink once, when the last handle goes. The state
+/// holds counters and the sink, never a secret; a flush failure is dropped.
 impl Drop for Inner {
     fn drop(&mut self) {
         drop(self.sink.flush());

@@ -4,21 +4,23 @@
 
 #[cfg(test)]
 #[expect(
+    clippy::missing_errors_doc,
     clippy::missing_panics_doc,
     reason = "test code is not rendered API documentation"
 )]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     extern crate alloc;
 
     use alloc::sync::Arc;
-    use core::{fmt, mem};
+    use core::{error::Error, fmt, mem};
     use std::sync::Mutex;
 
     use rskrb5_ng::trace::{
         Event, ExchangeKind, Guard, Identity, Options, Sink as _, adapter::Forward,
     };
     use tracing::{
-        Level, Metadata, Subscriber,
+        Dispatch, Level, Metadata, Subscriber,
         dispatcher::get_default,
         field::{Field, Visit},
         span::{Attributes, Id, Record},
@@ -132,7 +134,7 @@ mod tests {
 
     /// Events reach the scoped subscriber, with the severity of their kind.
     #[test]
-    fn events_reach_the_applications_subscriber() {
+    fn events_reach_the_applications_subscriber() -> Result<(), Box<dyn Error>> {
         let collector = Collector::default();
         let guard = Guard::new(Forward::new(), Options::new());
         with_default(collector.clone(), || {
@@ -141,6 +143,8 @@ mod tests {
         });
         let all = collector.take();
         assert_eq!(all.len(), 2);
+        let first = all.first().ok_or("no event")?;
+        assert_eq!(first.level, Level::DEBUG);
         let levels: Vec<Level> = all.iter().map(|item| item.level).collect();
         assert_eq!(levels, [Level::DEBUG, Level::WARN]);
         let names: Vec<&str> = all.iter().map(|item| item.name.as_str()).collect();
@@ -152,15 +156,17 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("kdc_error=24"), "{text}");
+        Ok(())
     }
 
     /// Without a subscriber the adapter is a no-op, and the library installs none.
     #[test]
-    fn no_subscriber_is_a_no_op_and_none_is_installed() {
+    fn no_subscriber_is_a_no_op_and_none_is_installed() -> Result<(), Box<dyn Error>> {
         let guard = Guard::new(Forward::new(), Options::new());
         guard.emit(&started());
         assert_eq!(guard.stats().emitted, 1);
-        assert!(get_default(|dispatch| dispatch.is::<NoSubscriber>()));
-        drop(Forward::new().write(&started(), "text"));
+        assert!(get_default(Dispatch::is::<NoSubscriber>));
+        Forward::new().write(&started(), "text")?;
+        Ok(())
     }
 }
