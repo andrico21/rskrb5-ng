@@ -14,13 +14,50 @@ pub(super) struct SrvAnswer {
     pub records: Vec<(u16, u16, String, u16)>,
 }
 
+/// The endpoints of an SRV set and the targets that gave none.
+pub(super) struct Resolved {
+    /// Endpoints in service order.
+    pub endpoints: Vec<KdcEndpoint>,
+    /// One `target <name>: <reason>` entry for each target skipped because it
+    /// has no address data.
+    pub failures: Vec<String>,
+}
+
+impl Resolved {
+    /// The endpoints, or the failure of a set none of whose targets resolved.
+    ///
+    /// A set without records is not a failure: it gives no endpoints and no
+    /// error.
+    ///
+    /// # Errors
+    /// Returns [`Error::KdcEndpointFailures`], one entry for the set, when no
+    /// endpoint resulted and at least one target was skipped.
+    pub(super) fn endpoints_or_failures(
+        self,
+        realm: &str,
+        protocol: KdcProtocol,
+    ) -> Result<Vec<KdcEndpoint>, Error> {
+        if self.endpoints.is_empty() && !self.failures.is_empty() {
+            return Err(Error::KdcEndpointFailures {
+                realm: realm.to_owned(),
+                protocol,
+                failures: vec![self.failures.join("; ")],
+            });
+        }
+        Ok(self.endpoints)
+    }
+}
+
 /// Resolve selected SRV targets while preserving their service order.
 ///
 /// Only with `resolve_targets` (an explicit DNS server); otherwise each target
-/// name is kept as the endpoint host and is looked up when it is contacted.
+/// name is kept as the endpoint host and is looked up when it is contacted. A
+/// target without address data is skipped and reported in
+/// [`Resolved::failures`].
 ///
 /// # Errors
-/// Returns target address lookup errors when no target resolved.
+/// Returns the lookup error of a target whose lookup failed for another reason
+/// than having no address data.
 ///
 /// # Cancel safety
 /// cancel-safe: DNS lookups change no credential state.
@@ -30,18 +67,17 @@ pub(super) async fn resolve(
     protocol: KdcProtocol,
     records: Vec<(u16, u16, String, u16)>,
     resolve_targets: bool,
-) -> Result<Vec<KdcEndpoint>, Error> {
+) -> Result<Resolved, Error> {
     let mut endpoints = Vec::with_capacity(records.len());
     let mut failures = Vec::new();
     for (_, _, target, port) in records {
         let hosts = if resolve_targets {
-            match resolve_dns_endpoint_host(resolver, realm, protocol, &target).await {
-                Ok(hosts) => hosts,
-                Err(error) => {
-                    failures.push(error.to_string());
-                    continue;
-                }
+            let hosts = resolve_dns_endpoint_host(resolver, realm, protocol, &target).await?;
+            if hosts.is_empty() {
+                failures.push(format!("target {target}: no address records found"));
+                continue;
             }
+            hosts
         } else {
             vec![target]
         };
@@ -52,14 +88,10 @@ pub(super) async fn resolve(
             source: KdcEndpointSource::DnsSrv,
         }));
     }
-    if endpoints.is_empty() && !failures.is_empty() {
-        return Err(Error::DnsSrvLookup {
-            realm: realm.to_owned(),
-            protocol,
-            message: failures.join("; "),
-        });
-    }
-    Ok(endpoints)
+    Ok(Resolved {
+        endpoints,
+        failures,
+    })
 }
 
 /// Empty successful SRV lookup handling.
@@ -78,7 +110,9 @@ mod tests {
     #[tokio::test]
     async fn empty_srv_answers_preserve_empty_success() -> Result<(), Error> {
         let resolver = dns_resolver(None)?;
-        let endpoints = resolve(&resolver, "TEST.GOKRB5", KdcProtocol::Tcp, vec![], false).await?;
+        let endpoints = resolve(&resolver, "TEST.GOKRB5", KdcProtocol::Tcp, vec![], false)
+            .await?
+            .endpoints_or_failures("TEST.GOKRB5", KdcProtocol::Tcp)?;
         assert!(
             endpoints.is_empty(),
             "empty answers must yield no endpoints"

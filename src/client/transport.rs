@@ -2129,16 +2129,22 @@ impl Tokio {
     /// Look up the `<service>._udp` or `._tcp` SRV records of `realm` and order
     /// them by priority, then weighted selection without replacement.
     ///
-    /// With an explicit DNS server set, each target is also resolved
-    /// to an IP address through the same resolver.
+    /// A root target stands for "no such service" only when it is the whole
+    /// set: in a set that also holds real records it drops only itself (MIT adds
+    /// every record, and the root entry never resolves,
+    /// `src/lib/krb5/os/locate_kdc.c:395-402`). With an explicit DNS server set,
+    /// each target is also resolved to an IP address through the same resolver.
     ///
     /// # Errors
     ///
     /// Returns [`Error::DnsResolverConfig`] when the resolver or the
     /// DNS server option is invalid, and [`Error::DnsSrvLookup`] when
-    /// the SRV lookup fails or, with an explicit DNS server, no selected target
-    /// resolves. Returns
-    /// [`Error::DnsServiceUnavailable`] when an SRV target is the root name.
+    /// the SRV lookup fails or finds no record, or an explicit DNS server fails to
+    /// resolve a target for another reason than a name with no address data.
+    /// Returns [`Error::KdcEndpointFailures`] when, with an explicit DNS server,
+    /// no target of the set resolves (MIT skips such hosts and then cannot
+    /// contact any KDC, `src/lib/krb5/os/sendto_kdc.c:758-786,1603`), and
+    /// [`Error::DnsServiceUnavailable`] when the set is a lone root target.
     ///
     /// # Cancel safety
     ///
@@ -2151,8 +2157,14 @@ impl Tokio {
         protocol: KdcProtocol,
     ) -> Result<Vec<KdcEndpoint>, Error> {
         let resolver = dns_resolver(self.dns_server)?;
-        let answer = self.srv_answer(&resolver, service, realm, protocol).await?;
-        if answer.root {
+        let Some(answer) = self.srv_answer(&resolver, service, realm, protocol).await? else {
+            return Err(Error::DnsSrvLookup {
+                realm: realm.to_owned(),
+                protocol,
+                message: format!("no {service} SRV records"),
+            });
+        };
+        if answer.root && answer.records.is_empty() {
             return Err(Error::DnsServiceUnavailable {
                 service: service.to_owned(),
                 realm: realm.to_owned(),
@@ -2165,15 +2177,23 @@ impl Tokio {
             answer.records,
             self.dns_server.is_some(),
         )
-        .await
+        .await?
+        .endpoints_or_failures(realm, protocol)
     }
 
     /// Look up one SRV name and order its non-root records as
     /// [`Self::discover_srv_endpoints`] does, without resolving their targets.
     ///
+    /// `Ok(None)` means the name holds no SRV set: NXDOMAIN or an empty NOERROR
+    /// answer, the only two answers that mean absent. Every other failure of the
+    /// lookup, a SERVFAIL, a refusal or a timeout among them, is an error, so a
+    /// broken resolver never reads as an absent set (MIT swallows it,
+    /// `src/lib/krb5/os/locate_kdc.c:395-397`).
+    ///
     /// # Errors
     ///
-    /// Returns [`Error::DnsSrvLookup`] when the SRV lookup fails.
+    /// Returns [`Error::DnsSrvLookup`] when the SRV lookup fails for a reason
+    /// other than absence, and the error of the weighted draw.
     ///
     /// # Cancel safety
     ///
@@ -2185,20 +2205,23 @@ impl Tokio {
         service: &str,
         realm: &str,
         protocol: KdcProtocol,
-    ) -> Result<srv_targets::SrvAnswer, Error> {
+    ) -> Result<Option<srv_targets::SrvAnswer>, Error> {
         let transport = match protocol {
             KdcProtocol::Udp | KdcProtocol::Auto => "_udp",
             KdcProtocol::Tcp => "_tcp",
         };
         let query = format!("{service}.{transport}.{realm}.");
-        let lookup = resolver
-            .srv_lookup(query.as_str())
-            .await
-            .map_err(|source| Error::DnsSrvLookup {
-                realm: realm.to_owned(),
-                protocol,
-                message: source.to_string(),
-            })?;
+        let lookup = match resolver.srv_lookup(query.as_str()).await {
+            Ok(lookup) => lookup,
+            Err(source) if source.is_no_records_found() => return Ok(None),
+            Err(source) => {
+                return Err(Error::DnsSrvLookup {
+                    realm: realm.to_owned(),
+                    protocol,
+                    message: source.to_string(),
+                });
+            }
+        };
 
         let root = lookup
             .answers()
@@ -2225,11 +2248,11 @@ impl Tokio {
             .filter(|(_, _, target, _)| !target.is_empty() && target != ".")
             .collect::<Vec<_>>();
         order_srv_records(&mut records, srv_draw)?;
-        Ok(srv_targets::SrvAnswer {
+        Ok(Some(srv_targets::SrvAnswer {
             published: root || !records.is_empty(),
             root,
             records,
-        })
+        }))
     }
 
     /// Try each endpoint in turn and return the first response.
@@ -2563,10 +2586,15 @@ fn dns_resolver(server: Option<(IpAddr, u16)>) -> Result<TokioResolver, Error> {
 
 /// Resolve every address of an SRV target; IP literals pass through.
 ///
+/// A name that does not exist or has no address data gives an empty list: the
+/// target is skipped, as MIT skips an entry whose lookup gives `EAI_NONAME` or
+/// `EAI_NODATA` (`src/lib/krb5/os/sendto_kdc.c:773-779`).
+///
 /// # Errors
 ///
-/// Returns [`Error::DnsSrvLookup`] when the address lookup fails or finds no
-/// address record.
+/// Returns [`Error::DnsSrvLookup`] when the address lookup fails for any other
+/// reason (a SERVFAIL, a refusal, a timeout), which aborts discovery as MIT's
+/// `EAI_AGAIN` does (`src/lib/krb5/os/sendto_kdc.c:764-766,1542-1545`).
 ///
 /// # Cancel safety
 ///
@@ -2588,23 +2616,15 @@ async fn resolve_dns_endpoint_host(
     } else {
         format!("{target}.")
     };
-    let lookup = resolver
-        .lookup_ip(lookup_name.as_str())
-        .await
-        .map_err(|source| Error::DnsSrvLookup {
+    match resolver.lookup_ip(lookup_name.as_str()).await {
+        Ok(lookup) => Ok(lookup.iter().map(|ip| ip.to_string()).collect()),
+        Err(source) if source.is_no_records_found() => Ok(Vec::new()),
+        Err(source) => Err(Error::DnsSrvLookup {
             realm: realm.to_owned(),
             protocol,
             message: format!("target {target}: {source}"),
-        })?;
-    let hosts: Vec<_> = lookup.iter().map(|ip| ip.to_string()).collect();
-    if hosts.is_empty() {
-        return Err(Error::DnsSrvLookup {
-            realm: realm.to_owned(),
-            protocol,
-            message: format!("target {target}: no address records found"),
-        });
+        }),
     }
-    Ok(hosts)
 }
 
 /// Parse a DNS server literal by the rule that [`Tokio::with_dns_server`]

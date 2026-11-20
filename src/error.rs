@@ -525,8 +525,10 @@ pub enum Client {
     #[cfg(feature = "tokio")]
     #[error("DNS resolver configuration failed: {0}")]
     DnsResolverConfig(String),
-    /// A DNS SRV lookup failed, or, with [`Tokio::with_dns_server`], none of the
-    /// targets of an SRV answer resolved to an address.
+    /// A DNS SRV lookup failed (not merely found no record, except for the last
+    /// resort lookups of the KDC and `_kerberos-adm` services), or, with
+    /// [`Tokio::with_dns_server`], the lookup of an SRV target failed for another
+    /// reason than the name having no address data.
     ///
     /// [`Tokio::with_dns_server`]: crate::client::transport::Tokio::with_dns_server
     #[cfg(feature = "tokio")]
@@ -538,12 +540,14 @@ pub enum Client {
         /// and `Auto` query `_udp`, `Tcp` queries `_tcp`. It is not always the
         /// requested protocol: a KDC request with `Auto` reports its second pass
         /// (see [`Tokio::send_to_realm`]), and the `_kerberos-adm._tcp` fallback
-        /// of a kpasswd call reports `Tcp` whatever was requested.
+        /// of a kpasswd call reports `Tcp`, the label it queried, whatever
+        /// protocol was requested (the failure of that fallback's targets is a
+        /// [`Error::KdcEndpointFailures`] of the requested protocol).
         ///
         /// [`Tokio::send_to_realm`]: crate::client::transport::Tokio::send_to_realm
         protocol: KdcProtocol,
-        /// The resolver's error for the SRV lookup, or one entry per failed
-        /// target lookup, joined by `; `.
+        /// The resolver's error for the SRV lookup, or for the lookup of one
+        /// SRV target (`target <name>: <error>`).
         message: String,
     },
     /// A root SRV target declares the service named in `service` unavailable.
@@ -569,8 +573,9 @@ pub enum Client {
         protocol: KdcProtocol,
     },
     /// Every endpoint of the last pass that ran failed, or, with
-    /// [`Tokio::with_dns_server`], kpasswd discovery found no endpoint and none
-    /// of the targets of at least one published record set resolved.
+    /// [`Tokio::with_dns_server`], discovery found no endpoint and none of the
+    /// targets of at least one published record set resolved (MIT:
+    /// `KRB5_KDC_UNREACH`).
     ///
     /// [`Tokio::with_dns_server`]: crate::client::transport::Tokio::with_dns_server
     #[cfg(feature = "tokio")]
@@ -588,8 +593,9 @@ pub enum Client {
         /// [`Tokio::send_to_kpasswd_realm`]: crate::client::transport::Tokio::send_to_kpasswd_realm
         protocol: KdcProtocol,
         /// One `authority: error` entry per endpoint of that pass, in the order
-        /// tried; for a kpasswd discovery failure, one entry per published
-        /// record set none of whose targets resolved, the UDP set first.
+        /// tried; for a discovery failure, one entry per published record set
+        /// none of whose targets resolved (`target <name>: <reason>` joined by
+        /// `; `), the UDP set first.
         failures: Vec<String>,
     },
     /// Tokio transport exchange timed out.
