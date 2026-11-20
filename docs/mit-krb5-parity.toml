@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 61
-partial = 57
-absent = 35
+implemented = 64
+partial = 55
+absent = 34
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -468,13 +468,37 @@ id = "MIT-preauth-7"
 area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "SPAKE password-authenticated key exchange"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "Built-in timestamp/key-hint flow only."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "preauth::spake::Client",
+  "preauth::spake::Group",
+  "preauth::spake::Policy",
+  "preauth::spake::Message",
+  "preauth::spake::Step",
+  "client::stepwise::InitCreds",
+  "client::stepwise::InitCredsOptions::with_spake_policy",
+  "error::Spake",
+]
+test_names = [
+  "src/preauth/spake/vectors.rs::rfc9588_vectors_replay_through_the_client",
+  "src/preauth/spake/vectors.rs::rfc9588_sha1_vector_derives_two_hash_blocks",
+  "tests/spake/scenarios.rs::spake_exchange_completes_with_the_strengthened_reply_key",
+  "tests/spake/scenarios.rs::keytab_exchange_runs_spake",
+  "tests/spake/scenarios.rs::optimistic_challenge_is_answered_without_support",
+  "tests/spake/scenarios.rs::challenge_outside_the_policy_is_rejected",
+  "tests/spake/scenarios.rs::challenge_without_a_supported_factor_is_rejected",
+  "tests/spake/scenarios.rs::tampered_transcript_fails_closed_without_fallback",
+  "tests/spake/scenarios.rs::spake_failure_does_not_fall_back",
+  "tests/spake/scenarios.rs::invalid_kdc_elements_are_rejected",
+  "tests/spake/scenarios.rs::malformed_challenges_are_rejected",
+  "tests/spake/profile.rs::outgoing_spake_is_admitted_exactly",
+  "tests/interop_spake/scenarios.rs::spake_login_meets_the_spake_requirement",
+  "tests/interop_spake/scenarios.rs::spake_login_in_each_nist_group",
+]
+feature_flags = ["spake"]
+security_divergence = "Stricter than MIT 1.22.2: non-canonical KDC elements and an identity shared element are refused for every group, the edwards25519 private scalar is drawn uniformly (64 bytes, wide reduction), and the exchange never falls back to another mechanism once SPAKE has started, also after a KDC failure answering the support message (MIT get_in_tkt.c:1318-1345 tries the remaining mechanisms there). Only SF-NONE is supported, as in MIT (spake_client.c:300-320)."
 disposition = "WP-07"
 closing_plan = 2
 closing_todo = 9
@@ -1970,13 +1994,24 @@ id = "MIT-config-39"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`spake_preauth_groups`"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "No SPAKE group is used; allowed-group lists do not require SPAKE; diagnostic; unknown names rejected rather than skipped (consumer: plan 2 WP-07)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::spake_preauth_groups"]
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "preauth::spake::Policy::from_libdefaults",
+  "client::stepwise::InitCredsOptions::from_config",
+  "client::stepwise::Exchange",
+  "config::ConfigDiagnostic::FeatureUnavailable",
+]
+test_names = [
+  "tests/spake/profile.rs::spake_preauth_groups",
+  "tests/spake/profile.rs::policy_follows_the_profile",
+  "tests/spake/scenarios.rs::configure_adopts_the_profile",
+  "tests/spake/scenarios.rs::empty_group_list_disables_spake",
+  "tests/interop_spake/scenarios.rs::spake_login_in_each_nist_group",
+]
+feature_flags = ["spake"]
+security_divergence = "Unknown group names are rejected at parse time rather than skipped (MIT groups.c:192-196 skips them). Without the spake leaf the relation is reported as ConfigDiagnostic::FeatureUnavailable (strict mode refuses it) and SPAKE is never answered."
 disposition = "WP-07"
 closing_plan = 2
 closing_todo = 9
@@ -2158,16 +2193,24 @@ id = "MIT-config-49"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`[realms]`: `disable_encrypted_timestamp`"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "SPAKE consumer; true is rejected (fail closed) because the current client may still send encrypted timestamp."
-rust_symbols = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "client::stepwise::InitCredsOptions::from_config",
+  "client::stepwise::Exchange",
+  "error::Client::EncryptedTimestampDisabled",
+]
 test_names = [
-  "tests/config/sections_d.rs::encrypted_timestamp_disable_fails_closed",
-  "tests/config/realm_relations_d.rs::disable_encrypted_timestamp",
+  "tests/spake/scenarios.rs::disable_encrypted_timestamp",
+  "tests/spake/scenarios.rs::disabled_timestamp_moves_on_to_spake",
+  "tests/spake/scenarios.rs::configure_adopts_the_profile",
+  "tests/config/sections_d.rs::encrypted_timestamp_disable_is_a_typed_boolean",
+  "tests/config/compatibility_e.rs::plan_timestamp_qa_is_effective",
+  "tests/interop_spake/scenarios.rs::without_spake_the_requirement_is_not_met",
 ]
 feature_flags = []
-security_divergence = ""
+security_divergence = "As MIT (get_in_tkt.c:758-772,815-818; preauth_encts.c:68-73) for every exchange the library runs: the encrypted-timestamp mechanism refuses for the client realm and the optimistic timestamp is suppressed. A caller-built AS-REQ sent through transport::Tokio::exchange_as_req_with_config carries the caller's PA-DATA unchanged (register row FU-SPK-P01)."
 disposition = "WP-07"
 closing_plan = 2
 closing_todo = 9
