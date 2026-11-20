@@ -73,7 +73,7 @@ pub(crate) fn lookup_name(
 ///
 /// MIT collects `priority`, `weight` and the target text and orders by priority
 /// alone, keeping the order of records with equal priority
-/// (`src/lib/krb5/os/dnssrv.c:77-103,214-259`). `Ok(None)` means the name holds
+/// (`src/lib/krb5/os/dnssrv.c:77-103,214-257`). `Ok(None)` means the name holds
 /// no URI record: NXDOMAIN or an empty NOERROR answer.
 ///
 /// # Errors
@@ -122,7 +122,7 @@ async fn uri_at(
 /// The URI records for `service` in `realm`: the site's first, then the generic name.
 ///
 /// MIT asks `<service>.<site>._sites.<realm>` and, when that query yields
-/// nothing, the name without the site (`src/lib/krb5/os/dnssrv.c:213-222`). A
+/// nothing, the name without the site (`src/lib/krb5/os/dnssrv.c:202-211`). A
 /// site name that fails for any reason still falls back, since the fallback stays
 /// within the same realm. A failure of the generic name is an error.
 ///
@@ -152,7 +152,7 @@ pub(crate) async fn uri_records(
 /// The realm of the first string of the first TXT record at `name`, or `None`.
 ///
 /// MIT takes the first character-string of the first record and removes a
-/// trailing dot (`src/lib/krb5/os/dnsglue.c:476-488`). The text is untrusted:
+/// trailing dot (`src/lib/krb5/os/dnsglue.c:476-489`). The text is untrusted:
 /// it is accepted only as a realm name ([`uri::realm_from_txt`]).
 ///
 /// # Errors

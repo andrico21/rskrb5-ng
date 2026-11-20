@@ -1,5 +1,5 @@
 //! The primary-KDC retry of an initial login (MIT `k5_get_init_creds`,
-//! `src/lib/krb5/krb/get_in_tkt.c:2012-2045`).
+//! `src/lib/krb5/krb/get_in_tkt.c:2012-2046`).
 //!
 //! A login that a replica answered with an error is repeated once, from the
 //! start, against the primary KDCs only, because the replica may not have the

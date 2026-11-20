@@ -27,7 +27,7 @@ fn via(dns: &Dns) -> Result<Tokio, TestError> {
 }
 
 /// FU-DSC-P01 (KDC path): a root target in a set that also holds a real record drops only
-/// itself (MIT `locate_kdc.c:395-402` adds each record; the root entry never resolves).
+/// itself (MIT `locate_kdc.c:376-390` adds each record; the root entry never resolves).
 #[tokio::test]
 async fn kdc_set_with_a_root_target_keeps_the_real_records() -> Result<(), TestError> {
     // Given an SRV set with a root target and a usable literal target.

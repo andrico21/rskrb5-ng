@@ -2,7 +2,7 @@
 //!
 //! The data of a `_kerberos`, `_kerberos-adm` or `_kpasswd` DNS URI record is
 //! `krb5srv:<flags>:<udp|tcp|kkdcp>:<host[:port] or URL>` (MIT
-//! `src/lib/krb5/os/locate_kdc.c:552-601`, `parse_uri_fields`). Only the flag
+//! `src/lib/krb5/os/locate_kdc.c:590-632`, `parse_uri_fields`). Only the flag
 //! `m` (any letter case) is defined: the server is a primary KDC.
 
 /// The longest record target accepted, in bytes; a longer one is ignored.
@@ -73,7 +73,7 @@ pub fn parse(record: &[u8]) -> Option<Target> {
 /// four-byte header.
 ///
 /// MIT keeps the weight unused and the target as the rest of the data
-/// (`src/lib/krb5/os/dnssrv.c:214-259`).
+/// (`src/lib/krb5/os/dnssrv.c:214-257`).
 #[must_use]
 #[inline]
 pub fn split_rdata(rdata: &[u8]) -> Option<(u16, &[u8])> {

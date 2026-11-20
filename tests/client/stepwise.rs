@@ -267,6 +267,51 @@ mod tests {
         Ok(())
     }
 
+    /// The bound is exact: `max` referrals are followed and the next one is refused with the
+    /// limit that was set (FU-DSC-P08).
+    #[test]
+    fn the_referral_limit_is_exact_at_every_depth() -> Result<(), TestError> {
+        let service = Principal::new("FINAL.GOKRB5", 2, ["HTTP", "host.final.gokrb5"]);
+        let referral_key = EncryptionKey::new(18, decode_hex(SERVICE_SESSION_KEY)?);
+        for max in [1_usize, 2, 3] {
+            let tgt = sample_tgt_session()?;
+            let options = TicketOptions::new(
+                TgsReq::new(timestamp(1_893_553_450)?, 0x7766_5544).with_etypes(vec![18_i32]),
+            )
+            .with_max_referrals(max);
+            let mut exchange = TicketCreds::new(tgt.clone(), service.clone(), options)
+                .map_err(|error| error.to_string())?;
+            let mut step = exchange
+                .step(StepInput::Start)
+                .map_err(|error| error.to_string())?;
+            let mut current = "TEST.GOKRB5".to_owned();
+            let mut key = tgt.session_key().clone();
+            // Each hop is answered with a referral TGT to the next realm.
+            for hop in 1..=max.saturating_add(1) {
+                let (_realm, wire, _) = outbound(step)?;
+                let decoded: rasn_kerberos::TgsReq = der::decode(&wire)?;
+                let mut built = built_tgs_request_from_der(decoded, &wire)?;
+                built.set_client(tgt.client().clone());
+                let next = format!("HOP{hop}.GOKRB5");
+                let referral = Principal::new(&current, 2, ["krbtgt".to_owned(), next.clone()]);
+                let reply = synthetic_tgs_rep_with_service(&built, built.nonce(), &key, &referral)?;
+                let outcome = exchange.step(StepInput::Reply(&reply));
+                if hop > max {
+                    assert!(
+                        matches!(outcome, Err(Error::MaxReferralDepth { max: limit }) if limit == max),
+                        "max {max}, hop {hop}: {outcome:?}"
+                    );
+                    assert_eq!(exchange.referral_tgts().len(), max);
+                    break;
+                }
+                step = outcome.map_err(|error| error.to_string())?;
+                current = next;
+                key = referral_key.clone();
+            }
+        }
+        Ok(())
+    }
+
     /// A referral chain is followed within its bound and stops beyond it.
     #[test]
     fn referrals_are_followed_within_their_bound() -> Result<(), TestError> {

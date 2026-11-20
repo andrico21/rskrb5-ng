@@ -828,9 +828,13 @@ impl Tokio {
     ///
     /// Configured `[realms]` kpasswd servers are preferred. DNS SRV lookup is
     /// attempted only when no password-change servers are configured and
-    /// `dns_lookup_kdc = true`. It discovers for the one `protocol` given;
-    /// [`Self::send_to_kpasswd_realm`] with [`KdcProtocol::Auto`] discovers once
-    /// for both protocols instead.
+    /// `dns_lookup_kdc = true` (URI records first when `dns_uri_lookup = true`). It
+    /// discovers for the one `protocol` given; [`Self::send_to_kpasswd_realm`] with
+    /// [`KdcProtocol::Auto`] discovers once for both protocols instead. An explicit
+    /// [`KdcProtocol::Tcp`] (or `Udp`) asks only the `_kpasswd._tcp` (`._udp`) set
+    /// before the `_kerberos-adm` fallback: that is a crate extension, since MIT has
+    /// no explicit transport for a password change; `changepw.c:66-85` locates the
+    /// servers for both transports and tries TCP first.
     ///
     /// # Errors
     ///
@@ -2233,7 +2237,7 @@ impl Tokio {
     /// A root target stands for "no such service" only when it is the whole
     /// set: in a set that also holds real records it drops only itself (MIT adds
     /// every record, and the root entry never resolves,
-    /// `src/lib/krb5/os/locate_kdc.c:395-402`). With an explicit DNS server set,
+    /// `src/lib/krb5/os/locate_kdc.c:376-390`). With an explicit DNS server set,
     /// each target is also resolved to an IP address through the same resolver.
     ///
     /// # Errors
@@ -2293,7 +2297,7 @@ impl Tokio {
     /// answer, the only two answers that mean absent. Every other failure of the
     /// lookup, a SERVFAIL, a refusal or a timeout among them, is an error, so a
     /// broken resolver never reads as an absent set (MIT swallows it,
-    /// `src/lib/krb5/os/locate_kdc.c:395-397`).
+    /// `src/lib/krb5/os/locate_kdc.c:370-374`).
     ///
     /// # Errors
     ///

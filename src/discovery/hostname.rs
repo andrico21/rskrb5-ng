@@ -25,7 +25,7 @@ enum Qualify {
     /// `qualify_shortname` is not set: no suffix.
     ///
     /// MIT falls back to the first search domain of the system's DNS
-    /// configuration (`src/lib/krb5/os/sn2princ.c:62-74`); this crate does not
+    /// configuration (`src/lib/krb5/os/sn2princ.c:60-84`); this crate does not
     /// read the system resolver configuration to name a service, so a suffix
     /// must be set explicitly.
     Unset,
