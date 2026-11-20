@@ -328,7 +328,7 @@ mod tests {
     fn err_fmt() -> Result<(), Box<dyn Error>> {
         let text = "[libdefaults]\n err_fmt = %C: %M\n";
         let config = Config::parse_with_mode(text, ParseMode::Strict)?;
-        assert!(config.diagnostics().is_empty());
+        assert_eq!(config.diagnostics().len(), 0_usize);
         let format = ErrFmt::from_config(&config);
         assert_eq!(format.template(), Some("%C: %M"));
         assert_eq!(format.format(7, "boom"), "7: boom");
