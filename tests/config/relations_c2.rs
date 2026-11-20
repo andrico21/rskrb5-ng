@@ -186,20 +186,18 @@ mod tests {
 
     /// `kcm_socket` is effective: undiagnosed in both modes, `-` disables the
     /// Unix socket transport, and any other value names the daemon socket.
+    #[cfg(unix)]
     #[test]
     fn kcm_socket() -> Result<(), Box<dyn Error>> {
-        #[cfg(unix)]
-        {
-            use rskrb5_ng::{ccache::kcm::Store, error::Kcm};
-            for (value, expected) in [("/run/kcm.sock", Some("/run/kcm.sock")), ("-", None)] {
-                let text = format!("[libdefaults]\n kcm_socket = {value}\n");
-                let config = Config::parse_with_mode(&text, ParseMode::Strict)?;
-                assert!(config.diagnostics().is_empty(), "{value} was diagnosed");
-                match (Store::from_libdefaults(&config.libdefaults), expected) {
-                    (Ok(store), Some(path)) => assert_eq!(store.socket().to_str(), Some(path)),
-                    (Err(Kcm::NoServer), None) => {}
-                    (other, _) => return Err(format!("{value}: {other:?}").into()),
-                }
+        use rskrb5_ng::{ccache::kcm::Store, error::Kcm};
+        for (value, expected) in [("/run/kcm.sock", Some("/run/kcm.sock")), ("-", None)] {
+            let text = format!("[libdefaults]\n kcm_socket = {value}\n");
+            let config = Config::parse_with_mode(&text, ParseMode::Strict)?;
+            assert!(config.diagnostics().is_empty(), "{value} was diagnosed");
+            match (Store::from_libdefaults(&config.libdefaults), expected) {
+                (Ok(store), Some(path)) => assert_eq!(store.socket().to_str(), Some(path)),
+                (Err(Kcm::NoServer), None) => {}
+                (other, _) => return Err(format!("{value}: {other:?}").into()),
             }
         }
         Ok(())
