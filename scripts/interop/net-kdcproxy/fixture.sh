@@ -59,7 +59,8 @@ net_kdcproxy_check() {
 
 fixture_kdcproxy_up() {
   local fixture=kdcproxy container dir out host=127.0.0.1 old new
-  local port="${INTEROP_KDCPROXY_PORT:-19143}"
+  local port
+  port="$(interop_port INTEROP_KDCPROXY_PORT 19143)" || return 1
   container="$(interop_container_name "$fixture")"
   dir="$INTEROP_ROOT/scripts/interop/net-kdcproxy"
   out="$INTEROP_STATE_DIR/kdcproxy"

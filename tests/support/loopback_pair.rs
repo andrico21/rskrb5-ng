@@ -28,7 +28,7 @@ use std::{
 
 use tokio::net::{TcpListener, UdpSocket};
 
-use crate::closed_port::next_reserved_port;
+use crate::closed_port::{next_reserved_port, prove_closed_with, tcp_answers};
 
 /// Attempts of [`bind_tcp_and_udp_pair`] before it gives up.
 const ATTEMPTS: u8 = 64;
@@ -287,13 +287,32 @@ pub(crate) async fn with_reserved_port<T>(
 
 /// Prove the TCP side of `addr` free, without keeping it, and bind the UDP side.
 ///
+/// The proof also connects to the number and rejects one that answers (FU-TST-P07: see
+/// `closed_port.rs`).
+///
 /// # Errors
-/// Returns the error of the first bind that fails.
+/// Returns the error of the first bind that fails, and `AddrInUse` when the TCP side answers.
 ///
 /// # Cancel safety
 /// cancel-safe: dropping the future drops the socket bound so far.
 async fn probe_tcp_then_udp(addr: SocketAddr) -> io::Result<UdpSocket> {
+    probe_tcp_then_udp_with(addr, tcp_answers).await
+}
+
+/// [`probe_tcp_then_udp`] with `answers` in place of the real connect, so that a test injects a
+/// number that answers after its proof listener was dropped.
+///
+/// # Errors
+/// As [`probe_tcp_then_udp`].
+///
+/// # Cancel safety
+/// cancel-safe: dropping the future drops the socket bound so far.
+pub(crate) async fn probe_tcp_then_udp_with(
+    addr: SocketAddr,
+    answers: impl FnOnce(SocketAddr) -> bool,
+) -> io::Result<UdpSocket> {
     drop(TcpListener::bind(addr).await?);
+    prove_closed_with(addr, |_bound| Ok(()), answers)?;
     UdpSocket::bind(addr).await
 }
 

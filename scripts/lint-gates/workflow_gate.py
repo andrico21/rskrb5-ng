@@ -12,6 +12,11 @@
   self-tests of the AD dispatch helper, the AD preflight, the
   fixture runner and the release script. The job may not be skipped or allowed
   to fail.
+* The `setid` job of `ci.yml` runs the real secure-environment decision of
+  `os_decision_of_this_process` in a privileged copy of the library test
+  binary (a file capability on Linux, set-uid root on macOS) with
+  `RSKRB5_EXPECT_DECISION=restricted`, and its plain-copy control. The job may
+  not be skipped or allowed to fail.
 * Every action is pinned to a full commit SHA, each `dtolnay/rust-toolchain`
   channel (`# stable`, `# master`, `# nightly`) to one SHA across all
   workflows, and the release workflows set up their toolchain only with the
@@ -216,6 +221,47 @@ def pin_errors(workflows: dict[str, str]) -> list[str]:
     return errors
 
 
+SETID_JOB: Final = re.compile(
+    r"^  setid:\n(.*?)(?=^  [a-z0-9-]+:\n|\Z)", re.DOTALL | re.MULTILINE
+)
+SETID_TEST: Final = "secure_env::decision_tests::tests::os_decision_of_this_process"
+SETID_REQUIRED: Final = (
+    "name: setid",
+    "fail-fast: false",
+    "os: [ubuntu-latest, macos-latest]",
+    'sudo setcap cap_net_bind_service+ep "$RUNNER_TEMP/elevated"',
+    'sudo chmod u+s "$RUNNER_TEMP/elevated"',
+    f'RSKRB5_EXPECT_DECISION=restricted "$RUNNER_TEMP/elevated" {SETID_TEST} --exact --nocapture',
+    'grep -q "test result: ok. 1 passed" elevated.log',
+    f'RSKRB5_EXPECT_DECISION=restricted "$RUNNER_TEMP/plain" {SETID_TEST} --exact',
+    f'"$RUNNER_TEMP/plain" {SETID_TEST} --exact',
+    '[ "$rc" -ne 0 ] && [ "$rc2" -eq 0 ]',
+)
+SETID_FORBIDDEN: Final = re.compile(
+    r"""^\s*(?:-\s+)?["']?(?:continue-on-error|needs)["']?\s*:|\|\|\s*(?:true|:)\b"""
+)
+SETID_IF: Final = re.compile(r"""^\s*(?:-\s+)?["']?if["']?\s*:""")
+
+
+def setid_errors(ci: str) -> list[str]:
+    """The `setid` job must run the real set-id decision on Linux and macOS, unskippably (S-01)."""
+    match = SETID_JOB.search(ci)
+    if match is None:
+        return ["ci.yml has no `setid` job (the real set-id decision test, S-01)"]
+    job = match[1]
+    errors = [
+        f"ci.yml setid job lacks `{needle}`"
+        for needle in SETID_REQUIRED
+        if needle not in job
+    ]
+    for line in job.splitlines():
+        if SETID_FORBIDDEN.search(line):
+            errors.append(f"ci.yml setid job may not be skipped or tolerated: `{line.strip()}`")
+        if SETID_IF.search(line) and line.split(":", 1)[1].strip() != "runner.os == 'macOS'":
+            errors.append(f"ci.yml setid job may not be conditional: `{line.strip()}`")
+    return errors
+
+
 def check(root: Path) -> list[str]:
     workflows = {
         path.name: path.read_text(encoding="utf-8")
@@ -246,6 +292,7 @@ def check(root: Path) -> list[str]:
         link_errors.append(str(error))
     return (
         link_errors
+        + setid_errors(workflows.get("ci.yml", ""))
         + wiring_errors(
             workflows.get("ci.yml", ""),
             (root / "prek.toml").read_text(encoding="utf-8"),
@@ -272,6 +319,39 @@ def self_test() -> int:
         actual_hook,
     ), "duplicate parser installation accepted"
     assert check(ROOT) == [], "actual workflows must enforce required checks"
+    assert setid_errors(actual_ci) == [], "the actual setid job must satisfy its own gate"
+    assert setid_errors("jobs:\n  test:\n    name: test\n"), "a missing setid job accepted"
+    setid_job = SETID_JOB.search(actual_ci)
+    assert setid_job is not None
+    setid_text = setid_job[1]
+    for before, after in (
+        ("os: [ubuntu-latest, macos-latest]", "os: [ubuntu-latest]"),
+        ("os: [ubuntu-latest, macos-latest]", "os: [windows-latest, macos-latest]"),
+        ("fail-fast: false", "fail-fast: true"),
+        (
+            'RSKRB5_EXPECT_DECISION=restricted "$RUNNER_TEMP/elevated"',
+            '"$RUNNER_TEMP/elevated"',
+        ),
+        (
+            'RSKRB5_EXPECT_DECISION=restricted "$RUNNER_TEMP/elevated"',
+            'RSKRB5_EXPECT_DECISION=restricted "$RUNNER_TEMP/plain"',
+        ),
+        ("sudo chmod u+s", "sudo chmod u+x"),
+        ("sudo setcap cap_net_bind_service+ep", "sudo setcap -r"),
+        ('grep -q "test result: ok. 1 passed" elevated.log', "true"),
+        ('[ "$rc" -ne 0 ] && [ "$rc2" -eq 0 ]', "true"),
+        ("    name: setid\n", "    name: setid\n    continue-on-error: true\n"),
+        ("    name: setid\n", "    name: setid\n    needs: mutants\n"),
+        (
+            "    name: setid\n",
+            "    name: setid\n    if: github.event_name == 'schedule'\n",
+        ),
+        ("    name: setid\n", "    name: setid\n    if: false\n"),
+        ("tee elevated.log\n", "tee elevated.log || true\n"),
+    ):
+        assert before in setid_text, before
+        hostile = actual_ci.replace(setid_text, setid_text.replace(before, after, 1))
+        assert setid_errors(hostile), f"weakened setid job accepted: {after}"
     commands = [SELF_TEST_LOOP, *REQUIRED[1:-1]]
     run = "".join(
         f"      - run: {command}\n" for command in [PARSER_INSTALL, *commands]

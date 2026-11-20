@@ -21,7 +21,9 @@ use std::{
 /// A container fixture a scenario needs.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Fixture {
-    /// Fixture name; its container is `rskrb5-interop-<name>`.
+    /// Fixture name; its container is `<prefix>-<name>`, the prefix being
+    /// `rskrb5-interop` unless the run has a namespace (see
+    /// [`container_prefix`]).
     name: &'static str,
     /// Env-file key holding the fixture's TCP endpoint (`host:port`).
     endpoint_key: &'static str,
@@ -47,12 +49,23 @@ pub(crate) struct FixtureUnavailable {
     reason: String,
 }
 
+/// The container-name prefix of this run: `INTEROP_CONTAINER_PREFIX` from the
+/// env file (`rskrb5-interop--<namespace>` in a namespaced run), else
+/// `rskrb5-interop`.
+fn container_prefix() -> String {
+    env::var("INTEROP_CONTAINER_PREFIX").unwrap_or_else(|_| "rskrb5-interop".to_owned())
+}
+
 impl fmt::Display for FixtureUnavailable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "required interop fixture unreachable: {} at {} (container rskrb5-interop-{}): {}",
-            self.fixture, self.endpoint, self.fixture, self.reason
+            "required interop fixture unreachable: {} at {} (container {}-{}): {}",
+            self.fixture,
+            self.endpoint,
+            container_prefix(),
+            self.fixture,
+            self.reason
         )
     }
 }
@@ -265,6 +278,16 @@ pub(crate) fn assert_ticket_flag(
         actual: format!("flags {}", u32::from_be_bytes(flags)),
     })
 }
+
+/// A relay that records the AS-REQs a client sends, so a scenario asserts the
+/// pre-authentication of the exchange it ran (Y1-04).
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[path = "kdc_tap.rs"]
+pub(crate) mod kdc_tap;
 
 /// Harness regressions; the environment-dependent ones run in child processes.
 #[cfg(test)]

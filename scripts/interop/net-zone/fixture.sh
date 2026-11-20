@@ -127,7 +127,8 @@ _kerberos                IN URI  30 1 \"krb5srv::kkdcp:https://localhost:$(net_p
 
 fixture_dns_up() {
   local fixture=dns container dir out image host=127.0.0.1 ip
-  local port="${INTEROP_DNS_PORT:-19153}"
+  local port
+  port="$(interop_port INTEROP_DNS_PORT 19153)" || return 1
   container="$(interop_container_name "$fixture")"
   dir="$INTEROP_ROOT/scripts/interop/net-zone"
   out="$INTEROP_STATE_DIR/dns"

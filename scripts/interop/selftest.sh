@@ -7,6 +7,9 @@
 # runtime and cargo stubbed out. No container, network or image is touched.
 # Sourced by run.sh after lib.sh; uses its cmd_test.
 
+# shellcheck source=/dev/null  # linted on its own: following it here mixes the two files' scratch variables (SC2031)
+source "$INTEROP_ROOT/scripts/interop/selftest-harness.sh"
+
 interop_self_test() {
   local scratch failures=0 printed loaded out
   scratch="$(mktemp -d "${TMPDIR:-/tmp}/rskrb5-interop-selftest.XXXXXX")"
@@ -138,6 +141,7 @@ interop_self_test() {
 
   # 4. Redaction of fixture logs.
   "$INTEROP_ROOT/scripts/interop/redact.sh" --self-test >/dev/null || st_fail "redact.sh --self-test failed"
+  interop_self_test_harness_groups st_fail "$scratch"
 
   # 5. Lane 1D-a (FAST, SPAKE, OTP+RADIUS, PKINIT, anonymous fixtures): per-run
   #    secrets, env keys, the self-check runners (container runtime stubbed),
@@ -299,8 +303,8 @@ interop_preauth_self_test() {
       [[ -z "$(find "$dir/mit/$file" -maxdepth 1 -type f -name '[0-9][0-9]-*' -printf '%f\n' | cut -c1-2 | sort | uniq -d)" ]] ||
         bad "mit/$file holds two drop-ins with the same prefix"
     done
-    prefix="$(grep -o 'INTEROP_RADIUS_PORT:-[0-9]*' "$dir/radius/fixture.sh" | head -1)"
-    prefix="${prefix##*-}"
+    prefix="$(grep -o 'interop_port INTEROP_RADIUS_PORT [0-9]*' "$dir/radius/fixture.sh" | head -1)"
+    prefix="${prefix##* }"
     ((prefix >= 19000 && prefix <= 19099)) || bad "the radius host port ${prefix:-unset} is outside 19000-19099"
 
     # Every image of the fixture is pinned by digest.

@@ -96,9 +96,10 @@ net_other_kvno() {
 
 fixture_mit_other_up() {
   local fixture=mit-other container dir out host=127.0.0.1
-  local kdc_port="${INTEROP_MIT_OTHER_KDC_PORT:-19188}"
-  local kpasswd_port="${INTEROP_MIT_OTHER_KPASSWD_PORT:-19164}"
-  local kadmin_port="${INTEROP_MIT_OTHER_KADMIN_PORT:-19149}"
+  local kdc_port kpasswd_port kadmin_port
+  kdc_port="$(interop_port INTEROP_MIT_OTHER_KDC_PORT 19188)" || return 1
+  kpasswd_port="$(interop_port INTEROP_MIT_OTHER_KPASSWD_PORT 19164)" || return 1
+  kadmin_port="$(interop_port INTEROP_MIT_OTHER_KADMIN_PORT 19149)" || return 1
   container="$(interop_container_name "$fixture")"
   dir="$INTEROP_ROOT/scripts/interop/net-other"
   out="$INTEROP_STATE_DIR/mit-other"
