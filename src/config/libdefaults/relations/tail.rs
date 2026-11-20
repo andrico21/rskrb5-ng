@@ -42,7 +42,7 @@ pub(crate) const RELATIONS_TAIL: [(&str, &str, &str, &str, &str, &str); 22] = [
         "string",
         "/var/run/.heim_org.h5l.kcm-socket",
         "kcm::Store::from_libdefaults",
-        "Effective: names the daemon socket of KCM stores built from the configuration; - or an empty value disables the Unix socket transport (Kcm::NoServer); the built-in KCM: name dispatch has no configuration and uses the default socket",
+        "Effective for KCM stores built from the configuration: names the daemon socket; - or an empty value disables the Unix socket transport (Kcm::NoServer); the KCM: name routes and the client keep the default socket until plan 2 todo 28",
         "kcm_socket",
     ),
     (
