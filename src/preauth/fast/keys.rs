@@ -55,7 +55,7 @@ pub(crate) fn seal(
 ) -> Result<EncryptedData, Error> {
     let cipher = etype(key.etype())?;
     let mut confounder = Zeroizing::new(vec![0; cipher.confounder_len()]);
-    getrandom::fill(&mut confounder)?;
+    getrandom::fill(&mut confounder).map_err(Error::Random)?;
     let sealed =
         cipher.encrypt_message_with_confounder(key.value(), plaintext, usage, &confounder)?;
     Ok(EncryptedData {
