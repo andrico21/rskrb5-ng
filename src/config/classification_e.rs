@@ -17,7 +17,7 @@ mod tests {
 
     /// Libdefaults: safe assignment and optional genuinely stronger assignment.
     /// None means no valid value tightens current behavior; table rationale explains why.
-    const LIB: [(&str, &str, Option<&str>); 19] = [
+    const LIB: [(&str, &str, Option<&str>); 18] = [
         ("canonicalize", "false", None),
         ("default_rcache_name", "none:", Some("dfl:")),
         ("dns_canonicalize_hostname", "fallback", None),
@@ -29,7 +29,6 @@ mod tests {
         ("k5login_authoritative", "true", None),
         ("k5login_directory", "/unread", None),
         ("kcm_mach_service", "-", None),
-        ("kcm_socket", "-", None),
         ("plugin_base_dir", "%{LIBDIR}/unloaded", None),
         ("qualify_shortname", "", None),
         ("rdns", "false", None),

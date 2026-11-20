@@ -41,8 +41,8 @@ pub(crate) const RELATIONS_TAIL: [(&str, &str, &str, &str, &str, &str); 22] = [
         "kcm_socket",
         "string",
         "/var/run/.heim_org.h5l.kcm-socket",
-        "plan 2 WP-09",
-        "No KCM connection exists, including when - disables Unix sockets; diagnostic",
+        "kcm::Store::from_libdefaults",
+        "Effective: names the daemon socket of KCM stores built from the configuration; - or an empty value disables the Unix socket transport (Kcm::NoServer); the built-in KCM: name dispatch has no configuration and uses the default socket",
         "kcm_socket",
     ),
     (
