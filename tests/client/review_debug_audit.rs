@@ -69,7 +69,7 @@ mod tests {
             (
                 "src/client/credential_debug.rs",
                 "AsRepSession",
-                "client,service,session_key,ticket,ticket_flags,auth_time,start_time,end_time,renew_till,key_expiration",
+                "client,service,session_key,ticket,ticket_flags,auth_time,start_time,end_time,renew_till,key_expiration,expiry",
             ),
             (
                 "src/client.rs",
