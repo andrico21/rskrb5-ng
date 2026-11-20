@@ -198,8 +198,8 @@ impl KdcEndpoint {
     /// `value` is trimmed with `str::trim`. A value that parses as a
     /// `core::net::IpAddr` is the host, with `default_port` (so `fd00::1:88` is
     /// an IPv6 address). A value that starts with `[` takes the host from between
-    /// that `[` and the first `]`, and after that `]` has either nothing (the port
-    /// is `default_port`) or a `:` and the port. Otherwise, when the text after
+    /// that `[` and the first `]` (which must not contain another `[`), and after that `]` has either nothing (the port
+    /// is `default_port`) or a `:` and the port, which is ASCII digits only. Otherwise, when the text after
     /// the last `:` is one or more ASCII digits and the text before it is not
     /// empty and does not end in `:`, they are the port and the host; without
     /// such a port the whole value is the host, with `default_port`. In a value
@@ -208,9 +208,9 @@ impl KdcEndpoint {
     /// # Errors
     ///
     /// Returns [`Error::InvalidKdcEndpoint`] when the trimmed `value` is empty;
-    /// when it starts with `[` and has no `]`, has nothing between the `[` and the
-    /// first `]`, or has text after that `]` that does not start with `:`; when a
-    /// port does not parse as a `u16`; or when a value that does not start with
+    /// when it starts with `[` and has no `]`, has nothing or another `[`
+    /// between the `[` and the first `]`, or has text after that `]` that does not
+    /// start with `:`; when a port is not ASCII digits of a `u16`; or when a value that does not start with
     /// `[` has a single `:` and no such port.
     #[inline]
     pub fn configured_with_default_port(
@@ -300,11 +300,10 @@ impl Tokio {
     /// parses as a `core::net::IpAddr` gives its address with port 53. An
     /// explicit IPv6 port therefore requires brackets: bare `fd00::1:5353` is an
     /// IPv6 address using port 53, and `[fd00::1]` without a port is refused.
-    /// In `[address]:port` a zone id may follow an IPv6 address: a `%` and
-    /// ASCII digits whose value fits in a `u32`, as in `[fe80::1%2]:5353`. The
-    /// zone id is dropped, so that value selects `fe80::1` port 5353 with no
-    /// zone; any other zone id, and a zone id in a value without brackets
-    /// (`fe80::1%2`), is refused.
+    /// A zone id (`%`, as in `[fe80::1%2]:5353`) is refused: the resolver's
+    /// server address has no scope field, so it cannot be honoured, and
+    /// dropping it would query a different link-local peer. The port is ASCII
+    /// digits only, the rule of [`KdcEndpoint::configured`] too.
     ///
     /// The server is used only for DNS discovery: configured host names and the
     /// host names of explicit addresses are looked up by the system in either
@@ -325,7 +324,8 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns [`Error::DnsResolverConfig`] when the trimmed `value` is not empty
-    /// and parses as neither a `core::net::SocketAddr` nor a `core::net::IpAddr`.
+    /// and has a zone id or parses as neither a `core::net::SocketAddr` nor a
+    /// `core::net::IpAddr`.
     #[inline]
     pub fn with_dns_server(mut self, value: &str) -> Result<Self, Error> {
         self.dns_server = if value.trim().is_empty() {
@@ -2511,7 +2511,7 @@ fn parse_kdc_endpoint(value: &str, default_port: u16) -> Result<(String, u16), E
         let Some((host, suffix)) = rest.split_once(']') else {
             return Err(Error::InvalidKdcEndpoint(endpoint.to_owned()));
         };
-        if host.is_empty() {
+        if host.is_empty() || host.contains('[') {
             return Err(Error::InvalidKdcEndpoint(endpoint.to_owned()));
         }
         let port = if let Some(port) = suffix.strip_prefix(':') {
@@ -2542,12 +2542,19 @@ fn parse_kdc_endpoint(value: &str, default_port: u16) -> Result<(String, u16), E
 
 /// Parse a KDC port, quoting `endpoint` in the error.
 ///
+/// The one port rule of endpoint literals and DNS server literals: ASCII digits
+/// only. MIT takes the port with `strtoul` (`src/lib/krb5/krb/parse_host_string.c:106`),
+/// which also accepts a sign and leading white space; neither is a port.
+///
 /// # Errors
 ///
-/// Returns [`Error::InvalidKdcEndpoint`] for `endpoint` when `port` is not a
-/// `u16`.
+/// Returns [`Error::InvalidKdcEndpoint`] for `endpoint` when `port` is not
+/// ASCII digits of a `u16`.
 #[cfg(feature = "tokio")]
 fn parse_kdc_port(endpoint: &str, port: &str) -> Result<u16, Error> {
+    if !port.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(Error::InvalidKdcEndpoint(endpoint.to_owned()));
+    }
     port.parse::<u16>()
         .ok()
         .ok_or_else(|| Error::InvalidKdcEndpoint(endpoint.to_owned()))
@@ -2630,18 +2637,25 @@ async fn resolve_dns_endpoint_host(
 /// Parse a DNS server literal by the rule that [`Tokio::with_dns_server`]
 /// documents, after trimming `value` with `str::trim`.
 ///
-/// A `core::net::SocketAddr` gives its address and port, without its zone
-/// id; else a `core::net::IpAddr` gives its address with port 53.
+/// A `core::net::SocketAddr` gives its address and port; else a
+/// `core::net::IpAddr` gives its address with port 53. A zone id (`%` in the
+/// text) is refused: the resolver's server address has no scope, so dropping it
+/// would send queries to another interface's link-local peer.
 ///
 /// # Errors
 ///
-/// Returns a description of the problem when the trimmed `value` is empty or
-/// parses as neither a `core::net::SocketAddr` nor a `core::net::IpAddr`.
+/// Returns a description of the problem when the trimmed `value` is empty, has a
+/// zone id, or parses as neither a `core::net::SocketAddr` nor a
+/// `core::net::IpAddr`.
 #[cfg(feature = "tokio")]
 fn parse_dns_server(value: &str) -> Result<(IpAddr, u16), String> {
     let server = value.trim();
     if server.is_empty() {
         return Err("empty DNS server override".to_owned());
+    }
+
+    if server.contains('%') {
+        return Err(format!("a zone id is not supported in {server:?}"));
     }
 
     if let Ok(addr) = server.parse::<SocketAddr>() {

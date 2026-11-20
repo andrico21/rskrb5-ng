@@ -370,3 +370,78 @@ async fn unresolvable_admin_targets_fail_as_endpoints_of_the_requested_protocol(
     );
     Ok(())
 }
+/// FU-DSC-P06: a zone id on a DNS server literal is refused, not dropped.
+#[test]
+fn a_dns_server_zone_id_is_refused() {
+    for value in [
+        "[fe80::1%2]:5353",
+        "[fe80::1%0]:53",
+        "[fe80::1%4294967295]:53",
+    ] {
+        assert!(
+            matches!(
+                Tokio::new().with_dns_server(value),
+                Err(ClientError::DnsResolverConfig(_))
+            ),
+            "{value}"
+        );
+    }
+}
+
+/// FU-DSC-P07: one port rule, digits only, for configured endpoints and DNS servers.
+#[test]
+fn endpoint_and_dns_server_literals_share_one_port_rule() {
+    for value in [
+        "[a]:+88",
+        "[a]:",
+        "a:+88",
+        "[::1]:+88",
+        "[a]: 88",
+        "[a]:88x",
+    ] {
+        assert!(
+            matches!(
+                KdcEndpoint::configured(KdcProtocol::Tcp, value),
+                Err(ClientError::InvalidKdcEndpoint(_))
+            ),
+            "{value}"
+        );
+    }
+    for value in ["[::1]:+53", "127.0.0.1:+53"] {
+        assert!(
+            matches!(
+                Tokio::new().with_dns_server(value),
+                Err(ClientError::DnsResolverConfig(_))
+            ),
+            "{value}"
+        );
+    }
+}
+
+/// FU-DSC-P07: a bracket inside a bracketed host is refused, so `authority()` cannot
+/// produce an unterminated bracket.
+#[test]
+fn a_nested_bracket_is_refused() -> Result<(), TestError> {
+    for value in ["[[a:b]", "[a[b]:88", "[a]b]"] {
+        assert!(
+            matches!(
+                KdcEndpoint::configured(KdcProtocol::Tcp, value),
+                Err(ClientError::InvalidKdcEndpoint(_))
+            ),
+            "{value}"
+        );
+    }
+    // The accepted shapes keep their authority.
+    for (value, authority) in [
+        ("[fd00::1]:88", "[fd00::1]:88"),
+        ("[fd00::1]", "[fd00::1]:88"),
+        ("fd00::1", "[fd00::1]:88"),
+        ("kdc.example:1088", "kdc.example:1088"),
+    ] {
+        assert_eq!(
+            KdcEndpoint::configured(KdcProtocol::Tcp, value)?.authority(),
+            authority
+        );
+    }
+    Ok(())
+}
