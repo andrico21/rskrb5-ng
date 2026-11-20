@@ -166,6 +166,28 @@ async fn a_replica_failure_is_retried_on_the_primary() -> Result<(), TestError> 
     Ok(())
 }
 
+/// With `disable_encrypted_timestamp` a replica's error is still the KDC's error and is retried
+/// on the primary: the timestamp refusal applies to a preauthentication challenge only (MIT
+/// `preauth_encts.c:68-73`).
+#[tokio::test]
+async fn a_replica_failure_is_retried_on_the_primary_when_timestamps_are_disabled()
+-> Result<(), TestError> {
+    // Given a realm that disables encrypted timestamp, a refusing replica and a primary.
+    let replica = kdc(24).await?;
+    let primary = kdc(6).await?;
+    let config = Config::parse(&format!(
+        "[libdefaults]\ndns_lookup_kdc = false\n[realms]\n{REALM} = {{\nkdc = {}\nkdc = {}\nprimary_kdc = {}\ndisable_encrypted_timestamp = true\n}}\n",
+        replica.address, primary.address, primary.address
+    ))?;
+    // When a password login runs.
+    let code = login_error_code(&config).await?;
+    // Then the primary was asked after the replica, and its error is the result.
+    assert_eq!(code, 6_i32);
+    assert_eq!(replica.contacts.load(Ordering::SeqCst), 1);
+    assert_eq!(primary.contacts.load(Ordering::SeqCst), 1);
+    Ok(())
+}
+
 /// A primary's own failure is final: it is not asked twice.
 #[tokio::test]
 async fn a_primary_failure_is_not_retried() -> Result<(), TestError> {

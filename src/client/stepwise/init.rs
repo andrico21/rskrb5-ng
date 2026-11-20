@@ -341,6 +341,9 @@ fn challenge(engine: &mut InitCreds<'_>, reply: &[u8]) -> Result<ExchangeStep, E
     if let Some(step) = encrypted_challenge(engine, reply, at)? {
         return Ok(step);
     }
+    // A KDC error that is no challenge stays the KDC's error (a replica's error is retried on
+    // the primary); MIT refuses only a challenge's timestamp (`preauth_encts.c:68-73`).
+    drop(preauth::challenge(reply, &engine.options.request)?);
     spake::check_timestamp(engine)?;
     let (request, reply_key) = match &engine.keytab {
         Some(keytab) => preauth::keytab_preauth_request_at(
