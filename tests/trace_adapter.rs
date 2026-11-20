@@ -149,7 +149,10 @@ mod tests {
         assert_eq!(levels, [Level::DEBUG, Level::WARN]);
         let names: Vec<&str> = all.iter().map(|item| item.name.as_str()).collect();
         assert_eq!(names, ["exchange-started", "failed"]);
-        assert!(all.iter().all(|item| item.target == "rskrb5_ng::trace"));
+        assert!(
+            all.iter()
+                .all(|item| item.target == "rskrb5_ng::trace::adapter")
+        );
         let text: String = all.iter().map(|item| item.message.clone()).collect();
         assert!(
             !text.contains("alice") && !text.contains("krbtgt"),

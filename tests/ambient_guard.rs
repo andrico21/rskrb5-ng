@@ -109,7 +109,7 @@ pub(crate) mod tests {
             "KRB5_CLIENT_KTNAME_ENV",
         ),
         (
-            "src/trace/options.rs",
+            "src/trace.rs",
             "Options::from_env",
             "KRB5_TRACE",
             "KRB5_TRACE_ENV",

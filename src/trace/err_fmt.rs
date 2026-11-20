@@ -120,8 +120,8 @@ impl ErrFmt {
 /// An error presented through `err_fmt`.
 ///
 /// `Display` is the formatted text. [`Self::error`] and `source` return the
-/// original, so no code or source is lost.
-#[derive(Debug)]
+/// original, so no code or source is lost. `Debug` shows the code and the size
+/// of the text, never the error or its text.
 pub struct Report<'error, E> {
     /// The original error.
     error: &'error E,
@@ -144,6 +144,16 @@ impl<E> Report<'_, E> {
     #[must_use]
     pub const fn code(&self) -> i64 {
         self.code
+    }
+}
+
+impl<E> fmt::Debug for Report<'_, E> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Report")
+            .field("code", &self.code)
+            .field("text_bytes", &self.text.len())
+            .finish_non_exhaustive()
     }
 }
 

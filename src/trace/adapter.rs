@@ -19,12 +19,9 @@ use super::{Event, Sink};
 #[cfg(feature = "tracing")]
 use crate::error::Trace as Error;
 
-/// The `tracing` target of every forwarded event.
-#[cfg(feature = "tracing")]
-const TARGET: &str = "rskrb5_ng::trace";
-
-/// Emits trace events to the application's `tracing` subscriber: failures and
-/// rejections at `WARN`, everything else at `DEBUG`.
+/// Emits trace events to the application's `tracing` subscriber, with the target
+/// `rskrb5_ng::trace::adapter`: failures and rejections at `WARN`, everything else
+/// at `DEBUG`.
 #[cfg(feature = "tracing")]
 #[derive(Clone, Copy, Debug, Default)]
 #[non_exhaustive]
@@ -46,9 +43,9 @@ impl Sink for Forward {
     fn write(&self, event: &Event<'_>, text: &str) -> Result<(), Error> {
         let name = event.name();
         if matches!(name, "failed" | "ap-req-rejected" | "provider-refused") {
-            tracing::event!(target: TARGET, Level::WARN, event = name, "{text}");
+            tracing::event!(Level::WARN, event = name, "{text}");
         } else {
-            tracing::event!(target: TARGET, Level::DEBUG, event = name, "{text}");
+            tracing::event!(Level::DEBUG, event = name, "{text}");
         }
         Ok(())
     }
