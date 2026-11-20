@@ -49,6 +49,8 @@ impl Watch {
     }
 }
 
+/// Drop audit: removes the login's entry of [`ANSWERED`], which holds only server names and
+/// ports; no secret or other cleanup is involved.
 impl Drop for Watch {
     fn drop(&mut self) {
         drop(
