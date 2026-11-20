@@ -17,7 +17,7 @@ use sha1::{Digest as _, Sha1};
 use zeroize::Zeroizing;
 
 use super::{
-    DES3_SEED_SIZE, Des3CbcSha1KdEtype, KerberosEtype, RC4_HMAC_KEY_SIZE, Rc4HmacEtype,
+    DES3_SEED_SIZE, Des3CbcSha1KdEtype, KerberosEtype, Purpose, RC4_HMAC_KEY_SIZE, Rc4HmacEtype,
     SecretScratch, hmac_sha1,
 };
 use crate::error::Crypto as Error;
@@ -186,17 +186,27 @@ impl<'key> Prepared<'key> {
     fn apply(&self, input: &[u8]) -> Result<Zeroizing<Vec<u8>>, Error> {
         let block = match self.key.etype {
             KerberosEtype::Sha1(family) => {
-                family.encrypt_data(&self.subkey, &hash_prefix(input))?.1
+                ciphertext_only(family.encrypt_data(&self.subkey, &hash_prefix(input))?)
             }
-            KerberosEtype::Des3CbcSha1Kd(_) => {
-                Des3CbcSha1KdEtype::encrypt_data(&self.subkey, &hash_prefix(input))?.1
-            }
+            KerberosEtype::Des3CbcSha1Kd(_) => ciphertext_only(Des3CbcSha1KdEtype::encrypt_data(
+                &self.subkey,
+                &hash_prefix(input),
+            )?),
             KerberosEtype::Sha2(family) => family.derive_random(self.key.material, input)?,
             KerberosEtype::Rc4Hmac(_) => hmac_sha1(self.key.material, input),
             KerberosEtype::Camellia(family) => family.prf_block(&self.subkey, input)?,
         };
         Ok(Zeroizing::new(block))
     }
+}
+
+/// The ciphertext of a CTS encryption, with the next-IV copy it returns beside it erased.
+///
+/// For a one-block input the IV equals the ciphertext, so dropping it bare would leave a
+/// copy of the PRF output outside every zeroizing owner.
+fn ciphertext_only((iv, ciphertext): (Vec<u8>, Vec<u8>)) -> Vec<u8> {
+    drop(SecretScratch::for_purpose(iv, Purpose::Iv));
+    ciphertext
 }
 
 /// The first 16 bytes of SHA-1 over `input`, the plaintext of the RFC 3961 PRF.

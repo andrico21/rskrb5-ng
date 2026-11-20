@@ -595,6 +595,60 @@ mod tests {
         Ok(())
     }
 
+    /// The directive's own text obeys the parser's source bound before any
+    /// provider is consulted, whatever the provider would answer.
+    #[test]
+    fn oversized_profile_directive_never_reaches_the_provider() -> Result<(), Box<dyn Error>> {
+        // Given a provider that would answer a tiny valid profile, and observers.
+        let (mut registry, provider) = with_profile(Some("# tiny\n"))?;
+        let recorder = Arc::new(Recorder::default());
+        registry.register(Extension::LibraryObserver(Arc::<Recorder>::clone(
+            &recorder,
+        )))?;
+        let prefix = "module site:";
+        let fitting = format!(
+            "{prefix}{}",
+            "r".repeat(MAX_INCLUDE_BYTES.saturating_sub(prefix.len()))
+        );
+        // When the directive is exactly at the bound, and then one byte over.
+        let accepted = registry.parse_config(&fitting, ParseMode::Compatible);
+        let seen_at_bound = provider.seen.lock().map_err(|_poisoned| "poisoned")?.len();
+        let oversized = format!("{fitting}r");
+        let failure = registry
+            .parse_config(&oversized, ParseMode::Compatible)
+            .err()
+            .ok_or("oversized directive accepted")?;
+        // Then the bound is inclusive, and the larger text fails before any provider call.
+        assert!(accepted.is_ok(), "text at the bound is accepted");
+        assert_eq!(
+            seen_at_bound, 1,
+            "the fitting directive reaches the provider"
+        );
+        assert!(
+            matches!(
+                failure,
+                Failure::Config(ConfigError::IncludeTooLarge { bytes, limit })
+                    if bytes == oversized.len() && limit == MAX_INCLUDE_BYTES
+            ),
+            "{failure}"
+        );
+        assert_eq!(
+            provider.seen.lock().map_err(|_poisoned| "poisoned")?.len(),
+            1,
+            "no provider call for the oversized directive"
+        );
+        let events = recorder
+            .events
+            .lock()
+            .map_err(|_poisoned| "poisoned")?
+            .len();
+        assert_eq!(
+            events, 2,
+            "only the fitting directive was consulted and chosen"
+        );
+        Ok(())
+    }
+
     /// Host-realm, local-authorization, locator and mechanism outputs are validated.
     #[test]
     fn provider_outputs_are_validated() -> Result<(), Box<dyn Error>> {

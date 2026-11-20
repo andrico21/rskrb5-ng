@@ -26,6 +26,8 @@ pub(super) enum Purpose {
     Plaintext,
     /// Last partial CTS block's decrypted allocation.
     CtsTail,
+    /// Next-IV copy that a CTS encryption returns beside its ciphertext.
+    Iv,
 }
 
 impl SecretScratch {
@@ -101,7 +103,7 @@ mod tests {
 
     use super::Purpose;
     use crate::{
-        crypto::{AesSha1Etype, KerberosEtype},
+        crypto::{AesSha1Etype, KerberosEtype, prf},
         error::Crypto,
     };
 
@@ -201,6 +203,43 @@ mod tests {
                 [(Purpose::CtsTail, 16)]
             );
         });
+        Ok(())
+    }
+
+    /// A PRF block that needs only the ciphertext erases the IV copy beside it.
+    #[test]
+    fn prf_iv_owner_erasure_is_independent() -> Result<(), Box<dyn Error>> {
+        // Given every family and the length of the IV its CTS encryption returns, if any.
+        for (id, iv_len) in [
+            (16_i32, Some(8_usize)),
+            (17_i32, Some(16)),
+            (18_i32, Some(16)),
+            (19_i32, None),
+            (20_i32, None),
+            (23_i32, None),
+        ] {
+            let etype = KerberosEtype::from_etype_id(id).ok_or("etype")?;
+            let key = vec![0x42; etype.key_len()];
+            EVENTS.with_borrow_mut(Vec::clear);
+            // When one PRF block is computed from the key.
+            let block = prf::pseudo_random(&prf::Key::new(etype, &key), b"prf input")?;
+            // Then exactly the IV copy, never the result owner, is erased as an IV.
+            assert!(!block.is_empty(), "etype {id}");
+            EVENTS.with_borrow(|events| {
+                assert_eq!(
+                    events
+                        .iter()
+                        .copied()
+                        .filter(|(purpose, _)| *purpose == Purpose::Iv)
+                        .collect::<Vec<_>>(),
+                    iv_len
+                        .map(|len| (Purpose::Iv, len))
+                        .into_iter()
+                        .collect::<Vec<_>>(),
+                    "etype {id}"
+                );
+            });
+        }
         Ok(())
     }
 }

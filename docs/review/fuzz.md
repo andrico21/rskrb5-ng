@@ -7,7 +7,7 @@ itself reaches the parsers mapped to it.
 
 ## Targets
 
-`cargo +nightly-2026-10-03 fuzz list` prints these fifteen targets. All take
+`cargo +nightly-2026-10-03 fuzz list` prints these sixteen targets. All take
 arbitrary bytes; most use the first byte as a selector and pass the rest to
 the chosen entry point, so one target covers a family of related decoders.
 
@@ -27,12 +27,15 @@ the chosen entry point, so one target covers a family of related decoders.
 | `krb5_conf` | `krb5.conf` text (UTF-8-lossy) | `Config::parse` and includes, then the enctype-list accessors `default_tkt_enctype_ids`, `default_tgs_enctype_ids` and `permitted_enctype_ids` on an accepted configuration |
 | `extensions` | `.k5identity` contents, or `krb5.conf` text parsed through an extension registry | `K5Identity::from_bytes` and `CacheSelector::choose` (the `.k5identity` grammar and its `fnmatch` patterns, for a host-based and a plain server), and `Registry::parse_config` (the `module <id>:<residual>` profile directive and `[plugins]` module resolution) in both parse modes |
 | `ccache_collection` | a `DIR` collection's `primary` pointer and its `tkt` cache file, split at the first byte | `DirStore` collection enumeration, primary resolution and loads (`read_primary`, the locked reads and `FileCache::parse`), and the `FILE` store load of the same file |
+| `camellia_crypto` | Camellia-CTS-CMAC input: a selector byte (entry point and camellia128 or camellia256), the key usage and the input | `CtsCmacEtype::decrypt_message` on the raw input, then on a sealed copy of it (round trip, and a changed MAC is refused); `verify_checksum` on a checksum split from its data, then on the computed one (and a changed one is refused); `decrypt_data` and the re-encryption of an accepted ciphertext; `string_to_key` on `s2kparams` text (the count is bounded to 64 so the run stays fast; zero, over-limit and malformed counts are refused before any work) |
 | `name_parse` | names and values as text | `Principal::parse_user`, `Principal::parse_service`, `CacheName::parse`, `keytab::Name::parse`, `KdcEndpoint::configured`, `Tokio::with_dns_server`, `config::parse_duration`, `config::parse_boolean`, `crypto::s2kparams_to_iterations` |
 
 The keys, keytabs, tickets and templates the targets use are the synthetic
 gokrb5 test vectors the tests already carry (`fuzz/fixtures/`). The fuzz
-crate depends on `libfuzzer-sys` and on `rskrb5-ng` with its `http` feature;
-the `http_negotiate` target needs that feature.
+crate depends on `libfuzzer-sys` and on `rskrb5-ng` with its `http` and `camellia`
+features; the `http_negotiate` target needs `http` and the `camellia_crypto` target
+needs the `camellia` leaf. Compiling the leaf in does not grant runtime permission
+(`docs/security-policy.md#camellia`).
 
 ### The TCP record-mark reader
 
@@ -93,6 +96,7 @@ timeout artifact:
 | `name_parse` | 2,629,623 | 121 s | 0 |
 | `extensions` | 651,170 (todo 3 of plan 2, 2026-11-18) | 121 s | 0 |
 | `ccache_collection` | 163,889 (todo 11 of plan 2, 2026-11-19) | 121 s | 0 |
+| `camellia_crypto` | 725,278 (todo 33 of plan 2, 2026-11-19) | 121 s | 0 |
 
 ### Round-2 session admission repair (FU-FUZ-R02)
 
@@ -185,6 +189,19 @@ readers and proved its four rows the same way (4 of 4 mappings; record
 `task-11-ccache-collection-coverage.tsv` in the execution evidence). The
 auxiliary-vector parser of the secure-environment decision has no target: it
 reads only this process's kernel-written `/proc/self/auxv`, and its row says so.
+
+Plan 2 todo 33 added the `camellia_crypto` target (the supervisor finding Y3-05,
+register row FU-CRY-P06) and proved its six rows the same way: `cargo fuzz coverage
+camellia_crypto` on the committed seeds, `llvm-cov export` of that target, then
+`coverage_index` and `check_coverage` on its rows (6 of 6 mappings; record
+`task-33-camellia-coverage.tsv` in the execution evidence). The inventory names a
+function by its source path, while the coverage symbols follow the module tree: this
+crate mounts `src/crypto.rs` as `pub mod cryptography` (re-exported as `crypto`), and
+the `impl CtsCmacEtype` blocks in `src/crypto/camellia/etype.rs` belong to the type
+declared in `camellia`. The proof therefore maps those two names before matching
+(`cryptography` to `crypto`, and `etype::` inserted for that file), and the unmodified
+`--coverage` mode does not match these rows; register row FU-FUZ-P01 records it. The
+other targets were not rebuilt in that lane.
 
 ## Round-trip properties
 
@@ -336,6 +353,12 @@ does.
 | `rskrb5_ng::crypto::s2kparams_to_iterations` | `src/crypto.rs` | `name_parse` |  |
 | `rskrb5_ng::crypto::split_trailing_mac` | `src/crypto.rs` | `gss_token` |  |
 | `rskrb5_ng::crypto::strip_confounder` | `src/crypto.rs` | `gss_token` |  |
+| `rskrb5_ng::crypto::camellia::cts::decrypt` | `src/crypto/camellia/cts.rs` | `camellia_crypto` |  |
+| `rskrb5_ng::crypto::camellia::etype::CtsCmacEtype::decrypt_data` | `src/crypto/camellia/etype.rs` | `camellia_crypto` |  |
+| `rskrb5_ng::crypto::camellia::etype::CtsCmacEtype::decrypt_message` | `src/crypto/camellia/etype.rs` | `camellia_crypto` |  |
+| `rskrb5_ng::crypto::camellia::etype::CtsCmacEtype::string_to_key` | `src/crypto/camellia/etype.rs` | `camellia_crypto` |  |
+| `rskrb5_ng::crypto::camellia::etype::CtsCmacEtype::verify_checksum` | `src/crypto/camellia/etype.rs` | `camellia_crypto` |  |
+| `rskrb5_ng::crypto::camellia::kdf::verify` | `src/crypto/camellia/kdf.rs` | `camellia_crypto` |  |
 | `rskrb5_ng::der::decode_complete` | `src/der.rs` | `der_oid` |  |
 | `rskrb5_ng::der::top_level_der_end` | `src/der.rs` | `der_oid` |  |
 | `rskrb5_ng::der::trim_zero_padded_der` | `src/der.rs` | `der_oid` |  |

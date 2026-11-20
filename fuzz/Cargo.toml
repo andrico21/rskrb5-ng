@@ -11,7 +11,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-rskrb5-ng = { version = "0.3.0", path = "..", features = ["http"] }
+rskrb5-ng = { version = "0.3.0", path = "..", features = ["camellia", "http"] }
 
 [[bin]]
 name = "kpasswd_reply"
@@ -114,6 +114,13 @@ bench = false
 [[bin]]
 name = "ccache_collection"
 path = "fuzz_targets/ccache_collection.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "camellia_crypto"
+path = "fuzz_targets/camellia_crypto.rs"
 test = false
 doc = false
 bench = false
