@@ -32,6 +32,7 @@ the chosen entry point, so one target covers a family of related decoders.
 | `keyring_index` | the payload of the `krb_ccache:primary` key of a `KEYRING:` collection | `ccache::keyring::index::parse`, then `encode` and `parse` again on accepted input (the version, the length and the name of the primary cache; MIT `cc_keyring.c:541-571`) |
 | `fast_reply` | replies to an armored AS request (RFC 6113 FAST) | the stepwise AS engine armored by `preauth::fast::Exchange` with a fixed armor ticket: the raw reply (outer AS-REP or KRB-ERROR, METHOD-DATA, `PA-FX-FAST-REPLY`), and the fuzzed bytes sealed as the `KrbFastResponse` under the conversation's armor key inside a KRB-ERROR or an AS-REP (`KrbFastResponse`, `PA-FX-ERROR`, the cookie bound, `KrbFastFinished` and its ticket checksum); no fuzzed reply may complete the exchange |
 | `spake_message` | a KDC's PA-SPAKE value (RFC 9588) | `preauth::spake::Message::decode` twice (deterministic), then a fresh `Client` permitting all four groups answers the value twice (`Client::process`): support message for empty or out-of-policy values, response for a challenge in a permitted group, which decodes and validates the edwards25519, P-256, P-384 or P-521 element and derives `K'[0]` and `K'[1]`; a second challenge must be refused |
+| `otp_challenge` | a KDC's `PA-OTP-CHALLENGE` value (RFC 6560) | `preauth::otp::Challenge::decode` twice (deterministic) and once under a tight policy (token count, field and challenge bounds), then an accepted challenge answers every token and one index past the list, with a value and with a value and a PIN, under an AES256 armor key (`Challenge::request`): every request built is an OTP padata of the request type |
 | `name_parse` | names and values as text | `Principal::parse_user`, `Principal::parse_service`, `CacheName::parse`, `keytab::Name::parse`, `KdcEndpoint::configured`, `Tokio::with_dns_server`, `config::parse_duration`, `config::parse_boolean`, `crypto::s2kparams_to_iterations` |
 | `discovery_uri` | the data DNS hands to server discovery, one selector byte then bytes or text | `discovery::uri::parse` (a `krb5srv:flags:transport:host` URI record target) and `host_port` on an accepted target, `split_rdata` (URI record data), `realm_from_txt` (the first string of a TXT realm record) and `host_port` on arbitrary text; the target text, the host and the realm stay within their bounds |
 
@@ -107,6 +108,7 @@ timeout artifact:
 | `keyring_index` | 6,296,962 (todo 13 of plan 2, 2026-11-19) | 121 s | 0 |
 | `fast_reply` | 28,010 (todo 7 of plan 2, 2026-11-20) | 121 s | 0 |
 | `spake_message` | 336,637 (todo 9 of plan 2, 2026-11-20) | 121 s | 0 |
+| `otp_challenge` | 1,658,639 (todo 10 of plan 2, 2026-11-21) | 121 s | 0 |
 
 ### Round-2 session admission repair (FU-FUZ-R02)
 
@@ -198,6 +200,17 @@ four groups of the `spake` leaf (the fuzz crate enables the leaf). The seeds
 are the support and challenge messages of the RFC 9588 appendix C vectors, an
 empty value and an `encdata` message. Coverage proof: record
 `task-9-spake-coverage.tsv` in the execution evidence.
+
+### OTP challenges (todo 10 of plan 2)
+
+`otp_challenge` fuzzes the `PA-OTP-CHALLENGE` a KDC sends inside FAST
+(`Challenge::decode` and its decoder `challenge::decode`: the size bound, the
+count and field bounds, the RFC 6560 flag rules and MIT's token filter) and the
+request builder behind it (`Challenge::request`). The seeds are MIT's own
+minimal and maximal challenges (`src/tests/asn.1/reference_encode.out`), a
+challenge with two PIN-collecting tokens, one that sets both PIN flags, an empty
+value and a truncated one. Coverage proof: record `task-10-otp-coverage.tsv` in
+the execution evidence.
 
 ### Earlier campaign crashes
 
@@ -595,6 +608,8 @@ does.
 | `rskrb5_ng::pac::ndr::ndr_len` | `src/pac/ndr.rs` | `pac_parse` |  |
 | `rskrb5_ng::preauth::spake::Message::decode` | `src/preauth/spake.rs` | `spake_message` |  |
 | `rskrb5_ng::preauth::spake::wire::decode` | `src/preauth/spake/wire.rs` | `spake_message` |  |
+| `rskrb5_ng::preauth::otp::Challenge::decode` | `src/preauth/otp.rs` | `otp_challenge` |  |
+| `rskrb5_ng::preauth::otp::challenge::decode` | `src/preauth/otp/challenge.rs` | `otp_challenge` |  |
 | `rskrb5_ng::pac::ndr::read_claim_entry_descriptor` | `src/pac/ndr.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::ndr::read_counted_supplemental_credentials` | `src/pac/ndr.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::ndr::read_deferred_bool_array` | `src/pac/ndr.rs` | `pac_parse` |  |
