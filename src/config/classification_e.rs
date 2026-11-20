@@ -17,7 +17,7 @@ mod tests {
 
     /// Libdefaults: safe assignment and optional genuinely stronger assignment.
     /// None means no valid value tightens current behavior; table rationale explains why.
-    const LIB: [(&str, &str, Option<&str>); 18] = [
+    const LIB: [(&str, &str, Option<&str>); 17] = [
         ("canonicalize", "false", None),
         ("default_rcache_name", "none:", Some("dfl:")),
         ("dns_canonicalize_hostname", "fallback", None),
@@ -34,16 +34,14 @@ mod tests {
         ("rdns", "false", None),
         ("realm_try_domains", "-1", None),
         ("request_timeout", "0", Some("1s")),
-        ("spake_preauth_groups", "P-521", None),
         ("verify_ap_req_nofail", "false", Some("true")),
     ];
 
     /// Realm values are restrictions on absent mechanisms, except encrypted timestamp.
-    const REALM: [(&str, &str, Option<&str>); 21] = [
+    const REALM: [(&str, &str, Option<&str>); 20] = [
         ("auth_to_local", "DEFAULT", None),
         ("auth_to_local_names", "{\n Alice = alice\n }", None),
         ("default_domain", "example.test", None),
-        ("disable_encrypted_timestamp", "false", Some("true")),
         ("http_anchors", "FILE:/ca", None),
         ("master_kdc", "master.example", None),
         ("primary_kdc", "primary.example", None),

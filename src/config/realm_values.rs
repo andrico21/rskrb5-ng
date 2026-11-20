@@ -62,16 +62,8 @@ pub(super) fn decode(
         "endpoint list" | "hostname list" | "string list" => Value::List(values),
         _ => Value::Text(first.to_owned()),
     };
-    let stricter =
-        name == "disable_encrypted_timestamp" && matches!(value, Value::Boolean(Toggle::Enabled));
     drop(realm.relations.insert(name.to_owned(), value));
     if consumer.starts_with("plan 2 ") {
-        if stricter {
-            return Err(Error::NotYetEffective {
-                relation: name,
-                package: consumer,
-            });
-        }
         Ok(Some(ConfigDiagnostic::NotYetEffective {
             relation: name,
             package: consumer,

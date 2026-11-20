@@ -40,8 +40,8 @@ pub(crate) const REALM_RELATIONS: [(&str, &str, &str, &str, &str, &str); 28] = [
         "disable_encrypted_timestamp",
         "boolean",
         "false",
-        "plan 2 WP-07",
-        "true errors because current client may send encrypted timestamp; false diagnostic",
+        "InitCredsOptions::from_config; Exchange::configure",
+        "Effective for the client realm: true never sends encrypted timestamp (EncryptedTimestampDisabled), never optimistically, and is never reset",
         "disable_encrypted_timestamp",
     ),
     (

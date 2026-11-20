@@ -18,7 +18,21 @@ use super::{ConfigDiagnostic, Error, LibDefaults, ParseMode};
 /// are rejected in both modes, with the owning plan-2 work package.
 pub(super) fn classify(defaults: &mut LibDefaults, selected: &[String]) -> Result<(), Error> {
     for &(name, _kind, _mit_default, consumer, _rationale, _test) in &relations::RELATIONS {
-        if !selected.iter().any(|key| key == name) || !consumer.starts_with("plan 2 ") {
+        if !selected.iter().any(|key| key == name) {
+            continue;
+        }
+        if let Some(feature) = missing_leaf(name) {
+            let diagnostic = ConfigDiagnostic::FeatureUnavailable {
+                relation: name,
+                feature,
+            };
+            if defaults.parse_mode() == ParseMode::Strict {
+                return Err(diagnostic.into_error());
+            }
+            defaults.enctype_diagnostics.push(diagnostic);
+            continue;
+        }
+        if !consumer.starts_with("plan 2 ") {
             continue;
         }
         let stricter = match name {
@@ -39,4 +53,11 @@ pub(super) fn classify(defaults: &mut LibDefaults, selected: &[String]) -> Resul
             });
     }
     Ok(())
+}
+
+/// The leaf feature whose consumer `relation` needs, when this build lacks it
+/// (plan 2 "Disabled leaves": `FeatureUnavailable`).
+fn missing_leaf(relation: &str) -> Option<&'static str> {
+    let spake = cfg!(feature = "spake");
+    (relation == "spake_preauth_groups" && !spake).then_some("spake")
 }

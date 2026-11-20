@@ -10,21 +10,21 @@ mod tests {
 
     use rskrb5_ng::config::{Config, ParseMode};
 
-    /// A realm cannot silently prohibit the timestamp mechanism still used by clients.
+    /// The timestamp prohibition is a typed Boolean: MIT's true spellings are admitted
+    /// (the exchange engine honours them, plan 2 todo 9) and a non-Boolean fails closed.
     #[test]
-    fn encrypted_timestamp_disable_fails_closed() -> Result<(), Box<dyn Error>> {
+    fn encrypted_timestamp_disable_is_a_typed_boolean() -> Result<(), Box<dyn Error>> {
         for mode in [ParseMode::Compatible, ParseMode::Strict] {
-            for value in ["true", "on", "maybe"] {
-                drop(
-                    Config::parse_with_mode(
-                        &format!(
-                            "[realms]\n EXAMPLE = {{\n disable_encrypted_timestamp = {value}\n }}\n"
-                        ),
-                        mode,
-                    )
-                    .err()
-                    .ok_or("timestamp restriction ignored")?,
+            for (value, admitted) in [("true", true), ("on", true), ("maybe", false)] {
+                let parsed = Config::parse_with_mode(
+                    &format!(
+                        "[realms]\n EXAMPLE = {{\n disable_encrypted_timestamp = {value}\n }}\n"
+                    ),
+                    mode,
                 );
+                if parsed.is_ok() != admitted {
+                    return Err(format!("{value} in {mode:?}: admitted {}", parsed.is_ok()).into());
+                }
             }
         }
         Ok(())

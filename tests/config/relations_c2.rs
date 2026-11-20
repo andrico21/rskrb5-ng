@@ -88,7 +88,6 @@ mod tests {
         rdns, "plan 2 WP-10", ["true", "false"];
         realm_try_domains, "plan 2 WP-10", ["-1", "0", "2"];
         request_timeout, "plan 2 WP-10", ["0", "0s"];
-        spake_preauth_groups, "plan 2 WP-07", ["edwards25519,P-256", "EDWARDS25519 p-256"];
         verify_ap_req_nofail, "plan 2 WP-11", ["false", "off"];
         client_aware_channel_bindings, "plan 2 WP-12", ["false", "off"];
     }

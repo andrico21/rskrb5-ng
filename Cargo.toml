@@ -59,6 +59,9 @@ tests = [
   "tests/spake.rs",
   "tests/spake/",
 ]
+seams = [
+  { file = "src/config/libdefaults.rs", item = "fn missing_leaf", call = "then_some" },
+]
 
 # The platform-store companion crate (owner decision D11); it depends on this
 # crate, never the reverse, and is not published.

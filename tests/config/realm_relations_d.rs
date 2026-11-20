@@ -51,7 +51,6 @@ mod tests {
     cases! {
         auth_to_local, "list", ["DEFAULT", "RULE:[1:$1](.*)s/a/b/"];
         default_domain, "text", ["example.test", "other.test"];
-        disable_encrypted_timestamp, "bool", ["false", "off"];
         http_anchors, "locations", ["FILE:/ca", "DIR:/ca", "ENV:CA_BUNDLE"];
         master_kdc, "list", ["master.example", "other.example:88"];
         primary_kdc, "list", ["primary.example", "other.example:88"];
