@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 58
+implemented = 59
 partial = 57
-absent = 38
+absent = 37
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -894,13 +894,39 @@ id = "MIT-ccache-4"
 area = "ccache"
 upstream_ref = "krb5-1.22.2-final"
 capability = "KCM cache client"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "KCM: names fail with a typed UnsupportedCacheType error; no KCM socket protocol."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "ccache::kcm::Store",
+  "ccache::kcm::client::Client",
+  "ccache::kcm::socket::Trust",
+  "ccache::kcm::wire::reply_length",
+  "ccache::kcm::seam::KcmTransport",
+  "ccache::kcm::seam::install_transport",
+]
+test_names = [
+  "tests/kcm/wire.rs::requests_match_the_frames_sssd_accepted",
+  "tests/kcm/wire.rs::an_oversized_reply_is_rejected_before_the_body_is_read",
+  "tests/kcm/transport.rs::partial_frames_fail_as_short_reads",
+  "tests/kcm/transport.rs::unknown_opcodes_and_error_ids_are_typed",
+  "tests/kcm/transport.rs::slow_peers_are_bounded_by_the_deadline",
+  "tests/kcm/transport.rs::an_oversized_reply_fails_without_waiting_for_the_body",
+  "tests/kcm/store.rs::a_cache_round_trips_through_the_daemon",
+  "tests/kcm/store.rs::a_collection_lists_switches_and_creates",
+  "tests/kcm/trust.rs::only_a_socket_is_connected_to",
+  "tests/kcm/tokio_client.rs::a_request_round_trips_over_a_unix_socket",
+  "tests/interop_kcm/scenarios.rs::rust_cache_in_the_daemon_is_read_by_mit",
+  "tests/interop_kcm/scenarios.rs::mit_cache_in_the_daemon_is_read_by_the_crate",
+  "tests/interop_kcm/scenarios.rs::store_remove_and_destroy_agree_with_mit",
+  "tests/interop_kcm/scenarios.rs::collection_primary_and_switch_agree_with_mit",
+  "tests/interop_kcm/scenarios.rs::the_daemon_is_still_alive_at_the_end_of_the_suite",
+  "tests/kcm_seam.rs::the_built_in_store_uses_the_installed_transport",
+  "tests/kcm_seam.rs::a_second_installation_is_refused",
+  "tests/store_registry.rs::taken_and_malformed_prefixes_are_refused",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "The daemon socket must be a socket (not a symbolic link) owned by root, by this process's effective user or by a trusted user, and the Tokio client also checks the peer's user id; MIT connects to whatever the path holds (`cc_kcm.c:301-342`). Replies are decoded strictly (no trailing bytes, a terminated name, no payload on an empty reply), where MIT ignores trailing bytes (`cc_kcm.c:495-541`), and every request has a deadline, which MIT lacks. A residual with a NUL byte or over 4096 bytes is refused; `KCM:<uid>:<name>` otherwise goes to the daemon unchanged. `store` of a credential for a client and server already in the cache reads the cache and replaces it with `REPLACE` (or `INITIALIZE` and `STORE` for a daemon without it, as MIT does, `cc_kcm.c:1280-1314`), and `remove` rewrites the cache the same way, where MIT sends `REMOVE_CRED` (SSSD 2.10.1 answers it with `KRB5_FCC_INTERNAL`). `RETRIEVE` is not used. The built-in `KCM` cache type is reserved (no store provider can claim it) and reaches the daemon through the socket, or through the process-wide `KcmTransport` an application installed first (MIT `kcmio_call` replaced by the macOS Mach service in `cc_kcm.c`; the Mach transport itself is todo 14's)."
 disposition = "WP-09"
 closing_plan = 2
 closing_todo = 12

@@ -821,7 +821,7 @@ pub trait LibraryObserver: Send + Sync {
 ///
 /// A provider is trusted code: it receives every credential stored under its
 /// prefix. It can never take a built-in type (`FILE`, `WRFILE`, `DIR`,
-/// `MEMORY`) or a prefix another provider holds, in any letter case, so no
+/// `MEMORY`, `KCM`) or a prefix another provider holds, in any letter case, so no
 /// registration can redirect a name that already resolves elsewhere. A
 /// prefix is 2 to [`MAX_ID_BYTES`] bytes of `[A-Za-z0-9_.-]`: it contains no
 /// `:` and is never a one-letter drive name.

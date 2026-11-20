@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use super::{
     CCache, Credential, Error, Principal,
     dir_store::{DirStore, create_unique},
-    direct_file_path_from_cache_name, file_name_error, is_config_credential,
+    direct_file_path_from_cache_name, file_name_error, is_config_credential, kcm,
     stores::{
         CacheCollection, CacheCursor, CacheHandle, CacheIdentity, CacheVersion, CredentialStore,
     },
@@ -90,6 +90,7 @@ pub fn resolve(name: &str, version: CacheVersion) -> Result<Box<dyn CacheHandle>
         Some((prefix, residual)) if prefix.eq_ignore_ascii_case("DIR") => {
             DirStore::new(version).resolve(residual)
         }
+        Some((prefix, residual)) if prefix.eq_ignore_ascii_case("KCM") => kcm::resolve(residual),
         _ => FileStore::new(version)
             .resolve(&direct_file_path_from_cache_name(&expanded)?.to_string_lossy()),
     }
@@ -112,6 +113,7 @@ pub fn collection(name: &str, version: CacheVersion) -> Result<Box<dyn CacheColl
         Some((prefix, residual)) if prefix.eq_ignore_ascii_case("DIR") => {
             DirStore::new(version).collection(residual)
         }
+        Some((prefix, residual)) if prefix.eq_ignore_ascii_case("KCM") => kcm::collection(residual),
         _ => FileStore::new(version)
             .collection(&direct_file_path_from_cache_name(&expanded)?.to_string_lossy()),
     }

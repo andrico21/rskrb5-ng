@@ -504,8 +504,8 @@ mod tests {
             Err(Error::CacheNotFound { name: _ })
         ));
         assert!(matches!(
-            file_store::resolve("KCM:", CacheVersion::V4),
-            Err(Error::UnsupportedCacheType { cache_type }) if cache_type == "KCM"
+            file_store::resolve("API:", CacheVersion::V4),
+            Err(Error::UnsupportedCacheType { cache_type }) if cache_type == "API"
         ));
         fs::remove_dir_all(directory)?;
         Ok(())

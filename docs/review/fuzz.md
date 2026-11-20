@@ -28,6 +28,7 @@ the chosen entry point, so one target covers a family of related decoders.
 | `extensions` | `.k5identity` contents, or `krb5.conf` text parsed through an extension registry | `K5Identity::from_bytes` and `CacheSelector::choose` (the `.k5identity` grammar and its `fnmatch` patterns, for a host-based and a plain server), and `Registry::parse_config` (the `module <id>:<residual>` profile directive and `[plugins]` module resolution) in both parse modes |
 | `ccache_collection` | a `DIR` collection's `primary` pointer and its `tkt` cache file, split at the first byte | `DirStore` collection enumeration, primary resolution and loads (`read_primary`, the locked reads and `FileCache::parse`), and the `FILE` store load of the same file |
 | `camellia_crypto` | Camellia-CTS-CMAC input: a selector byte (entry point and camellia128 or camellia256), the key usage and the input | `CtsCmacEtype::decrypt_message` on the raw input, then on a sealed copy of it (round trip, and a changed MAC is refused); `verify_checksum` on a checksum split from its data, then on the computed one (and a changed one is refused); `decrypt_data` and the re-encryption of an accepted ciphertext; `string_to_key` on `s2kparams` text (the count is bounded to 64 so the run stays fast; zero, over-limit and malformed counts are refused before any work) |
+| `kcm_reply` | a KCM daemon's reply byte stream | the blocking KCM client (`Client::call`, `read_frame`, `read_exact`) over the input as the whole reply stream, once for each reply shape: cache name, UUID list, default principal, one credential, counted credential list, KDC offset and empty (`Shape::decode` of each), with the reply limit lowered to 64 KiB; the announced length is checked before the body is allocated |
 | `name_parse` | names and values as text | `Principal::parse_user`, `Principal::parse_service`, `CacheName::parse`, `keytab::Name::parse`, `KdcEndpoint::configured`, `Tokio::with_dns_server`, `config::parse_duration`, `config::parse_boolean`, `crypto::s2kparams_to_iterations` |
 
 The keys, keytabs, tickets and templates the targets use are the synthetic
@@ -97,6 +98,7 @@ timeout artifact:
 | `extensions` | 651,170 (todo 3 of plan 2, 2026-11-18) | 121 s | 0 |
 | `ccache_collection` | 163,889 (todo 11 of plan 2, 2026-11-19) | 121 s | 0 |
 | `camellia_crypto` | 725,278 (todo 33 of plan 2, 2026-11-19) | 121 s | 0 |
+| `kcm_reply` | 596,862 (todo 12 of plan 2, 2026-11-19) | 121 s | 0 |
 
 ### Round-2 session admission repair (FU-FUZ-R02)
 
@@ -203,6 +205,17 @@ declared in `camellia`. The proof therefore maps those two names before matching
 `--coverage` mode does not match these rows; register row FU-FUZ-P01 records it. The
 other targets were not rebuilt in that lane.
 
+Plan 2 todo 12 added the `kcm_reply` target for the KCM client's reply reader
+and proved its nine rows the same way (9 of 9 mappings: `Client::read_frame`,
+`Client::read_exact` and the seven `Shape::decode` implementations; record
+`task-12-kcm-reply-coverage.tsv` in the execution evidence). The target serves
+each input as the whole reply stream to a fresh client once per reply shape, so
+every decoder is reached by every seed; the seeds are one valid reply per shape
+(name, UUID list, principal, credential, counted credential list, KDC offset,
+empty), a daemon status, a transport status, an announced length of 4 GiB and a
+credential count larger than the payload. `Deadline::read` reads the daemon
+socket and parses nothing, so its row names no target.
+
 ## Round-trip properties
 
 | Encoder and parser | Property | Where |
@@ -261,6 +274,17 @@ does.
 | `rskrb5_ng::ccache::read_u8` | `src/ccache.rs` | `ccache_parse` |  |
 | `rskrb5_ng::ccache::dir_store::read_primary` | `src/ccache/dir_store.rs` | `ccache_collection` |  |
 | `rskrb5_ng::ccache::file_store::FileCache::parse` | `src/ccache/file_store.rs` | `ccache_collection` |  |
+| `rskrb5_ng::ccache::kcm::client::Client::read_exact` | `src/ccache/kcm/client.rs` | `kcm_reply` |  |
+| `rskrb5_ng::ccache::kcm::client::Client::read_frame` | `src/ccache/kcm/client.rs` | `kcm_reply` |  |
+| `<rskrb5_ng::ccache::kcm::socket::Deadline as Read>::read` | `src/ccache/kcm/socket.rs` | - | reads the daemon socket into the caller's buffer under the call deadline and parses nothing; the framing that calls it is `Client::read_frame` (`kcm_reply`) |
+| `<rskrb5_ng::ccache::kcm::wire::shape::Credentials as rskrb5_ng::ccache::kcm::wire::shape::Shape>::decode` | `src/ccache/kcm/wire/shape.rs` | `kcm_reply` |  |
+| `<rskrb5_ng::ccache::kcm::wire::shape::DefaultPrincipal as rskrb5_ng::ccache::kcm::wire::shape::Shape>::decode` | `src/ccache/kcm/wire/shape.rs` | `kcm_reply` |  |
+| `<rskrb5_ng::ccache::kcm::wire::shape::Empty as rskrb5_ng::ccache::kcm::wire::shape::Shape>::decode` | `src/ccache/kcm/wire/shape.rs` | `kcm_reply` |  |
+| `<rskrb5_ng::ccache::kcm::wire::shape::KdcOffset as rskrb5_ng::ccache::kcm::wire::shape::Shape>::decode` | `src/ccache/kcm/wire/shape.rs` | `kcm_reply` |  |
+| `<rskrb5_ng::ccache::kcm::wire::shape::Name as rskrb5_ng::ccache::kcm::wire::shape::Shape>::decode` | `src/ccache/kcm/wire/shape.rs` | `kcm_reply` |  |
+| `<rskrb5_ng::ccache::kcm::wire::shape::OneCredential as rskrb5_ng::ccache::kcm::wire::shape::Shape>::decode` | `src/ccache/kcm/wire/shape.rs` | `kcm_reply` |  |
+| `<rskrb5_ng::ccache::kcm::wire::shape::Uuids as rskrb5_ng::ccache::kcm::wire::shape::Shape>::decode` | `src/ccache/kcm/wire/shape.rs` | `kcm_reply` |  |
+| `rskrb5_ng::ccache::kcm::wire::shape::decode` | `src/ccache/kcm/wire/shape.rs` | - | the declaration of the `Shape::decode` trait method, which has no body; each implementation has its own row |
 | `rskrb5_ng::client::decode` | `src/client.rs` | `kdc_reply` |  |
 | `rskrb5_ng::client::kerberos_string_to_string` | `src/client.rs` | `kdc_reply` |  |
 | `rskrb5_ng::client::preauth_key_info_from_method_data` | `src/client.rs` | `kdc_reply` |  |
