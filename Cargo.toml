@@ -50,6 +50,16 @@ minimal = []
 modules = ["src/ccache/keyring.rs", "src/ccache/keyring/"]
 tests = ["tests/ccache_keyring.rs", "tests/ccache_keyring/"]
 
+[package.metadata.rskrb5-ng.leaf-features.spake]
+minimal = ["messages"]
+modules = ["src/preauth/spake.rs", "src/preauth/spake/"]
+tests = [
+  "tests/interop_spake.rs",
+  "tests/interop_spake/",
+  "tests/spake.rs",
+  "tests/spake/",
+]
+
 # The platform-store companion crate (owner decision D11); it depends on this
 # crate, never the reverse, and is not published.
 [workspace]
@@ -64,6 +74,7 @@ camellia = ["dep:camellia", "dep:cmac"]
 ccache-keyring = ["dep:keyutils-raw", "dep:libc"]
 evaluation = ["spnego", "dep:hex"]
 messages = ["dep:chrono", "dep:rasn", "dep:rasn-kerberos"]
+spake = ["dep:curve25519-dalek", "dep:p256", "dep:p384", "dep:p521"]
 spnego = ["messages", "dep:base64"]
 http = ["spnego", "dep:http_types"]
 tower = ["http", "dep:tower_layer", "dep:tower_service"]
@@ -83,6 +94,10 @@ compcol = { version = "0.7", default-features = false, features = [
   "xpress",
   "xpress_huffman",
 ] }
+curve25519-dalek = { version = "5.0.0", default-features = false, features = [
+  "precomputed-tables",
+  "zeroize",
+], optional = true }
 des = "0.9.0"
 hex = { version = "0.4", optional = true }
 getrandom = { version = "0.4", features = ["std"] }
@@ -94,6 +109,15 @@ http_types = { package = "http", version = "1", optional = true }
 hmac = "0.13.0"
 md-5 = "0.11.0"
 md4 = "0.11.0"
+p256 = { version = "0.14.0", default-features = false, features = [
+  "arithmetic",
+], optional = true }
+p384 = { version = "0.14.0", default-features = false, features = [
+  "arithmetic",
+], optional = true }
+p521 = { version = "0.14.0", default-features = false, features = [
+  "arithmetic",
+], optional = true }
 pbkdf2 = "0.13"
 rasn = { version = "0.29", optional = true }
 rasn-kerberos = { version = "0.29", features = ["otp"], optional = true }
