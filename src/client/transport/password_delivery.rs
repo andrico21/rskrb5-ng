@@ -138,10 +138,11 @@ where
         });
     }
     let socket = transport.with_transport_timeout(udp::connect(addr)).await?;
+    let limit = udp::reply_limit(&socket, transport.udp_response_limit)?;
     let reply = transport
         .with_transport_timeout(async {
             let _: usize = socket.send(request).await?;
-            Ok::<_, Error>(udp::receive(&socket, transport.udp_response_limit).await)
+            Ok::<_, Error>(udp::receive(&socket, limit).await)
         })
         .await
         .map_err(|error| Error::KpasswdOutcomeUnknown(Box::new(error)))?;

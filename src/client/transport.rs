@@ -264,8 +264,9 @@ pub struct Tokio {
     dns_server: Option<(IpAddr, u16)>,
     /// Timeout applied to each KDC exchange.
     timeout: Duration,
-    /// Maximum accepted UDP response size.
-    udp_response_limit: usize,
+    /// Maximum accepted UDP response size; `None` takes the largest UDP payload of
+    /// the peer's address family.
+    udp_response_limit: Option<usize>,
     /// Maximum accepted TCP response body size.
     tcp_response_limit: usize,
     /// Locate only primary KDCs: the retry after a replica's failure.
@@ -288,13 +289,15 @@ impl Default for Tokio {
 impl Tokio {
     #[must_use]
     /// Create a transport with the system resolver, a 5-second timeout, a UDP
-    /// response limit of 65,508 bytes and a TCP response body limit of 16 MiB.
+    /// response limit of the largest UDP payload of the peer's address family
+    /// (65,507 bytes over IPv4, 65,527 over IPv6) and a TCP response body limit
+    /// of 16 MiB.
     #[inline]
     pub const fn new() -> Self {
         Self {
             dns_server: None,
             timeout: DEFAULT_KDC_TIMEOUT,
-            udp_response_limit: MAX_UDP_DATAGRAM + 1,
+            udp_response_limit: None,
             tcp_response_limit: DEFAULT_TCP_RESPONSE_LIMIT,
             primary_only: false,
             budget: None,
@@ -454,10 +457,10 @@ impl Tokio {
     }
 
     #[must_use]
-    /// Override the maximum accepted UDP response size.
+    /// Override the maximum accepted UDP response size, for both address families.
     #[inline]
     pub const fn with_udp_response_limit(mut self, udp_response_limit: usize) -> Self {
-        self.udp_response_limit = udp_response_limit;
+        self.udp_response_limit = Some(udp_response_limit);
         self
     }
 
@@ -499,8 +502,9 @@ impl Tokio {
 
         self.with_transport_timeout(async {
             let socket = udp::connect(addr).await?;
+            let limit = udp::reply_limit(&socket, self.udp_response_limit)?;
             let _: usize = socket.send(request).await?;
-            udp::receive(&socket, self.udp_response_limit).await
+            udp::receive(&socket, limit).await
         })
         .await
         .and_then(non_empty_kdc_response)

@@ -1,10 +1,39 @@
 //! Bounded UDP socket primitives.
 
+use core::net::IpAddr;
 use std::io;
 
 use tokio::net::{ToSocketAddrs, UdpSocket, lookup_host};
 
-use super::Error;
+use super::{Error, MAX_UDP_DATAGRAM};
+
+/// Largest UDP payload over IPv6, 65,527 bytes: 65,535 minus the 8-byte UDP header.
+///
+/// The IPv6 payload length does not count the fixed 40-byte IPv6 header (RFC 8200
+/// section 3); larger payloads need jumbograms (RFC 2675), which this crate does not
+/// use.
+const MAX_IPV6_DATAGRAM: usize = 0xFFF7;
+
+/// The largest UDP payload a peer at `ip` can send: 65,507 bytes over IPv4 (an
+/// IPv4-mapped IPv6 address included) and 65,527 over IPv6.
+const fn family_maximum(ip: IpAddr) -> usize {
+    match ip.to_canonical() {
+        IpAddr::V4(_) => MAX_UDP_DATAGRAM,
+        IpAddr::V6(_) => MAX_IPV6_DATAGRAM,
+    }
+}
+
+/// The reply limit of `socket`: `configured`, or the maximum of the connected
+/// peer's address family when nothing is configured.
+///
+/// # Errors
+/// Returns the socket error when the connected peer address cannot be read.
+pub(super) fn reply_limit(socket: &UdpSocket, configured: Option<usize>) -> Result<usize, Error> {
+    match configured {
+        Some(limit) => Ok(limit),
+        None => Ok(family_maximum(socket.peer_addr()?.ip())),
+    }
+}
 
 /// Connect a datagram socket matching the selected address family.
 ///
@@ -56,11 +85,16 @@ pub(super) async fn receive(socket: &UdpSocket, max: usize) -> Result<Vec<u8>, E
         .recv(&mut response)
         .await
         .map_err(|error| receive_error(error, max, cfg!(windows)))?;
-    if length > max {
-        return Err(Error::UdpResponseTooLarge { limit: max });
+    if let Some(error) = over_limit(length, max) {
+        return Err(error);
     }
     response.truncate(length);
     Ok(response)
+}
+
+/// The error for a datagram of `length` bytes above the limit `max`, if it is.
+fn over_limit(length: usize, max: usize) -> Option<Error> {
+    (length > max).then_some(Error::UdpResponseTooLarge { limit: max })
 }
 
 /// Map Windows WSAEMSGSIZE without reclassifying unrelated platform errors.
@@ -86,7 +120,7 @@ mod tests {
 
     use tokio::{net::UdpSocket, time::timeout};
 
-    use super::{Error, receive_error};
+    use super::{Error, IpAddr, receive_error};
     use crate::client::transport::{KdcProtocol, Tokio};
 
     /// Both services enforce the common receive cap while preserving mutation uncertainty.
@@ -159,6 +193,97 @@ mod tests {
             .ok_or("unrelated receive error must retain its I/O code")?;
         }
         Ok(())
+    }
+
+    /// The default limit takes a reply of the largest UDP payload of the peer's family.
+    ///
+    /// macOS refuses loopback datagrams above `net.inet.udp.maxdgram` (9216 bytes by
+    /// default), so the peer cannot send the maxima there; the limit itself is checked
+    /// on every platform by `family_maxima_bound_the_default_limit`.
+    #[cfg(not(target_os = "macos"))]
+    async fn whole_reply_of(
+        peer_addr: &str,
+        size: usize,
+        password: bool,
+    ) -> Result<(), Box<dyn StdError>> {
+        // Given a peer of one address family that answers with `size` bytes.
+        let peer = UdpSocket::bind(peer_addr).await?;
+        let addr = peer.local_addr()?;
+        let transport = Tokio::new().with_timeout(Duration::from_secs(5));
+        let server = async {
+            let mut request = [0; 32];
+            // A client that never sends fails here instead of hanging the suite.
+            let (_, client) =
+                timeout(Duration::from_secs(10), peer.recv_from(&mut request)).await??;
+            let _: usize = peer.send_to(&vec![42; size], client).await?;
+            Ok::<_, io::Error>(())
+        };
+        // When the KDC or the password service receives it with the default limit.
+        let client = async {
+            if password {
+                transport
+                    .send_password_once(KdcProtocol::Udp, addr, &[1])
+                    .await
+            } else {
+                transport.send_udp(addr, &[1]).await
+            }
+        };
+        let (sent, outcome) = tokio::join!(server, client);
+        sent?;
+        // Then the whole reply is accepted.
+        match outcome {
+            Ok(reply) => assert_eq!(reply.len(), size, "the reply must arrive whole"),
+            Err(error) => return Err(format!("a {size}-byte reply was refused: {error:?}").into()),
+        }
+        Ok(())
+    }
+
+    /// An IPv6 KDC reply of 65,527 bytes, the IPv6 maximum, is accepted.
+    #[cfg(not(target_os = "macos"))]
+    #[tokio::test]
+    async fn kdc_accepts_the_ipv6_maximum() -> Result<(), Box<dyn StdError>> {
+        whole_reply_of("[::1]:0", 0xFFF7, false).await
+    }
+
+    /// An IPv6 password reply of 65,527 bytes, the IPv6 maximum, is accepted.
+    #[cfg(not(target_os = "macos"))]
+    #[tokio::test]
+    async fn password_accepts_the_ipv6_maximum() -> Result<(), Box<dyn StdError>> {
+        whole_reply_of("[::1]:0", 0xFFF7, true).await
+    }
+
+    /// Each family's maximum is the default limit, and one byte more is refused.
+    #[test]
+    fn family_maxima_bound_the_default_limit() {
+        use core::net::{Ipv4Addr, Ipv6Addr};
+
+        let families = [
+            (IpAddr::V4(Ipv4Addr::LOCALHOST), 65_507),
+            (IpAddr::V6(Ipv6Addr::LOCALHOST), 0xFFF7),
+            (IpAddr::V6(Ipv4Addr::LOCALHOST.to_ipv6_mapped()), 65_507),
+        ];
+        for (ip, maximum) in families {
+            let limit = super::family_maximum(ip);
+            assert_eq!(limit, maximum, "{ip} must take its family's maximum");
+            assert!(
+                super::over_limit(maximum, limit).is_none(),
+                "{ip}: the maximum itself is accepted"
+            );
+            assert!(
+                matches!(
+                    super::over_limit(maximum.saturating_add(1), limit),
+                    Some(Error::UdpResponseTooLarge { limit: refused }) if refused == maximum
+                ),
+                "{ip}: one byte over the maximum is refused"
+            );
+        }
+    }
+
+    /// An IPv4 KDC reply of 65,507 bytes, the IPv4 maximum, is accepted.
+    #[cfg(not(target_os = "macos"))]
+    #[tokio::test]
+    async fn kdc_accepts_the_ipv4_maximum() -> Result<(), Box<dyn StdError>> {
+        whole_reply_of("127.0.0.1:0", 65_507, false).await
     }
 
     /// Receiving a queued datagram returns its exact bytes rather than a placeholder.
