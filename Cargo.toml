@@ -50,6 +50,16 @@ minimal = []
 modules = ["src/ccache/keyring.rs", "src/ccache/keyring/"]
 tests = ["tests/ccache_keyring.rs", "tests/ccache_keyring/"]
 
+[package.metadata.rskrb5-ng.leaf-features.pkinit]
+minimal = ["messages"]
+modules = ["src/preauth/pkinit.rs", "src/preauth/pkinit/"]
+tests = [
+  "tests/interop_pkinit.rs",
+  "tests/interop_pkinit/",
+  "tests/pkinit.rs",
+  "tests/pkinit/",
+]
+
 [package.metadata.rskrb5-ng.leaf-features.spake]
 minimal = ["messages"]
 modules = ["src/preauth/spake.rs", "src/preauth/spake/"]
