@@ -142,7 +142,10 @@ fn as_exchange_prompts_and_answers_the_preauth_challenge() -> Result<(), Box<dyn
         return Ok(());
     }
     runtime()?.block_on(async {
-        let config = config("")?;
+        // The realm also offers SPAKE first (plan 2 todo 9, `krb5.conf.d/30-spake.conf`),
+        // which the engine would answer with the `spake` leaf; an empty group list
+        // keeps this scenario on the encrypted-timestamp prompt flow it proves.
+        let config = config(" spake_preauth_groups =\n")?;
         let client = Principal::user(
             harness::var("INTEROP_MIT_REALM")?,
             harness::var("INTEROP_MIT_PREAUTH_USER")?,
