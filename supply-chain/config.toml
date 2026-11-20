@@ -36,6 +36,11 @@ criteria = "safe-to-deploy"
 version = "0.23.1"
 criteria = "safe-to-deploy"
 
+[[exemptions.base64ct]]
+version = "1.8.3"
+criteria = "safe-to-deploy"
+notes = "pkinit leaf (plan 2 todo 8): docs/dependency-admission.md#der"
+
 [[exemptions.bit-set]]
 version = "0.11.1"
 criteria = "safe-to-run"
@@ -120,6 +125,11 @@ criteria = "safe-to-deploy"
 version = "0.5.4"
 criteria = "safe-to-deploy"
 
+[[exemptions.cms]]
+version = "0.3.0-rc.2"
+criteria = "safe-to-deploy"
+notes = "pkinit leaf (plan 2 todo 8): docs/dependency-admission.md#cms"
+
 [[exemptions.combine]]
 version = "4.6.9"
 criteria = "safe-to-deploy"
@@ -169,16 +179,21 @@ version = "0.8.23"
 criteria = "safe-to-deploy"
 
 [[exemptions.crypto-bigint]]
-version = "0.7.10"
+version = "0.7.11"
 criteria = "safe-to-deploy"
-notes = "spake leaf (plan 2 todo 9): a production edge through elliptic-curve and primefield; docs/dependency-admission.md#p256"
+notes = "spake leaf (plan 2 todo 9): a production edge through elliptic-curve and primefield; docs/dependency-admission.md#p256; a direct dependency of the pkinit leaf (plan 2 todo 8) at 0.7.11, docs/dependency-admission.md#crypto-bigint"
 
 [[exemptions.crypto-common]]
 version = "0.2.2"
 criteria = "safe-to-deploy"
 
+[[exemptions.crypto-primes]]
+version = "0.7.2"
+criteria = "safe-to-deploy"
+notes = "pkinit leaf (plan 2 todo 8): docs/dependency-admission.md#rsa"
+
 [[exemptions.ctutils]]
-version = "0.4.7"
+version = "0.4.8"
 criteria = "safe-to-deploy"
 
 [[exemptions.curve25519-dalek]]
@@ -201,6 +216,11 @@ criteria = "safe-to-deploy"
 version = "0.8.3"
 criteria = "safe-to-deploy"
 
+[[exemptions.der_derive]]
+version = "0.8.0"
+criteria = "safe-to-deploy"
+notes = "pkinit leaf (plan 2 todo 8): docs/dependency-admission.md#der"
+
 [[exemptions.des]]
 version = "0.9.0"
 criteria = "safe-to-deploy"
@@ -216,6 +236,11 @@ criteria = "safe-to-deploy"
 [[exemptions.displaydoc]]
 version = "0.2.7"
 criteria = "safe-to-deploy"
+
+[[exemptions.ecdsa]]
+version = "0.17.0"
+criteria = "safe-to-deploy"
+notes = "pkinit leaf (plan 2 todo 8): docs/dependency-admission.md#rsa"
 
 [[exemptions.either]]
 version = "1.19.0"
@@ -249,6 +274,11 @@ criteria = "safe-to-deploy"
 [[exemptions.find-msvc-tools]]
 version = "0.1.15"
 criteria = "safe-to-deploy"
+
+[[exemptions.flagset]]
+version = "0.4.7"
+criteria = "safe-to-deploy"
+notes = "pkinit leaf (plan 2 todo 8): docs/dependency-admission.md#der"
 
 [[exemptions.fnv]]
 version = "1.0.7"
@@ -548,6 +578,11 @@ criteria = "safe-to-deploy"
 version = "0.13.0"
 criteria = "safe-to-deploy"
 
+[[exemptions.pem-rfc7468]]
+version = "1.0.0"
+criteria = "safe-to-deploy"
+notes = "pkinit leaf (plan 2 todo 8): docs/dependency-admission.md#der"
+
 [[exemptions.percent-encoding]]
 version = "2.3.2"
 criteria = "safe-to-deploy"
@@ -571,6 +606,16 @@ criteria = "safe-to-run"
 [[exemptions.pin-project-lite]]
 version = "0.2.17"
 criteria = "safe-to-deploy"
+
+[[exemptions.pkcs1]]
+version = "0.8.0"
+criteria = "safe-to-deploy"
+notes = "pkinit leaf (plan 2 todo 8): docs/dependency-admission.md#rsa"
+
+[[exemptions.pkcs8]]
+version = "0.11.0"
+criteria = "safe-to-deploy"
+notes = "pkinit leaf (plan 2 todo 8): docs/dependency-admission.md#rsa"
 
 [[exemptions.portable-atomic]]
 version = "1.15.0"
@@ -672,9 +717,19 @@ criteria = "safe-to-run"
 version = "0.7.6"
 criteria = "safe-to-deploy"
 
+[[exemptions.rfc6979]]
+version = "0.6.0"
+criteria = "safe-to-deploy"
+notes = "pkinit leaf (plan 2 todo 8): docs/dependency-admission.md#rsa"
+
 [[exemptions.ring]]
 version = "0.17.14"
 criteria = "safe-to-deploy"
+
+[[exemptions.rsa]]
+version = "0.10.0"
+criteria = "safe-to-deploy"
+notes = "pkinit leaf (plan 2 todo 8): docs/dependency-admission.md#rsa"
 
 [[exemptions.rustc_version]]
 version = "0.4.1"
@@ -749,6 +804,11 @@ criteria = "safe-to-deploy"
 version = "2.0.1"
 criteria = "safe-to-deploy"
 
+[[exemptions.signature]]
+version = "3.0.0"
+criteria = "safe-to-deploy"
+notes = "pkinit leaf (plan 2 todo 8): docs/dependency-admission.md#rsa"
+
 [[exemptions.simd_cesu8]]
 version = "1.2.0"
 criteria = "safe-to-deploy"
@@ -776,6 +836,11 @@ criteria = "safe-to-deploy"
 [[exemptions.socket2]]
 version = "0.6.5"
 criteria = "safe-to-deploy"
+
+[[exemptions.spki]]
+version = "0.8.1"
+criteria = "safe-to-deploy"
+notes = "pkinit leaf (plan 2 todo 8): docs/dependency-admission.md#spki"
 
 [[exemptions.stable_deref_trait]]
 version = "1.2.1"
@@ -1029,6 +1094,11 @@ criteria = "safe-to-deploy"
 [[exemptions.wyz]]
 version = "0.5.1"
 criteria = "safe-to-deploy"
+
+[[exemptions.x509-cert]]
+version = "0.3.1"
+criteria = "safe-to-deploy"
+notes = "pkinit leaf (plan 2 todo 8): docs/dependency-admission.md#x509-cert"
 
 [[exemptions.xml-no-std]]
 version = "0.8.26"
