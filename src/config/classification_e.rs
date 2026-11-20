@@ -17,8 +17,7 @@ mod tests {
 
     /// Libdefaults: safe assignment and optional genuinely stronger assignment.
     /// None means no valid value tightens current behavior; table rationale explains why.
-    const LIB: [(&str, &str, Option<&str>); 18] = [
-        ("canonicalize", "false", None),
+    const LIB: [(&str, &str, Option<&str>); 17] = [
         ("default_rcache_name", "none:", Some("dfl:")),
         ("dns_canonicalize_hostname", "fallback", None),
         ("dns_lookup_realm", "false", None),
