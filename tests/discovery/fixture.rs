@@ -98,8 +98,12 @@ async fn serve(bound: UdpSocket, table: Vec<Rule>, log: Arc<Mutex<Vec<String>>>,
     let mut sends = JoinSet::new();
     loop {
         let mut buffer = [0_u8; 4096];
-        let Ok((length, peer)) = socket.recv_from(&mut buffer).await else {
-            return;
+        let (length, peer) = match socket.recv_from(&mut buffer).await {
+            Ok(received) => received,
+            // Windows reports the ICMP port-unreachable of an earlier reply, sent to a client
+            // that had given up, as an error of the next receive; the peer goes on serving.
+            Err(error) if error.kind() == io::ErrorKind::ConnectionReset => continue,
+            Err(_) => return,
         };
         let Some(datagram) = buffer.get(..length) else {
             continue;
