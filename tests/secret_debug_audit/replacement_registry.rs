@@ -116,6 +116,11 @@ pub(super) const CONTRACTS: &[(&str, &str, &str)] = &[
         "Fills the empty reply-key slot for the final step and builds the request from a local clone of the request template; nothing held is replaced, and the reply key's erasure relies on EncryptionKey's Drop contract (ZeroizeOnDrop).",
     ),
     (
+        "src/client/stepwise/init.rs::client_referral",
+        "client_referrals_are_followed_only_when_armored_and_asked_for",
+        "Moves the client to the referred realm, drops the referring realm's cookie and rebuilds the first request through start from the retained password or keytab and a clone of the request template; no credential slot is replaced: step has already moved the pending request out of the state, the reply-key and held-reply slots are empty in the initial state, and an armored error never sets a strengthen key (the FAST reply check refuses one). The dropped pending request holds no key; erasure of its encoded bytes relies on Zeroizing's Drop contract.",
+    ),
+    (
         "src/client/stepwise/init.rs::start",
         "password_exchange_prompts_once_and_completes",
         "Builds the first request from a clone of the request template or prompts for the password; no credential slot or template field is replaced.",
