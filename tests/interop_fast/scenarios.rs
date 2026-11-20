@@ -50,10 +50,15 @@ fn nonce(sequence: u32) -> Result<u32, Box<dyn Error>> {
 }
 
 /// The TEST.RSKRB5 realm.
+///
+/// The realm also offers SPAKE (`krb5.conf.d/30-spake.conf`), and the client answers SPAKE
+/// before the encrypted challenge even inside FAST (as MIT's does), so an empty group list
+/// keeps these scenarios on the encrypted challenge, the only factor that earns the `fast-ec`
+/// indicator (the exchange suite does the same).
 fn config() -> Result<Config, Box<dyn Error>> {
     let realm = harness::var("INTEROP_MIT_REALM")?;
     Ok(Config::parse(&format!(
-        "[libdefaults]\n default_realm = {realm}\n dns_lookup_kdc = false\n\
+        "[libdefaults]\n default_realm = {realm}\n dns_lookup_kdc = false\n spake_preauth_groups =\n\
          [realms]\n {realm} = {{\n  kdc = {}\n }}\n",
         harness::var("INTEROP_MIT_KDC")?,
     ))?)
