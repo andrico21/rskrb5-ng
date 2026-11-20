@@ -14,6 +14,9 @@ use tokio::runtime::{Builder, Runtime};
 /// The error a fallible test returns; returning it fails the test.
 type TestError = Box<dyn Error + Send + Sync>;
 
+/// The expired-password flow.
+#[path = "kpasswd_expiry/flow.rs"]
+mod flow;
 /// The expiry the KDC reports in last-req and key-expiration.
 #[path = "kpasswd_expiry/notice.rs"]
 mod notice;

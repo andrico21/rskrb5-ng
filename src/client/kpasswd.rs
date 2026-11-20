@@ -21,6 +21,9 @@ use crate::{
 pub mod expiry;
 /// Request authenticator construction and KRB-PRIV options.
 mod request;
+/// Password expiry through a responder.
+#[cfg(feature = "tokio")]
+pub mod responder;
 use request::{build_kpasswd_ap_req_with_confounder, kpasswd_krb_priv_options};
 
 #[cfg(feature = "tokio")]

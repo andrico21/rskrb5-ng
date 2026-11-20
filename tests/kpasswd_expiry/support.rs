@@ -39,7 +39,7 @@ fn opaque_ticket() -> Result<Vec<u8>, TestError> {
 }
 
 /// An opaque ticket naming `service`, for a session whose ticket the client never opens.
-fn ticket_for(service: &[&str]) -> Result<Vec<u8>, TestError> {
+pub(super) fn ticket_for(service: &[&str]) -> Result<rasn_kerberos::Ticket, TestError> {
     let mut wire = ticket::decode(&opaque_ticket()?)?;
     wire.realm = rasn_kerberos::Realm::try_from(REALM.to_owned())?;
     wire.sname = rasn_kerberos::PrincipalName {
@@ -49,7 +49,7 @@ fn ticket_for(service: &[&str]) -> Result<Vec<u8>, TestError> {
             .map(|part| rasn_kerberos::KerberosString::try_from((*part).to_owned()))
             .collect::<Result<_, _>>()?,
     };
-    Ok(ticket::encode(&wire)?)
+    Ok(wire)
 }
 
 /// A TGT of `client`, valid for an hour from now.
@@ -59,7 +59,7 @@ pub(super) fn tgt(client: &Principal) -> Result<AsRepSession, TestError> {
         client.clone(),
         Principal::tgt_service(REALM),
         EncryptionKey::new(18, vec![0x11; 32]),
-        ticket_for(&["krbtgt", REALM])?.into(),
+        ticket::encode(&ticket_for(&["krbtgt", REALM])?)?.into(),
         [0; 4],
         now,
         now.checked_add(Duration::from_hours(1)).ok_or("end time")?,
@@ -73,7 +73,7 @@ pub(super) fn changepw_ticket(client: &Principal) -> Result<TgsRepSession, TestE
         client.clone(),
         changepw_principal(),
         changepw_key(),
-        ticket_for(&["kadmin", "changepw"])?.into(),
+        ticket::encode(&ticket_for(&["kadmin", "changepw"])?)?.into(),
         [0; 4],
         now.checked_sub(Duration::from_mins(1))
             .ok_or("start time")?,

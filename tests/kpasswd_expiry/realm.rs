@@ -40,6 +40,15 @@ pub(super) struct ExpiryFields {
     pub(super) last_req_account: Option<SystemTime>,
 }
 
+/// One AS request the KDC answered.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct AsSeen {
+    /// The requested service, joined with `/`.
+    pub(super) service: String,
+    /// Whether the PA-ENC-TIMESTAMP decrypted under the account's current password.
+    pub(super) preauthenticated: bool,
+}
+
 /// The state of the account and the requests seen.
 pub(super) struct Realm {
     /// The account's current password.
@@ -48,6 +57,8 @@ pub(super) struct Realm {
     pub(super) expired: Mutex<bool>,
     /// The expiry fields of a TGT reply.
     pub(super) expiry: Mutex<ExpiryFields>,
+    /// Every AS request answered, in order.
+    seen: Mutex<Vec<AsSeen>>,
 }
 
 impl Realm {
@@ -57,7 +68,22 @@ impl Realm {
             password: Mutex::new(password.to_vec()),
             expired: Mutex::new(expired),
             expiry: Mutex::new(ExpiryFields::default()),
+            seen: Mutex::new(Vec::new()),
         }
+    }
+
+    /// The AS requests answered so far.
+    pub(super) fn requests(&self) -> Result<Vec<AsSeen>, TestError> {
+        Ok(self.seen.lock().map_err(|_| "poisoned")?.clone())
+    }
+
+    /// Remember a request.
+    fn record(&self, service: &[String], preauthenticated: bool) -> Result<(), TestError> {
+        self.seen.lock().map_err(|_| "poisoned")?.push(AsSeen {
+            service: service.join("/"),
+            preauthenticated,
+        });
+        Ok(())
     }
 
     /// The account.
@@ -102,6 +128,7 @@ impl Realm {
             .flatten()
             .find(|padata| padata.r#type == PA_ENC_TIMESTAMP);
         let Some(timestamp) = timestamp else {
+            self.record(&service, false)?;
             return preauth_required(&service);
         };
         let proof: rasn_kerberos::EncryptedData = der::decode(&timestamp.value)?;
@@ -109,6 +136,7 @@ impl Realm {
             .ok_or("AES-SHA1")?
             .decrypt_message(key.value(), &proof.cipher, 1)
             .is_ok();
+        self.record(&service, preauthenticated)?;
         if !preauthenticated {
             return krb_error(KDC_ERR_PREAUTH_FAILED, &service, None);
         }

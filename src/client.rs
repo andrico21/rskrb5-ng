@@ -172,6 +172,8 @@ pub const PA_PAC_OPTIONS: i32 = 167;
 pub const PA_FOR_USER: i32 = 129;
 /// KDC error code for additional preauthentication required.
 pub const KDC_ERR_PREAUTH_REQUIRED: i32 = 25;
+/// KDC error code for a client key (password) that has expired (RFC 4120 `KDC_ERR_KEY_EXPIRED`).
+pub const KDC_ERR_KEY_EXPIRED: i32 = 23;
 /// KDC error code indicating the client should retry over TCP.
 pub const KRB_ERR_RESPONSE_TOO_BIG: i32 = 52;
 /// Key usage for AS-REQ encrypted timestamp preauthentication.
@@ -1293,6 +1295,8 @@ pub struct Tokio {
     fast_negotiation: bool,
     /// Redacted trace events of this client's logins and ticket requests.
     trace: Guard,
+    /// Whether a password change may have reached the server without a confirmed result.
+    unresolved_password_change: bool,
 }
 #[cfg(feature = "tokio")]
 impl fmt::Debug for Tokio {
@@ -1311,6 +1315,7 @@ impl fmt::Debug for Tokio {
             assume_preauthentication,
             fast_negotiation,
             trace,
+            unresolved_password_change,
         } = self;
         f.debug_struct("TokioClient")
             .field("import_policy_error", import_policy_error)
@@ -1325,6 +1330,7 @@ impl fmt::Debug for Tokio {
             .field("assume_preauthentication", assume_preauthentication)
             .field("fast_negotiation", fast_negotiation)
             .field("trace", trace)
+            .field("unresolved_password_change", unresolved_password_change)
             .finish()
     }
 }
@@ -1891,6 +1897,7 @@ impl Tokio {
             assume_preauthentication: false,
             fast_negotiation: true,
             trace: Guard::disabled(),
+            unresolved_password_change: false,
         }
     }
     #[must_use]
@@ -2959,6 +2966,9 @@ impl Tokio {
         new_password: Password,
         mut options: RequestOptions,
     ) -> Result<kadmin::ChangePasswordResult, Error> {
+        if self.unresolved_password_change {
+            return Err(Error::PasswordChangePending);
+        }
         let client = self.client.clone();
         let service = Principal::new(
             target.realm.clone(),
@@ -3009,7 +3019,11 @@ impl Tokio {
         };
         options.crypto_policy = Some(crypto_policy::configured(&self.config.libdefaults)?);
         let request = build_kpasswd_request(&ticket, &change_data, &options)?;
-        let reply = self
+        // From here the request may reach the server. Dropping this future before a
+        // result is classified leaves the flag set: the change is never replayed
+        // until the caller has verified the outcome and acknowledged it.
+        self.unresolved_password_change = true;
+        let reply = match self
             .transport
             .exchange_kpasswd_request_with_config(
                 &self.config,
@@ -3017,11 +3031,21 @@ impl Tokio {
                 &target.realm,
                 request.request(),
             )
-            .await?;
+            .await
+        {
+            Ok(reply) => reply,
+            Err(error) => {
+                // Only a request that may have been delivered leaves the outcome unknown.
+                self.unresolved_password_change = matches!(error, Error::KpasswdOutcomeUnknown(_));
+                return Err(error);
+            }
+        };
         // Delivery has occurred: unsigned refusals are unauthenticated diagnostics,
         // not proof of rollback. Wrap validator failures once, before ensure_success.
         let result = validated_result(&reply, &request, &options, request.crypto_policy())
             .map_err(|source| Error::KpasswdOutcomeUnknown(Box::new(source)))?;
+        // An authenticated result, success or rejection, is a confirmed outcome.
+        self.unresolved_password_change = false;
         result.ensure_success()?;
 
         if update_password_credential {
@@ -5876,7 +5900,7 @@ mod tests {
             end_time: now,
             renew_till: None,
             key_expiration: None,
-            expiry: ExpiryNotice::DEFAULT,
+            expiry: Default::default(),
         })
     }
 

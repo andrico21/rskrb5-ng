@@ -1202,6 +1202,9 @@ TEST.GOKRB5 = {{
                     Error::KpasswdOutcomeUnknown(source)
                         if matches!(*source, Error::Kadmin(KadminError::UnauthenticatedSuccess))
                 ));
+                // An unknown outcome is not replayed until the caller has verified it.
+                assert!(client.has_unresolved_password_change());
+                client.acknowledge_password_change_outcome();
             }
 
             kdc_task.await??;

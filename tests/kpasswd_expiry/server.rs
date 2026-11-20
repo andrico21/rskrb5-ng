@@ -1,6 +1,10 @@
 //! A fake kpasswd server over loopback TCP: framing, replies and the requests it opens.
 
-use core::time::Duration;
+use core::{
+    sync::atomic::{AtomicUsize, Ordering},
+    time::Duration,
+};
+use std::{sync::Arc, time::SystemTime};
 
 use rasn::der;
 use rskrb5_ng::{
@@ -15,23 +19,37 @@ use rskrb5_ng::{
 use tokio::{
     io::{AsyncReadExt as _, AsyncWriteExt as _},
     net::{TcpListener, TcpStream},
+    sync::oneshot,
     time::timeout,
 };
 
 use super::{
     TestError,
+    realm::{Realm, kerberos_time},
     support::{REALM, changepw_key},
 };
+
+/// Read one length-prefixed request; `None` when the peer closed before a new one.
+async fn read_frame(socket: &mut TcpStream) -> Result<Option<Vec<u8>>, TestError> {
+    let mut header = [0_u8; 4];
+    match timeout(Duration::from_secs(10), socket.read_exact(&mut header)).await? {
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+        Err(error) => return Err(error.into()),
+    }
+    let mut request = vec![0_u8; usize::try_from(u32::from_be_bytes(header))?];
+    let _: usize = timeout(Duration::from_secs(10), socket.read_exact(&mut request)).await??;
+    Ok(Some(request))
+}
 
 /// Accept one TCP client within 10 s and read its length-prefixed request.
 pub(super) async fn read_request(
     listener: &TcpListener,
 ) -> Result<(Vec<u8>, TcpStream), TestError> {
     let (mut socket, _) = timeout(Duration::from_secs(10), listener.accept()).await??;
-    let mut header = [0_u8; 4];
-    let _: usize = timeout(Duration::from_secs(10), socket.read_exact(&mut header)).await??;
-    let mut request = vec![0_u8; usize::try_from(u32::from_be_bytes(header))?];
-    let _: usize = timeout(Duration::from_secs(10), socket.read_exact(&mut request)).await??;
+    let request = read_frame(&mut socket)
+        .await?
+        .ok_or("the client sent no request")?;
     Ok((request, socket))
 }
 
@@ -88,6 +106,22 @@ pub(super) fn authenticated_reply(
     code: u16,
     text: &[u8],
 ) -> Result<Vec<u8>, TestError> {
+    reply_under(seen, &changepw_key(), code, text)
+}
+
+/// A reply that looks authenticated but is sealed under a key the client does not share:
+/// what a party without the session key can forge.
+pub(super) fn forged_reply(seen: &Seen, code: u16, text: &[u8]) -> Result<Vec<u8>, TestError> {
+    reply_under(seen, &EncryptionKey::new(18, vec![0xee; 32]), code, text)
+}
+
+/// A reply frame whose AP-REP is sealed under `ap_rep_key`.
+fn reply_under(
+    seen: &Seen,
+    ap_rep_key: &EncryptionKey,
+    code: u16,
+    text: &[u8],
+) -> Result<Vec<u8>, TestError> {
     let response_key = EncryptionKey::new(18, vec![0x77; 32]);
     let ap_rep = encode_build_ap_rep_with_confounder(
         &rasn_kerberos::EncApRepPart {
@@ -99,7 +133,7 @@ pub(super) fn authenticated_reply(
             }),
             seq_number: Some(99),
         },
-        &changepw_key(),
+        ap_rep_key,
         None,
         &[0x10; 16],
     )?;
@@ -124,4 +158,126 @@ fn frame(ap_rep_length: u16, body: &[u8]) -> Result<Vec<u8>, TestError> {
     out.extend_from_slice(&ap_rep_length.to_be_bytes());
     out.extend_from_slice(body);
     Ok(out)
+}
+
+/// An unauthenticated KRB-ERROR reply frame whose e-data holds result `code` and `text`: a
+/// server that cannot or will not authenticate its answer, or a party in the path.
+pub(super) fn unauthenticated_reply(code: u16, text: &[u8]) -> Result<Vec<u8>, TestError> {
+    let mut e_data = code.to_be_bytes().to_vec();
+    e_data.extend_from_slice(text);
+    let error = rasn_kerberos::KrbError {
+        pvno: 5_i32.into(),
+        msg_type: 30_i32.into(),
+        ctime: None,
+        cusec: None,
+        stime: kerberos_time(SystemTime::now())?,
+        susec: 0_i32.into(),
+        error_code: 52,
+        crealm: None,
+        cname: None,
+        realm: rasn_kerberos::Realm::try_from(REALM.to_owned())?,
+        sname: rasn_kerberos::PrincipalName {
+            r#type: 2,
+            string: ["kadmin", "changepw"]
+                .iter()
+                .map(|part| rasn_kerberos::KerberosString::try_from((*part).to_owned()))
+                .collect::<Result<_, _>>()?,
+        },
+        e_text: None,
+        e_data: Some(e_data.into()),
+    };
+    frame(0, &der::encode(&error)?)
+}
+
+/// How the fake kpasswd server answers one request.
+pub(super) enum Behavior {
+    /// Apply the new password and answer an authenticated success.
+    Succeed,
+    /// Answer an authenticated `KPASSWD_SOFTERROR` with this text, changing nothing.
+    Soft(&'static [u8]),
+    /// Answer a KRB-ERROR that claims success, changing nothing.
+    UnsignedSuccess,
+    /// Answer a success sealed under a key the client does not hold, changing nothing.
+    ForgedSuccess,
+    /// Close the connection without answering, as a lost reply; the change is applied.
+    Lose,
+    /// Tell the test the request arrived, then hold the connection open unanswered.
+    Hold(oneshot::Sender<()>),
+}
+
+/// Serve the KDC side of `realm` on `listener`: every connection answers requests until it closes.
+pub(super) fn spawn_kdc(listener: TcpListener, realm: Arc<Realm>) {
+    drop(tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            let realm = Arc::clone(&realm);
+            drop(tokio::spawn(async move {
+                while let Ok(Some(request)) = read_frame(&mut socket).await {
+                    let Ok(reply) = realm.answer(&request) else {
+                        return;
+                    };
+                    if write_response(&mut socket, &reply).await.is_err() {
+                        return;
+                    }
+                }
+            }));
+        }
+    }));
+}
+
+/// Serve the kpasswd side of `realm` following `script`, then succeeding;
+/// the returned counter is the number of requests received.
+pub(super) fn spawn_kpasswd(
+    listener: TcpListener,
+    realm: Arc<Realm>,
+    script: Vec<Behavior>,
+) -> Arc<AtomicUsize> {
+    let received = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&received);
+    drop(tokio::spawn(async move {
+        let mut script = script.into_iter();
+        let mut held = Vec::new();
+        loop {
+            let Ok((request, mut socket)) = read_request(&listener).await else {
+                return;
+            };
+            let _: usize = counter.fetch_add(1, Ordering::SeqCst);
+            let Ok(seen) = open_request(&request) else {
+                return;
+            };
+            let behavior = script.next().unwrap_or(Behavior::Succeed);
+            let applied = |realm: &Realm| -> Result<(), TestError> {
+                *realm.password.lock().map_err(|_| "poisoned")? =
+                    seen.change_data.new_passwd().to_vec();
+                *realm.expired.lock().map_err(|_| "poisoned")? = false;
+                Ok(())
+            };
+            let reply = match behavior {
+                Behavior::Succeed => applied(&realm)
+                    .and_then(|()| authenticated_reply(&seen, 0, b"password changed")),
+                Behavior::Soft(text) => authenticated_reply(&seen, 4, text),
+                Behavior::UnsignedSuccess => unauthenticated_reply(0, b"password changed"),
+                Behavior::ForgedSuccess => forged_reply(&seen, 0, b"password changed"),
+                Behavior::Lose => {
+                    drop(applied(&realm));
+                    drop(socket);
+                    continue;
+                }
+                Behavior::Hold(arrived) => {
+                    let _: Result<(), ()> = arrived.send(());
+                    held.push(socket);
+                    continue;
+                }
+            };
+            let Ok(reply) = reply else {
+                return;
+            };
+            if write_response(&mut socket, &reply).await.is_err() {
+                return;
+            }
+        }
+    }));
+    received
 }

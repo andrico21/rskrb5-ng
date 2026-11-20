@@ -79,7 +79,7 @@ mod tests {
             (
                 "src/client.rs",
                 "Tokio",
-                "config,import_policy_error,protocol,transport,client,credentials,tgt,tgt_sessions,service_tickets,assume_preauthentication,fast_negotiation,trace",
+                "config,import_policy_error,protocol,transport,client,credentials,tgt,tgt_sessions,service_tickets,assume_preauthentication,fast_negotiation,trace,unresolved_password_change",
             ),
             (
                 "src/client/negotiate.rs",
