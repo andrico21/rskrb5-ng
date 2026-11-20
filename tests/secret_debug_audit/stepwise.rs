@@ -34,7 +34,8 @@ pub(super) mod tests {
     pub(crate) fn run_audit() -> Result<(), Box<dyn Error>> {
         init_exchange_redacts_credentials()?;
         ticket_exchange_redacts_credentials()?;
-        spake_step_redacts_the_reply_key()
+        spake_step_redacts_the_reply_key();
+        Ok(())
     }
 
     /// PA-DATA whose encrypted part carries `cipher`.
@@ -98,7 +99,7 @@ pub(super) mod tests {
     /// A SPAKE response step redacts the strengthened reply key `K'[0]` it carries,
     /// and a decoded PA-SPAKE message its element and ciphertext bytes.
     #[test]
-    fn spake_step_redacts_the_reply_key() -> Result<(), Box<dyn Error>> {
+    fn spake_step_redacts_the_reply_key() {
         let key = pattern(161);
         let step = Step::Response {
             padata: rasn_kerberos::PaData {
@@ -121,7 +122,6 @@ pub(super) mod tests {
             },
             &[&cipher, &element],
         );
-        Ok(())
     }
 
     /// The ticket exchange, its options and a completed step redact the TGT's
