@@ -65,13 +65,14 @@ mod tests {
     }
 
     deferred_cases! {
-        canonicalize, "plan 2 WP-05", ["true", "false"];
+        canonicalize, "plan 2 WP-04", ["true", "false"];
         default_rcache_name, "plan 2 WP-20", ["none:"];
         dns_canonicalize_hostname, "plan 2 WP-10", ["true", "false", "FaLlBaCk"];
         dns_lookup_realm, "plan 2 WP-10", ["true", "false"];
         dns_uri_lookup, "plan 2 WP-10", ["on", "nil"];
         enforce_ok_as_delegate, "plan 2 WP-12", ["true", "false"];
         err_fmt, "plan 2 WP-18", ["%C: %M", "custom"];
+        extra_addresses, "plan 2 WP-04", ["127.0.0.1, ::1", "192.0.2.1 192.0.2.2"];
         ignore_acceptor_hostname, "plan 2 WP-12", ["true", "false"];
     }
 

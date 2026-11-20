@@ -18,11 +18,18 @@ use super::{ConfigDiagnostic, Error, LibDefaults, ParseMode};
 /// are rejected in both modes, with the owning plan-2 work package.
 pub(super) fn classify(defaults: &mut LibDefaults, selected: &[String]) -> Result<(), Error> {
     for &(name, _kind, _mit_default, consumer, _rationale, _test) in &relations::RELATIONS {
-        if !selected.iter().any(|key| key == name) || !consumer.starts_with("plan 2 ") {
+        if !selected
+            .iter()
+            .any(|key| key == name || (name == "noaddresses" && key == "no_addresses"))
+            || !consumer.starts_with("plan 2 ")
+        {
             continue;
         }
         let stricter = match name {
             "default_rcache_name" => defaults.default_rcache_name != "none:",
+            "extra_addresses" => {
+                !defaults.no_addresses.is_enabled() && !defaults.extra_addresses.is_empty()
+            }
             _ => c2::stricter(defaults, name),
         };
         if stricter || defaults.parse_mode() == ParseMode::Strict {

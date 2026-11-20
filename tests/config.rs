@@ -49,9 +49,6 @@ mod diagnostics_e;
 #[path = "config/plugin_case.rs"]
 mod plugin_case;
 
-#[path = "config/plugin_order.rs"]
-mod plugin_order;
-
 #[path = "config/name_case.rs"]
 mod name_case;
 
@@ -625,13 +622,13 @@ mod tests {
     /// Pins the libdefaults, KDCs, kpasswd servers and realm mapping of the gokrb5 integration config.
     #[test]
     fn parses_gokrb5_integration_config_fixture() -> Result<(), TestError> {
-        assert!(
-            !Config::parse(KRB5_CONF)
-                .context("address-bound fixture parses")?
-                .libdefaults
-                .no_addresses
-                .is_enabled()
-        );
+        assert!(matches!(
+            Config::parse(KRB5_CONF),
+            Err(Error::NotYetEffective {
+                relation: "noaddresses",
+                package: "plan 2 WP-04"
+            })
+        ));
         let config = Config::parse(&KRB5_CONF.replace("noaddresses = false", "noaddresses = true"))
             .context("addressless fixture parses")?;
 
@@ -673,13 +670,13 @@ mod tests {
     fn loads_config_file() -> Result<(), TestError> {
         let path = temp_file("load")?;
         fs::write(&path, KRB5_CONF).context("config fixture writes")?;
-        assert!(
-            !Config::load(&path)
-                .context("address-bound fixture loads")?
-                .libdefaults
-                .no_addresses
-                .is_enabled()
-        );
+        assert!(matches!(
+            Config::load(&path),
+            Err(Error::NotYetEffective {
+                relation: "noaddresses",
+                package: "plan 2 WP-04"
+            })
+        ));
         fs::write(
             &path,
             KRB5_CONF.replace("noaddresses = false", "noaddresses = true"),
@@ -1500,13 +1497,13 @@ mod tests {
     #[cfg(feature = "serde")]
     #[test]
     fn implicit_permitted_enctypes_round_trip_stays_implicit() -> Result<(), TestError> {
-        assert!(
-            !Config::parse(KRB5_CONF)
-                .context("address-bound fixture parses")?
-                .libdefaults
-                .no_addresses
-                .is_enabled()
-        );
+        assert!(matches!(
+            Config::parse(KRB5_CONF),
+            Err(Error::NotYetEffective {
+                relation: "noaddresses",
+                package: "plan 2 WP-04"
+            })
+        ));
         let config =
             Config::parse(&KRB5_CONF.replace("noaddresses = false", "noaddresses = true"))?;
         assert!(!config.libdefaults.permitted_enctypes_explicit.is_enabled());

@@ -112,16 +112,6 @@ duplicate-version skips, each with a reason stated in the record.
 - Maintenance: RustCrypto/MACs, repository pushed 2026-11-17; 0.8.0 on 2026-04-10 (release candidates since 2025-05), about 9.6 million recent downloads; `dbl` 0.5.0 on 2025-09-03 with about 9.3 million. No RustSec advisory (`cargo audit` clean at admission).
 - Features: `zeroize` (this crate's own feature, enabled by the `camellia` leaf)
 
-### libc
-- Version: 0.2.191
-- Leaf flags: ccache-keyring
-- Licence: MIT OR Apache-2.0 (both already on the `deny.toml` allow list; no change to it).
-- Source review: read on 2026-11-19 from the crates.io tarball (sha256 `65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a`, rust-lang/libc, the lock's version). This crate calls no function of it: it names eleven `errno` constants (`ENOSYS`, `EOPNOTSUPP`, `EPERM`, `EACCES`, `EDQUOT`, `ENOKEY`, `EKEYREVOKED`, `EKEYEXPIRED`, `EINVAL`, `ENODEV`, `EILSEQ`) to map the kernel's refusals of the key calls to typed errors in `src/ccache/keyring/kernel.rs`. The numbers differ between Linux architectures (`EDQUOT` is 122 on x86 and 1133 on mips, `ENOKEY` 126 and 161: `src/unix/linux_like/linux/uclibc/mips/mod.rs:131-137` against `musl/b32/x86/mod.rs:380-385`), which is why the constants come from `libc` and are not written down here. `libc` is already in the graph (tokio, mio, socket2 and `keyutils-raw`); this record makes it a direct, optional, Linux-only dependency of the `ccache-keyring` leaf. It has a `build.rs` (cfg probing, no `links` key); D6 and rule 4 list `libc` as an OS wrapper.
-- Constant-time and zeroization: not a cryptographic crate; this crate reads constants only.
-- Cargo vet: `supply-chain/config.toml` already has `[[exemptions.libc]]` 0.2.191, `safe-to-deploy`; no change. `cargo vet --locked` passes.
-- Maintenance: rust-lang/libc, 0.2.191 is the lock's release and the newest stable one; the crate is among the most downloaded of crates.io. No RustSec advisory for it (`cargo audit` clean at admission).
-- Features: none beyond the defaults (`default-features = false` here; `keyutils-raw` enables `std`, which cargo unifies)
-
 ### rustix
 - Version: 1.1.6
 - Leaf flags: none. The one non-optional exception of rule 2 (owner exception 2026-11-18, plan 2 D10, todo 11): `[target.'cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))'.dependencies]` with `default-features = false`, used only by the shared secure-environment check (`src/secure_env.rs`), which compares the real and effective user and group ids as MIT 1.22.2 `src/util/support/secure_getenv.c:83-99` does when `getresuid` is unavailable. Linux and Android read `AT_SECURE` from `/proc/self/auxv` with `std` and do not use it; Windows has no set-id processes.
@@ -131,51 +121,6 @@ duplicate-version skips, each with a reason stated in the record.
 - Cargo vet: `supply-chain/config.toml` raised `[[exemptions.rustix]]` 1.1.6 from `safe-to-run` to `safe-to-deploy`, and with it the two dependencies that become production edges, `[[exemptions.errno]]` 0.3.14 and `[[exemptions.linux-raw-sys]]` 0.12.1 (rustix's Linux backend, reached in the vet graph although this crate never enables rustix on Linux), each with `notes = "owner exception 2026-11-18 ..."`. Exemptions, not independent audits; the source review above is this record's evidence. `cargo vet --locked` passes.
 - Maintenance: bytecodealliance/rustix, repository pushed 2026-11-12; 1.1.6 published 2026-10-27, the newest stable release, about 377 million recent downloads of the crate. No RustSec advisory for 1.1.6 (`cargo audit` clean at admission).
 - Features: process
-
-### keyutils-raw
-- Version: 0.4.0
-- Leaf flags: ccache-keyring
-- Licence: BSD-3-Clause (the 3-clause BSD text, Copyright (c) 2018 Ben Boeckel). It is new to the `deny.toml` allow list, which this record extends with exactly `BSD-3-Clause`; `uninit` below is MIT, already allowed.
-- Source review: read in full on 2026-11-19 from the crates.io tarball (sha256 `db322e79368bacfd8d7ecba9d9038866d2ff5e78b52377376f38b7360878392b`, mathstuf/rust-keyutils, edition 2018): `src/functions.rs` (643 lines), `src/types.rs`, `src/constants.rs`, `src/lib.rs`. It is the safe function layer over `libc::syscall(SYS_add_key | SYS_request_key | SYS_keyctl)`: each public function takes typed arguments (`KeyringSerial` is a `NonZeroI32`, strings are `&str`) and wraps one syscall in one `unsafe` block with `CString` arguments that outlive the call. This crate uses `keyctl_get_keyring_id`, `add_key`, `keyctl_search`, `keyctl_link`, `keyctl_unlink`, `keyctl_clear`, `keyctl_read`, `keyctl_describe`, `keyctl_set_timeout` and `keyctl_get_persistent(uid, ring)` only, which is what MIT 1.22.2 `src/lib/krb5/ccache/cc_keyring.c` calls. No `build.rs`, no `links`, no proc macro; dependencies `errno` 0.3 (already locked), `libc` 0.2 (already locked, an OS wrapper of rule 4), `log` 0.4 (already locked) and `uninit` 0.3.0 (new to the graph, MIT, 2709 lines, no dependencies, no build script; `keyctl_read` and `keyctl_describe` take the caller's buffer as `uninit::out_ref::Out<[u8]>`, which this crate builds from a `&mut [u8]` and never reads before the kernel wrote it). Hazards found and handled by this crate: `cstring()` unwraps on an interior NUL (this crate refuses a NUL in any name before the call), the `ignore()` helper asserts that a successful syscall returned 0 (the kernel contract), and a 64-bit key id panics (not possible on Linux). The sibling crates were read and refused: `linux-keyutils` 0.2.5 (Apache-2.0 OR MIT) can add only `user` keys, search only `user` keys, cannot create a keyring, has no keyring timeout and no uid for the persistent keyring, so MIT's layout (a cache is a named keyring of one key per credential) cannot be built on it; `keyutils` 0.4.0 parses key descriptions with `unwrap` (a `;` in a description, which a service principal may contain, panics `Keyring::read`) and brings a second `bitflags` major. `rustix` 1.1.6 has no keyctl module. D6: the crate only calls the OS; `libc` and `errno` carry no `links` key to `cc`, `cmake` or `pkg-config`.
-- Constant-time and zeroization: not a cryptographic crate and it keeps no copy of a payload: `keyctl_read` writes into the caller's buffer, which this crate allocates as `Zeroizing<Vec<u8>>`, and `add_key` borrows the caller's slice (an owning zeroizing buffer of this crate). The kernel holds the payload in kernel memory (user keys) or encrypted tmpfs (`big_key`).
-- Cargo vet: `supply-chain/config.toml` gets `[[exemptions.keyutils-raw]]` 0.4.0 and `[[exemptions.uninit]]` 0.3.0, both `safe-to-deploy`; exemptions, not independent audits, and the source review above is this record's evidence. `errno`, `libc` and `log` keep their existing exemptions. `cargo vet --locked` passes.
-- Maintenance: mathstuf/rust-keyutils, 0.4.0 published 2023-08-17 (the newest release), about 505 thousand recent downloads, also the engine of the `keyutils` crate; `uninit` 0.3.0 is the version `keyutils-raw` requires (0.6.2 exists, 2023-11-20). No RustSec advisory (`cargo audit` clean at admission). The crate is stale rather than abandoned: the keyctl syscall ABI it wraps is stable, and the Linux leaf can move to another wrapper through this same record format without a change to the public API.
-- Features: none (`keyutils-raw` has no features). It is a Linux-only dependency, `[target.'cfg(target_os = "linux")'.dependencies]`, optional, enabled only by the `ccache-keyring` leaf.
-
-<a id="rskrb5-ng-os"></a>
-## The platform stores: `rskrb5-ng-os` (owner decision D11)
-
-Plan 2 todo 14 looked for a vetted crate with a safe API for the Windows LSA
-ticket cache, the macOS native cache (`API:`, Kerberos.framework CCAPI) and
-KCM over Mach RPC, on 2026-11-19 (crates.io searches and source review; the
-evidence log of todo 14 has the details). None qualifies:
-
-- `windows-lsa` 0.2.1 (MIT, 74 downloads, one author, first release
-  2026-08-08) retrieves only the TGT as a KRB-CRED, has no
-  `KerbRetrieveEncodedTicketMessage` for service tickets and no
-  `KerbPurgeTicketCacheExMessage`, writes a `#[repr(C)]` request through a
-  `Vec<u8>` pointer with `ptr::write` (`src/sys.rs:331`, an unaligned typed
-  write) and carries no vet audit. Rejected.
-- `windows` and `windows-sys` are raw bindings: every call stays `unsafe` in
-  the caller. `sspi`, `cross-krb5` and similar crates implement Kerberos
-  through SSPI or GSS, which the plan forbids.
-- No crate wraps CCAPI or the KCM Mach routine (`kcmrpc.defs`); `mach2` is raw
-  bindings.
-
-So, per D11, the stores live in the workspace member `rskrb5-ng-os`:
-
-- it depends on `rskrb5-ng` and nothing else (rule 5): it uses the main
-  crate's zeroizing owner instead of `zeroize`, and needs no record, no leaf
-  flag and no vet entry;
-- `rskrb5-ng` never depends on it, and it is `publish = false`;
-- it declares the few OS functions it calls itself (secur32 on Windows;
-  libSystem and Kerberos.framework on macOS, linked with `#[link]`, no
-  wrapper crate, so rule 4's macOS framework wrapper is not used);
-- its manifest takes the core lint profile with the one override of the
-  vendored guidelines' unsafe-ffi overlay, `unsafe_code = "deny"`: every
-  unsafe block and declaration carries `#[expect(unsafe_code, reason)]`, and
-  every unsafe block a `SAFETY` comment. The OS replies are copied out and
-  parsed by safe code that Miri checks.
 
 ## Baseline
 

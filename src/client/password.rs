@@ -63,12 +63,6 @@ impl Secret {
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes
     }
-
-    /// Record in `erased` whether the live bytes were zero when this owner dropped.
-    #[cfg(test)]
-    pub(crate) fn observe_erasure(&mut self, erased: Arc<AtomicBool>) {
-        self.erased = Some(erased);
-    }
 }
 
 impl fmt::Debug for Secret {

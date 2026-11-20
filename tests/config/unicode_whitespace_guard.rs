@@ -28,7 +28,7 @@ mod tests {
 
     /// The reviewed uses (todo 64 and todo 69 call inventories).
     const ALLOWLIST: [Allowed; 1] = [Allowed {
-        file: "src/config/values.rs",
+        file: "src/config.rs",
         function: "parse_duration",
         api: "split_whitespace",
         reason: "standalone public gokrb5 parse_duration compatibility API on a caller \

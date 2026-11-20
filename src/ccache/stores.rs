@@ -20,7 +20,7 @@ use std::path::PathBuf;
 
 use zeroize::Zeroizing;
 
-use super::{CCache, Credential, Error, Principal, file_store};
+use super::{CCache, Credential, Error, Principal};
 use crate::{config::LibDefaults, extensions};
 
 /// A credential-cache format version, 1 to 4, written into new caches (MIT
@@ -369,19 +369,15 @@ pub trait CredentialStore: fmt::Debug + Send + Sync {
     fn collection(&self, residual: &str) -> Result<Box<dyn CacheCollection>, Error>;
 }
 
-/// The cache an already-expanded `name` names when a store serves it.
-///
-/// That is a provider installed with
-/// [`crate::extensions::Registry::install_stores`] that claims its prefix, else
-/// a built-in non-file type (`KCM`, `KEYRING`) through the arms of
-/// [`super::file_store::resolve`]; `None` for a file name.
+/// The cache `name` names when a store provider installed with
+/// [`crate::extensions::Registry::install_stores`] claims its prefix.
 ///
 /// # Errors
 ///
-/// The errors of the store's [`CredentialStore::resolve`].
-pub(crate) fn store_cache(name: &str) -> Result<Option<Box<dyn CacheHandle>>, Error> {
+/// The errors of the provider's [`CredentialStore::resolve`].
+pub(crate) fn installed_cache(name: &str) -> Result<Option<Box<dyn CacheHandle>>, Error> {
     let Some((provider, residual)) = extensions::stores::installed(name) else {
-        return file_store::non_file(name).transpose();
+        return Ok(None);
     };
     provider
         .credential_store()

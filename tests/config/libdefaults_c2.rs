@@ -17,6 +17,7 @@ mod tests {
     fn restrictions_fail_closed() -> Result<(), Box<dyn Error>> {
         for mode in [ParseMode::Compatible, ParseMode::Strict] {
             for assignment in [
+                "noaddresses = false",
                 "request_timeout = 1s",
                 "verify_ap_req_nofail = true",
                 "client_aware_channel_bindings = true",

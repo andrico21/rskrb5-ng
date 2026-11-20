@@ -32,6 +32,7 @@ mod tests {
                 ),
                 "k5login_directory" => assert_eq!(defaults.k5login_directory, *value),
                 "kcm_mach_service" => assert_eq!(defaults.kcm_mach_service, *value),
+                "kcm_socket" => assert_eq!(defaults.kcm_socket, *value),
                 "plugin_base_dir" => assert_eq!(defaults.plugin_base_dir, *value),
                 "qualify_shortname" => {
                     assert_eq!(defaults.qualify_shortname.as_deref(), Some(*value));
@@ -83,7 +84,11 @@ mod tests {
         k5login_authoritative, "plan 2 WP-17", ["true", "false"];
         k5login_directory, "plan 2 WP-17", ["/first", "/second"];
         kcm_mach_service, "plan 2 WP-09", ["org.example.kcm", "-"];
+        kcm_socket, "plan 2 WP-09", ["/socket", "-"];
+        kdc_timesync, "plan 2 WP-04", ["0", "1", "2"];
+        noaddresses, "plan 2 WP-04", ["true", "yes"];
         plugin_base_dir, "plan 2 WP-16", ["/never-load", "%{LIBDIR}/krb5/plugins"];
+        preferred_preauth_types, "plan 2 WP-04", ["17,16,15,14", "17 16 14 15"];
         qualify_shortname, "plan 2 WP-10", ["", "example.test"];
         rdns, "plan 2 WP-10", ["true", "false"];
         realm_try_domains, "plan 2 WP-10", ["-1", "0", "2"];
@@ -180,25 +185,6 @@ mod tests {
             let config =
                 Config::parse(&format!("[libdefaults]\n udp_preference_limit = {value}\n"))?;
             assert_eq!(config.libdefaults.udp_preference_limit, value);
-        }
-        Ok(())
-    }
-
-    /// `kcm_socket` is effective: undiagnosed in both modes, `-` disables the
-    /// Unix socket transport, and any other value names the daemon socket.
-    #[cfg(unix)]
-    #[test]
-    fn kcm_socket() -> Result<(), Box<dyn Error>> {
-        use rskrb5_ng::{ccache::kcm::Store, error::Kcm};
-        for (value, expected) in [("/run/kcm.sock", Some("/run/kcm.sock")), ("-", None)] {
-            let text = format!("[libdefaults]\n kcm_socket = {value}\n");
-            let config = Config::parse_with_mode(&text, ParseMode::Strict)?;
-            assert!(config.diagnostics().is_empty(), "{value} was diagnosed");
-            match (Store::from_libdefaults(&config.libdefaults), expected) {
-                (Ok(store), Some(path)) => assert_eq!(store.socket().to_str(), Some(path)),
-                (Err(Kcm::NoServer), None) => {}
-                (other, _) => return Err(format!("{value}: {other:?}").into()),
-            }
         }
         Ok(())
     }

@@ -61,13 +61,6 @@ pub struct Plugins {
     pub disable: Vec<String>,
     /// Repeated allowlisted module names, in profile order.
     pub enable_only: Vec<String>,
-    /// Configured module names (`module = <name>:<path>`, the path ignored), in
-    /// profile order; they come before the other registered modules (MIT `plugin.c`).
-    #[cfg_attr(
-        feature = "serde",
-        serde(default, skip_serializing_if = "Vec::is_empty")
-    )]
-    pub module: Vec<String>,
 }
 
 /// Application values retain hierarchy and case; type is chosen by the caller.

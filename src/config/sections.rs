@@ -1,15 +1,8 @@
-//! Shared relation-line helpers of the section parsers.
-
-use std::{io, path::Path};
-
-use super::{Line, profile_syntax};
-use crate::error::Config as Error;
-
 /// Split a normalized assignment at its first equals sign.
 ///
 /// # Errors
 /// Returns a line-numbered error if the assignment separator is missing.
-pub(super) fn parse_assignment<'line>(
+fn parse_assignment<'line>(
     line: &'line Line,
     section: &'static str,
 ) -> Result<(&'line str, &'line str), Error> {
@@ -29,7 +22,7 @@ pub(super) fn parse_assignment<'line>(
 }
 
 /// Distinguish root-source I/O from failures in included files at the read boundary.
-pub(super) fn profile_file_error(path: &Path, depth: usize, source: io::Error) -> Error {
+fn profile_file_error(path: &Path, depth: usize, source: io::Error) -> Error {
     if depth == 0 {
         Error::File {
             path: path.to_path_buf(),

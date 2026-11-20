@@ -132,8 +132,14 @@ mod tests {
                         .no_addresses
                         .is_enabled()
                 );
-                let bound = format!("[libdefaults]\n{first}{marker} = false\n{second} = true\n");
-                assert!(!Config::parse(&bound)?.libdefaults.no_addresses.is_enabled());
+                let refused = format!("[libdefaults]\n{first}{marker} = false\n{second} = true\n");
+                assert!(matches!(
+                    Config::parse(&refused),
+                    Err(ConfigError::NotYetEffective {
+                        relation: _,
+                        package: _
+                    })
+                ));
                 let dir = Fixture::new()?;
                 let one = dir.path().join("one");
                 let two = dir.path().join("two");

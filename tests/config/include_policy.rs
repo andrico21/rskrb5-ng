@@ -34,7 +34,7 @@ mod tests {
             let directory = root.join(name);
             fs::create_dir_all(&directory)?;
             let child = directory.join(format!("{name}.conf"));
-            fs::write(&child, "[libdefaults]\nrequest_timeout = 1s\n")?;
+            fs::write(&child, "[libdefaults]\nnoaddresses = false\n")?;
             for (directive, target) in [("include", &child), ("includedir", &directory)] {
                 for separator in [" ", "\t"] {
                     for indent in ["", " \t"] {
@@ -47,8 +47,8 @@ mod tests {
                                 if !matches!(
                                     Config::parse_with_mode(&text, mode),
                                     Err(Failure::NotYetEffective {
-                                        relation: "request_timeout",
-                                        package: "plan 2 WP-10",
+                                        relation: "noaddresses",
+                                        package: "plan 2 WP-04",
                                     })
                                 ) {
                                     missed.push(format!("{mode:?}: {text}"));

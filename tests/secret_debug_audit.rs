@@ -118,10 +118,6 @@ mod replacement_registry;
 #[path = "secret_debug_audit/messages.rs"]
 mod messages;
 
-#[cfg(all(test, feature = "messages"))]
-#[path = "secret_debug_audit/stepwise.rs"]
-mod stepwise;
-
 #[cfg(all(test, feature = "spnego"))]
 #[path = "secret_debug_audit/tokens.rs"]
 mod tokens;
@@ -175,8 +171,6 @@ mod tests {
         super::stores::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         #[cfg(feature = "messages")]
         super::messages::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
-        #[cfg(feature = "messages")]
-        super::stepwise::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         #[cfg(feature = "spnego")]
         super::tokens::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -228,9 +222,6 @@ mod tests {
     }
 
     fn active(identity: &str) -> bool {
-        if identity.starts_with("src/ccache/kcm") {
-            return cfg!(unix);
-        }
         if identity.starts_with("src/pac") {
             return cfg!(feature = "messages");
         }
@@ -338,8 +329,7 @@ mod tests {
             }), ("src/client/cache_insert.rs::tgt_session_at", ReplacementProof::DependencyContractReplacement {
                 test: "tokio_client_prefers_freshest_cached_tgt_session",
                 contract: "Caching keeps the fresher primary or referral TGT and drops the other; the dropped session's key erasure relies on its Drop contract, not an observed first-party wipe.",
-            })]).chain(super::replacement_registry::CONTRACTS.iter().map(|&(method, test, contract)| (method, ReplacementProof::DependencyContractReplacement { test, contract })))
-            .collect::<Vec<_>>();
+            })]).collect::<Vec<_>>();
         for (identity, reason) in REPLACEMENT_EXCEPTIONS {
             for test in reason.split('`').skip(1).step_by(2) {
                 assert!(
@@ -1021,10 +1011,6 @@ mod tests {
     /// Methods with live pre-replacement byte observations in their owning unit tests.
     const REPLACEMENT_PROOFS: &[(&str, &str)] = &[
         (
-            "src/client/stepwise/init.rs::remember_cookie",
-            "armored_replies_thread_cookies_and_erase_replaced_strengthen_keys",
-        ),
-        (
             "src/ccache.rs::Credential::with_auth_data",
             "authorization_data_replacement_erases_previous_entries",
         ),
@@ -1244,9 +1230,6 @@ mod tests {
         "src/ccache/stores.rs::CacheCursor",
         "src/extensions.rs::Extension",
         "src/extensions.rs::Registry",
-        "src/ccache/kcm/wire.rs::Request",
-        "src/ccache/kcm/wire.rs::Reply",
-        "src/ccache/kcm/wire/calls.rs::Call",
         "src/ccache.rs::EncryptionKey",
         "src/ccache.rs::Credential",
         "src/ccache.rs::AuthorizationDataEntry",
@@ -1264,15 +1247,6 @@ mod tests {
         "src/client.rs::TgsFastRequestParts",
         "src/client.rs::Tokio",
         "src/client.rs::TokioClientCredentials",
-        "src/client/stepwise.rs::StepInput",
-        "src/client/stepwise.rs::ExchangeStep",
-        "src/client/stepwise.rs::Outbound",
-        "src/client/stepwise.rs::Answer",
-        "src/client/stepwise.rs::InitCredsOptions",
-        "src/client/stepwise.rs::TicketOptions",
-        "src/client/stepwise.rs::InitCreds",
-        "src/client/stepwise.rs::TicketCreds",
-        "src/client/stepwise.rs::ArmoredReply",
         "src/client/password.rs::Secret",
         "src/client/kpasswd.rs::BuiltKpasswdRequest",
         "src/client/kpasswd.rs::VerifiedKpasswdApRep",
@@ -1709,31 +1683,6 @@ mod tests {
             .add(entry)
             .map_err(io::Error::other)?;
         redacted(&memory, &[&key]);
-        #[cfg(unix)]
-        redacted_kcm(&cache, &key)?;
-        Ok(())
-    }
-
-    /// KCM requests and replies redact the keys and tickets they carry.
-    #[cfg(unix)]
-    fn redacted_kcm(cache: &ccache::CCache, key: &[u8]) -> Result<(), io::Error> {
-        use rskrb5_ng::ccache::kcm::wire::{Opcode, Reply, Residual, calls};
-        use zeroize::Zeroizing;
-        let credential = cache
-            .credentials()
-            .first()
-            .ok_or_else(|| io::Error::other("credential"))?;
-        let name = Residual::new("0:1").ok_or_else(|| io::Error::other("name"))?;
-        let call = calls::store(&name, credential).map_err(io::Error::other)?;
-        redacted(&call, &[key]);
-        redacted(call.request(), &[key]);
-        let reply = Reply::from_frame(
-            Opcode::GetCredByUuid,
-            0,
-            Zeroizing::new([&[0_u8; 4], key].concat()),
-        )
-        .map_err(io::Error::other)?;
-        redacted(&reply, &[key]);
         Ok(())
     }
 }

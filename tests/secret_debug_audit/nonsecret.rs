@@ -3,22 +3,12 @@
 /// Each exclusion identifies one owner and field, never an entire module.
 pub(super) const FIELDS: &[(&str, &str, &str)] = &[
     (
-        "src/ccache/kcm/client.rs::Client",
-        "stream",
-        "The daemon socket (any `Read + Write`): it carries one request or reply at a time through the zeroizing frame buffers and retains no credential.",
-    ),
-    (
-        "src/ccache/kcm/async_client.rs::Client",
-        "stream",
-        "The daemon socket (any Tokio stream): it carries one request or reply at a time through the zeroizing frame buffers and retains no credential.",
-    ),
-    (
         "src/http.rs::ValidatorOptions",
         "keytab_principal",
         "Principal selector components, not retained keytab credentials.",
     ),
     (
-        "src/config.rs::EnctypeTerm",
+        "src/config/enctype_expr.rs::EnctypeTerm",
         "token",
         "Configuration enctype expression spelling, not an authentication token.",
     ),

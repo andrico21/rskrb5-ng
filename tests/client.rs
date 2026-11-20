@@ -167,8 +167,6 @@ mod review_validity;
 #[path = "client/session_cache.rs"]
 #[cfg(feature = "tokio")]
 mod session_cache;
-#[path = "client/stepwise.rs"]
-mod stepwise;
 #[path = "client/subkey_reply.rs"]
 #[cfg(test)]
 #[expect(

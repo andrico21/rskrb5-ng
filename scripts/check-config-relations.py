@@ -21,25 +21,19 @@ ROOT: Final = Path(__file__).resolve().parents[1]
 TABLES: Final = (
     (
         "libdefaults",
-        (
-            ("src/config/libdefaults/relations.rs", "RELATIONS_HEAD", 21),
-            ("src/config/libdefaults/relations/tail.rs", "RELATIONS_TAIL", 22),
-        ),
+        "src/config/libdefaults/relations.rs",
+        "RELATIONS",
         43,
         "src/config/libdefaults/completeness.rs",
     ),
     (
         "realms",
-        (("src/config/realm_relations.rs", "REALM_RELATIONS", 28),),
+        "src/config/realm_relations.rs",
+        "REALM_RELATIONS",
         28,
         "src/config/section_inventory_tests.rs",
     ),
-    (
-        "sections",
-        (("src/config/section_decode.rs", "SECTION_RELATIONS", 6),),
-        6,
-        "",
-    ),
+    ("sections", "src/config/section_decode.rs", "SECTION_RELATIONS", 6, ""),
 )
 STRING: Final = r'"([^"\\\r\n]+)"'
 ROW: Final = re.compile(r"\s*\(\s*" + r"\s*,\s*".join([STRING] * 6) + r"\s*,?\s*\)\s*,")
@@ -135,14 +129,8 @@ def render(root: Path) -> str:
         for path in sorted((root / folder).rglob("*.rs")):
             tests.update(test_names(path.read_text(encoding="utf-8")))
     output = [HEADER]
-    for section, parts, count, inventory in TABLES:
-        rows = [
-            row
-            for path, symbol, part in parts
-            for row in table((root / path).read_text(encoding="utf-8"), symbol, part)
-        ]
-        if len(rows) != count:
-            raise AuditError(f"{section}: expected {count} rows, got {len(rows)}")
+    for section, path, symbol, count, inventory in TABLES:
+        rows = table((root / path).read_text(encoding="utf-8"), symbol, count)
         expected = (
             expected_names((root / inventory).read_text(encoding="utf-8"))
             if inventory
