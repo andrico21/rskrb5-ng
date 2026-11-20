@@ -50,7 +50,8 @@ confidence-threshold = 0.93
 # graph needs; any further entry is reported as `license-not-encountered`.
 # Dev-only dependencies are outside the license check (cargo-deny's
 # `include-dev` default), so axum's matchit (`MIT AND BSD-3-Clause`) adds nothing.
-allow = ["MIT", "Apache-2.0", "Unicode-3.0"]
+# BSD-3-Clause is the licence of `keyutils-raw` (docs/dependency-admission.md#keyutils-raw).
+allow = ["MIT", "Apache-2.0", "BSD-3-Clause", "Unicode-3.0"]
 
 [bans]
 multiple-versions = "deny"   # unavoidable duplicates go into `skip`, each with a reason

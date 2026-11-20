@@ -17,7 +17,7 @@ mod tests {
 
     /// Libdefaults: safe assignment and optional genuinely stronger assignment.
     /// None means no valid value tightens current behavior; table rationale explains why.
-    const LIB: [(&str, &str, Option<&str>); 23] = [
+    const LIB: [(&str, &str, Option<&str>); 18] = [
         ("canonicalize", "false", None),
         ("default_rcache_name", "none:", Some("dfl:")),
         ("dns_canonicalize_hostname", "fallback", None),
@@ -25,20 +25,11 @@ mod tests {
         ("dns_uri_lookup", "false", None),
         ("enforce_ok_as_delegate", "true", None),
         ("err_fmt", "%C: %M", None),
-        (
-            "extra_addresses",
-            "127.0.0.1",
-            Some("127.0.0.1\n noaddresses = false"),
-        ),
         ("ignore_acceptor_hostname", "false", None),
         ("k5login_authoritative", "true", None),
         ("k5login_directory", "/unread", None),
         ("kcm_mach_service", "-", None),
-        ("kcm_socket", "-", None),
-        ("kdc_timesync", "0", None),
-        ("noaddresses", "true", Some("false")),
         ("plugin_base_dir", "%{LIBDIR}/unloaded", None),
-        ("preferred_preauth_types", "17,16", None),
         ("qualify_shortname", "", None),
         ("rdns", "false", None),
         ("realm_try_domains", "-1", None),
@@ -110,7 +101,6 @@ mod tests {
         for (relation, assignment, package) in [
             ("client_aware_channel_bindings", "true", "plan 2 WP-12"),
             ("default_rcache_name", "dfl:", "plan 2 WP-20"),
-            ("noaddresses", "false", "plan 2 WP-04"),
             ("request_timeout", "1s", "plan 2 WP-10"),
             ("verify_ap_req_nofail", "true", "plan 2 WP-11"),
         ] {

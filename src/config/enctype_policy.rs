@@ -1,27 +1,13 @@
-use crate::error::RejectedFeature;
+//! Checked enctype-list policy shared by parsing and runtime policy.
 
-/// Internal checked expression operations shared by parsing and runtime policy.
-pub(crate) trait EnctypeDefaults {
-    /// Resolve final profile lists or return a named expression error.
-    /// # Errors
-    /// Rejects invalid expressions or out-of-policy explicit requests.
-    fn validate_explicit_enctypes(&mut self, enctypes: EnctypeParseState) -> Result<(), Error>;
-    /// Reject blanket weakening with a typed policy error.
-    /// # Errors
-    /// Rejects enabled weak crypto.
-    fn reject_weak_crypto(&self) -> Result<(), Error>;
-    /// Resolve names or return a named expression error.
-    /// # Errors
-    /// Rejects invalid, disabled or forbidden selections and empty results.
-    fn resolve_names(&self, names: &[String]) -> Result<ResolvedEnctypes, Error>;
-    /// Validate staged request names against the permitted list.
-    /// # Errors
-    /// Returns named expression or request-membership errors without narrowing.
-    #[cfg(feature = "messages")]
-    fn validate_request_enctypes(&self) -> Result<(), Error>;
-    /// Legacy accessor returns no usable IDs for invalid public mutation.
-    fn effective_enctype_ids(&self, names: &[String]) -> Vec<i32>;
-}
+use super::{
+    EnctypeDefaults, EnctypeExpr, EnctypeParseState, LibDefaults, ResolvedEnctypes, enctype_names,
+    protocol,
+};
+use crate::{
+    crypto::KerberosEtype,
+    error::{Config as Error, Policy, RejectedFeature, RejectionReason},
+};
 
 impl EnctypeDefaults for LibDefaults {
     /// Resolve all three relations after the final family permissions are known.

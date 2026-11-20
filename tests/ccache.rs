@@ -531,15 +531,15 @@ mod tests {
         }
         for cache_name in ["API:", "KCM:", "KEYRING:", "MSLSA:"] {
             let expected_type = cache_name.trim_end_matches(':');
-            assert!(
-                matches!(
-                    CCache::file_path_from_cache_name(cache_name)
-                        .err()
-                        .context("unsupported cache rejected")?,
-                    Error::UnsupportedCacheType { cache_type } if cache_type == expected_type
-                ),
-                "{cache_name}"
-            );
+            let refused = CCache::file_path_from_cache_name(cache_name)
+                .err()
+                .context("unsupported cache rejected")?;
+            let typed = if cfg!(windows) && expected_type == "API" {
+                matches!(refused, Error::UnsupportedWindowsApi)
+            } else {
+                matches!(&refused, Error::UnsupportedCacheType { cache_type } if cache_type == expected_type)
+            };
+            assert!(typed, "{cache_name}: {refused}");
         }
         Ok(())
     }
