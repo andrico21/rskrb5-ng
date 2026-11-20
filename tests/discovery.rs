@@ -31,3 +31,47 @@ mod fixture;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 #[path = "discovery/residuals.rs"]
 mod residuals;
+
+/// URI records, sites, roles and registered locators.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "discovery/servers.rs"]
+mod servers;
+
+/// Server roles and registered locators.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "discovery/roles.rs"]
+mod roles;
+
+/// Host-to-realm mapping.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "discovery/realms.rs"]
+mod realms;
+
+/// Hostname canonicalization.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "discovery/hostnames.rs"]
+mod hostnames;

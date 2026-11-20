@@ -1,10 +1,7 @@
 //! Plan-1 discovery residuals (register rows FU-DSC-P01 to FU-DSC-P08), each pinned on
 //! the route a caller reaches it by.
 
-use hickory_resolver::proto::{
-    op::ResponseCode,
-    rr::{RData, RecordType, rdata::SRV},
-};
+use hickory_resolver::proto::{op::ResponseCode, rr::RecordType};
 use rskrb5_ng::{
     client::transport::{KdcEndpoint, KdcProtocol, Tokio},
     config::Config,
@@ -13,7 +10,7 @@ use rskrb5_ng::{
 
 use crate::{
     TestError,
-    fixture::{Dns, Reply, name},
+    fixture::{Dns, Reply, srv},
 };
 
 /// The realm every test discovers.
@@ -22,11 +19,6 @@ const REALM: &str = "TEST.GOKRB5";
 /// A profile that enables SRV discovery and lists no server.
 fn dns_config() -> Result<Config, TestError> {
     Ok(Config::parse("[libdefaults]\ndns_lookup_kdc = true\n")?)
-}
-
-/// One SRV record.
-fn srv(priority: u16, port: u16, target: &str) -> Result<RData, TestError> {
-    Ok(RData::SRV(SRV::new(priority, 0, port, name(target)?)))
 }
 
 /// A transport that asks `dns` for discovery.

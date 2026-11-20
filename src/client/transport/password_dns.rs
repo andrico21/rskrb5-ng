@@ -1,6 +1,7 @@
 //! DNS password-service fallback.
 
-use super::{Error, KdcEndpoint, KdcProtocol, Tokio, dns_resolver, srv_targets};
+use super::{Config, Error, KdcEndpoint, KdcProtocol, Tokio, dns_resolver, srv_targets};
+use crate::discovery::locate::{EndpointRole, sitename, uri_servers};
 
 /// Discover password servers for one protocol, falling back to administrative service hosts.
 ///
@@ -27,12 +28,18 @@ use super::{Error, KdcEndpoint, KdcProtocol, Tokio, dns_resolver, srv_targets};
 /// cancel-safe: abandoning DNS lookups changes no credential state.
 pub(super) async fn discover(
     transport: &Tokio,
+    config: &Config,
     realm: &str,
     protocol: KdcProtocol,
 ) -> Result<Vec<KdcEndpoint>, Error> {
+    let found = uri_servers(transport, config, realm, EndpointRole::Kpasswd, protocol).await?;
+    if !found.is_empty() {
+        return Ok(found);
+    }
     let resolver = dns_resolver(transport.dns_server)?;
+    let site = sitename(config, realm);
     if let Some(answer) = transport
-        .srv_answer(&resolver, "_kpasswd", realm, protocol)
+        .srv_answer(&resolver, ("_kpasswd", site), realm, protocol)
         .await?
     {
         if answer.root && answer.records.is_empty() {
@@ -54,8 +61,7 @@ pub(super) async fn discover(
             return Ok(endpoints);
         }
     }
-    let mut endpoints = transport
-        .discover_srv_endpoints("_kerberos-adm", realm, KdcProtocol::Tcp)
+    let mut endpoints = admin_hosts(transport, config, realm)
         .await
         .map_err(|error| requested(error, protocol))?;
     for endpoint in &mut endpoints {
@@ -98,15 +104,28 @@ pub(super) async fn discover(
 /// cancel-safe: abandoning DNS lookups changes no credential state.
 pub(super) async fn discover_auto(
     transport: &Tokio,
+    config: &Config,
     realm: &str,
 ) -> Result<Vec<KdcEndpoint>, Error> {
+    let found = uri_servers(
+        transport,
+        config,
+        realm,
+        EndpointRole::Kpasswd,
+        KdcProtocol::Auto,
+    )
+    .await?;
+    if !found.is_empty() {
+        return Ok(found);
+    }
     let resolver = dns_resolver(transport.dns_server)?;
+    let site = sitename(config, realm);
     let mut endpoints = Vec::new();
     let mut published = false;
     let mut unresolved = Vec::new();
     for protocol in [KdcProtocol::Udp, KdcProtocol::Tcp] {
         let Some(answer) = transport
-            .srv_answer(&resolver, "_kpasswd", realm, protocol)
+            .srv_answer(&resolver, ("_kpasswd", site), realm, protocol)
             .await?
         else {
             continue;
@@ -142,8 +161,7 @@ pub(super) async fn discover_auto(
         });
     }
     let admin = admin_entries(
-        transport
-            .discover_srv_endpoints("_kerberos-adm", realm, KdcProtocol::Tcp)
+        admin_hosts(transport, config, realm)
             .await
             .map_err(|error| requested(error, KdcProtocol::Auto))?,
     );
@@ -155,6 +173,40 @@ pub(super) async fn discover_auto(
     } else {
         Ok(admin)
     }
+}
+
+/// The administrative hosts of `realm`: DNS URI records of `_kerberos-adm`, then its
+/// `_kerberos-adm._tcp` SRV records (MIT `locate_server` for `locate_service_kadmin`).
+///
+/// # Errors
+/// The errors of the URI step and of [`Tokio::discover_srv_endpoints`].
+///
+/// # Cancel safety
+/// cancel-safe: abandoning DNS lookups changes no credential state.
+async fn admin_hosts(
+    transport: &Tokio,
+    config: &Config,
+    realm: &str,
+) -> Result<Vec<KdcEndpoint>, Error> {
+    let found = uri_servers(
+        transport,
+        config,
+        realm,
+        EndpointRole::Kadmin,
+        KdcProtocol::Tcp,
+    )
+    .await?;
+    if !found.is_empty() {
+        return Ok(found);
+    }
+    transport
+        .discover_srv_endpoints(
+            "_kerberos-adm",
+            realm,
+            KdcProtocol::Tcp,
+            sitename(config, realm),
+        )
+        .await
 }
 
 /// The error of the `_kerberos-adm._tcp` lookup, as the call reports it.

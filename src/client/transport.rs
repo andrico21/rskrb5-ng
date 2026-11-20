@@ -51,18 +51,13 @@ mod password_result;
 /// Configured realm protocol preference.
 mod realm_auto;
 /// Ordered SRV target address resolution.
-mod srv_targets;
+pub(crate) mod srv_targets;
 /// Bounded UDP socket primitives.
 mod udp;
 use framing::tcp_request_length;
 #[cfg(test)]
 use framing::validate_tcp_length;
-use hickory_resolver::{
-    TokioResolver,
-    config::{ConnectionConfig, NameServerConfig, ResolverConfig},
-    net::runtime,
-    proto::rr,
-};
+use hickory_resolver::{TokioResolver, proto::rr};
 use tokio::{
     io::{AsyncReadExt as _, AsyncWriteExt as _},
     net::{TcpStream, ToSocketAddrs},
@@ -82,6 +77,11 @@ use super::{
 use crate::{
     client::kpasswd::{BuiltKpasswdRequest, RequestOptions},
     config::{Config, restrictions},
+    discovery::{
+        locate::{EndpointRole, ServerLocator},
+        realm::HostRealmResolver,
+        records::{dns_resolver, lookup_name},
+    },
     error::Config as ConfigError,
     kadmin,
     keytab::{EncryptionKey, Keytab},
@@ -163,6 +163,10 @@ pub enum KdcEndpointSource {
     /// Came from a DNS SRV record found by discovery (`_kerberos`, `_kpasswd`
     /// or `_kerberos-adm`).
     DnsSrv,
+    /// Came from a DNS URI record (`krb5srv:` target) found by discovery.
+    DnsUri,
+    /// Came from a registered server locator.
+    Provider,
 }
 
 /// One endpoint of a KDC or kpasswd server.
@@ -252,6 +256,8 @@ pub struct Tokio {
     udp_response_limit: usize,
     /// Maximum accepted TCP response body size.
     tcp_response_limit: usize,
+    /// Locate only primary KDCs: the retry after a replica's failure.
+    primary_only: bool,
 }
 
 #[cfg(feature = "tokio")]
@@ -274,7 +280,33 @@ impl Tokio {
             timeout: DEFAULT_KDC_TIMEOUT,
             udp_response_limit: MAX_UDP_DATAGRAM + 1,
             tcp_response_limit: DEFAULT_TCP_RESPONSE_LIMIT,
+            primary_only: false,
         }
+    }
+
+    /// The explicit DNS server of [`Self::with_dns_server`], if any.
+    pub(crate) const fn dns_server(&self) -> Option<(IpAddr, u16)> {
+        self.dns_server
+    }
+
+    /// A host-to-realm resolver over `config` that asks DNS through this transport.
+    #[must_use]
+    #[inline]
+    pub const fn host_realms<'config>(
+        &self,
+        config: &'config Config,
+    ) -> HostRealmResolver<'config> {
+        HostRealmResolver::new(*self, config)
+    }
+
+    /// A server locator over `config` that asks DNS through this transport.
+    ///
+    /// Add registered locators with [`ServerLocator::with_registry`]; the
+    /// exchange methods of this transport do not consult a registry.
+    #[must_use]
+    #[inline]
+    pub const fn locator<'config>(&self, config: &'config Config) -> ServerLocator<'config> {
+        ServerLocator::new(*self, config)
     }
 
     #[must_use]
@@ -667,16 +699,18 @@ impl Tokio {
 
     /// Discover KDC endpoints for a realm using `krb5.conf` semantics.
     ///
-    /// Configured `[realms]` KDCs are preferred. DNS SRV lookup is attempted
-    /// only when no KDCs are configured and `dns_lookup_kdc = true`.
+    /// Configured `[realms]` KDCs are preferred. DNS is asked only when no KDCs
+    /// are configured and `dns_lookup_kdc = true`: URI records first when
+    /// `dns_uri_lookup = true`, then SRV records, each under the realm's
+    /// `sitename` first when it has one (see [`ServerLocator`]).
     /// Whole-configuration restrictions are admitted before endpoint selection or DNS.
     ///
     /// # Errors
     ///
     /// Returns [`Error::Config`] for an unsupported or malformed configuration restriction,
     /// [`Error::InvalidKdcEndpoint`] for a malformed configured KDC
-    /// entry, [`Error::DnsResolverConfig`] or [`Error::DnsSrvLookup`] when DNS SRV
-    /// discovery fails, [`Error::DnsServiceUnavailable`] for a root SRV target,
+    /// entry, [`Error::DnsResolverConfig`] or [`Error::DnsSrvLookup`] when DNS
+    /// discovery fails, [`Error::DnsServiceUnavailable`] for a lone root SRV target,
     /// [`Error::NoKdcEndpoints`] when the realm is configured
     /// without KDCs or DNS finds none, and a configuration error when the realm is
     /// unknown and DNS lookup is disabled.
@@ -692,22 +726,16 @@ impl Tokio {
         realm: &str,
         protocol: KdcProtocol,
     ) -> Result<Vec<KdcEndpoint>, Error> {
-        restrictions::config(config)?;
-        if let Some(realm_entry) = config.realm(realm)
-            && !realm_entry.kdc.is_empty()
-        {
-            return realm_entry
-                .kdc
-                .iter()
-                .map(|value| KdcEndpoint::configured(protocol, value))
-                .collect();
+        let role = if self.primary_only {
+            EndpointRole::PrimaryKdc
+        } else {
+            EndpointRole::Kdc
+        };
+        let endpoints = self.locator(config).locate(realm, role, protocol).await?;
+        if !endpoints.is_empty() {
+            return Ok(endpoints);
         }
-
-        if config.libdefaults.dns_lookup_kdc.is_enabled() {
-            return self.discover_kdcs_with_dns(realm, protocol).await;
-        }
-
-        if config.realm(realm).is_some() {
+        if config.realm(realm).is_some() || config.libdefaults.dns_lookup_kdc.is_enabled() {
             Err(Error::NoKdcEndpoints {
                 realm: realm.to_owned(),
                 protocol,
@@ -2065,35 +2093,6 @@ impl Tokio {
         drive_tokio(self, (config, protocol), &mut exchange, &mut NoResponder).await
     }
 
-    /// Discover KDC endpoints through `_kerberos` DNS SRV records.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::DnsResolverConfig`] or [`Error::DnsSrvLookup`] when the
-    /// lookup fails, and [`Error::NoKdcEndpoints`] when it finds no KDC.
-    ///
-    /// # Cancel safety
-    ///
-    /// cancel-safe: DNS lookups change no state. Dropping the future abandons
-    /// the lookup, which the caller can repeat.
-    async fn discover_kdcs_with_dns(
-        &self,
-        realm: &str,
-        protocol: KdcProtocol,
-    ) -> Result<Vec<KdcEndpoint>, Error> {
-        let endpoints = self
-            .discover_srv_endpoints("_kerberos", realm, protocol)
-            .await?;
-        if endpoints.is_empty() {
-            Err(Error::NoKdcEndpoints {
-                realm: realm.to_owned(),
-                protocol,
-            })
-        } else {
-            Ok(endpoints)
-        }
-    }
-
     /// Discover kpasswd endpoints through `_kpasswd` DNS SRV records, falling
     /// back to `_kerberos-adm._tcp` on ordinary lookup failure or no records.
     ///
@@ -2120,10 +2119,11 @@ impl Tokio {
     /// the lookup, which the caller can repeat.
     async fn discover_kpasswd_servers_with_dns(
         &self,
+        config: &Config,
         realm: &str,
         protocol: KdcProtocol,
     ) -> Result<Vec<KdcEndpoint>, Error> {
-        password_dns::discover(self, realm, protocol).await
+        password_dns::discover(self, config, realm, protocol).await
     }
 
     /// Look up the `<service>._udp` or `._tcp` SRV records of `realm` and order
@@ -2150,14 +2150,18 @@ impl Tokio {
     ///
     /// cancel-safe: DNS lookups change no state. Dropping the future abandons
     /// the lookup, which the caller can repeat.
-    async fn discover_srv_endpoints(
+    pub(crate) async fn discover_srv_endpoints(
         &self,
         service: &str,
         realm: &str,
         protocol: KdcProtocol,
+        site: Option<&str>,
     ) -> Result<Vec<KdcEndpoint>, Error> {
         let resolver = dns_resolver(self.dns_server)?;
-        let Some(answer) = self.srv_answer(&resolver, service, realm, protocol).await? else {
+        let Some(answer) = self
+            .srv_answer(&resolver, (service, site), realm, protocol)
+            .await?
+        else {
             return Err(Error::DnsSrvLookup {
                 realm: realm.to_owned(),
                 protocol,
@@ -2199,19 +2203,47 @@ impl Tokio {
     ///
     /// cancel-safe: a DNS lookup changes no state. Dropping the future
     /// abandons it, which the caller can repeat.
-    async fn srv_answer(
+    pub(crate) async fn srv_answer(
         &self,
         resolver: &TokioResolver,
-        service: &str,
+        (service, site): (&str, Option<&str>),
         realm: &str,
         protocol: KdcProtocol,
     ) -> Result<Option<srv_targets::SrvAnswer>, Error> {
-        let transport = match protocol {
+        let label = match protocol {
             KdcProtocol::Udp | KdcProtocol::Auto => "_udp",
             KdcProtocol::Tcp => "_tcp",
         };
-        let query = format!("{service}.{transport}.{realm}.");
-        let lookup = match resolver.srv_lookup(query.as_str()).await {
+        if let Some(named) = site {
+            // A site's answer is preferred; any failure of that query falls back to the
+            // realm's own name, as MIT does (`dnssrv.c:289-294`).
+            let query = lookup_name(service, Some(label), Some(named), realm);
+            if let Ok(Some(answer)) = Self::srv_at(resolver, &query, realm, protocol).await
+                && answer.published
+            {
+                return Ok(Some(answer));
+            }
+        }
+        let query = lookup_name(service, Some(label), None, realm);
+        Self::srv_at(resolver, &query, realm, protocol).await
+    }
+
+    /// Look up one fully qualified SRV name.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`Self::srv_answer`].
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: a DNS lookup changes no state.
+    async fn srv_at(
+        resolver: &TokioResolver,
+        query: &str,
+        realm: &str,
+        protocol: KdcProtocol,
+    ) -> Result<Option<srv_targets::SrvAnswer>, Error> {
+        let lookup = match resolver.srv_lookup(query).await {
             Ok(lookup) => lookup,
             Err(source) if source.is_no_records_found() => return Ok(None),
             Err(source) => {
@@ -2558,37 +2590,6 @@ fn parse_kdc_port(endpoint: &str, port: &str) -> Result<u16, Error> {
     port.parse::<u16>()
         .ok()
         .ok_or_else(|| Error::InvalidKdcEndpoint(endpoint.to_owned()))
-}
-
-/// Build the DNS resolver using the explicitly selected server, if any.
-///
-/// # Errors
-///
-/// Returns [`Error::DnsResolverConfig`] when the override is invalid or the
-/// resolver cannot be built.
-#[cfg(feature = "tokio")]
-fn dns_resolver(server: Option<(IpAddr, u16)>) -> Result<TokioResolver, Error> {
-    if let Some((ip, port)) = server {
-        let mut udp = ConnectionConfig::udp();
-        udp.port = port;
-        let mut tcp = ConnectionConfig::tcp();
-        tcp.port = port;
-
-        let mut config = ResolverConfig::default();
-        config.name_servers = vec![NameServerConfig::new(ip, true, vec![udp, tcp])];
-
-        return TokioResolver::builder_with_config(
-            config,
-            runtime::TokioRuntimeProvider::default(),
-        )
-        .build()
-        .map_err(|source| Error::DnsResolverConfig(source.to_string()));
-    }
-
-    TokioResolver::builder_tokio()
-        .map_err(|source| Error::DnsResolverConfig(source.to_string()))?
-        .build()
-        .map_err(|source| Error::DnsResolverConfig(source.to_string()))
 }
 
 /// Resolve every address of an SRV target; IP literals pass through.

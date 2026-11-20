@@ -525,6 +525,11 @@ pub enum Client {
     #[cfg(feature = "tokio")]
     #[error("DNS resolver configuration failed: {0}")]
     DnsResolverConfig(String),
+    /// A registered server locator or host-realm mapper failed or gave a
+    /// refused answer.
+    #[cfg(feature = "tokio")]
+    #[error("server location extension failed: {0}")]
+    Locate(#[source] Box<Extensions>),
     /// A DNS SRV lookup failed (not merely found no record, except for the last
     /// resort lookups of the KDC and `_kerberos-adm` services), or, with
     /// [`Tokio::with_dns_server`], the lookup of an SRV target failed for another

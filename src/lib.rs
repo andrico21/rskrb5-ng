@@ -78,6 +78,8 @@ pub mod cryptography;
 #[cfg(feature = "messages")]
 /// DER helpers: trimming zero padding after a top-level DER value.
 mod der;
+#[cfg(feature = "tokio")]
+pub mod discovery;
 pub mod error;
 pub mod extensions;
 /// Credential-cache and keytab file-name parsing with path-token expansion.

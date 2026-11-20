@@ -5,7 +5,7 @@ use super::{
 };
 
 /// One SRV answer before its targets are resolved.
-pub(super) struct SrvAnswer {
+pub(crate) struct SrvAnswer {
     /// The answer held at least one record, a root one included.
     pub published: bool,
     /// A record named the root target, which stands for no service.
@@ -15,7 +15,7 @@ pub(super) struct SrvAnswer {
 }
 
 /// The endpoints of an SRV set and the targets that gave none.
-pub(super) struct Resolved {
+pub(crate) struct Resolved {
     /// Endpoints in service order.
     pub endpoints: Vec<KdcEndpoint>,
     /// One `target <name>: <reason>` entry for each target skipped because it
@@ -32,7 +32,7 @@ impl Resolved {
     /// # Errors
     /// Returns [`Error::KdcEndpointFailures`], one entry for the set, when no
     /// endpoint resulted and at least one target was skipped.
-    pub(super) fn endpoints_or_failures(
+    pub(crate) fn endpoints_or_failures(
         self,
         realm: &str,
         protocol: KdcProtocol,
@@ -61,7 +61,7 @@ impl Resolved {
 ///
 /// # Cancel safety
 /// cancel-safe: DNS lookups change no credential state.
-pub(super) async fn resolve(
+pub(crate) async fn resolve(
     resolver: &TokioResolver,
     realm: &str,
     protocol: KdcProtocol,

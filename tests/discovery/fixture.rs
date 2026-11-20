@@ -8,7 +8,10 @@ use std::{io, sync::Mutex};
 
 use hickory_resolver::proto::{
     op::{Message, ResponseCode},
-    rr::{Name, RData, Record, RecordType},
+    rr::{
+        Name, RData, Record, RecordType,
+        rdata::{A, CNAME, NULL, PTR, SRV, TXT},
+    },
 };
 use tokio::{net::UdpSocket, task::JoinHandle};
 
@@ -18,6 +21,8 @@ use crate::{TestError, loopback};
 pub(crate) enum Reply {
     /// These records, NOERROR.
     Records(Vec<RData>),
+    /// These records with their own owner names, NOERROR (a CNAME chain).
+    Owned(Vec<(&'static str, RData)>),
     /// NOERROR with an empty answer (NODATA).
     NoData,
     /// An answer-less response with this code (for example NXDOMAIN or SERVFAIL).
@@ -112,6 +117,16 @@ async fn serve(socket: UdpSocket, table: Vec<Rule>, log: Arc<Mutex<Vec<String>>>
                     ));
                 }
             }
+            Some(Reply::Owned(records)) => {
+                for (owner, data) in records {
+                    let Ok(owner_name) = Name::from_ascii(owner) else {
+                        continue;
+                    };
+                    response
+                        .answers
+                        .push(Record::from_rdata(owner_name, 60, data.clone()));
+                }
+            }
             Some(Reply::NoData) => {}
             Some(Reply::Code(code)) => response.metadata.response_code = *code,
             None => response.metadata.response_code = ResponseCode::NXDomain,
@@ -128,4 +143,40 @@ async fn serve(socket: UdpSocket, table: Vec<Rule>, log: Arc<Mutex<Vec<String>>>
 /// A fully qualified [`Name`].
 pub(crate) fn name(text: &str) -> Result<Name, TestError> {
     Ok(Name::from_ascii(text)?)
+}
+
+/// A DNS URI record: priority, weight 0 and the target text (RFC 7553).
+pub(crate) fn uri(priority: u16, text: &str) -> RData {
+    let mut bytes = priority.to_be_bytes().to_vec();
+    bytes.extend_from_slice(&0_u16.to_be_bytes());
+    bytes.extend_from_slice(text.as_bytes());
+    RData::Unknown {
+        code: RecordType::Unknown(256),
+        rdata: NULL::with(bytes),
+    }
+}
+
+/// An SRV record of weight 0.
+pub(crate) fn srv(priority: u16, port: u16, target: &str) -> Result<RData, TestError> {
+    Ok(RData::SRV(SRV::new(priority, 0, port, name(target)?)))
+}
+
+/// A TXT record of one character-string.
+pub(crate) fn txt(text: &str) -> RData {
+    RData::TXT(TXT::new(vec![text.to_owned()]))
+}
+
+/// An A record for `192.0.2.7`, a documentation address that no hosts file names.
+pub(crate) fn documentation() -> RData {
+    RData::A(A::new(192, 0, 2, 7))
+}
+
+/// A CNAME record.
+pub(crate) fn cname(target: &str) -> Result<RData, TestError> {
+    Ok(RData::CNAME(CNAME(name(target)?)))
+}
+
+/// A PTR record.
+pub(crate) fn ptr(target: &str) -> Result<RData, TestError> {
+    Ok(RData::PTR(PTR(name(target)?)))
 }
