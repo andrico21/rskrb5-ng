@@ -675,6 +675,10 @@ pub enum Client {
     /// another mechanism after it (MIT `disable_fallback`).
     #[error("SPAKE preauthentication failed")]
     Spake(#[from] Spake),
+    /// OTP preauthentication failed or was refused before a request was sent
+    /// (RFC 6560); there is no retry of an OTP value.
+    #[error("OTP preauthentication failed")]
+    Otp(#[from] Otp),
     /// Encrypted timestamp is disabled for the client realm
     /// (`[realms] disable_encrypted_timestamp`), and the KDC offered no other
     /// usable mechanism.
@@ -2556,6 +2560,85 @@ pub enum Spake {
     /// The random generator failed.
     #[error("random generator failed")]
     Random(#[from] getrandom::Error),
+}
+#[cfg(feature = "messages")]
+/// OTP preauthentication error (RFC 6560, `preauth::otp`). The stepwise AS
+/// exchange reports it as [`Client::Otp`]. No variant carries an OTP value or a PIN.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum Otp {
+    /// OTP is only ever sent inside FAST, and this exchange has no armor key.
+    #[error("OTP needs FAST armor and this exchange has none")]
+    ArmorRequired,
+    /// The KDC offered `PA-OTP-CHALLENGE` more than once in one reply.
+    #[error("the KDC offered PA-OTP-CHALLENGE more than once")]
+    RepeatedChallenge,
+    /// The `PA-OTP-CHALLENGE` value exceeds the policy's size bound.
+    #[error("the PA-OTP-CHALLENGE exceeds {limit} bytes")]
+    ChallengeTooLarge {
+        /// The bound.
+        limit: usize,
+    },
+    /// The challenge lists more token infos than the policy allows.
+    #[error("the PA-OTP-CHALLENGE lists more than {limit} tokens")]
+    TooManyTokens {
+        /// The bound.
+        limit: usize,
+    },
+    /// A challenge field exceeds the policy's size bound.
+    #[error("the {field} of the PA-OTP-CHALLENGE exceeds {limit} bytes")]
+    FieldTooLong {
+        /// The ASN.1 field name.
+        field: &'static str,
+        /// The bound.
+        limit: usize,
+    },
+    /// The challenge is not a valid RFC 6560 message.
+    #[error("malformed PA-OTP-CHALLENGE: {message}")]
+    Malformed {
+        /// What is wrong, without message bytes.
+        message: String,
+    },
+    /// A token info sets both `collect-pin` and `do-not-collect-pin`
+    /// (RFC 6560 section 4.1: the request is invalid).
+    #[error("a token sets both collect-pin and do-not-collect-pin")]
+    ConflictingPinFlags,
+    /// Every token of the challenge needs a feature this client lacks (MIT
+    /// `No supported tokens`).
+    #[error("none of the {dropped} offered tokens is supported")]
+    NoSupportedTokens {
+        /// How many token infos were dropped.
+        dropped: usize,
+    },
+    /// The answer selects a token the challenge does not list.
+    #[error("token {index} is not one of the {count} offered tokens")]
+    UnknownToken {
+        /// The selected index.
+        index: usize,
+        /// The number of usable tokens.
+        count: usize,
+    },
+    /// The OTP value does not fit the selected token.
+    #[error("the OTP value is refused: {reason}")]
+    ValueRejected {
+        /// Why, without the value.
+        reason: &'static str,
+    },
+    /// The OTP value or the PIN exceeds the policy's size bound.
+    #[error("the OTP value or PIN exceeds {limit} bytes")]
+    ValueTooLong {
+        /// The bound.
+        limit: usize,
+    },
+    /// The token requires a separate PIN and the answer has none.
+    #[error("the token requires a separate PIN")]
+    PinRequired,
+    /// The answer has a PIN for a token that must not collect one.
+    #[error("the token collects no PIN")]
+    PinNotCollected,
+    /// The armor key could not encrypt the nonce.
+    #[error("sealing the OTP nonce failed")]
+    Seal(#[from] Fast),
 }
 #[cfg(feature = "spnego")]
 /// SPNEGO/GSS token processing error.
