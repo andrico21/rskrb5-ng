@@ -36,7 +36,7 @@ passed() {
 require() {
   local line
   line="$(grep -m1 -E -- "$2" "$1")" || {
-    tail -n 20 "$1" >&2
+    tail_scrubbed 20 "$1"
     fail "self-check: $3: no line matches /$2/"
   }
   if [[ -n "${4:-}" ]]; then
@@ -50,7 +50,7 @@ kinit_password() {
   local name="$1" principal="$2" variable="$3"
   printf '%s\n' "${!variable:?}" |
     KRB5_TRACE="$WORK/$name.trace" KRB5CCNAME="FILE:$WORK/$name.cc" kinit "$principal" >"$WORK/$name.out" 2>&1 || {
-    tail -n 20 "$WORK/$name.trace" >&2
+    tail_scrubbed 20 "$WORK/$name.trace"
     fail "self-check: kinit $principal failed"
   }
 }
@@ -58,7 +58,7 @@ kinit_password() {
 # kinit_keytab NAME PRINCIPAL KEYTAB
 kinit_keytab() {
   KRB5_TRACE="$WORK/$1.trace" KRB5CCNAME="FILE:$WORK/$1.cc" kinit -k -t "$OUT/$3" "$2" >"$WORK/$1.out" 2>&1 || {
-    tail -n 20 "$WORK/$1.trace" >&2
+    tail_scrubbed 20 "$WORK/$1.trace"
     fail "self-check: kinit -k $2 failed"
   }
 }
@@ -83,7 +83,7 @@ check_login() {
 check_trust() {
   local cache="$1" service="$2" crossed="$3"
   kvno_as "$cache" "trust-$cache" "$service" || {
-    tail -n 20 "$WORK/trust-$cache.trace" >&2
+    tail_scrubbed 20 "$WORK/trust-$cache.trace"
     fail "self-check: cross-trust kvno $service failed"
   }
   KRB5CCNAME="FILE:$WORK/$cache.cc" klist -e >"$WORK/trust-$cache.klist" 2>&1
@@ -97,7 +97,7 @@ check_referral() {
   kinit_password referral testuser1@USER.RSKRB5 INTEROP_SAMBA_USER_USER_PASSWORD
   KRB5_CONFIG="$profile" KRB5_TRACE="$WORK/referral.trace" KRB5CCNAME="FILE:$WORK/referral.cc" \
     kvno -S HTTP host.res.rskrb5 >"$WORK/referral.out" 2>&1 || {
-    tail -n 20 "$WORK/referral.trace" >&2
+    tail_scrubbed 20 "$WORK/referral.trace"
     fail "self-check: referral of HTTP/host.res.rskrb5 across the trust failed"
   }
   require "$WORK/referral.trace" 'referral.*krbtgt/RES\.RSKRB5@USER\.RSKRB5|krbtgt/RES\.RSKRB5@USER\.RSKRB5.*referral' "referral TGT to RES.RSKRB5" "referral"
@@ -132,7 +132,7 @@ check_s4u() {
   local name="$1" principal="$2" keytab="$3"
   kinit_keytab "$name" "$principal" "$keytab"
   kvno_as "$name" "$name-allowed" -U s4uclient -P HTTP/backend.user.rskrb5@USER.RSKRB5 || {
-    tail -n 20 "$WORK/$name-allowed.trace" >&2
+    tail_scrubbed 20 "$WORK/$name-allowed.trace"
     fail "self-check: $name S4U2Proxy to HTTP/backend.user.rskrb5 failed"
   }
   require "$WORK/$name-allowed.trace" "TGS reply is for s4uclient@USER\\.RSKRB5 -> ${principal//./\\.} " \
@@ -154,7 +154,7 @@ check_kpasswd() {
   printf '%s\n%s\n%s\n' "${INTEROP_SAMBA_USER_KPASSWD_CHECK_PASSWORD:?}" \
     "${INTEROP_SAMBA_USER_KPASSWD_CHECK_NEW_PASSWORD:?}" "$INTEROP_SAMBA_USER_KPASSWD_CHECK_NEW_PASSWORD" |
     KRB5_TRACE="$WORK/kpasswd.trace" KRB5CCNAME="FILE:$WORK/kpasswd.cc" kpasswd kpasswdcheck@USER.RSKRB5 >"$WORK/kpasswd.out" 2>&1 || {
-    tail -n 20 "$WORK/kpasswd.trace" >&2
+    tail_scrubbed 20 "$WORK/kpasswd.trace"
     fail "self-check: kpasswd of kpasswdcheck failed"
   }
   require "$WORK/kpasswd.out" '^Password changed\.$' "kpasswd result" "kpasswd kpasswdcheck"
@@ -167,7 +167,7 @@ check_channel_bindings() {
   local uri=ldaps://dcuser.user.rskrb5 cache="FILE:$WORK/testuser1.cc"
   LDAPTLS_CACERT="$OUT/ldaps-ca.pem" LDAPSASL_CBINDING=tls-endpoint KRB5CCNAME="$cache" \
     ldapwhoami -Q -O maxssf=0 -Y GSSAPI -H "$uri" >"$WORK/cbt-bound.out" 2>&1 || {
-    tail -n 10 "$WORK/cbt-bound.out" >&2
+    tail_scrubbed 10 "$WORK/cbt-bound.out"
     fail "self-check: GSSAPI bind over LDAPS with tls-endpoint channel bindings failed"
   }
   require "$WORK/cbt-bound.out" '^u:USER\\testuser1$' "LDAP identity" "LDAPS GSSAPI with channel bindings"

@@ -11,8 +11,8 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 48
-partial = 67
+implemented = 47
+partial = 68
 absent = 38
 rejected = 8
 omitted = 1
@@ -2047,9 +2047,9 @@ id = "MIT-config-54"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`[plugins]` `disable`, `enable_only`, `module` common relations"
-implementation_status = "implemented"
+implementation_status = "partial"
 evidence_status = "unit"
-missing = ""
+missing = "P2-28 closes the row (register row FU-EXT-P01): the `disable` and `enable_only` consumers are deferred. `extensions::Registry::enabled` applies them to registered providers, but Strict mode still refuses both relations with `NotYetEffective`, and the built-in consumers of `clpreauth`, `ccselect`, `hostrealm` and `localauth` do not run through the registry yet (P2-4, P2-11, P2-15, P2-25 route them); lifting the Strict refusal changes an A7-pinned assertion and needs the recorded decision A7 requires."
 rust_symbols = [
   "extensions::Registry",
   "extensions::Registry::enabled",
@@ -2076,8 +2076,8 @@ feature_flags = []
 security_divergence = "A registered provider is active without a `module` relation, and `module = <id>:<path>` only checks that `<id>` is a registered provider of that interface (the path is ignored and nothing is reordered), where MIT puts `module` entries before the built-ins (`plugin.c:205-252`); any other `module` stays `Config::UnsupportedDynamicModule`. Strict mode still refuses `disable` and `enable_only` with `NotYetEffective` until the built-in consumers route through the registry (P2-4, P2-11, P2-15, P2-25; tests/config/plugin_case.rs::upper_interface_strict_matches_other_interfaces), and a `clpreauth` restriction that excludes `encrypted_timestamp` fails in both modes."
 disposition = "WP-16"
 closing_plan = 2
-closing_todo = 3
-contributors = []
+closing_todo = 28
+contributors = ["P2-3"]
 
 [[feature]]
 id = "MIT-config-55"

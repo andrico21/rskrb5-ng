@@ -65,7 +65,7 @@ provision_domain() {
     --option="kdc enable fast = yes" \
     --option="vfs objects = dfs_samba4 acl_xattr xattr_tdb" \
     --option="dns forwarder = $forwarder" >"$log" 2>&1; then
-    tail -n 25 "$log" >&2
+    tail_scrubbed 25 "$log"
     fail "samba-tool domain provision failed"
   fi
   log "provisioned $REALM (NetBIOS $NETBIOS, DC $DC_NAME.$DNS_DOMAIN, functional level $FUNCTION_LEVEL, forwarder $forwarder)"

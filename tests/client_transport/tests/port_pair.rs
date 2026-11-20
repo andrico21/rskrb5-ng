@@ -16,7 +16,7 @@ use crate::{
     },
     loopback_pair::{
         FIRST_PORT, Order, bind_on, bind_pair_with, bind_tcp_and_udp_pair_with, hold_wildcard,
-        hold_wildcard_v6, with_reserved_port,
+        hold_wildcard_v6, probe_tcp_then_udp_with, with_reserved_port,
     },
 };
 
@@ -596,4 +596,46 @@ fn a_live_listener_is_not_proved_closed() -> Result<(), TestError> {
     assert_eq!(error.kind(), io::ErrorKind::AddrInUse, "{error}");
     drop(listener);
     Ok(())
+}
+
+/// The closed-TCP search of `bind_udp_with_closed_tcp` and `reserve_closed_port` skips a number
+/// whose TCP side still answers after the proof listener was dropped (FU-TST-P07, Y1-07).
+#[test]
+fn an_answering_number_is_skipped_by_the_closed_tcp_then_udp_search() -> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given a connect that the first two numbers drawn answer, as a child process that
+        // inherited the freed proof listener does.
+        let mut drawn = Vec::new();
+        // When the search runs on the proof of the closed-TCP helpers.
+        let udp = with_reserved_port(async |address| {
+            probe_tcp_then_udp_with(address, |probed| {
+                drawn.push(probed.port());
+                drawn.len() <= 2
+            })
+            .await
+        })
+        .await?;
+        // Then the third number is the one whose UDP side the helper returns.
+        assert_eq!(drawn.len(), 3, "{drawn:?}");
+        assert_eq!(drawn.last(), Some(&udp.local_addr()?.port()), "{drawn:?}");
+        Ok::<_, TestError>(())
+    })
+}
+
+/// A number that answers is a collision, not a number the helper may return.
+#[test]
+fn the_closed_tcp_then_udp_proof_reports_an_answering_number_as_a_collision()
+-> Result<(), TestError> {
+    runtime()?.block_on(async {
+        // Given a number whose TCP side is free and answers a connect anyway.
+        let free = reserve_closed_tcp_port()?;
+        let address = SocketAddr::from((Ipv4Addr::LOCALHOST, free));
+        // When the proof of the helper runs.
+        let proof = probe_tcp_then_udp_with(address, |_probed| true).await;
+        // Then it reports the address in use, and no UDP socket is bound.
+        let error = proof.err().ok_or("an answering number was accepted")?;
+        assert_eq!(error.kind(), io::ErrorKind::AddrInUse, "{error}");
+        drop(UdpSocket::bind(address).await?);
+        Ok::<_, TestError>(())
+    })
 }

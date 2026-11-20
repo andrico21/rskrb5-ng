@@ -3,12 +3,26 @@
 //! A test that needs a changed environment re-runs itself in a child test
 //! process (`support/env.rs`); the parent asserts the child's outcome and output.
 
-use core::error::Error;
-use std::{ffi::OsStr, io};
+use core::{error::Error, time::Duration};
+use std::{ffi::OsStr, io, time::SystemTime};
+
+use rskrb5_ng::{
+    client::{
+        build_preauthenticated_tgt_as_req, build_tgt_as_req, options::AsReq, principal::Principal,
+        transport::KdcProtocol,
+    },
+    keytab::EncryptionKey,
+};
+use tokio::{
+    io::{AsyncReadExt as _, AsyncWriteExt as _},
+    net::{TcpListener, TcpStream, UdpSocket},
+    runtime::Builder,
+    time::timeout,
+};
 
 use super::{
     Fixture, assert_negotiated_enctype, assert_negotiated_mechanism, assert_negotiated_padata,
-    assert_ticket_flag, require,
+    assert_ticket_flag, kdc_tap::KdcTap, require,
 };
 use crate::{child_env, closed_port::reserve_closed_tcp_port};
 
@@ -33,6 +47,8 @@ fn child(
             ("INTEROP_REQUIRED", required.0.map(OsStr::new)),
             ("INTEGRATION_REQUIRED", required.1.map(OsStr::new)),
             (ENDPOINT_KEY, endpoint.map(OsStr::new)),
+            // A namespaced run exports its own prefix; these tests name the default container.
+            ("INTEROP_CONTAINER_PREFIX", None),
         ],
     )
 }
@@ -72,6 +88,37 @@ fn required_unreachable_fixture_fails_naming_it() -> Result<(), Box<dyn Error>> 
     assert!(
         report.contains("1 failed"),
         "the child did not fail one test: {report}"
+    );
+    Ok(())
+}
+
+/// A run namespace (`INTEROP_CONTAINER_PREFIX` in the env file) puts its own
+/// container name into the failure, so the report points at the right container.
+#[test]
+fn required_failure_names_the_namespaced_container() -> Result<(), Box<dyn Error>> {
+    const PATH: &str = "harness::tests::required_failure_names_the_namespaced_container";
+    if child_env::in_child(PATH) {
+        return require_in_child();
+    }
+    let endpoint = closed_endpoint()?;
+    let report = child_env::try_run_in_child(
+        PATH,
+        &[
+            ("INTEROP", Some(OsStr::new("1"))),
+            ("INTEROP_REQUIRED", Some(OsStr::new("1"))),
+            ("INTEGRATION_REQUIRED", None),
+            (
+                "INTEROP_CONTAINER_PREFIX",
+                Some(OsStr::new("rskrb5-interop--t34")),
+            ),
+            (ENDPOINT_KEY, Some(OsStr::new(&endpoint))),
+        ],
+    )
+    .err()
+    .ok_or("required mode passed with an unreachable fixture")?;
+    assert!(
+        report.contains("(container rskrb5-interop--t34-mit-kdc)"),
+        "the failure does not name the namespaced container: {report}"
     );
     Ok(())
 }
@@ -199,4 +246,145 @@ fn clear_ticket_flag_is_not_negotiated() {
         assert_ticket_flag("renewable", 8, pre_authent).is_err(),
         "a ticket without RENEWABLE passed"
     );
+}
+
+/// PA-DATA type of PA-ENC-TIMESTAMP (RFC 4120).
+const PA_ENC_TIMESTAMP: i32 = 2;
+
+/// The DER of two AS-REQs: one without PA-DATA and one with a PA-ENC-TIMESTAMP entry.
+fn as_reqs() -> Result<(Vec<u8>, Vec<u8>), Box<dyn Error>> {
+    let client = Principal::user("TEST.RSKRB5", "preauthuser");
+    let options = || {
+        AsReq::new(SystemTime::now(), 7)
+            .with_ticket_lifetime(Duration::from_hours(1))
+            .with_etypes(vec![18_i32])
+    };
+    let key = EncryptionKey::new(18, vec![0x55_u8; 32]);
+    let probe = build_tgt_as_req(client.clone(), options()).map_err(|error| error.to_string())?;
+    let answered = build_preauthenticated_tgt_as_req(client, options(), &key, None)
+        .map_err(|error| error.to_string())?;
+    Ok((probe.der().to_vec(), answered.der().to_vec()))
+}
+
+/// The relay forwards a client's requests over TCP unchanged and records the PA-DATA types of
+/// every AS-REQ in order, so a scenario can assert the mechanism the exchange carried.
+#[test]
+fn the_tap_records_the_padata_of_each_as_req_over_tcp() -> Result<(), Box<dyn Error>> {
+    Builder::new_current_thread()
+        .enable_io()
+        .enable_time()
+        .build()?
+        .block_on(async {
+            // Given a KDC that answers every framed request with a framed marker.
+            let kdc = TcpListener::bind("127.0.0.1:0").await?;
+            let upstream = kdc.local_addr()?.to_string();
+            let server = tokio::spawn(async move {
+                let (mut stream, _peer) = kdc.accept().await?;
+                for _ in 0_u8..2_u8 {
+                    let mut header = [0_u8; 4];
+                    let _header = stream.read_exact(&mut header).await?;
+                    let mut request = vec![0_u8; usize::try_from(u32::from_be_bytes(header))?];
+                    let _body = stream.read_exact(&mut request).await?;
+                    stream.write_all(&[0, 0, 0, 3, b'o', b'k', b'!']).await?;
+                }
+                Ok::<_, Box<dyn Error + Send + Sync>>(())
+            });
+            let tap = KdcTap::start(KdcProtocol::Tcp, &upstream).await?;
+            let (probe, answered) = as_reqs()?;
+            // When a client sends the probe and then the pre-authenticated request.
+            let mut client = TcpStream::connect(tap.endpoint()).await?;
+            for request in [&probe, &answered] {
+                client
+                    .write_all(&u32::try_from(request.len())?.to_be_bytes())
+                    .await?;
+                client.write_all(request).await?;
+                let mut reply = [0_u8; 7];
+                let _answer = client.read_exact(&mut reply).await?;
+                assert_eq!(
+                    &reply,
+                    &[0, 0, 0, 3, b'o', b'k', b'!'],
+                    "the reply was altered"
+                );
+            }
+            server.await?.map_err(|error| error.to_string())?;
+            // Then the relay saw an AS-REQ without PA-DATA, then one with PA-ENC-TIMESTAMP.
+            let seen = tap.as_req_padata()?;
+            assert_eq!(seen, vec![Vec::<i32>::new(), vec![PA_ENC_TIMESTAMP]]);
+            let [probe_types, answered_types] = seen.as_slice() else {
+                return Err("the relay did not record two AS-REQs".into());
+            };
+            assert_negotiated_padata("the answered AS-REQ", PA_ENC_TIMESTAMP, answered_types)?;
+            assert!(
+                assert_negotiated_padata("the probe", PA_ENC_TIMESTAMP, probe_types).is_err(),
+                "a request without PA-DATA passed for PA-ENC-TIMESTAMP"
+            );
+            Ok(())
+        })
+}
+
+/// The same over UDP: one datagram out, the KDC's answer back, the PA-DATA types recorded.
+#[test]
+fn the_tap_records_the_padata_of_each_as_req_over_udp() -> Result<(), Box<dyn Error>> {
+    Builder::new_current_thread()
+        .enable_io()
+        .enable_time()
+        .build()?
+        .block_on(async {
+            // Given a KDC that answers a datagram with a marker.
+            let kdc = UdpSocket::bind("127.0.0.1:0").await?;
+            let upstream = kdc.local_addr()?.to_string();
+            let server = tokio::spawn(async move {
+                let mut buffer = vec![0_u8; 0x1_0000];
+                let (_length, peer) = kdc.recv_from(&mut buffer).await?;
+                let _sent = kdc.send_to(b"ok!", peer).await?;
+                Ok::<_, io::Error>(())
+            });
+            let tap = KdcTap::start(KdcProtocol::Udp, &upstream).await?;
+            let (_probe, answered) = as_reqs()?;
+            // When a client sends the pre-authenticated request.
+            let client = UdpSocket::bind("127.0.0.1:0").await?;
+            let _sent = client.send_to(&answered, tap.endpoint()).await?;
+            let mut reply = [0_u8; 3];
+            let (received, _peer) = timeout(Duration::from_secs(5), client.recv_from(&mut reply))
+                .await
+                .map_err(|_elapsed| "no answer through the relay")??;
+            assert_eq!(received, 3);
+            assert_eq!(&reply, b"ok!");
+            server.await??;
+            // Then the relay recorded PA-ENC-TIMESTAMP.
+            assert_eq!(tap.as_req_padata()?, vec![vec![PA_ENC_TIMESTAMP]]);
+            Ok(())
+        })
+}
+
+/// A relay that cannot reach its KDC reports the failure instead of an empty record.
+#[test]
+fn a_relay_failure_is_reported_not_read_as_no_preauth() -> Result<(), Box<dyn Error>> {
+    Builder::new_current_thread()
+        .enable_io()
+        .enable_time()
+        .build()?
+        .block_on(async {
+            // Given a relay whose upstream refuses the connection.
+            let closed = reserve_closed_tcp_port()?;
+            let tap = KdcTap::start(KdcProtocol::Tcp, &format!("127.0.0.1:{closed}")).await?;
+            let (_probe, answered) = as_reqs()?;
+            // When a client sends a request.
+            let mut client = TcpStream::connect(tap.endpoint()).await?;
+            client
+                .write_all(&u32::try_from(answered.len())?.to_be_bytes())
+                .await?;
+            client.write_all(&answered).await?;
+            let mut reply = [0_u8; 1];
+            let read = timeout(Duration::from_secs(5), client.read(&mut reply))
+                .await
+                .map_err(|_elapsed| "the relay neither answered nor closed")?;
+            // Then the client sees the connection end, and the record says why.
+            assert!(matches!(read, Ok(0) | Err(_)), "{read:?}");
+            assert!(
+                tap.as_req_padata().is_err(),
+                "a relay that could not reach its KDC reported an empty record"
+            );
+            Ok(())
+        })
 }

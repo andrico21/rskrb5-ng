@@ -19,7 +19,13 @@
 #                                                 e.g. interop_suite mit interop_mit mit-kdc
 #   Names: container `rskrb5-interop-<name>` (interop_container_name), on the
 #   user-defined network `rskrb5-interop`, labelled `rskrb5-interop=1` (down
-#   removes every labelled container, network and volume). Images are tagged
+#   removes every labelled container, network and volume). All three derive
+#   from INTEROP_PREFIX, which INTEROP_NAMESPACE=<ns> turns into
+#   `rskrb5-interop--<ns>` (FU-IOP-P01): build every name from INTEROP_PREFIX,
+#   INTEROP_NETWORK, INTEROP_LABEL and interop_container_name, never a literal.
+#   Host ports: `interop_port VARIABLE DEFAULT` (the variable wins, else the
+#   default plus INTEROP_PORT_OFFSET); a literal `${VARIABLE:-1234}` fails the
+#   self-test. Images are tagged
 #   `rskrb5-interop/<name>:<12 hex of the build context sha256>` (fixture.sh
 #   excluded, also through .dockerignore), never latest;
 #   base images are pinned by digest in the Dockerfile. Ports are published on
@@ -30,7 +36,13 @@
 #   profile fragments in /etc/krb5.conf.d/ and /etc/krb5kdc/kdc.conf.d/.
 # Secrets. Generated per run on the host (interop_new_secret), delivered into
 #   the container's tmpfs /run/interop/secrets (interop_deliver_secrets, NAME=
-#   value lines, values [A-Za-z0-9]), never passed as `-e`, never COPY'd.
+#   value lines, values [A-Za-z0-9]), never passed as `-e`, never COPY'd. Every
+#   secret is appended to the run's secret inventory (interop_inventory_init in
+#   `up`, before any secret-bearing step) the moment it is drawn or recorded
+#   with `interop_env KEY` under a secret key; log redaction reads the inventory
+#   and refuses (no log is copied, LOG-UPLOAD-REFUSED.txt says why) when it is
+#   missing or unusable (Y1-01). Container scripts that print tool output
+#   scrub it with the secrets they loaded (samba/lib-dc.sh scrub).
 # Readiness. The container writes /run/interop/ready when it serves;
 #   interop_wait_ready waits for it with a bound (INTEROP_READY_TIMEOUT,
 #   default 180 s) and fails naming the fixture and its container, with the
@@ -56,14 +68,40 @@
 #   is a test failure whose message names the fixture, its endpoint and its
 #   container. Every scenario asserts the negotiated mechanism or protocol
 #   (harness::assert_negotiated_* helpers) so a fallback cannot pass.
+# Liveness. After the last suite `run.sh all` calls interop_check_alive: every
+#   registered fixture's container and every other labelled container must
+#   still run, or the run fails naming it (Y1-05).
 # Suites. `run.sh test <suite>` runs `cargo test --all-features --locked
 #   --test <target> -- --nocapture --test-threads=1` and, in required mode,
 #   fails unless every listed `scenarios::` test printed `interop: ran` and
 #   none printed SKIP; on failure it prints the state of the suite's fixtures.
 # =============================================================================
 
-readonly INTEROP_NETWORK=rskrb5-interop
-readonly INTEROP_LABEL=rskrb5-interop
+# Run namespace (FU-IOP-P01). INTEROP_NAMESPACE (default empty) scopes every
+# name this run creates: the label key, the network (and the isolated peer
+# network), the containers and the check containers all start with
+# INTEROP_PREFIX, so `up` and `down` of one namespace never touch the
+# resources of another run on the same container runtime. With no namespace
+# the prefix is `rskrb5-interop` (today's names). A namespace is [a-z][a-z0-9]*
+# of at most 16 characters and joins as `rskrb5-interop--<namespace>`: the
+# double hyphen cannot occur right after the prefix of an un-namespaced
+# container (`rskrb5-interop-<fixture>`, fixture names start with a letter),
+# so two namespaces, or one namespace and the default, cannot collide.
+# INTEROP_PORT_OFFSET (default 0) moves every default host port by a number
+# (interop_port); the state directory is target/interop[-<namespace>].
+if [[ -n "${INTEROP_NAMESPACE:-}" && ! "${INTEROP_NAMESPACE}" =~ ^[a-z][a-z0-9]{0,15}$ ]]; then
+  printf 'interop: ERROR: INTEROP_NAMESPACE must match [a-z][a-z0-9]* (at most 16 characters), not "%s"\n' \
+    "$INTEROP_NAMESPACE" >&2
+  return 1
+fi
+if [[ -n "${INTEROP_PORT_OFFSET:-}" && ! "${INTEROP_PORT_OFFSET}" =~ ^[0-9]{1,5}$ ]]; then
+  printf 'interop: ERROR: INTEROP_PORT_OFFSET must be a number of at most five digits, not "%s"\n' \
+    "$INTEROP_PORT_OFFSET" >&2
+  return 1
+fi
+readonly INTEROP_PREFIX="rskrb5-interop${INTEROP_NAMESPACE:+--$INTEROP_NAMESPACE}"
+readonly INTEROP_NETWORK="$INTEROP_PREFIX"
+readonly INTEROP_LABEL="$INTEROP_PREFIX"
 INTEROP_FIXTURES=()
 INTEROP_SUITE_NAMES=()
 INTEROP_SUITE_TARGETS=()
@@ -117,7 +155,19 @@ interop_fixture_id() {
 }
 
 interop_container_name() {
-  printf 'rskrb5-interop-%s' "$1"
+  printf '%s-%s' "$INTEROP_PREFIX" "$1"
+}
+
+# interop_port VARIABLE DEFAULT: prints the host port a fixture publishes: the
+# value of VARIABLE when set, else DEFAULT plus INTEROP_PORT_OFFSET.
+interop_port() {
+  local port="${!1:-}"
+  if [[ -z "$port" ]]; then
+    port=$(($2 + 10#${INTEROP_PORT_OFFSET:-0}))
+  fi
+  [[ "$port" =~ ^[0-9]+$ ]] && ((port >= 1 && port <= 65535)) ||
+    interop_die "host port for $1 is '$port', not a port number" || return 1
+  printf '%s' "$port"
 }
 
 interop_fixture() {
@@ -159,6 +209,9 @@ interop_env() {
   local name="$1" known
   [[ "$name" =~ ^(INTEROP|INTEGRATION)_[A-Z0-9_]+$ || "$name" == INTEROP ]] ||
     interop_die "invalid env-file key '$name'" || return 1
+  if interop_is_secret_name "$name"; then
+    interop_inventory_add "$2" || return 1
+  fi
   printf -v "$name" '%s' "$2"
   for known in "${INTEROP_ENV_NAMES[@]}"; do
     [[ "$known" == "$name" ]] && return 0
@@ -238,9 +291,11 @@ interop_print_env() {
 }
 
 # Prints the non-empty secret values of FILE, one per line (for redaction).
+# Fails when FILE is missing or cannot be sourced: a redaction without its
+# secrets must not look like a redaction (Y1-01).
 interop_secret_values() {
   local file="$1"
-  [[ -f "$file" ]] || return 0
+  [[ -f "$file" ]] || interop_die "no secret inventory at $file" || return 1
   (
     local name
     local -a names=()
@@ -262,7 +317,34 @@ interop_new_secret() {
   local value
   value="$(head -c 96 /dev/urandom | base64 -w0 | tr -dc 'A-Za-z0-9')"
   ((${#value} >= 24)) || interop_die "could not generate a secret" || return 1
+  interop_inventory_add "${value:0:24}" || return 1
   printf '%s' "${value:0:24}"
+}
+
+# Secret inventory (Y1-01). `up` creates a private append-only file before any
+# secret-bearing step (interop_inventory_init); every secret value is appended
+# to it the moment it is drawn (interop_new_secret) or recorded under a secret
+# key (interop_env), one `export INTEROP_INVENTORY_<n>_SECRET=<%q value>` line
+# each, so the redaction of fixture logs knows every secret even when `up`
+# fails before it writes the env file. The inventory is optional only while
+# INTEROP_SECRET_INVENTORY is unset (self-tests, redact.sh); once it is set, a
+# vanished file is an error.
+interop_inventory_init() {
+  local file="$1"
+  interop_prepare_private_dir "$(dirname -- "$file")" || return 1
+  (umask 077 && : >"$file") || interop_die "could not create the secret inventory $file" || return 1
+  chmod 600 "$file" || return 1
+  INTEROP_SECRET_INVENTORY="$file"
+}
+
+# interop_inventory_add VALUE: appends a secret value; a no-op for an empty
+# value or while no inventory is active.
+interop_inventory_add() {
+  [[ -n "$1" && -n "${INTEROP_SECRET_INVENTORY:-}" ]] || return 0
+  [[ -f "$INTEROP_SECRET_INVENTORY" ]] ||
+    interop_die "the secret inventory $INTEROP_SECRET_INVENTORY is missing" || return 1
+  printf 'export INTEROP_INVENTORY_%d_SECRET=%q\n' "$(($(wc -l <"$INTEROP_SECRET_INVENTORY") + 1))" "$1" \
+    >>"$INTEROP_SECRET_INVENTORY"
 }
 
 # interop_deliver_secrets CONTAINER KEY...: streams `KEY=value` lines into the
@@ -288,10 +370,25 @@ interop_image_tag() {
 # interop_build_image NAME CONTEXT: builds once per context hash; prints the tag.
 interop_build_image() {
   local name="$1" context="$2" tag size
+  local -a options=()
+  # FU-IOP-P02: INTEROP_BUILD_CA_DIR names a directory of extra root
+  # certificates (*.crt, PEM) for a host behind a TLS-inspecting proxy. It is
+  # mounted read-only at /usr/local/share/ca-certificates during the build, the
+  # directory Debian's ca-certificates package reads; the Dockerfiles' sha256
+  # and PGP checks of the downloads still bind. Off by default (CI never sets
+  # it); `docker build` cannot mount a directory, so it needs podman.
+  if [[ -n "${INTEROP_BUILD_CA_DIR:-}" ]]; then
+    [[ "$INTEROP_RT" == podman ]] ||
+      interop_die "INTEROP_BUILD_CA_DIR needs INTEROP_RUNTIME=podman: docker build cannot mount a directory" || return 1
+    [[ -d "$INTEROP_BUILD_CA_DIR" ]] ||
+      interop_die "INTEROP_BUILD_CA_DIR=$INTEROP_BUILD_CA_DIR is not a directory" || return 1
+    options+=(--volume "$INTEROP_BUILD_CA_DIR:/usr/local/share/ca-certificates:ro")
+  fi
   tag="$(interop_image_tag "$name" "$context")" || return 1
   if ! interop_rt image inspect "$tag" >/dev/null 2>&1; then
     interop_log "building image $tag from ${context#"$INTEROP_ROOT"/}"
-    interop_rt build -t "$tag" "$context" >&2 || interop_die "image build failed for fixture $name" || return 1
+    interop_rt build ${options[@]+"${options[@]}"} -t "$tag" "$context" >&2 ||
+      interop_die "image build failed for fixture $name" || return 1
   fi
   size="$(interop_rt image inspect -f '{{.Size}}' "$tag")"
   interop_log "image $tag size $size bytes"
@@ -329,11 +426,20 @@ interop_redact_stream() {
 # Prints the last lines of a container log with the secrets recorded so far
 # in this run (interop_env) redacted.
 interop_log_tail() {
-  local name
+  local name value inventory
   local -a secrets=()
   for name in "${INTEROP_ENV_NAMES[@]}"; do
     interop_is_secret_name "$name" && secrets+=("${!name:-}")
   done
+  if [[ -n "${INTEROP_SECRET_INVENTORY:-}" ]]; then
+    if ! inventory="$(interop_secret_values "$INTEROP_SECRET_INVENTORY")"; then
+      interop_log "log tail of $1 withheld: the secret inventory is unusable"
+      return 0
+    fi
+    while IFS= read -r value; do
+      [[ -n "$value" ]] && secrets+=("$value")
+    done <<<"$inventory"
+  fi
   interop_rt logs --tail 40 "$1" 2>&1 | interop_redact_stream "${secrets[@]}" >&2 || true
 }
 
@@ -419,4 +525,27 @@ interop_run_container() {
   interop_rt run -d --name "$(interop_container_name "$fixture")" \
     --label "$INTEROP_LABEL=1" --network "$INTEROP_NETWORK" \
     --tmpfs /run/interop:rw,mode=0700 "$@" "$image" >/dev/null
+}
+
+# interop_check_alive: fails, naming each one, unless every registered
+# fixture's container and every other container this run labelled is still
+# running (Y1-05). `all` calls it after the last suite and before it reports
+# success, so a fixture that died after its own startup check cannot pass.
+interop_check_alive() {
+  local fixture name state status=0
+  for fixture in "${INTEROP_FIXTURES[@]}"; do
+    state="$(interop_container_state "$(interop_container_name "$fixture")")"
+    if [[ "$state" != running ]]; then
+      interop_log "fixture $fixture (container $(interop_container_name "$fixture")) is not running at the end of the run (state: $state)"
+      status=1
+    fi
+  done
+  for name in $(interop_rt ps -a --filter "label=$INTEROP_LABEL" --format '{{.Names}}' 2>/dev/null); do
+    state="$(interop_container_state "$name")"
+    if [[ "$state" != running ]]; then
+      interop_log "container $name is not running at the end of the run (state: $state)"
+      status=1
+    fi
+  done
+  return "$status"
 }

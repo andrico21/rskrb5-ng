@@ -75,8 +75,8 @@ everything else is timeless or a dated record.
   `--all-features` entry. `feature_closures.py check-ci` keeps the matrix complete.
 - **CI jobs:** the blocking and the advisory sets are the ones named in project rule 8;
   `overlay_facts.py` compares them with the jobs of `.github/workflows/ci.yml`.
-- **Fuzz targets:** `fuzz/fuzz_targets/` holds 16 `.rs` files and `fuzz/Cargo.toml` declares
-  15 `[[bin]]` targets. `session_ticket.rs` is a shared helper module, not a target.
+- **Fuzz targets:** `fuzz/fuzz_targets/` holds 17 `.rs` files and `fuzz/Cargo.toml` declares
+  16 `[[bin]]` targets. `session_ticket.rs` is a shared helper module, not a target.
 - **Review backlog:** closed. The row and key totals are in `docs/review/README.md`
   "Totals".
 - **Ambient inputs:** 14 audited reader functions (16 reader/variable inventory entries
@@ -134,7 +134,8 @@ everything else is timeless or a dated record.
 8. **CI is the core Section 12 list plus rmcp-server-kit's stricter practice,** all
    blocking: `fmt`; clippy and tests in every feature closure (`closures`);
    `clippy-windows`; `lib-feature-sets`; `readme-commands`; `test` on Linux, macOS and
-   Windows; `i686`; `docs` (rustdoc `-D warnings` on stable and the dated nightly);
+   Windows; `setid` on Linux and macOS (the real set-id decision of `secure_env` in a
+   privileged copy of the test binary); `i686`; `docs` (rustdoc `-D warnings` on stable and the dated nightly);
    `msrv`; `semver-checks`; `publish-dryrun`; `consumer` (the packaged crate as a path
    dependency with warnings denied, in the consumer's feature set and with default
    features); `deny`; `audit`; `vet`; `machete`; `taplo`; `docs-validate`; `lint-gates`

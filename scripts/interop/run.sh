@@ -4,10 +4,15 @@
 set -euo pipefail
 
 INTEROP_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-INTEROP_STATE_DIR="${INTEROP_STATE_DIR:-"$INTEROP_ROOT/target/interop"}"
-INTEROP_ENV_FILE="$INTEROP_STATE_DIR/interop.env"
+# The self-test checks the default names and ports: it ignores a namespace, an
+# offset or a CA directory the caller exported for a real run.
+if [[ "${1:-}" == self-test ]]; then
+  unset INTEROP_NAMESPACE INTEROP_PORT_OFFSET INTEROP_BUILD_CA_DIR INTEROP_SECRET_INVENTORY
+fi
 # shellcheck source=scripts/interop/lib.sh
 source "$INTEROP_ROOT/scripts/interop/lib.sh"
+INTEROP_STATE_DIR="${INTEROP_STATE_DIR:-"$INTEROP_ROOT/target/interop${INTEROP_NAMESPACE:+-$INTEROP_NAMESPACE}"}"
+INTEROP_ENV_FILE="$INTEROP_STATE_DIR/interop.env"
 
 usage() {
   cat <<'EOF'
@@ -37,10 +42,22 @@ Environment:
   INTEROP_RUNTIME       docker | podman (default: docker if its daemon answers,
                         else podman). Plain run/exec, user-defined network, no
                         compose, no privileged containers.
-  INTEROP_STATE_DIR     Private per-run directory (default target/interop):
-                        env file, keytabs and caches, mode 0700/0600.
+  INTEROP_STATE_DIR     Private per-run directory (default target/interop, or
+                        target/interop-<namespace>): env file, secret inventory,
+                        keytabs and caches, mode 0700/0600.
+  INTEROP_NAMESPACE     Optional run namespace ([a-z][a-z0-9]*, at most 16
+                        characters). Every container, network and label of the
+                        run is named rskrb5-interop--<namespace>..., so `up` and
+                        `down` of two namespaces never touch each other.
+  INTEROP_PORT_OFFSET   Number added to every default host port (the fixtures'
+                        *_PORT variables still win), so two concurrent runs can
+                        publish side by side.
   INTEROP_LOG_DIR       Where `down` puts redacted fixture logs.
   INTEROP_READY_TIMEOUT Readiness bound per fixture in seconds (default 180).
+  INTEROP_BUILD_CA_DIR  podman only: a directory of extra root certificates
+                        mounted read-only at /usr/local/share/ca-certificates
+                        during image builds (hosts behind a TLS-inspecting
+                        proxy); off by default, the download pins still bind.
   INTEROP_MIT_KDC_PORT, INTEROP_MIT_KPASSWD_PORT, INTEROP_MIT_KADMIN_PORT
                         Host ports of the MIT fixture (18088, 18464, 18749).
 
@@ -75,10 +92,13 @@ cmd_up() {
   interop_remove_all >/dev/null 2>&1 || true
   rm -rf "$INTEROP_STATE_DIR"
   interop_prepare_private_dir "$INTEROP_STATE_DIR"
+  # The secret inventory exists before the first secret-bearing step (Y1-01).
+  interop_inventory_init "$INTEROP_STATE_DIR/secrets.inventory" || return 1
   INTEROP_ENV_NAMES=()
   interop_env INTEROP 1
   interop_env INTEROP_RUNTIME "$INTEROP_RT"
   interop_env INTEROP_STATE_DIR "$INTEROP_STATE_DIR"
+  interop_env INTEROP_CONTAINER_PREFIX "$INTEROP_PREFIX"
   interop_create_network
   local fixture id
   for fixture in "${INTEROP_FIXTURES[@]}"; do
@@ -91,8 +111,21 @@ cmd_up() {
   interop_print_env "$INTEROP_ENV_FILE" >&2
 }
 
+# refuse_log_upload DEST REASON: leaves only a refusal note in DEST (Y1-01).
+refuse_log_upload() {
+  mkdir -p "$1"
+  printf 'interop: the fixture logs were not uploaded: %s\n' "$2" >"$1/LOG-UPLOAD-REFUSED.txt"
+  interop_die "log upload refused: $2"
+}
+
+# Writes the redacted logs of the run to DEST, or refuses (Y1-01): the logs are
+# redacted in the private state directory with the secret inventory first, and
+# only fully redacted files are copied to DEST. A missing inventory or a failed
+# redaction leaves DEST with LOG-UPLOAD-REFUSED.txt and no log, and fails.
 collect_logs() {
-  local dest="$1" container fixture id raw
+  local dest="$1" container fixture id raw inventory file
+  inventory="$INTEROP_STATE_DIR/secrets.inventory"
+  [[ -f "$inventory" ]] || refuse_log_upload "$dest" "no secret inventory at $inventory" || return 1
   raw="$INTEROP_STATE_DIR/raw-logs"
   interop_prepare_private_dir "$raw" || return 1
   for container in $(interop_rt ps -a --filter "label=$INTEROP_LABEL" --format '{{.Names}}' 2>/dev/null); do
@@ -104,11 +137,14 @@ collect_logs() {
       "fixture_${id}_logs" "$raw" || true
     fi
   done
-  mkdir -p "$dest"
-  local file
   for file in "$raw"/*; do
     [[ -f "$file" ]] || continue
-    "$INTEROP_ROOT/scripts/interop/redact.sh" "$INTEROP_ENV_FILE" "$file"
+    "$INTEROP_ROOT/scripts/interop/redact.sh" "$inventory" "$file" ||
+      refuse_log_upload "$dest" "redacting $(basename -- "$file") failed" || return 1
+  done
+  mkdir -p "$dest"
+  for file in "$raw"/*; do
+    [[ -f "$file" ]] || continue
     cp "$file" "$dest/"
   done
   interop_log "redacted fixture logs in $dest"
@@ -116,10 +152,13 @@ collect_logs() {
 
 cmd_down() {
   interop_detect_runtime
-  if [[ -n "${INTEROP_LOG_DIR:-}" ]]; then
-    collect_logs "$INTEROP_LOG_DIR" || interop_log "log collection failed"
-  fi
   local status=0
+  if [[ -n "${INTEROP_LOG_DIR:-}" ]]; then
+    collect_logs "$INTEROP_LOG_DIR" || {
+      interop_log "log collection failed"
+      status=1
+    }
+  fi
   interop_remove_all || status=1
   rm -rf "$INTEROP_STATE_DIR"
   interop_log "cleanup receipt: state directory $INTEROP_STATE_DIR removed"
@@ -176,6 +215,9 @@ cmd_all() {
   for suite in "${INTEROP_SUITE_NAMES[@]}"; do
     (cmd_test "$suite") || status=1
   done
+  # Y1-05: a fixture that died after its startup check fails the run, even
+  # when no scenario asked for it.
+  interop_check_alive || status=1
   trap - EXIT
   cmd_down || status=1
   if ((status != 0)); then

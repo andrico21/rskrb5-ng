@@ -8,9 +8,16 @@ use crate::{
 
 /// Parse `text` with `module` resolved against `registry`.
 /// # Errors
-/// Returns the parser error, `UnsupportedDynamicModule` for an unregistered
+/// Returns `IncludeTooLarge` for text over the source bound (before any provider is
+/// consulted), the parser error, `UnsupportedDynamicModule` for an unregistered
 /// profile provider, or the provider's failure or oversized output.
 pub(super) fn compose(registry: &Registry, text: &str, mode: ParseMode) -> Result<Config, Error> {
+    if text.len() > MAX_INCLUDE_BYTES {
+        return Err(Error::Config(ConfigError::IncludeTooLarge {
+            bytes: text.len(),
+            limit: MAX_INCLUDE_BYTES,
+        }));
+    }
     let names = order::module_names(registry);
     let Some((name, residual)) = config::profile_module_directive(text) else {
         return Ok(config::compose_with_modules(text, mode, names)?);
