@@ -88,16 +88,32 @@ pub fn resolve(name: &str, version: CacheVersion) -> Result<Box<dyn CacheHandle>
     {
         return store.resolve(residual);
     }
+    if let Some(handle) = non_file(&expanded) {
+        return handle;
+    }
     match expanded.split_once(':') {
         Some((prefix, residual)) if prefix.eq_ignore_ascii_case("DIR") => {
             DirStore::new(version).resolve(residual)
         }
-        Some((prefix, residual)) if prefix.eq_ignore_ascii_case("KCM") => kcm::resolve(residual),
-        Some((prefix, residual)) if prefix.eq_ignore_ascii_case("KEYRING") => {
-            Keyring::new().resolve(residual)
-        }
         _ => FileStore::new(version)
             .resolve(&direct_file_path_from_cache_name(&expanded)?.to_string_lossy()),
+    }
+}
+
+/// The handle of a built-in non-file cache name, `None` for any other name.
+///
+/// The types are `KCM` and `KEYRING` (the `ccache-keyring` leaf on Linux), as
+/// [`resolve`] dispatches them; the name is already expanded. The cache-name
+/// route of [`CCache::load_name`] and [`CCache::save_name`] reaches them here.
+pub(super) fn non_file(name: &str) -> Option<Result<Box<dyn CacheHandle>, Error>> {
+    match name.split_once(':') {
+        Some((prefix, residual)) if prefix.eq_ignore_ascii_case("KCM") => {
+            Some(kcm::resolve(residual))
+        }
+        Some((prefix, residual)) if prefix.eq_ignore_ascii_case("KEYRING") => {
+            Some(Keyring::new().resolve(residual))
+        }
+        _ => None,
     }
 }
 

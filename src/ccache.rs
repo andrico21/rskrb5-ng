@@ -196,10 +196,8 @@ impl CCache {
     /// # Ambient input
     /// Reads `KRB5CCNAME`; use [`CCache::load_name`] for an explicit name.
     ///
-    /// Only file-backed cache names are supported: bare paths, `FILE:path`,
-    /// `WRFILE:path`, `DIR:directory`, and subsidiary `DIR::path` cache
-    /// names. Platform stores such as `KCM:`, `KEYRING:`, and `API:` are
-    /// rejected explicitly.
+    /// The names of [`CCache::load_name`] are supported; other types such as
+    /// `API:` are rejected explicitly.
     ///
     /// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
     /// ignores them (`secure_getenv`); see the secure-environment decision of
@@ -219,8 +217,10 @@ impl CCache {
     /// Load and parse a credential cache by MIT-style cache name.
     ///
     /// Bare paths, `FILE:path`, `WRFILE:path`, `DIR:directory`, and
-    /// subsidiary `DIR::path` cache names are supported, and the names of
-    /// stores installed with [`crate::extensions::Registry::install_stores`].
+    /// subsidiary `DIR::path` cache names are supported, the built-in `KCM:`
+    /// and (with the `ccache-keyring` leaf on Linux) `KEYRING:` types, and the
+    /// names of stores installed with
+    /// [`crate::extensions::Registry::install_stores`].
     ///
     /// # Errors
     ///
@@ -236,13 +236,14 @@ impl CCache {
         )
     }
 
-    /// Load an already-expanded name: an installed store's cache, else a file.
+    /// Load an already-expanded name: an installed store's cache, else a
+    /// built-in `KCM` or `KEYRING` cache, else a file.
     ///
     /// # Errors
-    /// Returns the errors of the installed store, or of [`Self::resolved_file_path`]
+    /// Returns the errors of the store, or of [`Self::resolved_file_path`]
     /// and [`Self::load`].
     pub(crate) fn load_resolved_name(name: &str) -> Result<Self, Error> {
-        match stores::installed_cache(name)? {
+        match stores::store_cache(name)? {
             Some(cache) => cache.load(),
             None => Self::load(Self::resolved_file_path(name)?),
         }
@@ -290,8 +291,10 @@ impl CCache {
     /// Save this credential cache by MIT-style cache name.
     ///
     /// Bare paths, `FILE:path`, `WRFILE:path`, `DIR:directory`, and
-    /// subsidiary `DIR::path` cache names are supported, and the names of
-    /// stores installed with [`crate::extensions::Registry::install_stores`].
+    /// subsidiary `DIR::path` cache names are supported, the built-in `KCM:`
+    /// and (with the `ccache-keyring` leaf on Linux) `KEYRING:` types, and the
+    /// names of stores installed with
+    /// [`crate::extensions::Registry::install_stores`].
     ///
     /// # Errors
     ///
@@ -311,7 +314,7 @@ impl CCache {
     /// # Errors
     /// Returns serialization, path and filesystem failures.
     pub(crate) fn save_resolved_name(&self, cache_name: &str) -> Result<(), Error> {
-        if let Some(cache) = stores::installed_cache(cache_name)? {
+        if let Some(cache) = stores::store_cache(cache_name)? {
             return cache.replace(self);
         }
         self.save(Self::resolved_file_path(cache_name)?)?;

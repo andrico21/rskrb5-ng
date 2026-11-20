@@ -3,11 +3,12 @@
 use std::{
     fs,
     io::{self, Write as _},
+    process,
 };
 
 use rskrb5_ng::{
     ccache::{
-        file_store,
+        CCache, file_store,
         keyring::{Fault, KernelError},
         stores::CacheVersion,
     },
@@ -186,6 +187,31 @@ fn credential_over_the_key_quota_is_refused() -> Result<(), TestError> {
         ),
         "{:?}",
         stored.map(|()| "stored")
+    );
+    Ok(())
+}
+
+/// The cache-name route reaches the built-in type (register row FU-KEY-P04):
+/// [`CCache::save_name`] then [`CCache::load_name`] round-trip a
+/// `KEYRING:process:` cache, as `file_store::resolve` does.
+#[test]
+fn cache_names_reach_the_keyring() -> Result<(), TestError> {
+    if !available("cache_names_reach_the_keyring")? {
+        return Ok(());
+    }
+    let residual = format!("process:rskrb5ng-test-name-route-{}", process::id());
+    let name = format!("KEYRING:{residual}");
+    let mut cache = CCache::new(principal("alice"));
+    drop(cache.upsert_credential(credential("krbtgt/EXAMPLE.COM", b"route".to_vec())));
+    cache.save_name(&name)?;
+    let loaded = CCache::load_name(&name)?;
+    open(&residual)?.destroy()?;
+    assert_eq!(loaded.default_principal(), &principal("alice"));
+    assert_eq!(
+        loaded
+            .get_entry(&["krbtgt", "EXAMPLE.COM"])
+            .map(|item| item.ticket().to_vec()),
+        Some(b"route".to_vec())
     );
     Ok(())
 }
