@@ -393,10 +393,11 @@ fn canonicalization_is_accepted_only_under_fast() -> Result<(), TestError> {
     Ok(())
 }
 
-/// A client referral (RFC 6806 section 7) is followed only when the caller
-/// asked for canonicalization and the armor authenticated the referral; the
-/// referred realm is armored again, and without armor for it the exchange
-/// fails closed.
+/// A client referral (RFC 6806 section 7) is followed only when asked for and armored.
+///
+/// The caller asked for canonicalization and the armor authenticated the
+/// referral; the referred realm is armored again, and without armor for it the
+/// exchange fails closed.
 #[test]
 fn client_referrals_are_followed_only_when_armored_and_asked_for() -> Result<(), TestError> {
     let mut kdc = Kdc::referring(OTHER);

@@ -543,7 +543,7 @@ fn enc_part(
 /// The armored `KDC_ERR_WRONG_REALM` that refers the client to `realm`.
 fn wrong_realm(context: &Context, inner: &KrbFastReq, realm: &str) -> Result<Vec<u8>, TestError> {
     let mut referral = error(inner, None)?;
-    referral.error_code = 68;
+    referral.error_code = 68_i32;
     referral.crealm = Some(string(realm)?);
     let response = KrbFastResponse {
         padata: vec![pa(PA_FX_ERROR, der::encode(&referral)?)],
