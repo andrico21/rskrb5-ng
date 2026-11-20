@@ -62,6 +62,17 @@ mod password_dns;
 mod password_result;
 /// The primary-KDC retry of an initial login.
 mod primary;
+/// MS-KKDCP endpoints: the request through the KDC proxy transport.
+mod proxied;
+/// `https://` endpoints through a caller's KDC proxy transport.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod proxy_tests;
 /// Configured realm protocol preference.
 mod realm_auto;
 /// Ordered SRV target address resolution.
@@ -105,6 +116,7 @@ use crate::{
     krb_error::decode as decode_krb_error,
     messages::secret_der::SecretDer,
     trace::{Guard, TransportStep},
+    transport::proxy::{KdcProxyTransport, Url},
 };
 
 /// Default timeout applied to each KDC exchange.
@@ -200,6 +212,11 @@ pub struct KdcEndpoint {
     pub port: u16,
     /// Where this endpoint came from.
     pub source: KdcEndpointSource,
+    /// The MS-KKDCP proxy URL of an `https://` server entry, `None` for a UDP or TCP
+    /// endpoint. A proxy endpoint has `protocol` [`KdcProtocol::Tcp`] and the URL's
+    /// `host` and `port`; its requests go as KDC-PROXY-MESSAGEs through the KDC
+    /// proxy transport ([`Tokio::with_kdc_proxy`]).
+    pub proxy: Option<Url>,
 }
 
 #[cfg(feature = "tokio")]
@@ -215,9 +232,14 @@ impl KdcEndpoint {
         Self::configured_with_default_port(protocol, value, 88)
     }
 
-    /// Create a configured endpoint from a `host[:port]` value and default port.
+    /// Create a configured endpoint from a `host[:port]` value and default port, or
+    /// a KDC proxy endpoint from an `https://` URL.
     ///
-    /// `value` is trimmed with `str::trim`. A value that parses as a
+    /// A value that starts with `https://` is an MS-KKDCP proxy URL (MIT
+    /// `locate_kdc.c:216-231`), read by [`Url::parse`] with the default port
+    /// 443 whatever `default_port` says; the endpoint has `protocol`
+    /// [`KdcProtocol::Tcp`] whatever `protocol` says. Otherwise `value` is trimmed
+    /// with `str::trim`. A value that parses as a
     /// `core::net::IpAddr` is the host, with `default_port` (so `fd00::1:88` is
     /// an IPv6 address). A value that starts with `[` takes the host from between
     /// that `[` and the first `]` (which must not contain another `[`), and after that `]` has either nothing (the port
@@ -233,20 +255,42 @@ impl KdcEndpoint {
     /// when it starts with `[` and has no `]`, has nothing or another `[`
     /// between the `[` and the first `]`, or has text after that `]` that does not
     /// start with `:`; when a port is not ASCII digits of a `u16`; or when a value that does not start with
-    /// `[` has a single `:` and no such port.
+    /// `[` has a single `:` and no such port. Returns [`Error::KdcProxy`] with
+    /// [`crate::error::KdcProxy::InvalidUrl`] for an `https://` value that
+    /// [`Url::parse`] refuses.
     #[inline]
     pub fn configured_with_default_port(
         protocol: KdcProtocol,
         value: &str,
         default_port: u16,
     ) -> Result<Self, Error> {
+        if let Some(url) = Url::parse(value)? {
+            return Ok(Self {
+                protocol: KdcProtocol::Tcp,
+                host: url.host().to_owned(),
+                port: url.port(),
+                source: KdcEndpointSource::Config,
+                proxy: Some(url),
+            });
+        }
         let (host, port) = parse_kdc_endpoint(value, default_port)?;
         Ok(Self {
             protocol,
             host,
             port,
             source: KdcEndpointSource::Config,
+            proxy: None,
         })
+    }
+
+    /// The proxy URL of a proxy endpoint, otherwise [`Self::authority`]: how
+    /// failures and traces name the endpoint.
+    #[must_use]
+    #[inline]
+    pub fn target(&self) -> String {
+        self.proxy
+            .as_ref()
+            .map_or_else(|| self.authority(), ToString::to_string)
     }
 
     #[must_use]
@@ -291,6 +335,8 @@ pub struct Tokio {
     budget: Option<Budget>,
     /// The key under which the login in progress records the KDCs that answer.
     watch: Option<u64>,
+    /// The transport of `https://` (MS-KKDCP) endpoints, if any.
+    proxy: Option<proxied::Handle>,
 }
 
 #[cfg(feature = "tokio")]
@@ -318,7 +364,21 @@ impl Tokio {
             primary_only: false,
             budget: None,
             watch: None,
+            proxy: proxied::Handle::builtin(),
         }
+    }
+
+    /// Send the requests for `https://` (MS-KKDCP) endpoints through `transport`.
+    ///
+    /// Without this call they go through the built-in rustls transport when the
+    /// `kkdcp-rustls` feature is compiled in, and fail with
+    /// [`crate::error::KdcProxy::Unavailable`] otherwise. A transport configured at
+    /// run time can be made `'static` with `Box::leak` once at start-up.
+    #[must_use]
+    #[inline]
+    pub const fn with_kdc_proxy(mut self, transport: &'static dyn KdcProxyTransport) -> Self {
+        self.proxy = Some(proxied::Handle::new(transport));
+        self
     }
 
     /// This transport with the total budget `total` for the request it is about to make.
@@ -964,7 +1024,7 @@ impl Tokio {
                 return this.send_to_realm_auto(config, realm, request).await;
             }
             let endpoints = this.discover_kdcs(config, realm, protocol).await?;
-            this.send_to_endpoints_pinned(realm, protocol, endpoints, request)
+            this.send_to_endpoints_pinned((config, realm), protocol, endpoints, request)
                 .await
         })
         .await
@@ -979,12 +1039,12 @@ impl Tokio {
     /// NOT cancel-safe: a delivered password request may already have committed.
     async fn send_to_password_endpoints(
         &self,
-        realm: &str,
+        destination: (&Config, &str),
         protocol: KdcProtocol,
         endpoints: Vec<KdcEndpoint>,
         request: &[u8],
     ) -> Result<Vec<u8>, Error> {
-        password_delivery::send_to_endpoints(self, realm, protocol, endpoints, request).await
+        password_delivery::send_to_endpoints(self, destination, protocol, endpoints, request).await
     }
 
     /// Send one password mutation, reporting uncertainty after possible delivery.
@@ -1023,7 +1083,7 @@ impl Tokio {
         request: &[u8],
     ) -> Result<Vec<u8>, Error> {
         let endpoints = self.discover_kdcs(config, realm, protocol).await?;
-        self.send_to_endpoints(realm, protocol, endpoints, request)
+        self.send_to_endpoints((config, realm), protocol, endpoints, request)
             .await
     }
 
@@ -1109,7 +1169,7 @@ impl Tokio {
         let endpoints = self
             .discover_kpasswd_servers(config, realm, protocol)
             .await?;
-        self.send_to_password_endpoints(realm, protocol, endpoints, request)
+        self.send_to_password_endpoints((config, realm), protocol, endpoints, request)
             .await
     }
 
@@ -2444,12 +2504,12 @@ impl Tokio {
     /// caller can send again.
     async fn send_to_endpoints(
         &self,
-        realm: &str,
+        destination: (&Config, &str),
         protocol: KdcProtocol,
         endpoints: Vec<KdcEndpoint>,
         request: &[u8],
     ) -> Result<Vec<u8>, Error> {
-        self.send_to_endpoints_pinned(realm, protocol, endpoints, request)
+        self.send_to_endpoints_pinned(destination, protocol, endpoints, request)
             .await
             .map(|(response, _)| response)
     }
@@ -2471,7 +2531,7 @@ impl Tokio {
     /// caller can send again.
     async fn send_to_endpoints_pinned(
         &self,
-        realm: &str,
+        (config, realm): (&Config, &str),
         protocol: KdcProtocol,
         endpoints: Vec<KdcEndpoint>,
         request: &[u8],
@@ -2489,22 +2549,28 @@ impl Tokio {
                 return Err(expired);
             }
             events::at(TransportStep::Sending, &endpoint, request.len());
-            match self
-                .send_pinned(
-                    endpoint.protocol,
-                    (endpoint.host.as_str(), endpoint.port),
-                    request,
-                )
-                .await
-            {
-                Ok(outcome) => {
-                    events::at(TransportStep::Answered, &endpoint, outcome.0.len());
+            let outcome = match &endpoint.proxy {
+                Some(url) => proxied::send(self, (config, realm), url, request)
+                    .await
+                    .map(|response| (response, None)),
+                None => {
+                    self.send_pinned(
+                        endpoint.protocol,
+                        (endpoint.host.as_str(), endpoint.port),
+                        request,
+                    )
+                    .await
+                }
+            };
+            match outcome {
+                Ok(answered) => {
+                    events::at(TransportStep::Answered, &endpoint, answered.0.len());
                     primary::record_answer(self.watch, &endpoint.host, endpoint.port);
-                    return Ok(outcome);
+                    return Ok(answered);
                 }
                 Err(error) => {
                     events::at(TransportStep::Unanswered, &endpoint, 0);
-                    failures.push(format!("{}: {error}", endpoint.authority()));
+                    failures.push(format!("{}: {error}", endpoint.target()));
                 }
             }
         }
@@ -2744,7 +2810,7 @@ fn non_empty_kdc_response(response: Vec<u8>) -> Result<Vec<u8>, Error> {
 /// Returns [`Error::InvalidKdcEndpoint`] in the cases that
 /// [`KdcEndpoint::configured_with_default_port`] documents.
 #[cfg(feature = "tokio")]
-fn parse_kdc_endpoint(value: &str, default_port: u16) -> Result<(String, u16), Error> {
+pub(crate) fn parse_kdc_endpoint(value: &str, default_port: u16) -> Result<(String, u16), Error> {
     let endpoint = value.trim();
     if endpoint.is_empty() {
         return Err(Error::InvalidKdcEndpoint(endpoint.to_owned()));

@@ -6,8 +6,8 @@ use std::io;
 use tokio::net::{ToSocketAddrs, lookup_host};
 
 use super::{
-    Error, KdcEndpoint, KdcProtocol, MAX_UDP_DATAGRAM, TcpFraming, Tokio, events,
-    non_empty_kdc_response, tcp_request_length, udp,
+    Config, Error, KdcEndpoint, KdcProtocol, MAX_UDP_DATAGRAM, TcpFraming, Tokio, events,
+    non_empty_kdc_response, proxied, tcp_request_length, udp,
 };
 use crate::trace::TransportStep;
 
@@ -20,7 +20,7 @@ use crate::trace::TransportStep;
 /// NOT cancel-safe: a delivered password request may already have committed.
 pub(super) async fn send_to_endpoints(
     transport: &Tokio,
-    realm: &str,
+    (config, realm): (&Config, &str),
     protocol: KdcProtocol,
     endpoints: Vec<KdcEndpoint>,
     request: &[u8],
@@ -31,13 +31,18 @@ pub(super) async fn send_to_endpoints(
             return Err(expired);
         }
         events::at(TransportStep::Sending, &endpoint, request.len());
-        let result = transport
-            .send_password_once(
-                endpoint.protocol,
-                (endpoint.host.as_str(), endpoint.port),
-                request,
-            )
-            .await;
+        let result = match &endpoint.proxy {
+            Some(url) => proxied::send_password(transport, (config, realm), url, request).await,
+            None => {
+                transport
+                    .send_password_once(
+                        endpoint.protocol,
+                        (endpoint.host.as_str(), endpoint.port),
+                        request,
+                    )
+                    .await
+            }
+        };
         match result {
             Ok(response) => {
                 events::at(TransportStep::Answered, &endpoint, response.len());
@@ -49,7 +54,7 @@ pub(super) async fn send_to_endpoints(
             }
             Err(error) => {
                 events::at(TransportStep::Unanswered, &endpoint, 0);
-                failures.push(format!("{}: {error}", endpoint.authority()));
+                failures.push(format!("{}: {error}", endpoint.target()));
             }
         }
     }
@@ -192,7 +197,9 @@ fn is_udp_refusal(error: &Error) -> bool {
 mod tests {
     use core::error::Error as StdError;
 
-    use super::{Error, KdcEndpoint, KdcProtocol, Tokio, io, is_udp_refusal, send_to_endpoints};
+    use super::{
+        Config, Error, KdcEndpoint, KdcProtocol, Tokio, io, is_udp_refusal, send_to_endpoints,
+    };
     use crate::client::transport::closed_port_tests::reserve_closed_tcp_port;
 
     /// Every pre-delivery failure identifies the endpoint that failed.
@@ -208,9 +215,10 @@ mod tests {
             .map(|address| KdcEndpoint::configured(KdcProtocol::Tcp, address))
             .collect::<Result<Vec<_>, _>>()?;
         // When failover exhausts both without sending a mutation.
+        let config = Config::parse("")?;
         let outcome = send_to_endpoints(
             &Tokio::new(),
-            "TEST.GOKRB5",
+            (&config, "TEST.GOKRB5"),
             KdcProtocol::Tcp,
             endpoints,
             b"request",

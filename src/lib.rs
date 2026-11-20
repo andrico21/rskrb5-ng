@@ -114,6 +114,8 @@ pub mod spnego;
 #[cfg(feature = "messages")]
 pub mod ticket;
 pub mod trace;
+#[cfg(feature = "messages")]
+pub mod transport;
 
 #[cfg(feature = "tokio")]
 pub use client::Tokio as TokioClient;

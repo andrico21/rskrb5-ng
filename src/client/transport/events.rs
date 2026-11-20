@@ -75,5 +75,10 @@ pub(super) fn switched(realm: &str, protocol: KdcProtocol) {
 
 /// `step` happened at `endpoint`, with `size` bytes sent or received.
 pub(super) fn at(step: TransportStep, endpoint: &KdcEndpoint, size: usize) {
-    emit(step, wire(endpoint.protocol), || endpoint.authority(), size);
+    let protocol = if endpoint.proxy.is_some() {
+        TransportWire::Https
+    } else {
+        wire(endpoint.protocol)
+    };
+    emit(step, protocol, || endpoint.target(), size);
 }

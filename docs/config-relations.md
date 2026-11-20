@@ -68,9 +68,9 @@ both modes. Parsed values do not imply an implemented mechanism.
 | realms | auth_to_local_names | case-sensitive string map | unset | plan 2 WP-17 | No local authorization executes; diagnostic | auth_to_local_names |
 | realms | default_domain | string | unset | plan 2 WP-17 | Legacy V4 mapping not performed; diagnostic | default_domain |
 | realms | disable_encrypted_timestamp | boolean | false | InitCredsOptions::from_config; Exchange::configure | Effective for the client realm: true never sends encrypted timestamp (EncryptedTimestampDisabled), never optimistically, and is never reset | disable_encrypted_timestamp |
-| realms | http_anchors | location list | system CA set | plan 2 WP-10 | No HTTPS proxy connection exists; trust restrictions cannot be bypassed; diagnostic | http_anchors |
-| realms | kdc | endpoint list | DNS discovery when enabled | Config::configured_kdcs; transport::Tokio::discover_kdcs | Existing network endpoint consumer; Unix sockets/proxies remain WP-10 | kdc |
-| realms | kpasswd_server | endpoint list | DNS then admin_server port 464 | Config::configured_kpasswd_servers | Effective configured password endpoint selection | kpasswd_server |
+| realms | http_anchors | location list | system CA set | transport::proxy::Request::anchors | Effective: every KDC proxy request carries the realm's anchors; the built-in rustls transport trusts only them (FILE:, DIR:, ENV:) or its configured roots, and an unset relation with no roots is NoAnchors, never the system CA set | http_anchors |
+| realms | kdc | endpoint list | DNS discovery when enabled | Config::configured_kdcs; transport::Tokio::discover_kdcs | Effective network endpoint consumer; https:// entries go through the MS-KKDCP KDC proxy; Unix sockets are not supported | kdc |
+| realms | kpasswd_server | endpoint list | DNS then admin_server port 464 | Config::configured_kpasswd_servers | Effective configured password endpoint selection; https:// entries go through the MS-KKDCP KDC proxy with outcome-unknown kept | kpasswd_server |
 | realms | master_kdc | endpoint list | unset | discovery::locate::ServerLocator | Effective fallback only when primary_kdc is absent | master_kdc |
 | realms | primary_kdc | endpoint list | master_kdc | client::transport::Tokio::login_as_service_with_password_config | Effective primary KDC retry after a replica's failure to authenticate | primary_kdc |
 | realms | sitename | string | unset | discovery::locate::sitename | Effective site-first DNS names for KDC, admin and kpasswd discovery | sitename |

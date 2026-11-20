@@ -31,7 +31,7 @@ pub(super) async fn send(
         .partition(|endpoint| endpoint.protocol == KdcProtocol::Tcp);
     if !tcp.is_empty() {
         match transport
-            .send_to_password_endpoints(realm, KdcProtocol::Tcp, tcp, request)
+            .send_to_password_endpoints((config, realm), KdcProtocol::Tcp, tcp, request)
             .await
         {
             Ok(response) => return Ok(response),
@@ -41,6 +41,6 @@ pub(super) async fn send(
         }
     }
     transport
-        .send_to_password_endpoints(realm, KdcProtocol::Udp, udp, request)
+        .send_to_password_endpoints((config, realm), KdcProtocol::Udp, udp, request)
         .await
 }

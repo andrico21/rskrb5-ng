@@ -63,7 +63,7 @@ async fn send_explicit(
     }
     let endpoints = transport.discover_kdcs(config, realm, protocol).await?;
     transport
-        .send_to_endpoints_pinned(realm, protocol, endpoints, request)
+        .send_to_endpoints_pinned((config, realm), protocol, endpoints, request)
         .await
 }
 

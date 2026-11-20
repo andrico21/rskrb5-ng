@@ -13,6 +13,7 @@ use crate::{
     discovery::{records, uri},
     error::{Client as Error, Config as ConfigError},
     extensions::{LocateRequest, LocateService, LocateTransport, Registry},
+    transport::proxy::Url,
 };
 
 /// The kind of server to locate (MIT `locate_service_type`).
@@ -195,6 +196,7 @@ impl<'config> ServerLocator<'config> {
                     host: address.host,
                     port: address.port,
                     source: KdcEndpointSource::Provider,
+                    proxy: None,
                 }));
             }
         }
@@ -202,6 +204,9 @@ impl<'config> ServerLocator<'config> {
     }
 
     /// The profile's servers of `role`, `None` when the realm lists none.
+    ///
+    /// An `https://` entry is a KDC proxy endpoint; a UDP-only request skips it, as
+    /// MIT's UDP-only strategy skips HTTPS entries (`sendto_kdc.c:819-823`).
     ///
     /// # Errors
     ///
@@ -224,13 +229,15 @@ impl<'config> ServerLocator<'config> {
         if values.is_empty() {
             return Ok(None);
         }
-        values
-            .iter()
-            .map(|value| {
-                KdcEndpoint::configured_with_default_port(protocol, value, role.default_port())
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map(Some)
+        let mut found = Vec::with_capacity(values.len());
+        for value in values {
+            let endpoint =
+                KdcEndpoint::configured_with_default_port(protocol, value, role.default_port())?;
+            if !(protocol == KdcProtocol::Udp && endpoint.proxy.is_some()) {
+                found.push(endpoint);
+            }
+        }
+        Ok(Some(found))
     }
 
     /// DNS URI records, then DNS SRV records.
@@ -309,14 +316,16 @@ pub(crate) async fn uri_servers(
 ///
 /// A record is skipped when its target does not parse (MIT `parse_uri_fields`),
 /// when its transport is not the requested one (`Auto` accepts both datagrams and
-/// streams), when it names MS-KKDCP (HTTPS is not a transport of this crate yet,
-/// WP-10b) and, for [`EndpointRole::PrimaryKdc`], when it lacks the `m` flag.
-/// Targets that are not literals are kept as names, or resolved by `resolve`.
+/// streams; an MS-KKDCP record counts as a stream, and its target must be an
+/// `https://` URL, MIT `locate_kdc.c:683-690`) and, for
+/// [`EndpointRole::PrimaryKdc`], when it lacks the `m` flag. Targets that are not
+/// literals are kept as names, or resolved by `resolve`; a proxy URL is kept as it
+/// is, because TLS verifies its host name.
 fn uri_targets(
     records: &[(u16, Vec<u8>)],
     role: EndpointRole,
     protocol: KdcProtocol,
-) -> Vec<(KdcProtocol, String, u16)> {
+) -> Vec<UriTarget> {
     records
         .iter()
         .filter_map(|(_, bytes)| uri::parse(bytes))
@@ -324,16 +333,29 @@ fn uri_targets(
         .filter_map(|target| {
             let wire = match target.transport {
                 uri::Transport::Udp => KdcProtocol::Udp,
-                uri::Transport::Tcp => KdcProtocol::Tcp,
-                uri::Transport::Kkdcp => return None,
+                uri::Transport::Tcp | uri::Transport::Kkdcp => KdcProtocol::Tcp,
             };
             if protocol != KdcProtocol::Auto && protocol != wire {
                 return None;
             }
+            if target.transport == uri::Transport::Kkdcp {
+                return Url::parse(&target.spec)
+                    .ok()
+                    .flatten()
+                    .map(UriTarget::Proxy);
+            }
             let (host, port) = uri::host_port(&target.spec, role.default_port())?;
-            Some((wire, host, port))
+            Some(UriTarget::Direct(wire, host, port))
         })
         .collect()
+}
+
+/// One usable URI record target.
+enum UriTarget {
+    /// A UDP or TCP server: protocol, host, port.
+    Direct(KdcProtocol, String, u16),
+    /// An MS-KKDCP proxy.
+    Proxy(Url),
 }
 
 /// Resolve the targets of URI records as SRV targets are resolved.
@@ -348,12 +370,25 @@ fn uri_targets(
 async fn resolve_uri_targets(
     resolver: &TokioResolver,
     (realm, protocol): (&str, KdcProtocol),
-    targets: Vec<(KdcProtocol, String, u16)>,
+    targets: Vec<UriTarget>,
     resolve_names: bool,
 ) -> Result<Vec<KdcEndpoint>, Error> {
     let mut endpoints = Vec::new();
     let mut failures = Vec::new();
-    for (wire, host, port) in targets {
+    for target in targets {
+        let (wire, host, port) = match target {
+            UriTarget::Direct(wire, host, port) => (wire, host, port),
+            UriTarget::Proxy(url) => {
+                endpoints.push(KdcEndpoint {
+                    protocol: KdcProtocol::Tcp,
+                    host: url.host().to_owned(),
+                    port: url.port(),
+                    source: KdcEndpointSource::DnsUri,
+                    proxy: Some(url),
+                });
+                continue;
+            }
+        };
         let set = srv_targets::resolve(
             resolver,
             realm,
