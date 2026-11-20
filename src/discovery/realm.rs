@@ -27,26 +27,12 @@ pub struct HostRealmResolver<'config> {
     transport: Tokio,
     /// The profile.
     config: &'config Config,
-    /// Registered mappers, asked first.
-    registry: Option<&'config Registry>,
 }
 
 impl<'config> HostRealmResolver<'config> {
     /// A resolver over `config` that asks DNS through `transport`.
     pub(crate) const fn new(transport: Tokio, config: &'config Config) -> Self {
-        Self {
-            transport,
-            config,
-            registry: None,
-        }
-    }
-
-    /// Ask the host-realm mappers registered in `registry` first.
-    #[must_use]
-    #[inline]
-    pub const fn with_registry(mut self, registry: &'config Registry) -> Self {
-        self.registry = Some(registry);
-        self
+        Self { transport, config }
     }
 
     /// The realm of `host` by registered mappers and `[domain_realm]`: `None` when
@@ -57,11 +43,15 @@ impl<'config> HostRealmResolver<'config> {
     /// Returns [`Error::Locate`] for a registered mapper that fails or answers
     /// malformed data.
     #[inline]
-    pub fn host_realm(&self, host: &str) -> Result<Option<String>, Error> {
+    pub fn host_realm(
+        &self,
+        registry: Option<&Registry>,
+        host: &str,
+    ) -> Result<Option<String>, Error> {
         let Some(cleaned) = clean(host) else {
             return Ok(None);
         };
-        if let Some(realms) = self.mapped(&RealmQuery::Host(&cleaned))? {
+        if let Some(realms) = Self::mapped(registry, self.config, &RealmQuery::Host(&cleaned))? {
             return Ok(realms.into_iter().next());
         }
         if is_numeric_address(&cleaned) {
@@ -92,11 +82,16 @@ impl<'config> HostRealmResolver<'config> {
     ///
     /// cancel-safe: DNS lookups change no state.
     #[inline]
-    pub async fn fallback_realm(&self, host: &str) -> Result<Option<String>, Error> {
+    pub async fn fallback_realm(
+        &self,
+        registry: Option<&Registry>,
+        host: &str,
+    ) -> Result<Option<String>, Error> {
         let Some(cleaned) = clean(host) else {
             return Ok(None);
         };
-        if let Some(realms) = self.mapped(&RealmQuery::Fallback(&cleaned))? {
+        if let Some(realms) = Self::mapped(registry, self.config, &RealmQuery::Fallback(&cleaned))?
+        {
             return Ok(realms.into_iter().next());
         }
         if let Some(realm) = self.txt_for_host(&cleaned).await? {
@@ -128,8 +123,12 @@ impl<'config> HostRealmResolver<'config> {
     ///
     /// cancel-safe: DNS lookups change no state.
     #[inline]
-    pub async fn service_realm(&self, host: &str) -> Result<Option<String>, Error> {
-        if let Some(realm) = self.host_realm(host)? {
+    pub async fn service_realm(
+        &self,
+        registry: Option<&Registry>,
+        host: &str,
+    ) -> Result<Option<String>, Error> {
+        if let Some(realm) = self.host_realm(registry, host)? {
             return Ok(Some(realm));
         }
         if let Some(cleaned) = clean(host) {
@@ -161,8 +160,12 @@ impl<'config> HostRealmResolver<'config> {
     ///
     /// cancel-safe: DNS lookups change no state.
     #[inline]
-    pub async fn default_realm(&self, local_fqdn: Option<&str>) -> Result<Option<String>, Error> {
-        if let Some(realms) = self.mapped(&RealmQuery::Default)? {
+    pub async fn default_realm(
+        &self,
+        registry: Option<&Registry>,
+        local_fqdn: Option<&str>,
+    ) -> Result<Option<String>, Error> {
+        if let Some(realms) = Self::mapped(registry, self.config, &RealmQuery::Default)? {
             return Ok(realms.into_iter().next());
         }
         let configured = &self.config.libdefaults.default_realm;
@@ -186,10 +189,14 @@ impl<'config> HostRealmResolver<'config> {
     /// # Errors
     ///
     /// Returns [`Error::Locate`] for a mapper that fails or answers malformed data.
-    fn mapped(&self, query: &RealmQuery<'_>) -> Result<Option<Vec<String>>, Error> {
-        self.registry.map_or(Ok(None), |registry| {
-            registry
-                .realms(self.config, query)
+    fn mapped(
+        registry: Option<&Registry>,
+        config: &Config,
+        query: &RealmQuery<'_>,
+    ) -> Result<Option<Vec<String>>, Error> {
+        registry.map_or(Ok(None), |providers| {
+            providers
+                .realms(config, query)
                 .map_err(|source| Error::Locate(Box::new(source)))
         })
     }
@@ -236,7 +243,7 @@ impl<'config> HostRealmResolver<'config> {
         while remaining >= 0_i32 && candidate.contains('.') {
             let realm = candidate.to_ascii_uppercase();
             if locator
-                .locate(&realm, EndpointRole::Kdc, KdcProtocol::Auto)
+                .locate(None, &realm, EndpointRole::Kdc, KdcProtocol::Auto)
                 .await
                 .is_ok_and(|found| !found.is_empty())
             {

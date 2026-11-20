@@ -3133,7 +3133,7 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "Host-to-realm plugin interface"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "Registered providers are consulted by ServerLocator::with_registry and HostRealmResolver::with_registry (todo 15); the Tokio exchange routes (send_to_realm, get_service_ticket*) carry no registry, so a registered provider does not influence them (closer: todo 28, configuration consumers)"
+missing = "Registered providers are consulted when a registry is passed to ServerLocator::locate and to the HostRealmResolver methods (todo 15); the Tokio exchange routes (send_to_realm, get_service_ticket*) carry no registry, so a registered provider does not influence them (closer: todo 28, configuration consumers)"
 rust_symbols = [
   "discovery::realm::HostRealmResolver",
   "client::transport::Tokio::host_realms",
@@ -3222,7 +3222,7 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "`hostrealm` hostname/default-realm mapping"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "Registered providers are consulted by ServerLocator::with_registry and HostRealmResolver::with_registry (todo 15); the Tokio exchange routes (send_to_realm, get_service_ticket*) carry no registry, so a registered provider does not influence them (closer: todo 28, configuration consumers)"
+missing = "Registered providers are consulted when a registry is passed to ServerLocator::locate and to the HostRealmResolver methods (todo 15); the Tokio exchange routes (send_to_realm, get_service_ticket*) carry no registry, so a registered provider does not influence them (closer: todo 28, configuration consumers)"
 rust_symbols = [
   "discovery::realm::HostRealmResolver",
   "client::transport::Tokio::host_realms",
@@ -3286,7 +3286,7 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "`locate` server-location interface"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "Registered providers are consulted by ServerLocator::with_registry and HostRealmResolver::with_registry (todo 15); the Tokio exchange routes (send_to_realm, get_service_ticket*) carry no registry, so a registered provider does not influence them (closer: todo 28, configuration consumers)"
+missing = "Registered providers are consulted when a registry is passed to ServerLocator::locate and to the HostRealmResolver methods (todo 15); the Tokio exchange routes (send_to_realm, get_service_ticket*) carry no registry, so a registered provider does not influence them (closer: todo 28, configuration consumers)"
 rust_symbols = [
   "discovery::locate::ServerLocator",
   "discovery::locate::EndpointRole",

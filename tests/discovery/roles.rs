@@ -62,11 +62,11 @@ async fn the_primary_role_needs_the_m_flag() -> Result<(), TestError> {
     // When each role is located.
     let any = transport
         .locator(&profile)
-        .locate(REALM, EndpointRole::Kdc, KdcProtocol::Tcp)
+        .locate(None, REALM, EndpointRole::Kdc, KdcProtocol::Tcp)
         .await?;
     let primary = transport
         .locator(&profile)
-        .locate(REALM, EndpointRole::PrimaryKdc, KdcProtocol::Tcp)
+        .locate(None, REALM, EndpointRole::PrimaryKdc, KdcProtocol::Tcp)
         .await?;
     // Then the primary role sees only the flagged record.
     assert_eq!(authorities(&any), ["127.0.0.1:1088", "127.0.0.1:1089"]);
@@ -98,11 +98,11 @@ async fn the_admin_role_uses_its_own_profile_key_and_dns_labels() -> Result<(), 
     // When the administration server is located for each.
     let listed = transport
         .locator(&configured)
-        .locate(REALM, EndpointRole::Kadmin, KdcProtocol::Tcp)
+        .locate(None, REALM, EndpointRole::Kadmin, KdcProtocol::Tcp)
         .await?;
     let published = transport
         .locator(&config(false)?)
-        .locate(REALM, EndpointRole::Kadmin, KdcProtocol::Tcp)
+        .locate(None, REALM, EndpointRole::Kadmin, KdcProtocol::Tcp)
         .await?;
     // Then the profile's host takes port 749 and DNS answers `_kerberos-adm`.
     assert_eq!(authorities(&listed), ["adm.example:749"]);
@@ -153,12 +153,11 @@ async fn a_registered_locator_answers_before_the_profile_and_dns() -> Result<(),
     let transport = via(&dns)?;
     let provided = transport
         .locator(&profile)
-        .with_registry(&registry)
-        .locate(REALM, EndpointRole::Kdc, KdcProtocol::Tcp)
+        .locate(Some(&registry), REALM, EndpointRole::Kdc, KdcProtocol::Tcp)
         .await?;
     let listed = transport
         .locator(&profile)
-        .locate(REALM, EndpointRole::Kdc, KdcProtocol::Tcp)
+        .locate(None, REALM, EndpointRole::Kdc, KdcProtocol::Tcp)
         .await?;
     // Then the locator wins, the profile is used without it, and DNS is never asked.
     assert_eq!(authorities(&provided), ["provided.example:8888"]);
@@ -180,8 +179,7 @@ async fn a_failing_locator_stops_the_lookup() -> Result<(), TestError> {
     // When the KDCs are located.
     let result = via(&dns)?
         .locator(&config(false)?)
-        .with_registry(&registry)
-        .locate(REALM, EndpointRole::Kdc, KdcProtocol::Tcp)
+        .locate(Some(&registry), REALM, EndpointRole::Kdc, KdcProtocol::Tcp)
         .await;
     // Then the failure is the error, and DNS is not asked.
     assert!(matches!(result, Err(ClientError::Locate(_))), "{result:?}");

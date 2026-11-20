@@ -7,26 +7,70 @@
 //! is the result, except that a primary that cannot be contacted leaves the
 //! replica's error.
 
-use alloc::sync::Arc;
-use std::sync::Mutex;
+use alloc::collections::BTreeMap;
+use core::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, PoisonError};
 
 use super::{AsRepSession, Config, Error, KdcProtocol, NoResponder, Tokio, drive_tokio};
 use crate::{client::stepwise::InitCreds, discovery::locate::EndpointRole};
 
-tokio::task_local! {
-    /// The `(host, port)` of every KDC that answered a request of the login in progress.
-    pub(super) static ANSWERED: Arc<Mutex<Vec<(String, u16)>>>;
+/// The `(host, port)` of every KDC that answered a request, for each login in progress.
+///
+/// `Tokio` is `Copy` and the exchange driver is not this module's, so the transport carries
+/// the key of its login and reports answers here.
+static ANSWERED: Mutex<BTreeMap<u64, Vec<(String, u16)>>> = Mutex::new(BTreeMap::new());
+/// The next key.
+static NEXT_WATCH: AtomicU64 = AtomicU64::new(1);
+
+/// A login's entry of [`ANSWERED`], removed when the login ends or is cancelled.
+struct Watch(u64);
+
+impl Watch {
+    /// Start a watch.
+    fn start() -> Self {
+        let key = NEXT_WATCH.fetch_add(1, Ordering::Relaxed);
+        drop(
+            ANSWERED
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .insert(key, Vec::new()),
+        );
+        Self(key)
+    }
+
+    /// The servers that answered so far.
+    fn heard(&self) -> Vec<(String, u16)> {
+        ANSWERED
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&self.0)
+            .cloned()
+            .unwrap_or_default()
+    }
 }
 
-/// Remember that `host:port` answered, if a login is watching.
-pub(super) fn record_answer(host: &str, port: u16) {
-    // Outside a login there is nothing watching, which is not an error.
-    match ANSWERED.try_with(|answered| {
-        if let Ok(mut list) = answered.lock() {
-            list.push((host.to_owned(), port));
-        }
-    }) {
-        Ok(()) | Err(_) => {}
+impl Drop for Watch {
+    fn drop(&mut self) {
+        drop(
+            ANSWERED
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(&self.0),
+        );
+    }
+}
+
+/// Remember that `host:port` answered a request of the login `key`, if it is being watched.
+pub(super) fn record_answer(key: Option<u64>, host: &str, port: u16) {
+    let Some(watched) = key else {
+        return;
+    };
+    if let Some(list) = ANSWERED
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get_mut(&watched)
+    {
+        list.push((host.to_owned(), port));
     }
 }
 
@@ -77,31 +121,26 @@ pub(super) async fn login<'exchange, F>(
 where
     F: Fn() -> InitCreds<'exchange> + Send + Sync,
 {
-    let answered = Arc::new(Mutex::new(Vec::new()));
-    let first = ANSWERED
-        .scope(Arc::clone(&answered), async {
-            let mut exchange = build();
-            drive_tokio(
-                transport,
-                (config, protocol),
-                &mut exchange,
-                &mut NoResponder,
-            )
-            .await
-        })
-        .await;
+    let watch = Watch::start();
+    let watched = transport.with_watch(watch.0);
+    let mut exchange = build();
+    let first = drive_tokio(
+        &watched,
+        (config, protocol),
+        &mut exchange,
+        &mut NoResponder,
+    )
+    .await;
     let Err(error) = first else {
         return first;
     };
     if transport.primary_only || !replica_failure(&error) {
         return Err(error);
     }
-    let Ok(heard) = answered.lock().map(|list| list.clone()) else {
-        return Err(error);
-    };
+    let heard = watch.heard();
     let Ok(primaries) = transport
         .locator(config)
-        .locate(realm, EndpointRole::PrimaryKdc, protocol)
+        .locate(None, realm, EndpointRole::PrimaryKdc, protocol)
         .await
     else {
         return Err(error);
@@ -115,11 +154,11 @@ where
         return Err(error);
     }
     let primary = transport.with_primary_kdcs();
-    let mut exchange = build();
+    let mut repeated = build();
     match drive_tokio(
         &primary,
         (config, protocol),
-        &mut exchange,
+        &mut repeated,
         &mut NoResponder,
     )
     .await

@@ -43,12 +43,12 @@ async fn txt_lookup_is_off_by_default() -> Result<(), TestError> {
     let on = profile("dns_lookup_realm = true", "")?;
     let without = via(&dns)?
         .host_realms(&off)
-        .fallback_realm("host.example.com")
+        .fallback_realm(None, "host.example.com")
         .await?;
     let asked_off = dns.questions()?.len();
     let with = via(&dns)?
         .host_realms(&on)
-        .fallback_realm("host.example.com")
+        .fallback_realm(None, "host.example.com")
         .await?;
     // Then only the enabled relation asks, and it wins over the parent-domain heuristic.
     assert_eq!(without.as_deref(), Some("EXAMPLE.COM"));
@@ -79,7 +79,7 @@ async fn txt_lookup_walks_the_parents_and_distrusts_the_answer() -> Result<(), T
     // When the realm of a host is asked.
     let realm = via(&dns)?
         .host_realms(&on)
-        .fallback_realm("A.B.Example.COM.")
+        .fallback_realm(None, "A.B.Example.COM.")
         .await?;
     // Then the walk goes host, parent, parent and stops at the first valid answer.
     assert_eq!(realm.as_deref(), Some("PARENT.REALM"));
@@ -109,12 +109,15 @@ async fn txt_lookup_skips_addresses_and_reports_failures() -> Result<(), TestErr
     // When literals and then a name are asked.
     let v4 = resolver
         .host_realms(&on)
-        .fallback_realm("192.0.2.1")
+        .fallback_realm(None, "192.0.2.1")
         .await?;
-    let v6 = resolver.host_realms(&on).fallback_realm("fd00::1").await?;
+    let v6 = resolver
+        .host_realms(&on)
+        .fallback_realm(None, "fd00::1")
+        .await?;
     let failed = resolver
         .host_realms(&on)
-        .fallback_realm("host.example.com")
+        .fallback_realm(None, "host.example.com")
         .await;
     // Then literals give no realm and no query, and the failure is not turned into a parent's answer.
     assert_eq!((v4, v6), (None, None));
@@ -153,7 +156,7 @@ async fn realm_try_domains_is_bounded_and_needs_a_realm() -> Result<(), TestErro
         found.push(
             via(&dns)?
                 .host_realms(&config)
-                .fallback_realm("a.b.example.com")
+                .fallback_realm(None, "a.b.example.com")
                 .await?,
         );
     }
@@ -177,7 +180,7 @@ async fn realm_try_domains_stops_before_a_one_label_name() -> Result<(), TestErr
     // When the realm of a deep host is asked.
     let realm = via(&dns)?
         .host_realms(&config)
-        .fallback_realm("a.b.example.com")
+        .fallback_realm(None, "a.b.example.com")
         .await?;
     // Then the parent domain is the answer, and `com` was never tried as a realm.
     assert_eq!(realm.as_deref(), Some("B.EXAMPLE.COM"));
@@ -228,16 +231,16 @@ async fn the_provider_chain_is_registry_then_profile_then_default() -> Result<()
         "[domain_realm]\n.example.com = DOMAIN.REALM\n",
     )?;
     let transport = via(&dns)?;
-    let plain = transport.host_realms(&config);
-    let chained = transport.host_realms(&config).with_registry(&registry);
+    let resolver = transport.host_realms(&config);
+    let chained = Some(&registry);
     // When hosts are mapped without and with the registry.
     let results = (
-        plain.host_realm("mapped.example.com")?,
-        chained.host_realm("mapped.example.com")?,
-        chained.host_realm("other.example.com")?,
-        plain.service_realm("elsewhere.test").await?,
-        chained.default_realm(None).await?,
-        plain.default_realm(None).await?,
+        resolver.host_realm(None, "mapped.example.com")?,
+        resolver.host_realm(chained, "mapped.example.com")?,
+        resolver.host_realm(chained, "other.example.com")?,
+        resolver.service_realm(None, "elsewhere.test").await?,
+        resolver.default_realm(chained, None).await?,
+        resolver.default_realm(None, None).await?,
     );
     // Then each step wins in its turn, and no DNS is asked without an opt-in.
     assert_eq!(
@@ -271,11 +274,11 @@ async fn the_service_realm_prefers_an_opted_in_txt_record_to_the_default() -> Re
     // When the service realm is asked with and without the relation.
     let with = via(&dns)?
         .host_realms(&on)
-        .service_realm("svc.example.net")
+        .service_realm(None, "svc.example.net")
         .await?;
     let without = via(&dns)?
         .host_realms(&off)
-        .service_realm("svc.example.net")
+        .service_realm(None, "svc.example.net")
         .await?;
     // Then the opt-in changes the answer.
     assert_eq!(with.as_deref(), Some("NET.REALM"));

@@ -212,7 +212,7 @@ fn the_primary_role_is_the_flagged_uri_record() -> Result<(), Box<dyn Error>> {
         let config = profile(&realm, true, None, false)?;
         let primaries = transport
             .locator(&config)
-            .locate(&realm, EndpointRole::PrimaryKdc, KdcProtocol::Auto)
+            .locate(None, &realm, EndpointRole::PrimaryKdc, KdcProtocol::Auto)
             .await?;
         assert_eq!(primaries.len(), 1, "{primaries:?}");
         assert_eq!(
@@ -242,8 +242,14 @@ fn the_txt_record_maps_a_host_to_the_realm_only_when_asked() -> Result<(), Box<d
         let host = "svc.deep.test.rskrb5";
         let on = profile(&realm, false, None, true)?;
         let off = profile(&realm, false, None, false)?;
-        let mapped = transport.host_realms(&on).fallback_realm(host).await?;
-        let heuristic = transport.host_realms(&off).fallback_realm(host).await?;
+        let mapped = transport
+            .host_realms(&on)
+            .fallback_realm(None, host)
+            .await?;
+        let heuristic = transport
+            .host_realms(&off)
+            .fallback_realm(None, host)
+            .await?;
         assert_eq!(
             mapped.as_deref(),
             Some(realm.as_str()),

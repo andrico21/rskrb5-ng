@@ -272,6 +272,8 @@ pub struct Tokio {
     primary_only: bool,
     /// The total budget of the request in progress, none outside one.
     budget: Option<Budget>,
+    /// The key under which the login in progress records the KDCs that answer.
+    watch: Option<u64>,
 }
 
 #[cfg(feature = "tokio")]
@@ -296,6 +298,7 @@ impl Tokio {
             tcp_response_limit: DEFAULT_TCP_RESPONSE_LIMIT,
             primary_only: false,
             budget: None,
+            watch: None,
         }
     }
 
@@ -347,6 +350,12 @@ impl Tokio {
             .map(|budget| Error::TransportTimeout(budget.total))
     }
 
+    /// This transport, reporting the KDCs that answer under the login `key`.
+    pub(crate) const fn with_watch(mut self, key: u64) -> Self {
+        self.watch = Some(key);
+        self
+    }
+
     /// This transport, locating primary KDCs only.
     pub(crate) const fn with_primary_kdcs(mut self) -> Self {
         self.primary_only = true;
@@ -370,7 +379,7 @@ impl Tokio {
 
     /// A server locator over `config` that asks DNS through this transport.
     ///
-    /// Add registered locators with [`ServerLocator::with_registry`]; the
+    /// Pass a registry to [`ServerLocator::locate`] to ask its locators first; the
     /// exchange methods of this transport do not consult a registry.
     #[must_use]
     #[inline]
@@ -809,7 +818,9 @@ impl Tokio {
             EndpointRole::Kdc
         };
         let endpoints = this
-            .within_budget(Box::pin(this.locator(config).locate(realm, role, protocol)))
+            .within_budget(Box::pin(
+                this.locator(config).locate(None, realm, role, protocol),
+            ))
             .await?;
         if !endpoints.is_empty() {
             return Ok(endpoints);
@@ -1812,7 +1823,7 @@ impl Tokio {
         if service.realm.is_empty() {
             // `[domain_realm]`, then the opt-in TXT record and domain search, then `default_realm`.
             let mapped = match service.components.last() {
-                Some(host) => self.host_realms(config).service_realm(host).await?,
+                Some(host) => self.host_realms(config).service_realm(None, host).await?,
                 None => None,
             };
             service.realm = mapped.unwrap_or(current_realm);
@@ -2459,7 +2470,7 @@ impl Tokio {
                 .await
             {
                 Ok(outcome) => {
-                    primary::record_answer(&endpoint.host, endpoint.port);
+                    primary::record_answer(self.watch, &endpoint.host, endpoint.port);
                     return Ok(outcome);
                 }
                 Err(error) => failures.push(format!("{}: {error}", endpoint.authority())),

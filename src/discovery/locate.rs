@@ -102,32 +102,18 @@ pub struct ServerLocator<'config> {
     transport: Tokio,
     /// The profile.
     config: &'config Config,
-    /// Registered locators, asked first.
-    registry: Option<&'config Registry>,
 }
 
 impl<'config> ServerLocator<'config> {
     /// A locator over `config` that asks DNS through `transport`.
     pub(crate) const fn new(transport: Tokio, config: &'config Config) -> Self {
-        Self {
-            transport,
-            config,
-            registry: None,
-        }
-    }
-
-    /// Ask the locators registered in `registry` first, as MIT asks its locator
-    /// modules before the profile.
-    #[must_use]
-    #[inline]
-    pub const fn with_registry(mut self, registry: &'config Registry) -> Self {
-        self.registry = Some(registry);
-        self
+        Self { transport, config }
     }
 
     /// The servers of `role` for `realm`, in the order to try them.
     ///
-    /// An empty list means that no step knows a server. For
+    /// The locators registered in `registry` are asked first, as MIT asks its locator
+    /// modules before the profile; `None` skips that step. An empty list means that no step knows a server. For
     /// [`EndpointRole::Kpasswd`] the profile and DNS steps are those of
     /// [`Tokio::discover_kpasswd_servers`].
     ///
@@ -148,6 +134,7 @@ impl<'config> ServerLocator<'config> {
     #[inline]
     pub async fn locate(
         &self,
+        registry: Option<&Registry>,
         realm: &str,
         role: EndpointRole,
         protocol: KdcProtocol,
@@ -156,7 +143,7 @@ impl<'config> ServerLocator<'config> {
         if realm.is_empty() {
             return Err(ConfigError::NoRealm(String::new()).into());
         }
-        if let Some(found) = self.provided(realm, role, protocol)? {
+        if let Some(found) = Self::provided(registry, realm, role, protocol)? {
             return Ok(found);
         }
         if role == EndpointRole::Kpasswd {
@@ -180,12 +167,12 @@ impl<'config> ServerLocator<'config> {
     ///
     /// Returns [`Error::Locate`] for a locator that fails or answers malformed data.
     fn provided(
-        &self,
+        registry: Option<&Registry>,
         realm: &str,
         role: EndpointRole,
         protocol: KdcProtocol,
     ) -> Result<Option<Vec<KdcEndpoint>>, Error> {
-        let Some(registry) = self.registry else {
+        let Some(providers) = registry else {
             return Ok(None);
         };
         let transports: &[(LocateTransport, KdcProtocol)] = match protocol {
@@ -199,7 +186,7 @@ impl<'config> ServerLocator<'config> {
         let mut found = Vec::new();
         for (transport, wire) in transports {
             let request = LocateRequest::new(realm, role.locate_service(), *transport);
-            if let Some(addresses) = registry
+            if let Some(addresses) = providers
                 .locate(&request)
                 .map_err(|source| Error::Locate(Box::new(source)))?
             {
