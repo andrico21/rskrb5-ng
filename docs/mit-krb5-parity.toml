@@ -434,10 +434,7 @@ capability = "FAST anonymous armor via anonymous PKINIT"
 implementation_status = "partial"
 evidence_status = "unit"
 missing = "P2-7 delivered the anonymous-armor hook (`preauth::fast::AnonymousArmor`, `ArmorSource::Anonymous`, asked for each realm the exchange armors); anonymous PKINIT behind it is the closing todo P2-8's."
-rust_symbols = [
-  "preauth::fast::AnonymousArmor",
-  "preauth::fast::ArmorSource",
-]
+rust_symbols = ["preauth::fast::AnonymousArmor", "preauth::fast::ArmorSource"]
 test_names = [
   "tests/fast/exchange.rs::client_referrals_are_followed_only_when_armored_and_asked_for",
 ]
