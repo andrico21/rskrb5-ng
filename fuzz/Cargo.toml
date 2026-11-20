@@ -11,7 +11,11 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-rskrb5-ng = { version = "0.3.0", path = "..", features = ["camellia", "http", "spake"] }
+rskrb5-ng = { version = "0.3.0", path = "..", features = [
+  "camellia",
+  "http",
+  "spake",
+] }
 
 [[bin]]
 name = "kpasswd_reply"
