@@ -5,6 +5,10 @@
 
 use core::error::Error;
 
+/// Loopback port numbers from a reserved range that tests need refused.
+#[path = "support/closed_port.rs"]
+mod closed_port;
+
 /// A loopback UDP socket with a wildcard socket held on its number.
 #[path = "discovery/loopback.rs"]
 mod loopback;
@@ -86,3 +90,14 @@ mod hostnames;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 #[path = "discovery/budget.rs"]
 mod budget;
+
+/// The primary-KDC retry.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "discovery/primary.rs"]
+mod primary;

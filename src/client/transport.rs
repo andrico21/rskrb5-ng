@@ -48,6 +48,8 @@ mod password_discovery;
 mod password_dns;
 /// Password result consumption after a transport exchange.
 mod password_result;
+/// The primary-KDC retry of an initial login.
+mod primary;
 /// Configured realm protocol preference.
 mod realm_auto;
 /// Ordered SRV target address resolution.
@@ -343,6 +345,12 @@ impl Tokio {
         self.budget
             .filter(|budget| Instant::now() >= budget.deadline)
             .map(|budget| Error::TransportTimeout(budget.total))
+    }
+
+    /// This transport, locating primary KDCs only.
+    pub(crate) const fn with_primary_kdcs(mut self) -> Self {
+        self.primary_only = true;
+        self
     }
 
     /// The explicit DNS server of [`Self::with_dns_server`], if any.
@@ -1994,9 +2002,12 @@ impl Tokio {
         restrictions::config(config)?;
         options.set_crypto_policy(Ok(super::crypto_policy::configured(&config.libdefaults)?));
         let engine_options = InitCredsOptions::new(options).with_service(service);
-        let owned = Password::from_vec(password.to_vec());
-        let mut exchange = InitCreds::with_password(client, Some(owned), engine_options);
-        drive_tokio(self, (config, protocol), &mut exchange, &mut NoResponder).await
+        let realm = client.realm.clone();
+        primary::login(self, (config, protocol, &realm), || {
+            let owned = Password::from_vec(password.to_vec());
+            InitCreds::with_password(client.clone(), Some(owned), engine_options.clone())
+        })
+        .await
     }
 
     /// Perform a TGT AS login using keytab credentials and KDC preauth hints.
@@ -2165,8 +2176,11 @@ impl Tokio {
         restrictions::config(config)?;
         options.set_crypto_policy(Ok(super::crypto_policy::configured(&config.libdefaults)?));
         let engine_options = InitCredsOptions::new(options).with_service(service);
-        let mut exchange = InitCreds::with_keytab(client, keytab.clone(), engine_options);
-        drive_tokio(self, (config, protocol), &mut exchange, &mut NoResponder).await
+        let realm = client.realm.clone();
+        primary::login(self, (config, protocol, &realm), || {
+            InitCreds::with_keytab(client.clone(), keytab.clone(), engine_options.clone())
+        })
+        .await
     }
 
     /// Discover kpasswd endpoints through `_kpasswd` DNS SRV records, falling
@@ -2429,7 +2443,10 @@ impl Tokio {
                 )
                 .await
             {
-                Ok(outcome) => return Ok(outcome),
+                Ok(outcome) => {
+                    primary::record_answer(&endpoint.host, endpoint.port);
+                    return Ok(outcome);
+                }
                 Err(error) => failures.push(format!("{}: {error}", endpoint.authority())),
             }
         }
