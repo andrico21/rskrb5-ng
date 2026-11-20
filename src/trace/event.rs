@@ -2,7 +2,7 @@
 
 use core::fmt::{self, Write as _};
 
-use super::{Event, ExchangeKind, Identity};
+use super::{Event, ExchangeKind, Identity, TransportStep, TransportWire};
 use crate::extensions::{Event as ProviderEvent, Refusal};
 
 impl ExchangeKind {
@@ -80,6 +80,35 @@ impl fmt::Display for Escaped<'_> {
     }
 }
 
+impl TransportStep {
+    /// The stable name used in rendered events.
+    #[inline]
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Located => "located",
+            Self::Sending => "sending",
+            Self::Answered => "answered",
+            Self::Unanswered => "unanswered",
+            Self::Switched => "switched",
+        }
+    }
+}
+
+impl TransportWire {
+    /// The stable name used in rendered events.
+    #[inline]
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Udp => "udp",
+            Self::Tcp => "tcp",
+            Self::Https => "https",
+            Self::Auto => "auto",
+        }
+    }
+}
+
 /// The stable name of a refusal reason.
 const fn refusal_name(reason: Refusal) -> &'static str {
     match reason {
@@ -93,7 +122,7 @@ const fn refusal_name(reason: Refusal) -> &'static str {
 
 impl Event<'_> {
     /// Every name [`Self::name`] returns.
-    pub const NAMES: [&'static str; 12] = [
+    pub const NAMES: [&'static str; 13] = [
         "exchange-started",
         "request-sent",
         "reply-received",
@@ -106,6 +135,7 @@ impl Event<'_> {
         "provider-refused",
         "ap-req-accepted",
         "ap-req-rejected",
+        "transport",
     ];
 
     /// The stable machine name that starts every rendered line.
@@ -154,6 +184,12 @@ impl Event<'_> {
             }) => "provider-refused",
             Self::ApReqAccepted { service: _ } => "ap-req-accepted",
             Self::ApReqRejected { reason: _ } => "ap-req-rejected",
+            Self::Transport {
+                step: _,
+                wire: _,
+                target: _,
+                size: _,
+            } => "transport",
         }
     }
 
@@ -184,6 +220,17 @@ impl Event<'_> {
             },
             Self::ApReqAccepted { service: _ } => Self::ApReqAccepted {
                 service: Identity::withheld(),
+            },
+            Self::Transport {
+                step,
+                wire,
+                target: _,
+                size,
+            } => Self::Transport {
+                step,
+                wire,
+                target: Identity::withheld(),
+                size,
             },
             other @ (Self::ReplyReceived { kind: _, bytes: _ }
             | Self::Prompted { kind: _ }
@@ -240,6 +287,17 @@ impl fmt::Display for Event<'_> {
             Self::Provider(event) => provider(f, *event),
             Self::ApReqAccepted { service } => write!(f, " service={service}"),
             Self::ApReqRejected { reason } => write!(f, " reason={reason}"),
+            Self::Transport {
+                step,
+                wire,
+                target,
+                size,
+            } => write!(
+                f,
+                " step={} wire={} target={target} size={size}",
+                step.name(),
+                wire.name()
+            ),
         }
     }
 }

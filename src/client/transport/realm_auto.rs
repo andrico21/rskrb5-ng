@@ -3,7 +3,7 @@
 use tokio::net::TcpStream;
 
 use super::{
-    Config, Error, KRB_ERR_RESPONSE_TOO_BIG, KdcProtocol, Tokio, auto_uses_udp_first,
+    Config, Error, KRB_ERR_RESPONSE_TOO_BIG, KdcProtocol, Tokio, auto_uses_udp_first, events,
     kdc_error_code,
 };
 
@@ -31,10 +31,14 @@ pub(super) async fn send(
             if first == KdcProtocol::Udp
                 && kdc_error_code(&response) == Some(KRB_ERR_RESPONSE_TOO_BIG) =>
         {
+            events::switched(realm, second);
             send_explicit(transport, (config, realm, second), request).await
         }
         Ok(response) => Ok(response),
-        Err(_) => send_explicit(transport, (config, realm, second), request).await,
+        Err(_) => {
+            events::switched(realm, second);
+            send_explicit(transport, (config, realm, second), request).await
+        }
     }
 }
 

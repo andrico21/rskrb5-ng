@@ -2,7 +2,7 @@
 
 use core::{error::Error, fmt::Write as _};
 
-use super::{Event, ExchangeKind, Identity, err_fmt::ErrFmt};
+use super::{Event, ExchangeKind, Identity, TransportStep, TransportWire, err_fmt::ErrFmt};
 use crate::extensions::{Event as ProviderEvent, Interface, Refusal};
 
 /// One event of every variant (`Event::name` matches exhaustively, so a new variant breaks the build).
@@ -44,6 +44,12 @@ fn every_event() -> Vec<Event<'static>> {
         }),
         Event::ApReqAccepted { service: identity },
         Event::ApReqRejected { reason: "replay" },
+        Event::Transport {
+            step: TransportStep::Sending,
+            wire: TransportWire::Https,
+            target: identity,
+            size: 1,
+        },
     ];
     all
 }

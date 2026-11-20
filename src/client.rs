@@ -2301,7 +2301,8 @@ impl Tokio {
             &self.client,
             &Principal::tgt_service(self.client.realm.clone()),
         );
-        let result = self.login_untraced().await;
+        let trace = self.trace.clone();
+        let result = transport::traced(trace, self.login_untraced()).await;
         match &result {
             Ok(session) => tracer.completed(session.session_key().etype()),
             Err(error) => tracer.failed(error),
@@ -2451,9 +2452,12 @@ impl Tokio {
     ) -> Result<TgsRepSession, Error> {
         let tracer = Tracer::new(self.trace.clone(), ExchangeKind::Ticket);
         tracer.started(&self.client, &requested);
-        let result = self
-            .get_service_ticket_with_clock(requested, SystemTime::now)
-            .await;
+        let trace = self.trace.clone();
+        let result = transport::traced(
+            trace,
+            self.get_service_ticket_with_clock(requested, SystemTime::now),
+        )
+        .await;
         match &result {
             Ok(ticket) => tracer.completed(ticket.session_key().etype()),
             Err(error) => tracer.failed(error),

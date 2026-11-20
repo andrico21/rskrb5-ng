@@ -2,6 +2,7 @@
 
 use core::{
     net::{IpAddr, SocketAddr},
+    pin::Pin,
     time::Duration,
 };
 
@@ -47,6 +48,8 @@ mod dns_literal_tests;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod encts_tests;
+/// Trace events of the transport.
+mod events;
 /// MIT-shaped password transport for `KdcProtocol::Auto`.
 mod password_auto;
 /// Single-delivery password mutation transport.
@@ -101,6 +104,7 @@ use crate::{
     keytab::{EncryptionKey, Keytab},
     krb_error::decode as decode_krb_error,
     messages::secret_der::SecretDer,
+    trace::{Guard, TransportStep},
 };
 
 /// Default timeout applied to each KDC exchange.
@@ -838,6 +842,7 @@ impl Tokio {
                 this.locator(config).locate(None, realm, role, protocol),
             ))
             .await?;
+        events::located(realm, protocol, endpoints.len());
         if !endpoints.is_empty() {
             return Ok(endpoints);
         }
@@ -887,10 +892,13 @@ impl Tokio {
         protocol: KdcProtocol,
     ) -> Result<Vec<KdcEndpoint>, Error> {
         let this = self.with_request_budget(config.libdefaults.request_timeout);
-        this.within_budget(Box::pin(password_discovery::discover(
-            &this, config, realm, protocol,
-        )))
-        .await
+        let endpoints = this
+            .within_budget(Box::pin(password_discovery::discover(
+                &this, config, realm, protocol,
+            )))
+            .await?;
+        events::located(realm, protocol, endpoints.len());
+        Ok(endpoints)
     }
 
     /// Send an encoded request to the first reachable KDC discovered from config.
@@ -2480,6 +2488,7 @@ impl Tokio {
             if let Some(expired) = self.budget_exhausted() {
                 return Err(expired);
             }
+            events::at(TransportStep::Sending, &endpoint, request.len());
             match self
                 .send_pinned(
                     endpoint.protocol,
@@ -2489,10 +2498,14 @@ impl Tokio {
                 .await
             {
                 Ok(outcome) => {
+                    events::at(TransportStep::Answered, &endpoint, outcome.0.len());
                     primary::record_answer(self.watch, &endpoint.host, endpoint.port);
                     return Ok(outcome);
                 }
-                Err(error) => failures.push(format!("{}: {error}", endpoint.authority())),
+                Err(error) => {
+                    events::at(TransportStep::Unanswered, &endpoint, 0);
+                    failures.push(format!("{}: {error}", endpoint.authority()));
+                }
             }
         }
 
@@ -2582,6 +2595,38 @@ impl Tokio {
             Err(_elapsed) => Err(Error::TransportTimeout(expiry)),
         }
     }
+}
+
+/// Run `future` with `guard` receiving the transport's trace events.
+///
+/// Every transport call `future` makes on this task emits
+/// [`crate::trace::Event::Transport`] events: the endpoints found for a realm, each
+/// send to an endpoint with its answer or failure, and each switch to the other
+/// protocol.
+///
+/// The high-level [`super::Tokio`] client runs its logins and ticket requests this
+/// way under its own guard ([`super::Tokio::with_trace`]); call it directly to trace
+/// the raw methods of [`Tokio`]. A call outside `future`, or on another task, emits
+/// nothing. The returned future is boxed, so it stays small whatever `future` is.
+///
+/// # Security
+///
+/// An event carries sizes, a step and a protocol name, and one identity (the realm
+/// or the endpoint), which the guard withholds unless its options allow identities.
+/// No request or reply byte is traced.
+///
+/// # Cancel safety
+///
+/// cancel-safe exactly when `future` is.
+#[inline]
+pub fn traced<'future, F>(
+    guard: Guard,
+    future: F,
+) -> Pin<Box<dyn Future<Output = F::Output> + Send + 'future>>
+where
+    F: Future + Send + 'future,
+{
+    Box::pin(events::scope(guard, future))
 }
 
 /// Refuse a caller-built PA-ENC-TIMESTAMP for a client realm whose

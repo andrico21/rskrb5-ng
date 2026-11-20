@@ -1,6 +1,6 @@
 //! MIT-shaped password transport for [`KdcProtocol::Auto`]: one discovery, a TCP pass, then a UDP pass.
 
-use super::{Config, Error, KdcProtocol, Tokio, password_discovery};
+use super::{Config, Error, KdcProtocol, Tokio, events, password_discovery};
 
 /// Discover once, try every TCP endpoint, then every UDP endpoint.
 ///
@@ -25,6 +25,7 @@ pub(super) async fn send(
             transport, config, realm,
         )))
         .await?;
+    events::located(realm, KdcProtocol::Auto, endpoints.len());
     let (tcp, udp): (Vec<_>, Vec<_>) = endpoints
         .into_iter()
         .partition(|endpoint| endpoint.protocol == KdcProtocol::Tcp);
@@ -36,7 +37,7 @@ pub(super) async fn send(
             Ok(response) => return Ok(response),
             Err(error @ Error::KpasswdOutcomeUnknown(_)) => return Err(error),
             Err(error) if udp.is_empty() => return Err(error),
-            Err(_) => {}
+            Err(_) => events::switched(realm, KdcProtocol::Udp),
         }
     }
     transport

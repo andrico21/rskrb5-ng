@@ -6,9 +6,10 @@ use std::io;
 use tokio::net::{ToSocketAddrs, lookup_host};
 
 use super::{
-    Error, KdcEndpoint, KdcProtocol, MAX_UDP_DATAGRAM, TcpFraming, Tokio, non_empty_kdc_response,
-    tcp_request_length, udp,
+    Error, KdcEndpoint, KdcProtocol, MAX_UDP_DATAGRAM, TcpFraming, Tokio, events,
+    non_empty_kdc_response, tcp_request_length, udp,
 };
+use crate::trace::TransportStep;
 
 /// Try password endpoints only while delivery is definitely unattempted.
 ///
@@ -29,6 +30,7 @@ pub(super) async fn send_to_endpoints(
         if let Some(expired) = transport.budget_exhausted() {
             return Err(expired);
         }
+        events::at(TransportStep::Sending, &endpoint, request.len());
         let result = transport
             .send_password_once(
                 endpoint.protocol,
@@ -37,9 +39,18 @@ pub(super) async fn send_to_endpoints(
             )
             .await;
         match result {
-            Ok(response) => return Ok(response),
-            Err(error @ Error::KpasswdOutcomeUnknown(_)) => return Err(error),
-            Err(error) => failures.push(format!("{}: {error}", endpoint.authority())),
+            Ok(response) => {
+                events::at(TransportStep::Answered, &endpoint, response.len());
+                return Ok(response);
+            }
+            Err(error @ Error::KpasswdOutcomeUnknown(_)) => {
+                events::at(TransportStep::Unanswered, &endpoint, 0);
+                return Err(error);
+            }
+            Err(error) => {
+                events::at(TransportStep::Unanswered, &endpoint, 0);
+                failures.push(format!("{}: {error}", endpoint.authority()));
+            }
         }
     }
     Err(Error::KdcEndpointFailures {
