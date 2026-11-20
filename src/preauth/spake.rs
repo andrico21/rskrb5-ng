@@ -328,7 +328,7 @@ pub struct Factor {
 }
 
 /// A decoded PA-SPAKE value, for inspection and fuzzing.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Message {
     /// `support`: the client's groups.
@@ -354,6 +354,41 @@ pub enum Message {
     },
     /// `encdata`: a second-factor round.
     Encdata(EncryptedData),
+}
+
+/// Redacted: group numbers, factor types, element sizes and enctypes, never
+/// element or ciphertext bytes.
+impl fmt::Debug for Message {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Support { groups } => f.debug_struct("Support").field("groups", groups).finish(),
+            Self::Challenge {
+                group,
+                pubkey,
+                factors,
+            } => f
+                .debug_struct("Challenge")
+                .field("group", group)
+                .field("pubkey_bytes", &pubkey.len())
+                .field(
+                    "factors",
+                    &factors.iter().map(|factor| factor.kind).collect::<Vec<_>>(),
+                )
+                .finish(),
+            Self::Response { pubkey, factor } => f
+                .debug_struct("Response")
+                .field("pubkey_bytes", &pubkey.len())
+                .field("factor_etype", &factor.etype)
+                .field("factor_bytes", &factor.cipher.len())
+                .finish(),
+            Self::Encdata(data) => f
+                .debug_struct("Encdata")
+                .field("etype", &data.etype)
+                .field("cipher_bytes", &data.cipher.len())
+                .finish(),
+        }
+    }
 }
 
 impl Message {

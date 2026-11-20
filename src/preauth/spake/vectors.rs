@@ -28,12 +28,14 @@ struct Vector {
     /// The PRF+ output that produces `w`.
     wbytes: &'static str,
     /// The client's private scalar `y`.
+    #[cfg(feature = "spake")]
     private: &'static str,
     /// The client's element `S`.
     client_element: &'static str,
     /// The shared element `K`.
     shared: &'static str,
     /// The rejected optimistic challenge, when the vector has one.
+    #[cfg(feature = "spake")]
     optimistic: Option<&'static str>,
     /// The support message, when the vector has one.
     support: Option<&'static str>,
@@ -65,9 +67,11 @@ const VECTORS: [Vector; 10] = [
         group: 1,
         key: "850bb51358548cd05e86768c313e3bfef7511937dcf72c3e",
         wbytes: "686d84730cb8679ae95416c6567c6a63f2c9cef124f7a3371ae81e11cad42a37",
+        #[cfg(feature = "spake")]
         private: "500b294797b8b042aca1bedc0f5931a4f52c537b3608b2d05cc8a2372f439f25",
         client_element: "5d10705e0d1e43d5dbf30240ccfbde4a0230c70d4c79147ab0b317edad2f8ae7",
         shared: "25bde0d875f0feb5755f45ba5e857889d916ecf7476f116aa31dc3e037ec4292",
+        #[cfg(feature = "spake")]
         optimistic: None,
         support: Some("a0093007a0053003020101"),
         challenge: "a1363034a003020101a122042018f511e750c97b592acd30db7d9e5fca660389102e6bf610c1bfbed4616c8362a20930073005a003020101",
@@ -87,9 +91,11 @@ const VECTORS: [Vector; 10] = [
         group: 1,
         key: "8846f7eaee8fb117ad06bdd830b7586c",
         wbytes: "7c86659d29cf2b2ea93bfe79c3cefb8850e82215b3ea6fcd896561d48048f49c",
+        #[cfg(feature = "spake")]
         private: "18fe7c1512708c7fd06db270361f04593775bc634ceaf45347e5c11c38aae017",
         client_element: "38f8d4568090148ebc9fd17c241b4cc2769505a7ca6f3f7104417b72b5b5cf54",
         shared: "03e75edd2cd7e7677642dd68736e91700953ac55dc650e3c2a1b3b4acdb800f8",
+        #[cfg(feature = "spake")]
         optimistic: None,
         support: Some("a0093007a0053003020101"),
         challenge: "a1363034a003020101a12204207db465f1c08c64983a19f560bce966fe5306c4b447f70a5bca14612a92da1d63a20930073005a003020101",
@@ -109,9 +115,11 @@ const VECTORS: [Vector; 10] = [
         group: 1,
         key: "fca822951813fb252154c883f5ee1cf4",
         wbytes: "0d591b197b667e083c2f5f98ac891d3c9f99e710e464e62f1fb7c9b67936f3eb",
+        #[cfg(feature = "spake")]
         private: "b877afe8612b406d96be85bd9f19d423e95be96c0e1e0b5824127195c3ed5917",
         client_element: "fbe08f7f96cd5d4139e7c9eccb95e79b8ace41e270a60198c007df18525b628e",
         shared: "c2f7f99997c585e6b686ceb62db42f17cc70932def3bb4cf009e36f22ea5473d",
+        #[cfg(feature = "spake")]
         optimistic: None,
         support: Some("a0093007a0053003020101"),
         challenge: "a1363034a003020101a12204209e9311d985c1355e022d7c3c694ad8d6f7ad6d647b68a90b0fe46992818002daa20930073005a003020101",
@@ -131,9 +139,11 @@ const VECTORS: [Vector; 10] = [
         group: 1,
         key: "01b897121d933ab44b47eb5494db15e50eb74530dbdae9b634d65020ff5d88c1",
         wbytes: "e902341590a1b4bb4d606a1c643cccb3f2108f1b6aa97b381012b9400c9e3f4e",
+        #[cfg(feature = "spake")]
         private: "88b859df58ef5c69bacdfe681c582754eaab09a74dc29cff50b328613c232f55",
         client_element: "9e2cc32908fc46273279ec75354b4aeafa70c3d99a4d507175ed70d80b255dda",
         shared: "cf57f58f6e60169d2ecc8f20bb923a8e4c16e5bc95b9e64b5dc870da7026321b",
+        #[cfg(feature = "spake")]
         optimistic: None,
         support: Some("a0093007a0053003020101"),
         challenge: "a1363034a003020101a12204206f301aacae1220e91be42868c163c5009aeea1e9d9e28afcfc339cda5e7105b5a20930073005a003020101",
@@ -153,9 +163,11 @@ const VECTORS: [Vector; 10] = [
         group: 2,
         key: "01b897121d933ab44b47eb5494db15e50eb74530dbdae9b634d65020ff5d88c1",
         wbytes: "eb2984af18703f94dd5288b8596cd36988d0d4e83bfb2b44de14d0e95e2090bd",
+        #[cfg(feature = "spake")]
         private: "e07405eb215663abc1f254b8adc0da7a16febaa011af923d79fdef7c42930b33",
         client_element: "021d07dc31266fc7cfd904ce2632111a169b7ec730e5f74a7e79700f86638e13c8",
         shared: "0268489d7a9983f2fde69c6e6a1307e9d252259264f5f2dfc32f58cca19671e79b",
+        #[cfg(feature = "spake")]
         optimistic: None,
         support: Some("a0093007a0053003020102"),
         challenge: "a1373035a003020102a1230421024f62078ceb53840d02612195494d0d0d88de21feeb81187c71cbf3d01e71788da20930073005a003020101",
@@ -175,9 +187,11 @@ const VECTORS: [Vector; 10] = [
         group: 3,
         key: "01b897121d933ab44b47eb5494db15e50eb74530dbdae9b634d65020ff5d88c1",
         wbytes: "0304cfc55151c6bbe889653db96dbfe0ba4acafc024c1e8840cb3a486f6d80c16e1b8974016aa4b7fa43042a9b3825b1",
+        #[cfg(feature = "spake")]
         private: "5b7c709acb175a5afb82860deabca8d0b341facdff0ac0f1a425799aa905d7507e1ea9c573581a81467437419466e472",
         client_element: "020d5adfdb92bc377041cf5837412574c5d13e0f4739208a4f0c859a0a302bc6a533440a245b9d97a0d34af5016a20053d",
         shared: "0264aa8c61da9600dfb0beb5e46550d63740e4ef29e73f1a30d543eb43c25499037ad16538586552761b093cf0e37c703a",
+        #[cfg(feature = "spake")]
         optimistic: None,
         support: Some("a0093007a0053003020103"),
         challenge: "a1473045a003020103a133043102a1524603ef14f184696f854229d3397507a66c63f841ba748451056be07879ac298912387b1c5cdff6381c264701be57a20930073005a003020101",
@@ -197,9 +211,11 @@ const VECTORS: [Vector; 10] = [
         group: 4,
         key: "01b897121d933ab44b47eb5494db15e50eb74530dbdae9b634d65020ff5d88c1",
         wbytes: "de3a095a2b2386eff3eb15b735398da1caf95bc8425665d82370aff58b0471f34a57bccddf1ebf0a2965b58a93ee5b45e85d1a5435d1c8c83662999722d542831f9a",
+        #[cfg(feature = "spake")]
         private: "003e2e2950656fa231e959acdd984d125e7fa59cec98126cbc8f3888447911ebcd49428a1c22d5fdb76a19fbeb1d9edfa3da6cf55b158b53031d05d51433ade9b2b4",
         client_element: "02004d142d87477841f6ba053c8f651f3395ad264b7405ca5911fb9a55abd454fef658a5f9ed97d1efac68764e9092fa15b9e0050880d78e95fd03abf59317916822b5",
         shared: "03007c303f62f09282cc849490805bd4457a6793a832cbeb55df427db6a31e99b055d5dc99756d24d47b70ad8b6015b0fb8742a718462ed423b90fa3fe631ac13fa916",
+        #[cfg(feature = "spake")]
         optimistic: None,
         support: Some("a0093007a0053003020104"),
         challenge: "a1593057a003020104a145044302017d3de19a3ec53d0174905665ef37947d142535102cd9809c0dfbd0dfe007353d54cf406ce2a59950f2bb540df6fbe75f8bbbef811c9ba06cc275adbd96756696eca20930073005a003020101",
@@ -219,9 +235,11 @@ const VECTORS: [Vector; 10] = [
         group: 1,
         key: "01b897121d933ab44b47eb5494db15e50eb74530dbdae9b634d65020ff5d88c1",
         wbytes: "e902341590a1b4bb4d606a1c643cccb3f2108f1b6aa97b381012b9400c9e3f4e",
+        #[cfg(feature = "spake")]
         private: "785d6801a2490df028903ac6449b105f2ff0db895b252953cdc2076649526103",
         client_element: "2a8f70f46cee9030700037b77f22cec7970dcc238e3e066d9d726baf183992c6",
         shared: "d3c5e4266aa6d1b2873a97ce8af91c7e4d7a7ac456acced7908d34c561ad8fa6",
+        #[cfg(feature = "spake")]
         optimistic: None,
         support: None,
         challenge: "a1363034a003020101a122042083523b35f1565006cbfc4f159885467c2fb9bc6fe23d36cb1da43d199f1a3118a20930073005a003020101",
@@ -241,9 +259,11 @@ const VECTORS: [Vector; 10] = [
         group: 4,
         key: "01b897121d933ab44b47eb5494db15e50eb74530dbdae9b634d65020ff5d88c1",
         wbytes: "de3a095a2b2386eff3eb15b735398da1caf95bc8425665d82370aff58b0471f34a57bccddf1ebf0a2965b58a93ee5b45e85d1a5435d1c8c83662999722d542831f9a",
+        #[cfg(feature = "spake")]
         private: "01ded675ebf74fe30c9a53710f577e9cf84f09f6048fe245a4600004884cc167733f9a9e43108fb83babe8754cd37cbd7025e28bc9ff870f084c7244f536285e25b4",
         client_element: "02016c64995e804416f748fd5fa3aa678cbc7cbb596a4f523132dc8af7ce84e541f484a2c74808c6b21dcf7775baefa6753398425becc7b838b210ac5daa0cb0b710e2",
         shared: "0200997f4848ae2e7a98c23d14ac662030743ab37fccc2a45f1c721114f40bcc80fe6ec6aba49868f8aea1aa994d50e81b86d3e4d3c1130c8695b68907c673d9e5886a",
+        #[cfg(feature = "spake")]
         optimistic: Some(
             "a1363034a003020102a122042047ca8c24c3a4a70b6eca228322529dadcfa85cf58faceecf5d5c02907b9e2deba20930073005a003020101",
         ),
@@ -265,9 +285,11 @@ const VECTORS: [Vector; 10] = [
         group: -1,
         key: "01b897121d933ab44b47eb5494db15e50eb74530dbdae9b634d65020ff5d88c1",
         wbytes: "26da6b118cee6fa5ea795ed32d61490d82b2f11102312f3f2fc04fb01c93df91",
+        #[cfg(feature = "spake")]
         private: "10fc4e0bb1a902e58f632a1ea0bceb366360ac985f46996d956a02572bfcf050",
         client_element: "f9a7fa352930dedb422d567700bfcd39ba221e7f9ac3e6b36f2b63b68b88642c",
         shared: "6f61d6b18323b6c3ddaac7c56712845335384f095d3e116f69feb926a04f1340",
+        #[cfg(feature = "spake")]
         optimistic: None,
         support: Some("a0093007a00530030201ff"),
         challenge: "a1363034a0030201ffa12204202289a4f3c613e6e1df95e94aaa3c127dc062b9fceec3f9b62378dc729d61d0e3a20930073005a003020101",

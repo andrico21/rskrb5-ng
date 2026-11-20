@@ -14,8 +14,8 @@ use rasn_kerberos::PaData;
 
 use super::{
     Error, ExchangeStep, InitCreds, InitCredsOptions, KDC_ERR_PREAUTH_REQUIRED, KdcError,
-    PA_ENC_TIMESTAMP, Principal, State, build_as_req, challenge_key, encode, order,
-    preauth_retry_options, process_kdc_error, send, service,
+    PA_ENC_TIMESTAMP, Principal, State, build_as_req, encode, order, preauth_retry_options,
+    process_kdc_error,
 };
 use crate::{
     error::Spake as SpakeError,
@@ -140,23 +140,27 @@ fn advance(
     value: &[u8],
 ) -> Result<ExchangeStep, Error> {
     let mut options = preauth_retry_options(engine.options.request.clone(), offers);
-    let unanswered = build_as_req(engine.client.clone(), service(engine), options.clone())?;
+    let unanswered = build_as_req(
+        engine.client.clone(),
+        super::service(engine),
+        options.clone(),
+    )?;
     let body = encode("KDC-REQ-BODY", &unanswered.message.0.req_body)?;
     let first = round.first.clone();
     let step = round
         .client
-        .process(value, &body, || challenge_key(engine, &first))?;
+        .process(value, &body, || super::challenge_key(engine, &first))?;
     match step {
         spake::Step::Support(padata) => {
             options.padata_mut().push(padata);
-            let request = build_as_req(engine.client.clone(), service(engine), options)?;
-            send(engine, request, true, |_| State::Spake(Box::new(round)))
+            let request = build_as_req(engine.client.clone(), super::service(engine), options)?;
+            super::send(engine, request, true, |_| State::Spake(Box::new(round)))
         }
         spake::Step::Response { padata, reply_key } => {
             options.padata_mut().push(padata);
-            let request = build_as_req(engine.client.clone(), service(engine), options)?;
+            let request = build_as_req(engine.client.clone(), super::service(engine), options)?;
             engine.reply_key = Some(reply_key);
-            send(engine, request, true, State::Final)
+            super::send(engine, request, true, State::Final)
         }
     }
 }

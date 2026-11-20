@@ -226,7 +226,7 @@ fn encrypt_factor(key: &EncryptionKey, entropy: &mut Entropy<'_>) -> Result<Encr
 /// # Errors
 /// Returns [`Error::Random`] when it fails.
 fn random(buffer: &mut [u8]) -> Result<(), Error> {
-    Ok(getrandom::fill(buffer)?)
+    getrandom::fill(buffer).map_err(Error::Random)
 }
 
 /// An unexpected-message error.
