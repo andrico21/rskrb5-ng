@@ -1,7 +1,7 @@
 //! The armor AP-REQ and armor key (MIT `fast.c:51-108`) and the armored
 //! request (`fast.c:144-169,253-357`).
 
-use core::{mem, time::Duration};
+use core::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rasn::types::Integer;
@@ -35,7 +35,7 @@ pub(super) fn decode_request(bytes: &[u8]) -> Result<rasn_kerberos::AsReq, Error
     keys::decode("AS-REQ", bytes)
 }
 
-/// Choose the conversation's armor under `policy`, consuming `source`.
+/// Choose the armor for requests to `realm` under `policy`.
 ///
 /// # Errors
 /// Returns [`Error::ArmorUnavailable`] when `Required` finds no armor, the
@@ -50,11 +50,11 @@ pub(super) fn choose(
         Policy::Off => return Ok(None),
         Policy::Opportunistic | Policy::Required => {}
     }
-    let ticket = match mem::replace(source, ArmorSource::None) {
+    let ticket = match source {
         ArmorSource::None => None,
-        ArmorSource::Ticket(ticket) => Some(*ticket),
+        ArmorSource::Ticket(ticket) => Some((**ticket).clone()),
         ArmorSource::Cache(cache) => cache.armor_ticket(realm, SystemTime::now()),
-        ArmorSource::Anonymous(mut provider) => Some(
+        ArmorSource::Anonymous(provider) => Some(
             provider
                 .armor_ticket(realm)
                 .map_err(Error::AnonymousArmor)?,
@@ -149,7 +149,7 @@ fn establish(
     crypto_policy
         .check_use(key.etype(), Use::SessionKey)
         .map_err(Crypto::from)?;
-    Ok((key, ap_req))
+    Ok((key, ap_req, realm.to_owned()))
 }
 
 /// The armor authenticator: the client, the current time and the subkey.

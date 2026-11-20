@@ -60,7 +60,11 @@ mod tests {
         for (value, enabled) in [("true", true), ("false", false)] {
             let text = format!("[libdefaults]\n canonicalize = {value}\n");
             let config = Config::parse_with_mode(&text, ParseMode::Strict)?;
-            assert_eq!(config.libdefaults.canonicalize.is_enabled(), enabled, "{value}");
+            assert_eq!(
+                config.libdefaults.canonicalize.is_enabled(),
+                enabled,
+                "{value}"
+            );
             assert!(
                 !config.diagnostics().iter().any(|item| matches!(item,
                     ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == "canonicalize")),

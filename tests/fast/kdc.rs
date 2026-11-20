@@ -86,6 +86,8 @@ pub(crate) struct Kdc {
     challenge_verified: bool,
     /// The cookie of the armored error.
     cookie: Vec<u8>,
+    /// The realm a request to [`REALM`] is referred to.
+    referral: Option<&'static str>,
 }
 
 impl Kdc {
@@ -99,6 +101,7 @@ impl Kdc {
             requests: Vec::new(),
             challenge_verified: false,
             cookie: b"MIT\x01cookie-state".to_vec(),
+            referral: None,
         }
     }
 
@@ -114,6 +117,14 @@ impl Kdc {
     pub(crate) fn canonicalizing(client: &'static str) -> Self {
         Self {
             canonical: Some(client),
+            ..Self::new()
+        }
+    }
+
+    /// A KDC that refers requests to [`REALM`] to `realm` (RFC 6806 section 7).
+    pub(crate) fn referring(realm: &'static str) -> Self {
+        Self {
+            referral: Some(realm),
             ..Self::new()
         }
     }
@@ -135,12 +146,17 @@ impl Kdc {
 
     /// An armor TGT of the realm, issued to a host.
     pub(crate) fn armor_ticket(&self) -> Result<AsRepSession, TestError> {
+        self.armor_ticket_in(REALM)
+    }
+
+    /// An armor TGT of `realm`'s TGS (this KDC serves every realm), issued to a host.
+    pub(crate) fn armor_ticket_in(&self, realm: &str) -> Result<AsRepSession, TestError> {
         let session = EncryptionKey::new(18, vec![0x33; 32]);
-        let ticket = self.ticket(&["host", "armor.fast.test"], &session)?;
+        let ticket = self.ticket(realm, &["host", "armor.fast.test"], &session)?;
         let now = SystemTime::now();
         Ok(AsRepSession::new(
-            Principal::new(REALM, 3, ["host", "armor.fast.test"]),
-            Principal::tgt_service(REALM),
+            Principal::new(realm, 3, ["host", "armor.fast.test"]),
+            Principal::tgt_service(realm),
             session,
             der::encode(&ticket)?.into(),
             [0x40, 0x60, 0, 0],
@@ -189,7 +205,13 @@ impl Kdc {
             armor_key,
             nonce: inner.req_body.nonce,
             request: request.to_vec(),
+            realm: String::from_utf8(outer.req_body.realm.as_bytes().to_vec())?,
         };
+        if let Some(referred) = self.referral
+            && context.realm == REALM
+        {
+            return wrong_realm(&context, &inner, referred);
+        }
         match inner
             .padata
             .iter()
@@ -229,7 +251,10 @@ impl Kdc {
         let fx_error = error(inner, None)?;
         let info = vec![EtypeInfo2Entry {
             etype: 18,
-            salt: Some(KerberosString::try_from(format!("{REALM}{CLIENT}"))?),
+            salt: Some(KerberosString::try_from(format!(
+                "{}{CLIENT}",
+                context.realm
+            ))?),
             s2kparams: None,
         }];
         let cookie = if self.tamper == Tamper::OversizedCookie {
@@ -283,7 +308,11 @@ impl Kdc {
     /// The armored AS-REP of a verified challenge.
     fn as_rep(&self, context: &Context, inner: &KrbFastReq) -> Result<Vec<u8>, TestError> {
         let client = self.canonical.unwrap_or(CLIENT);
-        let ticket = self.ticket(&[client], &EncryptionKey::new(18, vec![0x55; 32]))?;
+        let ticket = self.ticket(
+            &context.realm,
+            &[client],
+            &EncryptionKey::new(18, vec![0x55; 32]),
+        )?;
         let strengthen = EncryptionKey::new(18, vec![0x66; 32]);
         let unstrengthened = matches!(
             self.tamper,
@@ -353,7 +382,7 @@ impl Kdc {
             pvno: Integer::from(5_i32),
             msg_type: Integer::from(11_i32),
             padata: outer_padata,
-            crealm: string(REALM)?,
+            crealm: string(&context.realm)?,
             cname: name(1, &[CLIENT])?,
             ticket,
             enc_part,
@@ -383,7 +412,7 @@ impl Kdc {
         Ok(KrbFastFinished {
             timestamp: time(whole(SystemTime::now())?),
             usec: Integer::from(0_i32),
-            crealm: string(REALM)?,
+            crealm: string(&context.realm)?,
             cname: name(1, &[client])?,
             ticket_checksum: Checksum {
                 r#type,
@@ -416,8 +445,13 @@ impl Kdc {
         )])
     }
 
-    /// A ticket for `client`, sealed in the TGS key.
-    fn ticket(&self, client: &[&str], session: &EncryptionKey) -> Result<Ticket, TestError> {
+    /// A ticket of `realm` for `client`, sealed in the TGS key.
+    fn ticket(
+        &self,
+        realm: &str,
+        client: &[&str],
+        session: &EncryptionKey,
+    ) -> Result<Ticket, TestError> {
         let now = whole(SystemTime::now())?;
         let part = EncTicketPart {
             flags: TicketFlags(KerberosFlags::from_slice(&[0x40, 0x60, 0, 0])),
@@ -425,7 +459,7 @@ impl Kdc {
                 r#type: session.etype(),
                 value: session.value().to_vec().into(),
             },
-            crealm: string(REALM)?,
+            crealm: string(realm)?,
             cname: name(1, client)?,
             transited: TransitedEncoding {
                 r#type: 1,
@@ -440,8 +474,8 @@ impl Kdc {
         };
         Ok(Ticket {
             tkt_vno: Integer::from(5_i32),
-            realm: string(REALM)?,
-            sname: name(2, &["krbtgt", REALM])?,
+            realm: string(realm)?,
+            sname: name(2, &["krbtgt", realm])?,
             enc_part: seal(&self.tgs_key, 2, &der::encode(&part)?)?,
         })
     }
@@ -455,6 +489,8 @@ struct Context {
     nonce: u32,
     /// The request as received.
     request: Vec<u8>,
+    /// The realm the request was sent to.
+    realm: String,
 }
 
 /// The encrypted part of the AS-REP, with the RFC 6806 checksum over the
@@ -497,15 +533,38 @@ fn enc_part(
         start_time: None,
         end_time: inner.req_body.till.clone(),
         renew_till: None,
-        srealm: string(REALM)?,
-        sname: name(2, &["krbtgt", REALM])?,
+        srealm: string(&context.realm)?,
+        sname: name(2, &["krbtgt", &context.realm])?,
         caddr: None,
         encrypted_pa_data,
     })
 }
 
+/// The armored `KDC_ERR_WRONG_REALM` that refers the client to `realm`.
+fn wrong_realm(context: &Context, inner: &KrbFastReq, realm: &str) -> Result<Vec<u8>, TestError> {
+    let mut referral = error(inner, None)?;
+    referral.error_code = 68;
+    referral.crealm = Some(string(realm)?);
+    let response = KrbFastResponse {
+        padata: vec![pa(PA_FX_ERROR, der::encode(&referral)?)],
+        strengthen_key: None,
+        finished: None,
+        nonce: context.nonce,
+    };
+    let sealed = seal(&context.armor_key, 52, &der::encode(&response)?)?;
+    let method_data = vec![pa(
+        PA_FX_FAST,
+        der::encode(&PaFxFastReply::ArmoredData(KrbFastArmoredRep {
+            enc_fast_rep: sealed,
+        }))?,
+    )];
+    referral.e_data = Some(der::encode(&method_data)?.into());
+    Ok(der::encode(&referral)?)
+}
+
 /// The KRB-ERROR `PREAUTH_REQUIRED` for `inner` with `e_data`.
 fn error(inner: &KrbFastReq, e_data: Option<Vec<u8>>) -> Result<KrbError, TestError> {
+    let realm = String::from_utf8(inner.req_body.realm.as_bytes().to_vec())?;
     Ok(KrbError {
         pvno: Integer::from(5_i32),
         msg_type: Integer::from(30_i32),
@@ -514,10 +573,10 @@ fn error(inner: &KrbFastReq, e_data: Option<Vec<u8>>) -> Result<KrbError, TestEr
         stime: time(whole(SystemTime::now())?),
         susec: Integer::from(0_i32),
         error_code: 25,
-        crealm: Some(string(REALM)?),
+        crealm: Some(string(&realm)?),
         cname: inner.req_body.cname.clone(),
-        realm: string(REALM)?,
-        sname: name(2, &["krbtgt", REALM])?,
+        realm: string(&realm)?,
+        sname: name(2, &["krbtgt", &realm])?,
         e_text: None,
         e_data: e_data.map(Into::into),
     })

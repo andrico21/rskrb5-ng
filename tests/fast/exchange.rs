@@ -18,10 +18,11 @@ use rskrb5_ng::{
         stepwise::{ExchangeStep, InitCreds, InitCredsOptions, StepInput},
     },
     error::{Client as ClientError, Fast},
+    extensions::ProviderError,
     keytab::{Entry, Keytab, Principal as KeytabPrincipal},
     preauth::fast::{
-        ArmorCache, ArmorSource, Exchange, MAX_COOKIE_BYTES, Outcome, PA_ENCRYPTED_CHALLENGE,
-        PA_FX_FAST, Policy,
+        AnonymousArmor, ArmorCache, ArmorSource, Exchange, MAX_COOKIE_BYTES, Outcome,
+        PA_ENCRYPTED_CHALLENGE, PA_FX_FAST, Policy,
     },
 };
 
@@ -30,14 +31,44 @@ use super::kdc::{CLIENT, Kdc, REALM, Tamper, TestError};
 /// The client's keytab.
 fn keytab(kdc: &Kdc) -> Keytab {
     let mut keys = Keytab::new();
-    keys.entries_mut().push(Entry::new(
-        KeytabPrincipal::new(REALM, 1, vec![CLIENT.to_owned()]),
-        1_893_553_440,
-        1,
-        kdc.client_key().clone(),
-        1,
-    ));
+    for realm in [REALM, OTHER] {
+        keys.entries_mut().push(Entry::new(
+            KeytabPrincipal::new(realm, 1, vec![CLIENT.to_owned()]),
+            1_893_553_440,
+            1,
+            kdc.client_key().clone(),
+            1,
+        ));
+    }
     keys
+}
+
+/// The realm the referral tests are referred to.
+const OTHER: &str = "OTHER.TEST";
+
+/// An anonymous-armor provider (the hook todo 8 fills with anonymous PKINIT)
+/// that hands out the KDC's armor TGT of whichever realm is asked for.
+struct PerRealm(Vec<AsRepSession>);
+
+impl AnonymousArmor for PerRealm {
+    fn armor_ticket(&mut self, realm: &str) -> Result<AsRepSession, ProviderError> {
+        self.0
+            .iter()
+            .find(|ticket| ticket.service().realm == realm)
+            .cloned()
+            .ok_or_else(|| format!("no armor for {realm}").into())
+    }
+}
+
+/// The realm each request of `kdc` went to.
+fn request_realms(kdc: &Kdc) -> Result<Vec<String>, TestError> {
+    kdc.requests()
+        .iter()
+        .map(|request| {
+            let rasn_kerberos::AsReq(outer) = der::decode(request)?;
+            Ok(String::from_utf8(outer.req_body.realm.as_bytes().to_vec())?)
+        })
+        .collect()
 }
 
 /// Exchange options; `canonicalize` sets the KDC option.
@@ -358,6 +389,59 @@ fn canonicalization_is_accepted_only_under_fast() -> Result<(), TestError> {
             }
         ),
         "{error}"
+    );
+    Ok(())
+}
+
+/// A client referral (RFC 6806 section 7) is followed only when the caller
+/// asked for canonicalization and the armor authenticated the referral; the
+/// referred realm is armored again, and without armor for it the exchange
+/// fails closed.
+#[test]
+fn client_referrals_are_followed_only_when_armored_and_asked_for() -> Result<(), TestError> {
+    let mut kdc = Kdc::referring(OTHER);
+    let mut fast = Exchange::new(
+        Policy::Required,
+        ArmorSource::Anonymous(Box::new(PerRealm(vec![
+            kdc.armor_ticket_in(REALM)?,
+            kdc.armor_ticket_in(OTHER)?,
+        ]))),
+    );
+    let session = login(&mut kdc, &mut fast, true)?;
+    assert_eq!(
+        session.client(),
+        &Principal::user(OTHER, CLIENT),
+        "the referred client"
+    );
+    assert_eq!(
+        request_realms(&kdc)?,
+        vec![REALM.to_owned(), OTHER.to_owned(), OTHER.to_owned()],
+        "the referral restarts in the referred realm"
+    );
+    let mut unasked = Kdc::referring(OTHER);
+    let mut plain = armored(&unasked, Policy::Required)?;
+    let error = login(&mut unasked, &mut plain, false)
+        .err()
+        .ok_or("referral followed without canonicalize")?;
+    assert_eq!(
+        request_realms(&unasked)?,
+        vec![REALM.to_owned()],
+        "no restart: {error}"
+    );
+    let mut stranded = Kdc::referring(OTHER);
+    let mut single = armored(&stranded, Policy::Required)?;
+    let refused = login(&mut stranded, &mut single, true)
+        .err()
+        .ok_or("referred realm used without its armor")?;
+    assert!(
+        matches!(
+            fast_cause(&refused),
+            Some(Fast::ArmorTicket {
+                realm: _,
+                actual: _
+            })
+        ),
+        "{refused}"
     );
     Ok(())
 }

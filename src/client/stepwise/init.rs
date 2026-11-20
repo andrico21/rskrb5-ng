@@ -209,6 +209,9 @@ fn initial_reply(
         }
         return initial_as_rep(engine, &request, reply);
     }
+    if let Some(step) = client_referral(engine, reply)? {
+        return Ok(step);
+    }
     note_kdc_time(engine, reply);
     if let Some(probe) = preauth::discovery_request(&request, &engine.options.request, reply)? {
         return send(engine, probe, true, |_| State::Discovery);
@@ -568,6 +571,52 @@ fn strengthened(engine: &InitCreds<'_>, reply_key: EncryptionKey) -> Result<Encr
         Some(strengthen) => strengthen_key(strengthen, &reply_key),
         None => Ok(reply_key),
     }
+}
+
+/// RFC 4120 `KDC_ERR_C_PRINCIPAL_UNKNOWN`.
+const KDC_ERR_C_PRINCIPAL_UNKNOWN: i32 = 6;
+/// RFC 6806 `KDC_ERR_WRONG_REALM`.
+const KDC_ERR_WRONG_REALM: i32 = 68;
+
+/// Follow a client referral to the realm the KDC names (RFC 6806 section 7,
+/// MIT `get_in_tkt.c:1450-1458,1745-1762`), restarting the exchange there.
+///
+/// Only when the caller asked for canonicalization and the armor
+/// authenticated the error: an unarmored referral could move the client to a
+/// realm an attacker chose. The exchange's round bound also bounds referrals.
+///
+/// # Errors
+/// Returns the first request's errors in the referred realm.
+fn client_referral(
+    engine: &mut InitCreds<'_>,
+    reply: &[u8],
+) -> Result<Option<ExchangeStep>, Error> {
+    let armored = engine
+        .armor
+        .as_ref()
+        .is_some_and(|armor| armor.armor_key().is_some());
+    if !armored || !canonicalize_requested(engine) {
+        return Ok(None);
+    }
+    let Ok(error) = process_kdc_error(reply) else {
+        return Ok(None);
+    };
+    if !matches!(
+        error.error_code(),
+        KDC_ERR_WRONG_REALM | KDC_ERR_C_PRINCIPAL_UNKNOWN
+    ) {
+        return Ok(None);
+    }
+    let Some(realm) = error
+        .client()
+        .map(|client| client.realm.clone())
+        .filter(|realm| *realm != engine.client.realm)
+    else {
+        return Ok(None);
+    };
+    engine.client.realm = realm;
+    engine.cookie = None;
+    start(engine).map(Some)
 }
 
 /// Whether the caller asked for client canonicalization (`canonicalize`).

@@ -81,8 +81,9 @@ pub const MAX_COOKIE_BYTES: usize = 8192;
 /// The most armored requests of one exchange (MIT `MAX_IN_TKT_LOOPS`).
 pub const MAX_ROUNDS: usize = 16;
 
-/// The armor of one conversation: the armor key and the DER armor AP-REQ.
-type Armor = (EncryptionKey, Zeroizing<Vec<u8>>);
+/// The armor of one conversation: the armor key, the DER armor AP-REQ and
+/// the realm whose TGS issued the armor ticket.
+type Armor = (EncryptionKey, Zeroizing<Vec<u8>>, String);
 
 /// When an exchange uses FAST (MIT `krb5_get_init_creds_opt_set_fast_flags`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -179,7 +180,7 @@ impl fmt::Debug for ArmorSource {
 pub struct Exchange {
     /// When to armor.
     policy: Policy,
-    /// Where the armor ticket comes from; taken when the armor is built.
+    /// Where the armor ticket comes from, for each realm the exchange armors.
     source: ArmorSource,
     /// The policy the armor ticket and the armor key must satisfy.
     crypto_policy: CryptoPolicy,
@@ -249,17 +250,24 @@ impl Exchange {
         }
         self.rounds = self.rounds.saturating_add(1);
         let message = armor::decode_request(request.request)?;
-        if self.outcome.is_none() {
-            let realm = String::from_utf8(message.0.req_body.realm.as_bytes().to_vec())
-                .map_err(|error| keys::codec("decode", "request realm", &error))?;
-            self.armor = armor::choose(self.policy, &mut self.source, &self.crypto_policy, &realm)?;
+        let realm = String::from_utf8(message.0.req_body.realm.as_bytes().to_vec())
+            .map_err(|error| keys::codec("decode", "request realm", &error))?;
+        let choice = match (&self.armor, self.outcome) {
+            (_, None) => Some(self.policy),
+            (Some((_, _, armored)), Some(Outcome::Armored)) => {
+                (*armored != realm).then_some(Policy::Required)
+            }
+            (None, Some(_)) | (Some(_), Some(Outcome::Unarmored)) => None,
+        };
+        if let Some(policy) = choice {
+            self.armor = armor::choose(policy, &mut self.source, &self.crypto_policy, &realm)?;
             self.outcome = Some(if self.armor.is_some() {
                 Outcome::Armored
             } else {
                 Outcome::Unarmored
             });
         }
-        let Some((key, ap_req)) = &self.armor else {
+        let Some((key, ap_req, _)) = &self.armor else {
             return Ok(Zeroizing::new(request.request.to_vec()));
         };
         self.nonce = Some(message.0.req_body.nonce);
@@ -272,7 +280,7 @@ impl Exchange {
     /// Returns the reply's FAST failure.
     fn unwrap(&self, bytes: &[u8]) -> Result<ArmoredReply, Error> {
         match (&self.armor, self.nonce) {
-            (Some((key, _)), Some(nonce)) => reply::unwrap(key, nonce, bytes),
+            (Some((key, _, _)), Some(nonce)) => reply::unwrap(key, nonce, bytes),
             _ => Ok(ArmoredReply::new(
                 Zeroizing::new(bytes.to_vec()),
                 None,
@@ -311,7 +319,7 @@ impl ArmoredExchange for Exchange {
 
     #[inline]
     fn armor_key(&self) -> Option<&EncryptionKey> {
-        self.armor.as_ref().map(|(key, _)| key)
+        self.armor.as_ref().map(|(key, _, _)| key)
     }
 }
 
