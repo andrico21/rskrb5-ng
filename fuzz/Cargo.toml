@@ -138,3 +138,10 @@ path = "fuzz_targets/keyring_index.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fast_reply"
+path = "fuzz_targets/fast_reply.rs"
+test = false
+doc = false
+bench = false

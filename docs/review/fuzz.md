@@ -30,6 +30,7 @@ the chosen entry point, so one target covers a family of related decoders.
 | `camellia_crypto` | Camellia-CTS-CMAC input: a selector byte (entry point and camellia128 or camellia256), the key usage and the input | `CtsCmacEtype::decrypt_message` on the raw input, then on a sealed copy of it (round trip, and a changed MAC is refused); `verify_checksum` on a checksum split from its data, then on the computed one (and a changed one is refused); `decrypt_data` and the re-encryption of an accepted ciphertext; `string_to_key` on `s2kparams` text (the count is bounded to 64 so the run stays fast; zero, over-limit and malformed counts are refused before any work) |
 | `kcm_reply` | a KCM daemon's reply byte stream | the blocking KCM client (`Client::call`, `read_frame`, `read_exact`) over the input as the whole reply stream, once for each reply shape: cache name, UUID list, default principal, one credential, counted credential list, KDC offset and empty (`Shape::decode` of each), with the reply limit lowered to 64 KiB; the announced length is checked before the body is allocated |
 | `keyring_index` | the payload of the `krb_ccache:primary` key of a `KEYRING:` collection | `ccache::keyring::index::parse`, then `encode` and `parse` again on accepted input (the version, the length and the name of the primary cache; MIT `cc_keyring.c:541-571`) |
+| `fast_reply` | replies to an armored AS request (RFC 6113 FAST) | the stepwise AS engine armored by `preauth::fast::Exchange` with a fixed armor ticket: the raw reply (outer AS-REP or KRB-ERROR, METHOD-DATA, `PA-FX-FAST-REPLY`), and the fuzzed bytes sealed as the `KrbFastResponse` under the conversation's armor key inside a KRB-ERROR or an AS-REP (`KrbFastResponse`, `PA-FX-ERROR`, the cookie bound, `KrbFastFinished` and its ticket checksum); no fuzzed reply may complete the exchange |
 | `name_parse` | names and values as text | `Principal::parse_user`, `Principal::parse_service`, `CacheName::parse`, `keytab::Name::parse`, `KdcEndpoint::configured`, `Tokio::with_dns_server`, `config::parse_duration`, `config::parse_boolean`, `crypto::s2kparams_to_iterations` |
 
 The keys, keytabs, tickets and templates the targets use are the synthetic
@@ -101,6 +102,7 @@ timeout artifact:
 | `camellia_crypto` | 725,278 (todo 33 of plan 2, 2026-11-19) | 121 s | 0 |
 | `kcm_reply` | 596,862 (todo 12 of plan 2, 2026-11-19) | 121 s | 0 |
 | `keyring_index` | 6,296,962 (todo 13 of plan 2, 2026-11-19) | 121 s | 0 |
+| `fast_reply` | 28,010 (todo 7 of plan 2, 2026-11-20) | 121 s | 0 |
 
 ### Round-2 session admission repair (FU-FUZ-R02)
 
@@ -151,6 +153,23 @@ with only this target's export: `rskrb5_ng::ccache::keyring::index::parse` in
 module that the inventory search finds are reason-only rows: they hand bytes to
 parsers that other rows already cover, split text the application or the kernel
 produced, or are the key calls themselves.
+
+### FAST replies (todo 7 of plan 2)
+
+`fast_reply` fuzzes the replies to an armored AS request: the stepwise engine
+is armored by `preauth::fast::Exchange` with a fixed armor ticket, and the
+harness recovers the conversation's armor key from the armor AP-REQ as the KDC
+would, so its structured modes reach the decoders behind decryption
+(`KrbFastResponse`, `PA-FX-ERROR`, the cookie bound, `KrbFastFinished`). Each
+input builds a fresh exchange (a new armor subkey and AP-REQ), which keeps the
+rate near 230 inputs a second. The run of 2026-11-20 made 28,010 executions in
+121 s from the seven committed seeds with no artifact; an earlier run stopped
+at once on a harness assertion (the DER walk wrapped the armor AP-REQ in a
+second tag), fixed before this run. The coverage export of the target's own
+binary from the seeds alone reaches all six mapped functions (`decode_request`
+8, `keys::decode` 3, `keys::open` 5, `error_reply` 4, `fast_response` 5,
+`reply::unwrap` 7). `EncryptedChallenge::verify_reply` is mapped to its tests:
+a one-reply exchange never reaches the final round.
 
 ### Earlier campaign crashes
 
@@ -572,6 +591,13 @@ does.
 | `rskrb5_ng::pac::reader::Reader::read_u32` | `src/pac/reader.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::reader::Reader::read_u64` | `src/pac/reader.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::reader::Reader::read_u8` | `src/pac/reader.rs` | `pac_parse` |  |
+| `rskrb5_ng::preauth::encrypted_challenge::EncryptedChallenge::verify_reply` | `src/preauth/encrypted_challenge.rs` | - | decrypts the KDC's challenge only in the final round after the client's own challenge, which a one-reply fuzz exchange never reaches; its rejections (missing, repeated, wrong key) are the tamper and vector tests of `tests/fast.rs` |
+| `rskrb5_ng::preauth::fast::armor::decode_request` | `src/preauth/fast/armor.rs` | `fast_reply` |  |
+| `rskrb5_ng::preauth::fast::keys::decode` | `src/preauth/fast/keys.rs` | `fast_reply` |  |
+| `rskrb5_ng::preauth::fast::keys::open` | `src/preauth/fast/keys.rs` | `fast_reply` |  |
+| `rskrb5_ng::preauth::fast::reply::error_reply` | `src/preauth/fast/reply.rs` | `fast_reply` |  |
+| `rskrb5_ng::preauth::fast::reply::fast_response` | `src/preauth/fast/reply.rs` | `fast_reply` |  |
+| `rskrb5_ng::preauth::fast::reply::unwrap` | `src/preauth/fast/reply.rs` | `fast_reply` |  |
 | `rskrb5_ng::secure_env::parse_auxv` | `src/secure_env.rs` | - | reads this process's auxiliary vector, which the kernel writes (`/proc/self/auxv`), not bytes an attacker supplies; a malformed vector is restricted (fail closed); covered by `auxv_fixtures_decide_without_the_os` (AT_SECURE 0, 1, absent, truncated) |
 | `rskrb5_ng::service::ValidatedApReq::verify_ap_rep` | `src/service.rs` | `spnego_token` |  |
 | `rskrb5_ng::service::Validator::validate_ap_req` | `src/service.rs` | `spnego_token` |  |
