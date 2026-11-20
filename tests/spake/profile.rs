@@ -8,7 +8,7 @@ use rskrb5_ng::config::{Config, ConfigDiagnostic, ParseMode};
 /// The relation is effective with the leaf; without it, it is reported as
 /// `FeatureUnavailable` (strict mode refuses it) and never deferred to WP-07.
 #[test]
-fn spake_groups_report_the_leaf() -> Result<(), Box<dyn Error>> {
+fn spake_preauth_groups() -> Result<(), Box<dyn Error>> {
     let text = "[libdefaults]\n spake_preauth_groups = P-256 edwards25519\n";
     let config = Config::parse(text)?;
     let unavailable = config.diagnostics().iter().any(|item| {

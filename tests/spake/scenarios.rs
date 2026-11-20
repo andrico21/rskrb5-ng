@@ -8,26 +8,25 @@ use std::time::UNIX_EPOCH;
 use curve25519_dalek::edwards::CompressedEdwardsY;
 #[cfg(feature = "spake")]
 use rskrb5_ng::{
-    Config,
-    client::stepwise::Exchange as _,
     error::Spake,
     keytab::{Entry as KeytabEntry, Keytab, Principal as KeytabPrincipal},
-    preauth::spake::{Group, Message, PA_SPAKE, Policy},
+    preauth::spake::{Group, Message, PA_SPAKE},
 };
 use rskrb5_ng::{
+    Config,
     client::{
         Password,
         options::AsReq,
-        stepwise::{ExchangeStep, InitCreds, InitCredsOptions, StepInput},
+        stepwise::{Exchange as _, ExchangeStep, InitCreds, InitCredsOptions, StepInput},
     },
     error::Client as ClientError,
+    preauth::spake::Policy,
 };
 
 #[cfg(feature = "spake")]
-use crate::kdc::{COOKIE, Fault, Offer, PREAUTH_FAILED, REALM, long_term_key};
-use crate::kdc::{Kdc, PA_ENC_TIMESTAMP, PASSWORD, Script, TestError, client};
+use crate::kdc::{COOKIE, Fault, PREAUTH_FAILED, long_term_key};
+use crate::kdc::{Kdc, Offer, PA_ENC_TIMESTAMP, PASSWORD, REALM, Script, TestError, client};
 
-#[cfg(feature = "spake")]
 /// A check of the SPAKE error a scenario ends with.
 type Check = fn(&Spake) -> bool;
 
@@ -50,7 +49,6 @@ fn exchange(options: InitCredsOptions) -> InitCreds<'static> {
     )
 }
 
-#[cfg(feature = "spake")]
 /// A profile for the realm with extra realm relations and libdefaults lines.
 fn config(realm_lines: &str, libdefaults_lines: &str) -> Result<Config, TestError> {
     Ok(Config::parse(&format!(
@@ -58,7 +56,6 @@ fn config(realm_lines: &str, libdefaults_lines: &str) -> Result<Config, TestErro
     ))?)
 }
 
-#[cfg(feature = "spake")]
 /// Options from `profile`, at the scenarios' request time.
 fn configured(profile: &Config) -> Result<InitCredsOptions, TestError> {
     let now = UNIX_EPOCH
@@ -128,7 +125,6 @@ fn carries(kdc: &Kdc, index: usize, kind: i32) -> Result<bool, TestError> {
         .any(|entry| entry.r#type == kind))
 }
 
-#[cfg(feature = "spake")]
 /// No request of the exchange carried an encrypted timestamp.
 fn never_sent_timestamp(kdc: &Kdc) -> bool {
     kdc.requests()
@@ -428,14 +424,13 @@ fn malformed_challenges_are_rejected() -> Result<(), TestError> {
     Ok(())
 }
 
-#[cfg(feature = "spake")]
 /// Downgrade protection: `disable_encrypted_timestamp` refuses a timestamp-only offer.
 ///
 /// A KDC (or an attacker) that offers only encrypted timestamp gets no
 /// timestamp, and an optimistic timestamp is suppressed; without the relation
 /// the timestamp is used.
 #[test]
-fn disabled_timestamp_refuses_a_stripped_offer() -> Result<(), TestError> {
+fn disable_encrypted_timestamp() -> Result<(), TestError> {
     let stripped = Script {
         offer: Offer::TimestampOnly,
         ..Script::default()
@@ -548,8 +543,9 @@ fn empty_group_list_disables_spake() -> Result<(), TestError> {
     Ok(())
 }
 
-/// Without the `spake` leaf the engine never answers PA-SPAKE: it answers the
-/// same KDC with encrypted timestamp.
+/// Without the `spake` leaf the engine never answers PA-SPAKE.
+///
+/// It answers the same KDC with encrypted timestamp.
 #[cfg(not(feature = "spake"))]
 #[test]
 fn without_the_leaf_spake_is_never_answered() -> Result<(), TestError> {

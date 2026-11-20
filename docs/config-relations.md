@@ -53,7 +53,7 @@ both modes. Parsed values do not imply an implemented mechanism.
 | libdefaults | realm_try_domains | signed decimal i32 | -1 | plan 2 WP-10 | No domain realm probing occurs; negative disables, nonnegative does not tighten behavior; diagnostic | realm_try_domains |
 | libdefaults | renew_lifetime | duration | 0 | AsReq::from_libdefaults; TgsReq::from_libdefaults | Effective optional renewable lifetime, zero disables renewal; checked MIT intervals | renew_lifetime |
 | libdefaults | request_timeout | duration | 0 | plan 2 WP-10 | Existing per-attempt timeouts are not a total budget; every nonzero value errors; zero diagnostic | request_timeout |
-| libdefaults | spake_preauth_groups | SPAKE group name list | edwards25519 (client) | plan 2 WP-07 | No SPAKE group is used; allowed-group lists do not require SPAKE; diagnostic; unknown names rejected rather than skipped | spake_preauth_groups |
+| libdefaults | spake_preauth_groups | SPAKE group name list | edwards25519 (client) | InitCredsOptions::from_config; Exchange::configure; preauth::spake::SpakePolicy (leaf spake) | Effective SPAKE groups in preference order; an empty list disables SPAKE; without the spake leaf FeatureUnavailable and no SPAKE; unknown names rejected rather than skipped | spake_preauth_groups |
 | libdefaults | ticket_lifetime | duration | 1 day | AsReq::from_libdefaults; TgsReq::from_libdefaults | Effective request lifetime; checked MIT intervals | ticket_lifetime |
 | libdefaults | udp_preference_limit | signed decimal i32 | 1465 | client::transport::auto_uses_udp_first | Effective only in Auto transport; negative uses MIT default, large values capped at 32700 | udp_preference_limit |
 | libdefaults | verify_ap_req_nofail | boolean | false | plan 2 WP-11 | true requires unavailable verify-init-creds orchestration and errors; false diagnostic | verify_ap_req_nofail |
@@ -67,7 +67,7 @@ both modes. Parsed values do not imply an implemented mechanism.
 | realms | auth_to_local | rule list | DEFAULT | plan 2 WP-17 | No local authorization or mapping executes; diagnostic, rule expressions inert | auth_to_local |
 | realms | auth_to_local_names | case-sensitive string map | unset | plan 2 WP-17 | No local authorization executes; diagnostic | auth_to_local_names |
 | realms | default_domain | string | unset | plan 2 WP-17 | Legacy V4 mapping not performed; diagnostic | default_domain |
-| realms | disable_encrypted_timestamp | boolean | false | plan 2 WP-07 | true errors because current client may send encrypted timestamp; false diagnostic | disable_encrypted_timestamp |
+| realms | disable_encrypted_timestamp | boolean | false | InitCredsOptions::from_config; Exchange::configure | Effective for the client realm: true never sends encrypted timestamp (EncryptedTimestampDisabled), never optimistically, and is never reset | disable_encrypted_timestamp |
 | realms | http_anchors | location list | system CA set | plan 2 WP-10 | No HTTPS proxy connection exists; trust restrictions cannot be bypassed; diagnostic | http_anchors |
 | realms | kdc | endpoint list | DNS discovery when enabled | Config::configured_kdcs; transport::Tokio::discover_kdcs | Existing network endpoint consumer; Unix sockets/proxies remain WP-10 | kdc |
 | realms | kpasswd_server | endpoint list | DNS then admin_server port 464 | Config::configured_kpasswd_servers | Effective configured password endpoint selection | kpasswd_server |
