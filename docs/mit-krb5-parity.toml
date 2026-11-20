@@ -391,7 +391,7 @@ area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "FAST negotiation, armor-ticket use, request/response protection, cookies, encrypted challenges"
 implementation_status = "implemented"
-evidence_status = "unit"
+evidence_status = "live-local"
 missing = ""
 rust_symbols = [
   "preauth::fast::Exchange",
@@ -454,7 +454,7 @@ area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Encrypted challenge FAST factor"
 implementation_status = "implemented"
-evidence_status = "unit"
+evidence_status = "live-local"
 missing = ""
 rust_symbols = [
   "preauth::encrypted_challenge::EncryptedChallenge",
