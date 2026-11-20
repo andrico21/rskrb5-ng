@@ -9,12 +9,10 @@ use hickory_resolver::{
     proto::rr::{RData, RecordType},
 };
 
-use crate::{client::transport::KdcProtocol, error::Client as Error};
+use crate::{client::transport::KdcProtocol, discovery::uri, error::Client as Error};
 
 /// The DNS record type code of URI records (RFC 7553); the resolver has no typed form.
 const URI_TYPE: u16 = 256;
-/// The longest realm name a TXT record may name.
-const MAX_REALM_BYTES: usize = 255;
 
 /// Build the DNS resolver using the explicitly selected server, if any.
 ///
@@ -113,9 +111,8 @@ async fn uri_at(
             if u16::from(*code) != URI_TYPE {
                 return None;
             }
-            let (priority, body) = rdata.anything.split_first_chunk::<2>()?;
-            let (_weight, target) = body.split_first_chunk::<2>()?;
-            Some((u16::from_be_bytes(*priority), target.to_vec()))
+            let (priority, target) = uri::split_rdata(&rdata.anything)?;
+            Some((priority, target.to_vec()))
         })
         .collect();
     records.sort_by_key(|record| record.0);
@@ -152,21 +149,11 @@ pub(crate) async fn uri_records(
         .unwrap_or_default())
 }
 
-/// Whether `text` can be a realm name taken from DNS: printable ASCII without
-/// `@`, `/`, `\`, `:` or space, between 1 and 255 bytes.
-pub(crate) fn valid_realm(text: &str) -> bool {
-    !text.is_empty()
-        && text.len() <= MAX_REALM_BYTES
-        && text
-            .bytes()
-            .all(|byte| byte.is_ascii_graphic() && !matches!(byte, b'@' | b'/' | b'\\' | b':'))
-}
-
 /// The realm of the first string of the first TXT record at `name`, or `None`.
 ///
 /// MIT takes the first character-string of the first record and removes a
 /// trailing dot (`src/lib/krb5/os/dnsglue.c:476-488`). The text is untrusted:
-/// it is accepted only as a realm name ([`valid_realm`]).
+/// it is accepted only as a realm name ([`uri::realm_from_txt`]).
 ///
 /// # Errors
 ///
@@ -198,9 +185,5 @@ pub(crate) async fn txt_realm(
     }) else {
         return Ok(None);
     };
-    let Ok(raw) = String::from_utf8(first) else {
-        return Ok(None);
-    };
-    let candidate = raw.strip_suffix('.').unwrap_or(&raw);
-    Ok(valid_realm(candidate).then(|| candidate.to_owned()))
+    Ok(uri::realm_from_txt(&first))
 }

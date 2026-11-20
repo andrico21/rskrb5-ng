@@ -72,7 +72,7 @@ use super::{
     build_tgt_renewal_req, build_ticket_renewal_req, keytab_initial_as_rep_session,
     keytab_initial_as_req, password_initial_as_rep_session, password_initial_as_req,
     preauth::{keytab_preauth_request, password_preauth_request},
-    process_as_rep, process_tgs_rep, service_realm,
+    process_as_rep, process_tgs_rep,
     stepwise::{InitCreds, InitCredsOptions, NoResponder, TicketCreds, TicketOptions, drive_tokio},
     tgt_realm,
 };
@@ -1769,9 +1769,15 @@ impl Tokio {
 
     /// Acquire a service ticket with an explicit referral limit, returning the referral trace.
     ///
+    /// A `service` without a realm takes the realm of its host from
+    /// [`HostRealmResolver::service_realm`] (`[domain_realm]`, then, only when
+    /// `dns_lookup_realm` or `realm_try_domains` allow it, DNS, then
+    /// `default_realm`), else the realm of `tgt`.
+    ///
     /// # Errors
     ///
-    /// Returns [`Error::Config`] or [`Error::Crypto`] when the crypto policy
+    /// Returns [`Error::Locate`] or [`Error::DnsSrvLookup`] when that lookup fails,
+    /// [`Error::Config`] or [`Error::Crypto`] when the crypto policy
     /// refuses the `[libdefaults]` of `config`, [`Error::InvalidReferralTicket`]
     /// when `tgt` is not a TGT or a returned TGT is for the realm of the KDC that
     /// returned it, [`Error::ServicePrincipalMismatch`] when the KDC returns
@@ -1800,7 +1806,12 @@ impl Tokio {
             service: tgt.service.name(),
         })?;
         if service.realm.is_empty() {
-            service.realm = service_realm(config, &service).unwrap_or(current_realm);
+            // `[domain_realm]`, then the opt-in TXT record and domain search, then `default_realm`.
+            let mapped = match service.components.last() {
+                Some(host) => self.host_realms(config).service_realm(host).await?,
+                None => None,
+            };
+            service.realm = mapped.unwrap_or(current_realm);
         }
         let mut exchange = TicketCreds::new(
             tgt.clone(),

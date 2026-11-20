@@ -101,3 +101,12 @@ mod budget;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 #[path = "discovery/primary.rs"]
 mod primary;
+
+/// The URI record target and host splitting.
+#[cfg(test)]
+#[expect(
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[path = "discovery/uri.rs"]
+mod uri;
