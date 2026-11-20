@@ -29,6 +29,7 @@ the chosen entry point, so one target covers a family of related decoders.
 | `ccache_collection` | a `DIR` collection's `primary` pointer and its `tkt` cache file, split at the first byte | `DirStore` collection enumeration, primary resolution and loads (`read_primary`, the locked reads and `FileCache::parse`), and the `FILE` store load of the same file |
 | `camellia_crypto` | Camellia-CTS-CMAC input: a selector byte (entry point and camellia128 or camellia256), the key usage and the input | `CtsCmacEtype::decrypt_message` on the raw input, then on a sealed copy of it (round trip, and a changed MAC is refused); `verify_checksum` on a checksum split from its data, then on the computed one (and a changed one is refused); `decrypt_data` and the re-encryption of an accepted ciphertext; `string_to_key` on `s2kparams` text (the count is bounded to 64 so the run stays fast; zero, over-limit and malformed counts are refused before any work) |
 | `kcm_reply` | a KCM daemon's reply byte stream | the blocking KCM client (`Client::call`, `read_frame`, `read_exact`) over the input as the whole reply stream, once for each reply shape: cache name, UUID list, default principal, one credential, counted credential list, KDC offset and empty (`Shape::decode` of each), with the reply limit lowered to 64 KiB; the announced length is checked before the body is allocated |
+| `keyring_index` | the payload of the `krb_ccache:primary` key of a `KEYRING:` collection | `ccache::keyring::index::parse`, then `encode` and `parse` again on accepted input (the version, the length and the name of the primary cache; MIT `cc_keyring.c:541-571`) |
 | `name_parse` | names and values as text | `Principal::parse_user`, `Principal::parse_service`, `CacheName::parse`, `keytab::Name::parse`, `KdcEndpoint::configured`, `Tokio::with_dns_server`, `config::parse_duration`, `config::parse_boolean`, `crypto::s2kparams_to_iterations` |
 
 The keys, keytabs, tickets and templates the targets use are the synthetic
@@ -99,6 +100,7 @@ timeout artifact:
 | `ccache_collection` | 163,889 (todo 11 of plan 2, 2026-11-19) | 121 s | 0 |
 | `camellia_crypto` | 725,278 (todo 33 of plan 2, 2026-11-19) | 121 s | 0 |
 | `kcm_reply` | 596,862 (todo 12 of plan 2, 2026-11-19) | 121 s | 0 |
+| `keyring_index` | 6,296,962 (todo 13 of plan 2, 2026-11-19) | 121 s | 0 |
 
 ### Round-2 session admission repair (FU-FUZ-R02)
 
@@ -135,6 +137,20 @@ AP-REP/TGS mappings affected by this finding: `process_tgs_rep` 53,
 reachability proof, not a refreshed whole-inventory proof: checking all 71
 mappings of those four targets matched 51 and reported 20 unmatched mappings
 (including moved source owners and deeper reply-validation paths).
+
+### KEYRING collection index (todo 13 of plan 2)
+
+`keyring_index` fuzzes the one new parser of bytes that another process of the
+same user can write, the payload of the `krb_ccache:primary` key
+(`ccache::keyring::index::parse`). The run of 2026-11-19 made 6,296,962
+executions in 121 s from the eight committed seeds with no artifact. The
+coverage export of the target's own binary from the seeds alone reaches the
+mapped function (`scripts/lint-gates/fuzz_coverage.py --inventory --coverage`
+with only this target's export: `rskrb5_ng::ccache::keyring::index::parse` in
+`src/ccache/keyring/index.rs`, count 10). The other functions of the keyring
+module that the inventory search finds are reason-only rows: they hand bytes to
+parsers that other rows already cover, split text the application or the kernel
+produced, or are the key calls themselves.
 
 ### Earlier campaign crashes
 
@@ -273,6 +289,16 @@ does.
 | `rskrb5_ng::ccache::read_u32` | `src/ccache.rs` | `ccache_parse` |  |
 | `rskrb5_ng::ccache::read_u8` | `src/ccache.rs` | `ccache_parse` |  |
 | `rskrb5_ng::ccache::dir_store::read_primary` | `src/ccache/dir_store.rs` | `ccache_collection` |  |
+| `rskrb5_ng::ccache::keyring::index::parse` | `src/ccache/keyring/index.rs` | `keyring_index` |  |
+| `rskrb5_ng::ccache::keyring::payload::parse_credential` | `src/ccache/keyring/payload.rs` | - | Hands a key payload to `Credential::parse` (row `ccache_parse`) and refuses bytes after the credential; it reads no bytes itself. |
+| `rskrb5_ng::ccache::keyring::payload::parse_principal` | `src/ccache/keyring/payload.rs` | - | Hands a key payload to `Principal::parse` (row `ccache_parse`) and refuses bytes after the principal; it reads no bytes itself. |
+| `rskrb5_ng::ccache::keyring::residual::Residual::parse` | `src/ccache/keyring/residual.rs` | - | Splits the cache name the application passes in (`anchor:collection:subsidiary`) at two colons; text of the caller, not bytes read from outside the process. |
+| `rskrb5_ng::ccache::keyring::residual::parse_description` | `src/ccache/keyring/residual.rs` | - | Splits the text the kernel prints for `keyctl_describe` (`type;uid;gid;permissions;description`) at four semicolons; one bounded split, the kernel formats every field but the description. |
+| `rskrb5_ng::ccache::keyring::residual::parse_owner` | `src/ccache/keyring/residual.rs` | - | Reads the owner field of the same kernel text: one split and an integer parse. |
+| `rskrb5_ng::ccache::keyring::residual::parse_serials` | `src/ccache/keyring/residual.rs` | - | Chunks the array of 4-byte key serial numbers the kernel returns for a keyring read; no length field, a partial tail is dropped. |
+| `rskrb5_ng::ccache::keyring::backend::read` | `src/ccache/keyring/backend.rs` | - | The `keyctl_read` call as a trait method: it returns the caller's buffer and parses nothing. |
+| `<rskrb5_ng::ccache::keyring::kernel::Kernel as Backend>::read` | `src/ccache/keyring/kernel.rs` | - | The `keyctl_read` call of the kernel backend: one system call into a zeroizing buffer, no parsing. |
+| `<rskrb5_ng::ccache::keyring::fake::calls::Fake as Backend>::read` | `src/ccache/keyring/fake/calls.rs` | - | The in-memory kernel of the unit tests (`cfg(test)`), no parsing. |
 | `rskrb5_ng::ccache::file_store::FileCache::parse` | `src/ccache/file_store.rs` | `ccache_collection` |  |
 | `rskrb5_ng::ccache::kcm::client::Client::read_exact` | `src/ccache/kcm/client.rs` | `kcm_reply` |  |
 | `rskrb5_ng::ccache::kcm::client::Client::read_frame` | `src/ccache/kcm/client.rs` | `kcm_reply` |  |

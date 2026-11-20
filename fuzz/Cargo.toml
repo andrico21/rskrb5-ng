@@ -131,3 +131,10 @@ path = "fuzz_targets/kcm_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "keyring_index"
+path = "fuzz_targets/keyring_index.rs"
+test = false
+doc = false
+bench = false

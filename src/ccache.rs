@@ -65,6 +65,8 @@ pub mod kcm;
 #[path = "ccache/kcm/unsupported.rs"]
 pub mod kcm;
 
+pub mod keyring;
+
 pub mod selection;
 
 pub mod stores;
