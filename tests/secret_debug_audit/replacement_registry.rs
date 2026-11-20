@@ -85,6 +85,10 @@ pub(super) const DELEGATIONS: &[(&str, &str)] = &[
         "src/client/stepwise.rs::TicketCreds::step",
         "delegates:src/client/stepwise/ticket.rs::step",
     ),
+    (
+        "src/client/stepwise/spake.rs::reply",
+        "delegates:src/client/stepwise/spake.rs::advance",
+    ),
 ];
 
 /// Dependency-contract replacement proofs of the stepwise exchanges: `(method,
@@ -119,6 +123,16 @@ pub(super) const CONTRACTS: &[(&str, &str, &str)] = &[
         "src/client/stepwise/init.rs::registered_challenge",
         "preferred_preauth_types",
         "Appends a registered mechanism's PA-DATA to the request template in place; no credential value is replaced or dropped.",
+    ),
+    (
+        "src/client/stepwise/spake.rs::offer",
+        "spake_exchange_completes_with_the_strengthened_reply_key",
+        "Reads a clone of the SPAKE policy and the preferred order from the options and hands the exchange to advance; no option, credential or template field is replaced, and the reply-key slot is filled only by advance, empty before.",
+    ),
+    (
+        "src/client/stepwise/spake.rs::advance",
+        "spake_exchange_completes_with_the_strengthened_reply_key",
+        "Answers one PA-SPAKE value from a clone of the request template (the template itself is not replaced) and fills the empty reply-key slot with K'[0] for the response request; nothing held is replaced, and the key's erasure when the exchange is abandoned relies on EncryptionKey's Drop contract.",
     ),
     (
         "src/client/stepwise/ticket.rs::step",

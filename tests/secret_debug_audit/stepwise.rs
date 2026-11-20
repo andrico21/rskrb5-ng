@@ -24,6 +24,7 @@ pub(super) mod tests {
         },
         kadmin::Request,
         keytab::EncryptionKey,
+        preauth::spake::{Message, Step},
         ticket,
     };
     use zeroize::Zeroizing;
@@ -32,7 +33,8 @@ pub(super) mod tests {
 
     pub(crate) fn run_audit() -> Result<(), Box<dyn Error>> {
         init_exchange_redacts_credentials()?;
-        ticket_exchange_redacts_credentials()
+        ticket_exchange_redacts_credentials()?;
+        spake_step_redacts_the_reply_key()
     }
 
     /// PA-DATA whose encrypted part carries `cipher`.
@@ -89,6 +91,35 @@ pub(super) mod tests {
                 Some(cookie),
             ),
             &[&reply, &strengthen],
+        );
+        Ok(())
+    }
+
+    /// A SPAKE response step redacts the strengthened reply key `K'[0]` it carries,
+    /// and a decoded PA-SPAKE message its element and ciphertext bytes.
+    #[test]
+    fn spake_step_redacts_the_reply_key() -> Result<(), Box<dyn Error>> {
+        let key = pattern(161);
+        let step = Step::Response {
+            padata: rasn_kerberos::PaData {
+                r#type: 151,
+                value: vec![0xa2_u8, 0x00].into(),
+            },
+            reply_key: EncryptionKey::new(17, key.clone()),
+        };
+        redacted(&step, &[&key]);
+        let cipher = pattern(177);
+        let element = pattern(193);
+        redacted(
+            &Message::Response {
+                pubkey: element.clone(),
+                factor: rasn_kerberos::EncryptedData {
+                    etype: 17,
+                    kvno: None,
+                    cipher: cipher.clone().into(),
+                },
+            },
+            &[&cipher, &element],
         );
         Ok(())
     }

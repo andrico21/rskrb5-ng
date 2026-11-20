@@ -240,7 +240,7 @@ mod tests {
         if identity == "src/extensions.rs::PreauthInput" {
             return cfg!(feature = "messages");
         }
-        if identity.starts_with("src/service") {
+        if identity.starts_with("src/service") || identity.starts_with("src/preauth") {
             return cfg!(feature = "messages");
         }
         if identity.starts_with("src/http.rs") {
@@ -1273,6 +1273,8 @@ mod tests {
         "src/client/stepwise.rs::InitCreds",
         "src/client/stepwise.rs::TicketCreds",
         "src/client/stepwise.rs::ArmoredReply",
+        "src/preauth/spake.rs::Message",
+        "src/preauth/spake.rs::Step",
         "src/client/password.rs::Secret",
         "src/client/kpasswd.rs::BuiltKpasswdRequest",
         "src/client/kpasswd.rs::VerifiedKpasswdApRep",
