@@ -111,6 +111,11 @@ pub(super) const CONTRACTS: &[(&str, &str, &str)] = &[
         "Fills the empty held-reply or reply-key slot for the next step; nothing held is replaced, and the derived reply key's erasure when the exchange is abandoned is observed.",
     ),
     (
+        "src/client/stepwise/init.rs::encrypted_challenge",
+        "required_fast_logs_in_with_the_encrypted_challenge",
+        "Fills the empty reply-key slot for the final step and builds the request from a local clone of the request template; nothing held is replaced, and the reply key's erasure relies on EncryptionKey's Drop contract (ZeroizeOnDrop).",
+    ),
+    (
         "src/client/stepwise/init.rs::start",
         "password_exchange_prompts_once_and_completes",
         "Builds the first request from a clone of the request template or prompts for the password; no credential slot or template field is replaced.",

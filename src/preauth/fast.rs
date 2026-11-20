@@ -42,11 +42,21 @@ use crate::{
 
 /// The armor AP-REQ and the armor key.
 mod armor;
-pub mod asn1;
+/// RFC 6113 section 5.4 FAST messages.
+pub(crate) mod asn1;
 /// Key combination, encryption and checksums under FAST keys.
 pub(crate) mod keys;
 /// Unwrapping armored replies.
 mod reply;
+/// MIT encoding vectors and the round bound.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests;
 
 /// `PA-FX-COOKIE` (RFC 6113 section 5.2).
 pub const PA_FX_COOKIE: i32 = 133;
@@ -70,6 +80,9 @@ pub const KEY_USAGE_FAST_FINISHED: u32 = 53;
 pub const MAX_COOKIE_BYTES: usize = 8192;
 /// The most armored requests of one exchange (MIT `MAX_IN_TKT_LOOPS`).
 pub const MAX_ROUNDS: usize = 16;
+
+/// The armor of one conversation: the armor key and the DER armor AP-REQ.
+type Armor = (EncryptionKey, Zeroizing<Vec<u8>>);
 
 /// When an exchange uses FAST (MIT `krb5_get_init_creds_opt_set_fast_flags`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -170,8 +183,8 @@ pub struct Exchange {
     source: ArmorSource,
     /// The policy the armor ticket and the armor key must satisfy.
     crypto_policy: CryptoPolicy,
-    /// The armor of an armored exchange.
-    armor: Option<armor::Armor>,
+    /// The armor key and the armor AP-REQ of an armored exchange.
+    armor: Option<Armor>,
     /// The outcome, fixed by the first request.
     outcome: Option<Outcome>,
     /// Requests wrapped so far.
@@ -246,11 +259,11 @@ impl Exchange {
                 Outcome::Unarmored
             });
         }
-        let Some(active) = &self.armor else {
+        let Some((key, ap_req)) = &self.armor else {
             return Ok(Zeroizing::new(request.request.to_vec()));
         };
         self.nonce = Some(message.0.req_body.nonce);
-        armor::wrap(active, message, request)
+        armor::wrap((key, ap_req), message, request)
     }
 
     /// Unwrap one reply.
@@ -259,7 +272,7 @@ impl Exchange {
     /// Returns the reply's FAST failure.
     fn unwrap(&self, bytes: &[u8]) -> Result<ArmoredReply, Error> {
         match (&self.armor, self.nonce) {
-            (Some(active), Some(nonce)) => reply::unwrap(active, nonce, bytes),
+            (Some((key, _)), Some(nonce)) => reply::unwrap(key, nonce, bytes),
             _ => Ok(ArmoredReply::new(
                 Zeroizing::new(bytes.to_vec()),
                 None,
@@ -298,7 +311,7 @@ impl ArmoredExchange for Exchange {
 
     #[inline]
     fn armor_key(&self) -> Option<&EncryptionKey> {
-        self.armor.as_ref().map(armor::Armor::key)
+        self.armor.as_ref().map(|(key, _)| key)
     }
 }
 

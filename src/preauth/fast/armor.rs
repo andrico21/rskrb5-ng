@@ -9,8 +9,8 @@ use rasn_kerberos::{KerberosFlags, KerberosString, KerberosTime, PaData, Princip
 use zeroize::Zeroizing;
 
 use super::{
-    ARMOR_AP_REQUEST, ArmorSource, KEY_USAGE_FAST_ENC, KEY_USAGE_FAST_REQ_CHKSUM, PA_FX_COOKIE,
-    PA_FX_FAST, Policy,
+    ARMOR_AP_REQUEST, Armor, ArmorSource, KEY_USAGE_FAST_ENC, KEY_USAGE_FAST_REQ_CHKSUM,
+    PA_FX_COOKIE, PA_FX_FAST, Policy,
     asn1::{KrbFastArmor, KrbFastArmoredReq, KrbFastReq, PaFxFastRequest},
     keys::{self, codec, encode},
 };
@@ -26,21 +26,6 @@ use crate::{
 
 /// RFC 4120 `KDCOptions` bit 15, `canonicalize` (RFC 6806 section 3).
 const CANONICALIZE_BIT: usize = 15;
-
-/// The armor of one conversation: the armor AP-REQ and the armor key.
-pub(super) struct Armor {
-    /// `KRB-FX-CF2(subkey, ticket session key, "subkeyarmor", "ticketarmor")`.
-    key: EncryptionKey,
-    /// The DER armor AP-REQ.
-    ap_req: Zeroizing<Vec<u8>>,
-}
-
-impl Armor {
-    /// The armor key.
-    pub(super) const fn key(&self) -> &EncryptionKey {
-        &self.key
-    }
-}
 
 /// Decode the engine's unarmored AS-REQ.
 ///
@@ -118,7 +103,8 @@ fn principal(value: &ccache::Principal) -> Principal {
     )
 }
 
-/// Build the armor AP-REQ with a fresh subkey and derive the armor key.
+/// Build the armor AP-REQ with a fresh subkey and derive the armor key
+/// (`KRB-FX-CF2(subkey, ticket session key, "subkeyarmor", "ticketarmor")`).
 ///
 /// # Errors
 /// Returns [`Error::ArmorTicket`] for a ticket that is not `realm`'s TGT, the
@@ -145,7 +131,7 @@ fn establish(
         .check_use(decoded.enc_part.etype, Use::TicketKey)
         .map_err(Crypto::from)?;
     let subkey =
-        random_subkey_for(session).map_err(|error| Error::ArmorRequest(Box::new(error)))?;
+        random_subkey_for(session).map_err(|error| codec("build", "armor subkey", &error))?;
     let kvno = decoded.enc_part.kvno;
     let message = ap_req::build(
         decoded,
@@ -163,7 +149,7 @@ fn establish(
     crypto_policy
         .check_use(key.etype(), Use::SessionKey)
         .map_err(Crypto::from)?;
-    Ok(Armor { key, ap_req })
+    Ok((key, ap_req))
 }
 
 /// The armor authenticator: the client, the current time and the subkey.
@@ -217,7 +203,7 @@ fn authenticator(
 /// # Errors
 /// Returns the encoding and key errors.
 pub(super) fn wrap(
-    armor: &Armor,
+    (key, ap_req): (&EncryptionKey, &[u8]),
     message: rasn_kerberos::AsReq,
     request: &super::ArmorRequest<'_>,
 ) -> Result<Zeroizing<Vec<u8>>, Error> {
@@ -239,20 +225,20 @@ pub(super) fn wrap(
     let body = encode("KDC-REQ-BODY", &outer.req_body)?;
     let inner = encode(
         "KrbFastReq",
-        &KrbFastReq::new(
-            KerberosFlags::from_slice(&[0; 4]),
+        &KrbFastReq {
+            fast_options: KerberosFlags::from_slice(&[0; 4]),
             padata,
-            outer.req_body.clone(),
-        ),
+            req_body: outer.req_body.clone(),
+        },
     )?;
-    let armored = PaFxFastRequest::ArmoredData(KrbFastArmoredReq::new(
-        Some(KrbFastArmor::new(
-            ARMOR_AP_REQUEST,
-            armor.ap_req.to_vec().into(),
-        )),
-        keys::checksum(&armor.key, KEY_USAGE_FAST_REQ_CHKSUM, &body)?,
-        keys::seal(&armor.key, KEY_USAGE_FAST_ENC, &inner)?,
-    ));
+    let armored = PaFxFastRequest::ArmoredData(KrbFastArmoredReq {
+        armor: Some(KrbFastArmor {
+            armor_type: ARMOR_AP_REQUEST,
+            armor_value: ap_req.to_vec().into(),
+        }),
+        req_checksum: keys::checksum(key, KEY_USAGE_FAST_REQ_CHKSUM, &body)?,
+        enc_fast_req: keys::seal(key, KEY_USAGE_FAST_ENC, &inner)?,
+    });
     outer.padata = Some(vec![PaData {
         r#type: PA_FX_FAST,
         value: encode("PA-FX-FAST-REQUEST", &armored)?.to_vec().into(),

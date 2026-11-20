@@ -2,7 +2,8 @@
 //!
 //! A KDC reply is untrusted input: decoding refuses unknown CHOICE
 //! alternatives and trailing bytes, and every field is bounded by the reply
-//! the transport already bounded.
+//! the transport already bounded. The types stay inside the crate: they hold
+//! keys and ciphertext and are never handed to callers.
 
 use core::fmt;
 
@@ -17,26 +18,13 @@ use rasn_kerberos::{
 
 /// `KrbFastArmor` (RFC 6113 section 5.4.1).
 #[derive(AsnType, Clone, Decode, Encode, Eq, PartialEq)]
-#[non_exhaustive]
-pub struct KrbFastArmor {
+pub(crate) struct KrbFastArmor {
     /// The armor type; 1 is `FX_FAST_ARMOR_AP_REQUEST`.
     #[rasn(tag(explicit(0)))]
     pub armor_type: i32,
     /// The armor: the DER AP-REQ of an AP-REQ armor.
     #[rasn(tag(explicit(1)))]
     pub armor_value: OctetString,
-}
-
-impl KrbFastArmor {
-    /// An armor of `armor_type` carrying `armor_value`.
-    #[inline]
-    #[must_use]
-    pub const fn new(armor_type: i32, armor_value: OctetString) -> Self {
-        Self {
-            armor_type,
-            armor_value,
-        }
-    }
 }
 
 impl fmt::Debug for KrbFastArmor {
@@ -51,8 +39,7 @@ impl fmt::Debug for KrbFastArmor {
 
 /// `KrbFastArmoredReq` (RFC 6113 section 5.4.2).
 #[derive(AsnType, Clone, Debug, Decode, Encode, Eq, PartialEq)]
-#[non_exhaustive]
-pub struct KrbFastArmoredReq {
+pub(crate) struct KrbFastArmoredReq {
     /// The armor; present in an AS-REQ.
     #[rasn(tag(explicit(0)))]
     pub armor: Option<KrbFastArmor>,
@@ -64,28 +51,10 @@ pub struct KrbFastArmoredReq {
     pub enc_fast_req: EncryptedData,
 }
 
-impl KrbFastArmoredReq {
-    /// An armored request from its three fields.
-    #[inline]
-    #[must_use]
-    pub const fn new(
-        armor: Option<KrbFastArmor>,
-        req_checksum: Checksum,
-        enc_fast_req: EncryptedData,
-    ) -> Self {
-        Self {
-            armor,
-            req_checksum,
-            enc_fast_req,
-        }
-    }
-}
-
 /// `PA-FX-FAST-REQUEST` (RFC 6113 section 5.4.2), an extensible CHOICE.
 #[derive(AsnType, Clone, Debug, Decode, Encode, Eq, PartialEq)]
 #[rasn(choice)]
-#[non_exhaustive]
-pub enum PaFxFastRequest {
+pub(crate) enum PaFxFastRequest {
     /// The armored request.
     #[rasn(tag(explicit(0)))]
     ArmoredData(KrbFastArmoredReq),
@@ -93,8 +62,7 @@ pub enum PaFxFastRequest {
 
 /// `KrbFastReq` (RFC 6113 section 5.4.2): the protected inner request.
 #[derive(AsnType, Clone, Decode, Encode, Eq, PartialEq)]
-#[non_exhaustive]
-pub struct KrbFastReq {
+pub(crate) struct KrbFastReq {
     /// `FastOptions` (bits 1-15 are critical).
     #[rasn(tag(explicit(0)))]
     pub fast_options: KerberosFlags,
@@ -104,23 +72,6 @@ pub struct KrbFastReq {
     /// The inner request body, used in preference to the outer one.
     #[rasn(tag(explicit(2)))]
     pub req_body: KdcReqBody,
-}
-
-impl KrbFastReq {
-    /// An inner request from its three fields.
-    #[inline]
-    #[must_use]
-    pub const fn new(
-        fast_options: KerberosFlags,
-        padata: SequenceOf<PaData>,
-        req_body: KdcReqBody,
-    ) -> Self {
-        Self {
-            fast_options,
-            padata,
-            req_body,
-        }
-    }
 }
 
 impl fmt::Debug for KrbFastReq {
@@ -136,27 +87,16 @@ impl fmt::Debug for KrbFastReq {
 
 /// `KrbFastArmoredRep` (RFC 6113 section 5.4.3).
 #[derive(AsnType, Clone, Debug, Decode, Encode, Eq, PartialEq)]
-#[non_exhaustive]
-pub struct KrbFastArmoredRep {
+pub(crate) struct KrbFastArmoredRep {
     /// The `KrbFastResponse`, encrypted in the armor key (usage 52).
     #[rasn(tag(explicit(0)))]
     pub enc_fast_rep: EncryptedData,
 }
 
-impl KrbFastArmoredRep {
-    /// An armored reply around `enc_fast_rep`.
-    #[inline]
-    #[must_use]
-    pub const fn new(enc_fast_rep: EncryptedData) -> Self {
-        Self { enc_fast_rep }
-    }
-}
-
 /// `PA-FX-FAST-REPLY` (RFC 6113 section 5.4.3), an extensible CHOICE.
 #[derive(AsnType, Clone, Debug, Decode, Encode, Eq, PartialEq)]
 #[rasn(choice)]
-#[non_exhaustive]
-pub enum PaFxFastReply {
+pub(crate) enum PaFxFastReply {
     /// The armored reply.
     #[rasn(tag(explicit(0)))]
     ArmoredData(KrbFastArmoredRep),
@@ -165,8 +105,7 @@ pub enum PaFxFastReply {
 /// `KrbFastResponse` (RFC 6113 section 5.4.3). Its `Debug` output redacts the
 /// strengthen key; the dependency-owned key bytes are not erased on drop.
 #[derive(AsnType, Clone, Decode, Encode, Eq, PartialEq)]
-#[non_exhaustive]
-pub struct KrbFastResponse {
+pub(crate) struct KrbFastResponse {
     /// The reply padata.
     #[rasn(tag(explicit(0)))]
     pub padata: SequenceOf<PaData>,
@@ -179,25 +118,6 @@ pub struct KrbFastResponse {
     /// The nonce of the request this answers.
     #[rasn(tag(explicit(3)))]
     pub nonce: u32,
-}
-
-impl KrbFastResponse {
-    /// A response from its four fields.
-    #[inline]
-    #[must_use]
-    pub const fn new(
-        padata: SequenceOf<PaData>,
-        strengthen_key: Option<EncryptionKey>,
-        finished: Option<KrbFastFinished>,
-        nonce: u32,
-    ) -> Self {
-        Self {
-            padata,
-            strengthen_key,
-            finished,
-            nonce,
-        }
-    }
 }
 
 impl fmt::Debug for KrbFastResponse {
@@ -215,8 +135,7 @@ impl fmt::Debug for KrbFastResponse {
 
 /// `KrbFastFinished` (RFC 6113 section 5.4.3).
 #[derive(AsnType, Clone, Debug, Decode, Encode, Eq, PartialEq)]
-#[non_exhaustive]
-pub struct KrbFastFinished {
+pub(crate) struct KrbFastFinished {
     /// The KDC time the ticket was issued.
     #[rasn(tag(explicit(0)))]
     pub timestamp: KerberosTime,
@@ -232,23 +151,4 @@ pub struct KrbFastFinished {
     /// The armor key's checksum over the ticket (usage 53).
     #[rasn(tag(explicit(4)))]
     pub ticket_checksum: Checksum,
-}
-
-impl KrbFastFinished {
-    /// A finished message from the KDC time, the client and the ticket checksum.
-    #[inline]
-    #[must_use]
-    pub fn new(
-        (timestamp, usec): (KerberosTime, Microseconds),
-        (crealm, cname): (Realm, PrincipalName),
-        ticket_checksum: Checksum,
-    ) -> Self {
-        Self {
-            timestamp,
-            usec,
-            crealm,
-            cname,
-            ticket_checksum,
-        }
-    }
 }

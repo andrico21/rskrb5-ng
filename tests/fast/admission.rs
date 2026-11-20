@@ -19,14 +19,14 @@ use rskrb5_ng::{
     },
     error::{Client as ClientError, Policy},
     extensions::ProviderError,
-    preauth::fast::{
-        PA_ENCRYPTED_CHALLENGE, PA_FX_FAST,
-        asn1::{KrbFastArmoredReq, PaFxFastRequest},
-    },
+    preauth::fast::{PA_ENCRYPTED_CHALLENGE, PA_FX_FAST},
 };
 use zeroize::Zeroizing;
 
-use super::kdc::{CLIENT, REALM, TestError};
+use super::{
+    asn1::{KrbFastArmoredReq, PaFxFastRequest},
+    kdc::{CLIENT, REALM, TestError},
+};
 
 /// An armor that replaces the request's padata with `padata`.
 struct Replacing(Vec<PaData>);
@@ -60,18 +60,18 @@ fn first_step(padata: Vec<PaData>) -> Result<(), ClientError> {
 
 /// A `PA-FX-FAST` whose inner request is encrypted in `etype`.
 fn fast_padata(etype: i32) -> Result<Vec<PaData>, TestError> {
-    let armored = PaFxFastRequest::ArmoredData(KrbFastArmoredReq::new(
-        None,
-        Checksum {
+    let armored = PaFxFastRequest::ArmoredData(KrbFastArmoredReq {
+        armor: None,
+        req_checksum: Checksum {
             r#type: 16,
             checksum: vec![0; 12].into(),
         },
-        EncryptedData {
+        enc_fast_req: EncryptedData {
             etype,
             kvno: None,
             cipher: vec![0x47; 48].into(),
         },
-    ));
+    });
     Ok(vec![PaData {
         r#type: PA_FX_FAST,
         value: der::encode(&armored)?.into(),

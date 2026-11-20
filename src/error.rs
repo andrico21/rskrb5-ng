@@ -1170,9 +1170,6 @@ pub enum Fast {
     /// A FAST key has an enctype this library does not implement.
     #[error("FAST key enctype {0} is not implemented")]
     UnsupportedEtype(i32),
-    /// The armor ticket or the armor AP-REQ could not be built.
-    #[error("the FAST armor AP-REQ failed: {0}")]
-    ArmorRequest(#[source] Box<Client>),
     /// A key, checksum or cipher operation failed, or policy refused its enctype.
     #[error("FAST cryptography failed: {0}")]
     Crypto(#[from] Crypto),

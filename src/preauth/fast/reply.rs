@@ -7,7 +7,6 @@ use zeroize::Zeroizing;
 use super::{
     KEY_USAGE_FAST_FINISHED, KEY_USAGE_FAST_REP, MAX_COOKIE_BYTES, PA_FX_COOKIE, PA_FX_ERROR,
     PA_FX_FAST,
-    armor::Armor,
     asn1::{KrbFastResponse, PaFxFastReply},
     keys::{self, codec, encode},
 };
@@ -26,7 +25,11 @@ use crate::{
 ///
 /// # Errors
 /// Returns the FAST failure of the reply; nothing unauthenticated is passed on.
-pub(super) fn unwrap(armor: &Armor, nonce: u32, bytes: &[u8]) -> Result<ArmoredReply, Error> {
+pub(super) fn unwrap(
+    armor: &EncryptionKey,
+    nonce: u32,
+    bytes: &[u8],
+) -> Result<ArmoredReply, Error> {
     if let Ok(outer) = der::decode::<KrbError>(bytes) {
         return error_reply(armor, nonce, &outer);
     }
@@ -37,7 +40,7 @@ pub(super) fn unwrap(armor: &Armor, nonce: u32, bytes: &[u8]) -> Result<ArmoredR
         ticket::encode(&reply.ticket).map_err(|error| codec("encode", "ticket", &error))?,
     );
     keys::verify(
-        (armor.key(), KEY_USAGE_FAST_FINISHED),
+        (armor, KEY_USAGE_FAST_FINISHED),
         &ticket_der,
         &finished.ticket_checksum,
         Error::TicketChecksum,
@@ -62,7 +65,7 @@ pub(super) fn unwrap(armor: &Armor, nonce: u32, bytes: &[u8]) -> Result<ArmoredR
 /// # Errors
 /// Returns [`Error::UnarmoredError`] for an error without `PA-FX-FAST`, and
 /// the FAST failure of an armored one.
-fn error_reply(armor: &Armor, nonce: u32, outer: &KrbError) -> Result<ArmoredReply, Error> {
+fn error_reply(armor: &EncryptionKey, nonce: u32, outer: &KrbError) -> Result<ArmoredReply, Error> {
     let unarmored = Error::UnarmoredError {
         code: outer.error_code,
     };
@@ -114,10 +117,14 @@ fn error_reply(armor: &Armor, nonce: u32, outer: &KrbError) -> Result<ArmoredRep
 /// # Errors
 /// Returns [`Error::Unarmored`] without one, and the decryption, decoding,
 /// nonce and cookie failures.
-fn fast_response(armor: &Armor, nonce: u32, padata: &[PaData]) -> Result<KrbFastResponse, Error> {
+fn fast_response(
+    armor: &EncryptionKey,
+    nonce: u32,
+    padata: &[PaData],
+) -> Result<KrbFastResponse, Error> {
     let entry = single(padata, PA_FX_FAST)?.ok_or(Error::Unarmored)?;
     let PaFxFastReply::ArmoredData(armored) = keys::decode("PA-FX-FAST-REPLY", &entry.value)?;
-    let plain = keys::open(armor.key(), KEY_USAGE_FAST_REP, &armored.enc_fast_rep)?;
+    let plain = keys::open(armor, KEY_USAGE_FAST_REP, &armored.enc_fast_rep)?;
     let response: KrbFastResponse = keys::decode("KrbFastResponse", &plain)?;
     if response.nonce != nonce {
         return Err(Error::NonceMismatch {

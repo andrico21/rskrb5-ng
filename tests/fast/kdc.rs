@@ -19,13 +19,11 @@ use rskrb5_ng::{
     crypto::{KerberosEtype, prf},
     kdc_rep,
     keytab::EncryptionKey,
-    preauth::fast::{
-        PA_ENCRYPTED_CHALLENGE, PA_FX_COOKIE, PA_FX_ERROR, PA_FX_FAST,
-        asn1::{
-            KrbFastArmoredRep, KrbFastFinished, KrbFastReq, KrbFastResponse, PaFxFastReply,
-            PaFxFastRequest,
-        },
-    },
+    preauth::fast::{PA_ENCRYPTED_CHALLENGE, PA_FX_COOKIE, PA_FX_ERROR, PA_FX_FAST},
+};
+
+use super::asn1::{
+    KrbFastArmoredRep, KrbFastFinished, KrbFastReq, KrbFastResponse, PaFxFastReply, PaFxFastRequest,
 };
 
 /// The test realm.
@@ -162,9 +160,7 @@ impl Kdc {
         if fast.r#type != PA_FX_FAST {
             return Err("the outer padata is not PA-FX-FAST".into());
         }
-        let PaFxFastRequest::ArmoredData(armored) = der::decode(&fast.value)? else {
-            return Err("unknown PA-FX-FAST-REQUEST alternative".into());
-        };
+        let PaFxFastRequest::ArmoredData(armored) = der::decode(&fast.value)?;
         let armor = armored.armor.ok_or("AS armor missing")?;
         let ap_req: ApReq = der::decode(&armor.armor_value)?;
         let enc_ticket: EncTicketPart =
@@ -255,7 +251,12 @@ impl Kdc {
                 r#type: 18,
                 value: vec![0x44; 32].into(),
             });
-        let response = KrbFastResponse::new(padata, strengthen, None, context.nonce);
+        let response = KrbFastResponse {
+            padata,
+            strengthen_key: strengthen,
+            finished: None,
+            nonce: context.nonce,
+        };
         let mut sealed = seal(&context.armor_key, 52, &der::encode(&response)?)?;
         if self.tamper == Tamper::ErrorCiphertext {
             flip(&mut sealed)?;
@@ -268,7 +269,9 @@ impl Kdc {
         } else {
             vec![pa(
                 PA_FX_FAST,
-                der::encode(&PaFxFastReply::ArmoredData(KrbFastArmoredRep::new(sealed)))?,
+                der::encode(&PaFxFastReply::ArmoredData(KrbFastArmoredRep {
+                    enc_fast_rep: sealed,
+                }))?,
             )]
         };
         Ok(der::encode(&error(
@@ -317,21 +320,21 @@ impl Kdc {
             | Tamper::ErrorCiphertext
             | Tamper::ReplyCiphertext => Some(strengthen.value().to_vec()),
         };
-        let response = KrbFastResponse::new(
-            self.kdc_challenge(context)?,
-            reported.map(|value| rasn_kerberos::EncryptionKey {
+        let response = KrbFastResponse {
+            padata: self.kdc_challenge(context)?,
+            strengthen_key: reported.map(|value| rasn_kerberos::EncryptionKey {
                 r#type: 18,
                 value: value.into(),
             }),
-            (self.tamper != Tamper::DropFinished)
+            finished: (self.tamper != Tamper::DropFinished)
                 .then(|| self.finished(context, client, &ticket))
                 .transpose()?,
-            if self.tamper == Tamper::Nonce {
+            nonce: if self.tamper == Tamper::Nonce {
                 context.nonce.wrapping_add(1)
             } else {
                 context.nonce
             },
-        );
+        };
         let mut sealed = seal(&context.armor_key, 52, &der::encode(&response)?)?;
         if self.tamper == Tamper::ReplyCiphertext {
             flip(&mut sealed)?;
@@ -341,7 +344,9 @@ impl Kdc {
         } else {
             Some(vec![pa(
                 PA_FX_FAST,
-                der::encode(&PaFxFastReply::ArmoredData(KrbFastArmoredRep::new(sealed)))?,
+                der::encode(&PaFxFastReply::ArmoredData(KrbFastArmoredRep {
+                    enc_fast_rep: sealed,
+                }))?,
             )])
         };
         Ok(der::encode(&AsRep(KdcRep {
@@ -375,14 +380,16 @@ impl Kdc {
         } else {
             etype(&context.armor_key)?.checksum_type_id()
         };
-        Ok(KrbFastFinished::new(
-            (time(whole(SystemTime::now())?), Integer::from(0_i32)),
-            (string(REALM)?, name(1, &[client])?),
-            Checksum {
+        Ok(KrbFastFinished {
+            timestamp: time(whole(SystemTime::now())?),
+            usec: Integer::from(0_i32),
+            crealm: string(REALM)?,
+            cname: name(1, &[client])?,
+            ticket_checksum: Checksum {
                 r#type,
                 checksum: value.into(),
             },
-        ))
+        })
     }
 
     /// The reply padata: the KDC's encrypted challenge.

@@ -5,6 +5,11 @@
 //! authenticated canonicalization and the outgoing padata admission.
 #![cfg(feature = "messages")]
 
+/// The RFC 6113 messages, written independently of the library.
+#[cfg(test)]
+#[path = "fast/asn1.rs"]
+mod asn1;
+
 /// The fake KDC.
 #[cfg(test)]
 #[expect(
