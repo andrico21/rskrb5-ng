@@ -6,12 +6,6 @@ use std::time::UNIX_EPOCH;
 
 #[cfg(feature = "spake")]
 use curve25519_dalek::edwards::CompressedEdwardsY;
-#[cfg(feature = "spake")]
-use rskrb5_ng::{
-    error::Spake,
-    keytab::{Entry as KeytabEntry, Keytab, Principal as KeytabPrincipal},
-    preauth::spake::{Group, Message, PA_SPAKE},
-};
 use rskrb5_ng::{
     Config,
     client::{
@@ -21,6 +15,12 @@ use rskrb5_ng::{
     },
     error::Client as ClientError,
     preauth::spake::Policy,
+};
+#[cfg(feature = "spake")]
+use rskrb5_ng::{
+    error::Spake,
+    keytab::{Entry as KeytabEntry, Keytab, Principal as KeytabPrincipal},
+    preauth::spake::{Group, Message, PA_SPAKE},
 };
 
 #[cfg(feature = "spake")]
