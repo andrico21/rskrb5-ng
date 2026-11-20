@@ -618,6 +618,31 @@ pub enum Client {
     /// KDC transport failed.
     #[error("KDC transport failed: {0}")]
     Transport(String),
+    /// A stepwise exchange received an input it does not expect now.
+    #[error("the exchange expected {expected}")]
+    UnexpectedStepInput {
+        /// What the exchange expected.
+        expected: &'static str,
+    },
+    /// A stepwise exchange exceeded its round-trip bound (MIT `KRB5_GET_IN_TKT_LOOP`).
+    #[error("the exchange exceeded {limit} KDC round trips")]
+    ExchangeLoop {
+        /// The bound.
+        limit: usize,
+    },
+    /// The exchange's responder failed to answer a prompt.
+    #[error("the responder failed to answer a prompt")]
+    Responder(#[source] ProviderError),
+    /// A registered preauthentication mechanism failed or its output was refused.
+    #[error("a registered preauthentication mechanism failed")]
+    Preauth(#[source] Extensions),
+    /// The FAST armor failed to wrap a request or unwrap a reply.
+    #[error("the FAST armor failed")]
+    Armor(#[source] ProviderError),
+    /// `noaddresses = false` needs request addresses, and interface addresses
+    /// are not enumerated: configure `extra_addresses`.
+    #[error("noaddresses = false requires extra_addresses; interface addresses are not enumerated")]
+    NoRequestAddresses,
 }
 /// Configuration parsing error.
 #[derive(Debug, thiserror::Error)]

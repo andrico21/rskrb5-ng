@@ -169,16 +169,12 @@ fn draft9_preferences_are_ignored_with_diagnostics() -> Result<(), Box<dyn Error
     let config = Config::parse(text)?;
     // Then only current types remain and every ignored ID is observable.
     assert_eq!(config.libdefaults.preferred_preauth_types, [17_i32, 16_i32]);
-    assert_eq!(config.libdefaults.diagnostics().len(), 3);
+    assert_eq!(config.libdefaults.diagnostics().len(), 2);
     assert!(matches!(
         config.libdefaults.diagnostics().as_ref(),
         [
             ConfigDiagnostic::IgnoredPreauthType { id: 15_i32 },
             ConfigDiagnostic::IgnoredPreauthType { id: 14_i32 },
-            ConfigDiagnostic::NotYetEffective {
-                relation: "preferred_preauth_types",
-                package: "plan 2 WP-04"
-            }
         ]
     ));
     Ok(())

@@ -1,4 +1,4 @@
-use core::{fmt, mem, time::Duration};
+use core::{fmt, mem, net::IpAddr, time::Duration};
 use std::time::SystemTime;
 
 use zeroize::Zeroize as _;
@@ -41,6 +41,8 @@ pub struct AsReq {
     assume_preauthentication: bool,
     /// Advertise support for AS-REP encrypted padata negotiation.
     fast_negotiation: bool,
+    /// Client addresses the ticket is bound to; empty requests an addressless ticket.
+    addresses: Vec<IpAddr>,
 }
 
 impl fmt::Debug for AsReq {
@@ -58,6 +60,7 @@ impl fmt::Debug for AsReq {
             padata,
             assume_preauthentication,
             fast_negotiation,
+            addresses,
         } = self;
         f.debug_struct("AsReq")
             .field("crypto_policy", crypto_policy)
@@ -71,6 +74,7 @@ impl fmt::Debug for AsReq {
             .field("padata_count", &padata.len())
             .field("assume_preauthentication", assume_preauthentication)
             .field("fast_negotiation", fast_negotiation)
+            .field("addresses", addresses)
             .finish()
     }
 }
@@ -185,6 +189,7 @@ impl AsReq {
             padata: Vec::new(),
             assume_preauthentication: false,
             fast_negotiation: true,
+            addresses: Vec::new(),
         }
     }
 
@@ -218,6 +223,12 @@ impl AsReq {
         }
         if defaults.canonicalize.is_enabled() {
             options.kdc_option_bits |= KDC_OPTION_CANONICALIZE;
+        }
+        if !defaults.no_addresses.is_enabled() {
+            if defaults.extra_addresses.is_empty() {
+                return Err(ClientError::NoRequestAddresses);
+            }
+            options.addresses.clone_from(&defaults.extra_addresses);
         }
         Ok(options)
     }
@@ -266,6 +277,22 @@ impl AsReq {
     {
         self.padata = padata.into();
         self
+    }
+
+    #[must_use]
+    /// Bind the ticket to these client addresses; an empty list requests an
+    /// addressless ticket.
+    #[inline]
+    pub fn with_addresses(mut self, addresses: Vec<IpAddr>) -> Self {
+        self.addresses = addresses;
+        self
+    }
+
+    /// The client addresses the ticket is bound to.
+    #[inline]
+    #[must_use]
+    pub fn addresses(&self) -> &[IpAddr] {
+        &self.addresses
     }
 
     #[must_use]

@@ -70,16 +70,6 @@ mod tests {
                     "default_rcache_name",
                     "plan 2 WP-20",
                 ),
-                (
-                    "noaddresses = false\n extra_addresses = 192.0.2.1",
-                    "extra_addresses",
-                    "plan 2 WP-04",
-                ),
-                (
-                    "extra_addresses = 192.0.2.1\n noaddresses = false",
-                    "extra_addresses",
-                    "plan 2 WP-04",
-                ),
             ] {
                 let result = Config::parse_with_mode(&format!("[libdefaults]\n {body}\n"), mode);
                 let failure = result.err().ok_or("stricter policy accepted")?;

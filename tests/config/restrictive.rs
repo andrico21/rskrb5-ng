@@ -34,12 +34,29 @@ mod tests {
     };
     use tokio::runtime::Builder;
 
+    /// `noaddresses = false` needs request addresses: it round-trips through serde
+    /// and fails closed at request construction without `extra_addresses`.
+    #[test]
+    fn noaddresses() -> Result<(), Box<dyn Error>> {
+        let mut config = Config::new();
+        config.libdefaults.no_addresses = Toggle::Disabled;
+        let restored: Config = serde_json::from_value(serde_json::to_value(&config)?)?;
+        assert!(!restored.libdefaults.no_addresses.is_enabled());
+        assert!(matches!(
+            AsReq::from_libdefaults(UNIX_EPOCH, 42, &config.libdefaults),
+            Err(Client::NoRequestAddresses)
+        ));
+        config.libdefaults.extra_addresses = vec!["192.0.2.9".parse()?];
+        let options = AsReq::from_libdefaults(UNIX_EPOCH, 42, &config.libdefaults)?;
+        assert_eq!(options.addresses(), config.libdefaults.extra_addresses);
+        Ok(())
+    }
+
     /// Serde and programmatic defaults cannot silently weaken unavailable restrictions.
     #[test]
     fn restrictive_defaults_fail_before_requests() -> Result<(), Box<dyn Error>> {
         let runtime = Builder::new_current_thread().enable_all().build()?;
         for field in [
-            "no_addresses",
             "request_timeout",
             "verify_ap_req_nofail",
             "client_aware_channel_bindings",
@@ -47,7 +64,6 @@ mod tests {
         ] {
             let mut config = Config::new();
             match field {
-                "no_addresses" => config.libdefaults.no_addresses = Toggle::Disabled,
                 "request_timeout" => config.libdefaults.request_timeout = Duration::from_secs(1),
                 "verify_ap_req_nofail" => config.libdefaults.verify_ap_req_nofail = Toggle::Enabled,
                 "client_aware_channel_bindings" => {
@@ -71,7 +87,6 @@ mod tests {
                 "request accepted {field}"
             );
             let (relation, package) = match field {
-                "no_addresses" => ("noaddresses", "plan 2 WP-04"),
                 "request_timeout" => ("request_timeout", "plan 2 WP-10"),
                 "verify_ap_req_nofail" => ("verify_ap_req_nofail", "plan 2 WP-11"),
                 "client_aware_channel_bindings" => {

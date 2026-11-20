@@ -316,6 +316,13 @@ does.
 | `rskrb5_ng::config::LibDefaults::parse_lines` | `src/config.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::LibDefaults::parse_mode` | `src/config.rs` | - | Typed mode accessor, not a parser. |
 | `rskrb5_ng::config::Realm::parse` | `src/config.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::load::parse` | `src/config/load.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::load::parse_with_mode` | `src/config/load.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::load::parse_with_roots` | `src/config/load.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::load::parse_with_roots_mode` | `src/config/load.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::include_source::read_include` | `src/config/include_source.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::decode::parse_lines` | `src/config/decode.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::builders::parse_mode` | `src/config/builders.rs` | - | Typed mode accessor, not a parser. |
 | `rskrb5_ng::config::profile::Profile::finish` | `src/config/profile.rs` | `krb5_conf` | |
 | `rskrb5_ng::config::profile_syntax::State::line` | `src/config/profile_syntax.rs` | `krb5_conf` | |
 | `rskrb5_ng::config::profile_syntax::State::finish` | `src/config/profile_syntax.rs` | `krb5_conf` | |
@@ -325,18 +332,22 @@ does.
 | `rskrb5_ng::config::libdefaults::c2::parse` | `src/config/libdefaults/c2.rs` | `krb5_conf` | |
 | `rskrb5_ng::config::libdefaults::duration::parse` | `src/config/libdefaults/duration.rs` | `krb5_conf` | |
 | `rskrb5_ng::config::realm_values::decode` | `src/config/realm_values.rs` | `krb5_conf` | |
-| `rskrb5_ng::config::fork_tests::parse_does_not_read_uid_or_home` | `src/config.rs` | - | unit test, not a parser |
-| `rskrb5_ng::config::enctype_expr::EnctypeExpr::parse` | `src/config/enctype_expr.rs` | `krb5_conf` | |
+| `rskrb5_ng::config::fork_tests::parse_does_not_read_uid_or_home` | `src/config/fork_tests.rs` | - | unit test, not a parser |
+| `rskrb5_ng::config::EnctypeExpr::parse` | `src/config.rs` | `krb5_conf` | |
+| `rskrb5_ng::config::enctype_expr::parse` | `src/config/enctype_expr.rs` | `krb5_conf` | |
 | `rskrb5_ng::config::enctype_names::Selector::parse` | `src/config/enctype_names.rs` | `krb5_conf` | |
 | `rskrb5_ng::config::sections::parse_assignment` | `src/config/sections.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_boolean` | `src/config.rs` | `name_parse` |  |
-| `rskrb5_ng::config::parse_colon_duration` | `src/config.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::values::parse_colon_duration` | `src/config/values.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_duration` | `src/config.rs` | `name_parse` |  |
-| `rskrb5_ng::config::parse_i32` | `src/config.rs` | `krb5_conf` |  |
-| `rskrb5_ng::config::parse_i32_list` | `src/config.rs` | `krb5_conf` |  |
-| `rskrb5_ng::config::parse_ip_addresses` | `src/config.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::values::parse_duration` | `src/config/values.rs` | `name_parse` |  |
+| `rskrb5_ng::config::values::parse_boolean` | `src/config/values.rs` | `name_parse` |  |
+| `rskrb5_ng::config::decode::parse_i32` | `src/config/decode.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::decode::parse_i32_list` | `src/config/decode.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::decode::parse_ip_addresses` | `src/config/decode.rs` | `krb5_conf` |  |
 | `rskrb5_ng::config::parse_supported_enctype_ids` | `src/config.rs` | - | cfg(test)-only capability mapping helper; normal fuzz dependency builds do not contain it; configuration tests cover it |
-| `rskrb5_ng::config::parse_unit_duration` | `src/config.rs` | `krb5_conf` |  |
+| `rskrb5_ng::config::values::parse_supported_enctype_ids` | `src/config/values.rs` | - | cfg(test)-only capability mapping helper; normal fuzz dependency builds do not contain it; configuration tests cover it |
+| `rskrb5_ng::config::values::parse_unit_duration` | `src/config/values.rs` | `krb5_conf` |  |
 | `rskrb5_ng::crypto::AesSha1Etype::decrypt_message` | `src/crypto.rs` | `gss_token` |  |
 | `rskrb5_ng::crypto::AesSha2Etype::decrypt_message` | `src/crypto.rs` | `gss_token` |  |
 | `rskrb5_ng::crypto::Des3CbcSha1KdEtype::decrypt_message` | `src/crypto.rs` | `gss_token` |  |

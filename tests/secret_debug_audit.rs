@@ -118,6 +118,10 @@ mod replacement_registry;
 #[path = "secret_debug_audit/messages.rs"]
 mod messages;
 
+#[cfg(all(test, feature = "messages"))]
+#[path = "secret_debug_audit/stepwise.rs"]
+mod stepwise;
+
 #[cfg(all(test, feature = "spnego"))]
 #[path = "secret_debug_audit/tokens.rs"]
 mod tokens;
@@ -171,6 +175,8 @@ mod tests {
         super::stores::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         #[cfg(feature = "messages")]
         super::messages::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
+        #[cfg(feature = "messages")]
+        super::stepwise::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         #[cfg(feature = "spnego")]
         super::tokens::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -329,7 +335,8 @@ mod tests {
             }), ("src/client/cache_insert.rs::tgt_session_at", ReplacementProof::DependencyContractReplacement {
                 test: "tokio_client_prefers_freshest_cached_tgt_session",
                 contract: "Caching keeps the fresher primary or referral TGT and drops the other; the dropped session's key erasure relies on its Drop contract, not an observed first-party wipe.",
-            })]).collect::<Vec<_>>();
+            })]).chain(super::replacement_registry::CONTRACTS.iter().map(|&(method, test, contract)| (method, ReplacementProof::DependencyContractReplacement { test, contract })))
+            .collect::<Vec<_>>();
         for (identity, reason) in REPLACEMENT_EXCEPTIONS {
             for test in reason.split('`').skip(1).step_by(2) {
                 assert!(
@@ -1011,6 +1018,10 @@ mod tests {
     /// Methods with live pre-replacement byte observations in their owning unit tests.
     const REPLACEMENT_PROOFS: &[(&str, &str)] = &[
         (
+            "src/client/stepwise/init.rs::remember_cookie",
+            "armored_replies_thread_cookies_and_erase_replaced_strengthen_keys",
+        ),
+        (
             "src/ccache.rs::Credential::with_auth_data",
             "authorization_data_replacement_erases_previous_entries",
         ),
@@ -1247,6 +1258,15 @@ mod tests {
         "src/client.rs::TgsFastRequestParts",
         "src/client.rs::Tokio",
         "src/client.rs::TokioClientCredentials",
+        "src/client/stepwise.rs::StepInput",
+        "src/client/stepwise.rs::ExchangeStep",
+        "src/client/stepwise.rs::Outbound",
+        "src/client/stepwise.rs::Answer",
+        "src/client/stepwise.rs::InitCredsOptions",
+        "src/client/stepwise.rs::TicketOptions",
+        "src/client/stepwise.rs::InitCreds",
+        "src/client/stepwise.rs::TicketCreds",
+        "src/client/stepwise.rs::ArmoredReply",
         "src/client/password.rs::Secret",
         "src/client/kpasswd.rs::BuiltKpasswdRequest",
         "src/client/kpasswd.rs::VerifiedKpasswdApRep",
