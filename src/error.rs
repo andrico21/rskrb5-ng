@@ -671,6 +671,18 @@ pub enum Client {
     /// The FAST armor failed to wrap a request or unwrap a reply.
     #[error("the FAST armor failed")]
     Armor(#[source] ProviderError),
+    /// SPAKE preauthentication failed (RFC 9588); there is no fallback to
+    /// another mechanism after it (MIT `disable_fallback`).
+    #[error("SPAKE preauthentication failed")]
+    Spake(#[from] Spake),
+    /// Encrypted timestamp is disabled for the client realm
+    /// (`[realms] disable_encrypted_timestamp`), and the KDC offered no other
+    /// usable mechanism.
+    #[error("encrypted timestamp is disabled for realm {realm}")]
+    EncryptedTimestampDisabled {
+        /// The client realm.
+        realm: String,
+    },
     /// `noaddresses = false` needs request addresses, and interface addresses
     /// are not enumerated: configure `extra_addresses`.
     #[error("noaddresses = false requires extra_addresses; interface addresses are not enumerated")]
@@ -711,6 +723,15 @@ pub enum Config {
         relation: &'static str,
         /// Work package owning its runtime consumer.
         package: &'static str,
+    },
+    /// A relation's consumer needs a leaf Cargo feature this build lacks
+    /// (strict mode).
+    #[error("relation {relation} needs the `{feature}` Cargo feature")]
+    FeatureUnavailable {
+        /// Selected relation.
+        relation: &'static str,
+        /// The leaf feature.
+        feature: &'static str,
     },
     /// A local-address list contains a malformed IP address.
     #[error("invalid extra address: {0}")]
@@ -2486,6 +2507,55 @@ pub enum Service {
     /// A Kerberos time could not be represented as a `SystemTime`.
     #[error("Kerberos time overflows SystemTime")]
     TimeOverflow,
+}
+#[cfg(feature = "messages")]
+/// SPAKE preauthentication error (RFC 9588, `preauth::spake`).
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum Spake {
+    /// No configured SPAKE group is available in this build (MIT: the module
+    /// is not enabled without a permitted group).
+    #[error("no SPAKE group is permitted and available")]
+    NoGroups,
+    /// The KDC's challenge names a group the policy does not permit, after the
+    /// client already sent its support message (MIT `KRB5KDC_ERR_PREAUTH_FAILED`).
+    #[error("SPAKE group {group} is not permitted")]
+    GroupNotPermitted {
+        /// The group number of the challenge.
+        group: i32,
+    },
+    /// The challenge offers no second factor this client supports (only `SF-NONE`).
+    #[error("the SPAKE challenge offers no supported second factor")]
+    NoSupportedFactor,
+    /// A public key is not a valid, canonically encoded group element, or the
+    /// shared element is the identity.
+    #[error("invalid SPAKE group element for group {group}")]
+    InvalidElement {
+        /// The group number.
+        group: i32,
+    },
+    /// A PA-SPAKE value is not a valid DER message or exceeds a bound.
+    #[error("malformed PA-SPAKE message: {message}")]
+    Malformed {
+        /// What is wrong, without message bytes.
+        message: String,
+    },
+    /// The KDC sent a PA-SPAKE message this client does not expect now.
+    #[error("unexpected PA-SPAKE message: {message}")]
+    Unexpected {
+        /// What was received.
+        message: &'static str,
+    },
+    /// A second-factor exchange (`encdata`) was requested; only `SF-NONE` is
+    /// supported, as in MIT 1.22.2.
+    #[error("SPAKE second-factor rounds are not supported")]
+    SecondFactorUnsupported,
+    /// The initial reply key cannot feed the SPAKE derivations.
+    #[error("SPAKE key derivation failed")]
+    Crypto(#[from] Crypto),
+    /// The random generator failed.
+    #[error("random generator failed")]
+    Random(#[from] getrandom::Error),
 }
 #[cfg(feature = "spnego")]
 /// SPNEGO/GSS token processing error.

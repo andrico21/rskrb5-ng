@@ -40,6 +40,7 @@ use crate::{
     error::Client as Error,
     extensions::{PreauthSession, ProviderError},
     keytab::{EncryptionKey, Keytab},
+    preauth::spake::Policy as SpakePolicy,
     trace::{ExchangeKind, Guard},
 };
 
@@ -233,6 +234,13 @@ pub trait Exchange {
 
     /// The key expiration the finished exchange reported, if any.
     fn key_expiration(&self) -> Option<SystemTime>;
+
+    /// Adopt the profile's per-exchange settings before the first step;
+    /// [`drive_tokio`] calls it with its configuration. The default does nothing.
+    #[inline]
+    fn configure(&mut self, config: &Config) {
+        let _: &Config = config;
+    }
 }
 
 /// Options of one AS exchange, from the profile or per request.
@@ -246,6 +254,10 @@ pub struct InitCredsOptions {
     kdc_timesync: bool,
     /// MIT `preferred_preauth_types`, most preferred first.
     preferred_preauth_types: Vec<i32>,
+    /// `spake_preauth_groups`; `None` until set or adopted from a profile.
+    spake: Option<SpakePolicy>,
+    /// Realms whose `disable_encrypted_timestamp` is set (MIT `encts_disabled`).
+    timestamp_disabled: Vec<String>,
 }
 
 impl fmt::Debug for InitCredsOptions {
@@ -256,6 +268,8 @@ impl fmt::Debug for InitCredsOptions {
             .field("service", &self.service)
             .field("kdc_timesync", &self.kdc_timesync)
             .field("preferred_preauth_types", &self.preferred_preauth_types)
+            .field("spake", &self.spake)
+            .field("timestamp_disabled", &self.timestamp_disabled)
             .finish()
     }
 }
@@ -273,7 +287,9 @@ impl InitCredsOptions {
     /// Options from the parsed `[libdefaults]`: request lifetimes and flags
     /// (`ticket_lifetime`, `renew_lifetime`, `forwardable`, `proxiable`,
     /// `kdc_default_options`), request addresses (`noaddresses`,
-    /// `extra_addresses`), `kdc_timesync` and `preferred_preauth_types`.
+    /// `extra_addresses`), `kdc_timesync`, `preferred_preauth_types`,
+    /// `spake_preauth_groups` and the realms whose `disable_encrypted_timestamp`
+    /// is set.
     ///
     /// # Errors
     ///
@@ -362,6 +378,23 @@ impl InitCredsOptions {
     #[must_use]
     pub fn preferred_preauth_types(&self) -> &[i32] {
         &self.preferred_preauth_types
+    }
+
+    /// Run SPAKE (RFC 9588) with `policy`'s groups when the KDC offers it; an
+    /// empty policy disables SPAKE. Without this call the exchange uses the
+    /// profile's `spake_preauth_groups` under [`drive_tokio`] and MIT's client
+    /// default, edwards25519, otherwise.
+    #[inline]
+    #[must_use]
+    pub fn with_spake_policy(self, policy: SpakePolicy) -> Self {
+        options::with_spake(self, policy)
+    }
+
+    /// The SPAKE policy, when set or adopted from a profile.
+    #[inline]
+    #[must_use]
+    pub const fn spake_policy(&self) -> Option<&SpakePolicy> {
+        self.spake.as_ref()
     }
 }
 
@@ -566,6 +599,11 @@ impl Exchange for InitCreds<'_> {
     #[inline]
     fn key_expiration(&self) -> Option<SystemTime> {
         self.key_expiration
+    }
+
+    #[inline]
+    fn configure(&mut self, config: &Config) {
+        init::configure(self, config);
     }
 }
 

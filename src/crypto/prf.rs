@@ -120,7 +120,7 @@ pub const fn output_len(etype: KerberosEtype) -> usize {
 }
 
 /// Number of random bytes the `random-to-key` function of `etype` consumes.
-const fn seed_len(etype: KerberosEtype) -> usize {
+pub(crate) const fn seed_len(etype: KerberosEtype) -> usize {
     match etype {
         KerberosEtype::Des3CbcSha1Kd(_) => DES3_SEED_SIZE,
         KerberosEtype::Rc4Hmac(_) => RC4_HMAC_KEY_SIZE,
@@ -134,7 +134,10 @@ const fn seed_len(etype: KerberosEtype) -> usize {
 ///
 /// # Errors
 /// Returns the seed-length error of the enctype's function.
-fn random_to_key(etype: KerberosEtype, seed: &[u8]) -> Result<Zeroizing<Vec<u8>>, Error> {
+pub(crate) fn random_to_key(
+    etype: KerberosEtype,
+    seed: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, Error> {
     Ok(Zeroizing::new(match etype {
         KerberosEtype::Des3CbcSha1Kd(_) => Des3CbcSha1KdEtype::random_to_key(seed)?,
         KerberosEtype::Rc4Hmac(_) => Rc4HmacEtype::random_to_key(seed)?,

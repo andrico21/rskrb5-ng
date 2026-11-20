@@ -7,7 +7,11 @@ use super::{
     super::{options::AsReq, principal::Principal},
     InitCredsOptions,
 };
-use crate::{config::Config, error::Client as Error};
+use crate::{
+    config::{Config, Toggle, section_values::Value},
+    error::Client as Error,
+    preauth::spake::Policy as SpakePolicy,
+};
 
 /// The `forwardable` KDC option bit.
 pub(super) const FORWARDABLE: u32 = 0x4000_0000;
@@ -23,6 +27,8 @@ pub(super) fn from_request(request: AsReq) -> InitCredsOptions {
         service: None,
         kdc_timesync: false,
         preferred_preauth_types: MIT_PREFERRED.to_vec(),
+        spake: None,
+        timestamp_disabled: Vec::new(),
     }
 }
 
@@ -41,7 +47,44 @@ pub(super) fn from_config(
         service: None,
         kdc_timesync: defaults.kdc_time_sync != 0,
         preferred_preauth_types: defaults.preferred_preauth_types.clone(),
+        spake: Some(SpakePolicy::from_libdefaults(defaults)),
+        timestamp_disabled: timestamp_disabled(config),
     })
+}
+
+/// The realms whose `disable_encrypted_timestamp` is set; any value other than
+/// an explicit `false` counts as set (fail closed).
+pub(super) fn timestamp_disabled(config: &Config) -> Vec<String> {
+    config
+        .realms
+        .iter()
+        .filter(|realm| {
+            realm
+                .relations
+                .get("disable_encrypted_timestamp")
+                .is_some_and(|value| !matches!(value, Value::Boolean(Toggle::Disabled)))
+        })
+        .map(|realm| realm.name.clone())
+        .collect()
+}
+
+/// Adopt `config`: its SPAKE groups unless a policy is set, and its
+/// timestamp-disabled realms in addition to the ones already set.
+pub(super) fn adopt(options: &mut InitCredsOptions, config: &Config) {
+    if options.spake.is_none() {
+        options.spake = Some(SpakePolicy::from_libdefaults(&config.libdefaults));
+    }
+    for realm in timestamp_disabled(config) {
+        if !options.timestamp_disabled.contains(&realm) {
+            options.timestamp_disabled.push(realm);
+        }
+    }
+}
+
+/// Set the SPAKE policy.
+pub(super) fn with_spake(mut options: InitCredsOptions, policy: SpakePolicy) -> InitCredsOptions {
+    options.spake = Some(policy);
+    options
 }
 
 /// Request another service.

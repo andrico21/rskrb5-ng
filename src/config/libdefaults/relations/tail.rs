@@ -145,8 +145,8 @@ pub(crate) const RELATIONS_TAIL: [(&str, &str, &str, &str, &str, &str); 22] = [
         "spake_preauth_groups",
         "SPAKE group name list",
         "edwards25519 (client)",
-        "plan 2 WP-07",
-        "No SPAKE group is used; allowed-group lists do not require SPAKE; diagnostic; unknown names rejected rather than skipped",
+        "InitCredsOptions::from_config; Exchange::configure; preauth::spake::SpakePolicy (leaf spake)",
+        "Effective SPAKE groups in preference order; an empty list disables SPAKE; without the spake leaf FeatureUnavailable and no SPAKE; unknown names rejected rather than skipped",
         "spake_preauth_groups",
     ),
     (

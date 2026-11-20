@@ -24,14 +24,17 @@ use super::{
     Answer, ArmorRequest, ArmoredReply, Exchange, ExchangeStep, InitCreds, InitCredsOptions,
     MAX_EXCHANGE_ROUNDS, Outbound, Prompt, Responder, StepInput, order,
 };
-#[cfg(feature = "tokio")]
-use crate::config::Config;
 use crate::{
+    config::Config,
     crypto::{KerberosEtype, Use, prf},
     error::Fast,
     keytab::{EncryptionKey, Keytab},
     preauth::{encrypted_challenge::EncryptedChallenge, fast::PA_ENCRYPTED_CHALLENGE},
 };
+
+/// The engine side of SPAKE preauthentication (RFC 9588).
+#[path = "spake.rs"]
+mod spake;
 
 /// Where an AS exchange stands.
 pub(super) enum State {
@@ -51,6 +54,8 @@ pub(super) enum State {
     PasswordForChallenge,
     /// The preauthenticated request is out; its key is in `reply_key`.
     Final(Box<BuiltAsReq>),
+    /// A PA-SPAKE support message is out; the KDC answers with its challenge.
+    Spake(Box<spake::Round>),
     /// Finished or failed; no further step is possible.
     Done,
 }
@@ -59,8 +64,9 @@ pub(super) enum State {
 pub(super) fn new(
     client: Principal,
     (password, keytab): (Option<Password>, Option<Keytab>),
-    options: InitCredsOptions,
+    mut options: InitCredsOptions,
 ) -> InitCreds<'static> {
+    spake::strip_timestamp(&client, &mut options);
     InitCreds {
         client,
         password,
@@ -79,6 +85,13 @@ pub(super) fn new(
         trace: None,
         authenticated_client: None,
     }
+}
+
+/// Adopt `config`'s SPAKE groups and timestamp-disabled realms (MIT reads both
+/// from the profile when the exchange starts).
+pub(super) fn configure(engine: &mut InitCreds<'_>, config: &Config) {
+    super::options::adopt(&mut engine.options, config);
+    spake::strip_timestamp(&engine.client, &mut engine.options);
 }
 
 /// Redacted `Debug`: identities, state and counters, never secrets.
@@ -104,7 +117,7 @@ const fn state_name(state: &State) -> &'static str {
         State::PasswordForInitial | State::PasswordForReply(_) | State::PasswordForChallenge => {
             "a password answer"
         }
-        State::Initial(_) | State::Discovery | State::Final(..) => "a KDC reply",
+        State::Initial(_) | State::Discovery | State::Final(..) | State::Spake(_) => "a KDC reply",
         State::Done => "nothing (the exchange is finished)",
     }
 }
@@ -165,6 +178,7 @@ fn advance(engine: &mut InitCreds<'_>, input: StepInput<'_>) -> Result<ExchangeS
             let reply = held(engine.held_reply.take())?;
             challenge(engine, &reply)
         }
+        (State::Spake(round), StepInput::Reply(reply)) => spake::reply(engine, *round, reply),
         (State::Final(request), StepInput::Reply(reply)) => {
             let reply_key = held(engine.reply_key.take())?;
             verify_kdc_challenge(engine, &request, reply, &reply_key)?;
@@ -321,9 +335,13 @@ fn challenge(engine: &mut InitCreds<'_>, reply: &[u8]) -> Result<ExchangeStep, E
         engine.reply_key = Some(key);
         return send(engine, request, true, State::Final);
     }
+    if let Some(step) = spake::offer(engine, reply)? {
+        return Ok(step);
+    }
     if let Some(step) = encrypted_challenge(engine, reply, at)? {
         return Ok(step);
     }
+    spake::check_timestamp(engine)?;
     let (request, reply_key) = match &engine.keytab {
         Some(keytab) => preauth::keytab_preauth_request_at(
             (engine.client.clone(), service(engine)),
@@ -372,12 +390,16 @@ fn registered_challenge(
             .iter()
             .map(|offer| offer.r#type)
             .collect();
+    let timestamp = spake::timestamp_allowed(engine);
     let Some(session) = engine.preauth.as_mut() else {
         return Ok(None);
     };
     for pa_type in offered {
         if pa_type == PA_ENC_TIMESTAMP {
-            return Ok(None);
+            if timestamp {
+                return Ok(None);
+            }
+            continue;
         }
         if let Some(padata) = session
             .respond(pa_type, error.method_data(), &body)
@@ -841,6 +863,7 @@ where
     E: Exchange + ?Sized,
     R: Responder + ?Sized,
 {
+    exchange.configure(config);
     let mut reply: Option<Vec<u8>> = None;
     let mut answer = None;
     let mut pinned = None;

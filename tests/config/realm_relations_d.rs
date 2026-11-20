@@ -88,7 +88,6 @@ mod tests {
     cases! {
         auth_to_local, "list", ["DEFAULT", "RULE:[1:$1](.*)s/a/b/"];
         default_domain, "text", ["example.test", "other.test"];
-        disable_encrypted_timestamp, "bool", ["false", "off"];
         http_anchors, "locations", ["FILE:/ca", "DIR:/ca", "ENV:CA_BUNDLE"];
         pkinit_anchors, "locations", ["FILE:/ca", "DIR:/ca"];
         pkinit_cert_match, "list", ["<SUBJECT>.*", "&&<EKU>msScLogin,clientAuth<KU>digitalSignature"];

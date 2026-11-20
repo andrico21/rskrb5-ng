@@ -124,7 +124,6 @@ mod tests {
         k5login_directory, "plan 2 WP-17", ["/first", "/second"];
         kcm_mach_service, "plan 2 WP-09", ["org.example.kcm", "-"];
         plugin_base_dir, "plan 2 WP-16", ["/never-load", "%{LIBDIR}/krb5/plugins"];
-        spake_preauth_groups, "plan 2 WP-07", ["edwards25519,P-256", "EDWARDS25519 p-256"];
         verify_ap_req_nofail, "plan 2 WP-11", ["false", "off"];
         client_aware_channel_bindings, "plan 2 WP-12", ["false", "off"];
     }

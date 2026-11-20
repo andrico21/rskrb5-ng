@@ -65,7 +65,6 @@ fn configured_constructors_retain_policy_causes() -> Result<(), Box<dyn Error>> 
             Some(RejectedFeature::UnprotectedPasswordChange),
         ),
         ("unknown-enctype", "", None),
-        ("", "disable_encrypted_timestamp", None),
     ] {
         let mut config = Config::parse("[realms]\nR = {\nkdc = host\n}")?;
         config.libdefaults.default_keytab_name = "unsupported:admission-first".to_owned();
@@ -117,7 +116,7 @@ fn configured_constructors_retain_policy_causes() -> Result<(), Box<dyn Error>> 
 /// Config-backed HTTP constructors refuse unsupported restrictions before keytab discovery.
 #[test]
 fn http_constructors_reject_restrictive_scopes() -> Result<(), Box<dyn Error>> {
-    for scope in ["realm", "disable", "enable_only"] {
+    for scope in ["disable", "enable_only"] {
         let mut config = Config::parse("[realms]\nR = {\nkdc = 127.0.0.1:1\n}\n")?;
         config.libdefaults.default_keytab_name = "unsupported:policy-must-run-first".to_owned();
         if scope == "realm" {

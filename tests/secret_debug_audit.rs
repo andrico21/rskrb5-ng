@@ -1287,6 +1287,8 @@ mod tests {
         "src/preauth/fast.rs::ArmorSource",
         "src/preauth/fast.rs::Exchange",
         "src/preauth/encrypted_challenge.rs::EncryptedChallenge",
+        "src/preauth/spake.rs::Message",
+        "src/preauth/spake.rs::Step",
         "src/client/password.rs::Secret",
         "src/client/kpasswd.rs::BuiltKpasswdRequest",
         "src/client/kpasswd.rs::VerifiedKpasswdApRep",
