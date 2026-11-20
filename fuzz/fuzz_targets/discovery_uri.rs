@@ -21,7 +21,7 @@ fuzz_target!(|data: &[u8]| {
             if let Some(target) = uri::parse(input) {
                 assert!(target.spec.len() <= uri::MAX_TARGET_BYTES);
                 if let Some((host, _port)) = uri::host_port(&target.spec, 88) {
-                    assert!(!host.is_empty());
+                    assert!(!host.is_empty(), "an empty host was accepted");
                 }
             }
         }
@@ -38,7 +38,7 @@ fuzz_target!(|data: &[u8]| {
         _ => {
             let text = String::from_utf8_lossy(input);
             if let Some((host, _port)) = uri::host_port(&text, 464) {
-                assert!(!host.is_empty());
+                assert!(!host.is_empty(), "an empty host was accepted");
             }
         }
     }

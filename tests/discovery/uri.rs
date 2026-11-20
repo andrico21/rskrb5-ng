@@ -3,6 +3,8 @@
 
 use rskrb5_ng::discovery::uri::{self, MAX_TARGET_BYTES, Transport};
 
+use crate::TestError;
+
 /// One record: transport, primary flag, target text.
 fn parsed(record: &str) -> Option<(Transport, bool, String)> {
     uri::parse(record.as_bytes()).map(|target| (target.transport, target.primary, target.spec))
@@ -58,16 +60,20 @@ fn other_records_are_ignored() {
 
 /// The target is bounded.
 #[test]
-fn an_oversized_target_is_ignored() {
+fn an_oversized_target_is_ignored() -> Result<(), TestError> {
     let within = format!("krb5srv::tcp:{}", "a".repeat(MAX_TARGET_BYTES - 4));
     let over = format!("krb5srv::tcp:{}", "a".repeat(MAX_TARGET_BYTES + 1));
-    assert!(parsed(&within).is_some());
+    let accepted = parsed(&within).ok_or("a target at the bound is accepted")?;
+    assert_eq!(accepted.0, Transport::Tcp);
     assert_eq!(parsed(&over), None);
+    Ok(())
 }
 
 /// `host[:port]` as `k5_parse_host_string` reads it, with digits-only ports.
 #[test]
-fn host_and_port_are_split_by_the_endpoint_rule() {
+fn host_and_port_are_split_by_the_endpoint_rule() -> Result<(), TestError> {
+    let plain = uri::host_port("kdc.example:1", 88).ok_or("a plain host and port")?;
+    assert_eq!(plain.1, 1);
     for (text, expected) in [
         ("kdc.example", Some(("kdc.example", 88))),
         ("kdc.example:1088", Some(("kdc.example", 1088))),
@@ -94,6 +100,7 @@ fn host_and_port_are_split_by_the_endpoint_rule() {
             "{text:?}"
         );
     }
+    Ok(())
 }
 
 /// The URI record data is priority, weight and the target, which may be empty.
@@ -111,7 +118,9 @@ fn rdata_splits_into_priority_and_target() {
 
 /// A TXT realm is accepted only as a plain realm name, with one trailing dot removed.
 #[test]
-fn a_txt_realm_must_be_a_plain_realm_name() {
+fn a_txt_realm_must_be_a_plain_realm_name() -> Result<(), TestError> {
+    let plain = uri::realm_from_txt(b"R").ok_or("a plain realm")?;
+    assert_eq!(plain, "R");
     assert_eq!(
         uri::realm_from_txt(b"EXAMPLE.COM"),
         Some("EXAMPLE.COM".to_owned())
@@ -140,4 +149,5 @@ fn a_txt_realm_must_be_a_plain_realm_name() {
     ] {
         assert_eq!(uri::realm_from_txt(bad), None, "{bad:?}");
     }
+    Ok(())
 }

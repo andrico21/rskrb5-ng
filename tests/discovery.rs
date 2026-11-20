@@ -105,8 +105,10 @@ mod primary;
 /// The URI record target and host splitting.
 #[cfg(test)]
 #[expect(
+    clippy::missing_errors_doc,
     clippy::missing_panics_doc,
     reason = "test code is not rendered API documentation"
 )]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 #[path = "discovery/uri.rs"]
 mod uri;

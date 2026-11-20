@@ -199,6 +199,10 @@ impl<'config> HostRealmResolver<'config> {
     /// # Errors
     ///
     /// The errors of [`txt_realm`], and [`Error::DnsResolverConfig`].
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: DNS lookups change no state.
     async fn txt_for_host(&self, host: &str) -> Result<Option<String>, Error> {
         if !self.config.libdefaults.dns_lookup_realm.is_enabled() || is_numeric_address(host) {
             return Ok(None);
@@ -217,6 +221,10 @@ impl<'config> HostRealmResolver<'config> {
     }
 
     /// The first of the host's domain and `realm_try_domains` parents that is a realm.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: DNS lookups change no state.
     async fn try_domains(&self, host: &str) -> Option<String> {
         let limit = self.config.libdefaults.realm_try_domains;
         if limit < 0_i32 {

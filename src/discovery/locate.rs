@@ -251,6 +251,10 @@ impl<'config> ServerLocator<'config> {
     /// # Errors
     ///
     /// The DNS errors of [`Tokio::discover_kdcs`].
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: DNS lookups change no state.
     async fn dns(
         &self,
         realm: &str,
@@ -350,6 +354,10 @@ fn uri_targets(
 /// # Errors
 ///
 /// Returns the error of [`srv_targets::resolve`].
+///
+/// # Cancel safety
+///
+/// cancel-safe: DNS lookups change no state.
 async fn resolve_uri_targets(
     resolver: &TokioResolver,
     (realm, protocol): (&str, KdcProtocol),

@@ -414,7 +414,11 @@ fn endpoint_and_dns_server_literals_share_one_port_rule() {
 /// produce an unterminated bracket.
 #[test]
 fn a_nested_bracket_is_refused() -> Result<(), TestError> {
-    for value in ["[[a:b]", "[a[b]:88", "[a]b]"] {
+    for value in [
+        "\u{5b}\u{5b}a:b\u{5d}",
+        "\u{5b}a\u{5b}b\u{5d}:88",
+        "\u{5b}a\u{5d}b\u{5d}",
+    ] {
         assert!(
             matches!(
                 KdcEndpoint::configured(KdcProtocol::Tcp, value),

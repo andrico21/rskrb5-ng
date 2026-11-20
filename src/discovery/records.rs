@@ -130,6 +130,10 @@ async fn uri_at(
 ///
 /// Returns [`Error::DnsSrvLookup`] when the generic lookup fails for another
 /// reason than finding no record.
+///
+/// # Cancel safety
+///
+/// cancel-safe: DNS lookups change no state.
 pub(crate) async fn uri_records(
     resolver: &TokioResolver,
     (service, site, realm): (&str, Option<&str>, &str),
@@ -160,6 +164,10 @@ pub(crate) async fn uri_records(
 /// Returns [`Error::DnsSrvLookup`] when the lookup fails for another reason than
 /// finding no record: a failing name never lets the lookup continue at its
 /// parent, which would choose a realm by breaking a query.
+///
+/// # Cancel safety
+///
+/// cancel-safe: DNS lookups change no state.
 pub(crate) async fn txt_realm(
     resolver: &TokioResolver,
     name: &str,
