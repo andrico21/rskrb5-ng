@@ -50,6 +50,11 @@ minimal = []
 modules = ["src/ccache/keyring.rs", "src/ccache/keyring/"]
 tests = ["tests/ccache_keyring.rs", "tests/ccache_keyring/"]
 
+# The platform-store companion crate (owner decision D11); it depends on this
+# crate, never the reverse, and is not published.
+[workspace]
+members = ["rskrb5-ng-os"]
+
 [lib]
 name = "rskrb5_ng"
 

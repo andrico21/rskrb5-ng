@@ -692,10 +692,16 @@ fn direct_file_path_from_cache_name(name: &str) -> Result<PathBuf, Error> {
 }
 
 /// Map the shared filename boundary into the credential-cache error domain.
+///
+/// An `API:` name reaches here only when no installed store claims `API`; on
+/// Windows that is the omitted Kerberos for Windows cache (owner decision D13).
 fn file_name_error(error: file_name::Error) -> Error {
     match error {
         file_name::Error::Empty => Error::InvalidCacheName,
         file_name::Error::IdentityUnavailable => Error::IdentityUnavailable,
+        file_name::Error::UnsupportedType { name_type } if cfg!(windows) && name_type == "API" => {
+            Error::UnsupportedWindowsApi
+        }
         file_name::Error::UnsupportedType { name_type } => Error::UnsupportedCacheType {
             cache_type: name_type,
         },

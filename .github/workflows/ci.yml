@@ -241,6 +241,118 @@ jobs:
       - name: Clippy (--all-features, Windows)
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+  clippy-macos:
+    name: clippy-macos
+    # Plan 2 todo 14: code dead outside macOS, and the macOS stores of the
+    # `rskrb5-ng-os` workspace member, only fail on a macOS target.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Remove the image's Homebrew Rust (macOS)
+        shell: bash
+        run: |
+          for formula in rustup rust; do
+            if brew list --formula "$formula" >/dev/null 2>&1; then
+              brew uninstall --ignore-dependencies --formula "$formula"
+            fi
+          done
+          for bin in cargo cargo-clippy cargo-fmt clippy-driver rustc rustdoc rustfmt rustup rustup-init; do
+            rm -f "/opt/homebrew/bin/$bin"
+          done
+          rm -rf "$HOME/.rustup"
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-bin: false
+      - name: Clippy (--all-features, macOS)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Clippy (rskrb5-ng-os, macOS)
+        run: cargo clippy -p rskrb5-ng-os --all-targets -- -D warnings
+
+  platform-macos:
+    name: platform-macos
+    # The macOS stores against real services: MIT 1.22.2 (Homebrew krb5) seeds
+    # an `API:` cache (Kerberos.framework CCAPI) and a `KCM:` cache in the
+    # system's `org.h5l.kcm` from a throwaway KDC; the ignored tests of
+    # `rskrb5-ng-os` read them back, write and destroy, and make MIT write into
+    # a KCM service the test checks in under a test Mach name.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Remove the image's Homebrew Rust (macOS)
+        shell: bash
+        run: |
+          for formula in rustup rust; do
+            if brew list --formula "$formula" >/dev/null 2>&1; then
+              brew uninstall --ignore-dependencies --formula "$formula"
+            fi
+          done
+          for bin in cargo cargo-clippy cargo-fmt clippy-driver rustc rustdoc rustfmt rustup rustup-init; do
+            rm -f "/opt/homebrew/bin/$bin"
+          done
+          rm -rf "$HOME/.rustup"
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-bin: false
+      - name: Throwaway MIT realm and seeded caches
+        shell: bash
+        run: bash rskrb5-ng-os/scripts/macos-fixture.sh
+      - name: Tests (rskrb5-ng-os)
+        run: cargo test -p rskrb5-ng-os --locked
+      - name: Tests against the seeded caches (rskrb5-ng-os, --ignored)
+        run: cargo test -p rskrb5-ng-os --locked -- --ignored --test-threads=1
+      - name: MIT reads the cache the API store wrote, not the one it destroyed
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RSKRB5_NG_OS_MIT_BIN/klist" -c "API:$RSKRB5_NG_OS_API_COPY"
+          if "$RSKRB5_NG_OS_MIT_BIN/klist" -s -c "API:$RSKRB5_NG_OS_API_CACHE"; then
+            echo "::error::the destroyed API cache still holds tickets"
+            exit 1
+          fi
+          "$RSKRB5_NG_OS_MIT_BIN/kdestroy" -c "API:$RSKRB5_NG_OS_API_COPY"
+          "$RSKRB5_NG_OS_MIT_BIN/kdestroy" -c "KCM:$RSKRB5_NG_OS_KCM_CACHE"
+
+  platform-windows:
+    name: platform-windows
+    # The `MSLSA:` store against the runner's own logon session: the ignored
+    # test submits a fixture KRB-CRED with KerbSubmitTicketMessage, reads it
+    # back through `MSLSA:` and purges only that ticket.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Clippy (rskrb5-ng-os, Windows)
+        run: cargo clippy -p rskrb5-ng-os --all-targets -- -D warnings
+      - name: Tests (rskrb5-ng-os)
+        run: cargo test -p rskrb5-ng-os --locked
+      - name: Tests against the logon session (rskrb5-ng-os, --ignored)
+        run: cargo test -p rskrb5-ng-os --locked -- --ignored --test-threads=1
+
+  miri-os:
+    name: miri-os
+    # Miri over the pure-Rust parts of `rskrb5-ng-os` (the message codecs and
+    # parsers every OS reply goes through), and the audit of its unsafe code.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: nightly-2026-10-03
+          components: miri, rust-src
+      - name: Unsafe audit (SAFETY comments and expectations; none in the main crate)
+        run: python3 scripts/check-os-unsafe.py --self-test && python3 scripts/check-os-unsafe.py
+      - name: Miri (rskrb5-ng-os)
+        env:
+          MIRIFLAGS: "-Zmiri-strict-provenance"
+        run: cargo +nightly-2026-10-03 miri test -p rskrb5-ng-os --locked
+
   lib-feature-sets:
     name: lib-feature-sets
     runs-on: ubuntu-latest

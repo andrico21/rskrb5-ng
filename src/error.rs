@@ -158,6 +158,12 @@ pub enum Ccache {
         /// Cache type prefix before the first colon.
         cache_type: String,
     },
+    /// The Windows `API:` cache (MIT Kerberos for Windows CCAPI) is omitted by owner decision
+    /// D13; see `docs/security-policy.md#windows-api-ccache`.
+    #[error(
+        "the Windows API: credential cache is omitted by owner decision D13 (docs/security-policy.md#windows-api-ccache)"
+    )]
+    UnsupportedWindowsApi,
     /// Input is too short to contain the `ccache` header.
     #[error("credential cache is too short: {actual} bytes")]
     TooShort {

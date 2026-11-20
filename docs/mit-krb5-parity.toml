@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 60
-partial = 57
-absent = 36
+implemented = 62
+partial = 56
+absent = 35
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -998,9 +998,16 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "Windows API cache"
 implementation_status = "omitted"
 evidence_status = "unit"
-missing = "Omitted by owner decision D13: the legacy KfW API: cache is not provided; API: names fail with a typed UnsupportedCacheType error."
-rust_symbols = ["ccache::CacheName"]
-test_names = ["tests/ccache.rs::rejects_unsupported_cache_names"]
+missing = "Omitted by owner decision D13: the legacy KfW API: cache is not provided. On Windows an API: name that no installed store provider claims fails on every cache-name route (CCache::load_name, file_store::resolve and collection, the client lookups) with the typed error::Ccache::UnsupportedWindowsApi, which names D13 and its anchor; other systems report UnsupportedCacheType (macOS API: is the separate Kerberos.framework store of rskrb5-ng-os)."
+rust_symbols = [
+  "ccache::CacheName",
+  "ccache::file_store::resolve",
+  "error::Ccache::UnsupportedWindowsApi",
+]
+test_names = [
+  "tests/ccache.rs::rejects_unsupported_cache_names",
+  "tests/ccache_platform.rs::windows_api_cache_is_omitted",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "D13"
@@ -1014,13 +1021,26 @@ id = "MIT-ccache-7"
 area = "ccache"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Windows MSLSA cache"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "MSLSA: names fail with a typed UnsupportedCacheType error; no LSA cache backend."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-ci"
+missing = ""
+rust_symbols = [
+  "ccache::file_store::resolve",
+  "extensions::Registry::install_stores",
+  "extensions::StoreProvider",
+]
+test_names = [
+  "rskrb5-ng-os/src/windows/tests.rs::system_lsa_round_trip",
+  "rskrb5-ng-os/src/windows/tests.rs::changes_need_authorization",
+  "rskrb5-ng-os/src/windows/tests.rs::store_submits_and_load_reads_back",
+  "rskrb5-ng-os/src/windows/tests.rs::remove_and_destroy_purge",
+  "rskrb5-ng-os/src/windows/tests.rs::collection_of_one_cache",
+  "rskrb5-ng-os/src/windows/tests.rs::installed_provider_serves_mslsa_names",
+  "rskrb5-ng-os/src/lib.rs::registers_the_platform_stores",
+  "tests/store_registry.rs::installed_store_resolves_cache_and_keytab_names",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Delivered by the companion crate rskrb5-ng-os (owner decision D11: rskrb5_ng_os::windows::MslsaStore, an extensions::StoreProvider that rskrb5_ng_os::register registers read-only; after Registry::install_stores MSLSA: names resolve through every cache-name route of rskrb5-ng). Stricter than MIT: reads retrieve from the cache only (KERB_RETRIEVE_TICKET_USE_CACHE_ONLY, never a KDC) and need no TGT; changes need MslsaStore::with_mutation(true) and affect the whole logon session; a failed KerbSubmitTicketMessage is an error, never a KDC request through the LSA. The KRB-CRED is encrypted with a fixed AES key where MIT uses a fixed RC4 key (the key travels in the same request). The live test runs in the Windows CI job (platform-windows, --ignored): it submits a fixture KRB-CRED through an installed authorized provider, reads it back by name with its session key, purges exactly it, and gets the typed authorization error from the default read-only store against the real LSA."
 disposition = "WP-09"
 closing_plan = 2
 closing_todo = 14
@@ -1666,13 +1686,19 @@ id = "MIT-config-25"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`kcm_mach_service`"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "No KCM connection exists, including when - disables Mach RPC; diagnostic (consumer: plan 2 WP-09)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::kcm_mach_service"]
+implementation_status = "implemented"
+evidence_status = "live-ci"
+missing = ""
+rust_symbols = ["config::LibDefaults"]
+test_names = [
+  "tests/config/relations_c2.rs::kcm_mach_service",
+  "rskrb5-ng-os/src/macos/tests.rs::kcm_over_mach_round_trip",
+  "rskrb5-ng-os/src/macos/tests.rs::kcm_mach_disabled_and_absent",
+  "rskrb5-ng-os/src/macos/tests.rs::mit_kinit_writes_to_the_test_service",
+  "rskrb5-ng-os/src/macos/tests.rs::kcm_reads_the_system_service_cache",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Delivered by the companion crate rskrb5-ng-os (owner decision D11): rskrb5_ng_os::macos::KcmMachStore::from_libdefaults reads kcm_mach_service; - disables Mach RPC as in MIT. KCM over Mach only: the MIT fallback to the Unix socket is the built-in KCM store of todo 12. Each call has its own reply port and a 30-second bound (MIT waits forever), and replies pass the MIG checks before parsing. The KCM: name route of rskrb5-ng reaches this Mach transport only once the built-in KCM store of todo 12 offers install_transport (rskrb5-ng-os then installs it from register; until then KcmMachStore is used directly), and the rskrb5-ng crate alone makes no KCM connection, so its relation table keeps the plan-2 classification (register FU-OSS-P02). Live evidence: the macOS CI job (platform-macos) runs MIT 1.22.2 kinit against a KCM service checked in under a test Mach name and reads the system org.h5l.kcm."
 disposition = "WP-09"
 closing_plan = 2
 closing_todo = 14

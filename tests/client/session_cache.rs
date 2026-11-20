@@ -1515,11 +1515,16 @@ mod tests {
             .err()
             .context("unsupported cache type rejected")?;
 
-        assert!(matches!(
-            error,
-            Error::CCache(CcacheError::UnsupportedCacheType { cache_type })
-                if cache_type == "API"
-        ));
+        let preserved = if cfg!(windows) {
+            matches!(error, Error::CCache(CcacheError::UnsupportedWindowsApi))
+        } else {
+            matches!(
+                error,
+                Error::CCache(CcacheError::UnsupportedCacheType { cache_type })
+                    if cache_type == "API"
+            )
+        };
+        assert!(preserved);
         Ok(())
     }
 
