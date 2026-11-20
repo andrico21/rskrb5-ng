@@ -105,15 +105,16 @@ fn a_lost_reply_to_a_mutation_is_an_unknown_outcome() -> Result<(), TestError> {
 #[test]
 fn unknown_opcodes_and_error_ids_are_typed() -> Result<(), TestError> {
     let closes: Script = Box::new(skip_request);
-    let internal: Script = Box::new(|stream| {
+    // A daemon error leaves the connection usable, so the client sends the
+    // next request on it: one script answers both requests and closes only
+    // after the second, as a daemon that keeps its connection open would.
+    let errors: Script = Box::new(|stream| {
         skip_request(stream)?;
-        reply(stream, -1_765_328_188, 0, &[])
-    });
-    let nofile: Script = Box::new(|stream| {
+        reply(stream, -1_765_328_188, 0, &[])?;
         skip_request(stream)?;
         reply(stream, 0, -1_765_328_189, &[])
     });
-    let daemon = Scripted::start("errors", vec![closes, internal, nofile])?;
+    let daemon = Scripted::start("errors", vec![closes, errors])?;
     let store = store(daemon.path())?;
     assert!(matches!(
         primary(&store),
