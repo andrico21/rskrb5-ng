@@ -4,7 +4,7 @@
 //!
 //! The payload is the version, 1, and the length of the name as big-endian
 //! 32-bit numbers, then the name. The key is writable by every process of the
-//! user, so [`parse`] treats it as untrusted bytes.
+//! user, so [`parse()`](crate::ccache::keyring::index::parse) treats it as untrusted bytes.
 
 use super::Fault;
 use crate::ccache::Error;
