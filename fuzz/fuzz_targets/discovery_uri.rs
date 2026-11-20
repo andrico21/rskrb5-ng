@@ -19,7 +19,10 @@ fuzz_target!(|data: &[u8]| {
     match selector & 0x03 {
         0 => {
             if let Some(target) = uri::parse(input) {
-                assert!(target.spec.len() <= uri::MAX_TARGET_BYTES);
+                assert!(
+                    target.spec.len() <= uri::MAX_TARGET_BYTES,
+                    "a target over the bound was accepted"
+                );
                 if let Some((host, _port)) = uri::host_port(&target.spec, 88) {
                     assert!(!host.is_empty(), "an empty host was accepted");
                 }
@@ -27,12 +30,15 @@ fuzz_target!(|data: &[u8]| {
         }
         1 => {
             if let Some((_priority, target)) = uri::split_rdata(input) {
-                assert!(target.len() <= input.len());
+                assert!(target.len() <= input.len(), "the target outgrew the data");
             }
         }
         2 => {
             if let Some(realm) = uri::realm_from_txt(input) {
-                assert!(!realm.is_empty() && realm.len() <= 255);
+                assert!(
+                    !realm.is_empty() && realm.len() <= 255,
+                    "a realm outside its bound was accepted"
+                );
             }
         }
         _ => {

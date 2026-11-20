@@ -1493,9 +1493,7 @@ capability = "`dns_canonicalize_hostname`"
 implementation_status = "partial"
 evidence_status = "unit"
 missing = "CanonicalizationPolicy (todo 15) is the effective consumer, but no client route canonicalizes a host name implicitly: Principal::host_based_service and the GSS and HTTP name import still only lower-case the host (consumers: todo 18 for the GSS name import, todo 26 for the HTTP client)"
-rust_symbols = [
-  "discovery::hostname::CanonicalizationPolicy",
-]
+rust_symbols = ["discovery::hostname::CanonicalizationPolicy"]
 test_names = [
   "tests/config/relations_c1.rs::dns_canonicalize_hostname",
   "tests/discovery/hostnames.rs::the_three_modes_order_their_forms",
@@ -1507,10 +1505,7 @@ security_divergence = ""
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
-contributors = [
-  "P2-18",
-  "P2-26",
-]
+contributors = ["P2-18", "P2-26"]
 
 [[feature]]
 id = "MIT-config-15"
@@ -1913,9 +1908,7 @@ capability = "`qualify_shortname`"
 implementation_status = "partial"
 evidence_status = "unit"
 missing = "CanonicalizationPolicy (todo 15) applies the suffix, but no client route canonicalizes a host name implicitly: Principal::host_based_service and the GSS and HTTP name import still only lower-case the host (consumers: todo 18 for the GSS name import, todo 26 for the HTTP client)"
-rust_symbols = [
-  "discovery::hostname::CanonicalizationPolicy",
-]
+rust_symbols = ["discovery::hostname::CanonicalizationPolicy"]
 test_names = [
   "tests/config/relations_c2.rs::qualify_shortname",
   "tests/discovery/hostnames.rs::qualify_shortname_adds_a_suffix_to_one_label_names",
@@ -1926,10 +1919,7 @@ security_divergence = "unset adds no suffix (MIT uses the first search domain of
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
-contributors = [
-  "P2-18",
-  "P2-26",
-]
+contributors = ["P2-18", "P2-26"]
 
 [[feature]]
 id = "MIT-config-35"
@@ -1939,9 +1929,7 @@ capability = "`rdns`"
 implementation_status = "partial"
 evidence_status = "unit"
 missing = "CanonicalizationPolicy (todo 15) makes the reverse lookup, but no client route canonicalizes a host name implicitly: Principal::host_based_service and the GSS and HTTP name import still only lower-case the host (consumers: todo 18 for the GSS name import, todo 26 for the HTTP client)"
-rust_symbols = [
-  "discovery::hostname::CanonicalizationPolicy",
-]
+rust_symbols = ["discovery::hostname::CanonicalizationPolicy"]
 test_names = [
   "tests/config/relations_c2.rs::rdns",
   "tests/discovery/hostnames.rs::dns_canonicalization_follows_the_name_and_then_the_address",
@@ -1952,10 +1940,7 @@ security_divergence = ""
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
-contributors = [
-  "P2-18",
-  "P2-26",
-]
+contributors = ["P2-18", "P2-26"]
 
 [[feature]]
 id = "MIT-config-36"
@@ -2503,9 +2488,7 @@ capability = "Hostname canonicalization with DNS, `fallback`, short-name qualifi
 implementation_status = "partial"
 evidence_status = "unit"
 missing = "CanonicalizationPolicy (todo 15) is the effective consumer, but no client route canonicalizes a host name implicitly: Principal::host_based_service and the GSS and HTTP name import still only lower-case the host (consumers: todo 18 for the GSS name import, todo 26 for the HTTP client)"
-rust_symbols = [
-  "discovery::hostname::CanonicalizationPolicy",
-]
+rust_symbols = ["discovery::hostname::CanonicalizationPolicy"]
 test_names = [
   "tests/discovery/hostnames.rs::the_three_modes_order_their_forms",
   "tests/discovery/hostnames.rs::dns_canonicalization_follows_the_name_and_then_the_address",
@@ -2517,10 +2500,7 @@ security_divergence = ""
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
-contributors = [
-  "P2-18",
-  "P2-26",
-]
+contributors = ["P2-18", "P2-26"]
 
 [[feature]]
 id = "MIT-dns-5"
@@ -2597,9 +2577,7 @@ capability = "KDC transport ordering, failover, timeout and TCP/UDP fallback"
 implementation_status = "implemented"
 evidence_status = "unit"
 missing = ""
-rust_symbols = [
-  "client::transport::Tokio::send_to_realm",
-]
+rust_symbols = ["client::transport::Tokio::send_to_realm"]
 test_names = [
   "tests/discovery/budget.rs::the_budget_covers_every_dns_lookup_together",
   "tests/discovery/budget.rs::the_budget_is_shared_by_the_endpoints_and_cuts_the_wait_for_a_reply",
@@ -3146,9 +3124,7 @@ security_divergence = ""
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 15
-contributors = [
-  "P2-28",
-]
+contributors = ["P2-28"]
 
 [[feature]]
 id = "MIT-plugin-1"
@@ -3235,9 +3211,7 @@ security_divergence = ""
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 15
-contributors = [
-  "P2-28",
-]
+contributors = ["P2-28"]
 
 [[feature]]
 id = "MIT-plugin-4"
@@ -3301,9 +3275,7 @@ security_divergence = ""
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 15
-contributors = [
-  "P2-28",
-]
+contributors = ["P2-28"]
 
 [[feature]]
 id = "MIT-plugin-7"
