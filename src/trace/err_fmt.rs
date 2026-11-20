@@ -7,8 +7,8 @@
 //! The profile relation is read once, in `krb5_init_context`
 //! (`src/lib/krb5/krb/init_ctx.c:299-300`).
 //!
-//! Here the typed error is never altered. [`ErrFmt::report`] wraps a borrowed
-//! error in a [`Report`] whose `Display` is the formatted text and whose
+//! Here the typed error is never altered. [`ErrFmt::report`](crate::trace::err_fmt::ErrFmt::report)
+//! wraps a borrowed error in a [`Report`](crate::trace::err_fmt::Report) whose `Display` is the formatted text and whose
 //! `source` is the original error, so a handler still matches the typed
 //! variant, reads its code and walks its sources.
 //!
