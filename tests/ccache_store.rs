@@ -503,10 +503,16 @@ mod tests {
             cache.load(),
             Err(Error::CacheNotFound { name: _ })
         ));
-        assert!(matches!(
-            file_store::resolve("API:", CacheVersion::V4),
-            Err(Error::UnsupportedCacheType { cache_type }) if cache_type == "API"
-        ));
+        // `API:` is the omitted Kerberos for Windows cache (D13) on Windows only.
+        let refused = file_store::resolve("API:", CacheVersion::V4)
+            .err()
+            .ok_or("API: resolves")?;
+        let typed = if cfg!(windows) {
+            matches!(refused, Error::UnsupportedWindowsApi)
+        } else {
+            matches!(&refused, Error::UnsupportedCacheType { cache_type } if cache_type == "API")
+        };
+        assert!(typed, "{refused}");
         fs::remove_dir_all(directory)?;
         Ok(())
     }
