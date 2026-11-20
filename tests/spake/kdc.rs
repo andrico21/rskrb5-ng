@@ -40,6 +40,7 @@ pub(crate) const PA_FX_COOKIE: i32 = 133;
 /// `PA-ETYPE-INFO2`.
 const PA_ETYPE_INFO2: i32 = 19;
 /// `KDC_ERR_PREAUTH_FAILED`.
+#[cfg(feature = "spake")]
 pub(crate) const PREAUTH_FAILED: i32 = 24;
 /// `KDC_ERR_PREAUTH_REQUIRED`.
 const PREAUTH_REQUIRED: i32 = 25;
@@ -54,14 +55,17 @@ pub(crate) enum Offer {
     /// An empty PA-SPAKE before PA-ENC-TIMESTAMP.
     SpakeFirst,
     /// PA-ENC-TIMESTAMP before an empty PA-SPAKE.
+    #[cfg(feature = "spake")]
     TimestampFirst,
     /// The challenge itself before PA-ENC-TIMESTAMP (RFC 9588 section 4.6).
+    #[cfg(feature = "spake")]
     Optimistic,
     /// PA-ENC-TIMESTAMP alone (PA-SPAKE stripped).
     TimestampOnly,
 }
 
 /// How the KDC misbehaves.
+#[cfg(feature = "spake")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Fault {
     /// It does not.
@@ -80,14 +84,19 @@ pub(crate) struct Script {
     /// The mechanisms of `PREAUTH_REQUIRED`.
     pub offer: Offer,
     /// The challenge group.
+    #[cfg(feature = "spake")]
     pub group: i32,
     /// The offered second factors.
+    #[cfg(feature = "spake")]
     pub factors: Vec<(i32, Option<Vec<u8>>)>,
     /// Bytes delivered instead of the KDC element `T`.
+    #[cfg(feature = "spake")]
     pub element: Option<Vec<u8>>,
     /// Bytes delivered instead of the challenge after the support message.
+    #[cfg(feature = "spake")]
     pub raw_challenge: Option<Vec<u8>>,
     /// The misbehaviour.
+    #[cfg(feature = "spake")]
     pub fault: Fault,
 }
 
@@ -95,10 +104,15 @@ impl Default for Script {
     fn default() -> Self {
         Self {
             offer: Offer::SpakeFirst,
+            #[cfg(feature = "spake")]
             group: 1,
+            #[cfg(feature = "spake")]
             factors: vec![(1, None)],
+            #[cfg(feature = "spake")]
             element: None,
+            #[cfg(feature = "spake")]
             raw_challenge: None,
+            #[cfg(feature = "spake")]
             fault: Fault::Honest,
         }
     }
@@ -150,6 +164,23 @@ fn kerberos_time(seconds: u64) -> Result<rasn_kerberos::KerberosTime, TestError>
     ))
 }
 
+impl Script {
+    /// The default script offering `offer`.
+    #[cfg(feature = "spake")]
+    pub(crate) fn offering(offer: Offer) -> Self {
+        Self {
+            offer,
+            ..Self::default()
+        }
+    }
+
+    /// The default script offering `offer`.
+    #[cfg(not(feature = "spake"))]
+    pub(crate) const fn offering(offer: Offer) -> Self {
+        Self { offer }
+    }
+}
+
 impl Kdc {
     /// A KDC following `script`.
     ///
@@ -184,7 +215,11 @@ impl Kdc {
             return as_rep(&message, &self.key);
         }
         let Some(spake) = padata.iter().find(|entry| entry.r#type == PA_SPAKE) else {
-            return self.preauth_required();
+            #[cfg(feature = "spake")]
+            let spake_value = optimistic(self)?;
+            #[cfg(not(feature = "spake"))]
+            let spake_value = Vec::new();
+            return self.preauth_required(spake_value);
         };
         let cookie = padata
             .iter()
@@ -199,7 +234,7 @@ impl Kdc {
     ///
     /// # Errors
     /// Returns the encoding errors.
-    fn preauth_required(&mut self) -> Result<Vec<u8>, TestError> {
+    fn preauth_required(&self, spake_value: Vec<u8>) -> Result<Vec<u8>, TestError> {
         let info = rasn_kerberos::EtypeInfo2::from([rasn_kerberos::EtypeInfo2Entry {
             etype: 18,
             salt: Some(rasn_kerberos::KerberosString::try_from(SALT.to_owned())?),
@@ -208,9 +243,11 @@ impl Kdc {
         let mut offers = vec![offer(PA_ETYPE_INFO2, der::encode(&info)?)];
         let timestamp = offer(PA_ENC_TIMESTAMP, Vec::new());
         let mechanisms = match self.script.offer {
-            Offer::SpakeFirst => vec![offer(PA_SPAKE, Vec::new()), timestamp],
-            Offer::TimestampFirst => vec![timestamp, offer(PA_SPAKE, Vec::new())],
-            Offer::Optimistic => vec![offer(PA_SPAKE, optimistic(self)?), timestamp],
+            Offer::SpakeFirst => vec![offer(PA_SPAKE, spake_value), timestamp],
+            #[cfg(feature = "spake")]
+            Offer::TimestampFirst => vec![timestamp, offer(PA_SPAKE, spake_value)],
+            #[cfg(feature = "spake")]
+            Offer::Optimistic => vec![offer(PA_SPAKE, spake_value), timestamp],
             Offer::TimestampOnly => vec![timestamp],
         };
         offers.extend(mechanisms);
@@ -245,22 +282,18 @@ fn spake_reply(
     Err("PA-SPAKE sent without the spake leaf".into())
 }
 
-/// The optimistic challenge.
+/// The PA-SPAKE value of `PREAUTH_REQUIRED`: the challenge when the script is
+/// optimistic, else empty.
 ///
 /// # Errors
 /// Returns the errors of the KDC half.
 #[cfg(feature = "spake")]
 fn optimistic(kdc: &mut Kdc) -> Result<Vec<u8>, TestError> {
-    half::challenge(kdc)
-}
-
-/// Without the leaf there is no challenge to send.
-///
-/// # Errors
-/// Always.
-#[cfg(not(feature = "spake"))]
-fn optimistic(_kdc: &mut Kdc) -> Result<Vec<u8>, TestError> {
-    Err("an optimistic challenge needs the spake leaf".into())
+    if kdc.script.offer == Offer::Optimistic {
+        half::challenge(kdc)
+    } else {
+        Ok(Vec::new())
+    }
 }
 
 /// One METHOD-DATA entry.

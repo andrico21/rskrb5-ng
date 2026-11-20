@@ -28,6 +28,7 @@ use crate::kdc::{COOKIE, Fault, PREAUTH_FAILED, long_term_key};
 use crate::kdc::{Kdc, Offer, PA_ENC_TIMESTAMP, PASSWORD, REALM, Script, TestError, client};
 
 /// A check of the SPAKE error a scenario ends with.
+#[cfg(feature = "spake")]
 type Check = fn(&Spake) -> bool;
 
 /// The request template: AES256 only, no FAST negotiation marker.
@@ -431,10 +432,7 @@ fn malformed_challenges_are_rejected() -> Result<(), TestError> {
 /// the timestamp is used.
 #[test]
 fn disable_encrypted_timestamp() -> Result<(), TestError> {
-    let stripped = Script {
-        offer: Offer::TimestampOnly,
-        ..Script::default()
-    };
+    let stripped = Script::offering(Offer::TimestampOnly);
     let disabled = config(" disable_encrypted_timestamp = true", "")?;
     let mut kdc = Kdc::new(stripped.clone())?;
     let mut login = exchange(configured(&disabled)?);
