@@ -54,7 +54,7 @@ pub(super) fn from_config(
 
 /// The realms whose `disable_encrypted_timestamp` is set; any value other than
 /// an explicit `false` counts as set (fail closed).
-pub(super) fn timestamp_disabled(config: &Config) -> Vec<String> {
+pub(in crate::client) fn timestamp_disabled(config: &Config) -> Vec<String> {
     config
         .realms
         .iter()

@@ -38,6 +38,15 @@ mod closed_port_tests;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod dns_literal_tests;
+/// `disable_encrypted_timestamp` on the raw configured AS route.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod encts_tests;
 /// MIT-shaped password transport for `KdcProtocol::Auto`.
 mod password_auto;
 /// Single-delivery password mutation transport.
@@ -73,7 +82,10 @@ use super::{
     keytab_initial_as_req, password_initial_as_rep_session, password_initial_as_req,
     preauth::{keytab_preauth_request, password_preauth_request},
     process_as_rep, process_tgs_rep,
-    stepwise::{InitCreds, InitCredsOptions, NoResponder, TicketCreds, TicketOptions, drive_tokio},
+    stepwise::{
+        InitCreds, InitCredsOptions, NoResponder, TicketCreds, TicketOptions, drive_tokio,
+        options::timestamp_disabled,
+    },
     tgt_realm,
 };
 use crate::{
@@ -1312,7 +1324,9 @@ impl Tokio {
     /// key uses, `[libdefaults]` makes a choice the policy permanently rejects (a
     /// removed enctype such as `des-cbc-crc` in an enctype list, `allow_weak_crypto`,
     /// or an unkeyed `safe_checksum_type`) or a PA-DATA entry has a permanently
-    /// rejected type (draft-9 PKINIT, types 14 and 15).
+    /// rejected type (draft-9 PKINIT, types 14 and 15). Still before any I/O it
+    /// returns [`Error::EncryptedTimestampDisabled`] when `request` carries
+    /// PA-ENC-TIMESTAMP and the client realm sets `disable_encrypted_timestamp`.
     ///
     /// Returns the errors of [`Self::send_to_realm`], [`Error::Kdc`] when the KDC
     /// answers with a KRB-ERROR, an error when the AS-REP cannot be decoded,
@@ -1338,6 +1352,7 @@ impl Tokio {
         let policy = super::crypto_policy::configured(&config.libdefaults)?;
         super::crypto_policy::wire_message(&request.message, &request.der, "AS-REQ")?;
         super::crypto_policy::before_exchange(&policy, &request.message.0, reply_key)?;
+        refuse_disabled_timestamp(config, request)?;
         let mut bound = request.clone();
         bound.crypto_policy = policy;
         let response = self
@@ -2567,6 +2582,27 @@ impl Tokio {
             Err(_elapsed) => Err(Error::TransportTimeout(expiry)),
         }
     }
+}
+
+/// Refuse a caller-built PA-ENC-TIMESTAMP for a client realm whose
+/// `disable_encrypted_timestamp` is set, as the exchange engine refuses its own
+/// (MIT `preauth_encts.c:68-73`).
+///
+/// # Errors
+/// Returns [`Error::EncryptedTimestampDisabled`] naming the client realm.
+fn refuse_disabled_timestamp(config: &Config, request: &BuiltAsReq) -> Result<(), Error> {
+    let stamped = request
+        .message
+        .0
+        .padata
+        .as_deref()
+        .is_some_and(|padata| super::padata_contains(padata, super::PA_ENC_TIMESTAMP));
+    if stamped && timestamp_disabled(config).contains(&request.client.realm) {
+        return Err(Error::EncryptedTimestampDisabled {
+            realm: request.client.realm.clone(),
+        });
+    }
+    Ok(())
 }
 
 /// Select without replacement within ascending priorities using RFC 2782 draws.
