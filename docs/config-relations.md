@@ -28,10 +28,10 @@ both modes. Parsed values do not imply an implemented mechanism.
 | libdefaults | default_realm | string | unset | Config::realm_for_host; client::service_realm | Effective fallback after domain mapping; explicit service realm remains authoritative | default_realm |
 | libdefaults | default_tgs_enctypes | enctype expression | permitted_enctypes | TgsReq::from_libdefaults | Effective WP-02; AES SHA2-first default, forbidden positives error | default_tgs_enctypes |
 | libdefaults | default_tkt_enctypes | enctype expression | permitted_enctypes | AsReq::from_libdefaults | Effective WP-02; AES SHA2-first default, forbidden positives error | default_tkt_enctypes |
-| libdefaults | dns_canonicalize_hostname | boolean or fallback | true | plan 2 WP-10 | No DNS canonicalization occurs; all values diagnostic, including fallback per todo 15 | dns_canonicalize_hostname |
+| libdefaults | dns_canonicalize_hostname | boolean or fallback | true | discovery::hostname::CanonicalizationPolicy | Effective: true canonicalizes the host with DNS, false never does, fallback tries the plain name first; no client route canonicalizes a host implicitly | dns_canonicalize_hostname |
 | libdefaults | dns_lookup_kdc | boolean | true when built with DNS support | client::transport::discover_kdcs | Effective SRV switch; crate default false avoids ambient DNS | dns_lookup_kdc |
-| libdefaults | dns_lookup_realm | boolean | false | plan 2 WP-10 | No TXT realm discovery occurs; false satisfied, true cannot relax behavior; diagnostic | dns_lookup_realm |
-| libdefaults | dns_uri_lookup | boolean | true | plan 2 WP-10 | No URI discovery occurs; false satisfied, true cannot relax behavior; diagnostic; crate default false | dns_uri_lookup |
+| libdefaults | dns_lookup_realm | boolean | false | discovery::realm::HostRealmResolver | Effective opt-in TXT realm lookup for service hosts and fallback realms; never read when false | dns_lookup_realm |
+| libdefaults | dns_uri_lookup | boolean | true | discovery::locate::ServerLocator | Effective URI-before-SRV discovery under dns_lookup_kdc; crate default false | dns_uri_lookup |
 | libdefaults | enforce_ok_as_delegate | boolean | false | plan 2 WP-12 | GSS credential forwarding is unavailable; no credentials delegated, so true already satisfied; diagnostic | enforce_ok_as_delegate |
 | libdefaults | err_fmt | string | unset | plan 2 WP-18 | Formatting does not alter typed errors or authentication policy; diagnostic | err_fmt |
 | libdefaults | extra_addresses | IP address list | unset | AsReq::from_libdefaults; InitCredsOptions::from_config | Effective with noaddresses=false as the request addresses; MIT also adds interface addresses, which this library does not enumerate; ignored when noaddresses=true | extra_addresses |
@@ -48,11 +48,11 @@ both modes. Parsed values do not imply an implemented mechanism.
 | libdefaults | plugin_base_dir | parameter template | %{LIBDIR}/krb5/plugins | plan 2 WP-16 | Inert template, no expansion/discovery or executable code loading; diagnostic | plugin_base_dir |
 | libdefaults | preferred_preauth_types | signed decimal i32 list | 17,16,15,14 | InitCredsOptions::from_config; InitCreds::with_preauth | Effective order of the KDC offers between registered mechanisms and encrypted timestamp; not an allowlist; draft-9 IDs 14/15 ignored with IgnoredPreauthType | preferred_preauth_types |
 | libdefaults | proxiable | boolean | false | AsReq::from_libdefaults; TgsReq::from_libdefaults; InitCredsOptions::from_config | Effective proxiable bit; false clears conflicting raw bit | proxiable |
-| libdefaults | qualify_shortname | optional string | first system DNS search domain | plan 2 WP-10 | No automatic qualification exists; empty disables and nonempty requests unavailable name rewriting; diagnostic | qualify_shortname |
-| libdefaults | rdns | boolean | true | plan 2 WP-10 | No reverse DNS occurs; false satisfied, true cannot relax current behavior; diagnostic | rdns |
-| libdefaults | realm_try_domains | signed decimal i32 | -1 | plan 2 WP-10 | No domain realm probing occurs; negative disables, nonnegative does not tighten behavior; diagnostic | realm_try_domains |
+| libdefaults | qualify_shortname | optional string | first system DNS search domain | discovery::hostname::CanonicalizationPolicy | Effective suffix of a one-label name that DNS did not canonicalize; unset adds none because the system resolver configuration is not read to name a service, empty disables | qualify_shortname |
+| libdefaults | rdns | boolean | true | discovery::hostname::CanonicalizationPolicy | Effective reverse lookup after the forward lookup of DNS canonicalization; false skips it | rdns |
+| libdefaults | realm_try_domains | signed decimal i32 | -1 | discovery::realm::HostRealmResolver | Effective bounded search of the host's domain and parents for a realm; negative disables | realm_try_domains |
 | libdefaults | renew_lifetime | duration | 0 | AsReq::from_libdefaults; TgsReq::from_libdefaults | Effective optional renewable lifetime, zero disables renewal; checked MIT intervals | renew_lifetime |
-| libdefaults | request_timeout | duration | 0 | plan 2 WP-10 | Existing per-attempt timeouts are not a total budget; every nonzero value errors; zero diagnostic | request_timeout |
+| libdefaults | request_timeout | duration | 0 | client::transport::Tokio::send_to_realm | Effective total budget over DNS, connect, retries and read of each KDC and kpasswd request; zero is no budget | request_timeout |
 | libdefaults | spake_preauth_groups | SPAKE group name list | edwards25519 (client) | plan 2 WP-07 | No SPAKE group is used; allowed-group lists do not require SPAKE; diagnostic; unknown names rejected rather than skipped | spake_preauth_groups |
 | libdefaults | ticket_lifetime | duration | 1 day | AsReq::from_libdefaults; TgsReq::from_libdefaults | Effective request lifetime; checked MIT intervals | ticket_lifetime |
 | libdefaults | udp_preference_limit | signed decimal i32 | 1465 | client::transport::auto_uses_udp_first | Effective only in Auto transport; negative uses MIT default, large values capped at 32700 | udp_preference_limit |
@@ -71,9 +71,9 @@ both modes. Parsed values do not imply an implemented mechanism.
 | realms | http_anchors | location list | system CA set | plan 2 WP-10 | No HTTPS proxy connection exists; trust restrictions cannot be bypassed; diagnostic | http_anchors |
 | realms | kdc | endpoint list | DNS discovery when enabled | Config::configured_kdcs; transport::Tokio::discover_kdcs | Existing network endpoint consumer; Unix sockets/proxies remain WP-10 | kdc |
 | realms | kpasswd_server | endpoint list | DNS then admin_server port 464 | Config::configured_kpasswd_servers | Effective configured password endpoint selection | kpasswd_server |
-| realms | master_kdc | endpoint list | unset | plan 2 WP-10 | Fallback only when primary_kdc absent; primary retry unavailable; diagnostic | master_kdc |
-| realms | primary_kdc | endpoint list | master_kdc | plan 2 WP-10 | Primary retry unavailable, no authentication restriction weakened; diagnostic | primary_kdc |
-| realms | sitename | string | unset | plan 2 WP-10 | Site DNS preference unavailable; diagnostic | sitename |
+| realms | master_kdc | endpoint list | unset | discovery::locate::ServerLocator | Effective fallback only when primary_kdc is absent | master_kdc |
+| realms | primary_kdc | endpoint list | master_kdc | client::transport::Tokio::login_as_service_with_password_config | Effective primary KDC retry after a replica's failure to authenticate | primary_kdc |
+| realms | sitename | string | unset | discovery::locate::sitename | Effective site-first DNS names for KDC, admin and kpasswd discovery | sitename |
 | realms | v4_instance_convert | rejected subsection | unset | protocol::relation | Permanent V4 conversion rejection before composition | v4_instance_convert |
 | realms | v4_realm | rejected string | unset | protocol::relation | Permanent V4 conversion rejection before composition | v4_realm |
 | realms | pkinit_anchors | location list | unset | plan 2 WP-06 | No PKINIT trust acceptance occurs; diagnostic | pkinit_anchors |

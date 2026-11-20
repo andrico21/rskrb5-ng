@@ -18,8 +18,8 @@ last_reviewed = "2026-11-01"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 18
-partial = 17
+implemented = 19
+partial = 16
 absent = 0
 rejected = 0
 omitted = 0
@@ -44,7 +44,7 @@ rskrb5_modules = ["src/config.rs"]
 rskrb5_tests = ["tests/config.rs"]
 status = "partial"
 evidence = ["unit tests cover parsing, defaults, realm lookup, enctype mapping, path-list loading, reader adapters and gokrb5-shaped JSON", "every [libdefaults], [realms] and section relation has a typed value and a consumer, a diagnostic or an error (docs/config-relations.md); unknown relations are diagnostics and Strict mode rejects them", "unit tests cover the MIT [domain_realm] semantics that diverge from gokrb5: DNS case folding and bare tags applied to subdomains"]
-next = ["GO-config-2: relation consumers close across plan-2 todos 4, 15, 18 and 25; P2-28 closes the row", "GO-config-3: primary-KDC retry and DNS realm discovery close in P2-15"]
+next = ["GO-config-2: relation consumers close across plan-2 todos 4, 15, 18 and 25; P2-28 closes the row", "GO-config-3 closed in P2-15: primary-KDC retry and DNS realm discovery"]
 
 [[area]]
 id = "keytab"
@@ -303,11 +303,25 @@ id = "GO-config-3"
 area = "config"
 upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
 capability = "`[realms]`, endpoint precedence, KDC and kpasswd lookup"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Primary-KDC retry after a bad password and DNS realm discovery (P2-15); configured kdc and kpasswd_server endpoints, the terminal `*`, the admin_server port-464 kpasswd fallback, IPv6 endpoints and KDC/kpasswd SRV lookup exist."
-rust_symbols = ["config::Realm"]
-test_names = ["tests/config/realm_relations_d.rs::kdc", "tests/config/realm_relations_d.rs::kpasswd_server", "tests/config/realm_relations_d.rs::admin_server", "tests/config/section_composition_d.rs::primary_kdc_precedence", "tests/client_transport/cases.rs::kpasswd_admin_fallback_preserves_ipv6", "tests/config/name_case.rs::realms_header_and_relation_are_case_sensitive"]
+missing = ""
+rust_symbols = [
+  "config::Realm",
+  "discovery::locate::ServerLocator",
+  "client::transport::Tokio::login_tgt_with_password_config",
+]
+test_names = [
+  "tests/config/realm_relations_d.rs::kdc",
+  "tests/config/realm_relations_d.rs::kpasswd_server",
+  "tests/config/realm_relations_d.rs::admin_server",
+  "tests/config/section_composition_d.rs::primary_kdc_precedence",
+  "tests/client_transport/cases.rs::kpasswd_admin_fallback_preserves_ipv6",
+  "tests/config/name_case.rs::realms_header_and_relation_are_case_sensitive",
+  "tests/discovery/primary.rs::a_replica_failure_is_retried_on_the_primary",
+  "tests/discovery/servers.rs::uri_records_are_used_before_srv_records",
+  "tests/discovery/realms.rs::the_service_realm_prefers_an_opted_in_txt_record_to_the_default",
+]
 feature_flags = []
 security_divergence = "Relation names are case-sensitive, as in MIT; gokrb5 folds them (krb5conf.go:378)."
 disposition = "WP-10"

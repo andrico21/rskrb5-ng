@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 61
-partial = 57
-absent = 35
+implemented = 73
+partial = 49
+absent = 31
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -1492,15 +1492,20 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "`dns_canonicalize_hostname`"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "No DNS canonicalization occurs; all values diagnostic, including fallback per todo 15 (consumer: plan 2 WP-10)."
-rust_symbols = []
-test_names = ["tests/config/relations_c1.rs::dns_canonicalize_hostname"]
+missing = "CanonicalizationPolicy (todo 15) is the effective consumer, but no client route canonicalizes a host name implicitly: Principal::host_based_service and the GSS and HTTP name import still only lower-case the host (consumers: todo 18 for the GSS name import, todo 26 for the HTTP client)"
+rust_symbols = ["discovery::hostname::CanonicalizationPolicy"]
+test_names = [
+  "tests/config/relations_c1.rs::dns_canonicalize_hostname",
+  "tests/discovery/hostnames.rs::the_three_modes_order_their_forms",
+  "tests/discovery/hostnames.rs::dns_canonicalization_follows_the_name_and_then_the_address",
+  "tests/discovery/hostnames.rs::fallback_candidates_are_distinct_and_ordered",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
-contributors = []
+contributors = ["P2-18", "P2-26"]
 
 [[feature]]
 id = "MIT-config-15"
@@ -1522,13 +1527,21 @@ id = "MIT-config-16"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`dns_lookup_realm`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "No TXT realm discovery occurs; false satisfied, true cannot relax behavior; diagnostic (consumer: plan 2 WP-10)."
-rust_symbols = []
-test_names = ["tests/config/relations_c1.rs::dns_lookup_realm"]
+missing = ""
+rust_symbols = [
+  "discovery::realm::HostRealmResolver",
+  "client::transport::Tokio::host_realms",
+]
+test_names = [
+  "tests/config/relations_c1.rs::dns_lookup_realm",
+  "tests/discovery/realms.rs::txt_lookup_is_off_by_default",
+  "tests/discovery/realms.rs::txt_lookup_walks_the_parents_and_distrusts_the_answer",
+  "tests/discovery/realms.rs::the_service_realm_prefers_an_opted_in_txt_record_to_the_default",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "TXT lookup needs dns_lookup_realm (default false, as MIT); a failing TXT lookup is an error instead of a silent step to the parent name (MIT ignores every failure, dnsglue.c:449-497), and the answer is accepted only as a plain realm name"
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
@@ -1539,13 +1552,21 @@ id = "MIT-config-17"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`dns_uri_lookup`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "No URI discovery occurs; false satisfied, true cannot relax behavior; diagnostic; crate default false (consumer: plan 2 WP-10)."
-rust_symbols = []
-test_names = ["tests/config/relations_c1.rs::dns_uri_lookup"]
+missing = ""
+rust_symbols = [
+  "discovery::locate::ServerLocator",
+  "discovery::locate::EndpointRole",
+  "client::transport::Tokio::locator",
+]
+test_names = [
+  "tests/config/relations_c1.rs::dns_uri_lookup",
+  "tests/discovery/servers.rs::uri_records_are_used_before_srv_records",
+  "tests/discovery/servers.rs::uri_lookup_is_off_unless_enabled",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "crate default false (MIT true); URI lookup also needs dns_lookup_kdc, which is off by default; for a primary KDC only records flagged m are used (MIT's locate_uri takes primary_only and never uses it, locate_kdc.c:645-713)"
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
@@ -1886,15 +1907,19 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "`qualify_shortname`"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "No automatic qualification exists; empty disables and nonempty requests unavailable name rewriting; diagnostic (consumer: plan 2 WP-10)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::qualify_shortname"]
+missing = "CanonicalizationPolicy (todo 15) applies the suffix, but no client route canonicalizes a host name implicitly: Principal::host_based_service and the GSS and HTTP name import still only lower-case the host (consumers: todo 18 for the GSS name import, todo 26 for the HTTP client)"
+rust_symbols = ["discovery::hostname::CanonicalizationPolicy"]
+test_names = [
+  "tests/config/relations_c2.rs::qualify_shortname",
+  "tests/discovery/hostnames.rs::qualify_shortname_adds_a_suffix_to_one_label_names",
+  "tests/discovery/hostnames.rs::a_failed_lookup_keeps_the_name",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "unset adds no suffix (MIT uses the first search domain of the system resolver configuration, sn2princ.c:62-74; the library does not read that configuration to name a service)"
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
-contributors = []
+contributors = ["P2-18", "P2-26"]
 
 [[feature]]
 id = "MIT-config-35"
@@ -1903,28 +1928,39 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "`rdns`"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "No reverse DNS occurs; false satisfied, true cannot relax current behavior; diagnostic (consumer: plan 2 WP-10)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::rdns"]
+missing = "CanonicalizationPolicy (todo 15) makes the reverse lookup, but no client route canonicalizes a host name implicitly: Principal::host_based_service and the GSS and HTTP name import still only lower-case the host (consumers: todo 18 for the GSS name import, todo 26 for the HTTP client)"
+rust_symbols = ["discovery::hostname::CanonicalizationPolicy"]
+test_names = [
+  "tests/config/relations_c2.rs::rdns",
+  "tests/discovery/hostnames.rs::dns_canonicalization_follows_the_name_and_then_the_address",
+  "tests/discovery/hostnames.rs::an_address_literal_is_named_only_by_the_reverse_lookup",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
-contributors = []
+contributors = ["P2-18", "P2-26"]
 
 [[feature]]
 id = "MIT-config-36"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`realm_try_domains`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "No domain realm probing occurs; negative disables, nonnegative does not tighten behavior; diagnostic (consumer: plan 2 WP-10)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::realm_try_domains"]
+missing = ""
+rust_symbols = [
+  "discovery::realm::HostRealmResolver",
+  "client::transport::Tokio::host_realms",
+]
+test_names = [
+  "tests/config/relations_c2.rs::realm_try_domains",
+  "tests/discovery/realms.rs::realm_try_domains_is_bounded_and_needs_a_realm",
+  "tests/discovery/realms.rs::realm_try_domains_stops_before_a_one_label_name",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "the search starts at the host's domain, as MIT documents; MIT's code also tries the whole host name as a realm first (hostrealm_domain.c:86), which an attacker-chosen DNS name could use"
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
@@ -1953,13 +1989,20 @@ id = "MIT-config-38"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`request_timeout`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Existing per-attempt timeouts are not a total budget; every nonzero value errors; zero diagnostic (consumer: plan 2 WP-10)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::request_timeout"]
+missing = ""
+rust_symbols = [
+  "client::transport::Tokio::send_to_realm",
+  "client::transport::Tokio::send_to_kpasswd_realm",
+]
+test_names = [
+  "tests/config/relations_c2.rs::request_timeout",
+  "tests/discovery/budget.rs::the_budget_covers_every_dns_lookup_together",
+  "tests/discovery/budget.rs::the_budget_is_shared_by_the_endpoints_and_cuts_the_wait_for_a_reply",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "the budget also covers DNS discovery (MIT's request_timeout bounds sendto only, sendto_kdc.c:1510-1525); a kpasswd request whose budget ends after it was sent is KpasswdOutcomeUnknown"
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
@@ -2078,17 +2121,25 @@ id = "MIT-config-45"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`[realms]`: `primary_kdc` (formerly `master_kdc`)"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Primary-KDC retry after a bad password against a replica; primary_kdc and master_kdc are parsed (primary_kdc wins) with a diagnostic."
-rust_symbols = []
+missing = ""
+rust_symbols = [
+  "client::transport::Tokio::login_tgt_with_password_config",
+  "discovery::locate::EndpointRole",
+]
 test_names = [
   "tests/config/section_composition_d.rs::primary_kdc_precedence",
   "tests/config/realm_relations_d.rs::primary_kdc",
   "tests/config/realm_relations_d.rs::master_kdc",
+  "tests/discovery/primary.rs::a_replica_failure_is_retried_on_the_primary",
+  "tests/discovery/primary.rs::a_primary_failure_is_not_retried",
+  "tests/discovery/primary.rs::a_realm_without_primaries_is_not_retried",
+  "tests/discovery/primary.rs::an_unreachable_primary_keeps_the_replicas_error",
+  "tests/discovery/primary.rs::master_kdc_names_the_primary_when_primary_kdc_is_absent",
 ]
 feature_flags = []
-security_divergence = ""
+security_divergence = "the retry applies to a failure that a replica answered with a KDC error or an undecryptable reply, as MIT's does for any error but unreachability; it is made by the password and keytab login functions of Tokio"
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
@@ -2099,11 +2150,19 @@ id = "MIT-config-46"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`[realms]`: `sitename`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Site-local DNS discovery; the relation is parsed with a diagnostic."
-rust_symbols = []
-test_names = ["tests/config/realm_relations_d.rs::sitename"]
+missing = ""
+rust_symbols = [
+  "discovery::locate::ServerLocator",
+  "discovery::locate::EndpointRole",
+  "client::transport::Tokio::locator",
+]
+test_names = [
+  "tests/config/realm_relations_d.rs::sitename",
+  "tests/discovery/servers.rs::the_site_is_asked_before_the_realm",
+  "tests/discovery/servers.rs::a_site_without_an_answer_falls_back_to_the_realm",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-10"
@@ -2345,13 +2404,24 @@ id = "MIT-dns-1"
 area = "dns"
 upstream_ref = "krb5-1.22.2-final"
 capability = "KDC/admin/password server DNS SRV discovery"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "KDC/kpasswd and admin-to-kpasswd fallback exist; distinct remote-admin endpoint discovery missing."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "discovery::locate::ServerLocator",
+  "discovery::locate::EndpointRole",
+  "client::transport::Tokio::locator",
+]
+test_names = [
+  "tests/discovery/residuals.rs::kdc_set_with_a_root_target_keeps_the_real_records",
+  "tests/discovery/residuals.rs::kpasswd_set_with_a_root_target_keeps_the_real_records",
+  "tests/discovery/residuals.rs::kdc_target_that_does_not_resolve_is_an_endpoint_failure",
+  "tests/discovery/residuals.rs::a_target_servfail_aborts_discovery_with_a_single_prefix",
+  "tests/discovery/residuals.rs::a_servfail_for_kpasswd_does_not_fall_back_to_the_admin_service",
+  "tests/discovery/roles.rs::the_admin_role_uses_its_own_profile_key_and_dns_labels",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "an SRV or target lookup failure other than absence propagates (MIT swallows an SRV error, locate_kdc.c:370-374, and aborts only on a target error, sendto_kdc.c:764-766); the plan-1 baseline of A8 for kpasswd is kept"
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
@@ -2362,13 +2432,25 @@ id = "MIT-dns-2"
 area = "dns"
 upstream_ref = "krb5-1.22.2-final"
 capability = "KDC/KPASSWD DNS URI discovery"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "SRV-only discovery."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "discovery::locate::ServerLocator",
+  "discovery::locate::EndpointRole",
+  "client::transport::Tokio::locator",
+  "discovery::uri::parse",
+]
+test_names = [
+  "tests/discovery/servers.rs::uri_records_are_used_before_srv_records",
+  "tests/discovery/servers.rs::a_uri_record_with_an_unknown_transport_is_ignored",
+  "tests/discovery/servers.rs::uri_transport_follows_the_request",
+  "tests/discovery/servers.rs::kpasswd_discovery_uses_uri_records_first",
+  "tests/discovery/uri.rs::the_fields_follow_parse_uri_fields",
+  "tests/discovery/uri.rs::other_records_are_ignored",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "records for the MS-KKDCP transport are ignored until the proxy transport exists (todo 16)"
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
@@ -2379,13 +2461,20 @@ id = "MIT-dns-3"
 area = "dns"
 upstream_ref = "krb5-1.22.2-final"
 capability = "DNS TXT realm lookup"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "Flag only; resolver paths do not issue TXT."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "discovery::realm::HostRealmResolver",
+  "client::transport::Tokio::host_realms",
+]
+test_names = [
+  "tests/discovery/realms.rs::txt_lookup_is_off_by_default",
+  "tests/discovery/realms.rs::txt_lookup_skips_addresses_and_reports_failures",
+  "tests/discovery/uri.rs::a_txt_realm_must_be_a_plain_realm_name",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "off by default; no default-realm lookup of the local host name, because the library has no source for it (the caller passes it); see MIT-config-16"
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
@@ -2397,16 +2486,21 @@ area = "dns"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Hostname canonicalization with DNS, `fallback`, short-name qualification and reverse DNS"
 implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Host component lowercase normalization only; DNS/PTR/fallback policy absent."
-rust_symbols = []
-test_names = []
+evidence_status = "unit"
+missing = "CanonicalizationPolicy (todo 15) is the effective consumer, but no client route canonicalizes a host name implicitly: Principal::host_based_service and the GSS and HTTP name import still only lower-case the host (consumers: todo 18 for the GSS name import, todo 26 for the HTTP client)"
+rust_symbols = ["discovery::hostname::CanonicalizationPolicy"]
+test_names = [
+  "tests/discovery/hostnames.rs::the_three_modes_order_their_forms",
+  "tests/discovery/hostnames.rs::dns_canonicalization_follows_the_name_and_then_the_address",
+  "tests/discovery/hostnames.rs::fallback_candidates_are_distinct_and_ordered",
+  "tests/discovery/hostnames.rs::qualify_shortname_adds_a_suffix_to_one_label_names",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
-contributors = []
+contributors = ["P2-18", "P2-26"]
 
 [[feature]]
 id = "MIT-dns-5"
@@ -2430,11 +2524,18 @@ id = "MIT-dns-6"
 area = "dns"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Site-local KDC discovery (`sitename`)"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "No site-local DNS queries; sitename is parsed with a diagnostic."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "discovery::locate::ServerLocator",
+  "discovery::locate::EndpointRole",
+  "client::transport::Tokio::locator",
+]
+test_names = [
+  "tests/discovery/servers.rs::the_site_is_asked_before_the_realm",
+  "tests/discovery/servers.rs::a_site_without_an_answer_falls_back_to_the_realm",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-10"
@@ -2447,11 +2548,20 @@ id = "MIT-dns-7"
 area = "dns"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Primary KDC retry after invalid password"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "Master metadata not a primary retry workflow."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "client::transport::Tokio::login_tgt_with_password_config",
+  "discovery::locate::EndpointRole",
+]
+test_names = [
+  "tests/discovery/primary.rs::a_replica_failure_is_retried_on_the_primary",
+  "tests/discovery/primary.rs::a_primary_failure_is_not_retried",
+  "tests/discovery/primary.rs::a_realm_without_primaries_is_not_retried",
+  "tests/discovery/primary.rs::an_unreachable_primary_keeps_the_replicas_error",
+  "tests/discovery/roles.rs::the_primary_role_needs_the_m_flag",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-10"
@@ -2464,13 +2574,16 @@ id = "MIT-dns-8"
 area = "dns"
 upstream_ref = "krb5-1.22.2-final"
 capability = "KDC transport ordering, failover, timeout and TCP/UDP fallback"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Bounded UDP/TCP fallback/endpoint retries exist; request_timeout config/whole discovery budget absent."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = ["client::transport::Tokio::send_to_realm"]
+test_names = [
+  "tests/discovery/budget.rs::the_budget_covers_every_dns_lookup_together",
+  "tests/discovery/budget.rs::the_budget_is_shared_by_the_endpoints_and_cuts_the_wait_for_a_reply",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "the total budget covers DNS, connect, retries and read of each request (MIT's covers sendto only)"
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
@@ -2997,16 +3110,21 @@ area = "authz"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Host-to-realm plugin interface"
 implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Built-in profile realm resolution, no trait/provider chain."
-rust_symbols = []
-test_names = []
+evidence_status = "unit"
+missing = "Registered providers are consulted when a registry is passed to ServerLocator::locate and to the HostRealmResolver methods (todo 15); the Tokio exchange routes (send_to_realm, get_service_ticket*) carry no registry, so a registered provider does not influence them (closer: todo 28, configuration consumers)"
+rust_symbols = [
+  "discovery::realm::HostRealmResolver",
+  "client::transport::Tokio::host_realms",
+]
+test_names = [
+  "tests/discovery/realms.rs::the_provider_chain_is_registry_then_profile_then_default",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 15
-contributors = []
+contributors = ["P2-28"]
 
 [[feature]]
 id = "MIT-plugin-1"
@@ -3079,16 +3197,21 @@ area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`hostrealm` hostname/default-realm mapping"
 implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Profile resolve exists, DNS/domain provider chain incomplete."
-rust_symbols = []
-test_names = []
+evidence_status = "unit"
+missing = "Registered providers are consulted when a registry is passed to ServerLocator::locate and to the HostRealmResolver methods (todo 15); the Tokio exchange routes (send_to_realm, get_service_ticket*) carry no registry, so a registered provider does not influence them (closer: todo 28, configuration consumers)"
+rust_symbols = [
+  "discovery::realm::HostRealmResolver",
+  "client::transport::Tokio::host_realms",
+]
+test_names = [
+  "tests/discovery/realms.rs::the_provider_chain_is_registry_then_profile_then_default",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 15
-contributors = []
+contributors = ["P2-28"]
 
 [[feature]]
 id = "MIT-plugin-4"
@@ -3136,16 +3259,23 @@ area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`locate` server-location interface"
 implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Built-in transport discovery, no provider registry."
-rust_symbols = []
-test_names = []
+evidence_status = "unit"
+missing = "Registered providers are consulted when a registry is passed to ServerLocator::locate and to the HostRealmResolver methods (todo 15); the Tokio exchange routes (send_to_realm, get_service_ticket*) carry no registry, so a registered provider does not influence them (closer: todo 28, configuration consumers)"
+rust_symbols = [
+  "discovery::locate::ServerLocator",
+  "discovery::locate::EndpointRole",
+  "client::transport::Tokio::locator",
+]
+test_names = [
+  "tests/discovery/roles.rs::a_registered_locator_answers_before_the_profile_and_dns",
+  "tests/discovery/roles.rs::a_failing_locator_stops_the_lookup",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 15
-contributors = []
+contributors = ["P2-28"]
 
 [[feature]]
 id = "MIT-plugin-7"

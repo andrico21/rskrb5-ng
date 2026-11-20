@@ -33,16 +33,8 @@ mod tests {
                 "k5login_directory" => assert_eq!(defaults.k5login_directory, *value),
                 "kcm_mach_service" => assert_eq!(defaults.kcm_mach_service, *value),
                 "plugin_base_dir" => assert_eq!(defaults.plugin_base_dir, *value),
-                "qualify_shortname" => {
-                    assert_eq!(defaults.qualify_shortname.as_deref(), Some(*value));
-                }
                 "kdc_timesync" => assert_eq!(defaults.kdc_time_sync, value.parse::<i32>()?),
-                "realm_try_domains" => {
-                    assert_eq!(defaults.realm_try_domains, value.parse::<i32>()?);
-                }
-                "rdns" => assert_eq!(defaults.rdns.is_enabled(), *value == "true"),
                 "noaddresses" => assert!(defaults.no_addresses.is_enabled()),
-                "request_timeout" => assert_eq!(defaults.request_timeout.as_secs(), 0),
                 "verify_ap_req_nofail" => assert!(!defaults.verify_ap_req_nofail.is_enabled()),
                 "client_aware_channel_bindings" => {
                     assert!(!defaults.client_aware_channel_bindings.is_enabled());
@@ -69,6 +61,54 @@ mod tests {
         Ok(())
     }
 
+    /// Effective relations: typed value, ignored duplicates, no diagnostic in either mode.
+    fn effective(name: &str, values: &[&str]) -> Result<(), Box<dyn Error>> {
+        for value in values {
+            // Given a first scalar and an ignored duplicate.
+            let text = format!("[libdefaults]\n {name} = {value}\n {name} = invalid-later\n");
+            // When parsed in both modes, then the typed field holds the first value.
+            let config = Config::parse(&text)?;
+            let strict = Config::parse_with_mode(&text, ParseMode::Strict)?;
+            let defaults = &config.libdefaults;
+            match name {
+                "qualify_shortname" => {
+                    assert_eq!(defaults.qualify_shortname.as_deref(), Some(*value));
+                }
+                "realm_try_domains" => {
+                    assert_eq!(defaults.realm_try_domains, value.parse::<i32>()?);
+                }
+                "rdns" => assert_eq!(defaults.rdns.is_enabled(), *value == "true"),
+                "request_timeout" => assert_eq!(
+                    defaults.request_timeout.as_secs(),
+                    u64::from(*value == "1s")
+                ),
+                _ => return Err(format!("unreviewed effective relation {name}").into()),
+            }
+            // And no diagnostic names the relation.
+            for parsed in [&config, &strict] {
+                assert!(!parsed.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == name)));
+            }
+        }
+        Ok(())
+    }
+
+    /// Independent named tests over the effective scalar contract.
+    macro_rules! effective_cases {
+        ($($name:ident, [$($value:literal),+];)+) => {$ (
+            /// The named effective relation retains its typed scalar.
+            #[test]
+            fn $name() -> Result<(), Box<dyn Error>> {
+                effective(stringify!($name), &[$($value),+])
+            }
+        )+};
+    }
+    effective_cases! {
+        qualify_shortname, ["", "example.test"];
+        rdns, ["true", "false"];
+        realm_try_domains, ["-1", "0", "2"];
+        request_timeout, ["0", "0s", "1s"];
+    }
+
     /// Independent named tests over the common scalar/diagnostic contract.
     macro_rules! deferred_cases {
         ($($name:ident, $package:literal, [$($value:literal),+];)+) => {$ (
@@ -84,10 +124,6 @@ mod tests {
         k5login_directory, "plan 2 WP-17", ["/first", "/second"];
         kcm_mach_service, "plan 2 WP-09", ["org.example.kcm", "-"];
         plugin_base_dir, "plan 2 WP-16", ["/never-load", "%{LIBDIR}/krb5/plugins"];
-        qualify_shortname, "plan 2 WP-10", ["", "example.test"];
-        rdns, "plan 2 WP-10", ["true", "false"];
-        realm_try_domains, "plan 2 WP-10", ["-1", "0", "2"];
-        request_timeout, "plan 2 WP-10", ["0", "0s"];
         spake_preauth_groups, "plan 2 WP-07", ["edwards25519,P-256", "EDWARDS25519 p-256"];
         verify_ap_req_nofail, "plan 2 WP-11", ["false", "off"];
         client_aware_channel_bindings, "plan 2 WP-12", ["false", "off"];

@@ -480,9 +480,10 @@ The remaining fail-closed rules apply in both modes:
 
 - `noaddresses=false` (including `no_addresses`) requires unavailable
   address-bound requests and is rejected, even without extra addresses.
-- Any nonzero `request_timeout` requires a total deadline across discovery,
-  retries and password delivery; existing per-attempt timeouts do not satisfy
-  it. It is rejected rather than wrapped in a cancellation-unsafe timeout.
+- `request_timeout` is a total budget per KDC or password-change request over
+  DNS lookups, connects, endpoint retries and the wait for the reply (plan 2
+  WP-10a); `0` is no budget. A password-change request whose budget ends after
+  it was sent has an unknown outcome.
 - `verify_ap_req_nofail=true` requires unavailable initial-credential proof
   orchestration and is rejected (WP-11).
 - `client_aware_channel_bindings=true` requires unavailable GSS signaling and
@@ -564,7 +565,8 @@ accepted; MIT's additional numeric rounding/prefix parsing is not copied.
 Repeated endpoints, authorization rules, certificate rules, trust locations,
 identities and hostnames retain source order. Scalars select their first value.
 `primary_kdc` metadata takes precedence over the legacy master list; the primary
-retry consumer remains WP-10. KDC and kpasswd endpoint consumers keep their
+retry after a replica's failure is made by the password and keytab login
+functions of `client::transport::Tokio` (plan 2 WP-10a). KDC and kpasswd endpoint consumers keep their
 `host[:port]` syntax and the admin-server port-464 fallback, except that bare
 IPv6 literals keep their full address and an IPv6 `admin_server` yields
 `[addr]:464` (v0.2.2 cut `[::1]:749` to `[:464`; see CHANGELOG [0.3.0],
@@ -671,7 +673,6 @@ stricter behavior, both modes must fail with NotYetEffective:
 | libdefaults | default_rcache_name | none: (memory protection retained) | dfl: |
 | libdefaults | extra_addresses | list with noaddresses=true | nonempty list with noaddresses=false |
 | libdefaults | noaddresses | true | false |
-| libdefaults | request_timeout | 0 | positive total deadline |
 | libdefaults | verify_ap_req_nofail | false | true |
 | libdefaults | client_aware_channel_bindings | false | true |
 | realms | disable_encrypted_timestamp | false | true |

@@ -21,7 +21,7 @@ pub(super) async fn discover(
     }
     if config.libdefaults.dns_lookup_kdc.is_enabled() {
         return transport
-            .discover_kpasswd_servers_with_dns(realm, protocol)
+            .discover_kpasswd_servers_with_dns(config, realm, protocol)
             .await;
     }
     Err(missing(config, realm))
@@ -48,7 +48,7 @@ pub(super) async fn discover_auto(
         return Ok(endpoints);
     }
     if config.libdefaults.dns_lookup_kdc.is_enabled() {
-        return password_dns::discover_auto(transport, realm).await;
+        return password_dns::discover_auto(transport, config, realm).await;
     }
     Err(missing(config, realm))
 }

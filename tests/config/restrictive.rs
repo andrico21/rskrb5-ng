@@ -13,7 +13,6 @@ mod tests {
         error::Error,
         pin::pin,
         task::{Context, Poll, Waker},
-        time::Duration,
     };
     use std::time::UNIX_EPOCH;
 
@@ -57,14 +56,12 @@ mod tests {
     fn restrictive_defaults_fail_before_requests() -> Result<(), Box<dyn Error>> {
         let runtime = Builder::new_current_thread().enable_all().build()?;
         for field in [
-            "request_timeout",
             "verify_ap_req_nofail",
             "client_aware_channel_bindings",
             "default_rcache_name",
         ] {
             let mut config = Config::new();
             match field {
-                "request_timeout" => config.libdefaults.request_timeout = Duration::from_secs(1),
                 "verify_ap_req_nofail" => config.libdefaults.verify_ap_req_nofail = Toggle::Enabled,
                 "client_aware_channel_bindings" => {
                     config.libdefaults.client_aware_channel_bindings = Toggle::Enabled;
@@ -87,7 +84,6 @@ mod tests {
                 "request accepted {field}"
             );
             let (relation, package) = match field {
-                "request_timeout" => ("request_timeout", "plan 2 WP-10"),
                 "verify_ap_req_nofail" => ("verify_ap_req_nofail", "plan 2 WP-11"),
                 "client_aware_channel_bindings" => {
                     ("client_aware_channel_bindings", "plan 2 WP-12")

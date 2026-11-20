@@ -31,6 +31,7 @@ the chosen entry point, so one target covers a family of related decoders.
 | `kcm_reply` | a KCM daemon's reply byte stream | the blocking KCM client (`Client::call`, `read_frame`, `read_exact`) over the input as the whole reply stream, once for each reply shape: cache name, UUID list, default principal, one credential, counted credential list, KDC offset and empty (`Shape::decode` of each), with the reply limit lowered to 64 KiB; the announced length is checked before the body is allocated |
 | `keyring_index` | the payload of the `krb_ccache:primary` key of a `KEYRING:` collection | `ccache::keyring::index::parse`, then `encode` and `parse` again on accepted input (the version, the length and the name of the primary cache; MIT `cc_keyring.c:541-571`) |
 | `name_parse` | names and values as text | `Principal::parse_user`, `Principal::parse_service`, `CacheName::parse`, `keytab::Name::parse`, `KdcEndpoint::configured`, `Tokio::with_dns_server`, `config::parse_duration`, `config::parse_boolean`, `crypto::s2kparams_to_iterations` |
+| `discovery_uri` | the data DNS hands to server discovery, one selector byte then bytes or text | `discovery::uri::parse` (a `krb5srv:flags:transport:host` URI record target) and `host_port` on an accepted target, `split_rdata` (URI record data), `realm_from_txt` (the first string of a TXT realm record) and `host_port` on arbitrary text; the target text, the host and the realm stay within their bounds |
 
 The keys, keytabs, tickets and templates the targets use are the synthetic
 gokrb5 test vectors the tests already carry (`fuzz/fixtures/`). The fuzz
@@ -98,6 +99,7 @@ timeout artifact:
 | `name_parse` | 2,629,623 | 121 s | 0 |
 | `extensions` | 651,170 (todo 3 of plan 2, 2026-11-18) | 121 s | 0 |
 | `ccache_collection` | 163,889 (todo 11 of plan 2, 2026-11-19) | 121 s | 0 |
+| `discovery_uri` | 5,245,496 (todo 15 of plan 2, 2026-11-20) | 91 s | 0 |
 | `camellia_crypto` | 725,278 (todo 33 of plan 2, 2026-11-19) | 121 s | 0 |
 | `kcm_reply` | 596,862 (todo 12 of plan 2, 2026-11-19) | 121 s | 0 |
 | `keyring_index` | 6,296,962 (todo 13 of plan 2, 2026-11-19) | 121 s | 0 |
@@ -151,6 +153,20 @@ with only this target's export: `rskrb5_ng::ccache::keyring::index::parse` in
 module that the inventory search finds are reason-only rows: they hand bytes to
 parsers that other rows already cover, split text the application or the kernel
 produced, or are the key calls themselves.
+
+### Server discovery (todo 15 of plan 2)
+
+`discovery_uri` fuzzes the four parsers of the data that DNS hands to server
+discovery: the `krb5srv:flags:transport:host` target of a URI record
+(`discovery::uri::parse`), its `host[:port]` (`host_port`), the URI record data
+(`split_rdata`) and the first string of a TXT realm record (`realm_from_txt`).
+The run of 2026-11-20 made 5,245,496 executions in 91 s from the seven committed
+seeds and a scratch corpus with no artifact. The coverage export of the target's
+own binary from the seeds alone reaches all four mapped functions
+(`scripts/lint-gates/fuzz_coverage.py --inventory --coverage` with only this
+target's export proves 4 mappings, counts 3, 5, 1 and 1). The server-name
+parsers that the DNS answer reaches afterwards (`KdcEndpoint::configured`) stay
+under `name_parse`.
 
 ### Earlier campaign crashes
 
@@ -423,6 +439,10 @@ does.
 | `rskrb5_ng::der::decode_complete` | `src/der.rs` | `der_oid` |  |
 | `rskrb5_ng::der::top_level_der_end` | `src/der.rs` | `der_oid` |  |
 | `rskrb5_ng::der::trim_zero_padded_der` | `src/der.rs` | `der_oid` |  |
+| `rskrb5_ng::discovery::uri::parse` | `src/discovery/uri.rs` | `discovery_uri` |  |
+| `rskrb5_ng::discovery::uri::host_port` | `src/discovery/uri.rs` | `discovery_uri` |  |
+| `rskrb5_ng::discovery::uri::split_rdata` | `src/discovery/uri.rs` | `discovery_uri` |  |
+| `rskrb5_ng::discovery::uri::realm_from_txt` | `src/discovery/uri.rs` | `discovery_uri` |  |
 | `rskrb5_ng::extensions::K5Identity::from_bytes` | `src/extensions.rs` | `extensions` |  |
 | `rskrb5_ng::extensions::Registry::parse_config` | `src/extensions.rs` | `extensions` |  |
 | `rskrb5_ng::extensions::k5identity::parse_line` | `src/extensions/k5identity.rs` | `extensions` |  |

@@ -29,7 +29,6 @@ pub(crate) const fn configuration_policy(error: &Error) -> Policy {
 /// Returns the named deferred relation before any authentication effect.
 pub(crate) fn defaults(value: &LibDefaults) -> Result<(), Error> {
     for (name, restricted) in [
-        ("request_timeout", !value.request_timeout.is_zero()),
         (
             "verify_ap_req_nofail",
             value.verify_ap_req_nofail.is_enabled(),
