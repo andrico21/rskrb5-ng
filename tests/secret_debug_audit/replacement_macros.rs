@@ -36,7 +36,17 @@ pub(super) fn expressions(invocation: &Macro) -> Option<Vec<Expr>> {
         };
         return parser.parse2(invocation.tokens.clone()).ok();
     }
-    if [
+    let tracing_event = {
+        let mut segments = invocation
+            .path
+            .segments
+            .iter()
+            .map(|segment| &segment.ident);
+        segments.next().is_some_and(|first| first == "tracing")
+            && segments.next().is_some_and(|second| second == "event")
+            && segments.next().is_none()
+    };
+    let standard = [
         "format",
         "format_args",
         "write",
@@ -50,8 +60,8 @@ pub(super) fn expressions(invocation: &Macro) -> Option<Vec<Expr>> {
         "vec",
     ]
     .iter()
-    .any(|name| invocation.path.is_ident(name))
-    {
+    .any(|name| invocation.path.is_ident(name));
+    if tracing_event || standard {
         return Punctuated::<Expr, Token![,]>::parse_terminated
             .parse2(invocation.tokens.clone())
             .ok()
@@ -71,6 +81,19 @@ mod tests {
     use std::io;
 
     use crate::source::parse;
+
+    /// The `tracing` crate's `event!` is an expression macro only by its full path.
+    #[test]
+    fn tracing_event_is_an_expression_macro_by_its_full_path() -> Result<(), syn::Error> {
+        let call = "(Level::DEBUG, event = name, \"{text}\")";
+        let tracing = syn::parse_str::<syn::Macro>(&format!("tracing::event!{call}"))?;
+        assert_eq!(super::expressions(&tracing).map(|list| list.len()), Some(3));
+        for other in ["event", "other::event", "tracing::event::deeper"] {
+            let foreign = syn::parse_str::<syn::Macro>(&format!("{other}!{call}"))?;
+            assert!(super::expressions(&foreign).is_none(), "{other}");
+        }
+        Ok(())
+    }
 
     /// Shadowing a standard macro cannot hide receiver writes.
     #[test]

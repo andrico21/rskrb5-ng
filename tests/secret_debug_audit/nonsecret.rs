@@ -3,6 +3,11 @@
 /// Each exclusion identifies one owner and field, never an entire module.
 pub(super) const FIELDS: &[(&str, &str, &str)] = &[
     (
+        "src/trace/err_fmt.rs::Report",
+        "error",
+        "The borrowed original typed error: its own Debug is this crate's redacted error Debug, and the Debug of Report names only the code and the text size.",
+    ),
+    (
         "src/ccache/kcm/client.rs::Client",
         "stream",
         "The daemon socket (any `Read + Write`): it carries one request or reply at a time through the zeroizing frame buffers and retains no credential.",
