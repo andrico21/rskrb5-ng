@@ -72,7 +72,6 @@ mod tests {
             "dns_lookup_realm = false",
             "dns_uri_lookup = false",
             "enforce_ok_as_delegate = true",
-            "err_fmt = %C: %M",
             "ignore_acceptor_hostname = false",
         ] {
             // When parsing in strict mode.

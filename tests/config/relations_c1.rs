@@ -33,7 +33,6 @@ mod tests {
                     defaults.enforce_ok_as_delegate.is_enabled(),
                     *value == "true"
                 ),
-                "err_fmt" => assert_eq!(defaults.err_fmt, *value),
                 "ignore_acceptor_hostname" => assert_eq!(
                     defaults.ignore_acceptor_hostname.is_enabled(),
                     *value == "true"
@@ -71,7 +70,6 @@ mod tests {
         dns_lookup_realm, "plan 2 WP-10", ["true", "false"];
         dns_uri_lookup, "plan 2 WP-10", ["on", "nil"];
         enforce_ok_as_delegate, "plan 2 WP-12", ["true", "false"];
-        err_fmt, "plan 2 WP-18", ["%C: %M", "custom"];
         ignore_acceptor_hostname, "plan 2 WP-12", ["true", "false"];
     }
 

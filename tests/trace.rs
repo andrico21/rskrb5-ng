@@ -26,14 +26,15 @@ mod tests {
 
     use rskrb5_ng::{
         ccache::Principal,
-        config::Config,
+        config::{Config, ParseMode},
         error::Trace as TraceError,
         extensions::{
             CacheSelector, Extension, Priority, ProviderError, Registry, Selection,
             SelectionRequest,
         },
         trace::{
-            Event, ExchangeKind, Guard, Identity, Options, Sink, capture::Memory, file::Append,
+            Event, ExchangeKind, Guard, Identity, Options, Sink, capture::Memory, err_fmt::ErrFmt,
+            file::Append,
         },
     };
 
@@ -319,5 +320,53 @@ mod tests {
         assert!(text.contains("provider-consulted"), "{text}");
         assert!(text.contains("id=chooser"), "{text}");
         Ok(())
+    }
+
+    /// `err_fmt` no longer yields `NotYetEffective`, even in strict mode, and the
+    /// formatter reads the configured template.
+    #[test]
+    fn err_fmt() -> Result<(), Box<dyn Error>> {
+        let text = "[libdefaults]\n err_fmt = %C: %M\n";
+        let config = Config::parse_with_mode(text, ParseMode::Strict)?;
+        assert!(config.diagnostics().is_empty());
+        let format = ErrFmt::from_config(&config);
+        assert_eq!(format.template(), Some("%C: %M"));
+        assert_eq!(format.format(7, "boom"), "7: boom");
+        assert_eq!(ErrFmt::from_config(&Config::parse("")?).template(), None);
+        Ok(())
+    }
+
+    /// A report keeps the typed error, its source chain and its KDC code.
+    #[cfg(feature = "messages")]
+    #[test]
+    fn report_preserves_the_typed_error_and_code() {
+        use rskrb5_ng::{
+            client::{KdcError, principal::Principal as ClientPrincipal},
+            error::{Any, Client},
+        };
+        let kdc = KdcError::new(
+            SystemTime::UNIX_EPOCH,
+            0,
+            25,
+            ClientPrincipal::tgt_service("EXAMPLE.COM"),
+        );
+        let failure = Client::Kdc(Box::new(kdc));
+        let format = ErrFmt::new("[%C] %M");
+        let report = format.report(&failure);
+        assert_eq!(report.code(), -1_765_328_384 + 25);
+        assert!(matches!(report.error(), Client::Kdc(_)));
+        assert!(report.to_string().starts_with("[-1765328359] "), "{report}");
+        let source = Error::source(&report);
+        assert!(matches!(
+            source.and_then(|inner| inner.downcast_ref::<Client>()),
+            Some(Client::Kdc(_))
+        ));
+        let wrapped = Any::from(Client::Kdc(Box::new(KdcError::new(
+            SystemTime::UNIX_EPOCH,
+            0,
+            24,
+            ClientPrincipal::tgt_service("EXAMPLE.COM"),
+        ))));
+        assert_eq!(format.report(&wrapped).code(), -1_765_328_384 + 24);
     }
 }

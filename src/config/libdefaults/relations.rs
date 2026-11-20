@@ -170,8 +170,8 @@ pub(crate) const RELATIONS_HEAD: [(&str, &str, &str, &str, &str, &str); 21] = [
         "err_fmt",
         "string",
         "unset",
-        "plan 2 WP-18",
-        "Formatting does not alter typed errors or authentication policy; diagnostic",
+        "ErrFmt::from_config; ErrFmt::report",
+        "Effective as presentation only: %M is the message, %C the MIT code of a KDC refusal (0 when the error has none), %% a percent; the typed error, its code and its sources are unchanged; empty counts as unset",
         "err_fmt",
     ),
     (
