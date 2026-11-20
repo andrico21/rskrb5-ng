@@ -13,6 +13,7 @@ use crate::{
     crypto::{CryptoPolicy, Use, selection},
     error::{Config as ConfigError, Policy},
     keytab::EncryptionKey,
+    preauth::spake,
     ticket,
 };
 
@@ -32,6 +33,13 @@ pub(super) fn padata(policy: &CryptoPolicy, data: &[rasn_kerberos::PaData]) -> R
                 let encrypted: rasn_kerberos::EncryptedData =
                     super::decode("PA-ENC-TIMESTAMP", &entry.value)?;
                 policy.check_use(encrypted.etype, Use::ReplyKey)?;
+            }
+            // RFC 9588: a client sends only a support message or a response; the
+            // response's factor is sealed in a key of the reply key's enctype.
+            spake::PA_SPAKE => {
+                if let Some(etype) = spake::outgoing(&entry.value)? {
+                    policy.check_use(etype, Use::ReplyKey)?;
+                }
             }
             // A client does not send enctype hints; the KDC and the peer do.
             11_i32 | 19_i32 | 23_i32 | 165_i32 => {
@@ -67,7 +75,7 @@ pub(super) fn padata(policy: &CryptoPolicy, data: &[rasn_kerberos::PaData]) -> R
             | 134..=136
             | 138_i32
             | 141..=148
-            | 151..=153 => {
+            | 152..=153 => {
                 return Err(Error::Encode {
                     target: "PA-DATA",
                     message: format!("outgoing PA type {} is not supported", entry.r#type),

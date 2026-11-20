@@ -217,13 +217,14 @@ const EMBEDDING_WRAPPER: i32 = 22;
 
 /// PA types this client neither builds nor can policy-check: credential mechanisms, the halves a KDC
 /// sends, FAST armor, authentication sets, and obsolete or vendor ids.
-const UNSUPPORTED: [i32; 28] = [
+const UNSUPPORTED: [i32; 27] = [
     5, 6, 7, 8, 9, 12, 13, 16, 17, 30, 31, 41, 130, 134, 135, 136, 138, 141, 142, 143, 144, 145,
-    146, 147, 148, 151, 152, 153,
+    146, 147, 148, 152, 153,
 ];
 
 /// PA types with their own decoder: a payload that is not their element is refused before the transport.
-const DECODED: [i32; 2] = [1, 2];
+/// PA-SPAKE (151) is admitted checked: only a support message or a response leaves the client.
+const DECODED: [i32; 3] = [1, 2, 151];
 
 /// The permanently refused draft-9 PKINIT types, refused by the selection layer before the arms.
 const DRAFT9_PKINIT: [i32; 2] = [14, 15];
