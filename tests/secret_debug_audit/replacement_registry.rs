@@ -85,13 +85,21 @@ pub(super) const DELEGATIONS: &[(&str, &str)] = &[
         "src/client/stepwise.rs::TicketCreds::step",
         "delegates:src/client/stepwise/ticket.rs::step",
     ),
+    (
+        "src/client/stepwise/init.rs::step",
+        "delegates:src/client/stepwise/init.rs::advance",
+    ),
+    (
+        "src/client/stepwise/ticket.rs::step",
+        "delegates:src/client/stepwise/ticket.rs::advance",
+    ),
 ];
 
 /// Dependency-contract replacement proofs of the stepwise exchanges: `(method,
 /// test, contract)`, each erasure resting on the named owner's Drop contract.
 pub(super) const CONTRACTS: &[(&str, &str, &str)] = &[
     (
-        "src/client/stepwise/init.rs::step",
+        "src/client/stepwise/init.rs::advance",
         "cancellation_drops_every_secret",
         "Each step moves the held reply and the reply key out of their slots and drops them once consumed, fills only empty slots and replaces the strengthen key through remember_cookie; erasure of the dropped values relies on the Zeroizing, Password and EncryptionKey Drop contracts, observed for the prompted password and the derived reply key when an exchange is abandoned.",
     ),
@@ -121,7 +129,7 @@ pub(super) const CONTRACTS: &[(&str, &str, &str)] = &[
         "Appends a registered mechanism's PA-DATA to the request template in place; no credential value is replaced or dropped.",
     ),
     (
-        "src/client/stepwise/ticket.rs::step",
+        "src/client/stepwise/ticket.rs::advance",
         "referrals_are_followed_within_their_bound",
         "A referral replaces the hop's TGT with the referral TGT, which referral_tgts also keeps; the previous hop's TGT is dropped and its key erasure relies on AsRepSession's Drop contract (EncryptionKey is ZeroizeOnDrop), not an observed first-party wipe.",
     ),

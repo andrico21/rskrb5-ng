@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 73
-partial = 49
-absent = 31
+implemented = 76
+partial = 48
+absent = 29
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -1594,13 +1594,24 @@ id = "MIT-config-19"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`err_fmt`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Formatting does not alter typed errors or authentication policy; diagnostic (consumer: plan 2 WP-18)."
-rust_symbols = []
-test_names = ["tests/config/relations_c1.rs::err_fmt"]
+missing = ""
+rust_symbols = [
+  "trace::err_fmt::ErrFmt",
+  "trace::err_fmt::ErrFmt::from_config",
+  "trace::err_fmt::ErrFmt::format",
+  "trace::err_fmt::ErrFmt::report",
+  "trace::err_fmt::Report",
+]
+test_names = [
+  "tests/trace.rs::err_fmt",
+  "tests/trace.rs::report_preserves_the_typed_error_and_code",
+  "src/trace/tests.rs::err_fmt_matches_mit_vectors",
+  "tests/config/relations_c1.rs::canonicalize",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "`ErrFmt::format` expands `%M`, `%C`, `%%` and keeps any other `%c` as MIT `err_fmt_fmt` does (`kerrs.c:140-169`; the vectors of `src/tests/t_errmsg.py:8-26` pass). MIT applies the template inside `krb5_get_error_message` for every message of a context; here the caller asks: `ErrFmt::from_config(&config).report(&error)` returns a `Report` whose `Display` is the formatted text, whose `error()` is the unchanged typed error and whose `source()` is that error, so typed variants, codes and sources survive. `%C` is the `com_err` code of a KDC refusal (`-1765328384` + the KRB-ERROR number) and 0 for an error that carries no Kerberos protocol code (the library has no `com_err` table for its other errors); an empty relation counts as unset (MIT would print an empty message). The relation no longer yields `NotYetEffective`, also in strict mode."
 disposition = "WP-18"
 closing_plan = 2
 closing_todo = 6
@@ -3319,13 +3330,23 @@ id = "MIT-plugin-9"
 area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Interposer modules"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "No safe extension/observer API; C symbol interposition mechanics excluded, Rust equivalent required."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "extensions::LibraryObserver",
+  "extensions::Event",
+  "extensions::Extension",
+  "trace::Guard",
+  "trace::Sink",
+]
+test_names = [
+  "tests/trace.rs::guard_observes_registry_events",
+  "tests/trace.rs::provider_refusal_never_carries_the_provider_error_text",
+  "tests/extensions.rs::observers_receive_redacted_events",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "The Rust equivalent of an MIT interposer module (`src/lib/krb5/krb/plugin.c`, mechanics of C symbol interposition) is an in-process `LibraryObserver` registered through the extension registry (todo 3, no `dlopen`, D3/D7) and its trace implementation `trace::Guard`: observers receive redacted events that carry interface names, provider ids and static reasons only, never a principal, key or protocol bytes, and cannot change an outcome. C symbol interposition itself is excluded."
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 6
@@ -3400,13 +3421,54 @@ id = "MIT-trace-1"
 area = "trace"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`KRB5_TRACE` diagnostic trace logging and programmatic trace controls"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "Diagnostics JSON exists but no event sink/env trace controls."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = [
+  "trace::Event",
+  "trace::Sink",
+  "trace::Guard",
+  "trace::Guard::emit",
+  "trace::Options",
+  "trace::Options::from_env",
+  "trace::Options::with_file",
+  "trace::file::Append",
+  "trace::capture::Memory",
+  "trace::adapter::Forward",
+  "client::stepwise::InitCreds::with_trace",
+  "client::stepwise::TicketCreds::with_trace",
+  "client::Tokio::with_trace",
+  "service::Validator::with_trace",
+]
+test_names = [
+  "tests/trace.rs::guard_delivers_the_event_with_its_name_first",
+  "tests/trace.rs::identities_are_withheld_unless_opted_in",
+  "tests/trace.rs::identity_text_is_escaped_and_stays_on_one_line",
+  "tests/trace.rs::debug_of_an_event_is_redacted",
+  "tests/trace.rs::event_text_is_capped_at_a_character_boundary",
+  "tests/trace.rs::event_count_cap_drops_and_counts",
+  "tests/trace.rs::total_byte_cap_stops_the_output",
+  "tests/trace.rs::failing_sink_is_counted_and_swallowed",
+  "tests/trace.rs::file_sink_appends_mit_framed_lines",
+  "tests/trace.rs::krb5_trace_names_the_destination",
+  "tests/trace.rs::oversized_krb5_trace_is_refused",
+  "tests/trace.rs::every_event_type_withholds_and_redacts_marker_text",
+  "tests/client/trace_events.rs::initial_exchange_traces_each_step_without_secrets",
+  "tests/client/trace_events.rs::kdc_refusal_is_traced_with_its_code",
+  "tests/client/trace_events.rs::failing_sink_leaves_the_credential_unchanged",
+  "tests/client/trace_events.rs::ticket_exchange_is_traced",
+  "tests/client/trace_events.rs::tokio_client_traces_login",
+  "tests/service/trace_events.rs::accept_and_reject_are_traced_without_secrets",
+  "tests/trace_adapter.rs::events_reach_the_applications_subscriber",
+  "tests/trace_adapter.rs::no_subscriber_is_a_no_op_and_none_is_installed",
+  "src/secure_env/tests.rs::krb5_trace_is_ignored_when_restricted",
+  "tests/ambient_guard.rs::production_environment_reads_are_explicit",
+  "tests/interop_trace/scenarios.rs::auth_success_trace_contains_no_secrets",
+  "tests/interop_trace/scenarios.rs::auth_failure_trace_contains_no_secrets",
+  "tests/interop_trace/scenarios.rs::krb5_trace_file_records_a_login_without_secrets",
+]
+feature_flags = ["tracing"]
+security_divergence = "`KRB5_TRACE` names a file (MIT `trace.c:389`, `secure_getenv`: ignored in a set-id process), read only by `trace::Options::from_env` (an opt-in constructor, in the ambient-guard inventory); the file is opened for append, mode 0600 on Unix, and each line is `[pid] seconds.micros: text` (`trace.c:411`, `:449-464`). Divergences, all on the secure side or documented: nothing is traced unless the application attaches a `trace::Guard` (`with_trace` of the exchange, the Tokio client and the acceptor; no process-wide context, no global subscriber is ever installed); principals, realms and endpoints are withheld unless `with_identities(true)`; events carry counts, numeric codes and static names only (MIT prints key hashes and message contents), so no password, key, ticket, OTP or authorization header can reach a sink; output is bounded by event, per-event byte and total-byte caps; a failing sink is counted and never changes an exchange. Events: the stepwise AS and TGS exchanges (start, request, reply, prompt, completion, failure), the Tokio client login and service-ticket calls, extension-provider events and the acceptor decision. NOT traced yet: the transport endpoint attempts (resolution, per-endpoint send), whose files todo 15 owns in this wave (register FU-TRC-P01). The `tracing` leaf forwards the same text to the application subscriber at DEBUG, failures and rejections at WARN."
 disposition = "WP-18"
 closing_plan = 2
 closing_todo = 6

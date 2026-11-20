@@ -1557,6 +1557,7 @@ dependencies = [
  "toml",
  "tower-layer",
  "tower-service",
+ "tracing",
  "zeroize",
 ]
 

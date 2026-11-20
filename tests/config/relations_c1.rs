@@ -27,7 +27,6 @@ mod tests {
                     defaults.enforce_ok_as_delegate.is_enabled(),
                     *value == "true"
                 ),
-                "err_fmt" => assert_eq!(defaults.err_fmt, *value),
                 "ignore_acceptor_hostname" => assert_eq!(
                     defaults.ignore_acceptor_hostname.is_enabled(),
                     *value == "true"
@@ -111,7 +110,6 @@ mod tests {
         canonicalize, "plan 2 WP-05", ["true", "false"];
         default_rcache_name, "plan 2 WP-20", ["none:"];
         enforce_ok_as_delegate, "plan 2 WP-12", ["true", "false"];
-        err_fmt, "plan 2 WP-18", ["%C: %M", "custom"];
         ignore_acceptor_hostname, "plan 2 WP-12", ["true", "false"];
     }
 

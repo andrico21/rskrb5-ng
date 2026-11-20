@@ -50,6 +50,11 @@ minimal = []
 modules = ["src/ccache/keyring.rs", "src/ccache/keyring/"]
 tests = ["tests/ccache_keyring.rs", "tests/ccache_keyring/"]
 
+[package.metadata.rskrb5-ng.leaf-features.tracing]
+minimal = []
+modules = ["src/trace/adapter.rs"]
+tests = ["tests/trace_adapter.rs"]
+
 # The platform-store companion crate (owner decision D11); it depends on this
 # crate, never the reverse, and is not published.
 [workspace]
@@ -69,6 +74,7 @@ http = ["spnego", "dep:http_types"]
 tower = ["http", "dep:tower_layer", "dep:tower_service"]
 tokio = ["messages", "dep:hickory-resolver", "dep:tokio"]
 serde = ["dep:serde", "dep:serde_json"]
+tracing = ["dep:tracing"]
 
 [dependencies]
 aes = "0.9.1"
@@ -112,6 +118,12 @@ tokio = { version = "1.47", features = [
 ], optional = true }
 tower_layer = { package = "tower-layer", version = "0.3", optional = true }
 tower_service = { package = "tower-service", version = "0.3", optional = true }
+# The adapter to the application's `tracing` subscriber (the `tracing` leaf). Only
+# the `std` feature: no span macros, no proc macro. Admission record:
+# docs/dependency-admission.md#tracing.
+tracing = { version = "0.1.44", default-features = false, features = [
+  "std",
+], optional = true }
 zeroize = { version = "1", features = ["derive"] }
 
 # The one non-optional dependency (owner exception 2026-11-18, plan 2 D10):

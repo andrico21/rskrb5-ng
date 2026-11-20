@@ -69,7 +69,6 @@ mod tests {
         // Given recognized but not implemented behavior.
         for assignment in [
             "enforce_ok_as_delegate = true",
-            "err_fmt = %C: %M",
             "ignore_acceptor_hostname = false",
         ] {
             // When parsing in strict mode.

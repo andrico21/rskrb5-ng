@@ -79,11 +79,11 @@ everything else is timeless or a dated record.
   19 `[[bin]]` targets. `session_ticket.rs` is a shared helper module, not a target.
 - **Review backlog:** closed. The row and key totals are in `docs/review/README.md`
   "Totals".
-- **Ambient inputs:** 14 audited reader functions (16 reader/variable inventory entries
-  over `KRB5_CONFIG`, `KRB5CCNAME`, `KRB5_KTNAME`, `KRB5_CLIENT_KTNAME`, `HOME`, `TMPDIR`,
-  `TEMP` and `APPDATA`), listed in `READERS` of
+- **Ambient inputs:** 15 audited reader functions (17 reader/variable inventory entries
+  over `KRB5_CONFIG`, `KRB5CCNAME`, `KRB5_KTNAME`, `KRB5_CLIENT_KTNAME`, `KRB5_TRACE`, `HOME`,
+  `TMPDIR`, `TEMP` and `APPDATA`), listed in `READERS` of
   `tests/ambient_guard.rs` and enforced by `cargo test --all-features --test
-  ambient_guard`. `src` has 38 `# Ambient input` sections (`rg '# Ambient input' src | wc
+  ambient_guard`. `src` has 39 `# Ambient input` sections (`rg '# Ambient input' src | wc
   -l`). `LibDefaults::new()` reads nothing; `LibDefaults::from_env()` is the explicit
   constructor that reads `HOME` (`src/config.rs`).
 - **Vendored rules:** `docs/rust-guidelines/` holds the core, the two domain overlays and
@@ -175,7 +175,8 @@ everything else is timeless or a dated record.
     pull requests. They receive no commits and no deletion.
 13. **Ambient inputs:** library code reads the environment only in named
     ambient-discovery constructors (`KRB5_CONFIG`, `KRB5CCNAME`, `KRB5_KTNAME`,
-    `KRB5_CLIENT_KTNAME`, and `HOME` in `LibDefaults::from_env`) and in the credential
+    `KRB5_CLIENT_KTNAME`, `KRB5_TRACE` in `trace::Options::from_env`, and `HOME` in
+    `LibDefaults::from_env`) and in the credential
     template expansion (`TMPDIR` on non-Windows, `TEMP` and `APPDATA` on Windows, in
     `resolve_credential_template`). Each one is documented
     with an `# Ambient input` section and pinned by a guard test. There are no implicit

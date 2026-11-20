@@ -71,6 +71,7 @@ pub(super) fn new(
         key_expiration: None,
         cookie: None,
         strengthen_key: None,
+        trace: None,
     }
 }
 
@@ -110,6 +111,21 @@ pub(super) fn step(
     engine: &mut InitCreds<'_>,
     input: StepInput<'_>,
 ) -> Result<ExchangeStep, Error> {
+    if let Some(tracer) = &engine.trace {
+        tracer.input(&input, (&engine.client, &service(engine)));
+    }
+    let result = advance(engine, input);
+    if let Some(tracer) = &mut engine.trace {
+        tracer.output(&result);
+    }
+    result
+}
+
+/// Advance the exchange without tracing.
+///
+/// # Errors
+/// Returns the typed failure of the step; the exchange cannot continue after it.
+fn advance(engine: &mut InitCreds<'_>, input: StepInput<'_>) -> Result<ExchangeStep, Error> {
     let state = mem::replace(&mut engine.state, State::Done);
     let expected = state_name(&state);
     let unwrapped = match (&input, engine.armor.as_mut()) {

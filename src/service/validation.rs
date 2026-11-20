@@ -10,7 +10,12 @@ use super::{
     principal_from_parts, system_time_from_kerberos_time, ticket_error, ticket_start_time,
     validate_authorization_data, verified_ticket_pac,
 };
-use crate::{ap_req, crypto::Use, ticket};
+use crate::{
+    ap_req,
+    crypto::Use,
+    ticket,
+    trace::{Event as TraceEvent, Identity},
+};
 
 impl Validator<'_> {
     /// Resolve the ticket's key identity without altering policy or replay state.
@@ -68,6 +73,31 @@ impl Validator<'_> {
         bytes: &[u8],
         check: F,
     ) -> Result<ValidatedApReq, E>
+    where
+        F: FnOnce(&rasn_kerberos::Authenticator, &EncryptionKey) -> Result<(), E>,
+        E: From<Error>,
+    {
+        let result = self.validate_untraced(bytes, check);
+        match &result {
+            Ok(validated) => {
+                let service = format!("{}@{}", validated.service.name(), validated.service.realm);
+                self.trace.emit(&TraceEvent::ApReqAccepted {
+                    service: Identity::new(&service),
+                });
+            }
+            Err(_) => self
+                .trace
+                .emit(&TraceEvent::ApReqRejected { reason: "rejected" }),
+        }
+        result
+    }
+
+    /// The validation of [`Self::validate_ap_req_with_check`], without its trace events.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Self::validate_ap_req`] or the supplied check.
+    fn validate_untraced<F, E>(&mut self, bytes: &[u8], check: F) -> Result<ValidatedApReq, E>
     where
         F: FnOnce(&rasn_kerberos::Authenticator, &EncryptionKey) -> Result<(), E>,
         E: From<Error>,

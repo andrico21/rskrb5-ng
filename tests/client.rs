@@ -180,6 +180,9 @@ mod stepwise;
 mod subkey_reply;
 #[path = "client/tgs_exchange.rs"]
 mod tgs_exchange;
+#[cfg(feature = "tokio")]
+#[path = "client/trace_events.rs"]
+mod trace_events;
 
 use harness::*;
 

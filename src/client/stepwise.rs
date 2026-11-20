@@ -40,6 +40,7 @@ use crate::{
     error::Client as Error,
     extensions::{PreauthSession, ProviderError},
     keytab::{EncryptionKey, Keytab},
+    trace::{ExchangeKind, Guard},
 };
 
 /// The AS state machine.
@@ -64,6 +65,9 @@ mod tests;
 /// The TGS state machine with referral chasing.
 #[path = "stepwise/ticket.rs"]
 mod ticket;
+/// Redacted trace events of the exchanges.
+#[path = "stepwise/trace.rs"]
+pub(super) mod trace;
 
 /// The most KDC round trips one exchange may take (MIT `MAX_IN_TKT_LOOPS`).
 pub const MAX_EXCHANGE_ROUNDS: usize = 16;
@@ -467,6 +471,8 @@ pub struct InitCreds<'registry> {
     cookie: Option<Vec<u8>>,
     /// The strengthen key of the newest armored reply.
     strengthen_key: Option<EncryptionKey>,
+    /// The trace of the exchange, when a guard is attached.
+    trace: Option<trace::Tracer>,
 }
 
 impl fmt::Debug for InitCreds<'_> {
@@ -502,6 +508,16 @@ impl<'registry> InitCreds<'registry> {
     #[must_use]
     pub fn with_preauth(mut self, session: PreauthSession<'registry>) -> Self {
         self.preauth = Some(session);
+        self
+    }
+
+    /// Trace this exchange to `guard`: its start, each request and reply, a
+    /// prompt, and its completion or failure, as redacted [`crate::trace::Event`]s.
+    /// A failing sink never changes the exchange.
+    #[inline]
+    #[must_use]
+    pub fn with_trace(mut self, guard: Guard) -> Self {
+        self.trace = Some(trace::Tracer::new(guard, ExchangeKind::Initial));
         self
     }
 
@@ -563,6 +579,8 @@ pub struct TicketCreds {
     state: ticket::State,
     /// Cross-realm TGTs obtained on the way, in hop order.
     referral_tgts: Vec<TgsRepSession>,
+    /// The trace of the exchange, when a guard is attached.
+    trace: Option<trace::Tracer>,
 }
 
 impl fmt::Debug for TicketCreds {
@@ -586,6 +604,14 @@ impl TicketCreds {
         options: TicketOptions,
     ) -> Result<Self, Error> {
         ticket::new(tgt, service, options)
+    }
+
+    /// Trace this exchange to `guard` (see [`InitCreds::with_trace`]).
+    #[inline]
+    #[must_use]
+    pub fn with_trace(mut self, guard: Guard) -> Self {
+        self.trace = Some(trace::Tracer::new(guard, ExchangeKind::Ticket));
+        self
     }
 
     /// Advance the exchange.

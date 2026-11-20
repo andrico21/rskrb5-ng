@@ -108,6 +108,12 @@ pub(crate) mod tests {
             "KRB5_CLIENT_KTNAME",
             "KRB5_CLIENT_KTNAME_ENV",
         ),
+        (
+            "src/trace.rs",
+            "Options::from_env",
+            "KRB5_TRACE",
+            "KRB5_TRACE_ENV",
+        ),
     ];
 
     /// Structural token; literal/doc contents never become structural tokens.
@@ -746,6 +752,7 @@ pub(crate) mod tests {
                 "with_keytab_name",
             ],
             "KRB5_CLIENT_KTNAME" => &["with_keytab_name", "with_client_keytab_from_config"],
+            "KRB5_TRACE" => &["with_file", "new"],
             "HOME" => &["new", "with_home"],
             "TMPDIR" | "TEMP" | "APPDATA" => &[
                 "expand",
