@@ -59,6 +59,33 @@ pub(super) fn mit(script: &str) -> Result<String, Box<dyn Error>> {
     }
 }
 
+/// How many seconds the `kcm` fixture's daemon has been up.
+///
+/// The container's own clock minus the modification time of the ready file its
+/// entrypoint wrote when `sssd_kcm` had created its socket. The container ends
+/// when the daemon does (`scripts/interop/net-kcm/entrypoint.sh`), so a running
+/// container is the daemon that wrote the file.
+pub(super) fn daemon_age() -> Result<u64, Box<dyn Error>> {
+    let output = Command::new(harness::var("INTEROP_RUNTIME")?)
+        .args(["exec", harness::var("INTEROP_KCM_CONTAINER")?.as_str()])
+        .args([
+            "bash",
+            "-c",
+            "echo $(( $(date +%s) - $(stat -c %Y /run/interop/ready) ))",
+        ])
+        .output()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    if !output.status.success() {
+        return Err(format!(
+            "the kcm container is not running ({}): {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
+    }
+    Ok(text.trim().parse()?)
+}
+
 /// The daemon socket of the `kcm` fixture, which must be a socket on the host.
 pub(super) fn socket() -> Result<PathBuf, Box<dyn Error>> {
     let path = PathBuf::from(harness::var("INTEROP_KCM_SOCKET")?);

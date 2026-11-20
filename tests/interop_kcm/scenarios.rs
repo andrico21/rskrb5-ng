@@ -1,6 +1,10 @@
 //! KCM caches between the crate's `KCM` store and MIT's tools, through SSSD.
 
 use core::error::Error;
+use std::{
+    env,
+    io::{self, Write as _},
+};
 
 use rskrb5_ng::{
     ccache::{
@@ -14,7 +18,9 @@ use tokio::runtime::Builder;
 
 use crate::{
     harness,
-    support::{MIT_KDC, REALM, USER, mechanism, mit, residual, socket, store, tgt_cache},
+    support::{
+        MIT_KDC, REALM, USER, daemon_age, mechanism, mit, residual, socket, store, tgt_cache,
+    },
 };
 
 /// The service the scenarios ask MIT `kvno` for.
@@ -199,5 +205,47 @@ fn collection_primary_and_switch_agree_with_mit() -> Result<(), Box<dyn Error>> 
     )?;
     fresh.destroy()?;
     kept.destroy()?;
+    Ok(())
+}
+
+/// FU-IOP-P04: the daemon is still alive, and still serves requests, when
+/// the suite ends.
+///
+/// libtest runs the scenarios of a target one after another in name order
+/// (`run.sh test` passes `--test-threads=1`) and this name sorts after every
+/// other scenario's, so this is the suite's last act. The daemon's age is
+/// printed; `INTEROP_KCM_MIN_UPTIME_SECS` makes it a requirement, which is how
+/// a run longer than the daemon's old five-minute idle timeout proves the
+/// fixture stays up.
+#[test]
+fn the_daemon_is_still_alive_at_the_end_of_the_suite() -> Result<(), Box<dyn Error>> {
+    if !harness::require(
+        "the_daemon_is_still_alive_at_the_end_of_the_suite",
+        &[MIT_KDC],
+    )? {
+        return Ok(());
+    }
+    let age = daemon_age()?;
+    let cache = store()?.resolve(&residual("liveness")?)?;
+    drop(cache.destroy());
+    let user = CachePrincipal::new(REALM, 1, vec![USER.to_owned()]);
+    cache.initialize(&user)?;
+    mechanism(
+        "principal read back",
+        &user.name_string(),
+        &cache.load()?.default_principal().name_string(),
+    )?;
+    cache.destroy()?;
+    writeln!(
+        io::stderr(),
+        "interop: kcm daemon alive {age} s after its start, at the end of the suite"
+    )?;
+    if let Ok(required) = env::var("INTEROP_KCM_MIN_UPTIME_SECS") {
+        let minimum: u64 = required.parse()?;
+        assert!(
+            age >= minimum,
+            "the suite ended {age} s after the daemon started, under the {minimum} s the proof needs"
+        );
+    }
     Ok(())
 }
