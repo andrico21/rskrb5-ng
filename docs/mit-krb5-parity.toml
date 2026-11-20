@@ -11,8 +11,8 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 63
-partial = 55
+implemented = 61
+partial = 57
 absent = 35
 rejected = 8
 omitted = 1
@@ -1689,9 +1689,9 @@ id = "MIT-config-25"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`kcm_mach_service`"
-implementation_status = "implemented"
+implementation_status = "partial"
 evidence_status = "live-ci"
-missing = ""
+missing = "P2-28 closes the row (register rows FU-OSS-P02 and FU-OSS-P06): the main crate never consumes `kcm_mach_service`. The catalogue still defers it to plan 2 WP-09, so Strict mode refuses it with `NotYetEffective` and Compatible mode diagnoses it; `KCM:` names, `KRB5CCNAME` and the client's default cache reach the built-in KCM store (the Unix socket or an installed `KcmTransport`), never Mach RPC. The companion crate reads the relation only when the application builds `rskrb5_ng_os::macos::KcmMachStore::from_libdefaults` from a configuration itself; `rskrb5_ng_os::register` installs no Mach transport. P2-14 delivered that store and its hosted macOS tests (platform-macos job, live-ci), named below."
 rust_symbols = ["config::LibDefaults"]
 test_names = [
   "tests/config/relations_c2.rs::kcm_mach_service",
@@ -1704,28 +1704,28 @@ feature_flags = []
 security_divergence = "Delivered by the companion crate rskrb5-ng-os (owner decision D11): rskrb5_ng_os::macos::KcmMachStore::from_libdefaults reads kcm_mach_service; - disables Mach RPC as in MIT. KCM over Mach only: the MIT fallback to the Unix socket is the built-in KCM store of todo 12. Each call has its own reply port and a 30-second bound (MIT waits forever), and replies pass the MIG checks before parsing. The KCM: name route of rskrb5-ng reaches this Mach transport only once the built-in KCM store of todo 12 offers install_transport (rskrb5-ng-os then installs it from register; until then KcmMachStore is used directly), and the rskrb5-ng crate alone makes no KCM connection, so its relation table keeps the plan-2 classification (register FU-OSS-P02). Live evidence: the macOS CI job (platform-macos) runs MIT 1.22.2 kinit against a KCM service checked in under a test Mach name and reads the system org.h5l.kcm."
 disposition = "WP-09"
 closing_plan = 2
-closing_todo = 14
-contributors = []
+closing_todo = 28
+contributors = ["P2-14"]
 
 [[feature]]
 id = "MIT-config-26"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`kcm_socket`"
-implementation_status = "implemented"
+implementation_status = "partial"
 evidence_status = "unit"
-missing = ""
+missing = "P2-28 closes the row (register rows FU-KCM-P02 and FU-KCM-P04): `kcm_socket` is effective only for KCM stores built from the configuration (`ccache::kcm::Store::from_libdefaults`, which also bypasses an installed `KcmTransport`). The `KCM:` name routes (`CCache::load_name`, `save_name`, `KRB5CCNAME`) and the client's cache-name sites (`Tokio::from_ccache_name`, `from_default_ccache_name`, `from_default_ccache`, `save_ccache_name`, `save_default_ccache_name`, `save_default_ccache`) keep the default socket or an installed transport; honouring the relation there needs a configured built-in store (installed transport first, then the configured socket, as MIT tries Mach before the socket) at those six client sites."
 rust_symbols = ["ccache::kcm::Store::from_libdefaults"]
 test_names = [
   "tests/config/relations_c2.rs::kcm_socket",
   "tests/kcm/trust.rs::the_kcm_socket_setting_selects_the_socket",
 ]
 feature_flags = []
-security_divergence = "`kcm_socket` names the daemon socket of the KCM stores built from the configuration (`ccache::kcm::Store::from_libdefaults`, MIT `cc_kcm.c:306-316`); `-` or an empty value disables the Unix socket transport (`Kcm::NoServer`). The built-in `KCM:` name dispatch (`CCache::load_name`, the client's default cache) has no configuration and uses the default socket `/var/run/.heim_org.h5l.kcm-socket` or an installed `KcmTransport`, where MIT reads the relation from the context profile (docs/review/parity-register.md FU-KCM-P02)."
+security_divergence = "`kcm_socket` names the daemon socket of the KCM stores built from the configuration (`ccache::kcm::Store::from_libdefaults`, MIT `cc_kcm.c:306-316`); `-` or an empty value disables the Unix socket transport (`Kcm::NoServer`). The built-in `KCM:` name dispatch has no configuration (see `missing`), where MIT reads the relation from the context profile."
 disposition = "WP-09"
 closing_plan = 2
-closing_todo = 12
-contributors = []
+closing_todo = 28
+contributors = ["P2-12"]
 
 [[feature]]
 id = "MIT-config-27"
