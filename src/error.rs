@@ -547,7 +547,7 @@ pub enum Client {
         /// (see [`Tokio::send_to_realm`]), and the `_kerberos-adm._tcp` fallback
         /// of a kpasswd call reports `Tcp`, the label it queried, whatever
         /// protocol was requested (the failure of that fallback's targets is a
-        /// [`Error::KdcEndpointFailures`] of the requested protocol).
+        /// [`Client::KdcEndpointFailures`] of the requested protocol).
         ///
         /// [`Tokio::send_to_realm`]: crate::client::transport::Tokio::send_to_realm
         protocol: KdcProtocol,
