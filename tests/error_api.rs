@@ -37,6 +37,7 @@ mod tests {
     use rskrb5_ng::spnego;
     use rskrb5_ng::{
         Result, ccache::CCache, config, crypto::AesSha1Etype, error, keytab::Keytab, pac::Pac,
+        trace::Options,
     };
     #[cfg(feature = "messages")]
     use rskrb5_ng::{ap_rep, ap_req, client::principal::Principal, kadmin, kdc_rep, kdc_req};
@@ -76,6 +77,11 @@ mod tests {
         AesSha1Etype::Aes128.derive_key(&[], &[])
     );
     propagates_domain!(pac_when_truncated, error::Pac, Pac::parse(&[]));
+    propagates_domain!(
+        trace_when_destination_empty,
+        error::Trace,
+        Options::new().with_file("")
+    );
 
     #[cfg(feature = "messages")]
     propagates_domain!(

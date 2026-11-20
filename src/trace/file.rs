@@ -63,7 +63,8 @@ impl Sink for Append {
         self.file
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .write_all(line.as_bytes())?;
+            .write_all(line.as_bytes())
+            .map_err(Error::Write)?;
         Ok(())
     }
 
@@ -72,7 +73,8 @@ impl Sink for Append {
         self.file
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .flush()?;
+            .flush()
+            .map_err(Error::Write)?;
         Ok(())
     }
 }
