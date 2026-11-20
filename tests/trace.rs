@@ -29,8 +29,8 @@ mod tests {
         config::{Config, ParseMode},
         error::Trace as TraceError,
         extensions::{
-            CacheSelector, Extension, Priority, ProviderError, Registry, Selection,
-            SelectionRequest,
+            CacheSelector, Event as ProviderEvent, Extension, Interface, Priority, ProviderError,
+            Refusal, Registry, Selection, SelectionRequest,
         },
         trace::{
             Event, ExchangeKind, Guard, Identity, Options, Sink, capture::Memory, err_fmt::ErrFmt,
@@ -320,6 +320,95 @@ mod tests {
         assert!(text.contains("provider-consulted"), "{text}");
         assert!(text.contains("id=chooser"), "{text}");
         Ok(())
+    }
+
+    /// A selector whose failure text carries a secret-looking marker.
+    struct Leaky;
+
+    impl CacheSelector for Leaky {
+        fn id(&self) -> &'static str {
+            "leaky"
+        }
+
+        fn priority(&self) -> Priority {
+            Priority::Heuristic
+        }
+
+        fn choose(&self, _request: &SelectionRequest<'_>) -> Result<Selection, ProviderError> {
+            Err("MARKER-OTP-123456 and the password hunter2".into())
+        }
+    }
+
+    /// A provider's own error text, which may hold anything, never reaches a sink.
+    #[test]
+    fn provider_refusal_never_carries_the_provider_error_text() -> Result<(), Box<dyn Error>> {
+        let (guard, sink) = captured(Options::new().with_identities(true));
+        let mut registry = Registry::new();
+        registry.register(Extension::LibraryObserver(Arc::new(guard)))?;
+        registry.register(Extension::CacheSelector(Arc::new(Leaky)))?;
+        let server = Principal::new("EXAMPLE.ORG", 1, vec!["www".to_owned()]);
+        drop(registry.select_cache(&Config::parse("")?, &server, &[]));
+        let text = sink.lines().join("\n");
+        assert!(text.contains("provider-refused"), "{text}");
+        assert!(
+            !text.contains("MARKER") && !text.contains("hunter2"),
+            "{text}"
+        );
+        Ok(())
+    }
+
+    /// Every event type, carrying a marker in every text field it has, shows none
+    /// of it by default and never in `Debug`.
+    #[test]
+    fn every_event_type_withholds_and_redacts_marker_text() {
+        let marker = "MARKER-SECRET-9f3a";
+        let identity = Identity::new(marker);
+        let kind = ExchangeKind::Initial;
+        let interface = Interface::CacheSelector;
+        let events = [
+            Event::ExchangeStarted {
+                kind,
+                client: identity,
+                service: identity,
+            },
+            Event::RequestSent {
+                kind,
+                round: 1,
+                realm: identity,
+                bytes: 1,
+            },
+            Event::ReplyReceived { kind, bytes: 1 },
+            Event::Prompted { kind },
+            Event::Completed {
+                kind,
+                enctype: 18_i32,
+            },
+            Event::Failed {
+                kind,
+                kdc_error: Some(24_i32),
+                reason: "kdc-error",
+            },
+            Event::Provider(ProviderEvent::Consulted { interface, id: "p" }),
+            Event::Provider(ProviderEvent::Chosen { interface, id: "p" }),
+            Event::Provider(ProviderEvent::Declined { interface, id: "p" }),
+            Event::Provider(ProviderEvent::Refused {
+                interface,
+                id: "p",
+                reason: Refusal::Failed,
+            }),
+            Event::ApReqAccepted { service: identity },
+            Event::ApReqRejected { reason: "rejected" },
+        ];
+        let names: Vec<&str> = events.iter().map(Event::name).collect();
+        assert_eq!(names, Event::NAMES);
+        let (guard, sink) = captured(Options::new());
+        for event in &events {
+            guard.emit(event);
+            assert!(!format!("{event:?}").contains(marker), "{event:?}");
+        }
+        let text = sink.lines().join("\n");
+        assert_eq!(sink.lines().len(), events.len());
+        assert!(!text.contains(marker), "{text}");
     }
 
     /// `err_fmt` no longer yields `NotYetEffective`, even in strict mode, and the
