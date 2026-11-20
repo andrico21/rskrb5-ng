@@ -50,8 +50,8 @@ pub(crate) const RELATIONS_HEAD: [(&str, &str, &str, &str, &str, &str); 21] = [
         "canonicalize",
         "boolean",
         "false",
-        "plan 2 WP-05",
-        "TGS option consumed; AS builders suppress canonicalization, preserving identity; either value diagnostic",
+        "AsReq::from_libdefaults; TgsReq::from_libdefaults; preauth::fast::Exchange",
+        "Effective under FAST: the armored AS request asks for canonicalization and a changed client is accepted only from KrbFastFinished; unarmored AS requests drop the option (no unauthenticated identity change, stricter than MIT); TGS option consumed",
         "canonicalize",
     ),
     (

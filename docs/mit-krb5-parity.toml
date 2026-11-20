@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 76
-partial = 48
-absent = 29
+implemented = 80
+partial = 46
+absent = 27
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -92,13 +92,20 @@ id = "MIT-client-3"
 area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Client principal referrals and enterprise principal canonicalization"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Unarmored AS canonicalize stays stripped and the returned client must equal the request; P2-4 delivered the stepwise exchange and its `ArmoredExchange` seam; the authenticated client-referral and enterprise flow under FAST is the closing todo P2-7's."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "client::stepwise::InitCreds::with_armor",
+  "preauth::fast::Exchange",
+  "preauth::fast::ArmorSource",
+]
+test_names = [
+  "tests/fast/exchange.rs::client_referrals_are_followed_only_when_armored_and_asked_for",
+  "tests/fast/exchange.rs::canonicalization_is_accepted_only_under_fast",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Client referrals and canonicalized client names are accepted only from FAST-authenticated replies when the caller asked for canonicalization: an armored KDC_ERR_WRONG_REALM or C_PRINCIPAL_UNKNOWN restarts the exchange in the named realm (re-armored for it, Required fails closed without armor), and a changed client is taken only from `KrbFastFinished`. MIT 1.22.2 also follows unarmored referrals and accepts a changed client from an unarmored AS-REP (get_in_tkt.c:227-238,1745-1762). The live MIT fixture has no cross-realm client alias, so the referral is proven against the deterministic FAST KDC only."
 disposition = "WP-05"
 closing_plan = 2
 closing_todo = 7
@@ -383,13 +390,37 @@ id = "MIT-preauth-2"
 area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "FAST negotiation, armor-ticket use, request/response protection, cookies, encrypted challenges"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Request-integrity advertisement/check and cookies are not full FAST armor."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "preauth::fast::Exchange",
+  "preauth::fast::Policy",
+  "preauth::fast::Outcome",
+  "preauth::fast::ArmorSource",
+  "preauth::fast::ArmorCache",
+  "preauth::fast::AnonymousArmor",
+  "client::stepwise::ArmoredExchange",
+  "client::stepwise::InitCreds::with_armor",
+]
+test_names = [
+  "tests/fast/exchange.rs::required_fast_logs_in_with_the_encrypted_challenge",
+  "tests/fast/exchange.rs::tampered_replies_are_rejected",
+  "tests/fast/exchange.rs::tampered_reply_keys_are_rejected",
+  "tests/fast/exchange.rs::required_rejects_a_reply_without_finished",
+  "tests/fast/exchange.rs::required_without_armor_sends_nothing",
+  "tests/fast/exchange.rs::unarmored_exchanges_report_their_outcome",
+  "tests/fast/exchange.rs::opportunistic_with_armor_is_armored_and_strict",
+  "tests/fast/exchange.rs::the_armor_cache_yields_the_realm_tgt",
+  "tests/fast/admission.rs::armor_output_enctypes_are_policy_checked",
+  "src/preauth/fast/tests.rs::mit_fast_response_encoding_round_trips",
+  "src/preauth/fast/tests.rs::mit_pa_fx_fast_reply_encoding_round_trips",
+  "src/preauth/fast/tests.rs::armored_rounds_are_bounded",
+  "tests/fast/vectors.rs::fast_key_derivations_match_the_independent_vectors",
+  "tests/interop_fast/scenarios.rs::encrypted_challenge_login_is_armored",
+]
 feature_flags = []
-security_divergence = "The PA-REQ-ENC-PA-REP checksum of a reply must have the type that the reply key's encryption type requires (RFC 6806 section 11); MIT 1.22.2 `krb5int_fast_verify_nego` (fast.c:635-668) passes any checksum type to `krb5_c_verify_checksum`, whose `verify_key` (crypto_int.h:598-607) only compares encryption providers: the AES128 and AES256 providers are shared by the SHA1 and SHA2 enctypes (etypes.c:88,132) and checksum types (cksumtypes.c:70,100), and HMAC-MD5 (-138) has no provider (cksumtypes.c:61-66), so it passes under a key of any enctype with a valid length."
+security_divergence = "The PA-REQ-ENC-PA-REP checksum of a reply must have the type that the reply key's encryption type requires (RFC 6806 section 11), also under FAST, where it covers the armored request as sent; MIT 1.22.2 `krb5int_fast_verify_nego` (fast.c:635-668) passes any checksum type to `krb5_c_verify_checksum`, whose `verify_key` (crypto_int.h:598-607) only compares encryption providers: the AES128 and AES256 providers are shared by the SHA1 and SHA2 enctypes (etypes.c:88,132) and checksum types (cksumtypes.c:70,100), and HMAC-MD5 (-138) has no provider (cksumtypes.c:61-66), so it passes under a key of any enctype with a valid length. The `KrbFastFinished` ticket checksum must equally be the armor key's mandatory type (MIT fast.c:543-547 verifies any type). An armored exchange never accepts an unarmored reply or error (MIT treats an undecryptable FAST error as the KDC's fatal error, fast.c:445-460, and so does this crate, reporting it as `error::Fast::UnarmoredError`). TGS requests are not FAST-armored: MIT 1.22.2 armors every TGS request implicitly (send_tgs.c:178, fast.c:110-142) and accepts an unarmored reply from a KDC without FAST; executor decision recorded as FU-FST-P01."
 disposition = "WP-05"
 closing_plan = 2
 closing_todo = 7
@@ -400,11 +431,13 @@ id = "MIT-preauth-3"
 area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "FAST anonymous armor via anonymous PKINIT"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "No PKINIT/armor exchange."
-rust_symbols = []
-test_names = []
+implementation_status = "partial"
+evidence_status = "unit"
+missing = "P2-7 delivered the anonymous-armor hook (`preauth::fast::AnonymousArmor`, `ArmorSource::Anonymous`, asked for each realm the exchange armors); anonymous PKINIT behind it is the closing todo P2-8's."
+rust_symbols = ["preauth::fast::AnonymousArmor", "preauth::fast::ArmorSource"]
+test_names = [
+  "tests/fast/exchange.rs::client_referrals_are_followed_only_when_armored_and_asked_for",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-06"
@@ -417,13 +450,24 @@ id = "MIT-preauth-4"
 area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Encrypted challenge FAST factor"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "Timestamp helper is distinct from armored challenge."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "preauth::encrypted_challenge::EncryptedChallenge",
+  "preauth::encrypted_challenge::EncryptedChallenge::new",
+  "preauth::encrypted_challenge::EncryptedChallenge::padata",
+  "preauth::encrypted_challenge::EncryptedChallenge::verify_reply",
+]
+test_names = [
+  "tests/fast/vectors.rs::fast_key_derivations_match_the_independent_vectors",
+  "tests/fast/exchange.rs::required_fast_logs_in_with_the_encrypted_challenge",
+  "tests/fast/exchange.rs::tampered_replies_are_rejected",
+  "tests/fast/exchange.rs::the_challenge_travels_only_inside_the_armor",
+  "tests/interop_fast/scenarios.rs::fast_required_service_needs_the_fast_ec_indicator",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "The client requires the KDC's PA-ENCRYPTED-CHALLENGE to decrypt in the KDC challenge key and the reply key to be strengthened before it releases the credential (RFC 6113 section 5.4.6); MIT 1.22.2 checks the KDC's challenge only when one is present (preauth_ec.c:64-95) and does not require the strengthen key."
 disposition = "WP-05"
 closing_plan = 2
 closing_todo = 7
@@ -1280,13 +1324,20 @@ id = "MIT-config-4"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`canonicalize`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "TGS option consumed; AS builders suppress canonicalization, preserving identity; either value diagnostic. P2-4 delivered the `ArmoredExchange` seam; the authenticated canonicalization under FAST is the closing todo P2-7's."
-rust_symbols = []
-test_names = ["tests/config/relations_c1.rs::canonicalize"]
+missing = ""
+rust_symbols = [
+  "client::options::AsReq::from_libdefaults",
+  "client::stepwise::ArmorRequest",
+  "preauth::fast::Exchange",
+]
+test_names = [
+  "tests/config/relations_c1.rs::canonicalize",
+  "tests/fast/exchange.rs::canonicalization_is_accepted_only_under_fast",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "`canonicalize` takes effect only under FAST armor; an unarmored AS request drops the option, so no unauthenticated reply changes the client identity (MIT sets it from the profile in every AS request, get_in_tkt.c:921-930)."
 disposition = "WP-05"
 closing_plan = 2
 closing_todo = 7
