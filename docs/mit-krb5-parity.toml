@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 47
-partial = 68
-absent = 38
+implemented = 61
+partial = 57
+absent = 35
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -24,13 +24,34 @@ id = "MIT-client-1"
 area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "AS exchange / initial TGT acquisition; password, keytab, preauth callback/responder, multi-round-trip step API"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Login/build/process exist, no responder or general multi-round step API."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = [
+  "client::stepwise::InitCreds",
+  "client::stepwise::InitCreds::step",
+  "client::stepwise::InitCreds::with_password",
+  "client::stepwise::InitCreds::with_keytab",
+  "client::stepwise::ExchangeStep",
+  "client::stepwise::StepInput",
+  "client::stepwise::Prompt",
+  "client::stepwise::Answer",
+  "client::stepwise::Responder",
+  "client::stepwise::drive",
+  "client::stepwise::drive_tokio",
+]
+test_names = [
+  "tests/client/stepwise.rs::password_exchange_prompts_once_and_completes",
+  "tests/client/stepwise.rs::drive_answers_prompts_through_the_responder",
+  "tests/client/stepwise.rs::replayed_as_rep_with_another_nonce_is_rejected",
+  "tests/client/stepwise.rs::unexpected_input_keeps_the_exchange",
+  "src/client/stepwise/tests.rs::cancellation_drops_every_secret",
+  "src/client/stepwise/tests.rs::unanswered_exchange_holds_no_secret",
+  "tests/interop_exchange/scenarios.rs::as_exchange_prompts_and_answers_the_preauth_challenge",
+  "tests/interop_exchange/scenarios.rs::keytab_exchange_obtains_the_service_principal_tgt",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Every AS-REP is bound to its request: client, service, nonce and offered enctypes (`NonceMismatch` for a reply to another nonce). An exchange sends at most `MAX_EXCHANGE_ROUNDS` = 16 requests, MIT `MAX_IN_TKT_LOOPS` (`get_in_tkt.c:398`). Prompts carry no secret; a prompted password and every derived key are owned by erasing types and are erased when the exchange is dropped between steps (MIT prompters write into caller buffers). An unarmored AS request never sets `canonicalize`, so no unauthenticated reply changes the client identity (MIT sets it from the profile, `get_in_tkt.c`)."
 disposition = "WP-04"
 closing_plan = 2
 closing_todo = 4
@@ -41,13 +62,26 @@ id = "MIT-client-2"
 area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "TGS service-ticket acquisition and asynchronous step API"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Async acquisition/referral APIs, no transport-neutral tkt-creds step context."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = [
+  "client::stepwise::TicketCreds",
+  "client::stepwise::TicketCreds::step",
+  "client::stepwise::TicketCreds::referral_tgts",
+  "client::stepwise::TicketOptions",
+  "client::stepwise::TicketOptions::with_max_referrals",
+  "client::stepwise::TicketOptions::with_user_to_user",
+  "client::stepwise::drive_tokio",
+]
+test_names = [
+  "tests/client/stepwise.rs::referrals_are_followed_within_their_bound",
+  "tests/client/stepwise.rs::user_to_user_request_carries_the_second_ticket",
+  "tests/interop_exchange/scenarios.rs::ticket_exchange_plain_and_user_to_user",
+  "tests/interop_exchange/scenarios.rs::ticket_exchange_follows_the_referral_within_its_bound",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Every TGS-REP is bound to the TGT session key, the request nonce and the requested service; a referral back to the current realm is refused and the chain is bounded by `TicketOptions::with_max_referrals` (default `DEFAULT_MAX_REFERRALS` = 10, MIT `KRB5_REFERRAL_MAXHOPS`, `get_creds.c:609`). The Tokio referral acquisition (`transport::Tokio::get_service_ticket_with_referral_trace_limit`) runs on this exchange."
 disposition = "WP-04"
 closing_plan = 2
 closing_todo = 4
@@ -60,7 +94,7 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "Client principal referrals and enterprise principal canonicalization"
 implementation_status = "partial"
 evidence_status = "unproven"
-missing = "Unarmored AS canonicalize deliberately stripped and returned client must equal request; no authenticated client-referral/enterprise flow."
+missing = "Unarmored AS canonicalize stays stripped and the returned client must equal the request; P2-4 delivered the stepwise exchange and its `ArmoredExchange` seam; the authenticated client-referral and enterprise flow under FAST is the closing todo P2-7's."
 rust_symbols = []
 test_names = []
 feature_flags = []
@@ -180,13 +214,28 @@ id = "MIT-client-10"
 area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Ticket request flags and lifetimes: forwardable, proxiable, renewable, renewable-ok, address controls, canonicalize, etc."
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Forwardable/proxiable/lifetime relations map to request options; address controls (extra_addresses, noaddresses = false), authenticated canonicalization and a typed per-request options API are missing."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = [
+  "client::stepwise::InitCredsOptions",
+  "client::stepwise::InitCredsOptions::from_config",
+  "client::stepwise::InitCredsOptions::with_forwardable",
+  "client::stepwise::InitCredsOptions::with_proxiable",
+  "client::stepwise::InitCredsOptions::with_ticket_lifetime",
+  "client::stepwise::InitCredsOptions::with_renew_lifetime",
+  "client::stepwise::InitCredsOptions::with_addresses",
+  "client::stepwise::TicketOptions::with_forwardable",
+  "client::stepwise::TicketOptions::with_proxiable",
+]
+test_names = [
+  "tests/client/stepwise.rs::flag_options_set_request_bits",
+  "tests/client/stepwise.rs::addresses_follow_the_options",
+  "tests/client/stepwise.rs::extra_addresses",
+  "tests/interop_exchange/scenarios.rs::profile_flags_reach_the_kdc_and_the_tgt_renews",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "`noaddresses = false` binds requests to `extra_addresses` only and fails closed with `NoRequestAddresses` when that list is empty; MIT adds the host interface addresses (`localaddr.c`), which this library does not enumerate. Unarmored AS requests never set `canonicalize`; the authenticated (FAST) canonicalization is plan 2 todo 7 (MIT-config-4, MIT-client-3)."
 disposition = "WP-04"
 closing_plan = 2
 closing_todo = 4
@@ -198,10 +247,17 @@ area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Initial-credential options and prompting: lifetimes, addresses, enctypes, preauth options, service, anonymous, callbacks/responders"
 implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Options/password/keytab helpers; no responder, automatic password-on-expiry or anonymous flow."
-rust_symbols = []
-test_names = []
+evidence_status = "unit"
+missing = "P2-4 delivered options, prompts, the responder and the password-expiry notice (`Responder::password_expiry`); automatic password change on expiry and the anonymous flow are the closing todo P2-23's."
+rust_symbols = [
+  "client::stepwise::InitCredsOptions",
+  "client::stepwise::Prompt",
+  "client::stepwise::Responder",
+]
+test_names = [
+  "tests/client/stepwise.rs::drive_reports_the_password_expiry",
+  "tests/client/stepwise.rs::drive_answers_prompts_through_the_responder",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-15"
@@ -463,23 +519,30 @@ id = "MIT-preauth-10"
 area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Client preauth (`clpreauth`) and KDC preauth (`kdcpreauth`) plugin interfaces"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "P2-4: the exchange engine and the built-in timestamp preauthentication run through `extensions::ClientPreauth` sessions, with responder and cookies. P2-3 delivered the registry, per-exchange state, the round and output bounds and the outgoing PA-DATA admission of mechanism output. The kdcpreauth subpart is D1-excluded."
+missing = ""
 rust_symbols = [
   "extensions::ClientPreauth",
   "extensions::PreauthState",
   "extensions::PreauthSession",
   "extensions::Registry::preauth_session",
+  "client::stepwise::InitCreds::with_preauth",
+  "client::stepwise::InitCreds::with_armor",
+  "client::stepwise::ArmoredExchange",
+  "client::stepwise::Responder",
 ]
 test_names = [
   "tests/extensions.rs::rejected_enctype_padata_is_refused_by_policy",
   "tests/extensions.rs::mechanism_bounds_and_types",
   "tests/extensions.rs::per_exchange_state_and_round_bound",
   "tests/extensions.rs::session_order_selection_and_conflicts",
+  "tests/client/stepwise.rs::preferred_preauth_types",
+  "tests/client/stepwise.rs::drive_answers_prompts_through_the_responder",
+  "src/client/stepwise/tests.rs::armored_replies_thread_cookies_and_erase_replaced_strengthen_keys",
 ]
 feature_flags = []
-security_divergence = ""
+security_divergence = "The exchange consults the registered `ClientPreauth` mechanisms for the KDC's offers in `preferred_preauth_types` order; encrypted timestamp stays built in and cannot be disabled (FU-EXT-P01). The KDC cookie and strengthen key of an armored reply are threaded through the `ArmoredExchange` seam; the FAST armor itself is plan 2 todo 7. The kdcpreauth subpart is D1-excluded."
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 4
@@ -814,13 +877,50 @@ id = "MIT-ccache-3"
 area = "ccache"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Linux KEYRING: process/thread/user/session/persistent"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "KEYRING: names fail with a typed UnsupportedCacheType error; no kernel keyring backend."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "ccache::keyring::Keyring",
+  "ccache::keyring::Fault",
+  "ccache::keyring::KernelError",
+  "ccache::keyring::index::parse",
+  "ccache::keyring::index::encode",
+  "ccache::file_store::resolve",
+  "ccache::file_store::collection",
+]
+test_names = [
+  "src/ccache/keyring/tests/names.rs::primary_payload_matches_mit",
+  "src/ccache/keyring/tests/names.rs::malformed_primary_payloads_are_rejected",
+  "src/ccache/keyring/tests/operations.rs::resolve_creates_the_collection_and_primary_name",
+  "src/ccache/keyring/tests/operations.rs::initialize_writes_the_principal_key",
+  "src/ccache/keyring/tests/operations.rs::store_adds_one_key_per_credential",
+  "src/ccache/keyring/tests/operations.rs::remove_unlinks_matching_credentials",
+  "src/ccache/keyring/tests/legacy.rs::legacy_cache_is_visible_to_old_code",
+  "src/ccache/keyring/tests/collections.rs::anchors_place_the_collection",
+  "src/ccache/keyring/tests/collections.rs::persistent_keyring_of_another_user_is_refused",
+  "src/ccache/keyring/tests/collections.rs::new_unique_reserves_a_name",
+  "src/ccache/keyring/tests/collections.rs::switch_changes_the_primary",
+  "src/ccache/keyring/tests/failures.rs::enosys_is_unavailable",
+  "src/ccache/keyring/tests/failures.rs::permission_errors_are_typed",
+  "src/ccache/keyring/tests/failures.rs::quota_is_not_retried",
+  "src/ccache/keyring/tests/failures.rs::unreadable_credentials_are_skipped",
+  "src/ccache/keyring/tests/failures.rs::revoked_collection_is_reported",
+  "src/ccache/keyring/kernel/tests.rs::errno_values_map_to_typed_failures",
+  "tests/ccache_keyring/kernel.rs::every_anchor_round_trips",
+  "tests/ccache_keyring/kernel.rs::collection_lists_switches_and_creates",
+  "tests/ccache_keyring/kernel.rs::another_users_persistent_keyring_is_refused",
+  "tests/ccache_keyring/kernel.rs::credential_over_the_key_quota_is_refused",
+  "tests/ccache_keyring/namespaces.rs::process_keyring_is_private_to_the_process",
+  "tests/ccache_keyring/namespaces.rs::thread_keyring_is_private_to_the_thread",
+  "tests/ccache_keyring/namespaces.rs::session_and_user_keyrings_are_shared",
+  "tests/ccache_keyring/mit.rs::cache_written_here_is_listed_by_klist",
+  "tests/ccache_keyring/mit.rs::mit_written_cache_is_read_and_copied",
+  "tests/ccache_keyring.rs::providers_cannot_claim_the_keyring_prefix",
+  "tests/ccache_keyring/kernel.rs::cache_names_reach_the_keyring",
+]
+feature_flags = ["ccache-keyring"]
+security_divergence = "Compiled only with the `ccache-keyring` leaf on Linux; without it `KEYRING:` names keep failing with `UnsupportedCacheType`. `KEYRING` is a built-in type: no store provider can claim the prefix, with the leaf on or off. Names reach it through `ccache::file_store::resolve` and `collection`, the `CredentialStore` API, and the same `resolve` arm from `CCache::load_name`, `save_name` and the client's default-cache lookup and write-back (docs/review/parity-register.md FU-KEY-P04, fixed by the wave-3b merge). The persistent keyring of another user goes to the kernel, which refuses it without `CAP_SETUID` (`EPERM`, typed `KernelError::PermissionDenied`), where MIT's fallback (`cc_keyring.c:182-195`) is the same for a kernel without persistent keyrings and a user id that is not the caller's. The persistent collection name is decimal digits only, where MIT's `strtol` also takes blanks and signs (`cc_keyring.c:456-473`). A key lookup treats only a missing, expired or revoked key as absent and reports `EACCES`, `EPERM` and quota errors, where MIT reads every failure as absent (`cc_keyring.c:229-250,664-668`). A credential key with bytes after the credential, and a primary-name key with an empty name, are refused. Errors setting a key timeout and linking the legacy cache into the session keyring are reported, where MIT ignores them (`cc_keyring.c:350-353,758-760`). A cache is not replaced atomically, as in MIT. Credentials are written in the version 4 file encoding in zeroizing buffers; the `ccache_type` version does not apply, as in MIT (`cc_keyring.c:1215`). No MIT 1.22.2 container run: Docker's default seccomp profile blocks the key calls and the MIT fixture image is built without libkeyutils, so its MIT has no `KEYRING` type; MIT's own tools run natively in the `keyring` CI job instead, see docs/review/parity-register.md FU-KEY-P03."
 disposition = "WP-09"
 closing_plan = 2
 closing_todo = 13
@@ -831,13 +931,41 @@ id = "MIT-ccache-4"
 area = "ccache"
 upstream_ref = "krb5-1.22.2-final"
 capability = "KCM cache client"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "KCM: names fail with a typed UnsupportedCacheType error; no KCM socket protocol."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "ccache::kcm::Store",
+  "ccache::kcm::client::Client",
+  "ccache::kcm::socket::Trust",
+  "ccache::kcm::wire::reply_length",
+  "ccache::kcm::seam::KcmTransport",
+  "ccache::kcm::seam::install_transport",
+]
+test_names = [
+  "tests/kcm/wire.rs::requests_match_the_frames_sssd_accepted",
+  "tests/kcm/wire.rs::an_oversized_reply_is_rejected_before_the_body_is_read",
+  "tests/kcm/transport.rs::partial_frames_fail_as_short_reads",
+  "tests/kcm/transport.rs::unknown_opcodes_and_error_ids_are_typed",
+  "tests/kcm/transport.rs::slow_peers_are_bounded_by_the_deadline",
+  "tests/kcm/transport.rs::an_oversized_reply_fails_without_waiting_for_the_body",
+  "tests/kcm/store.rs::a_cache_round_trips_through_the_daemon",
+  "tests/kcm/store.rs::a_collection_lists_switches_and_creates",
+  "tests/kcm/trust.rs::only_a_socket_is_connected_to",
+  "tests/kcm/tokio_client.rs::a_request_round_trips_over_a_unix_socket",
+  "tests/interop_kcm/scenarios.rs::rust_cache_in_the_daemon_is_read_by_mit",
+  "tests/interop_kcm/scenarios.rs::mit_cache_in_the_daemon_is_read_by_the_crate",
+  "tests/interop_kcm/scenarios.rs::store_remove_and_destroy_agree_with_mit",
+  "tests/interop_kcm/scenarios.rs::collection_primary_and_switch_agree_with_mit",
+  "tests/interop_kcm/scenarios.rs::the_daemon_is_still_alive_at_the_end_of_the_suite",
+  "tests/kcm_seam.rs::the_built_in_store_uses_the_installed_transport",
+  "tests/kcm_seam.rs::a_second_installation_is_refused",
+  "tests/kcm_name_route.rs::cache_names_reach_the_built_in_kcm_store",
+  "tests/kcm_name_route.rs::the_default_cache_of_the_client_reaches_the_built_in_kcm_store",
+  "tests/store_registry.rs::taken_and_malformed_prefixes_are_refused",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "The daemon socket must be a socket (not a symbolic link) owned by root, by this process's effective user or by a trusted user, and the Tokio client also checks the peer's user id; MIT connects to whatever the path holds (`cc_kcm.c:301-342`). Replies are decoded strictly (no trailing bytes, a terminated name, no payload on an empty reply), where MIT ignores trailing bytes (`cc_kcm.c:495-541`), and every request has a deadline, which MIT lacks. A residual with a NUL byte or over 4096 bytes is refused; `KCM:<uid>:<name>` otherwise goes to the daemon unchanged. `store` of a credential for a client and server already in the cache reads the cache and replaces it with `REPLACE` (or `INITIALIZE` and `STORE` for a daemon without it, as MIT does, `cc_kcm.c:1280-1314`), and `remove` rewrites the cache the same way, where MIT sends `REMOVE_CRED` (SSSD 2.10.1 answers it with `KRB5_FCC_INTERNAL`). `RETRIEVE` is not used. The built-in `KCM` cache type is reserved (no store provider can claim it) and reaches the daemon through the socket, or through the process-wide `KcmTransport` an application installed first (MIT `kcmio_call` replaced by the macOS Mach service in `cc_kcm.c`; the Mach transport itself is todo 14's)."
 disposition = "WP-09"
 closing_plan = 2
 closing_todo = 12
@@ -873,9 +1001,16 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "Windows API cache"
 implementation_status = "omitted"
 evidence_status = "unit"
-missing = "Omitted by owner decision D13: the legacy KfW API: cache is not provided; API: names fail with a typed UnsupportedCacheType error."
-rust_symbols = ["ccache::CacheName"]
-test_names = ["tests/ccache.rs::rejects_unsupported_cache_names"]
+missing = "Omitted by owner decision D13: the legacy KfW API: cache is not provided. On Windows an API: name that no installed store provider claims fails on every cache-name route (CCache::load_name, file_store::resolve and collection, the client lookups) with the typed error::Ccache::UnsupportedWindowsApi, which names D13 and its anchor; other systems report UnsupportedCacheType (macOS API: is the separate Kerberos.framework store of rskrb5-ng-os)."
+rust_symbols = [
+  "ccache::CacheName",
+  "ccache::file_store::resolve",
+  "error::Ccache::UnsupportedWindowsApi",
+]
+test_names = [
+  "tests/ccache.rs::rejects_unsupported_cache_names",
+  "tests/ccache_platform.rs::windows_api_cache_is_omitted",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "D13"
@@ -889,13 +1024,26 @@ id = "MIT-ccache-7"
 area = "ccache"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Windows MSLSA cache"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "MSLSA: names fail with a typed UnsupportedCacheType error; no LSA cache backend."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-ci"
+missing = ""
+rust_symbols = [
+  "ccache::file_store::resolve",
+  "extensions::Registry::install_stores",
+  "extensions::StoreProvider",
+]
+test_names = [
+  "rskrb5-ng-os/src/windows/tests.rs::system_lsa_round_trip",
+  "rskrb5-ng-os/src/windows/tests.rs::changes_need_authorization",
+  "rskrb5-ng-os/src/windows/tests.rs::store_submits_and_load_reads_back",
+  "rskrb5-ng-os/src/windows/tests.rs::remove_and_destroy_purge",
+  "rskrb5-ng-os/src/windows/tests.rs::collection_of_one_cache",
+  "rskrb5-ng-os/src/windows/tests.rs::installed_provider_serves_mslsa_names",
+  "rskrb5-ng-os/src/lib.rs::registers_the_platform_stores",
+  "tests/store_registry.rs::installed_store_resolves_cache_and_keytab_names",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Delivered by the companion crate rskrb5-ng-os (owner decision D11: rskrb5_ng_os::windows::MslsaStore, an extensions::StoreProvider that rskrb5_ng_os::register registers read-only; after Registry::install_stores MSLSA: names resolve through every cache-name route of rskrb5-ng). Stricter than MIT: reads retrieve from the cache only (KERB_RETRIEVE_TICKET_USE_CACHE_ONLY, never a KDC) and need no TGT; changes need MslsaStore::with_mutation(true) and affect the whole logon session; a failed KerbSubmitTicketMessage is an error, never a KDC request through the LSA. The KRB-CRED is encrypted with a fixed AES key where MIT uses a fixed RC4 key (the key travels in the same request). The live test runs in the Windows CI job (platform-windows, --ignored): it submits a fixture KRB-CRED through an installed authorized provider, reads it back by name with its session key, purges exactly it, and gets the typed authorization error from the default read-only store against the real LSA."
 disposition = "WP-09"
 closing_plan = 2
 closing_todo = 14
@@ -1045,9 +1193,17 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "Client keytab, automatic initial creds and refresh"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "P2-11 delivered the `KeyStore` lookups the client-keytab refresh uses (`keytab::stores::resolve`, `KeyStore::find`); the client-keytab acquisition and refresh is P2-4's, and the GSS implicit acquisition integration that of the closing todo P2-18."
-rust_symbols = ["keytab::stores::KeyStore", "keytab::stores::resolve"]
-test_names = ["tests/keytab_store.rs::file_keytabs_through_the_store"]
+missing = "P2-11 delivered the `KeyStore` lookups (`keytab::stores::resolve`, `KeyStore::find`); the Tokio client acquires from the default client keytab and re-logs in from it when its TGT needs a refresh (`client::Tokio::with_client_keytab_from_default`, `refresh_tgt_if_needed`), with no new code in P2-4; routing the client keytab name through the store registration interface follows the supervisor's store corrections (register FU-CLI-P03), and the GSS implicit acquisition integration that of the closing todo P2-18."
+rust_symbols = [
+  "keytab::stores::KeyStore",
+  "keytab::stores::resolve",
+  "client::Tokio::with_client_keytab_from_default",
+  "client::Tokio::refresh_tgt_if_needed",
+]
+test_names = [
+  "tests/keytab_store.rs::file_keytabs_through_the_store",
+  "tests/client/session_cache.rs::tokio_client_refresh_tgt_if_needed_falls_back_to_as_for_expired_renewable_tgt",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-12"
@@ -1126,7 +1282,7 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "`canonicalize`"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "TGS option consumed; AS builders suppress canonicalization, preserving identity; either value diagnostic (consumer: plan 2 WP-04)."
+missing = "TGS option consumed; AS builders suppress canonicalization, preserving identity; either value diagnostic. P2-4 delivered the `ArmoredExchange` seam; the authenticated canonicalization under FAST is the closing todo P2-7's."
 rust_symbols = []
 test_names = ["tests/config/relations_c1.rs::canonicalize"]
 feature_flags = []
@@ -1434,13 +1590,19 @@ id = "MIT-config-20"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`extra_addresses`"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "Ignored when noaddresses=true; nonempty list with noaddresses=false requires unavailable address-bound requests and errors (consumer: plan 2 WP-04)."
-rust_symbols = []
-test_names = ["tests/config/relations_c1.rs::extra_addresses"]
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = [
+  "client::stepwise::InitCredsOptions::from_config",
+  "client::options::AsReq::from_libdefaults",
+]
+test_names = [
+  "tests/client/stepwise.rs::extra_addresses",
+  "tests/client/stepwise.rs::addresses_follow_the_options",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Used only with `noaddresses = false`; without interface enumeration an empty list fails closed with `NoRequestAddresses` (MIT adds the host addresses, `localaddr.c`)."
 disposition = "WP-04"
 closing_plan = 2
 closing_todo = 4
@@ -1451,11 +1613,19 @@ id = "MIT-config-21"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`forwardable`"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "The relation already sets the AS/TGS forwardable bit; the typed per-request option API and KDC-backed proof close in plan-2 todo 4."
-rust_symbols = ["client::options::AsReq::from_libdefaults"]
-test_names = ["tests/config/relations_c1.rs::forwardable"]
+implementation_status = "implemented"
+evidence_status = "fixture"
+missing = ""
+rust_symbols = [
+  "client::options::AsReq::from_libdefaults",
+  "client::stepwise::InitCredsOptions::with_forwardable",
+  "client::stepwise::TicketOptions::with_forwardable",
+]
+test_names = [
+  "tests/config/relations_c1.rs::forwardable",
+  "tests/client/stepwise.rs::flag_options_set_request_bits",
+  "tests/interop_exchange/scenarios.rs::profile_flags_reach_the_kdc_and_the_tgt_renews",
+]
 feature_flags = ["tokio"]
 security_divergence = ""
 disposition = "WP-04"
@@ -1520,16 +1690,22 @@ area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`kcm_mach_service`"
 implementation_status = "partial"
-evidence_status = "unit"
-missing = "No KCM connection exists, including when - disables Mach RPC; diagnostic (consumer: plan 2 WP-09)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::kcm_mach_service"]
+evidence_status = "live-ci"
+missing = "P2-28 closes the row (register rows FU-OSS-P02 and FU-OSS-P06): the main crate never consumes `kcm_mach_service`. The catalogue still defers it to plan 2 WP-09, so Strict mode refuses it with `NotYetEffective` and Compatible mode diagnoses it; `KCM:` names, `KRB5CCNAME` and the client's default cache reach the built-in KCM store (the Unix socket or an installed `KcmTransport`), never Mach RPC. The companion crate reads the relation only when the application builds `rskrb5_ng_os::macos::KcmMachStore::from_libdefaults` from a configuration itself; `rskrb5_ng_os::register` installs no Mach transport. P2-14 delivered that store and its hosted macOS tests (platform-macos job, live-ci), named below."
+rust_symbols = ["config::LibDefaults"]
+test_names = [
+  "tests/config/relations_c2.rs::kcm_mach_service",
+  "rskrb5-ng-os/src/macos/tests.rs::kcm_over_mach_round_trip",
+  "rskrb5-ng-os/src/macos/tests.rs::kcm_mach_disabled_and_absent",
+  "rskrb5-ng-os/src/macos/tests.rs::mit_kinit_writes_to_the_test_service",
+  "rskrb5-ng-os/src/macos/tests.rs::kcm_reads_the_system_service_cache",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Delivered by the companion crate rskrb5-ng-os (owner decision D11): rskrb5_ng_os::macos::KcmMachStore::from_libdefaults reads kcm_mach_service; - disables Mach RPC as in MIT. KCM over Mach only: the MIT fallback to the Unix socket is the built-in KCM store of todo 12. Each call has its own reply port and a 30-second bound (MIT waits forever), and replies pass the MIG checks before parsing. The KCM: name route of rskrb5-ng reaches this Mach transport only once the built-in KCM store of todo 12 offers install_transport (rskrb5-ng-os then installs it from register; until then KcmMachStore is used directly), and the rskrb5-ng crate alone makes no KCM connection, so its relation table keeps the plan-2 classification (register FU-OSS-P02). Live evidence: the macOS CI job (platform-macos) runs MIT 1.22.2 kinit against a KCM service checked in under a test Mach name and reads the system org.h5l.kcm."
 disposition = "WP-09"
 closing_plan = 2
-closing_todo = 14
-contributors = []
+closing_todo = 28
+contributors = ["P2-14"]
 
 [[feature]]
 id = "MIT-config-26"
@@ -1538,15 +1714,18 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "`kcm_socket`"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "No KCM connection exists, including when - disables Unix sockets; diagnostic (consumer: plan 2 WP-09)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::kcm_socket"]
+missing = "P2-28 closes the row (register rows FU-KCM-P02 and FU-KCM-P04): `kcm_socket` is effective only for KCM stores built from the configuration (`ccache::kcm::Store::from_libdefaults`, which also bypasses an installed `KcmTransport`). The `KCM:` name routes (`CCache::load_name`, `save_name`, `KRB5CCNAME`) and the client's cache-name sites (`Tokio::from_ccache_name`, `from_default_ccache_name`, `from_default_ccache`, `save_ccache_name`, `save_default_ccache_name`, `save_default_ccache`) keep the default socket or an installed transport; honouring the relation there needs a configured built-in store (installed transport first, then the configured socket, as MIT tries Mach before the socket) at those six client sites."
+rust_symbols = ["ccache::kcm::Store::from_libdefaults"]
+test_names = [
+  "tests/config/relations_c2.rs::kcm_socket",
+  "tests/kcm/trust.rs::the_kcm_socket_setting_selects_the_socket",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "`kcm_socket` names the daemon socket of the KCM stores built from the configuration (`ccache::kcm::Store::from_libdefaults`, MIT `cc_kcm.c:306-316`); `-` or an empty value disables the Unix socket transport (`Kcm::NoServer`). The built-in `KCM:` name dispatch has no configuration (see `missing`), where MIT reads the relation from the context profile."
 disposition = "WP-09"
 closing_plan = 2
-closing_todo = 12
-contributors = []
+closing_todo = 28
+contributors = ["P2-12"]
 
 [[feature]]
 id = "MIT-config-27"
@@ -1574,13 +1753,17 @@ id = "MIT-config-28"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`kdc_timesync`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "No clock correction occurs; zero satisfied, nonzero does not tighten authentication; diagnostic (consumer: plan 2 WP-04)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::kdc_timesync"]
+missing = ""
+rust_symbols = [
+  "client::stepwise::InitCredsOptions::from_config",
+  "client::stepwise::InitCredsOptions::kdc_timesync",
+  "client::stepwise::InitCreds::kdc_time_offset",
+]
+test_names = ["tests/client/stepwise.rs::kdc_timesync"]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Nonzero adopts the KDC clock offset of a preauthentication error and of the AS-REP for the stepwise exchange (MIT `get_in_tkt.c:260-268`, `:1425-1439`); the offset lives in the exchange, not in a process-wide context. The `AsReq`-taking login functions keep the strict reply start-time check."
 disposition = "WP-04"
 closing_plan = 2
 closing_todo = 4
@@ -1591,13 +1774,19 @@ id = "MIT-config-29"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`noaddresses`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Requests currently omit addresses; false requires unavailable address restriction and errors; true diagnostic (consumer: plan 2 WP-04)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::noaddresses"]
+missing = ""
+rust_symbols = [
+  "client::stepwise::InitCredsOptions::from_config",
+  "client::options::AsReq::from_libdefaults",
+]
+test_names = [
+  "tests/config/restrictive.rs::noaddresses",
+  "tests/client/stepwise.rs::extra_addresses",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "`false` binds requests to `extra_addresses` and fails closed with `NoRequestAddresses` without them; MIT would add the host interface addresses (`localaddr.c`)."
 disposition = "WP-04"
 closing_plan = 2
 closing_todo = 4
@@ -1646,13 +1835,21 @@ id = "MIT-config-32"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`preferred_preauth_types`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Preference ordering is not an allowlist; no new preauth selection, diagnostic; draft-9 IDs 14/15 removed with existing IgnoredPreauthType (consumer: plan 2 WP-04)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::preferred_preauth_types"]
+missing = ""
+rust_symbols = [
+  "client::stepwise::InitCredsOptions::from_config",
+  "client::stepwise::InitCredsOptions::preferred_preauth_types",
+  "client::stepwise::InitCreds::with_preauth",
+]
+test_names = [
+  "tests/client/stepwise.rs::preferred_preauth_types",
+  "src/client/stepwise/tests.rs::preferred_types_move_to_the_front",
+  "tests/policy/protocols.rs::draft9_preferences_are_ignored_with_diagnostics",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "An ordering of the KDC's offers (MIT `sort_krb5_padata_sequence`), not an allowlist; the draft-9 IDs 14 and 15 are dropped with `IgnoredPreauthType`."
 disposition = "WP-04"
 closing_plan = 2
 closing_todo = 4
@@ -1663,11 +1860,18 @@ id = "MIT-config-33"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`proxiable`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "The relation already sets the AS/TGS proxiable bit; the typed per-request option API and KDC-backed proof close in plan-2 todo 4."
-rust_symbols = ["client::options::AsReq::from_libdefaults"]
-test_names = ["tests/config/relations_c2.rs::proxiable"]
+missing = ""
+rust_symbols = [
+  "client::options::AsReq::from_libdefaults",
+  "client::stepwise::InitCredsOptions::with_proxiable",
+  "client::stepwise::TicketOptions::with_proxiable",
+]
+test_names = [
+  "tests/config/relations_c2.rs::proxiable",
+  "tests/client/stepwise.rs::flag_options_set_request_bits",
+]
 feature_flags = ["tokio"]
 security_divergence = ""
 disposition = "WP-04"
@@ -2809,23 +3013,26 @@ id = "MIT-plugin-1"
 area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`clpreauth` client preauthentication"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "P2-4: the exchange engine and the built-in timestamp preauthentication run through `extensions::ClientPreauth` sessions, with responder and cookies. P2-3 delivered the registry, per-exchange state, the round and output bounds and the outgoing PA-DATA admission of mechanism output."
+missing = ""
 rust_symbols = [
   "extensions::ClientPreauth",
   "extensions::PreauthState",
   "extensions::PreauthSession",
   "extensions::Registry::preauth_session",
+  "client::stepwise::InitCreds::with_preauth",
 ]
 test_names = [
   "tests/extensions.rs::rejected_enctype_padata_is_refused_by_policy",
   "tests/extensions.rs::mechanism_bounds_and_types",
   "tests/extensions.rs::per_exchange_state_and_round_bound",
   "tests/extensions.rs::session_order_selection_and_conflicts",
+  "tests/client/stepwise.rs::preferred_preauth_types",
+  "tests/config/plugin_order.rs::configured_module_precedes_registered_ones",
 ]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Mechanisms are statically registered Rust providers (no dynamic modules); the exchange consults them for the KDC's offers in `preferred_preauth_types` order before the built-in encrypted timestamp, and configured `[plugins] clpreauth module` names come first in profile order (MIT `plugin.c:207-252`)."
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 4

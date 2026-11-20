@@ -53,8 +53,8 @@ pub(crate) const SECTION_RELATIONS: [(&str, &str, &str, &str, &str, &str); 6] = 
         "module",
         "registered extension id and ignored path",
         "empty",
-        "extensions::Registry::parse_config",
-        "A registered provider id of the interface resolves; any other module is rejected before composition",
+        "extensions::Registry::parse_config; extensions::Registry::enabled",
+        "A registered provider id of the interface resolves and comes first in profile order, before the other registered providers (MIT plugin.c); any other module is rejected before composition",
         "module",
     ),
 ];
@@ -148,6 +148,14 @@ pub(super) fn finish(
                     entry.enable_only = names;
                 }
                 diagnostic(config, key)?;
+            }
+            [section, interface, key] if section == "plugins" && key == "module" => {
+                // Only `<registered id>:<path>` values reach here (profile_syntax).
+                let names = strings(lines)?
+                    .into_iter()
+                    .filter_map(|spec| spec.split_once(':').map(|(name, _)| name.to_owned()))
+                    .collect();
+                config.plugins.entry(interface.clone()).or_default().module = names;
             }
             _ => {}
         }

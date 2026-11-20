@@ -116,3 +116,43 @@ fn plugin_selection_row_is_not_implemented_while_a_consumer_is_deferred() -> Res
     );
     Ok(())
 }
+
+/// A row that names one relation is not `implemented` while the generated
+/// catalogue still defers that relation to a later plan-2 package.
+#[test]
+fn relation_rows_are_not_implemented_while_the_catalogue_defers_them() -> Result<(), TestError> {
+    // Given the manifest and the consumer column of every catalogue row.
+    let (_, features) = manifest(MIT.manifest)?;
+    let catalogue = read("docs/config-relations.md")?;
+    let deferred: Vec<&str> = catalogue
+        .lines()
+        .filter_map(|line| {
+            let cells: Vec<&str> = line.split('|').map(str::trim).collect();
+            (cells.len() > 6 && cells.get(5)?.starts_with("plan "))
+                .then(|| cells.get(2).copied())?
+        })
+        .collect();
+    assert!(
+        !deferred.is_empty(),
+        "no deferred relation in the catalogue"
+    );
+    // When a row's capability is exactly one relation name, `` `name` ``.
+    let claimed: Vec<&str> = features
+        .iter()
+        .filter(|feature| feature.status == "implemented")
+        .filter(|feature| {
+            feature
+                .capability
+                .strip_prefix('`')
+                .and_then(|rest| rest.strip_suffix('`'))
+                .is_some_and(|name| deferred.contains(&name))
+        })
+        .map(|feature| feature.id.as_str())
+        .collect();
+    // Then no such row claims completion.
+    assert!(
+        claimed.is_empty(),
+        "implemented while the catalogue defers the relation: {claimed:?}"
+    );
+    Ok(())
+}

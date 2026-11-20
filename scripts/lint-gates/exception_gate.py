@@ -24,6 +24,11 @@ Every `#[expect]`/`#![expect]` in the Rust tree, including one nested in
 6. `#![cfg_attr(test, expect(dead_code_pub_in_binary, reason = "public API:
    unused inside the unit-test harness"))]` in `src/lib.rs`.
 
+The workspace member `rskrb5-ng-os` (owner decision D11) takes the vendored
+guidelines' unsafe-ffi overlay, whose one override needs a seventh form, valid
+only under `rskrb5-ng-os/`: `#[expect(unsafe_code, reason = "...")]` (a
+non-empty reason) on the item or statement that holds the unsafe code.
+
 `#[deny(lint, reason = "...")]` opt-ins of excluded lints are not exceptions and
 pass. `#[allow]` is the allow gate's business.
 
@@ -64,6 +69,8 @@ DELIBERATE_ASYNC: Final = re.compile(
 )
 TYPE_KINDS: Final = frozenset({"struct", "enum", "union"})
 CRATE_ROOT: Final = "src/lib.rs"
+# The platform-store companion crate (D11), the only place of form (7).
+COMPANION: Final = "rskrb5-ng-os/"
 
 
 def is_cfg_test(body: str) -> bool:
@@ -148,6 +155,10 @@ def check(
         return "the facade is allowed only as an inner attribute of src/lib.rs"
     if lints == ("dead_code_pub_in_binary",) and reason == HARNESS_REASON:
         return "form (6) is allowed only as an inner attribute of src/lib.rs"
+    if lints == ("unsafe_code",) and reason.strip():
+        if file.startswith(COMPANION):
+            return None
+        return "the unsafe-ffi form is allowed only in rskrb5-ng-os"
     return "not one of the six sanctioned exception forms"
 
 
@@ -324,6 +335,10 @@ def self_test() -> int:
         expected = 2 if label == "test pair on a non-test item" else 1
         assert len(hits) == expected, (label, hits)
         assert all(WHY[label] in hit for hit in hits), (label, hits)
+    # Form (7): the unsafe-ffi expectation, only in the companion crate.
+    unsafe_form = '#[expect(unsafe_code, reason = "FFI call")]\nfn call() {}\n'
+    assert scan("rskrb5-ng-os/src/mach.rs", unsafe_form) == []
+    assert len(scan("src/client.rs", unsafe_form)) == 1
     # Near misses of the sanctioned forms are rejected too.
     for file, source in (
         ("src/der.rs", '#[expect(clippy::unwrap_used, reason = "x")]\nfn f() {}\n'),

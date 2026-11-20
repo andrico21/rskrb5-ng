@@ -9,7 +9,7 @@ use std::sync::{PoisonError, RwLock};
 use super::{Error, Interface, MAX_EXTENSIONS, MAX_ID_BYTES, StoreProvider};
 
 /// The built-in name types, which no provider may claim in any letter case.
-const BUILT_IN: [&str; 4] = ["FILE", "WRFILE", "DIR", "MEMORY"];
+const BUILT_IN: [&str; 6] = ["FILE", "WRFILE", "DIR", "MEMORY", "KCM", "KEYRING"];
 
 /// One installed provider and the prefix it held when it was installed.
 type Installed = (String, Arc<dyn StoreProvider>);

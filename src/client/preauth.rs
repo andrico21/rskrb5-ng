@@ -1,9 +1,12 @@
 //! Preauthentication challenge request construction.
 
+use std::time::SystemTime;
+
 use super::{
     AsReq, BuiltAsReq, EncryptionKey, Error, KDC_ERR_PREAUTH_REQUIRED, KdcError, KerberosEtype,
-    Keytab, PA_FX_COOKIE, PreauthKeyInfo, Principal, build_as_req, build_preauthenticated_as_req,
-    preauth_retry_options, process_kdc_error, select_keytab_reply_key, select_preauth_key_info,
+    Keytab, PA_FX_COOKIE, PreauthKeyInfo, Principal, build_as_req,
+    build_preauthenticated_as_req_at, preauth_retry_options, process_kdc_error,
+    select_keytab_reply_key, select_preauth_key_info,
 };
 use crate::{crypto::Use, error::Keytab as KeytabError};
 
@@ -11,7 +14,7 @@ use crate::{crypto::Use, error::Keytab as KeytabError};
 ///
 /// # Errors
 /// Returns [`Error::NoSupportedPreauthEtype`] for an empty intersection; other keytab errors propagate.
-fn challenge_key(
+pub(super) fn challenge_key(
     keytab: &Keytab,
     client: &Principal,
     error: &KdcError,
@@ -123,12 +126,35 @@ fn challenge(bytes: &[u8], requested: &AsReq) -> Result<KdcError, Error> {
 ///
 /// Returns [`Error::Kdc`] for any other KDC error, and errors from key-info
 /// selection, password key derivation and request building.
+#[cfg(any(feature = "tokio", test))]
 pub(super) fn password_preauth_request(
     client: Principal,
     service: Principal,
     password: &[u8],
     requested: AsReq,
     kdc_error_bytes: &[u8],
+) -> Result<(BuiltAsReq, EncryptionKey), Error> {
+    password_preauth_request_at(
+        (client, service),
+        password,
+        requested,
+        kdc_error_bytes,
+        None,
+    )
+}
+
+/// [`password_preauth_request`] with the encrypted timestamp taken from `at` when
+/// given (the KDC's clock under `kdc_timesync`).
+///
+/// # Errors
+///
+/// Returns the errors of [`password_preauth_request`].
+pub(super) fn password_preauth_request_at(
+    (client, service): (Principal, Principal),
+    password: &[u8],
+    requested: AsReq,
+    kdc_error_bytes: &[u8],
+    at: Option<(SystemTime, u32)>,
 ) -> Result<(BuiltAsReq, EncryptionKey), Error> {
     let policy = super::crypto_policy::request(requested.crypto_policy(), requested.etypes())?;
     super::crypto_policy::padata(&policy, requested.padata())?;
@@ -137,7 +163,8 @@ pub(super) fn password_preauth_request(
     policy.check_use(key_info.etype, Use::ReplyKey)?;
     let reply_key = super::password_derivation::derive(&policy, &client, password, &key_info)?;
     let options = preauth_retry_options(requested, error.method_data());
-    let request = build_preauthenticated_as_req(client, service, options, &reply_key, None)?;
+    let request =
+        build_preauthenticated_as_req_at(client, service, options, &reply_key, (None, at))?;
     Ok((request, reply_key))
 }
 
@@ -148,6 +175,7 @@ pub(super) fn password_preauth_request(
 ///
 /// Returns [`Error::Kdc`] for any other KDC error, and errors from key-info
 /// selection, keytab lookup and request building.
+#[cfg(feature = "tokio")]
 pub(super) fn keytab_preauth_request(
     client: Principal,
     service: Principal,
@@ -155,12 +183,29 @@ pub(super) fn keytab_preauth_request(
     requested: AsReq,
     kdc_error_bytes: &[u8],
 ) -> Result<(BuiltAsReq, EncryptionKey), Error> {
+    keytab_preauth_request_at((client, service), keytab, requested, kdc_error_bytes, None)
+}
+
+/// [`keytab_preauth_request`] with the encrypted timestamp taken from `at` when
+/// given (the KDC's clock under `kdc_timesync`).
+///
+/// # Errors
+///
+/// Returns the errors of [`keytab_preauth_request`].
+pub(super) fn keytab_preauth_request_at(
+    (client, service): (Principal, Principal),
+    keytab: &Keytab,
+    requested: AsReq,
+    kdc_error_bytes: &[u8],
+    at: Option<(SystemTime, u32)>,
+) -> Result<(BuiltAsReq, EncryptionKey), Error> {
     let policy = super::crypto_policy::request(requested.crypto_policy(), requested.etypes())?;
     super::crypto_policy::padata(&policy, requested.padata())?;
     let error = challenge(kdc_error_bytes, &requested)?;
     let (reply_key, kvno) = challenge_key(keytab, &client, &error, requested.etypes())?;
     policy.check_use(reply_key.etype(), Use::ReplyKey)?;
     let options = preauth_retry_options(requested, error.method_data());
-    let request = build_preauthenticated_as_req(client, service, options, &reply_key, Some(kvno))?;
+    let request =
+        build_preauthenticated_as_req_at(client, service, options, &reply_key, (Some(kvno), at))?;
     Ok((request, reply_key))
 }

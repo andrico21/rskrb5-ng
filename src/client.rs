@@ -13,7 +13,7 @@ use alloc::fmt;
 use alloc::sync::Arc;
 #[cfg(not(feature = "tokio"))]
 use core::fmt;
-use core::time::Duration;
+use core::{net::IpAddr, time::Duration};
 #[cfg(feature = "tokio")]
 use std::env;
 #[cfg(feature = "tokio")]
@@ -94,7 +94,6 @@ use renewal_eligibility::session_renewable_at;
 mod preauth;
 /// Authenticated KDC reply time and flag constraints.
 mod reply_constraints;
-use preauth::{keytab_preauth_request, password_preauth_request};
 /// TGT session metadata serialization.
 #[cfg(all(feature = "tokio", feature = "serde"))]
 mod session_json;
@@ -111,6 +110,8 @@ pub mod negotiate;
 pub mod options;
 /// Kerberos principal names used by the client.
 pub mod principal;
+
+pub mod stepwise;
 #[cfg(feature = "tokio")]
 /// KDC endpoint discovery and asynchronous transport.
 pub mod transport;
@@ -3108,7 +3109,7 @@ pub fn build_as_req(
         rtime: renew_till.map(kerberos_time_from_system_time).transpose()?,
         nonce: options.nonce(),
         etype: options.take_etypes(),
-        addresses: None,
+        addresses: host_addresses(options.addresses()),
         enc_authorization_data: None,
         additional_tickets: None,
     };
@@ -3278,6 +3279,34 @@ pub fn build_preauthenticated_as_req(
     crypto_policy::padata(&policy, options.padata())?;
     policy.check_use(key.etype(), Use::ReplyKey)?;
     let (timestamp, cusec) = current_preauth_time()?;
+    options
+        .padata_mut()
+        .retain(|padata| padata.r#type != PA_ENC_TIMESTAMP);
+    options
+        .padata_mut()
+        .push(pa_enc_timestamp(key, timestamp, cusec, kvno)?);
+    build_as_req(client, service, options)
+}
+
+/// [`build_preauthenticated_as_req`] with the timestamp taken from `at` when
+/// given (the KDC's clock under `kdc_timesync`), else from the local clock.
+///
+/// # Errors
+///
+/// Returns the errors of [`build_preauthenticated_as_req`].
+fn build_preauthenticated_as_req_at(
+    client: Principal,
+    service: Principal,
+    mut options: AsReq,
+    key: &EncryptionKey,
+    (kvno, at): (Option<u32>, Option<(SystemTime, u32)>),
+) -> Result<BuiltAsReq, Error> {
+    let Some((timestamp, cusec)) = at else {
+        return build_preauthenticated_as_req(client, service, options, key, kvno);
+    };
+    let policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
+    crypto_policy::padata(&policy, options.padata())?;
+    policy.check_use(key.etype(), Use::ReplyKey)?;
     options
         .padata_mut()
         .retain(|padata| padata.r#type != PA_ENC_TIMESTAMP);
@@ -4242,23 +4271,10 @@ pub fn login_as_service_with_password<T>(
 where
     T: KdcTransport + ?Sized,
 {
-    let initial_request =
-        password_initial_as_req(client.clone(), service.clone(), password, options.clone())?;
-    let mut initial_response = transport.send(&client.realm, &initial_request.der)?;
-    if let Some(session) =
-        password_initial_as_rep_session(&initial_request, &initial_response, &client, password)?
-    {
-        return Ok(session);
-    }
-    if let Some(probe) = preauth::discovery_request(&initial_request, &options, &initial_response)?
-    {
-        initial_response = transport.send(&client.realm, &probe.der)?;
-        preauth::validate_discovery(&initial_response, &options)?;
-    }
-    let (request, reply_key) =
-        password_preauth_request(client, service, password, options, &initial_response)?;
-    let response = transport.send(&request.client.realm, &request.der)?;
-    process_as_rep(&request, &response, &reply_key)
+    let owned = Password::from_vec(password.to_vec());
+    let engine_options = stepwise::InitCredsOptions::new(options).with_service(service);
+    let mut exchange = stepwise::InitCreds::with_password(client, Some(owned), engine_options);
+    stepwise::drive(transport, &mut exchange, &mut stepwise::NoResponder)
 }
 
 /// Perform a TGT AS login using keytab credentials and KDC preauth hints.
@@ -4296,23 +4312,9 @@ pub fn login_as_service_with_keytab<T>(
 where
     T: KdcTransport + ?Sized,
 {
-    let initial_request =
-        keytab_initial_as_req(client.clone(), service.clone(), keytab, options.clone())?;
-    let mut initial_response = transport.send(&client.realm, &initial_request.der)?;
-    if let Some(session) =
-        keytab_initial_as_rep_session(&initial_request, &initial_response, &client, keytab)?
-    {
-        return Ok(session);
-    }
-    if let Some(probe) = preauth::discovery_request(&initial_request, &options, &initial_response)?
-    {
-        initial_response = transport.send(&client.realm, &probe.der)?;
-        preauth::validate_discovery(&initial_response, &options)?;
-    }
-    let (request, reply_key) =
-        keytab_preauth_request(client, service, keytab, options, &initial_response)?;
-    let response = transport.send(&request.client.realm, &request.der)?;
-    process_as_rep(&request, &response, &reply_key)
+    let engine_options = stepwise::InitCredsOptions::new(options).with_service(service);
+    let mut exchange = stepwise::InitCreds::with_keytab(client, keytab.clone(), engine_options);
+    stepwise::drive(transport, &mut exchange, &mut stepwise::NoResponder)
 }
 
 /// Decrypt and validate an AS-REP against the original AS-REQ.
@@ -5377,6 +5379,25 @@ fn principal_from_message_info(value: messages::PrincipalNameInfo) -> Principal 
 /// ignored.
 fn principal_matches(left: &Principal, right: &Principal) -> bool {
     left.realm == right.realm && left.components == right.components
+}
+
+/// RFC 4120 section 7.5.3 host addresses, or `None` for an addressless request.
+fn host_addresses(addresses: &[IpAddr]) -> Option<Vec<rasn_kerberos::HostAddress>> {
+    (!addresses.is_empty()).then(|| {
+        addresses
+            .iter()
+            .map(|address| match address {
+                IpAddr::V4(v4) => rasn_kerberos::HostAddress {
+                    addr_type: 2,
+                    address: v4.octets().to_vec().into(),
+                },
+                IpAddr::V6(v6) => rasn_kerberos::HostAddress {
+                    addr_type: 24,
+                    address: v6.octets().to_vec().into(),
+                },
+            })
+            .collect()
+    })
 }
 
 /// Whether a principal is a `krbtgt/<realm>` service.

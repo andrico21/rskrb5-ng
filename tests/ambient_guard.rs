@@ -822,28 +822,122 @@ pub(crate) mod tests {
         failures
     }
 
-    /// Walk src using full manifest-relative paths, never basenames.
-    fn inspect(root: &Path, directory: &Path) -> Result<(Vec<Function>, Vec<String>), io::Error> {
-        let mut items = Vec::new();
-        let mut failures = Vec::new();
+    /// Files of out-of-line modules declared under an exact `#[cfg(test)]` in `file`.
+    ///
+    /// Such a file is compiled only for tests, like the inline `cfg(test)` items
+    /// [`production`] removes, so none of it is production code.
+    fn test_module_files(file: &str, source: &str) -> Vec<String> {
+        let words = tokens(&source.replace("\r\n", "\n"));
+        let directory = file.rsplit_once('/').map_or("", |(parent, _)| parent);
+        let base = if file.ends_with("/lib.rs") || file.ends_with("/mod.rs") {
+            directory
+        } else {
+            file.strip_suffix(".rs").unwrap_or(file)
+        };
+        let mut result = Vec::new();
+        let mut index = 0_usize;
+        while index < words.len() {
+            if !(is(&words, index, "#") && is(&words, index.saturating_add(1), "[")) {
+                index = index.saturating_add(1);
+                continue;
+            }
+            let end = closing(&words, index.saturating_add(1)).unwrap_or(words.len());
+            let test_only = words
+                .get(index.saturating_add(2)..end)
+                .unwrap_or_default()
+                .iter()
+                .map(|word| word.text.as_str())
+                .eq(["cfg", "(", "test", ")"]);
+            index = end.saturating_add(1);
+            if !test_only {
+                continue;
+            }
+            let mut path = None;
+            while is(&words, index, "#") && is(&words, index.saturating_add(1), "[") {
+                if is(&words, index.saturating_add(2), "path")
+                    && is(&words, index.saturating_add(3), "=")
+                {
+                    path = words
+                        .get(index.saturating_add(4))
+                        .filter(|word| word.text == "literal")
+                        .map(|word| word.value.clone());
+                }
+                index = closing(&words, index.saturating_add(1))
+                    .map_or(words.len(), |finish| finish.saturating_add(1));
+            }
+            if is(&words, index, "mod")
+                && is(&words, index.saturating_add(2), ";")
+                && let Some(name) = words.get(index.saturating_add(1))
+            {
+                result.push(path.map_or_else(
+                    || format!("{base}/{}.rs", name.text),
+                    |relative| format!("{directory}/{relative}"),
+                ));
+            }
+        }
+        result
+    }
+
+    /// Every `.rs` file below `directory` with its full manifest-relative path, never a basename.
+    fn sources(
+        root: &Path,
+        directory: &Path,
+        output: &mut Vec<(String, String)>,
+    ) -> Result<(), io::Error> {
         for entry in fs::read_dir(directory)? {
             let path = entry?.path();
-            let (functions, errors) = if path.is_dir() {
-                inspect(root, &path)?
-            } else if path.extension().is_some_and(|extension| extension == "rs") {
+            if path.is_dir() {
+                sources(root, &path, output)?;
+                continue;
+            }
+            if path.extension().is_some_and(|extension| extension == "rs") {
                 let relative = path
                     .strip_prefix(root)
                     .map_err(io::Error::other)?
                     .to_string_lossy()
                     .replace('\\', "/");
-                inventory(&relative, &fs::read_to_string(&path)?)
-            } else {
+                output.push((relative, fs::read_to_string(&path)?));
+            }
+        }
+        Ok(())
+    }
+
+    /// Inventory every production file below `directory`; test-only module files are skipped.
+    fn inspect(root: &Path, directory: &Path) -> Result<(Vec<Function>, Vec<String>), io::Error> {
+        let mut files = Vec::new();
+        sources(root, directory, &mut files)?;
+        let tests: Vec<String> = files
+            .iter()
+            .flat_map(|(file, source)| test_module_files(file, source))
+            .collect();
+        let mut items = Vec::new();
+        let mut failures = Vec::new();
+        for (file, source) in &files {
+            if tests.contains(file) {
                 continue;
-            };
+            }
+            let (functions, errors) = inventory(file, source);
             items.extend(functions);
             failures.extend(errors);
         }
         Ok((items, failures))
+    }
+
+    /// Only an exact `cfg(test)` out-of-line module declaration marks its file test-only.
+    #[test]
+    fn cfg_test_module_files_are_exact_declarations() {
+        let source = "#[cfg(test)] #[path = \"a/probe_tests.rs\"] mod probe;\n\
+                      #[cfg(test)]\n#[doc(hidden)]\nmod plain;\n\
+                      #[cfg(feature = \"x\")] mod gated;\n#[cfg(not(test))] mod other;\n\
+                      mod regular;\n#[cfg(test)] mod inline {}\n";
+        assert_eq!(
+            test_module_files("src/a.rs", source),
+            ["src/a/probe_tests.rs", "src/a/plain.rs"]
+        );
+        assert_eq!(
+            test_module_files("src/x/mod.rs", "#[cfg(test)] mod tests;"),
+            ["src/x/tests.rs"]
+        );
     }
 
     /// All production reads and their public transitive callers are explicit.

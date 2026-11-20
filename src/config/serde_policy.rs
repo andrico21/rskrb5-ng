@@ -6,18 +6,6 @@ use serde::{Deserialize as _, Deserializer, de::Error as _};
 
 use super::{EnctypeExpr, ParseMode, Toggle};
 
-/// Refuse address-bearing requests until their consumer exists.
-/// # Errors
-/// Rejects malformed or unsupported restrictions through serde.
-pub(super) fn addresses<'de, D>(deserializer: D) -> Result<Toggle, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Toggle::deserialize(deserializer)?;
-    super::restrictions::reject("noaddresses", !value.is_enabled()).map_err(D::Error::custom)?;
-    Ok(value)
-}
-
 /// Refuse unimplemented mandatory AP verification.
 /// # Errors
 /// Rejects malformed or unsupported restrictions through serde.
