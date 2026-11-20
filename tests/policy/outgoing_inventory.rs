@@ -222,9 +222,11 @@ const UNSUPPORTED: [i32; 25] = [
     148, 152, 153,
 ];
 
-/// PA types with their own decoder: a payload that is not their element is refused before the
-/// transport. 136 (PA-FX-FAST) and 138 (PA-ENCRYPTED-CHALLENGE) are admitted by FAST (todo 7);
-/// PA-SPAKE (151) is admitted checked: only a support message or a response leaves the client.
+/// PA types with their own decoder: a payload that is not their element is refused.
+///
+/// The refusal happens before the transport. 136 (PA-FX-FAST) and 138 (PA-ENCRYPTED-CHALLENGE)
+/// are admitted by FAST (todo 7); PA-SPAKE (151) is admitted checked: only a support message or a
+/// response leaves the client.
 const DECODED: [i32; 5] = [1, 2, 136, 138, 151];
 
 /// The permanently refused draft-9 PKINIT types, refused by the selection layer before the arms.
