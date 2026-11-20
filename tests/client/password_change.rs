@@ -978,15 +978,18 @@ client.cache_service_ticket(ticket)?;
                     let parsed =
                         KpasswdRequest::parse(&request).context("kpasswd request parses")?;
                     let (_, change_data) = decrypt_change_data(&parsed, &service_session_key)?;
-                    let target = principal_from_parts(
-                        change_data.targ_realm().context("target realm set")?,
-                        change_data.targ_name().context("target principal set")?,
-                    )?;
                     if call == 0_i32 {
+                        let target = principal_from_parts(
+                            change_data.targ_realm().context("target realm set")?,
+                            change_data.targ_name().context("target principal set")?,
+                        )?;
                         assert_eq!(target, expected_target);
                         assert_eq!(change_data.new_passwd(), &new_password.to_vec());
                     } else {
-                        assert_eq!(target, self_client.clone());
+                        // The client's own password is a change without target fields
+                        // (FU-IOP-P13, MIT `changepw.c:308-315`).
+                        assert!(change_data.targ_name().is_none());
+                        assert!(change_data.targ_realm().is_none());
                         assert_eq!(change_data.new_passwd(), &old_password.to_vec());
                     }
                     let session_key = EncryptionKey::new(18, decode_hex(SESSION_KEY)?);

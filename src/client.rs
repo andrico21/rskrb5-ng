@@ -2975,12 +2975,20 @@ impl Tokio {
             }
             None => self.get_service_ticket(service).await?,
         };
-        let change_data = kadmin::ChangePasswdData::for_target(
-            Password::from_vec(new_password.as_bytes().to_vec()),
-            target.name_type,
-            target.components.iter().map(String::as_str),
-            &target.realm,
-        )?;
+        let payload_password = Password::from_vec(new_password.as_bytes().to_vec());
+        // The client's own password is a change (MIT `changepw.c:308-315` sends no target);
+        // naming oneself as the RFC 3244 target is a set-password that Samba and Active
+        // Directory refuse without the Reset-Password right.
+        let change_data = if principal_matches(&target, &self.client) {
+            kadmin::ChangePasswdData::new(payload_password)
+        } else {
+            kadmin::ChangePasswdData::for_target(
+                payload_password,
+                target.name_type,
+                target.components.iter().map(String::as_str),
+                &target.realm,
+            )?
+        };
         options.crypto_policy = Some(crypto_policy::configured(&self.config.libdefaults)?);
         let request = build_kpasswd_request(&ticket, &change_data, &options)?;
         let reply = self

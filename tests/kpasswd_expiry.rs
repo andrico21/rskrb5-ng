@@ -17,6 +17,12 @@ type TestError = Box<dyn Error + Send + Sync>;
 /// The same `[libdefaults]` refusal on the AS, TGS and kpasswd paths.
 #[path = "kpasswd_expiry/policy_kinds.rs"]
 mod policy_kinds;
+/// A self-service change carries no RFC 3244 target fields.
+#[path = "kpasswd_expiry/self_change.rs"]
+mod self_change;
+/// A fake kpasswd server.
+#[path = "kpasswd_expiry/server.rs"]
+mod server;
 /// Loopback fixtures.
 #[path = "kpasswd_expiry/support.rs"]
 mod support;
