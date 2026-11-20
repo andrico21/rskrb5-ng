@@ -169,7 +169,7 @@ impl<'config> ServerLocator<'config> {
             return Ok(found);
         }
         if self.config.libdefaults.dns_lookup_kdc.is_enabled() {
-            return self.dns(realm, role, protocol).await;
+            return Box::pin(self.dns(realm, role, protocol)).await;
         }
         Ok(Vec::new())
     }

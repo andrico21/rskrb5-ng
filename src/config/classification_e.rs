@@ -17,12 +17,9 @@ mod tests {
 
     /// Libdefaults: safe assignment and optional genuinely stronger assignment.
     /// None means no valid value tightens current behavior; table rationale explains why.
-    const LIB: [(&str, &str, Option<&str>); 18] = [
+    const LIB: [(&str, &str, Option<&str>); 11] = [
         ("canonicalize", "false", None),
         ("default_rcache_name", "none:", Some("dfl:")),
-        ("dns_canonicalize_hostname", "fallback", None),
-        ("dns_lookup_realm", "false", None),
-        ("dns_uri_lookup", "false", None),
         ("enforce_ok_as_delegate", "true", None),
         ("err_fmt", "%C: %M", None),
         ("ignore_acceptor_hostname", "false", None),
@@ -30,24 +27,17 @@ mod tests {
         ("k5login_directory", "/unread", None),
         ("kcm_mach_service", "-", None),
         ("plugin_base_dir", "%{LIBDIR}/unloaded", None),
-        ("qualify_shortname", "", None),
-        ("rdns", "false", None),
-        ("realm_try_domains", "-1", None),
-        ("request_timeout", "0", Some("1s")),
         ("spake_preauth_groups", "P-521", None),
         ("verify_ap_req_nofail", "false", Some("true")),
     ];
 
     /// Realm values are restrictions on absent mechanisms, except encrypted timestamp.
-    const REALM: [(&str, &str, Option<&str>); 21] = [
+    const REALM: [(&str, &str, Option<&str>); 18] = [
         ("auth_to_local", "DEFAULT", None),
         ("auth_to_local_names", "{\n Alice = alice\n }", None),
         ("default_domain", "example.test", None),
         ("disable_encrypted_timestamp", "false", Some("true")),
         ("http_anchors", "FILE:/ca", None),
-        ("master_kdc", "master.example", None),
-        ("primary_kdc", "primary.example", None),
-        ("sitename", "Site", None),
         ("pkinit_anchors", "FILE:/ca", None),
         ("pkinit_cert_match", "<SUBJECT>restricted", None),
         ("pkinit_eku_checking", "kpKDC", None),
@@ -101,7 +91,6 @@ mod tests {
         for (relation, assignment, package) in [
             ("client_aware_channel_bindings", "true", "plan 2 WP-12"),
             ("default_rcache_name", "dfl:", "plan 2 WP-20"),
-            ("request_timeout", "1s", "plan 2 WP-10"),
             ("verify_ap_req_nofail", "true", "plan 2 WP-11"),
         ] {
             // Given the tightened relation and a refused preauthentication plugin restriction.

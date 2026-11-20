@@ -40,6 +40,43 @@ mod tests {
         Ok(())
     }
 
+    /// Effective realm relations keep their typed values and raise no diagnostic.
+    fn effective(name: &str, kind: &str, inputs: &[&str]) -> Result<(), Box<dyn Error>> {
+        for input in inputs {
+            let text = format!("[realms]\n EXAMPLE = {{\n {name} = {input}\n }}\n");
+            let config = Config::parse(&text)?;
+            let strict = Config::parse_with_mode(&text, ParseMode::Strict)?;
+            let realm = config.realm("EXAMPLE").ok_or("realm missing")?;
+            match (name, kind) {
+                ("master_kdc", "list") => assert_eq!(realm.master_kdc, [*input]),
+                ("primary_kdc", "list") => assert_eq!(realm.primary_kdc, [*input]),
+                ("sitename", "text") => assert_eq!(
+                    realm.relations.get("sitename"),
+                    Some(&Value::Text((*input).to_owned()))
+                ),
+                _ => return Err(format!("unreviewed effective relation {name}").into()),
+            }
+            for parsed in [&config, &strict] {
+                assert!(!parsed.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == name)));
+            }
+        }
+        Ok(())
+    }
+
+    /// Named tests for the effective realm relations.
+    macro_rules! effective_cases {
+        ($($name:ident, $kind:literal, [$($value:literal),+];)+) => {$ (
+            /// The named relation has typed values and no deferred-consumer diagnostic.
+            #[test]
+            fn $name() -> Result<(), Box<dyn Error>> { effective(stringify!($name), $kind, &[$($value),+]) }
+        )+};
+    }
+    effective_cases! {
+        master_kdc, "list", ["master.example", "other.example:88"];
+        primary_kdc, "list", ["primary.example", "other.example:88"];
+        sitename, "text", ["Site-A", "Site-B"];
+    }
+
     /// Named tests keep independent relation failures visible.
     macro_rules! cases {
         ($($name:ident, $kind:literal, [$($value:literal),+];)+) => {$ (
@@ -53,9 +90,6 @@ mod tests {
         default_domain, "text", ["example.test", "other.test"];
         disable_encrypted_timestamp, "bool", ["false", "off"];
         http_anchors, "locations", ["FILE:/ca", "DIR:/ca", "ENV:CA_BUNDLE"];
-        master_kdc, "list", ["master.example", "other.example:88"];
-        primary_kdc, "list", ["primary.example", "other.example:88"];
-        sitename, "text", ["Site-A", "Site-B"];
         pkinit_anchors, "locations", ["FILE:/ca", "DIR:/ca"];
         pkinit_cert_match, "list", ["<SUBJECT>.*", "&&<EKU>msScLogin,clientAuth<KU>digitalSignature"];
         pkinit_eku_checking, "choice", ["kpKDC", "kpServerAuth", "none"];

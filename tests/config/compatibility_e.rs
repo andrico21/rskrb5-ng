@@ -36,9 +36,21 @@ mod tests {
         };
         assert_eq!(config.libdefaults.permitted_enctype_ids(), permitted);
         assert_eq!(config.configured_kdcs("ATHENA.MIT.EDU")?.len(), 3);
-        for relation in ["rdns", "default_domain"] {
-            assert!(config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation: name, package: _ } if *name == relation)));
-        }
+        assert!(config.diagnostics().iter().any(|item| matches!(
+            item,
+            ConfigDiagnostic::NotYetEffective {
+                relation: "default_domain",
+                package: _
+            }
+        )));
+        // `rdns` is effective since the discovery work package, so it has no diagnostic.
+        assert!(!config.diagnostics().iter().any(|item| matches!(
+            item,
+            ConfigDiagnostic::NotYetEffective {
+                relation: "rdns",
+                package: _
+            }
+        )));
         assert!(!config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == "ccache_type")));
         assert!(config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::UnknownRelation { path } if path == &["libdefaults", "fcc-mit-ticketflags"])));
         assert_eq!(

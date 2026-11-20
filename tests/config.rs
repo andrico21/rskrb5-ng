@@ -1522,11 +1522,12 @@ mod tests {
             decoded.enctype_diagnostics.is_empty(),
             "parse diagnostics are not serialized"
         );
-        assert!(config.diagnostics().iter().any(|item| matches!(
+        // `dns_lookup_realm` is effective since the discovery work package: no diagnostic.
+        assert!(!config.diagnostics().iter().any(|item| matches!(
             item,
             ConfigDiagnostic::NotYetEffective {
                 relation: "dns_lookup_realm",
-                package: "plan 2 WP-10"
+                package: _
             }
         )));
         Ok(())

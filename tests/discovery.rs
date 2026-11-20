@@ -75,3 +75,14 @@ mod realms;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 #[path = "discovery/hostnames.rs"]
 mod hostnames;
+
+/// The total request budget.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "discovery/budget.rs"]
+mod budget;

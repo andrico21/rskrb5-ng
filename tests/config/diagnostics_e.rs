@@ -46,7 +46,7 @@ mod tests {
         for input in [
             "[unknown]\n",
             "[libdefaults]\n typo = true\n",
-            "[libdefaults]\n rdns = false\n",
+            "[libdefaults]\n err_fmt = %C\n",
             "[libdefaults]\n permitted_enctypes = aes camellia\n",
             "[logging]\n",
             "[libdefaults]\n preferred_preauth_types = 14,15\n",

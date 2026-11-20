@@ -61,7 +61,7 @@ use hickory_resolver::{TokioResolver, proto::rr};
 use tokio::{
     io::{AsyncReadExt as _, AsyncWriteExt as _},
     net::{TcpStream, ToSocketAddrs},
-    time::timeout,
+    time::{Instant, timeout_at},
 };
 
 use super::{
@@ -244,6 +244,16 @@ impl KdcEndpoint {
     }
 }
 
+/// The total time one request may take, set from `request_timeout`.
+#[cfg(feature = "tokio")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Budget {
+    /// The instant the request must be over.
+    deadline: Instant,
+    /// The configured total, reported when the budget ends the request.
+    total: Duration,
+}
+
 /// Tokio-backed KDC and kpasswd transport, with endpoint discovery.
 #[cfg(feature = "tokio")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -258,6 +268,8 @@ pub struct Tokio {
     tcp_response_limit: usize,
     /// Locate only primary KDCs: the retry after a replica's failure.
     primary_only: bool,
+    /// The total budget of the request in progress, none outside one.
+    budget: Option<Budget>,
 }
 
 #[cfg(feature = "tokio")]
@@ -281,7 +293,56 @@ impl Tokio {
             udp_response_limit: MAX_UDP_DATAGRAM + 1,
             tcp_response_limit: DEFAULT_TCP_RESPONSE_LIMIT,
             primary_only: false,
+            budget: None,
         }
+    }
+
+    /// This transport with the total budget `total` for the request it is about to make.
+    ///
+    /// Zero is no budget (MIT `request_timeout = 0`). Under a budget that is already
+    /// running the earlier deadline stays, so nested calls share one budget.
+    pub(crate) fn with_request_budget(mut self, total: Duration) -> Self {
+        if total.is_zero() {
+            return self;
+        }
+        let begun = Instant::now();
+        let deadline = begun.checked_add(total).unwrap_or(begun);
+        if self
+            .budget
+            .is_none_or(|running| deadline < running.deadline)
+        {
+            self.budget = Some(Budget { deadline, total });
+        }
+        self
+    }
+
+    /// Run `operation` within the request budget, if there is one.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::TransportTimeout`] with the configured total when the
+    /// budget ends first, and otherwise the error of `operation`.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe exactly when `operation` is.
+    pub(crate) async fn within_budget<F, T>(&self, operation: F) -> Result<T, Error>
+    where
+        F: Future<Output = Result<T, Error>>,
+    {
+        match self.budget {
+            None => operation.await,
+            Some(budget) => timeout_at(budget.deadline, operation)
+                .await
+                .unwrap_or(Err(Error::TransportTimeout(budget.total))),
+        }
+    }
+
+    /// The error that ends a request whose budget has run out, if it has.
+    pub(crate) fn budget_exhausted(&self) -> Option<Error> {
+        self.budget
+            .filter(|budget| Instant::now() >= budget.deadline)
+            .map(|budget| Error::TransportTimeout(budget.total))
     }
 
     /// The explicit DNS server of [`Self::with_dns_server`], if any.
@@ -317,6 +378,13 @@ impl Tokio {
     /// With [`KdcProtocol::Auto`] and an explicit address the name is also
     /// resolved under a budget of its own and a definite TCP failure can be
     /// followed by a UDP attempt, so a call can take up to four times it.
+    ///
+    /// The profile's `request_timeout` is a separate, total budget: a call that
+    /// takes a configuration ends with [`Error::TransportTimeout`] carrying that
+    /// total once DNS lookups, connects, retries and the wait for the reply have
+    /// used it up, whatever this timeout says. Zero (the default) is no budget.
+    /// A kpasswd request whose budget ends after it was sent is
+    /// [`Error::KpasswdOutcomeUnknown`], as for this timeout.
     #[inline]
     pub const fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -726,12 +794,15 @@ impl Tokio {
         realm: &str,
         protocol: KdcProtocol,
     ) -> Result<Vec<KdcEndpoint>, Error> {
-        let role = if self.primary_only {
+        let this = self.with_request_budget(config.libdefaults.request_timeout);
+        let role = if this.primary_only {
             EndpointRole::PrimaryKdc
         } else {
             EndpointRole::Kdc
         };
-        let endpoints = self.locator(config).locate(realm, role, protocol).await?;
+        let endpoints = this
+            .within_budget(Box::pin(this.locator(config).locate(realm, role, protocol)))
+            .await?;
         if !endpoints.is_empty() {
             return Ok(endpoints);
         }
@@ -776,7 +847,11 @@ impl Tokio {
         realm: &str,
         protocol: KdcProtocol,
     ) -> Result<Vec<KdcEndpoint>, Error> {
-        password_discovery::discover(self, config, realm, protocol).await
+        let this = self.with_request_budget(config.libdefaults.request_timeout);
+        this.within_budget(Box::pin(password_discovery::discover(
+            &this, config, realm, protocol,
+        )))
+        .await
     }
 
     /// Send an encoded request to the first reachable KDC discovered from config.
@@ -836,12 +911,16 @@ impl Tokio {
         realm: &str,
         request: &[u8],
     ) -> Result<(Vec<u8>, Option<TcpStream>), Error> {
-        if protocol == KdcProtocol::Auto {
-            return self.send_to_realm_auto(config, realm, request).await;
-        }
-        let endpoints = self.discover_kdcs(config, realm, protocol).await?;
-        self.send_to_endpoints_pinned(realm, protocol, endpoints, request)
-            .await
+        let this = self.with_request_budget(config.libdefaults.request_timeout);
+        this.within_budget(async {
+            if protocol == KdcProtocol::Auto {
+                return this.send_to_realm_auto(config, realm, request).await;
+            }
+            let endpoints = this.discover_kdcs(config, realm, protocol).await?;
+            this.send_to_endpoints_pinned(realm, protocol, endpoints, request)
+                .await
+        })
+        .await
     }
 
     /// Send to password endpoints with RFC 3244 framing.
@@ -951,13 +1030,11 @@ impl Tokio {
         realm: &str,
         request: &[u8],
     ) -> Result<Vec<u8>, Error> {
+        let this = self.with_request_budget(config.libdefaults.request_timeout);
         if protocol == KdcProtocol::Auto {
-            return self
-                .send_to_kpasswd_realm_auto(config, realm, request)
-                .await;
+            return Box::pin(this.send_to_kpasswd_realm_auto(config, realm, request)).await;
         }
-        self.send_to_kpasswd_realm_explicit(config, protocol, realm, request)
-            .await
+        Box::pin(this.send_to_kpasswd_realm_explicit(config, protocol, realm, request)).await
     }
 
     /// Send an encoded kpasswd request over one explicit protocol to the first
@@ -1061,9 +1138,8 @@ impl Tokio {
     ) -> Result<kadmin::Reply, Error> {
         restrictions::config(config)?;
         let frame = SecretDer::new(request.encode()?, "kpasswd request frame");
-        let response = self
-            .send_to_kpasswd_realm(config, protocol, realm, &frame)
-            .await?;
+        let response =
+            Box::pin(self.send_to_kpasswd_realm(config, protocol, realm, &frame)).await?;
         kadmin::Reply::parse(&response)
             .map_err(|source| Error::KpasswdOutcomeUnknown(Box::new(Error::from(source))))
     }
@@ -2342,6 +2418,9 @@ impl Tokio {
 
         let mut failures = Vec::new();
         for endpoint in endpoints {
+            if let Some(expired) = self.budget_exhausted() {
+                return Err(expired);
+            }
             match self
                 .send_pinned(
                     endpoint.protocol,
@@ -2413,12 +2492,13 @@ impl Tokio {
         password_auto::send(self, config, realm, request).await
     }
 
-    /// Run `operation` under the transport timeout.
+    /// Run `operation` under the transport timeout and the request budget.
     ///
     /// # Errors
     ///
     /// Returns [`Error::TransportTimeout`] when `operation` does not finish within
-    /// the timeout, and otherwise the error of `operation`.
+    /// the timeout (with the configured total when the request budget ends first),
+    /// and otherwise the error of `operation`.
     ///
     /// # Cancel safety
     ///
@@ -2428,9 +2508,16 @@ impl Tokio {
     where
         F: Future<Output = Result<T, Error>>,
     {
-        match timeout(self.timeout, operation).await {
+        let attempt = Instant::now()
+            .checked_add(self.timeout)
+            .unwrap_or_else(Instant::now);
+        let (deadline, expiry) = match self.budget {
+            Some(budget) if budget.deadline < attempt => (budget.deadline, budget.total),
+            Some(_) | None => (attempt, self.timeout),
+        };
+        match timeout_at(deadline, operation).await {
             Ok(result) => result,
-            Err(_elapsed) => Err(Error::TransportTimeout(self.timeout)),
+            Err(_elapsed) => Err(Error::TransportTimeout(expiry)),
         }
     }
 }
@@ -2706,6 +2793,7 @@ mod tests {
     use tokio::{
         io::{AsyncReadExt as _, AsyncWriteExt as _},
         net::UdpSocket,
+        time::timeout,
     };
 
     use self::loopback_pair::bind_tcp_and_udp_pair;
@@ -2823,7 +2911,7 @@ mod tests {
         let peer = async {
             let mut request = [0; 32];
             let (_, client) =
-                super::timeout(Duration::from_secs(10), socket.recv_from(&mut request)).await??;
+                timeout(Duration::from_secs(10), socket.recv_from(&mut request)).await??;
             let _: usize = socket.send_to(b"ordinary", client).await?;
             Ok::<_, Box<dyn StdError>>(())
         };
@@ -2872,13 +2960,12 @@ mod tests {
         let peer = async {
             let mut request = [0; 32];
             let (_, client) =
-                super::timeout(Duration::from_secs(10), socket.recv_from(&mut request)).await??;
+                timeout(Duration::from_secs(10), socket.recv_from(&mut request)).await??;
             let _: usize = socket.send_to(&response, client).await?;
-            let (mut stream, _) =
-                super::timeout(Duration::from_secs(10), listener.accept()).await??;
+            let (mut stream, _) = timeout(Duration::from_secs(10), listener.accept()).await??;
             let mut framed = [0; 11];
             let _: usize =
-                super::timeout(Duration::from_secs(10), stream.read_exact(&mut framed)).await??;
+                timeout(Duration::from_secs(10), stream.read_exact(&mut framed)).await??;
             stream.write_all(&[0, 0, 0, 1, 42]).await?;
             Ok::<_, Box<dyn StdError>>(stream)
         };

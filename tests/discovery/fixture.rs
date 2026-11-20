@@ -3,7 +3,7 @@
 extern crate alloc;
 
 use alloc::sync::Arc;
-use core::net::SocketAddr;
+use core::{net::SocketAddr, time::Duration};
 use std::{io, sync::Mutex};
 
 use hickory_resolver::proto::{
@@ -13,7 +13,11 @@ use hickory_resolver::proto::{
         rdata::{A, CNAME, NULL, PTR, SRV, TXT},
     },
 };
-use tokio::{net::UdpSocket, task::JoinHandle};
+use tokio::{
+    net::UdpSocket,
+    task::{JoinHandle, JoinSet},
+    time::sleep,
+};
 
 use crate::{TestError, loopback};
 
@@ -48,6 +52,14 @@ impl Dns {
     where
         I: IntoIterator<Item = (&'static str, RecordType, Reply)>,
     {
+        Self::start_slow(rules, Duration::ZERO).await
+    }
+
+    /// Like [`Self::start`], but each answer is sent `delay` after its question arrived.
+    pub(crate) async fn start_slow<I>(rules: I, delay: Duration) -> Result<Self, TestError>
+    where
+        I: IntoIterator<Item = (&'static str, RecordType, Reply)>,
+    {
         let socket = loopback::bind(false).await?;
         let addr = socket.local_addr()?;
         let table: Vec<Rule> = rules
@@ -55,7 +67,7 @@ impl Dns {
             .map(|(name, kind, reply)| (name.to_ascii_lowercase(), kind, reply))
             .collect();
         let log = Arc::new(Mutex::new(Vec::new()));
-        let task = tokio::spawn(serve(socket, table, Arc::clone(&log)));
+        let task = tokio::spawn(serve(socket, table, Arc::clone(&log), delay));
         Ok(Self { addr, log, task })
     }
 
@@ -81,7 +93,9 @@ impl Drop for Dns {
 }
 
 /// Answer questions until the task is aborted.
-async fn serve(socket: UdpSocket, table: Vec<Rule>, log: Arc<Mutex<Vec<String>>>) {
+async fn serve(bound: UdpSocket, table: Vec<Rule>, log: Arc<Mutex<Vec<String>>>, delay: Duration) {
+    let socket = Arc::new(bound);
+    let mut sends = JoinSet::new();
     loop {
         let mut buffer = [0_u8; 4096];
         let Ok((length, peer)) = socket.recv_from(&mut buffer).await else {
@@ -134,9 +148,11 @@ async fn serve(socket: UdpSocket, table: Vec<Rule>, log: Arc<Mutex<Vec<String>>>
         let Ok(bytes) = response.to_vec() else {
             continue;
         };
-        if socket.send_to(&bytes, peer).await.is_err() {
-            return;
-        }
+        let reply_socket = Arc::clone(&socket);
+        drop(sends.spawn(async move {
+            sleep(delay).await;
+            drop(reply_socket.send_to(&bytes, peer).await);
+        }));
     }
 }
 
