@@ -30,6 +30,7 @@ the chosen entry point, so one target covers a family of related decoders.
 | `camellia_crypto` | Camellia-CTS-CMAC input: a selector byte (entry point and camellia128 or camellia256), the key usage and the input | `CtsCmacEtype::decrypt_message` on the raw input, then on a sealed copy of it (round trip, and a changed MAC is refused); `verify_checksum` on a checksum split from its data, then on the computed one (and a changed one is refused); `decrypt_data` and the re-encryption of an accepted ciphertext; `string_to_key` on `s2kparams` text (the count is bounded to 64 so the run stays fast; zero, over-limit and malformed counts are refused before any work) |
 | `kcm_reply` | a KCM daemon's reply byte stream | the blocking KCM client (`Client::call`, `read_frame`, `read_exact`) over the input as the whole reply stream, once for each reply shape: cache name, UUID list, default principal, one credential, counted credential list, KDC offset and empty (`Shape::decode` of each), with the reply limit lowered to 64 KiB; the announced length is checked before the body is allocated |
 | `keyring_index` | the payload of the `krb_ccache:primary` key of a `KEYRING:` collection | `ccache::keyring::index::parse`, then `encode` and `parse` again on accepted input (the version, the length and the name of the primary cache; MIT `cc_keyring.c:541-571`) |
+| `spake_message` | a KDC's PA-SPAKE value (RFC 9588) | `preauth::spake::Message::decode` twice (deterministic), then a fresh `Client` permitting all four groups answers the value twice (`Client::process`): support message for empty or out-of-policy values, response for a challenge in a permitted group, which decodes and validates the edwards25519, P-256, P-384 or P-521 element and derives `K'[0]` and `K'[1]`; a second challenge must be refused |
 | `name_parse` | names and values as text | `Principal::parse_user`, `Principal::parse_service`, `CacheName::parse`, `keytab::Name::parse`, `KdcEndpoint::configured`, `Tokio::with_dns_server`, `config::parse_duration`, `config::parse_boolean`, `crypto::s2kparams_to_iterations` |
 
 The keys, keytabs, tickets and templates the targets use are the synthetic
@@ -101,6 +102,7 @@ timeout artifact:
 | `camellia_crypto` | 725,278 (todo 33 of plan 2, 2026-11-19) | 121 s | 0 |
 | `kcm_reply` | 596,862 (todo 12 of plan 2, 2026-11-19) | 121 s | 0 |
 | `keyring_index` | 6,296,962 (todo 13 of plan 2, 2026-11-19) | 121 s | 0 |
+| `spake_message` | 336,637 (todo 9 of plan 2, 2026-11-20) | 121 s | 0 |
 
 ### Round-2 session admission repair (FU-FUZ-R02)
 
@@ -151,6 +153,16 @@ with only this target's export: `rskrb5_ng::ccache::keyring::index::parse` in
 module that the inventory search finds are reason-only rows: they hand bytes to
 parsers that other rows already cover, split text the application or the kernel
 produced, or are the key calls themselves.
+
+### SPAKE messages (todo 9 of plan 2)
+
+`spake_message` fuzzes the PA-SPAKE value a KDC sends (`Message::decode`,
+`wire::decode`: the bounded DER codec of RFC 9588 appendix A) and the client
+half behind it, which decodes and validates the KDC's group element in the
+four groups of the `spake` leaf (the fuzz crate enables the leaf). The seeds
+are the support and challenge messages of the RFC 9588 appendix C vectors, an
+empty value and an `encdata` message. Coverage proof: record
+`task-9-spake-coverage.tsv` in the execution evidence.
 
 ### Earlier campaign crashes
 
@@ -542,6 +554,8 @@ does.
 | `rskrb5_ng::pac::ndr::RpcUnicodeStringDescriptor::read` | `src/pac/ndr.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::ndr::ensure_zero_trailing` | `src/pac/ndr.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::ndr::ndr_len` | `src/pac/ndr.rs` | `pac_parse` |  |
+| `rskrb5_ng::preauth::spake::Message::decode` | `src/preauth/spake.rs` | `spake_message` |  |
+| `rskrb5_ng::preauth::spake::wire::decode` | `src/preauth/spake/wire.rs` | `spake_message` |  |
 | `rskrb5_ng::pac::ndr::read_claim_entry_descriptor` | `src/pac/ndr.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::ndr::read_counted_supplemental_credentials` | `src/pac/ndr.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::ndr::read_deferred_bool_array` | `src/pac/ndr.rs` | `pac_parse` |  |

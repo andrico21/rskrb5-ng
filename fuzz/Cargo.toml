@@ -11,7 +11,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-rskrb5-ng = { version = "0.3.0", path = "..", features = ["camellia", "http"] }
+rskrb5-ng = { version = "0.3.0", path = "..", features = ["camellia", "http", "spake"] }
 
 [[bin]]
 name = "kpasswd_reply"
@@ -135,6 +135,13 @@ bench = false
 [[bin]]
 name = "keyring_index"
 path = "fuzz_targets/keyring_index.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "spake_message"
+path = "fuzz_targets/spake_message.rs"
 test = false
 doc = false
 bench = false
