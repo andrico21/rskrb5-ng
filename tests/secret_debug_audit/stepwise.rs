@@ -97,8 +97,8 @@ pub(super) mod tests {
     }
 
     /// A SPAKE response step redacts the strengthened reply key `K'[0]` it carries,
-    /// and a decoded PA-SPAKE message its element and ciphertext bytes.
-    #[test]
+    /// and a decoded PA-SPAKE message its element and ciphertext bytes (run by
+    /// `run_audit`, which the owner audit calls).
     fn spake_step_redacts_the_reply_key() {
         let key = pattern(161);
         let step = Step::Response {
