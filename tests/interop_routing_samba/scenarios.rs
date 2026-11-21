@@ -105,19 +105,18 @@ fn shown(error: Box<dyn Error>) -> Box<dyn Error> {
     text.into()
 }
 
-/// FU-IOP-P12 and FU-SVC-08: a canonicalizing request for
-/// `HTTP/host.res.rskrb5` in USER.RSKRB5 is answered with the referral TGT
+/// FU-IOP-P12: a canonicalizing request for `HTTP/host.res.rskrb5` in
+/// USER.RSKRB5 is answered with the referral TGT
 /// `krbtgt/RES.RSKRB5@USER.RSKRB5`; the client asks RES.RSKRB5 for the service
 /// itself (not for `krbtgt/USER.RSKRB5`, which Samba refuses with
-/// `KRB_AP_ERR_ILL_CR_TKT`). The RES acceptor refuses the ticket, which AD
-/// leaves without TRANSITED-POLICY-CHECKED, by default and with a
-/// `[capaths]` that does not list the pair, and accepts it with the direct
-/// `[capaths]` route USER.RSKRB5 -> RES.RSKRB5.
+/// `KRB_AP_ERR_ILL_CR_TKT`), and the RES service key opens the ticket. Samba's
+/// KDC checks the transited path and sets TRANSITED-POLICY-CHECKED, so the
+/// acceptor-side `[capaths]` validation of an unchecked ticket is proven
+/// against MIT (`interop_routing`), not here.
 #[test]
-fn service_referral_crosses_the_trust_and_capaths_validate_the_transit()
--> Result<(), Box<dyn Error>> {
+fn service_referral_crosses_the_trust() -> Result<(), Box<dyn Error>> {
     if !harness::require(
-        "service_referral_crosses_the_trust_and_capaths_validate_the_transit",
+        "service_referral_crosses_the_trust",
         &[SAMBA_USER, SAMBA_RES],
     )? {
         return Ok(());

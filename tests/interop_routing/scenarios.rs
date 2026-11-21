@@ -361,10 +361,12 @@ fn unchecked_cross_realm_ticket_is_validated_with_capaths() -> Result<(), Box<dy
             let profile = three_realms(&format!(
                 "[libdefaults]\n default_keytab_name = FILE:{keytab_path}\n{listed}"
             ))?;
-            let profiled_header = spnego::init_sec_context(&ticket, spnego::InitiatorContextOptions::new())?;
+            let profiled_header =
+                spnego::init_sec_context(&ticket, spnego::InitiatorContextOptions::new())?;
             let mut configured =
                 Validator::from_default_keytab_name(&profile)?.with_now(SystemTime::now());
-            let admitted = spnego::accept_sec_context_header(&mut configured, profiled_header.header_ref())?;
+            let admitted =
+                spnego::accept_sec_context_header(&mut configured, profiled_header.header_ref())?;
             assert_eq!(
                 admitted.ap_req().client().realm,
                 other,
@@ -406,9 +408,12 @@ fn verify_init_creds_accepts_the_host_keytab_and_rejects_a_wrong_one() -> Result
             let verified = client
                 .verify_init_creds(&host_keytab, VerifyOptions::new())
                 .await?;
+            let Verification::Verified(server) = verified else {
+                return Err(format!("expected a verification, got {verified:?}").into());
+            };
             assert_eq!(
-                verified,
-                Verification::Verified(Principal::new(realm.clone(), 2, host.split('/'))),
+                (server.realm.as_str(), server.components.join("/")),
+                (realm.as_str(), host.clone()),
                 "verified against the host principal"
             );
             // A wrong key for the same host principal is rejected, nofail or not.
