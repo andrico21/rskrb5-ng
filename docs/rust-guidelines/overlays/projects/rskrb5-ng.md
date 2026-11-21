@@ -83,7 +83,7 @@ everything else is timeless or a dated record.
   over `KRB5_CONFIG`, `KRB5CCNAME`, `KRB5_KTNAME`, `KRB5_CLIENT_KTNAME`, `KRB5_TRACE`, `HOME`,
   `TMPDIR`, `TEMP` and `APPDATA`), listed in `READERS` of
   `tests/ambient_guard.rs` and enforced by `cargo test --all-features --test
-  ambient_guard`. `src` has 39 `# Ambient input` sections (`rg '# Ambient input' src | wc
+  ambient_guard`. `src` has 43 `# Ambient input` sections (`rg '# Ambient input' src | wc
   -l`). `LibDefaults::new()` reads nothing; `LibDefaults::from_env()` is the explicit
   constructor that reads `HOME` (`src/config.rs`).
 - **Vendored rules:** `docs/rust-guidelines/` holds the core, the two domain overlays and
