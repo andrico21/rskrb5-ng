@@ -13,6 +13,7 @@ use crate::{
     transport::{
         kkdcp,
         proxy::{KdcProxyTransport, Request, Url},
+        rustls_proxy,
     },
 };
 
@@ -29,7 +30,10 @@ impl Handle {
 
     /// The built-in transport, when the `kkdcp-rustls` feature compiles one in.
     pub(super) const fn builtin() -> Option<Self> {
-        None
+        match rustls_proxy::BUILTIN_PROXY {
+            Some(transport) => Some(Self(transport)),
+            None => None,
+        }
     }
 }
 
@@ -128,12 +132,12 @@ async fn post(
     prepared: &Prepared,
     (realm, url): (&str, &Url),
 ) -> Result<Vec<u8>, Error> {
-    let posted = prepared.proxy.0.post(Request::new(
-        url,
-        &prepared.body,
-        (realm, &prepared.anchors),
-        kkdcp::MAX_MESSAGE,
-    ));
+    let posted = prepared.proxy.0.post(
+        Request::new(url, &prepared.body)
+            .with_realm(realm)
+            .with_anchors(&prepared.anchors)
+            .with_max_response(kkdcp::MAX_MESSAGE),
+    );
     transport
         .with_transport_timeout(async { Ok(posted.await?) })
         .await

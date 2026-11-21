@@ -5,7 +5,7 @@
 //! `locate_kdc.c:216-231`, `docs/admin/https.rst`). This module holds the
 //! `KDC-PROXY-MESSAGE` codec ([`kkdcp`]) and, with the `tokio` feature, the transport
 //! trait the Tokio client posts through (`proxy`) and the built-in rustls transport
-//! (`rustls_transport`, feature `kkdcp-rustls`).
+//! (`rustls_proxy`, feature `kkdcp-rustls`).
 //!
 //! # Security
 //!
@@ -18,3 +18,5 @@
 pub mod kkdcp;
 #[cfg(feature = "tokio")]
 pub mod proxy;
+#[cfg(feature = "tokio")]
+pub mod rustls_proxy;

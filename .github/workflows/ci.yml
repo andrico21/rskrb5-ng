@@ -131,6 +131,8 @@ jobs:
           - "--no-default-features --features camellia"
           - "--features ccache-keyring"
           - "--no-default-features --features ccache-keyring"
+          - "--features kkdcp-rustls"
+          - "--no-default-features --features tokio,kkdcp-rustls"
           - "--features tracing"
           - "--no-default-features --features tracing"
           - "--features spake"

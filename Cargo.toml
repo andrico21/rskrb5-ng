@@ -50,6 +50,16 @@ minimal = []
 modules = ["src/ccache/keyring.rs", "src/ccache/keyring/"]
 tests = ["tests/ccache_keyring.rs", "tests/ccache_keyring/"]
 
+[package.metadata.rskrb5-ng.leaf-features.kkdcp-rustls]
+minimal = ["tokio"]
+modules = ["src/transport/rustls_proxy.rs", "src/transport/rustls_proxy/"]
+tests = [
+  "tests/interop_kkdcp.rs",
+  "tests/interop_kkdcp/",
+  "tests/kkdcp.rs",
+  "tests/kkdcp/",
+]
+
 [package.metadata.rskrb5-ng.leaf-features.spake]
 minimal = ["messages"]
 modules = ["src/preauth/spake.rs", "src/preauth/spake/"]
@@ -81,6 +91,12 @@ default = ["spnego", "tokio", "serde"]
 camellia = ["dep:camellia", "dep:cmac"]
 ccache-keyring = ["dep:keyutils-raw", "dep:libc"]
 evaluation = ["spnego", "dep:hex"]
+kkdcp-rustls = [
+  "dep:hyper",
+  "dep:rustls",
+  "dep:rustls-rustcrypto",
+  "dep:tokio-rustls",
+]
 messages = ["dep:chrono", "dep:rasn", "dep:rasn-kerberos"]
 spake = ["dep:curve25519-dalek", "dep:p256", "dep:p384", "dep:p521"]
 spnego = ["messages", "dep:base64"]
@@ -116,6 +132,13 @@ hickory-resolver = { version = "0.26.1", default-features = false, features = [
 ], optional = true }
 http_types = { package = "http", version = "1", optional = true }
 hmac = "0.13.0"
+# The HTTP/1.1 client of the built-in KDC proxy transport (the `kkdcp-rustls`
+# leaf): client connections only, no server, no runtime glue. Admission record:
+# docs/dependency-admission.md#hyper.
+hyper = { version = "1.12.0", default-features = false, features = [
+  "client",
+  "http1",
+], optional = true }
 md-5 = "0.11.0"
 md4 = "0.11.0"
 p256 = { version = "0.14.0", default-features = false, features = [
@@ -131,6 +154,18 @@ pbkdf2 = "0.13"
 rasn = { version = "0.29", optional = true }
 rasn-kerberos = { version = "0.29", features = ["otp"], optional = true }
 rc4 = "0.2.0"
+# TLS of the built-in KDC proxy transport (the `kkdcp-rustls` leaf), with the
+# pure-Rust RustCrypto provider; no ring, no aws-lc. Admission records:
+# docs/dependency-admission.md#rustls, #rustls-rustcrypto and #tokio-rustls.
+rustls = { version = "0.23.46", default-features = false, features = [
+  "std",
+  "tls12",
+], optional = true }
+rustls-rustcrypto = { version = "0.1.0-pre.0", default-features = false, features = [
+  "std",
+  "tls12",
+  "zeroize",
+], optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 sha1 = "0.11.0"
@@ -142,6 +177,9 @@ tokio = { version = "1.47", features = [
   "time",
   "rt",
   "sync",
+], optional = true }
+tokio-rustls = { version = "0.26.6", default-features = false, features = [
+  "tls12",
 ], optional = true }
 tower_layer = { package = "tower-layer", version = "0.3", optional = true }
 tower_service = { package = "tower-service", version = "0.3", optional = true }
@@ -257,6 +295,11 @@ required-features = ["spnego"]
 name = "kadmin"
 path = "tests/kadmin.rs"
 required-features = ["messages"]
+
+[[test]]
+name = "kkdcp"
+path = "tests/kkdcp.rs"
+required-features = ["kkdcp-rustls", "tokio"]
 
 [[test]]
 name = "kdc_rep"

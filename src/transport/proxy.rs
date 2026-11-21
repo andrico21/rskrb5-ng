@@ -189,20 +189,43 @@ impl fmt::Debug for Request<'_> {
 }
 
 impl<'request> Request<'request> {
-    /// A request for `realm` to `url` with `body`.
-    pub(crate) const fn new(
-        url: &'request Url,
-        body: &'request [u8],
-        (realm, anchors): (&'request str, &'request [Location]),
-        max_response: usize,
-    ) -> Self {
+    /// A request that POSTs `body` to `url`, for no realm, with no anchors and the
+    /// response bound [`super::kkdcp::MAX_MESSAGE`]; the Tokio transport sets all
+    /// four. Transports and their tests build requests with it.
+    #[inline]
+    #[must_use]
+    pub const fn new(url: &'request Url, body: &'request [u8]) -> Self {
         Self {
             url,
             body,
-            realm,
-            anchors,
-            max_response,
+            realm: "",
+            anchors: &[],
+            max_response: super::kkdcp::MAX_MESSAGE,
         }
+    }
+
+    /// This request for the realm `realm`.
+    #[inline]
+    #[must_use]
+    pub const fn with_realm(mut self, realm: &'request str) -> Self {
+        self.realm = realm;
+        self
+    }
+
+    /// This request with the trust anchors `anchors`.
+    #[inline]
+    #[must_use]
+    pub const fn with_anchors(mut self, anchors: &'request [Location]) -> Self {
+        self.anchors = anchors;
+        self
+    }
+
+    /// This request with the response bound `max_response`.
+    #[inline]
+    #[must_use]
+    pub const fn with_max_response(mut self, max_response: usize) -> Self {
+        self.max_response = max_response;
+        self
     }
 }
 
@@ -214,7 +237,7 @@ pub type PostFuture<'request> =
 ///
 /// Implement it to reach the proxy through the application's own HTTPS stack; pass a
 /// `&'static` instance to [`Tokio::with_kdc_proxy`]. The built-in implementation is
-/// `transport::rustls_transport::RustlsTransport` (feature `kkdcp-rustls`).
+/// `transport::rustls_proxy::RustlsTransport` (feature `kkdcp-rustls`).
 ///
 /// [`Tokio::with_kdc_proxy`]: crate::client::transport::Tokio::with_kdc_proxy
 ///
