@@ -64,9 +64,10 @@ pub(super) fn start(engine: &mut InitCreds<'_>) -> Result<ExchangeStep, Error> {
 /// Returns [`Pkinit::Unexpected`] for a PKINIT exchange.
 pub(super) const fn refuse_unauthenticated(engine: &InitCreds<'_>) -> Result<(), Error> {
     if engine.pkinit.is_some() {
-        return Err(Error::Pkinit(Pkinit::Unexpected {
+        let refusal = Pkinit::Unexpected {
             reason: "the KDC issued a ticket without PKINIT",
-        }));
+        };
+        return Err(Error::Pkinit(refusal));
     }
     Ok(())
 }
