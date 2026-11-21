@@ -1,5 +1,6 @@
 //! Fuzz the kadmin frame parsers on arbitrary input: `Reply`,
-//! `ChangePasswordResult` (numeric result code and raw result text) and `Request`.
+//! `ChangePasswordResult` (numeric result code and raw result text, read as a typed
+//! kind, MIT's user message and the Active Directory policy structure) and `Request`.
 //! None may panic; every input must return `Ok`/`Err`.
 //! An accepted reply is also processed the way the password-change client
 //! reads it: the KRB-ERROR or KRB-PRIV result is decrypted and the AP-REP is
@@ -9,7 +10,7 @@
 
 mod session_ticket;
 
-use core::time::Duration;
+use core::{hint::black_box, time::Duration};
 use std::time::SystemTime;
 
 use libfuzzer_sys::fuzz_target;
@@ -76,7 +77,9 @@ fuzz_target!(|data: &[u8]| {
         }
     }
     if let Ok(result) = ChangePasswordResult::parse(data) {
-        drop(result);
+        black_box(result.kind());
+        black_box(result.message());
+        black_box(result.ad_policy());
     }
     if let Ok(request) = Request::parse(data) {
         drop(request);
