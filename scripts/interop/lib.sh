@@ -598,7 +598,11 @@ interop_check_protocols() {
   for fixture in "${INTEROP_FIXTURES[@]}"; do
     probe="interop_probe_${fixture//-/_}"
     declare -F "$probe" >/dev/null || continue
-    "$probe" || status=1
+    if "$probe"; then
+      interop_log "protocol probe: fixture $fixture answered"
+    else
+      status=1
+    fi
   done
   return "$status"
 }

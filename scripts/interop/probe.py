@@ -103,7 +103,12 @@ def der_value(data: bytes, offset: int) -> tuple[int, bytes, int]:
 
 def probe_kdcproxy(url: str, ca_file: str, realm: str) -> str:
     request = as_req(realm)
-    message = tlv(0x30, tlv(0xA0, tlv(0x04, struct.pack(">I", len(request)) + request)))
+    # kdcproxy routes by `target-domain`, which MS-KKDCP makes optional.
+    message = tlv(
+        0x30,
+        tlv(0xA0, tlv(0x04, struct.pack(">I", len(request)) + request))
+        + tlv(0xA1, tlv(0x1B, realm.encode())),
+    )
     post = urllib.request.Request(
         url, data=message, headers={"Content-Type": "application/kerberos"}
     )
