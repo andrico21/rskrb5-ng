@@ -218,8 +218,8 @@ const EMBEDDING_WRAPPER: i32 = 22;
 /// PA types this client neither builds nor can policy-check: credential mechanisms, the halves a KDC
 /// sends, FAST armor, authentication sets, and obsolete or vendor ids.
 const UNSUPPORTED: [i32; 23] = [
-    5, 6, 7, 8, 9, 12, 13, 17, 30, 31, 41, 130, 134, 135, 141, 143, 144, 145, 146, 147, 148,
-    152, 153,
+    5, 6, 7, 8, 9, 12, 13, 17, 30, 31, 41, 130, 134, 135, 141, 143, 144, 145, 146, 147, 148, 152,
+    153,
 ];
 
 /// PA types with their own decoder: a payload that is not their element is refused.
