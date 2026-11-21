@@ -417,6 +417,16 @@ pub enum Client {
         /// Maximum number of referrals followed.
         max: usize,
     },
+    /// The configured cross-realm path cannot be used (WP-11).
+    #[error("routing error: {0}")]
+    Routing(#[from] Routing),
+    /// A TGS referral named a realm the exchange already visited (MIT 1.22.2
+    /// `get_creds.c:612-614`).
+    #[error("cross-realm referral loop through {realm}")]
+    ReferralLoop {
+        /// The realm referred to a second time.
+        realm: String,
+    },
     /// A TGS referral reply did not contain a usable `krbtgt/<realm>` service.
     #[error("invalid TGS referral ticket service: {service}")]
     InvalidReferralTicket {

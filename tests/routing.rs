@@ -63,3 +63,25 @@ mod forge;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 #[path = "routing/acceptor.rs"]
 mod acceptor;
+
+/// A fake KDC for the sans-I/O TGS engine.
+#[cfg(test)]
+#[cfg(feature = "messages")]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[path = "routing/kdc.rs"]
+mod kdc;
+
+/// Client referrals and `[capaths]` paths (FU-IOP-P12).
+#[cfg(test)]
+#[cfg(feature = "messages")]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "routing/referrals.rs"]
+mod referrals;

@@ -117,6 +117,7 @@ use crate::{
     keytab::{EncryptionKey, Keytab},
     krb_error::decode as decode_krb_error,
     messages::secret_der::SecretDer,
+    routing::RealmPath,
     trace::{Guard, TransportStep},
     transport::proxy::{KdcProxyTransport, Url},
 };
@@ -1881,9 +1882,17 @@ impl Tokio {
     /// `dns_lookup_realm` or `realm_try_domains` allow it, DNS, then
     /// `default_realm`), else the realm of `tgt`.
     ///
+    /// A service in another realm is reached along the `[capaths]` path of
+    /// `config` when it lists one ([`RealmPath::client`]), otherwise by asking
+    /// for the service realm's TGT directly and following the KDC's referrals.
+    /// A referral that answers the request for the service names the realm the
+    /// service is then requested in (MIT 1.22.2 `get_creds.c:561-634`).
+    ///
     /// # Errors
     ///
-    /// Returns [`Error::Locate`] or [`Error::DnsSrvLookup`] when that lookup fails,
+    /// Returns [`Error::Routing`] when the configured path loops or is too
+    /// long, [`Error::ReferralLoop`] when a referral names a realm already
+    /// reached, [`Error::Locate`] or [`Error::DnsSrvLookup`] when that lookup fails,
     /// [`Error::Config`] or [`Error::Crypto`] when the crypto policy
     /// refuses the `[libdefaults]` of `config`, [`Error::InvalidReferralTicket`]
     /// when `tgt` is not a TGT or a returned TGT is for the realm of the KDC that
@@ -1918,13 +1927,17 @@ impl Tokio {
                 Some(host) => self.host_realms(config).service_realm(None, host).await?,
                 None => None,
             };
-            service.realm = mapped.unwrap_or(current_realm);
+            service.realm = mapped.unwrap_or_else(|| current_realm.clone());
         }
-        let mut exchange = TicketCreds::new(
-            tgt.clone(),
-            service,
-            TicketOptions::new(options).with_max_referrals(max_referrals),
-        )?;
+        let mut ticket_options = TicketOptions::new(options).with_max_referrals(max_referrals);
+        if current_realm != service.realm {
+            ticket_options = ticket_options.with_realm_path(RealmPath::client(
+                &config.capaths,
+                &current_realm,
+                &service.realm,
+            )?);
+        }
+        let mut exchange = TicketCreds::new(tgt.clone(), service, ticket_options)?;
         let ticket = drive_tokio(self, (config, protocol), &mut exchange, &mut NoResponder).await?;
         Ok(ReferralTgsResult::new(
             ticket,
