@@ -2362,6 +2362,22 @@ impl Tokio {
             return Err(Error::NoClientCredentials);
         };
         let options = self.as_req_options()?;
+        self.login_with(credentials, options).await
+    }
+    /// An AS login with `credentials` and `options`, replacing the primary TGT
+    /// and clearing the session caches.
+    /// # Errors
+    ///
+    /// Returns the errors of [`Self::login`].
+    /// # Cancel safety
+    ///
+    /// cancel-safe, as [`Self::login`]: the caches are replaced only after the
+    /// exchange completes.
+    async fn login_with(
+        &mut self,
+        credentials: TokioClientCredentials,
+        options: AsReq,
+    ) -> Result<&AsRepSession, Error> {
         let session = match credentials {
             TokioClientCredentials::Password(password) => {
                 self.transport
@@ -2551,8 +2567,10 @@ impl Tokio {
     /// Acquire an `S4U2Self` ticket for an impersonated user using the current service TGT.
     ///
     /// The request asks for a forwardable ticket whatever the profile's
-    /// `forwardable` says, because it is the evidence of a later `S4U2Proxy`;
-    /// use [`Self::s4u2self_with_options`] for explicit options.
+    /// `forwardable` says, because it is the evidence of a later `S4U2Proxy`; a
+    /// TGT that is not forwardable is first replaced by a forwardable one from a
+    /// new AS exchange with the client's credentials. Use
+    /// [`Self::s4u2self_with_options`] for explicit options.
     /// # Errors
     ///
     /// Returns [`Error::Random`] when the nonce cannot be generated, and the errors
@@ -2564,9 +2582,11 @@ impl Tokio {
     /// the client consistent and the call can be repeated.
     #[inline]
     pub async fn s4u2self(&mut self, user: Principal) -> Result<TgsRepSession, Error> {
-        let options = self.tgs_req_options()?;
         // FU-IOP-P11: evidence for S4U2Proxy must be forwardable (Samba refuses
-        // it otherwise, even for resource-based constrained delegation).
+        // it otherwise, even for resource-based constrained delegation), and a
+        // KDC issues a forwardable ticket only for a forwardable TGT.
+        drop(self.forwardable_tgt().await?);
+        let options = self.tgs_req_options()?;
         let bits = options.kdc_option_bits() | 0x4000_0000;
         self.s4u2self_with_options(user, options.with_kdc_option_bits(bits))
             .await
@@ -2671,7 +2691,11 @@ impl Tokio {
         identity: S4uIdentity,
         options: DelegationOptions,
     ) -> Result<TgsRepSession, Error> {
-        let service_tgt = self.ensure_tgt().await?;
+        let service_tgt = if options.forwardable() {
+            self.forwardable_tgt().await?
+        } else {
+            self.ensure_tgt().await?
+        };
         let request = self.tgs_req_options()?;
         let session = self.delegation_session();
         impersonation::s4u2self(
@@ -2704,7 +2728,11 @@ impl Tokio {
         target: Principal,
         options: DelegationOptions,
     ) -> Result<Delegation, Error> {
-        let service_tgt = self.ensure_tgt().await?;
+        let service_tgt = if options.forwardable() {
+            self.forwardable_tgt().await?
+        } else {
+            self.ensure_tgt().await?
+        };
         let request = self.tgs_req_options()?;
         let session = self.delegation_session();
         let evidence = impersonation::s4u2self(
@@ -2796,6 +2824,26 @@ impl Tokio {
             self.cache_tgt_session(referral_tgt)?;
         }
         Ok(ticket)
+    }
+
+    /// A forwardable TGT: the current one when it is forwardable, else one from a
+    /// new AS exchange that asks for it (FU-IOP-P11). A client without
+    /// credentials keeps its TGT.
+    /// # Errors
+    ///
+    /// Returns the errors of [`Self::login`].
+    async fn forwardable_tgt(&mut self) -> Result<AsRepSession, Error> {
+        let tgt = self.ensure_tgt().await?;
+        let forwardable = u32::from_be_bytes(tgt.ticket_flags()) & 0x4000_0000 != 0;
+        let Some(credentials) = self.credentials.clone().filter(|_| !forwardable) else {
+            return Ok(tgt);
+        };
+        let options = self.as_req_options()?;
+        let bits = options.kdc_option_bits() | 0x4000_0000;
+        Ok(self
+            .login_with(credentials, options.with_kdc_option_bits(bits))
+            .await?
+            .clone())
     }
 
     /// The transport, profile and keytab a delegation runs with.

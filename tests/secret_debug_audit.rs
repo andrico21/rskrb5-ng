@@ -1078,6 +1078,10 @@ mod tests {
             "login_replacement_erases_live_cached_key",
         ),
         (
+            "src/client.rs::Tokio::login_with",
+            "login_replacement_erases_live_cached_key",
+        ),
+        (
             "src/client.rs::Tokio::affirm_login",
             "login_replacement_erases_live_cached_key",
         ),
