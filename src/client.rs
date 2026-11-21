@@ -2832,6 +2832,10 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns the errors of [`Self::login`].
+    /// # Cancel safety
+    ///
+    /// cancel-safe, as [`Self::login`]: the caches are replaced only after the
+    /// exchange completes.
     async fn forwardable_tgt(&mut self) -> Result<AsRepSession, Error> {
         let tgt = self.ensure_tgt().await?;
         let forwardable = u32::from_be_bytes(tgt.ticket_flags()) & 0x4000_0000 != 0;

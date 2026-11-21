@@ -232,6 +232,12 @@ impl<'session> Session<'session> {
 /// [`Error::DelegationPrincipalMismatch`] when the decrypted ticket names
 /// another user, [`Error::ReferralLoop`], [`Error::MaxReferralDepth`] and the
 /// errors of each TGS exchange.
+///
+/// # Cancel safety
+///
+/// cancel-safe: it changes no client state; dropping the future abandons the
+/// exchange and closes its sockets, and a KDC that already answered keeps no
+/// state the caller depends on, so the call can be repeated.
 pub(crate) async fn s4u2self(
     session: &Session<'_>,
     service_tgt: &AsRepSession,
@@ -349,6 +355,12 @@ pub(crate) async fn s4u2self(
 /// [`Error::DelegationPrincipalMismatch`] when the evidence does not name its
 /// user, [`Error::ServicePrincipalMismatch`] for a reply for another service,
 /// and the errors of each TGS exchange.
+///
+/// # Cancel safety
+///
+/// cancel-safe: it changes no client state; dropping the future abandons the
+/// exchange and closes its sockets, and a KDC that already answered keeps no
+/// state the caller depends on, so the call can be repeated.
 pub(crate) async fn s4u2proxy(
     session: &Session<'_>,
     service_tgt: &AsRepSession,
@@ -491,6 +503,12 @@ impl ProxyRequest {
 /// # Errors
 ///
 /// Returns the build, transport and reply-processing errors.
+///
+/// # Cancel safety
+///
+/// cancel-safe: it changes no client state; dropping the future abandons the
+/// exchange and closes its sockets, and a KDC that already answered keeps no
+/// state the caller depends on, so the call can be repeated.
 async fn exchange(session: &Session<'_>, request: ProxyRequest) -> Result<TgsRepSession, Error> {
     let ProxyRequest {
         tgt,

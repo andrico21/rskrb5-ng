@@ -1966,6 +1966,11 @@ impl Tokio {
     /// # Errors
     ///
     /// Returns the errors of [`Self::get_service_ticket_with_referral_trace_limit`].
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: it takes `&self` and changes no client state; dropping the
+    /// future abandons the exchange and closes its sockets.
     async fn ticket_exchange(
         &self,
         config: &Config,

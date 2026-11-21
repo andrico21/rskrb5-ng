@@ -29,7 +29,8 @@ mod harness;
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
     clippy::too_long_first_doc_paragraph,
-    reason = "test code is not rendered API documentation"
+    clippy::too_many_lines,
+    reason = "test code is not rendered API documentation; a live scenario reads as one story"
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 #[path = "interop_routing/scenarios.rs"]

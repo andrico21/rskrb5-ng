@@ -126,8 +126,9 @@ mod tests {
         client_aware_channel_bindings, "plan 2 WP-12", ["false", "off"];
     }
 
-    /// `verify_ap_req_nofail` is effective (consumer `Tokio::verify_init_creds`):
-    /// both values parse in both modes without a deferred diagnostic, and the
+    /// `verify_ap_req_nofail` is effective (consumer `Tokio::verify_init_creds`).
+    ///
+    /// Both values parse in both modes without a deferred diagnostic, and the
     /// profile records that it was set, since unset requires verification.
     #[test]
     fn verify_ap_req_nofail() -> Result<(), Box<dyn Error>> {
@@ -139,8 +140,15 @@ mod tests {
                     mode,
                 )?;
                 let defaults = &config.libdefaults;
-                assert_eq!(defaults.verify_ap_req_nofail.is_enabled(), enabled, "{value}");
-                assert!(defaults.verify_ap_req_nofail_explicit.is_enabled(), "{value}");
+                assert_eq!(
+                    defaults.verify_ap_req_nofail.is_enabled(),
+                    enabled,
+                    "{value}"
+                );
+                assert!(
+                    defaults.verify_ap_req_nofail_explicit.is_enabled(),
+                    "{value}"
+                );
                 assert!(!config.diagnostics().iter().any(|item| matches!(
                     item,
                     ConfigDiagnostic::NotYetEffective {

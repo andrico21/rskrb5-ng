@@ -87,14 +87,17 @@ fn expansions_match_the_mit_vectors() -> Result<(), TestError> {
 /// `transit-tests:38`: a domain name joined to an X.500 name gives mixed name
 /// styles between two neighbours, which MIT and this crate refuse.
 #[test]
-fn mixed_name_styles_are_refused() {
+fn mixed_name_styles_are_refused() -> Result<(), TestError> {
     // When the MIT error vector is decoded.
-    let result = transited::decode(b",EDU,/COM,", "ATHENA.MIT.EDU", "/COM/HP/APOLLO");
+    let error = transited::decode(b",EDU,/COM,", "ATHENA.MIT.EDU", "/COM/HP/APOLLO")
+        .err()
+        .ok_or("mixed styles accepted")?;
     // Then it is malformed.
     assert!(
-        matches!(result, Err(Routing::MalformedTransited { reason: _ })),
-        "{result:?}"
+        matches!(error, Routing::MalformedTransited { reason: _ }),
+        "{error:?}"
     );
+    Ok(())
 }
 
 /// Malformed encodings are refused.
@@ -126,7 +129,7 @@ fn malformed_encodings_are_refused() -> Result<(), TestError> {
 
 /// The byte, name and realm-count bounds hold before any expansion is kept.
 #[test]
-fn bounds_are_enforced() {
+fn bounds_are_enforced() -> Result<(), TestError> {
     // Given an encoding, a name and a realm list just past each bound.
     let long_encoding = vec![b'A'; transited::MAX_ENCODED_BYTES + 1];
     let long_name = vec![b'A'; transited::MAX_REALM_BYTES + 1];
@@ -136,22 +139,29 @@ fn bounds_are_enforced() {
         .join(",")
         .into_bytes();
     // When each is decoded.
-    let encoding = transited::decode(&long_encoding, "A", "B");
-    let name = transited::decode(&long_name, "A", "B");
-    let count = transited::decode(&many, "A", "B");
+    let encoding = transited::decode(&long_encoding, "A", "B")
+        .err()
+        .ok_or("long encoding accepted")?;
+    let name = transited::decode(&long_name, "A", "B")
+        .err()
+        .ok_or("long name accepted")?;
+    let count = transited::decode(&many, "A", "B")
+        .err()
+        .ok_or("many realms accepted")?;
     // Then each bound is named.
     assert!(
-        matches!(encoding, Err(Routing::TransitedTooLong { max }) if max == transited::MAX_ENCODED_BYTES),
+        matches!(encoding, Routing::TransitedTooLong { max } if max == transited::MAX_ENCODED_BYTES),
         "{encoding:?}"
     );
     assert!(
-        matches!(name, Err(Routing::TransitedRealmTooLong { max }) if max == transited::MAX_REALM_BYTES),
+        matches!(name, Routing::TransitedRealmTooLong { max } if max == transited::MAX_REALM_BYTES),
         "{name:?}"
     );
     assert!(
-        matches!(count, Err(Routing::TransitedTooManyRealms { max }) if max == transited::MAX_REALMS),
+        matches!(count, Routing::TransitedTooManyRealms { max } if max == transited::MAX_REALMS),
         "{count:?}"
     );
+    Ok(())
 }
 
 /// The encoder uses the RFC 4120 forms.
@@ -180,17 +190,27 @@ fn encoder_uses_the_rfc_forms() -> Result<(), TestError> {
 
 /// Empty, NUL-bearing and oversized realms cannot be encoded.
 #[test]
-fn encoder_refuses_unrepresentable_realms() {
+fn encoder_refuses_unrepresentable_realms() -> Result<(), TestError> {
     for realm in [
         String::new(),
         "A\0B".to_owned(),
         "A".repeat(transited::MAX_REALM_BYTES + 1),
     ] {
         // When the realm is encoded.
-        let result = transited::encode(&[realm.as_str()]);
+        let error = transited::encode(&[realm.as_str()])
+            .err()
+            .ok_or_else(|| format!("{realm:?} was encoded"))?;
         // Then it is refused.
-        assert!(result.is_err(), "{realm:?} was encoded");
+        assert!(
+            matches!(
+                error,
+                Routing::MalformedTransited { reason: _ }
+                    | Routing::TransitedRealmTooLong { max: _ }
+            ),
+            "{error:?}"
+        );
     }
+    Ok(())
 }
 
 proptest! {

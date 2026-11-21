@@ -44,27 +44,31 @@ fn identity_keeps_its_parts() -> Result<(), TestError> {
 
 /// An empty or oversized certificate and an empty realm are refused.
 #[test]
-fn identity_bounds_are_enforced() {
+fn identity_bounds_are_enforced() -> Result<(), TestError> {
     // When identities past each bound are built.
-    let empty = CertificateIdentity::new(Vec::new(), "USER.TEST");
+    let empty = CertificateIdentity::new(Vec::new(), "USER.TEST")
+        .err()
+        .ok_or("empty certificate accepted")?;
     let oversized = CertificateIdentity::new(
         vec![0x30; CertificateIdentity::MAX_CERTIFICATE_BYTES + 1],
         "USER.TEST",
-    );
-    let realmless = CertificateIdentity::new(vec![0x30], "");
+    )
+    .err()
+    .ok_or("oversized certificate accepted")?;
+    let realmless = CertificateIdentity::new(vec![0x30], "")
+        .err()
+        .ok_or("empty realm accepted")?;
     // Then each is refused by name.
     assert!(
-        matches!(empty, Err(Routing::CertificateSize { max }) if max == CertificateIdentity::MAX_CERTIFICATE_BYTES),
+        matches!(empty, Routing::CertificateSize { max } if max == CertificateIdentity::MAX_CERTIFICATE_BYTES),
         "{empty:?}"
     );
     assert!(
-        matches!(oversized, Err(Routing::CertificateSize { max: _ })),
+        matches!(oversized, Routing::CertificateSize { max: _ }),
         "{oversized:?}"
     );
-    assert!(
-        matches!(realmless, Err(Routing::EmptyRealm)),
-        "{realmless:?}"
-    );
+    assert!(matches!(realmless, Routing::EmptyRealm), "{realmless:?}");
+    Ok(())
 }
 
 /// The inspection seam sees the certificate once and its refusal is carried.
