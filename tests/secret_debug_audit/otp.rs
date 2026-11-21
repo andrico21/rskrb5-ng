@@ -3,12 +3,14 @@
 #[cfg(test)]
 #[expect(
     clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
     reason = "test code is not rendered API documentation"
 )]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 pub(super) mod tests {
     use core::error::Error;
 
-    use rasn::der;
+    use rasn::{der, types::BitString};
     use rasn_kerberos::otp::{OtpFlags, OtpTokenInfo, PaOtpChallenge};
     use rskrb5_ng::{
         client::{
@@ -54,9 +56,7 @@ pub(super) mod tests {
         redacted(&StepInput::Answer(Answer::Otp(response())), &[&value, &pin]);
         let wire = PaOtpChallenge::new(
             pattern(81).into(),
-            vec![OtpTokenInfo::new(OtpFlags(rasn::types::BitString::repeat(
-                false, 32,
-            )))],
+            vec![OtpTokenInfo::new(OtpFlags(BitString::repeat(false, 32)))],
         );
         let challenge = Challenge::decode(&der::encode(&wire)?, &Policy::default())?;
         let prompt = Prompt::Otp {

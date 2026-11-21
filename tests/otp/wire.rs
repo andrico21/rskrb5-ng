@@ -425,7 +425,9 @@ fn answers_are_validated_before_a_request_is_built() -> Result<(), TestError> {
 /// The OTP value and the PIN never appear in `Debug` output.
 #[test]
 fn responses_are_redacted() -> Result<(), TestError> {
-    let response = Response::new(1, b"s3cr3t-value".to_vec()).with_pin("s3cr3t-pin".to_owned());
+    let response = Response::new(0, b"s3cr3t-value".to_vec()).with_pin("s3cr3t-pin".to_owned());
+    let sent = request(token(&[3, 6]), &response)?;
+    assert_eq!(sent.otp_pin.as_deref(), Some("s3cr3t-pin"));
     let text = format!("{response:?}");
     for secret in ["s3cr3t-value", "s3cr3t-pin"] {
         assert!(!text.contains(secret), "{text}");
