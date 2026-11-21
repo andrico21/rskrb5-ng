@@ -1994,11 +1994,10 @@ impl Tokio {
         }
         let mut ticket_options = TicketOptions::new(template).with_max_referrals(max_referrals);
         if current_realm != service.realm {
-            ticket_options = ticket_options.with_realm_path(RealmPath::client(
-                &config.capaths,
-                &current_realm,
-                &service.realm,
-            )?);
+            ticket_options = ticket_options.with_realm_path(
+                RealmPath::client(&config.capaths, &current_realm, &service.realm)
+                    .map_err(Error::Routing)?,
+            );
         }
         if let Some(ticket) = second_ticket {
             ticket_options = ticket_options.with_user_to_user(ticket)?;
