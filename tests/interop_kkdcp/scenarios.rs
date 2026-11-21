@@ -72,8 +72,9 @@ fn user(key: &str) -> Result<Principal, Box<dyn Error>> {
     ))
 }
 
-/// A password login and a service ticket go through the proxy over HTTPS, and
-/// the transport traces each request as an `https` send to the proxy URL.
+/// A pre-authenticated password login (two AS rounds) and a service ticket go
+/// through the proxy over HTTPS, and the transport traces each request as an
+/// `https` send to the proxy URL.
 #[test]
 fn login_and_service_ticket_through_the_proxy() -> Result<(), Box<dyn Error>> {
     if !harness::require(
@@ -88,8 +89,8 @@ fn login_and_service_ticket_through_the_proxy() -> Result<(), Box<dyn Error>> {
         let mut client = Tokio::with_password(
             config("INTEROP_KDCPROXY_CA")?,
             KdcProtocol::Tcp,
-            user("INTEROP_MIT_USER")?,
-            harness::var("INTEROP_MIT_USER_PASSWORD")?.into_bytes(),
+            user("INTEROP_MIT_PREAUTH_USER")?,
+            harness::var("INTEROP_MIT_PREAUTH_USER_PASSWORD")?.into_bytes(),
         )
         .with_transport(transport())
         .with_trace(guard);
