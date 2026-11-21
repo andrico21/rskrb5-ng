@@ -65,7 +65,7 @@ pub(super) fn read(path: &Path, limit: usize) -> Result<Vec<u8>, Error> {
 /// # Errors
 /// Returns [`Error::UnsupportedLocation`] for an unset variable or a value
 /// that is not a `FILE:` or `DIR:` location.
-fn environment(relation: &'static str, name: &str) -> Result<Location, Error> {
+fn pkinit_env_location(relation: &'static str, name: &str) -> Result<Location, Error> {
     let value =
         secure_env::ambient(|| env::var(name)).map_err(|_unset| Error::UnsupportedLocation {
             relation,
@@ -86,7 +86,7 @@ fn environment(relation: &'static str, name: &str) -> Result<Location, Error> {
 ///
 /// # Errors
 /// Returns [`Error::UnsupportedLocation`] and [`Error::Io`].
-fn files(
+fn pkinit_location_files(
     config: &Config,
     realm: &str,
     relation: &'static str,
@@ -97,7 +97,7 @@ fn files(
     };
     let mut out = Vec::new();
     for location in locations {
-        let resolved = resolve(relation, location)?;
+        let resolved = pkinit_resolved_location(relation, location)?;
         match resolved {
             Location::File(path) => out.push(path),
             Location::Directory(path) => out.extend(directory(Path::new(&path), suffix)?),
@@ -112,10 +112,13 @@ fn files(
 /// `location`, with an `ENV:` reference replaced by the location it names.
 ///
 /// # Errors
-/// Returns the errors of [`environment`].
-fn resolve(relation: &'static str, location: &Location) -> Result<Location, Error> {
+/// Returns the errors of [`pkinit_env_location`].
+fn pkinit_resolved_location(
+    relation: &'static str,
+    location: &Location,
+) -> Result<Location, Error> {
     if let Location::Environment(name) = location {
-        environment(relation, name)
+        pkinit_env_location(relation, name)
     } else {
         Ok(location.clone())
     }
@@ -161,14 +164,14 @@ fn directory(path: &Path, suffix: &str) -> Result<Vec<String>, Error> {
 ///
 /// # Errors
 /// Returns the location, file and PEM errors.
-fn pem_files(
+fn pkinit_pem_files(
     config: &Config,
     realm: &str,
     relation: &'static str,
     crls: bool,
 ) -> Result<Vec<Vec<u8>>, Error> {
     let mut out = Vec::new();
-    for path in files(config, realm, relation, "")? {
+    for path in pkinit_location_files(config, realm, relation, "")? {
         let bytes = read(Path::new(&path), MAX_CRL_BYTES)?;
         out.extend(if crls {
             ops::pem_crls(&bytes)?
@@ -183,16 +186,16 @@ fn pem_files(
 ///
 /// # Errors
 /// Returns [`Error::NoAnchors`] and the location, file and PEM errors.
-pub(super) fn trust(config: &Config, realm: &str) -> Result<KdcTrust, Error> {
-    let anchors = pem_files(config, realm, "pkinit_anchors", false)?;
+pub(super) fn pkinit_trust(config: &Config, realm: &str) -> Result<KdcTrust, Error> {
+    let anchors = pkinit_pem_files(config, realm, "pkinit_anchors", false)?;
     if anchors.is_empty() {
         return Err(Error::NoAnchors {
             realm: realm.to_owned(),
         });
     }
     Ok(KdcTrust::new(anchors)
-        .with_intermediates(pem_files(config, realm, "pkinit_pool", false)?)
-        .with_crls(pem_files(config, realm, "pkinit_revoke", true)?))
+        .with_intermediates(pkinit_pem_files(config, realm, "pkinit_pool", false)?)
+        .with_crls(pkinit_pem_files(config, realm, "pkinit_revoke", true)?))
 }
 
 /// `pkinit_identities` of `realm` as `(certificate, key)` pairs: `FILE:cert[,key]`,
@@ -205,7 +208,7 @@ pub(super) fn trust(config: &Config, realm: &str) -> Result<KdcTrust, Error> {
 /// # Errors
 /// Returns the location and directory errors, and
 /// [`Error::UnsupportedLocation`] when `pkinit_cert_match` is set.
-pub(super) fn identities(
+pub(super) fn pkinit_identity_files(
     config: &Config,
     realm: &str,
 ) -> Result<Vec<(PathBuf, Option<PathBuf>)>, Error> {
@@ -220,7 +223,7 @@ pub(super) fn identities(
     };
     let mut out = Vec::new();
     for location in locations {
-        let resolved = resolve("pkinit_identities", location)?;
+        let resolved = pkinit_resolved_location("pkinit_identities", location)?;
         match resolved {
             Location::File(text) => out.push(match text.split_once(',') {
                 Some((certificate, key)) => (PathBuf::from(certificate), Some(PathBuf::from(key))),

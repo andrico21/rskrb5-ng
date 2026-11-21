@@ -220,7 +220,7 @@ duplicate-version skips, each with a reason stated in the record.
 - Constant-time and zeroization: the `zeroize` feature wipes `der`'s owned buffers of secret-bearing types this crate decodes (PKCS#8 private keys); Base64 decoding of PEM key files is constant-time in `base64ct`.
 - Cargo vet: the existing `[[exemptions.der]]` 0.8.3 `safe-to-deploy`; new `safe-to-deploy` exemptions for `der_derive` 0.8.0, `flagset` 0.4.7, `pem-rfc7468` 1.0.0 and `base64ct` 1.8.3. Exemptions, not independent audits. `cargo vet --locked` passes.
 - Maintenance: RustCrypto/formats, 0.8.3 published 2026-10-25 (the newest stable release), about 175 million recent downloads (crates.io API, 2026-11-21). No RustSec advisory (`cargo audit` clean at admission).
-- Features: `alloc`, `derive`, `oid`, `pem`, `zeroize` (`default-features = false`; `derive` uses the `der_derive` 0.8.0 macro that `x509-cert` already pulls in, for the RFC 3279 `DomainParameters` of the client's DH key)
+- Features: `alloc`, `oid`, `pem`, `zeroize` (`default-features = false`)
 
 ### rsa
 - Version: 0.10.0

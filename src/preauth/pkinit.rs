@@ -303,9 +303,16 @@ impl ConfiguredIdentities {
     /// names one and for configured `pkinit_cert_match` rules (not evaluated),
     /// and [`Error::Io`](crate::error::Pkinit::Io) for an unreadable `DIR:`
     /// location.
+    /// # Ambient input
+    ///
+    /// An `ENV:` location reads the variable an ENV: location names, through
+    /// the secure-environment guard (never in a set-id process). The explicit
+    /// alternatives that read no variable are `new`, `from_pem` and
+    /// `with_provider`.
+    ///
     #[inline]
     pub fn from_config(config: &Config, realm: &str) -> Result<Self, Error> {
-        config::identities(config, realm).map(|files| Self { files })
+        config::pkinit_identity_files(config, realm).map(|files| Self { files })
     }
 
     /// The `(certificate, key)` file pairs, in order.
@@ -377,9 +384,16 @@ impl KdcTrust {
     /// Returns [`Error::NoAnchors`](crate::error::Pkinit::NoAnchors) when no
     /// anchor is configured, [`Error::Io`](crate::error::Pkinit::Io) for an
     /// unreadable location and the PEM errors of [`KdcTrust::from_pem`].
+    /// # Ambient input
+    ///
+    /// An `ENV:` location reads the variable an ENV: location names, through
+    /// the secure-environment guard (never in a set-id process). The explicit
+    /// alternatives that read no variable are `new`, `from_pem` and
+    /// `with_provider`.
+    ///
     #[inline]
     pub fn from_config(config: &Config, realm: &str) -> Result<Self, Error> {
-        config::trust(config, realm)
+        config::pkinit_trust(config, realm)
     }
 
     /// Add DER intermediate certificates.
@@ -680,8 +694,6 @@ pub struct Exchange {
     trust: KdcTrust,
     /// The certificate and group policy.
     policy: CertificatePolicy,
-    /// The state between request and reply.
-    pending: Option<exchange::Pending>,
 }
 
 impl Exchange {
@@ -693,7 +705,6 @@ impl Exchange {
             credential: Credential::Identity(identity),
             trust,
             policy,
-            pending: None,
         }
     }
 
@@ -709,7 +720,6 @@ impl Exchange {
             credential: Credential::Provider(provider),
             trust,
             policy,
-            pending: None,
         }
     }
 
@@ -722,7 +732,6 @@ impl Exchange {
             credential: Credential::Anonymous,
             trust,
             policy,
-            pending: None,
         }
     }
 
@@ -732,6 +741,13 @@ impl Exchange {
     /// # Errors
     ///
     /// Returns the configuration errors of the three.
+    /// # Ambient input
+    ///
+    /// An `ENV:` location reads the variable an ENV: location names, through
+    /// the secure-environment guard (never in a set-id process). The explicit
+    /// alternatives that read no variable are `new`, `from_pem` and
+    /// `with_provider`.
+    ///
     #[inline]
     pub fn from_config(config: &Config, realm: &str) -> Result<Self, Error> {
         let identities = ConfiguredIdentities::from_config(config, realm)?;
@@ -747,6 +763,13 @@ impl Exchange {
     /// # Errors
     ///
     /// Returns the configuration errors of the trust and the policy.
+    /// # Ambient input
+    ///
+    /// An `ENV:` location reads the variable an ENV: location names, through
+    /// the secure-environment guard (never in a set-id process). The explicit
+    /// alternatives that read no variable are `new`, `from_pem` and
+    /// `with_provider`.
+    ///
     #[inline]
     pub fn anonymous_from_config(config: &Config, realm: &str) -> Result<Self, Error> {
         Ok(Self::anonymous(
@@ -789,7 +812,6 @@ impl fmt::Debug for Exchange {
             .field("credential", &credential)
             .field("trust", &self.trust)
             .field("policy", &self.policy)
-            .field("pending", &self.pending.is_some())
             .finish()
     }
 }

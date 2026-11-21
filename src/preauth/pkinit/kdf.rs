@@ -80,7 +80,7 @@ fn etype_of(etype: i32) -> Result<(KerberosEtype, usize), Error> {
 /// # Errors
 /// Returns the random-to-key errors.
 fn to_key(kind: KerberosEtype, etype: i32, seed: &[u8]) -> Result<EncryptionKey, Error> {
-    let key = prf::random_to_key(kind, seed)?;
+    let key = prf::random_to_key(kind, seed).map_err(Error::Crypto)?;
     Ok(EncryptionKey::new(etype, key.to_vec()))
 }
 

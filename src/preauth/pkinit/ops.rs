@@ -25,9 +25,6 @@ use crate::{
     keytab::EncryptionKey,
 };
 
-/// The client's ephemeral key-agreement key, erased when dropped.
-pub(super) struct Ephemeral(dh::Ephemeral);
-
 /// The DER certificates of a PEM document.
 ///
 /// # Errors
@@ -63,7 +60,7 @@ pub(super) fn request(
     identity: Option<&Identity>,
     group: DhGroup,
     input: &RequestInput<'_>,
-) -> Result<(Vec<u8>, Ephemeral), Error> {
+) -> Result<(Vec<u8>, Zeroizing<Vec<u8>>), Error> {
     let (ephemeral, spki) = dh::generate(group)?;
     let (whole, micros) = input.time;
     let authenticator = asn1::PkAuthenticator {
@@ -120,7 +117,7 @@ pub(super) fn request(
             kdc_pk_id: None,
         },
     )?;
-    Ok((value, Ephemeral(ephemeral)))
+    Ok((value, ephemeral))
 }
 
 /// Decode an outgoing PA-PK-AS-REQ within [`MAX_MESSAGE_BYTES`].
@@ -147,7 +144,7 @@ pub(super) fn outgoing(value: &[u8]) -> Result<(), Error> {
 /// # Errors
 /// Returns the CMS, certificate, identity, key-agreement and KDF errors.
 pub(super) fn reply(
-    ephemeral: &Ephemeral,
+    (group, ephemeral): (DhGroup, &[u8]),
     nonce: u32,
     (trust, policy): (&KdcTrust, &CertificatePolicy),
     input: &ReplyInput<'_>,
@@ -200,7 +197,7 @@ pub(super) fn reply(
         });
     }
     let public = key_info.subject_public_key.as_raw_slice();
-    let secret = dh::agree(&ephemeral.0, public)?;
+    let secret = dh::agree(group, ephemeral, public)?;
     let inputs = kdf::Inputs {
         secret: &secret,
         etype: input.etype,

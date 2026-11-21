@@ -93,6 +93,7 @@ pub(super) fn new(
         trace: None,
         authenticated_client: None,
         pkinit: None,
+        pkinit_pending: None,
     }
 }
 

@@ -41,7 +41,7 @@ use crate::{
     extensions::{PreauthSession, ProviderError},
     keytab::{EncryptionKey, Keytab},
     preauth::{
-        pkinit::{AnonymousOptions, Exchange as PkinitExchange},
+        pkinit::{AnonymousOptions, Exchange as PkinitExchange, exchange::Pending},
         spake::Policy as SpakePolicy,
     },
     trace::{ExchangeKind, Guard},
@@ -534,6 +534,8 @@ pub struct InitCreds<'registry> {
     authenticated_client: Option<Principal>,
     /// The PKINIT exchange of a certificate or anonymous login.
     pkinit: Option<Box<PkinitExchange>>,
+    /// The ephemeral key and nonce of the PA-PK-AS-REQ in flight.
+    pkinit_pending: Option<Pending>,
 }
 
 impl fmt::Debug for InitCreds<'_> {

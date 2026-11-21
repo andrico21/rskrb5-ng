@@ -7,17 +7,14 @@
 use core::fmt;
 use std::time::SystemTime;
 
-use super::{Credential, Exchange, ops};
+use zeroize::Zeroizing;
+
+use super::{Credential, DhGroup, Exchange, ops};
 use crate::{client::principal::Principal, error::Pkinit as Error, keytab::EncryptionKey};
 
-/// The state between the request and the reply: the ephemeral key (erased
-/// when dropped) and the authenticator nonce.
-pub(super) struct Pending {
-    /// The client's ephemeral key-agreement key.
-    ephemeral: ops::Ephemeral,
-    /// The `PKAuthenticator` nonce.
-    nonce: u32,
-}
+/// The state between the request and the reply: the group, the client's
+/// ephemeral private value (erased when dropped) and the authenticator nonce.
+pub(crate) type Pending = (DhGroup, Zeroizing<Vec<u8>>, u32);
 
 /// What a request needs from the engine.
 pub(crate) struct RequestInput<'input> {
@@ -74,13 +71,16 @@ impl fmt::Debug for ReplyInput<'_> {
     }
 }
 
-/// The PA-PK-AS-REQ value for one request; a fresh ephemeral key replaces
-/// any earlier one.
+/// The PA-PK-AS-REQ value for one request and the state its reply needs (the
+/// engine keeps it).
 ///
 /// # Errors
 /// Returns [`Error::Unavailable`] without the leaf, the identity
 /// provider's failure and the encoding and signing errors.
-pub(crate) fn request(exchange: &mut Exchange, input: &RequestInput<'_>) -> Result<Vec<u8>, Error> {
+pub(crate) fn request(
+    exchange: &Exchange,
+    input: &RequestInput<'_>,
+) -> Result<(Vec<u8>, Pending), Error> {
     let supplied;
     let identity = match &exchange.credential {
         Credential::Identity(identity) => Some(identity),
@@ -90,30 +90,25 @@ pub(crate) fn request(exchange: &mut Exchange, input: &RequestInput<'_>) -> Resu
         }
         Credential::Anonymous => None,
     };
-    let (value, ephemeral) = ops::request(identity, exchange.policy.group(), input)?;
-    exchange.pending = Some(Pending {
-        ephemeral,
-        nonce: input.nonce,
-    });
-    Ok(value)
+    let group = exchange.policy.group();
+    let (value, ephemeral) = ops::request(identity, group, input)?;
+    Ok((value, (group, ephemeral, input.nonce)))
 }
 
-/// The reply key from the KDC's PA-PK-AS-REP; the ephemeral key is
-/// consumed.
+/// The reply key from the KDC's PA-PK-AS-REP for the request that left
+/// `pending`; the ephemeral key is consumed.
 ///
 /// # Errors
 /// Returns [`Error::Unexpected`] before a request, and the CMS,
 /// certificate, key-agreement and KDF errors.
 pub(crate) fn reply_key(
-    exchange: &mut Exchange,
+    exchange: &Exchange,
+    (group, ephemeral, nonce): Pending,
     input: &ReplyInput<'_>,
 ) -> Result<EncryptionKey, Error> {
-    let pending = exchange.pending.take().ok_or(Error::Unexpected {
-        reason: "a PA-PK-AS-REP before any PA-PK-AS-REQ",
-    })?;
     ops::reply(
-        &pending.ephemeral,
-        pending.nonce,
+        (group, &ephemeral),
+        nonce,
         (&exchange.trust, &exchange.policy),
         input,
     )

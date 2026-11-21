@@ -4,14 +4,13 @@
 
 use alloc::sync::Arc;
 
+use zeroize::Zeroizing;
+
 use super::{
     CertificatePolicy, DhGroup, Identity, KdcTrust, Signer,
     exchange::{ReplyInput, RequestInput},
 };
 use crate::{error::Pkinit as Error, keytab::EncryptionKey};
-
-/// No ephemeral key exists in this build.
-pub(super) enum Ephemeral {}
 
 /// Unavailable.
 ///
@@ -48,7 +47,7 @@ pub(super) const fn request(
     _identity: Option<&Identity>,
     _group: DhGroup,
     _input: &RequestInput<'_>,
-) -> Result<(Vec<u8>, Ephemeral), Error> {
+) -> Result<(Vec<u8>, Zeroizing<Vec<u8>>), Error> {
     Err(Error::Unavailable)
 }
 
@@ -60,17 +59,17 @@ pub(super) const fn outgoing(_value: &[u8]) -> Result<(), Error> {
     Err(Error::Unavailable)
 }
 
-/// Unreachable: no [`Ephemeral`] exists.
+/// Unavailable.
 ///
 /// # Errors
-/// Never returns.
+/// Always [`Error::Unavailable`].
 pub(super) const fn reply(
-    ephemeral: &Ephemeral,
+    _ephemeral: (DhGroup, &[u8]),
     _nonce: u32,
     _context: (&KdcTrust, &CertificatePolicy),
     _input: &ReplyInput<'_>,
 ) -> Result<EncryptionKey, Error> {
-    match *ephemeral {}
+    Err(Error::Unavailable)
 }
 
 /// Unavailable.

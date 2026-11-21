@@ -8,7 +8,6 @@ use core::{error::Error as StdError, slice, str, time::Duration};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use der::{Decode as _, Encode, asn1::Uint as DerUint, pem};
-use p256::elliptic_curve::PrimeField as _;
 use x509_cert::{Certificate, crl::CertificateList};
 
 use super::{
@@ -156,15 +155,11 @@ fn modp_2048_agreement_matches_openssl() -> Result<(), TestError> {
         .get_mut(start..)
         .ok_or("pad")?
         .copy_from_slice(&private);
-    let secret = crypto_bigint::U2048::from_be_slice(&padded);
     let public = hex(fixture!("dh-b.pub.hex"))?;
     let integer = DerUint::new(&public)?;
     let encoded = Encode::to_der(&integer)?;
     // When this client agrees, then the secret is OpenSSL's, padded to 256 bytes.
-    let shared = dh::agree(
-        &dh::Ephemeral::Modp2048(Box::new(zeroize::Zeroizing::new(secret))),
-        &encoded,
-    )?;
+    let shared = dh::agree(DhGroup::Modp2048, &padded, &encoded)?;
     assert_eq!(shared.as_slice(), fixture!("dh-shared.bin").as_slice());
     Ok(())
 }
@@ -172,12 +167,7 @@ fn modp_2048_agreement_matches_openssl() -> Result<(), TestError> {
 #[test]
 fn p256_agreement_matches_openssl() -> Result<(), TestError> {
     let private = hex(fixture!("ec-a.priv.hex"))?;
-    let repr = p256::FieldBytes::try_from(private.as_slice())?;
-    let scalar = Option::<p256::Scalar>::from(p256::Scalar::from_repr(repr)).ok_or("scalar")?;
-    let shared = dh::agree(
-        &dh::Ephemeral::P256(zeroize::Zeroizing::new(scalar)),
-        &hex(fixture!("ec-b.pub.hex"))?,
-    )?;
+    let shared = dh::agree(DhGroup::P256, &private, &hex(fixture!("ec-b.pub.hex"))?)?;
     assert_eq!(shared.as_slice(), fixture!("ec-shared.bin").as_slice());
     Ok(())
 }
@@ -206,7 +196,7 @@ fn invalid_public_values_are_refused() -> Result<(), TestError> {
         vec![0x04, 0x01, 0x00],
     ] {
         assert!(matches!(
-            dh::agree(&ephemeral, &value),
+            dh::agree(DhGroup::Modp2048, &ephemeral, &value),
             Err(Error::PublicValue)
         ));
     }
@@ -216,7 +206,10 @@ fn invalid_public_values_are_refused() -> Result<(), TestError> {
         *last ^= 1;
     }
     for value in [vec![0x00], off_curve] {
-        assert!(matches!(dh::agree(&curve, &value), Err(Error::PublicValue)));
+        assert!(matches!(
+            dh::agree(DhGroup::P256, &curve, &value),
+            Err(Error::PublicValue)
+        ));
     }
     Ok(())
 }

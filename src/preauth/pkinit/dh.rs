@@ -16,7 +16,7 @@ use crypto_bigint::{
     modular::{FixedMontyForm, FixedMontyParams},
 };
 use der::{
-    Decode as _, Encode as _, Sequence,
+    Decode as _, Encode as _,
     asn1::{Any, BitString, ObjectIdentifier, Uint as DerUint, UintRef},
 };
 use p256::elliptic_curve::{
@@ -47,37 +47,12 @@ const SECP521R1: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.132.0.35")
 /// Most candidates a private-key rejection sampling draws.
 const MAX_DRAWS: usize = 64;
 
-/// `DomainParameters` (RFC 3279 section 2.3.3) as MIT encodes it: `p`, `g`, `q`.
-#[derive(Sequence)]
-struct DomainParameters {
-    /// The prime `p`.
-    prime: DerUint,
-    /// The generator `g`, 2.
-    generator: DerUint,
-    /// The subgroup order `q = (p - 1) / 2`.
-    order: DerUint,
-}
-
-/// The client's ephemeral private key, erased when dropped.
-pub(super) enum Ephemeral {
-    /// A 2048-bit MODP exponent.
-    Modp2048(Box<Zeroizing<U2048>>),
-    /// A 4096-bit MODP exponent.
-    Modp4096(Box<Zeroizing<U4096>>),
-    /// A P-256 scalar.
-    P256(Zeroizing<p256::Scalar>),
-    /// A P-384 scalar.
-    P384(Zeroizing<p384::Scalar>),
-    /// A P-521 scalar.
-    P521(Zeroizing<p521::Scalar>),
-}
-
 /// Fill `bytes` from the OS generator.
 ///
 /// # Errors
 /// Returns [`Error::Random`].
 fn random(bytes: &mut [u8]) -> Result<(), Error> {
-    getrandom::fill(bytes).map_err(Error::from)
+    getrandom::fill(bytes).map_err(Error::Random)
 }
 
 /// The DER `SubjectPublicKeyInfo` of `oid` with `parameters` and `key`.
@@ -100,37 +75,44 @@ fn spki(oid: ObjectIdentifier, parameters: Any, key: &[u8]) -> Result<Vec<u8>, E
     .map_err(malformed)
 }
 
-/// A fresh key in `group` and the DER `SubjectPublicKeyInfo` of its public half.
+/// A fresh key in `group`: its private value (big-endian bytes, erased when
+/// dropped) and the DER `SubjectPublicKeyInfo` of its public half.
 ///
 /// # Errors
 /// Returns [`Error::Random`] and the encoding errors.
-pub(super) fn generate(group: DhGroup) -> Result<(Ephemeral, Vec<u8>), Error> {
+pub(super) fn generate(group: DhGroup) -> Result<(Zeroizing<Vec<u8>>, Vec<u8>), Error> {
+    let modp_bytes =
+        |secret: Zeroizing<U2048>| Zeroizing::new(secret.to_be_bytes().as_ref().to_vec());
+    let wide_bytes =
+        |secret: Zeroizing<U4096>| Zeroizing::new(secret.to_be_bytes().as_ref().to_vec());
     match group {
         DhGroup::Modp2048 => modp::<{ U2048::LIMBS }>(&MODP_2048)
-            .map(|(secret, public)| (Ephemeral::Modp2048(Box::new(secret)), public)),
+            .map(|(secret, public)| (modp_bytes(secret), public)),
         DhGroup::Modp4096 => modp::<{ U4096::LIMBS }>(&MODP_4096)
-            .map(|(secret, public)| (Ephemeral::Modp4096(Box::new(secret)), public)),
-        DhGroup::P256 => curve::<p256::NistP256>(SECP256R1, 0xff)
-            .map(|(secret, public)| (Ephemeral::P256(secret), public)),
-        DhGroup::P384 => curve::<p384::NistP384>(SECP384R1, 0xff)
-            .map(|(secret, public)| (Ephemeral::P384(secret), public)),
-        DhGroup::P521 => curve::<p521::NistP521>(SECP521R1, 0x01)
-            .map(|(secret, public)| (Ephemeral::P521(secret), public)),
+            .map(|(secret, public)| (wide_bytes(secret), public)),
+        DhGroup::P256 => curve::<p256::NistP256>(SECP256R1, 0xff),
+        DhGroup::P384 => curve::<p384::NistP384>(SECP384R1, 0xff),
+        DhGroup::P521 => curve::<p521::NistP521>(SECP521R1, 0x01),
     }
 }
 
-/// The shared secret of `ephemeral` and the KDC's public value `theirs`
-/// (`KDCDHKeyInfo.subjectPublicKey`), left-padded to the group size.
+/// The shared secret of the private value `secret` in `group` and the KDC's
+/// public value `theirs` (`KDCDHKeyInfo.subjectPublicKey`), left-padded to the
+/// group size.
 ///
 /// # Errors
 /// Returns [`Error::PublicValue`] for an invalid public value.
-pub(super) fn agree(ephemeral: &Ephemeral, theirs: &[u8]) -> Result<Zeroizing<Vec<u8>>, Error> {
-    match ephemeral {
-        Ephemeral::Modp2048(secret) => modp_agree::<{ U2048::LIMBS }>(&MODP_2048, secret, theirs),
-        Ephemeral::Modp4096(secret) => modp_agree::<{ U4096::LIMBS }>(&MODP_4096, secret, theirs),
-        Ephemeral::P256(secret) => curve_agree::<p256::NistP256>(secret, theirs),
-        Ephemeral::P384(secret) => curve_agree::<p384::NistP384>(secret, theirs),
-        Ephemeral::P521(secret) => curve_agree::<p521::NistP521>(secret, theirs),
+pub(super) fn agree(
+    group: DhGroup,
+    secret: &[u8],
+    theirs: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, Error> {
+    match group {
+        DhGroup::Modp2048 => modp_agree::<{ U2048::LIMBS }>(&MODP_2048, secret, theirs),
+        DhGroup::Modp4096 => modp_agree::<{ U4096::LIMBS }>(&MODP_4096, secret, theirs),
+        DhGroup::P256 => curve_agree::<p256::NistP256>(secret, theirs),
+        DhGroup::P384 => curve_agree::<p384::NistP384>(secret, theirs),
+        DhGroup::P521 => curve_agree::<p521::NistP521>(secret, theirs),
     }
 }
 
@@ -180,11 +162,13 @@ fn modp<const LIMBS: usize>(prime: &[u8]) -> Result<(Zeroizing<Uint<LIMBS>>, Vec
                 encode(&order),
                 encode(&public),
             );
-            let parameters = DomainParameters {
-                prime: integer(pb.as_ref())?,
-                generator: integer(gb.as_ref())?,
-                order: integer(qb.as_ref())?,
-            }
+            // RFC 3279 section 2.3.3 `DomainParameters` as MIT encodes it:
+            // `p`, `g`, `q` (a SEQUENCE of three INTEGERs).
+            let parameters = vec![
+                integer(pb.as_ref())?,
+                integer(gb.as_ref())?,
+                integer(qb.as_ref())?,
+            ]
             .to_der()
             .map_err(unencodable)?;
             let key = integer(yb.as_ref())?.to_der().map_err(unencodable)?;
@@ -229,9 +213,21 @@ fn strip(bytes: &[u8]) -> &[u8] {
 /// Returns [`Error::PublicValue`].
 fn modp_agree<const LIMBS: usize>(
     prime: &[u8],
-    secret: &Uint<LIMBS>,
+    secret_bytes: &[u8],
     theirs: &[u8],
 ) -> Result<Zeroizing<Vec<u8>>, Error> {
+    let mut wide = Zeroizing::new(vec![0_u8; prime.len()]);
+    let offset = prime
+        .len()
+        .checked_sub(secret_bytes.len())
+        .ok_or(Error::Malformed {
+            structure: "DH key",
+            reason: "the private value is longer than the group",
+        })?;
+    wide.get_mut(offset..)
+        .ok_or(Error::PublicValue)?
+        .copy_from_slice(secret_bytes);
+    let secret = Zeroizing::new(Uint::<LIMBS>::from_be_slice(&wide));
     let (modulus_value, params, order) = modulus::<LIMBS>(prime)?;
     let integer = UintRef::from_der(theirs).map_err(|_detail| Error::PublicValue)?;
     let magnitude = integer.as_bytes();
@@ -253,7 +249,7 @@ fn modp_agree<const LIMBS: usize>(
     if form.pow_vartime(&order).retrieve() != Uint::<LIMBS>::ONE {
         return Err(Error::PublicValue);
     }
-    let shared = Zeroizing::new(form.pow(secret).retrieve());
+    let shared = Zeroizing::new(form.pow(&*secret).retrieve());
     let bytes = shared.to_be_bytes();
     Ok(Zeroizing::new(bytes.as_ref().to_vec()))
 }
@@ -262,7 +258,7 @@ fn modp_agree<const LIMBS: usize>(
 ///
 /// # Errors
 /// As [`generate`].
-fn curve<C>(curve: ObjectIdentifier, top: u8) -> Result<(Zeroizing<C::Scalar>, Vec<u8>), Error>
+fn curve<C>(curve: ObjectIdentifier, top: u8) -> Result<(Zeroizing<Vec<u8>>, Vec<u8>), Error>
 where
     C: CurveArithmetic,
     C::AffinePoint: FromSec1Point<C> + ToSec1Point<C>,
@@ -282,7 +278,8 @@ where
                 .to_affine()
                 .to_sec1_point(false);
             let parameters = Any::from(curve);
-            return Ok((secret, spki(EC_PUBLIC_KEY, parameters, point.as_bytes())?));
+            let private = Zeroizing::new(secret.to_repr().as_slice().to_vec());
+            return Ok((private, spki(EC_PUBLIC_KEY, parameters, point.as_bytes())?));
         }
     }
     Err(Error::Malformed {
@@ -295,12 +292,26 @@ where
 ///
 /// # Errors
 /// Returns [`Error::PublicValue`].
-fn curve_agree<C>(secret: &C::Scalar, theirs: &[u8]) -> Result<Zeroizing<Vec<u8>>, Error>
+fn curve_agree<C>(secret_bytes: &[u8], theirs: &[u8]) -> Result<Zeroizing<Vec<u8>>, Error>
 where
     C: CurveArithmetic,
     C::AffinePoint: FromSec1Point<C> + ToSec1Point<C>,
     FieldBytesSize<C>: ModulusSize,
 {
+    let mut repr = FieldBytes::<C>::default();
+    if repr.len() != secret_bytes.len() {
+        return Err(Error::Malformed {
+            structure: "EC key",
+            reason: "the private value has the wrong length",
+        });
+    }
+    repr.copy_from_slice(secret_bytes);
+    let scalar: Option<C::Scalar> = Option::from(C::Scalar::from_repr(repr));
+    repr.as_mut_slice().zeroize();
+    let secret = Zeroizing::new(scalar.ok_or(Error::Malformed {
+        structure: "EC key",
+        reason: "the private value is not a scalar",
+    })?);
     let encoded = Sec1Point::<C>::from_bytes(theirs).map_err(|_detail| Error::PublicValue)?;
     let point = Option::<C::AffinePoint>::from(C::AffinePoint::from_sec1_point(&encoded))
         .ok_or(Error::PublicValue)?;

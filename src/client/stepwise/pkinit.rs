@@ -16,8 +16,7 @@ use rasn_kerberos::PaData;
 
 use super::{
     BuiltAsReq, Error, ExchangeStep, InitCreds, KDC_ERR_PREAUTH_REQUIRED, State, build_as_req,
-    canonical_request, decode, encode, finish, padata_contains, preauth_retry_options,
-    process_as_rep, process_kdc_error, send, service, strengthened,
+    decode, encode, padata_contains, preauth_retry_options, process_as_rep, process_kdc_error,
 };
 use crate::{
     crypto::Use,
@@ -33,12 +32,10 @@ use crate::{
 ///
 /// # Errors
 /// Returns [`Pkinit::Unexpected`] when the engine has none.
-fn installed<'engine>(
-    engine: &'engine mut InitCreds<'_>,
-) -> Result<&'engine mut PkinitExchange, Error> {
+fn installed<'engine>(engine: &'engine InitCreds<'_>) -> Result<&'engine PkinitExchange, Error> {
     engine
         .pkinit
-        .as_deref_mut()
+        .as_deref()
         .ok_or(Error::Pkinit(Pkinit::Unexpected {
             reason: "no PKINIT exchange is installed",
         }))
@@ -56,8 +53,8 @@ pub(super) fn start(engine: &mut InitCreds<'_>) -> Result<ExchangeStep, Error> {
             value: Vec::new().into(),
         });
     }
-    let request = build_as_req(engine.client.clone(), service(engine), options)?;
-    send(engine, request, false, State::Initial)
+    let request = build_as_req(engine.client.clone(), super::service(engine), options)?;
+    super::send(engine, request, false, State::Initial)
 }
 
 /// A PKINIT exchange never accepts a reply it cannot authenticate: an AS-REP
@@ -91,7 +88,7 @@ pub(super) fn offer(
     }
     let offers = error.method_data();
     if !padata_contains(offers, PA_PK_AS_REQ) {
-        return Err(Error::Pkinit(Pkinit::NotOffered));
+        return Err(Pkinit::NotOffered.into());
     }
     let freshness = offers
         .iter()
@@ -99,13 +96,13 @@ pub(super) fn offer(
         .map(|entry| entry.value.to_vec());
     let options = preauth_retry_options(engine.options.request.clone(), offers);
     let client = engine.client.clone();
-    let unanswered = build_as_req(client.clone(), service(engine), options.clone())?;
+    let unanswered = build_as_req(client.clone(), super::service(engine), options.clone())?;
     let body = encode("KDC-REQ-BODY", &unanswered.message.0.req_body)?;
     let time = match at {
         Some(kdc_time) => kdc_time,
         None => super::now()?,
     };
-    let value = exchange::request(
+    let (value, pending) = exchange::request(
         installed(engine)?,
         &RequestInput {
             client: &client,
@@ -115,18 +112,19 @@ pub(super) fn offer(
             freshness: freshness.as_deref(),
         },
     )?;
+    engine.pkinit_pending = Some(pending);
     let mut answered = options;
     answered.padata_mut().push(PaData {
         r#type: PA_PK_AS_REQ,
         value: value.into(),
     });
-    let request = build_as_req(client, service(engine), answered)?;
+    let request = build_as_req(client, super::service(engine), answered)?;
     if encode("KDC-REQ-BODY", &request.message.0.req_body)? != body {
         return Err(Error::Pkinit(Pkinit::Unexpected {
             reason: "the request body differs from the checksummed one",
         }));
     }
-    send(engine, request, true, State::Pkinit)
+    super::send(engine, request, true, State::Pkinit)
 }
 
 /// The AS-REP to a PA-PK-AS-REQ: derive the reply key, decrypt, and check an
@@ -157,8 +155,15 @@ pub(super) fn reply(
     }))?;
     let etype = as_rep.enc_part.etype;
     request.crypto_policy.check_use(etype, Use::ReplyKey)?;
+    let pending = engine
+        .pkinit_pending
+        .take()
+        .ok_or(Error::Pkinit(Pkinit::Unexpected {
+            reason: "a PA-PK-AS-REP before any PA-PK-AS-REQ",
+        }))?;
     let reply_key = exchange::reply_key(
         installed(engine)?,
+        pending,
         &ReplyInput {
             pk_as_rep: &pk_as_rep,
             request: &request.der,
@@ -168,11 +173,11 @@ pub(super) fn reply(
             now: SystemTime::now(),
         },
     )?;
-    let canonical = canonical_request(engine, request);
+    let canonical = super::canonical_request(engine, request);
     let session = process_as_rep(
         canonical.as_ref().unwrap_or(request),
         reply,
-        &strengthened(engine, reply_key.clone())?,
+        &super::strengthened(engine, reply_key.clone())?,
     )?;
     if engine.options.anonymous == Some(AnonymousOptions::Full) {
         exchange::verify_anonymous(
@@ -181,7 +186,7 @@ pub(super) fn reply(
             session.session_key(),
         )?;
     }
-    Ok(finish(engine, request, session))
+    Ok(super::finish(engine, request, session))
 }
 
 /// The request with the client name an anonymous reply must carry.
