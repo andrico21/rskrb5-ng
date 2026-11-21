@@ -2,6 +2,7 @@
 
 use core::{
     net::{IpAddr, SocketAddr},
+    pin::Pin,
     time::Duration,
 };
 
@@ -38,6 +39,18 @@ mod closed_port_tests;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod dns_literal_tests;
+/// `disable_encrypted_timestamp` on the raw configured AS route.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "transport/tests/encts.rs"]
+mod encts_tests;
+/// Trace events of the transport.
+mod events;
 /// MIT-shaped password transport for `KdcProtocol::Auto`.
 mod password_auto;
 /// Single-delivery password mutation transport.
@@ -50,6 +63,18 @@ mod password_dns;
 mod password_result;
 /// The primary-KDC retry of an initial login.
 mod primary;
+/// MS-KKDCP endpoints: the request through the KDC proxy transport.
+mod proxied;
+/// `https://` endpoints through a caller's KDC proxy transport.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "transport/tests/proxy.rs"]
+mod proxy_tests;
 /// Configured realm protocol preference.
 mod realm_auto;
 /// Ordered SRV target address resolution.
@@ -73,7 +98,10 @@ use super::{
     keytab_initial_as_req, password_initial_as_rep_session, password_initial_as_req,
     preauth::{keytab_preauth_request, password_preauth_request},
     process_as_rep, process_tgs_rep,
-    stepwise::{InitCreds, InitCredsOptions, NoResponder, TicketCreds, TicketOptions, drive_tokio},
+    stepwise::{
+        InitCreds, InitCredsOptions, NoResponder, TicketCreds, TicketOptions, drive_tokio,
+        options::timestamp_disabled,
+    },
     tgt_realm,
 };
 use crate::{
@@ -89,6 +117,8 @@ use crate::{
     keytab::{EncryptionKey, Keytab},
     krb_error::decode as decode_krb_error,
     messages::secret_der::SecretDer,
+    trace::{Guard, TransportStep},
+    transport::proxy::{KdcProxyTransport, Url},
 };
 
 /// Default timeout applied to each KDC exchange.
@@ -184,6 +214,11 @@ pub struct KdcEndpoint {
     pub port: u16,
     /// Where this endpoint came from.
     pub source: KdcEndpointSource,
+    /// The MS-KKDCP proxy URL of an `https://` server entry, `None` for a UDP or TCP
+    /// endpoint. A proxy endpoint has `protocol` [`KdcProtocol::Tcp`] and the URL's
+    /// `host` and `port`; its requests go as KDC-PROXY-MESSAGEs through the KDC
+    /// proxy transport ([`Tokio::with_kdc_proxy`]).
+    pub proxy: Option<Url>,
 }
 
 #[cfg(feature = "tokio")]
@@ -199,9 +234,14 @@ impl KdcEndpoint {
         Self::configured_with_default_port(protocol, value, 88)
     }
 
-    /// Create a configured endpoint from a `host[:port]` value and default port.
+    /// Create a configured endpoint from a `host[:port]` value and default port, or
+    /// a KDC proxy endpoint from an `https://` URL.
     ///
-    /// `value` is trimmed with `str::trim`. A value that parses as a
+    /// A value that starts with `https://` is an MS-KKDCP proxy URL (MIT
+    /// `locate_kdc.c:216-231`), read by [`Url::parse`] with the default port
+    /// 443 whatever `default_port` says; the endpoint has `protocol`
+    /// [`KdcProtocol::Tcp`] whatever `protocol` says. Otherwise `value` is trimmed
+    /// with `str::trim`. A value that parses as a
     /// `core::net::IpAddr` is the host, with `default_port` (so `fd00::1:88` is
     /// an IPv6 address). A value that starts with `[` takes the host from between
     /// that `[` and the first `]` (which must not contain another `[`), and after that `]` has either nothing (the port
@@ -217,20 +257,42 @@ impl KdcEndpoint {
     /// when it starts with `[` and has no `]`, has nothing or another `[`
     /// between the `[` and the first `]`, or has text after that `]` that does not
     /// start with `:`; when a port is not ASCII digits of a `u16`; or when a value that does not start with
-    /// `[` has a single `:` and no such port.
+    /// `[` has a single `:` and no such port. Returns [`Error::KdcProxy`] with
+    /// [`crate::error::KdcProxy::InvalidUrl`] for an `https://` value that
+    /// [`Url::parse`] refuses.
     #[inline]
     pub fn configured_with_default_port(
         protocol: KdcProtocol,
         value: &str,
         default_port: u16,
     ) -> Result<Self, Error> {
+        if let Some(url) = Url::parse(value)? {
+            return Ok(Self {
+                protocol: KdcProtocol::Tcp,
+                host: url.host().to_owned(),
+                port: url.port(),
+                source: KdcEndpointSource::Config,
+                proxy: Some(url),
+            });
+        }
         let (host, port) = parse_kdc_endpoint(value, default_port)?;
         Ok(Self {
             protocol,
             host,
             port,
             source: KdcEndpointSource::Config,
+            proxy: None,
         })
+    }
+
+    /// The proxy URL of a proxy endpoint, otherwise [`Self::authority`]: how
+    /// failures and traces name the endpoint.
+    #[must_use]
+    #[inline]
+    pub fn target(&self) -> String {
+        self.proxy
+            .as_ref()
+            .map_or_else(|| self.authority(), ToString::to_string)
     }
 
     #[must_use]
@@ -264,8 +326,9 @@ pub struct Tokio {
     dns_server: Option<(IpAddr, u16)>,
     /// Timeout applied to each KDC exchange.
     timeout: Duration,
-    /// Maximum accepted UDP response size.
-    udp_response_limit: usize,
+    /// Maximum accepted UDP response size; `None` takes the largest UDP payload of
+    /// the peer's address family.
+    udp_response_limit: Option<usize>,
     /// Maximum accepted TCP response body size.
     tcp_response_limit: usize,
     /// Locate only primary KDCs: the retry after a replica's failure.
@@ -274,6 +337,8 @@ pub struct Tokio {
     budget: Option<Budget>,
     /// The key under which the login in progress records the KDCs that answer.
     watch: Option<u64>,
+    /// The transport of `https://` (MS-KKDCP) endpoints, if any.
+    proxy: Option<proxied::Handle>,
 }
 
 #[cfg(feature = "tokio")]
@@ -288,18 +353,34 @@ impl Default for Tokio {
 impl Tokio {
     #[must_use]
     /// Create a transport with the system resolver, a 5-second timeout, a UDP
-    /// response limit of 65,508 bytes and a TCP response body limit of 16 MiB.
+    /// response limit of the largest UDP payload of the peer's address family
+    /// (65,507 bytes over IPv4, 65,527 over IPv6) and a TCP response body limit
+    /// of 16 MiB.
     #[inline]
     pub const fn new() -> Self {
         Self {
             dns_server: None,
             timeout: DEFAULT_KDC_TIMEOUT,
-            udp_response_limit: MAX_UDP_DATAGRAM + 1,
+            udp_response_limit: None,
             tcp_response_limit: DEFAULT_TCP_RESPONSE_LIMIT,
             primary_only: false,
             budget: None,
             watch: None,
+            proxy: proxied::Handle::builtin(),
         }
+    }
+
+    /// Send the requests for `https://` (MS-KKDCP) endpoints through `transport`.
+    ///
+    /// Without this call they go through the built-in rustls transport when the
+    /// `kkdcp-rustls` feature is compiled in, and fail with
+    /// [`crate::error::KdcProxy::Unavailable`] otherwise. A transport configured at
+    /// run time can be made `'static` with `Box::leak` once at start-up.
+    #[must_use]
+    #[inline]
+    pub const fn with_kdc_proxy(mut self, transport: &'static dyn KdcProxyTransport) -> Self {
+        self.proxy = Some(proxied::Handle::new(transport));
+        self
     }
 
     /// This transport with the total budget `total` for the request it is about to make.
@@ -454,10 +535,10 @@ impl Tokio {
     }
 
     #[must_use]
-    /// Override the maximum accepted UDP response size.
+    /// Override the maximum accepted UDP response size, for both address families.
     #[inline]
     pub const fn with_udp_response_limit(mut self, udp_response_limit: usize) -> Self {
-        self.udp_response_limit = udp_response_limit;
+        self.udp_response_limit = Some(udp_response_limit);
         self
     }
 
@@ -499,8 +580,9 @@ impl Tokio {
 
         self.with_transport_timeout(async {
             let socket = udp::connect(addr).await?;
+            let limit = udp::reply_limit(&socket, self.udp_response_limit)?;
             let _: usize = socket.send(request).await?;
-            udp::receive(&socket, self.udp_response_limit).await
+            udp::receive(&socket, limit).await
         })
         .await
         .and_then(non_empty_kdc_response)
@@ -822,6 +904,7 @@ impl Tokio {
                 this.locator(config).locate(None, realm, role, protocol),
             ))
             .await?;
+        events::located(realm, protocol, endpoints.len());
         if !endpoints.is_empty() {
             return Ok(endpoints);
         }
@@ -871,10 +954,13 @@ impl Tokio {
         protocol: KdcProtocol,
     ) -> Result<Vec<KdcEndpoint>, Error> {
         let this = self.with_request_budget(config.libdefaults.request_timeout);
-        this.within_budget(Box::pin(password_discovery::discover(
-            &this, config, realm, protocol,
-        )))
-        .await
+        let endpoints = this
+            .within_budget(Box::pin(password_discovery::discover(
+                &this, config, realm, protocol,
+            )))
+            .await?;
+        events::located(realm, protocol, endpoints.len());
+        Ok(endpoints)
     }
 
     /// Send an encoded request to the first reachable KDC discovered from config.
@@ -940,7 +1026,7 @@ impl Tokio {
                 return this.send_to_realm_auto(config, realm, request).await;
             }
             let endpoints = this.discover_kdcs(config, realm, protocol).await?;
-            this.send_to_endpoints_pinned(realm, protocol, endpoints, request)
+            this.send_to_endpoints_pinned((config, realm), protocol, endpoints, request)
                 .await
         })
         .await
@@ -955,12 +1041,12 @@ impl Tokio {
     /// NOT cancel-safe: a delivered password request may already have committed.
     async fn send_to_password_endpoints(
         &self,
-        realm: &str,
+        destination: (&Config, &str),
         protocol: KdcProtocol,
         endpoints: Vec<KdcEndpoint>,
         request: &[u8],
     ) -> Result<Vec<u8>, Error> {
-        password_delivery::send_to_endpoints(self, realm, protocol, endpoints, request).await
+        password_delivery::send_to_endpoints(self, destination, protocol, endpoints, request).await
     }
 
     /// Send one password mutation, reporting uncertainty after possible delivery.
@@ -999,7 +1085,7 @@ impl Tokio {
         request: &[u8],
     ) -> Result<Vec<u8>, Error> {
         let endpoints = self.discover_kdcs(config, realm, protocol).await?;
-        self.send_to_endpoints(realm, protocol, endpoints, request)
+        self.send_to_endpoints((config, realm), protocol, endpoints, request)
             .await
     }
 
@@ -1085,7 +1171,7 @@ impl Tokio {
         let endpoints = self
             .discover_kpasswd_servers(config, realm, protocol)
             .await?;
-        self.send_to_password_endpoints(realm, protocol, endpoints, request)
+        self.send_to_password_endpoints((config, realm), protocol, endpoints, request)
             .await
     }
 
@@ -1211,10 +1297,13 @@ impl Tokio {
     /// # Errors
     ///
     /// Before any I/O it returns [`Error::Config`] when the configuration is
-    /// refused or a request list names an enctype outside the permitted list
+    /// refused for a reason other than a permanently rejected `[libdefaults]`
+    /// choice or a request list names an enctype outside the permitted list
     /// ([`crate::error::Config::EnctypeNotPermitted`]) and [`Error::Crypto`]
-    /// carrying the typed policy refusal when the crypto policy does not permit
-    /// an encryption type of the request's keys. Then returns the pre-delivery
+    /// carrying the typed policy refusal when `[libdefaults]` makes a choice the
+    /// policy permanently rejects (as [`Self::exchange_as_req_with_config`] and
+    /// [`Self::exchange_tgs_req_with_config`] report it) or the crypto policy does
+    /// not permit an encryption type of the request's keys. Then returns the pre-delivery
     /// errors of [`Self::exchange_kpasswd_request_with_config`]
     /// and the same authenticated outcome classification as
     /// [`Self::exchange_kpasswd_result`]. Invalid or unauthenticated replies
@@ -1237,7 +1326,7 @@ impl Tokio {
         options: &RequestOptions,
     ) -> Result<kadmin::ChangePasswordResult, Error> {
         restrictions::config(config)?;
-        let policy = super::crypto_policy::configured_requests(&config.libdefaults)?;
+        let policy = super::crypto_policy::configured(&config.libdefaults)?;
         password_result::outgoing(request, &policy)?;
         let reply = self
             .exchange_kpasswd_request_with_config(config, protocol, realm, request.request())
@@ -1308,7 +1397,9 @@ impl Tokio {
     /// key uses, `[libdefaults]` makes a choice the policy permanently rejects (a
     /// removed enctype such as `des-cbc-crc` in an enctype list, `allow_weak_crypto`,
     /// or an unkeyed `safe_checksum_type`) or a PA-DATA entry has a permanently
-    /// rejected type (draft-9 PKINIT, types 14 and 15).
+    /// rejected type (draft-9 PKINIT, types 14 and 15). Still before any I/O it
+    /// returns [`Error::EncryptedTimestampDisabled`] when `request` carries
+    /// PA-ENC-TIMESTAMP and the client realm sets `disable_encrypted_timestamp`.
     ///
     /// Returns the errors of [`Self::send_to_realm`], [`Error::Kdc`] when the KDC
     /// answers with a KRB-ERROR, an error when the AS-REP cannot be decoded,
@@ -1334,6 +1425,7 @@ impl Tokio {
         let policy = super::crypto_policy::configured(&config.libdefaults)?;
         super::crypto_policy::wire_message(&request.message, &request.der, "AS-REQ")?;
         super::crypto_policy::before_exchange(&policy, &request.message.0, reply_key)?;
+        refuse_disabled_timestamp(config, request)?;
         let mut bound = request.clone();
         bound.crypto_policy = policy;
         let response = self
@@ -2417,12 +2509,12 @@ impl Tokio {
     /// caller can send again.
     async fn send_to_endpoints(
         &self,
-        realm: &str,
+        destination: (&Config, &str),
         protocol: KdcProtocol,
         endpoints: Vec<KdcEndpoint>,
         request: &[u8],
     ) -> Result<Vec<u8>, Error> {
-        self.send_to_endpoints_pinned(realm, protocol, endpoints, request)
+        self.send_to_endpoints_pinned(destination, protocol, endpoints, request)
             .await
             .map(|(response, _)| response)
     }
@@ -2444,7 +2536,7 @@ impl Tokio {
     /// caller can send again.
     async fn send_to_endpoints_pinned(
         &self,
-        realm: &str,
+        (config, realm): (&Config, &str),
         protocol: KdcProtocol,
         endpoints: Vec<KdcEndpoint>,
         request: &[u8],
@@ -2461,19 +2553,30 @@ impl Tokio {
             if let Some(expired) = self.budget_exhausted() {
                 return Err(expired);
             }
-            match self
-                .send_pinned(
-                    endpoint.protocol,
-                    (endpoint.host.as_str(), endpoint.port),
-                    request,
-                )
-                .await
-            {
-                Ok(outcome) => {
-                    primary::record_answer(self.watch, &endpoint.host, endpoint.port);
-                    return Ok(outcome);
+            events::at(TransportStep::Sending, &endpoint, request.len());
+            let outcome = match &endpoint.proxy {
+                Some(url) => proxied::send(self, (config, realm), url, request)
+                    .await
+                    .map(|response| (response, None)),
+                None => {
+                    self.send_pinned(
+                        endpoint.protocol,
+                        (endpoint.host.as_str(), endpoint.port),
+                        request,
+                    )
+                    .await
                 }
-                Err(error) => failures.push(format!("{}: {error}", endpoint.authority())),
+            };
+            match outcome {
+                Ok(answered) => {
+                    events::at(TransportStep::Answered, &endpoint, answered.0.len());
+                    primary::record_answer(self.watch, &endpoint.host, endpoint.port);
+                    return Ok(answered);
+                }
+                Err(error) => {
+                    events::at(TransportStep::Unanswered, &endpoint, 0);
+                    failures.push(format!("{}: {error}", endpoint.target()));
+                }
             }
         }
 
@@ -2563,6 +2666,59 @@ impl Tokio {
             Err(_elapsed) => Err(Error::TransportTimeout(expiry)),
         }
     }
+}
+
+/// Run `future` with `guard` receiving the transport's trace events.
+///
+/// Every transport call `future` makes on this task emits
+/// [`crate::trace::Event::Transport`] events: the endpoints found for a realm, each
+/// send to an endpoint with its answer or failure, and each switch to the other
+/// protocol.
+///
+/// The high-level [`super::Tokio`] client runs its logins and ticket requests this
+/// way under its own guard ([`super::Tokio::with_trace`]); call it directly to trace
+/// the raw methods of [`Tokio`]. A call outside `future`, or on another task, emits
+/// nothing. The returned future is boxed, so it stays small whatever `future` is.
+///
+/// # Security
+///
+/// An event carries sizes, a step and a protocol name, and one identity (the realm
+/// or the endpoint), which the guard withholds unless its options allow identities.
+/// No request or reply byte is traced.
+///
+/// # Cancel safety
+///
+/// cancel-safe exactly when `future` is.
+#[inline]
+pub fn traced<'future, F>(
+    guard: Guard,
+    future: F,
+) -> Pin<Box<dyn Future<Output = F::Output> + Send + 'future>>
+where
+    F: Future + Send + 'future,
+{
+    Box::pin(events::scope(guard, future))
+}
+
+/// Refuse a caller-built PA-ENC-TIMESTAMP for a client realm whose
+/// `disable_encrypted_timestamp` is set, as the exchange engine refuses its own
+/// (MIT `preauth_encts.c:68-73`).
+///
+/// # Errors
+/// Returns [`Error::EncryptedTimestampDisabled`] naming the client realm.
+fn refuse_disabled_timestamp(config: &Config, request: &BuiltAsReq) -> Result<(), Error> {
+    let stamped = request
+        .message
+        .0
+        .padata
+        .as_deref()
+        .is_some_and(|padata| super::padata_contains(padata, super::PA_ENC_TIMESTAMP));
+    if stamped && timestamp_disabled(config).contains(&request.client.realm) {
+        return Err(Error::EncryptedTimestampDisabled {
+            realm: request.client.realm.clone(),
+        });
+    }
+    Ok(())
 }
 
 /// Select without replacement within ascending priorities using RFC 2782 draws.
@@ -2659,7 +2815,7 @@ fn non_empty_kdc_response(response: Vec<u8>) -> Result<Vec<u8>, Error> {
 /// Returns [`Error::InvalidKdcEndpoint`] in the cases that
 /// [`KdcEndpoint::configured_with_default_port`] documents.
 #[cfg(feature = "tokio")]
-fn parse_kdc_endpoint(value: &str, default_port: u16) -> Result<(String, u16), Error> {
+pub(crate) fn parse_kdc_endpoint(value: &str, default_port: u16) -> Result<(String, u16), Error> {
     let endpoint = value.trim();
     if endpoint.is_empty() {
         return Err(Error::InvalidKdcEndpoint(endpoint.to_owned()));

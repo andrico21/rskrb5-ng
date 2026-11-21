@@ -107,7 +107,8 @@ async fn uri_lookup_is_off_unless_enabled() -> Result<(), TestError> {
 /// QA failure scenario: a URI record with an unknown transport is ignored and the next one used.
 #[tokio::test]
 async fn a_uri_record_with_an_unknown_transport_is_ignored() -> Result<(), TestError> {
-    // Given records that MIT's `parse_uri_fields` rejects, before a good one.
+    // Given records that MIT's `parse_uri_fields` rejects, before an MS-KKDCP record
+    // (a stream, MIT `locate_kdc.c:683-690`) and a good TCP one.
     let dns = Dns::start([(
         KDC_URI,
         RecordType::Unknown(256),
@@ -124,8 +125,11 @@ async fn a_uri_record_with_an_unknown_transport_is_ignored() -> Result<(), TestE
     let endpoints = via(&dns)?
         .discover_kdcs(&config(true, None)?, REALM, KdcProtocol::Tcp)
         .await?;
-    // Then only the well-formed TCP record is used.
-    assert_eq!(authorities(&endpoints), ["127.0.0.1:1088"]);
+    // Then only the proxy and the well-formed TCP record are used.
+    assert_eq!(
+        authorities(&endpoints),
+        ["kdc.example:443", "127.0.0.1:1088"]
+    );
     Ok(())
 }
 

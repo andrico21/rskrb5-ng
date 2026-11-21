@@ -1,8 +1,8 @@
 //! Request frame and option implementations.
 
 use super::{
-    CHANGE_PASSWORD_REQUEST_VERSION, ChangePasswdMessageOptions, Error, HEADER_LEN,
-    PasswordEncryption, Request,
+    CHANGE_PASSWORD_REQUEST_VERSION, CHANGE_PASSWORD_VERSION, ChangePasswdMessageOptions, Error,
+    HEADER_LEN, PasswordEncryption, Request,
     codec::{ap_req_error, parse_header},
     decode_krb_priv, encode_krb_priv,
 };
@@ -47,7 +47,19 @@ impl Request {
     #[inline]
     #[must_use]
     pub const fn new(ap_req: rasn_kerberos::ApReq, krb_priv: rasn_kerberos::KrbPriv) -> Self {
-        Self { ap_req, krb_priv }
+        Self {
+            ap_req,
+            krb_priv,
+            version: CHANGE_PASSWORD_REQUEST_VERSION,
+        }
+    }
+
+    /// The protocol version of the frame: [`CHANGE_PASSWORD_VERSION`] or
+    /// [`CHANGE_PASSWORD_REQUEST_VERSION`].
+    #[inline]
+    #[must_use]
+    pub const fn version(&self) -> u16 {
+        self.version
     }
 
     /// Borrow the AP-REQ; explicit dependency-owned clones retain caller erasure duties.
@@ -68,7 +80,11 @@ impl Request {
     #[inline]
     #[must_use]
     pub fn into_parts(self) -> (rasn_kerberos::ApReq, rasn_kerberos::KrbPriv) {
-        let Self { ap_req, krb_priv } = self;
+        let Self {
+            ap_req,
+            krb_priv,
+            version: _,
+        } = self;
         (ap_req, krb_priv)
     }
     /// Parse a password-change request frame.
@@ -81,13 +97,15 @@ impl Request {
     /// of trailing bytes, and [`Error::TruncatedFrame`] when the declared length
     /// exceeds the supplied length;
     /// [`Error::InvalidRequestVersion`] for a version other than
-    /// [`CHANGE_PASSWORD_REQUEST_VERSION`], [`Error::InvalidApReqLength`] when
+    /// [`CHANGE_PASSWORD_REQUEST_VERSION`] and [`CHANGE_PASSWORD_VERSION`], [`Error::InvalidApReqLength`] when
     /// the AP-REQ length leaves no room for the AP-REQ or the KRB-PRIV, and the
     /// decode errors of either message.
     #[inline]
     pub fn parse(bytes: &[u8]) -> Result<Self, Error> {
         let frame = parse_header(bytes)?;
-        if frame.version != CHANGE_PASSWORD_REQUEST_VERSION {
+        if frame.version != CHANGE_PASSWORD_REQUEST_VERSION
+            && frame.version != CHANGE_PASSWORD_VERSION
+        {
             return Err(Error::InvalidRequestVersion(frame.version));
         }
 
@@ -106,7 +124,11 @@ impl Request {
 
         let ap_req = ap_req::decode(ap_req_bytes).map_err(ap_req_error)?;
         let krb_priv = decode_krb_priv(krb_priv_bytes)?;
-        Ok(Self { ap_req, krb_priv })
+        Ok(Self {
+            ap_req,
+            krb_priv,
+            version: frame.version,
+        })
     }
 
     /// Encode a password-change request frame.
@@ -153,7 +175,7 @@ impl Request {
 
         let mut frame = Vec::with_capacity(message_length);
         frame.extend_from_slice(&wire_length.to_be_bytes());
-        frame.extend_from_slice(&CHANGE_PASSWORD_REQUEST_VERSION.to_be_bytes());
+        frame.extend_from_slice(&self.version.to_be_bytes());
         frame.extend_from_slice(&ap_req_length.to_be_bytes());
         frame.extend_from_slice(&ap_req);
         frame.extend_from_slice(&krb_priv);

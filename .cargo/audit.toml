@@ -18,4 +18,11 @@
 # ^0.4.38; the picky crates in the lock do not use it. Revisit when rasn drops
 # chrono or a maintained replacement is adopted (plan 2); remove this entry
 # together with the equal one in deny.toml. Full reason text: deny.toml.
-ignore = ["RUSTSEC-2026-0543"]
+#
+# RUSTSEC-2024-0436: paste is unmaintained (INFO, type unmaintained, 2024-10-07,
+# all versions, locked 1.0.15; a maintenance notice, not a vulnerability). A
+# compile-time proc macro of rustls-rustcrypto 0.1.0-pre.0 (the optional
+# kkdcp-rustls leaf); it ships no code and parses no input at run time. No
+# maintained release exists; remove this entry together with the equal one in
+# deny.toml when rustls-rustcrypto drops paste. Full reason text: deny.toml.
+ignore = ["RUSTSEC-2024-0436", "RUSTSEC-2026-0543"]

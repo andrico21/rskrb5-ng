@@ -78,6 +78,22 @@ pub(super) const DELEGATIONS: &[(&str, &str)] = &[
         "delegates:src/client.rs::Tokio::change_password_for_with_options",
     ),
     (
+        "src/client.rs::Tokio::login_with_expiry",
+        "delegates:src/client.rs::Tokio::login",
+    ),
+    (
+        "src/client.rs::Tokio::login_with_expiry",
+        "delegates:src/client.rs::Tokio::login",
+    ),
+    (
+        "src/client.rs::Tokio::login_with_expiry",
+        "delegates:src/client.rs::Tokio::change_password_with_options",
+    ),
+    (
+        "src/client.rs::Tokio::login_with_expiry",
+        "delegates:src/client.rs::Tokio::affirm_login",
+    ),
+    (
         "src/client/stepwise.rs::InitCreds::step",
         "delegates:src/client/stepwise/init.rs::step",
     ),
@@ -141,6 +157,26 @@ pub(super) const CONTRACTS: &[(&str, &str, &str)] = &[
         "src/client/stepwise/init.rs::registered_challenge",
         "preferred_preauth_types",
         "Appends a registered mechanism's PA-DATA to the request template in place; no credential value is replaced or dropped.",
+    ),
+    (
+        "src/client/stepwise/otp.rs::answer",
+        "otp_answer_redacts_credentials",
+        "Builds the request from a clone of the request template (the template itself is not replaced) and fills the empty reply-key slot with the armor key; nothing held is replaced. The answer's OTP value and PIN are moved into the request builder and erased when the answer is dropped (Zeroizing's Drop contract), and the armor key's erasure when the exchange is abandoned relies on EncryptionKey's Drop contract.",
+    ),
+    (
+        "src/client/stepwise/pkinit.rs::start",
+        "certificate_login_completes_with_the_freshness_token",
+        "Builds the first request from a clone of the request template with an empty PA-AS-FRESHNESS added to the clone; no credential slot or template field is replaced.",
+    ),
+    (
+        "src/client/stepwise/pkinit.rs::offer",
+        "certificate_login_completes_with_the_freshness_token",
+        "Builds the PA-PK-AS-REQ from a clone of the request template and fills the empty pkinit_pending slot with the ephemeral private value and nonce; nothing held is replaced (send moves the pending request into the next state), and the value's erasure relies on Zeroizing's Drop contract.",
+    ),
+    (
+        "src/client/stepwise/pkinit.rs::reply",
+        "anonymous_pkinit_yields_the_anonymous_principal",
+        "Takes the pending ephemeral value out of its slot and consumes it in the key agreement; the derived reply key is a local dropped after the AS-REP is decrypted, its erasure relying on EncryptionKey's Drop contract (ZeroizeOnDrop) and the Zeroizing shared secret's.",
     ),
     (
         "src/client/stepwise/spake.rs::offer",

@@ -10,7 +10,10 @@ use super::{
 use crate::{
     config::{Config, Toggle, section_values::Value},
     error::Client as Error,
-    preauth::spake::Policy as SpakePolicy,
+    preauth::{
+        pkinit::{AnonymousOptions, KDC_OPTION_REQUEST_ANONYMOUS},
+        spake::Policy as SpakePolicy,
+    },
 };
 
 /// The `forwardable` KDC option bit.
@@ -29,6 +32,7 @@ pub(super) fn from_request(request: AsReq) -> InitCredsOptions {
         preferred_preauth_types: MIT_PREFERRED.to_vec(),
         spake: None,
         timestamp_disabled: Vec::new(),
+        anonymous: None,
     }
 }
 
@@ -49,12 +53,13 @@ pub(super) fn from_config(
         preferred_preauth_types: defaults.preferred_preauth_types.clone(),
         spake: Some(SpakePolicy::from_libdefaults(defaults)),
         timestamp_disabled: timestamp_disabled(config),
+        anonymous: None,
     })
 }
 
 /// The realms whose `disable_encrypted_timestamp` is set; any value other than
 /// an explicit `false` counts as set (fail closed).
-pub(super) fn timestamp_disabled(config: &Config) -> Vec<String> {
+pub(in crate::client) fn timestamp_disabled(config: &Config) -> Vec<String> {
     config
         .realms
         .iter()
@@ -85,6 +90,16 @@ pub(super) fn adopt(options: &mut InitCredsOptions, config: &Config) {
 pub(super) fn with_spake(mut options: InitCredsOptions, policy: SpakePolicy) -> InitCredsOptions {
     options.spake = Some(policy);
     options
+}
+
+/// Ask for anonymous credentials: the `request-anonymous` KDC option.
+pub(super) fn with_anonymous(
+    options: InitCredsOptions,
+    anonymous: AnonymousOptions,
+) -> InitCredsOptions {
+    let mut flagged = with_flag(options, KDC_OPTION_REQUEST_ANONYMOUS, true);
+    flagged.anonymous = Some(anonymous);
+    flagged
 }
 
 /// Request another service.

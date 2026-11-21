@@ -69,13 +69,17 @@ fn configured(
     if realm_entry.kpasswd_server.is_empty() {
         return Ok(None);
     }
-    realm_entry
-        .kpasswd_server
-        .iter()
-        .flat_map(|value| protocols.iter().map(move |protocol| (*protocol, value)))
-        .map(|(protocol, value)| KdcEndpoint::configured_with_default_port(protocol, value, 464))
-        .collect::<Result<Vec<_>, _>>()
-        .map(Some)
+    let mut found = Vec::new();
+    for value in &realm_entry.kpasswd_server {
+        for protocol in protocols {
+            let endpoint = KdcEndpoint::configured_with_default_port(*protocol, value, 464)?;
+            // A proxy entry is one HTTPS endpoint, listed once, never for UDP.
+            if endpoint.proxy.is_none() || *protocol == KdcProtocol::Tcp {
+                found.push(endpoint);
+            }
+        }
+    }
+    Ok(Some(found))
 }
 
 /// The error for a realm without a configured server when DNS is off.

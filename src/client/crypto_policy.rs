@@ -4,6 +4,7 @@
 use core::error::Error as _;
 
 use rasn::{Encode, der};
+use rasn_kerberos::otp::PaOtpRequest;
 use zeroize::Zeroizing;
 
 use super::{AsRepSession, Error, ticket_error};
@@ -13,7 +14,7 @@ use crate::{
     crypto::{CryptoPolicy, Use, selection},
     error::{Config as ConfigError, Policy},
     keytab::EncryptionKey,
-    preauth::{fast, spake},
+    preauth::{fast, otp, pkinit, spake},
     ticket,
 };
 
@@ -42,10 +43,19 @@ pub(super) fn padata(policy: &CryptoPolicy, data: &[rasn_kerberos::PaData]) -> R
             }
             // RFC 9588: a client sends only a support message or a response; the
             // response's factor is sealed in a key of the reply key's enctype.
+            // RFC 4556: the client sends only a DER PA-PK-AS-REQ; its CMS signs and
+            // its key agreement keys nothing under a Kerberos enctype.
+            pkinit::PA_PK_AS_REQ => pkinit::outgoing(&entry.value).map_err(Error::Pkinit)?,
             spake::PA_SPAKE => {
                 if let Some(etype) = spake::outgoing(&entry.value)? {
                     policy.check_use(etype, Use::ReplyKey)?;
                 }
+            }
+            // RFC 6560: the one OTP type a client sends; its nonce is sealed in the armor key. The
+            // challenge (141) and the PIN-change message (144) are KDC halves and stay refused.
+            otp::PA_OTP_REQUEST => {
+                let request: PaOtpRequest = super::decode("PA-OTP-REQUEST", &entry.value)?;
+                policy.check_use(request.enc_data.etype, Use::SessionKey)?;
             }
             // A client does not send enctype hints; the KDC and the peer do.
             11_i32 | 19_i32 | 23_i32 | 165_i32 => {
@@ -74,12 +84,13 @@ pub(super) fn padata(policy: &CryptoPolicy, data: &[rasn_kerberos::PaData]) -> R
             // opaque nested encryption; the message claims no more than the refusal.
             5..=9
             | 12..=13
-            | 16..=17
+            | 17_i32
             | 30..=31
             | 41_i32
             | 130_i32
             | 134..=135
-            | 141..=148
+            | 141_i32
+            | 143..=148
             | 152..=153 => {
                 return Err(Error::Encode {
                     target: "PA-DATA",

@@ -19,7 +19,7 @@
 ARG BASE_IMAGE=docker.io/library/debian:trixie-20261104-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
 
 FROM ${BASE_IMAGE}
-ARG SSSD_KCM_VERSION=2.10.1-2+b1
+ARG SSSD_KCM_VERSION=2.10.1-2+deb13u1
 RUN apt-get update \
     && apt-get install -y --no-install-recommends "sssd-kcm=${SSSD_KCM_VERSION}" krb5-user tini \
     && rm -rf /var/lib/apt/lists/* \

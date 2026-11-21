@@ -78,6 +78,37 @@ pub enum ExchangeKind {
     Ticket,
 }
 
+/// What a KDC or kpasswd transport step did.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum TransportStep {
+    /// Discovery found `size` endpoints for the realm `target`.
+    Located,
+    /// A request of `size` bytes is going to the endpoint `target`.
+    Sending,
+    /// The endpoint `target` answered with `size` bytes.
+    Answered,
+    /// The endpoint `target` gave no usable answer (it failed, timed out or answered
+    /// malformed data); the next one is tried, if any.
+    Unanswered,
+    /// The realm `target` is tried again over the protocol `wire`.
+    Switched,
+}
+
+/// The protocol of a transport step.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum TransportWire {
+    /// UDP datagrams.
+    Udp,
+    /// TCP with record marks.
+    Tcp,
+    /// MS-KKDCP through an HTTPS KDC proxy.
+    Https,
+    /// UDP and TCP in the order the profile selects (discovery only).
+    Auto,
+}
+
 /// A principal, realm or endpoint name. It is sensitive: a guard withholds it
 /// unless [`Options::with_identities`] opts in, `Debug` never prints it,
 /// and `Display` escapes it.
@@ -150,6 +181,19 @@ pub enum Event<'event> {
     ApReqRejected {
         /// A static name of the rejection class.
         reason: &'static str,
+    },
+    /// A step of the KDC or kpasswd transport, where MIT's `sendto_kdc.c` traces
+    /// "Sending request (N bytes) to REALM" and "Received answer (N bytes) from ...".
+    Transport {
+        /// What the transport did.
+        step: TransportStep,
+        /// The protocol of the step.
+        wire: TransportWire,
+        /// The realm for [`TransportStep::Located`] and [`TransportStep::Switched`],
+        /// the endpoint (`host:port` or the KDC proxy URL) otherwise.
+        target: Identity<'event>,
+        /// Endpoints found, or bytes sent or received; 0 for a failure or a switch.
+        size: usize,
     },
 }
 

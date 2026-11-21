@@ -1,6 +1,9 @@
 //! Result code interpretation.
 
-use super::{ChangePasswordResult, Error, KPASSWD_SUCCESS};
+use super::{
+    ChangePasswordResult, Error, KPASSWD_SUCCESS,
+    result_text::{self, AdPasswordPolicy, ResultCode},
+};
 
 impl ChangePasswordResult {
     /// Parse a cleartext password-change response.
@@ -22,6 +25,29 @@ impl ChangePasswordResult {
             text: String::from_utf8_lossy(&text_raw).into_owned(),
             text_raw,
         })
+    }
+
+    /// The result code as a typed kind.
+    #[inline]
+    #[must_use]
+    pub fn kind(&self) -> ResultCode {
+        ResultCode::from(self.code)
+    }
+
+    /// The Active Directory password policy in the result text, if it carries one.
+    #[inline]
+    #[must_use]
+    pub fn ad_policy(&self) -> Option<AdPasswordPolicy> {
+        result_text::ad_policy(&self.text_raw)
+    }
+
+    /// A message for the user (MIT `krb5_chpw_message`): the sentences of an Active
+    /// Directory policy; else the text when it is valid UTF-8 without NUL; else generic
+    /// advice.
+    #[inline]
+    #[must_use]
+    pub fn message(&self) -> String {
+        result_text::message(&self.text_raw)
     }
 
     #[must_use]

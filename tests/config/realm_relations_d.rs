@@ -54,6 +54,10 @@ mod tests {
                     realm.relations.get("sitename"),
                     Some(&Value::Text((*input).to_owned()))
                 ),
+                ("http_anchors", "locations") => assert!(matches!(
+                    realm.relations.get("http_anchors"),
+                    Some(Value::Locations(locations)) if locations.len() == 1
+                )),
                 _ => return Err(format!("unreviewed effective relation {name}").into()),
             }
             for parsed in [&config, &strict] {
@@ -61,6 +65,53 @@ mod tests {
             }
         }
         Ok(())
+    }
+
+    /// The client PKINIT relations (todo 8): typed values and no deferred-consumer
+    /// diagnostic; a `FeatureUnavailable` diagnostic (without the `pkinit` leaf)
+    /// exactly when Strict mode refuses the profile.
+    fn pkinit(name: &str, kind: &str, inputs: &[&str]) -> Result<(), Box<dyn Error>> {
+        for input in inputs {
+            let text = format!("[realms]\n EXAMPLE = {{\n {name} = {input}\n }}\n");
+            let config = Config::parse(&text)?;
+            let realm = config.realm("EXAMPLE").ok_or("realm missing")?;
+            let value = realm.relations.get(name).ok_or("relation missing")?;
+            match (kind, value) {
+                ("bool", Value::Boolean(flag)) => assert_eq!(flag.is_enabled(), *input == "true"),
+                ("choice", Value::Choice(choice)) => assert_eq!(choice, input),
+                ("locations", Value::Locations(locations)) => assert_eq!(locations.len(), 1),
+                ("list", Value::List(values)) => assert_eq!(values, &[*input]),
+                _ => return Err(format!("wrong value kind {name}").into()),
+            }
+            assert!(!config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == name)));
+            let unavailable = config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::FeatureUnavailable { relation, feature: "pkinit" } if *relation == name));
+            let strict = Config::parse_with_mode(&text, ParseMode::Strict);
+            // With the leaf the relation is effective; without it, unavailable
+            // (tests/pkinit/profile.rs checks which one each build is).
+            assert_eq!(unavailable, strict.is_err(), "{name}: {strict:?}");
+        }
+        Ok(())
+    }
+
+    /// Named tests for the client PKINIT relations.
+    macro_rules! pkinit_cases {
+        ($($name:ident, $kind:literal, [$($value:literal),+];)+) => {$ (
+            /// The named relation is effective, or unavailable without the leaf.
+            #[test]
+            fn $name() -> Result<(), Box<dyn Error>> { pkinit(stringify!($name), $kind, &[$($value),+]) }
+        )+};
+    }
+
+    pkinit_cases! {
+        pkinit_anchors, "locations", ["FILE:/ca", "DIR:/ca"];
+        pkinit_cert_match, "list", ["<SUBJECT>.*", "&&<EKU>msScLogin,clientAuth<KU>digitalSignature"];
+        pkinit_eku_checking, "choice", ["kpKDC", "kpServerAuth", "none"];
+        pkinit_dh_min_bits, "choice", ["1024", "2048", "4096", "P-256", "P-384", "P-521"];
+        pkinit_identities, "locations", ["FILE:/cert,/key", "PKCS12:/identity", "PKCS11:module_name=never-load", "ENV:IDENTITY"];
+        pkinit_kdc_hostname, "list", ["kdc.example", "other.example"];
+        pkinit_pool, "locations", ["FILE:/pool", "DIR:/pool"];
+        pkinit_require_crl_checking, "bool", ["true", "false"];
+        pkinit_revoke, "locations", ["FILE:/crl", "DIR:/crl"];
     }
 
     /// Named tests for the effective realm relations.
@@ -72,6 +123,7 @@ mod tests {
         )+};
     }
     effective_cases! {
+        http_anchors, "locations", ["FILE:/ca", "DIR:/ca", "ENV:CA_BUNDLE"];
         master_kdc, "list", ["master.example", "other.example:88"];
         primary_kdc, "list", ["primary.example", "other.example:88"];
         sitename, "text", ["Site-A", "Site-B"];
@@ -88,16 +140,6 @@ mod tests {
     cases! {
         auth_to_local, "list", ["DEFAULT", "RULE:[1:$1](.*)s/a/b/"];
         default_domain, "text", ["example.test", "other.test"];
-        http_anchors, "locations", ["FILE:/ca", "DIR:/ca", "ENV:CA_BUNDLE"];
-        pkinit_anchors, "locations", ["FILE:/ca", "DIR:/ca"];
-        pkinit_cert_match, "list", ["<SUBJECT>.*", "&&<EKU>msScLogin,clientAuth<KU>digitalSignature"];
-        pkinit_eku_checking, "choice", ["kpKDC", "kpServerAuth", "none"];
-        pkinit_dh_min_bits, "choice", ["1024", "2048", "4096", "P-256", "P-384", "P-521"];
-        pkinit_identities, "locations", ["FILE:/cert,/key", "PKCS12:/identity", "PKCS11:module_name=never-load", "ENV:IDENTITY"];
-        pkinit_kdc_hostname, "list", ["kdc.example", "other.example"];
-        pkinit_pool, "locations", ["FILE:/pool", "DIR:/pool"];
-        pkinit_require_crl_checking, "bool", ["true", "false"];
-        pkinit_revoke, "locations", ["FILE:/crl", "DIR:/crl"];
         pkinit_identity, "locations", ["FILE:/cert,/key", "PKCS12:/server"];
         pkinit_allow_upn, "bool", ["true", "false"];
         pkinit_indicator, "list", ["strong", "pkinit"];

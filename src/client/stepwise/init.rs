@@ -29,9 +29,18 @@ use crate::{
     crypto::{KerberosEtype, Use, prf},
     error::Fast,
     keytab::{EncryptionKey, Keytab},
-    preauth::{encrypted_challenge::EncryptedChallenge, fast::PA_ENCRYPTED_CHALLENGE},
+    preauth::{
+        encrypted_challenge::EncryptedChallenge, fast::PA_ENCRYPTED_CHALLENGE,
+        pkinit::Exchange as PkinitExchange,
+    },
 };
 
+/// The engine side of OTP preauthentication (RFC 6560).
+#[path = "otp.rs"]
+mod otp;
+/// The engine side of PKINIT and anonymous PKINIT (RFC 4556, RFC 6112).
+#[path = "pkinit.rs"]
+mod pkinit;
 /// The engine side of SPAKE preauthentication (RFC 9588).
 #[path = "spake.rs"]
 mod spake;
@@ -54,8 +63,12 @@ pub(super) enum State {
     PasswordForChallenge,
     /// The preauthenticated request is out; its key is in `reply_key`.
     Final(Box<BuiltAsReq>),
+    /// The OTP challenge is put to the caller; the answer becomes the request.
+    Otp(Box<otp::Pending>),
     /// A PA-SPAKE support message is out; the KDC answers with its challenge.
     Spake(Box<spake::Round>),
+    /// A PA-PK-AS-REQ is out; the KDC answers with an AS-REP carrying PA-PK-AS-REP.
+    Pkinit(Box<BuiltAsReq>),
     /// Finished or failed; no further step is possible.
     Done,
 }
@@ -84,7 +97,19 @@ pub(super) fn new(
         strengthen_key: None,
         trace: None,
         authenticated_client: None,
+        otp: None,
+        pkinit: None,
+        pkinit_pending: None,
     }
+}
+
+/// Install the PKINIT exchange of a certificate or anonymous login.
+pub(super) fn with_pkinit(
+    mut engine: InitCreds<'static>,
+    exchange: PkinitExchange,
+) -> InitCreds<'static> {
+    engine.pkinit = Some(Box::new(exchange));
+    engine
 }
 
 /// Adopt `config`'s SPAKE groups and timestamp-disabled realms (MIT reads both
@@ -107,6 +132,8 @@ pub(super) fn debug(engine: &InitCreds<'_>, formatter: &mut fmt::Formatter<'_>) 
         .field("kdc_time_offset", &engine.time_offset)
         .field("preauth", &engine.preauth)
         .field("armor", &engine.armor.is_some())
+        .field("otp", &engine.otp.is_some())
+        .field("pkinit", &engine.pkinit)
         .finish_non_exhaustive()
 }
 
@@ -117,7 +144,12 @@ const fn state_name(state: &State) -> &'static str {
         State::PasswordForInitial | State::PasswordForReply(_) | State::PasswordForChallenge => {
             "a password answer"
         }
-        State::Initial(_) | State::Discovery | State::Final(..) | State::Spake(_) => "a KDC reply",
+        State::Otp(_) => "an OTP answer",
+        State::Initial(_)
+        | State::Discovery
+        | State::Final(..)
+        | State::Spake(_)
+        | State::Pkinit(_) => "a KDC reply",
         State::Done => "nothing (the exchange is finished)",
     }
 }
@@ -178,7 +210,9 @@ fn advance(engine: &mut InitCreds<'_>, input: StepInput<'_>) -> Result<ExchangeS
             let reply = held(engine.held_reply.take())?;
             challenge(engine, &reply)
         }
+        (State::Otp(pending), StepInput::Answer(answer)) => otp::answer(engine, &pending, answer),
         (State::Spake(round), StepInput::Reply(reply)) => spake::reply(engine, *round, reply),
+        (State::Pkinit(request), StepInput::Reply(reply)) => pkinit::reply(engine, &request, reply),
         (State::Final(request), StepInput::Reply(reply)) => {
             let reply_key = held(engine.reply_key.take())?;
             verify_kdc_challenge(engine, &request, reply, &reply_key)?;
@@ -202,6 +236,10 @@ fn advance(engine: &mut InitCreds<'_>, input: StepInput<'_>) -> Result<ExchangeS
 /// # Errors
 /// Returns the typed failure of the step; the exchange cannot continue after it.
 fn start(engine: &mut InitCreds<'_>) -> Result<ExchangeStep, Error> {
+    otp::require_armor(engine)?;
+    if engine.pkinit.is_some() {
+        return pkinit::start(engine);
+    }
     let service = service(engine);
     if awaiting_password(engine) && engine.options.request.assume_preauthentication() {
         return Ok(prompt(engine, State::PasswordForInitial));
@@ -233,6 +271,7 @@ fn initial_reply(
     reply: &[u8],
 ) -> Result<ExchangeStep, Error> {
     if as_rep_reply_key_info(reply).is_some() {
+        pkinit::refuse_unauthenticated(engine)?;
         if awaiting_password(engine) {
             engine.held_reply = Some(Zeroizing::new(reply.to_vec()));
             return Ok(prompt(engine, State::PasswordForReply(request)));
@@ -323,11 +362,17 @@ fn initial_reply_key(
 /// # Errors
 /// Returns the typed failure of the step; the exchange cannot continue after it.
 fn challenge(engine: &mut InitCreds<'_>, reply: &[u8]) -> Result<ExchangeStep, Error> {
+    if let Some(step) = otp::offer(engine, reply)? {
+        return Ok(step);
+    }
     if awaiting_password(engine) {
         engine.held_reply = Some(Zeroizing::new(reply.to_vec()));
         return Ok(prompt(engine, State::PasswordForChallenge));
     }
     let at = preauth_time(engine)?;
+    if engine.pkinit.is_some() {
+        return pkinit::offer(engine, reply, at);
+    }
     if let Some(error) = registered_challenge(engine, reply)? {
         let key = challenge_key(engine, &error)?;
         let options = preauth_retry_options(engine.options.request.clone(), error.method_data());
@@ -436,12 +481,15 @@ fn accept(engine: &mut InitCreds<'_>, answer: Answer) -> Result<(), Error> {
         Answer::Password(_) => Err(Error::UnexpectedStepInput {
             expected: "a KDC reply",
         }),
+        Answer::Otp(_) => Err(Error::UnexpectedStepInput {
+            expected: "a password answer",
+        }),
     }
 }
 
 /// Whether this is a password exchange still without its password.
 const fn awaiting_password(engine: &InitCreds<'_>) -> bool {
-    engine.keytab.is_none() && engine.password.is_none()
+    engine.keytab.is_none() && engine.password.is_none() && engine.pkinit.is_none()
 }
 
 /// The password bytes of a password exchange (empty before it is known).
@@ -520,7 +568,7 @@ fn finish(engine: &mut InitCreds<'_>, request: &BuiltAsReq, session: AsRepSessio
     if engine.options.kdc_timesync {
         engine.time_offset = Some(offset(session.auth_time, request.reply_clock().0));
     }
-    engine.key_expiration = session.key_expiration;
+    engine.key_expiration = session.expiry_notice().password();
     engine.state = State::Done;
     ExchangeStep::Complete(Box::new(session))
 }
@@ -665,12 +713,16 @@ const fn canonicalize_requested(engine: &InitCreds<'_>) -> bool {
     engine.options.request.kdc_option_bits() & KDC_OPTION_CANONICALIZE != 0
 }
 
-/// The request with the client FAST authenticated.
+/// The request with the client the reply must name: the anonymous client of
+/// an anonymous request (RFC 6112), else the client FAST authenticated.
 ///
-/// Only when it differs and the caller asked for canonicalization: only a
-/// protected reply may change the client name (RFC 6806 section 7; RFC 6113
-/// section 5.4.3 `cname`).
+/// The FAST client only when it differs and the caller asked for
+/// canonicalization: only a protected reply may change the client name (RFC
+/// 6806 section 7; RFC 6113 section 5.4.3 `cname`).
 fn canonical_request(engine: &InitCreds<'_>, request: &BuiltAsReq) -> Option<BuiltAsReq> {
+    if let Some(anonymous) = engine.options.anonymous {
+        return Some(pkinit::anonymous_request(anonymous, request));
+    }
     let client = engine.authenticated_client.as_ref()?;
     (canonicalize_requested(engine) && *client != request.client).then(|| {
         let mut canonical = request.clone();

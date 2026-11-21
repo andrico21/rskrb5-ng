@@ -33,8 +33,8 @@ mod tests {
             Refusal, Registry, Selection, SelectionRequest,
         },
         trace::{
-            Event, ExchangeKind, Guard, Identity, Options, Sink, capture::Memory, err_fmt::ErrFmt,
-            file::Append,
+            Event, ExchangeKind, Guard, Identity, Options, Sink, TransportStep, TransportWire,
+            capture::Memory, err_fmt::ErrFmt, file::Append,
         },
     };
 
@@ -420,6 +420,12 @@ mod tests {
             }),
             Event::ApReqAccepted { service: identity },
             Event::ApReqRejected { reason: "rejected" },
+            Event::Transport {
+                step: TransportStep::Sending,
+                wire: TransportWire::Https,
+                target: identity,
+                size: 1,
+            },
         ];
         let names: Vec<&str> = events.iter().map(Event::name).collect();
         assert_eq!(names, Event::NAMES);

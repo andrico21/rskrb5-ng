@@ -268,6 +268,7 @@ mod tests {
             host: "admin.test.gokrb5".to_owned(),
             port: 749,
             source: KdcEndpointSource::DnsSrv,
+            proxy: None,
         };
         // When it is expanded for the password passes.
         let entries = admin_entries(vec![host.clone()]);

@@ -32,6 +32,7 @@ create_user s4uclient INTEROP_SAMBA_USER_S4U_CLIENT_PASSWORD
 create_user kpasswduser INTEROP_SAMBA_USER_KPASSWD_USER_PASSWORD
 create_user kpasswdcheck INTEROP_SAMBA_USER_KPASSWD_CHECK_PASSWORD
 create_user setpwtarget INTEROP_SAMBA_USER_SETPW_TARGET_PASSWORD
+create_user kpasswdself INTEROP_SAMBA_USER_KPASSWD_SELF_PASSWORD
 
 # The HTTP service of the Negotiate and PAC scenarios: AES and, for the
 # seeded RC4 trust scenario (allow_rc4 opt-in on the client), RC4-HMAC

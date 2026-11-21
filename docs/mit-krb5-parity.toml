@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 83
-partial = 44
-absent = 26
+implemented = 91
+partial = 41
+absent = 21
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -153,7 +153,7 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "S4U2Self protocol transition / impersonation"
 implementation_status = "partial"
 evidence_status = "unproven"
-missing = "PA-FOR-USER/principal S4U exists; no certificate S4U identity."
+missing = "PA-FOR-USER/principal S4U exists; no certificate S4U identity. P2-8 delivered the certificate types (preauth::pkinit::Identity DER chains and the x509-cert parsing of the pkinit leaf); the PA-S4U-X509-USER certificate request is P2-17's (closer)."
 rust_symbols = []
 test_names = []
 feature_flags = []
@@ -204,13 +204,21 @@ id = "MIT-client-9"
 area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Anonymous and realm-exposed anonymous initial credentials"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "AS options lack anonymous identity/policy orchestration."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "preauth::pkinit::AnonymousOptions",
+  "client::stepwise::InitCredsOptions::with_anonymous",
+  "client::stepwise::InitCreds::with_pkinit",
+]
+test_names = [
+  "tests/pkinit/scenarios.rs::realm_exposed_anonymity_requires_the_anonymous_name",
+  "tests/pkinit/scenarios.rs::anonymous_pkinit_yields_the_anonymous_principal",
+  "tests/interop_pkinit/scenarios.rs::anonymous_pkinit_issues_the_anonymous_principal",
+]
+feature_flags = ["pkinit"]
+security_divergence = "Realm-exposed anonymity (a normal login with request-anonymous) accepts only WELLKNOWN/ANONYMOUS in the client realm as the reply client; MIT 1.22.2 KDCs do not issue such tickets, so it is verified against the test KDC only (doc/user/user_commands/kinit.rst -n)."
 disposition = "WP-06"
 closing_plan = 2
 closing_todo = 8
@@ -255,15 +263,21 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "Initial-credential options and prompting: lifetimes, addresses, enctypes, preauth options, service, anonymous, callbacks/responders"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "P2-4 delivered options, prompts, the responder and the password-expiry notice (`Responder::password_expiry`); automatic password change on expiry and the anonymous flow are the closing todo P2-23's."
+missing = "P2-4 delivered options, prompts, the responder and the password-expiry notice (`Responder::password_expiry`); P2-23 delivered the expiry notice from last-req and key-expiration (`ExpiryNotice`) and the automatic password change and restart on `KDC_ERR_KEY_EXPIRED` (`Tokio::login_with_expiry`). The anonymous option flow (`krb5_get_init_creds_opt_set_anonymous`) is the anonymous credentials of plan-2 todo 8, which delivered `InitCredsOptions::with_anonymous` (row MIT-client-9); the wave-5 merge keeps this row partial because the generated catalogue `docs/config-relations.md` does not record that flow (register row FU-KPW-P05); plan-2 todo 28 (parity manifests at 100%) closes it."
 rust_symbols = [
   "client::stepwise::InitCredsOptions",
   "client::stepwise::Prompt",
   "client::stepwise::Responder",
+  "client::kpasswd::last_req::ExpiryNotice",
+  "client::kpasswd::password_expiry::ExpiryResponder",
 ]
 test_names = [
   "tests/client/stepwise.rs::drive_reports_the_password_expiry",
   "tests/client/stepwise.rs::drive_answers_prompts_through_the_responder",
+  "tests/kpasswd_expiry/notice.rs::the_responder_hears_the_last_req_password_expiry_before_key_expiration",
+  "tests/kpasswd_expiry/notice.rs::the_warning_follows_mit_rules_and_wording",
+  "tests/kpasswd_expiry/flow.rs::an_expired_password_is_changed_and_the_login_restarts_with_the_new_one",
+  "tests/interop_kpasswd/scenarios.rs::an_impending_expiry_reaches_the_responder",
 ]
 feature_flags = []
 security_divergence = ""
@@ -431,14 +445,20 @@ id = "MIT-preauth-3"
 area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "FAST anonymous armor via anonymous PKINIT"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "P2-7 delivered the anonymous-armor hook (`preauth::fast::AnonymousArmor`, `ArmorSource::Anonymous`, asked for each realm the exchange armors); anonymous PKINIT behind it is the closing todo P2-8's."
-rust_symbols = ["preauth::fast::AnonymousArmor", "preauth::fast::ArmorSource"]
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "preauth::fast::AnonymousArmor",
+  "preauth::fast::ArmorSource",
+  "preauth::pkinit::AnonymousArmorSource",
+]
 test_names = [
   "tests/fast/exchange.rs::client_referrals_are_followed_only_when_armored_and_asked_for",
+  "tests/pkinit/scenarios.rs::anonymous_armor_source_obtains_an_anonymous_tgt",
+  "tests/interop_pkinit/scenarios.rs::anonymous_armor_carries_the_encrypted_challenge",
 ]
-feature_flags = []
+feature_flags = ["pkinit"]
 security_divergence = ""
 disposition = "WP-06"
 closing_plan = 2
@@ -478,13 +498,40 @@ id = "MIT-preauth-5"
 area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "PKINIT certificate authentication (RSA and supported ECC paths)"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "PKINIT excluded by current code; implement current ECC/DH, not removed RSA mode."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "preauth::pkinit::Exchange",
+  "preauth::pkinit::Identity",
+  "preauth::pkinit::IdentityProvider",
+  "preauth::pkinit::Signer",
+  "preauth::pkinit::KdcTrust",
+  "preauth::pkinit::CertificatePolicy",
+  "preauth::pkinit::DhGroup",
+  "preauth::pkinit::ConfiguredIdentities",
+  "client::stepwise::InitCreds::with_pkinit",
+  "error::Pkinit",
+]
+test_names = [
+  "src/preauth/pkinit/tests.rs::rfc8636_kdf_vectors",
+  "src/preauth/pkinit/tests.rs::octetstring2key_concatenates_counted_sha1_blocks",
+  "src/preauth/pkinit/tests.rs::modp_2048_agreement_matches_openssl",
+  "src/preauth/pkinit/tests.rs::p256_agreement_matches_openssl",
+  "src/preauth/pkinit/tests.rs::invalid_public_values_are_refused",
+  "src/preauth/pkinit/tests.rs::openssl_cms_signed_data_verifies",
+  "src/preauth/pkinit/tests.rs::chain_validation_rules",
+  "src/preauth/pkinit/tests.rs::kdc_identity_rules",
+  "src/preauth/pkinit/tests.rs::software_identities_and_outgoing_requests",
+  "tests/pkinit/scenarios.rs::certificate_login_completes_with_the_freshness_token",
+  "tests/pkinit/scenarios.rs::no_freshness_token_is_sent_when_none_is_offered",
+  "tests/pkinit/scenarios.rs::kdc_certificate_without_the_kdc_eku_is_rejected_under_kp_kdc",
+  "tests/pkinit/scenarios.rs::kdc_certificate_without_the_eku_is_accepted_under_none",
+  "tests/pkinit/scenarios.rs::rejections_of_the_kdc_reply",
+  "tests/interop_pkinit/scenarios.rs::certificate_login_earns_the_pkinit_indicator",
+]
+feature_flags = ["pkinit"]
+security_divergence = "Stricter than MIT 1.22.2: the KDC certificate must carry the EKU pkinit_eku_checking asks for (and digitalSignature) also when its id-pkinit-san names the TGS (MIT skips the EKU check then, pkinit_clnt.c:395-399,584-601); finite-field groups below 2048 bits are refused (pkinit_dh_min_bits = 1024 is DhGroupTooSmall); SHA-1 signatures and RSA keys below 2048 bits are refused on certificates and CMS; a stale CRL fails as RevocationUnknown; the bounded in-crate path validator replaces OpenSSL X509_verify_cert (rules in src/preauth/pkinit/chain.rs). Built-in software identities sign with EC keys (P-256, P-384); RSA client keys sign through the Signer trait (D8). RSA key transport (encKeyPack) stays rejected (D2). The TD-DH-PARAMETERS retry with another group (pkinit_client_tryagain) is not implemented: the KDC refusal is returned as the KDC error."
 disposition = "WP-06"
 closing_plan = 2
 closing_todo = 8
@@ -495,13 +542,22 @@ id = "MIT-preauth-6"
 area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Anonymous PKINIT"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "No certificate-less anonymous exchange."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "preauth::pkinit::Exchange",
+  "preauth::pkinit::AnonymousOptions",
+  "client::stepwise::InitCredsOptions::with_anonymous",
+]
+test_names = [
+  "tests/pkinit/scenarios.rs::anonymous_pkinit_yields_the_anonymous_principal",
+  "tests/pkinit/scenarios.rs::anonymous_reply_without_the_key_exchange_is_rejected",
+  "src/preauth/pkinit/tests.rs::anonymous_key_exchange_must_match_the_session_key",
+  "tests/interop_pkinit/scenarios.rs::anonymous_pkinit_issues_the_anonymous_principal",
+]
+feature_flags = ["pkinit"]
+security_divergence = "Stricter than MIT 1.22.2: the reply client must be exactly WELLKNOWN/ANONYMOUS@WELLKNOWN:ANONYMOUS (MIT accepts any canonicalized name for a request-anonymous request, get_in_tkt.c:227-238) and its session key is checked against PA-PKINIT-KX in constant time (MIT memcmp, get_in_tkt.c:147-203). The client always sends an unsigned SignedData (RFC 6112), never the pre-1.10 bare ContentInfo."
 disposition = "WP-06"
 closing_plan = 2
 closing_todo = 8
@@ -553,13 +609,59 @@ id = "MIT-preauth-8"
 area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "OTP client interaction and OTP-over-FAST protocol support"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "OTP dependency types enabled but no client factor/responder exchange."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "preauth::otp::Challenge",
+  "preauth::otp::Challenge::decode",
+  "preauth::otp::Challenge::request",
+  "preauth::otp::Policy",
+  "preauth::otp::Response",
+  "preauth::otp::Responder",
+  "preauth::otp::Responders",
+  "preauth::otp::Token",
+  "preauth::otp::Format",
+  "preauth::otp::PinMode",
+  "client::stepwise::InitCreds::with_otp",
+  "client::stepwise::Prompt",
+  "client::stepwise::Answer",
+  "error::Otp",
+]
+test_names = [
+  "tests/otp/wire.rs::mit_encodings_round_trip_through_the_message_types",
+  "tests/otp/wire.rs::mit_minimal_challenge_decodes",
+  "tests/otp/wire.rs::mit_maximal_challenge_drops_the_unsupported_token",
+  "tests/otp/wire.rs::flags_select_the_supported_tokens",
+  "tests/otp/wire.rs::malformed_flags_are_refused",
+  "tests/otp/wire.rs::token_fields_filter_and_report",
+  "tests/otp/wire.rs::challenges_are_bounded",
+  "tests/otp/wire.rs::malformed_challenges_are_refused",
+  "tests/otp/wire.rs::request_carries_the_token_and_the_encrypted_nonce",
+  "tests/otp/wire.rs::pin_modes_decide_where_the_pin_goes",
+  "tests/otp/wire.rs::answers_are_validated_before_a_request_is_built",
+  "tests/otp/wire.rs::responses_are_redacted",
+  "tests/otp/exchange.rs::otp_login_inside_fast_completes",
+  "tests/otp/exchange.rs::a_refused_value_ends_the_exchange",
+  "tests/otp/exchange.rs::the_answer_selects_the_token",
+  "tests/otp/exchange.rs::a_separate_pin_is_sent_in_its_own_field",
+  "tests/otp/exchange.rs::an_invalid_answer_sends_nothing",
+  "tests/otp/exchange.rs::otp_without_fast_fails_before_sending",
+  "tests/otp/exchange.rs::otp_with_required_fast_and_no_armor_fails_before_sending",
+  "tests/otp/exchange.rs::an_unarmored_challenge_is_never_answered",
+  "tests/otp/exchange.rs::otp_is_never_answered_unasked",
+  "tests/otp/exchange.rs::bad_challenges_end_the_exchange",
+  "tests/otp/exchange.rs::an_unexpected_otp_answer_is_refused",
+  "tests/otp/exchange.rs::the_responder_adapter_drives_a_login",
+  "tests/otp/exchange.rs::the_exchange_keeps_no_secret",
+  "tests/policy/outgoing_inventory.rs::outgoing_padata_types_are_refused_or_admitted_exactly",
+  "tests/secret_debug_audit/otp.rs::otp_answer_redacts_credentials",
+  "tests/interop_otp/scenarios.rs::otp_login_inside_fast_earns_the_otp_indicator",
+  "tests/interop_otp/scenarios.rs::a_wrong_token_value_is_refused",
+  "tests/interop_otp/scenarios.rs::without_fast_no_otp_is_offered",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Tokens that need `nextOTP`, `combine`, `must-encrypt-nonce`, `check-digit`, hashed OTP values (`supportedHashAlg`, `iterationCount`) or base64 values, and tokens whose vendor or challenge is not printable ASCII, are dropped and counted, as MIT does (preauth_otp.c:869-897), so the RFC 6560 section 3.6 key derivations from the OTP value are not implemented (MIT has none either); the PIN-change message (`PA-OTP-PIN-CHANGE`, RFC 6560 section 4.3) is not handled, as in MIT. Stricter than MIT 1.22.2: OTP is only ever sent inside FAST (MIT fails with ENOENT without an armor key, preauth_otp.c:1084-1087, and so does this client, before it sends anything); a token that sets both `collect-pin` and `do-not-collect-pin` (RFC 6560 section 4.1), a flags string that is not 32 to 64 bits, a negative `otp-length`, an empty `otp-challenge`, a repeated `PA-OTP-CHALLENGE`, a challenge with trailing bytes and a challenge over the size, token-count and field bounds of `Policy` are refused; the user's answer is checked against the token's length, format and PIN mode before a request is built (MIT checks only when it picks the token itself, preauth_otp.c:451-470), and a PIN is never sent to a token that must not collect one; an OTP value is tried once (a refusal ends the exchange). With an OTP policy installed the exchange answers OTP before the encrypted challenge and the encrypted timestamp unless `preferred_preauth_types` names another offered mechanism first (MIT answers the first usable offer in the KDC's order). The names are `otp::Challenge`, `otp::Response`, `otp::Responder` and `otp::Policy` (module_name_repetitions). The OTP value is held in zeroizing owners; the `rasn` containers of the request copy it as plain bytes (register row FU-OTP-P02). EXECUTOR decisions of plan-2 todo 10 (register row FU-OTP-P01, the owner may veto): there is no `otp` Cargo feature (`rasn-kerberos` enables its OTP types for every `messages` build and FAST is core, so a leaf would gate nothing); only `PA-OTP-REQUEST` (142) leaves the client, while `PA-OTP-CHALLENGE` (141) and `PA-OTP-PIN-CHANGE` (144) are KDC halves and stay refused by name in `client::crypto_policy::padata`."
 disposition = "WP-08"
 closing_plan = 2
 closing_todo = 10
@@ -2342,13 +2444,26 @@ id = "MIT-config-50"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`[realms]`: `http_anchors` for HTTPS KDC/kpasswd proxy"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "MS-KKDCP HTTPS proxy transport; the relation is parsed with a diagnostic."
-rust_symbols = []
-test_names = ["tests/config/realm_relations_d.rs::http_anchors"]
-feature_flags = []
-security_divergence = ""
+missing = ""
+rust_symbols = [
+  "transport::proxy::Request",
+  "transport::rustls_proxy::RustlsTransport",
+  "transport::rustls_proxy::RustlsTransport::with_pem_roots",
+]
+test_names = [
+  "tests/config/realm_relations_d.rs::http_anchors",
+  "src/client/transport/tests/proxy.rs::kdc_requests_go_through_the_proxy",
+  "tests/kkdcp.rs::posts_to_a_verified_proxy",
+  "tests/kkdcp.rs::configured_roots_replace_missing_anchors",
+  "tests/kkdcp.rs::missing_anchors_are_refused",
+  "tests/kkdcp.rs::wrong_anchor_is_refused",
+  "tests/kkdcp.rs::tokio_transport_uses_the_builtin_proxy",
+  "tests/interop_kkdcp/scenarios.rs::unrelated_ca_is_refused",
+]
+feature_flags = ["kkdcp-rustls"]
+security_divergence = "`FILE:` and `DIR:` anchors as MIT 1.22.2 `load_anchor` (`src/plugins/tls/k5tls/openssl.c:391-400`), read with bounds (1 MiB per file, 1,024 directory entries); every request carries the realm's anchors to the KDC proxy transport, so a caller's transport receives them too, `ENV:` locations included. Stricter than MIT: an unset relation is not the system CA store; with no roots configured on the built-in transport the request fails with `KdcProxy::NoAnchors`; the built-in transport refuses an `ENV:` location (MIT reads it with `secure_getenv`, `openssl.c:401-405`) because the crate reads the environment only through explicit entry points, never inside a request (EXECUTOR decision, register FU-KDP-P05), and a `PKCS11:` or `PKCS12:` value is refused."
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 16
@@ -2361,14 +2476,26 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "`[realms]`: PKINIT identity/trust/cert-auth options"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "PKINIT; realm pkinit_* relations are parsed with diagnostics and enabled pkinit_win2k/pkinit_draft9 values are rejected (D2)."
-rust_symbols = []
+missing = "pkinit_cert_match rule evaluation: the rules are POSIX regular expressions (MIT pkinit_matching.c) and no regex engine is admitted, so a configured rule is a typed UnsupportedLocation error, never skipped; closer: plan 2 todo 28 (configuration consumers complete) once a regex engine is admitted (the localauth leaf of todo 25). The client relations pkinit_anchors, pkinit_pool, pkinit_revoke, pkinit_identities, pkinit_eku_checking, pkinit_dh_min_bits, pkinit_kdc_hostname and pkinit_require_crl_checking are effective (P2-8); pkinit_identity, pkinit_allow_upn, pkinit_indicator and pkinit_require_freshness are KDC-side (D1) and keep their diagnostic."
+rust_symbols = [
+  "preauth::pkinit::KdcTrust::from_config",
+  "preauth::pkinit::CertificatePolicy::from_config",
+  "preauth::pkinit::ConfiguredIdentities::from_config",
+  "preauth::pkinit::DhGroup::from_min_bits",
+]
 test_names = [
   "tests/config/sections_d.rs::pkinit_invalid_enums_fail",
   "tests/config/realm_relations_d.rs::pkinit_anchors",
   "tests/config/realm_relations_d.rs::pkinit_identities",
+  "tests/pkinit/profile.rs::dh_min_bits_maps_like_mit_with_a_2048_floor",
+  "tests/pkinit/profile.rs::realm_relations_shape_the_certificate_policy",
+  "tests/pkinit/profile.rs::refused_identity_locations_are_typed_errors",
+  "tests/pkinit/profile.rs::certificate_matching_rules_are_refused_not_skipped",
+  "tests/pkinit/profile.rs::file_identities_pair_certificate_and_key",
+  "tests/pkinit/profile.rs::missing_anchors_are_a_typed_error",
+  "tests/pkinit/profile.rs::anchors_pool_and_crls_load_from_files",
 ]
-feature_flags = []
+feature_flags = ["pkinit"]
 security_divergence = ""
 disposition = "WP-06"
 closing_plan = 2
@@ -2612,13 +2739,45 @@ id = "MIT-dns-5"
 area = "dns"
 upstream_ref = "krb5-1.22.2-final"
 capability = "KDC proxy transport over HTTPS (MS-KKDCP)"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "No HTTP KDC transport."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "transport::kkdcp::ProxyMessage",
+  "transport::kkdcp::encode_request",
+  "transport::kkdcp::decode_reply",
+  "transport::proxy::KdcProxyTransport",
+  "transport::proxy::Request",
+  "transport::proxy::Url",
+  "transport::rustls_proxy::RustlsTransport",
+  "client::transport::Tokio::with_kdc_proxy",
+  "client::transport::KdcEndpoint::target",
+]
+test_names = [
+  "src/transport/kkdcp/tests.rs::mit_reference_encoding_round_trips",
+  "src/transport/kkdcp/tests.rs::request_carries_its_record_mark_and_realm",
+  "src/transport/kkdcp/tests.rs::reply_needs_a_matching_record_mark",
+  "src/transport/kkdcp/tests.rs::reply_bytes_are_bounded_and_complete",
+  "src/transport/proxy/tests.rs::urls_split_into_host_port_and_path",
+  "src/transport/proxy/tests.rs::unsafe_urls_are_refused",
+  "src/client/transport/tests/proxy.rs::kdc_requests_go_through_the_proxy",
+  "src/client/transport/tests/proxy.rs::udp_only_requests_skip_proxy_entries",
+  "src/client/transport/tests/proxy.rs::failing_proxies_fail_over_and_are_named",
+  "src/client/transport/tests/proxy.rs::kpasswd_through_the_proxy_keeps_outcome_unknown",
+  "src/client/transport/tests/proxy.rs::missing_proxy_transport_is_definite",
+  "src/client/transport/tests/proxy.rs::proxy_replies_obey_the_response_limit",
+  "tests/kkdcp.rs::posts_to_a_verified_proxy",
+  "tests/kkdcp.rs::wrong_anchor_is_refused",
+  "tests/kkdcp.rs::certificate_for_another_host_is_refused",
+  "tests/kkdcp.rs::redirects_and_other_statuses_are_refused",
+  "tests/kkdcp.rs::oversized_body_is_refused",
+  "tests/kkdcp.rs::tokio_transport_uses_the_builtin_proxy",
+  "tests/interop_kkdcp/scenarios.rs::login_and_service_ticket_through_the_proxy",
+  "tests/interop_kkdcp/scenarios.rs::unrelated_ca_is_refused",
+  "tests/interop_kkdcp/scenarios.rs::kpasswd_through_the_proxy",
+]
+feature_flags = ["kkdcp-rustls"]
+security_divergence = "Stricter than MIT 1.22.2: an `https://` entry with no `http_anchors` and no roots configured on the transport fails (`KdcProxy::NoAnchors`) where MIT trusts the system CA store (`src/plugins/tls/k5tls/openssl.c:422-425`); only a `200` response is read and a redirect or any other status is refused (MIT ignores the status line, `sendto_kdc.c:1351-1360`); a URL with user information, a query or fragment before the path, or a byte outside visible ASCII in the host part or path is refused; TLS 1.2 is the minimum (rustls); the body is bounded at 1 MiB as MIT bounds it. Kept from MIT: the realm framing of the request (record mark, `target-domain`), default port 443, no SNI for an IP literal, HTTPS entries used for every request except a UDP-only one (`sendto_kdc.c:819-823`), and `krb5srv:...:kkdcp:` DNS URI targets. Differences: HTTP/1.1 with `Connection: close` instead of HTTP/1.0; a password change through the proxy is outcome-unknown unless the failure proves the request never left the client."
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 16
@@ -2954,13 +3113,35 @@ id = "MIT-admin-1"
 area = "admin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Password-change client protocol (change password / set password)"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Authenticated change/target-set APIs exist; expiry responder/automatic change/restart absent."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "client::Tokio::change_password",
+  "client::Tokio::change_password_for",
+  "client::kpasswd::password_expiry::ExpiryResponder",
+  "client::kpasswd::password_expiry::NewPasswordPrompt",
+  "client::kpasswd::password_expiry::ChangeReason",
+  "client::kpasswd::last_req::ExpiryNotice",
+  "kadmin::result_text::ResultCode",
+  "kadmin::result_text::AdPasswordPolicy",
+]
+test_names = [
+  "tests/kpasswd_expiry/self_change.rs::a_self_change_is_the_change_password_protocol",
+  "tests/kpasswd_expiry/self_change.rs::another_principal_is_a_targeted_set_password",
+  "tests/kpasswd_expiry/policy_kinds.rs::the_same_libdefaults_refusal_has_one_kind_on_every_path",
+  "tests/kpasswd_expiry/result_policy.rs::an_ad_policy_becomes_mits_sentences",
+  "tests/kpasswd_expiry/result_policy.rs::result_codes_map_to_kinds_with_mits_descriptions",
+  "tests/kpasswd_expiry/flow.rs::an_expired_password_is_changed_and_the_login_restarts_with_the_new_one",
+  "tests/kpasswd_expiry/flow.rs::an_unauthenticated_change_success_does_not_restart_the_as",
+  "tests/kpasswd_expiry/flow.rs::a_lost_reply_is_never_replayed_by_the_flow_or_by_the_next_call",
+  "tests/kpasswd_expiry/flow.rs::a_cancelled_flow_leaves_the_outcome_unknown",
+  "tests/interop_kpasswd/scenarios.rs::an_expired_password_is_changed_and_the_login_starts_over",
+  "tests/interop_kpasswd_samba/scenarios.rs::an_ordinary_user_changes_their_own_password",
+  "tests/interop_kpasswd_samba/scenarios.rs::an_administrators_targeted_reset_sets_another_accounts_password",
+]
 feature_flags = []
-security_divergence = "`KdcProtocol::Auto` follows changepw.c: one discovery for both protocols (`_kpasswd._udp` and `_kpasswd._tcp` are both queried and form one list; `_kerberos-adm._tcp` hosts at port 464 over both protocols only when neither set held a record, decided from the SRV answer before the targets are resolved), then TCP first over every endpoint and UDP only after the TCP pass failed; `udp_preference_limit` does not apply. A root SRV target adds no endpoint and the other records of its set are kept, as in MIT 1.22.2, which never aborts on one (dnssrv.c:332 appends a dot to every target, so the empty-host test at locate_kdc.c:380-383 cannot match, and sendto_kdc.c skips a name that resolves to nothing); with root targets only the call fails with `DnsServiceUnavailable` before any request is sent to a password server, where MIT ends in KRB5_KDC_UNREACH having sent nothing. A published set none of whose targets resolves (with `Tokio::with_dns_server`) counts as published: with no endpoint left the call fails with `KdcEndpointFailures` carrying the failure of every such set, UDP first, where MIT skips the unresolved names and ends in KRB5_KDC_UNREACH (sendto_kdc.c:753-780 and :1602-1604), and `_kerberos-adm` is asked only when the list is empty (changepw.c:68). Documented residual: the KDC path (`discover_srv_endpoints`) and the explicit `Tcp`/`Udp` discovery (its own root check in `password_dns::discover`) still discard a whole record set that mixes a root record with real records, where MIT uses the real ones. Explicit `Tcp` and `Udp` discover for their own protocol and apply the published rule to their own set (a published `_kpasswd` set of that protocol none of whose targets resolves fails with `KdcEndpointFailures` of that protocol, or with `DnsServiceUnavailable` when the set holds a root target, and `_kerberos-adm` is not asked); MIT has no explicit transport, changepw.c always runs its TCP pass and then its UDP pass over one list. Three kept divergences: (1) UDP is never tried after a TCP request that may have been delivered (the result is `KpasswdOutcomeUnknown`), where MIT kills the connection and then runs its UDP pass; (2) one datagram per endpoint with no retransmit, where MIT resends the datagram on each of up to three passes; (3) only `ConnectionRefused` or `ConnectionReset` while the single UDP reply is awaited is a plain endpoint failure and every other failure after the datagram was sent stays `KpasswdOutcomeUnknown`, where MIT treats any UDP receive error as that server failing."
+security_divergence = "P2-23: the client's own password is changed without RFC 3244 target fields (changepw.c:308-315) and any other principal as a targeted set-password; an expired password is changed through `Tokio::login_with_expiry` (gic_pwd.c:171-343) and the AS restarts only after an authenticated kpasswd success: an unsigned KRB-ERROR that claims success, or a success sealed under another key, ends the flow with `KpasswdOutcomeUnknown` (MIT treats an unsigned KRB-ERROR result code as the server's answer, chpw.c:228-235 refuses only success; this client treats every unauthenticated answer as unknown, security beats leniency), and a request that may have been delivered leaves a per-client mark (`Tokio::has_unresolved_password_change`) that refuses further changes with `PasswordChangePending` until `acknowledge_password_change_outcome`, where MIT has no memory across calls; `login_with_expiry` takes the sender address of the KRB-PRIV, where MIT derives it from the connection. `KdcProtocol::Auto` follows changepw.c: one discovery for both protocols (`_kpasswd._udp` and `_kpasswd._tcp` are both queried and form one list; `_kerberos-adm._tcp` hosts at port 464 over both protocols only when neither set held a record, decided from the SRV answer before the targets are resolved), then TCP first over every endpoint and UDP only after the TCP pass failed; `udp_preference_limit` does not apply. A root SRV target adds no endpoint and the other records of its set are kept, as in MIT 1.22.2, which never aborts on one (dnssrv.c:332 appends a dot to every target, so the empty-host test at locate_kdc.c:380-383 cannot match, and sendto_kdc.c skips a name that resolves to nothing); with root targets only the call fails with `DnsServiceUnavailable` before any request is sent to a password server, where MIT ends in KRB5_KDC_UNREACH having sent nothing. A published set none of whose targets resolves (with `Tokio::with_dns_server`) counts as published: with no endpoint left the call fails with `KdcEndpointFailures` carrying the failure of every such set, UDP first, where MIT skips the unresolved names and ends in KRB5_KDC_UNREACH (sendto_kdc.c:753-780 and :1602-1604), and `_kerberos-adm` is asked only when the list is empty (changepw.c:68). Documented residual: the KDC path (`discover_srv_endpoints`) and the explicit `Tcp`/`Udp` discovery (its own root check in `password_dns::discover`) still discard a whole record set that mixes a root record with real records, where MIT uses the real ones. Explicit `Tcp` and `Udp` discover for their own protocol and apply the published rule to their own set (a published `_kpasswd` set of that protocol none of whose targets resolves fails with `KdcEndpointFailures` of that protocol, or with `DnsServiceUnavailable` when the set holds a root target, and `_kerberos-adm` is not asked); MIT has no explicit transport, changepw.c always runs its TCP pass and then its UDP pass over one list. Three kept divergences: (1) UDP is never tried after a TCP request that may have been delivered (the result is `KpasswdOutcomeUnknown`), where MIT kills the connection and then runs its UDP pass; (2) one datagram per endpoint with no retransmit, where MIT resends the datagram on each of up to three passes; (3) only `ConnectionRefused` or `ConnectionReset` while the single UDP reply is awaited is a plain endpoint failure and every other failure after the datagram was sent stays `KpasswdOutcomeUnknown`, where MIT treats any UDP receive error as that server failing."
 disposition = "WP-15"
 closing_plan = 2
 closing_todo = 23

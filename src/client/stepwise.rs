@@ -40,7 +40,11 @@ use crate::{
     error::Client as Error,
     extensions::{PreauthSession, ProviderError},
     keytab::{EncryptionKey, Keytab},
-    preauth::spake::Policy as SpakePolicy,
+    preauth::{
+        otp::{Challenge, Policy, Response},
+        pkinit::{AnonymousOptions, Exchange as PkinitExchange, exchange::Pending},
+        spake::Policy as SpakePolicy,
+    },
     trace::{ExchangeKind, Guard},
 };
 
@@ -49,7 +53,7 @@ use crate::{
 mod init;
 /// Request options and their profile defaults.
 #[path = "stepwise/options.rs"]
-mod options;
+pub(super) mod options;
 /// MIT's `preferred_preauth_types` ordering.
 #[path = "stepwise/order.rs"]
 mod order;
@@ -173,6 +177,14 @@ pub enum Prompt {
         /// The client whose password is needed.
         client: Principal,
     },
+    /// The KDC offers OTP tokens: choose one and answer with [`Answer::Otp`]. The
+    /// challenge carries no secret.
+    Otp {
+        /// The client that logs in.
+        client: Principal,
+        /// The tokens to choose from.
+        challenge: Challenge,
+    },
 }
 
 /// The caller's answer to a [`Prompt`]. Its `Debug` output is redacted and its
@@ -181,6 +193,8 @@ pub enum Prompt {
 pub enum Answer {
     /// A password, for [`Prompt::Password`].
     Password(Password),
+    /// The chosen token, its OTP value and its PIN, for [`Prompt::Otp`].
+    Otp(Response),
 }
 
 impl fmt::Debug for Answer {
@@ -188,6 +202,7 @@ impl fmt::Debug for Answer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Password(_) => f.write_str("Answer::Password([REDACTED])"),
+            Self::Otp(_) => f.write_str("Answer::Otp([REDACTED])"),
         }
     }
 }
@@ -258,6 +273,8 @@ pub struct InitCredsOptions {
     spake: Option<SpakePolicy>,
     /// Realms whose `disable_encrypted_timestamp` is set (MIT `encts_disabled`).
     timestamp_disabled: Vec<String>,
+    /// Anonymous credentials (RFC 6112), when requested.
+    anonymous: Option<AnonymousOptions>,
 }
 
 impl fmt::Debug for InitCredsOptions {
@@ -270,6 +287,7 @@ impl fmt::Debug for InitCredsOptions {
             .field("preferred_preauth_types", &self.preferred_preauth_types)
             .field("spake", &self.spake)
             .field("timestamp_disabled", &self.timestamp_disabled)
+            .field("anonymous", &self.anonymous)
             .finish()
     }
 }
@@ -396,6 +414,24 @@ impl InitCredsOptions {
     pub const fn spake_policy(&self) -> Option<&SpakePolicy> {
         self.spake.as_ref()
     }
+
+    /// Ask for anonymous credentials (RFC 6112, MIT
+    /// `krb5_get_init_creds_opt_set_anonymous`): sets `request-anonymous` and
+    /// requires the ticket's client to be the anonymous name `anonymous`
+    /// implies. A fully anonymous exchange also verifies the KDC's
+    /// `PA-PKINIT-KX`.
+    #[inline]
+    #[must_use]
+    pub fn with_anonymous(self, anonymous: AnonymousOptions) -> Self {
+        options::with_anonymous(self, anonymous)
+    }
+
+    /// The anonymous request, when set.
+    #[inline]
+    #[must_use]
+    pub const fn anonymous(&self) -> Option<AnonymousOptions> {
+        self.anonymous
+    }
 }
 
 /// Options of one TGS exchange.
@@ -508,6 +544,12 @@ pub struct InitCreds<'registry> {
     trace: Option<trace::Tracer>,
     /// The client the armor authenticated in the newest reply.
     authenticated_client: Option<Principal>,
+    /// The OTP policy, when the exchange may answer an OTP challenge.
+    otp: Option<Policy>,
+    /// The PKINIT exchange of a certificate or anonymous login.
+    pkinit: Option<Box<PkinitExchange>>,
+    /// The ephemeral key and nonce of the PA-PK-AS-REQ in flight.
+    pkinit_pending: Option<Pending>,
 }
 
 impl fmt::Debug for InitCreds<'_> {
@@ -537,6 +579,20 @@ impl<'registry> InitCreds<'registry> {
         init::new(client, (None, Some(keytab)), options)
     }
 
+    /// A PKINIT exchange for `client` (RFC 4556): certificate login, or
+    /// anonymous PKINIT (RFC 6112) with [`PkinitExchange::anonymous`] and
+    /// [`AnonymousOptions::client`] as `client`. The reply key comes from the
+    /// KDC's signed Diffie-Hellman value; no password is ever asked for.
+    #[inline]
+    #[must_use]
+    pub fn with_pkinit(
+        client: Principal,
+        pkinit: PkinitExchange,
+        options: InitCredsOptions,
+    ) -> Self {
+        init::with_pkinit(init::new(client, (None, None), options), pkinit)
+    }
+
     /// Consult `session`'s registered mechanisms for the PA types the KDC offers,
     /// in `preferred_preauth_types` order, before the built-in encrypted timestamp.
     #[inline]
@@ -564,6 +620,17 @@ impl<'registry> InitCreds<'registry> {
         A: ArmoredExchange + 'registry,
     {
         self.armor = Some(Box::new(armor));
+        self
+    }
+
+    /// Answer the KDC's OTP challenge (RFC 6560) under `policy`: the exchange asks
+    /// with [`Prompt::Otp`] and sends the answer inside FAST, never unarmored. It
+    /// needs [`with_armor`](Self::with_armor); without armor the first step fails
+    /// with [`Error::Otp`] before anything is sent. OTP needs no password.
+    #[inline]
+    #[must_use]
+    pub const fn with_otp(mut self, policy: Policy) -> Self {
+        self.otp = Some(policy);
         self
     }
 

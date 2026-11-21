@@ -86,8 +86,14 @@ TEST.GOKRB5 = {{
         let reply_key = EncryptionKey::new(subkey.r#type, subkey.value.as_ref().to_vec());
         let enc_part = decrypt_krb_priv_enc_part(parsed.krb_priv(), &reply_key)
             .context("KRB-PRIV payload decrypts")?;
-        let change_data = ChangePasswdData::decode_der(enc_part.user_data.as_ref())
-            .context("ChangePasswdData decodes")?;
+        // A change of the client's own password is the version 1 protocol: the KRB-PRIV
+        // carries the password itself; a set-password carries a `ChangePasswdData`.
+        let change_data = if parsed.version() == 1 {
+            ChangePasswdData::new(Password::from_vec(enc_part.user_data.as_ref().to_vec()))
+        } else {
+            ChangePasswdData::decode_der(enc_part.user_data.as_ref())
+                .context("ChangePasswdData decodes")?
+        };
         Ok((authenticator, change_data))
     }
 
@@ -209,6 +215,8 @@ TEST.GOKRB5 = {{
             .context("KRB-PRIV decrypts")?;
         let enc_part: rasn_kerberos::EncKrbPrivPart =
             der::decode(&krb_priv_bytes).context("EncKrbPrivPart decodes")?;
+        // With target fields this is an RFC 3244 set-password: version 0xff80, a ChangePasswdData.
+        assert_eq!(parsed.version(), 0xff80);
         let decoded_change_data =
             ChangePasswdData::decode_der(enc_part.user_data.as_ref()).context("payload decodes")?;
 
@@ -270,10 +278,10 @@ TEST.GOKRB5 = {{
             .context("KRB-PRIV decrypts")?;
         let enc_part: rasn_kerberos::EncKrbPrivPart =
             der::decode(&krb_priv_bytes).context("EncKrbPrivPart decodes")?;
-        let decoded_change_data =
-            ChangePasswdData::decode_der(enc_part.user_data.as_ref()).context("payload decodes")?;
-
-        assert_eq!(decoded_change_data, change_data);
+        // Without target fields this is the change of the client's own password: version 1,
+        // the password itself in the KRB-PRIV (MIT `chpw.c:21-76`).
+        assert_eq!(parsed.version(), 1);
+        assert_eq!(enc_part.user_data.as_ref(), b"newpassword");
         assert_eq!(enc_part.seq_number, Some(42));
         Ok(())
     }
@@ -978,15 +986,18 @@ client.cache_service_ticket(ticket)?;
                     let parsed =
                         KpasswdRequest::parse(&request).context("kpasswd request parses")?;
                     let (_, change_data) = decrypt_change_data(&parsed, &service_session_key)?;
-                    let target = principal_from_parts(
-                        change_data.targ_realm().context("target realm set")?,
-                        change_data.targ_name().context("target principal set")?,
-                    )?;
                     if call == 0_i32 {
+                        let target = principal_from_parts(
+                            change_data.targ_realm().context("target realm set")?,
+                            change_data.targ_name().context("target principal set")?,
+                        )?;
                         assert_eq!(target, expected_target);
                         assert_eq!(change_data.new_passwd(), &new_password.to_vec());
                     } else {
-                        assert_eq!(target, self_client.clone());
+                        // The client's own password is a change without target fields
+                        // (FU-IOP-P13, MIT `changepw.c:308-315`).
+                        assert!(change_data.targ_name().is_none());
+                        assert!(change_data.targ_realm().is_none());
                         assert_eq!(change_data.new_passwd(), &old_password.to_vec());
                     }
                     let session_key = EncryptionKey::new(18, decode_hex(SESSION_KEY)?);
@@ -1199,6 +1210,9 @@ TEST.GOKRB5 = {{
                     Error::KpasswdOutcomeUnknown(source)
                         if matches!(*source, Error::Kadmin(KadminError::UnauthenticatedSuccess))
                 ));
+                // An unknown outcome is not replayed until the caller has verified it.
+                assert!(client.has_unresolved_password_change());
+                client.acknowledge_password_change_outcome();
             }
 
             kdc_task.await??;

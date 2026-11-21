@@ -131,10 +131,14 @@ jobs:
           - "--no-default-features --features camellia"
           - "--features ccache-keyring"
           - "--no-default-features --features ccache-keyring"
+          - "--features kkdcp-rustls"
+          - "--no-default-features --features tokio,kkdcp-rustls"
           - "--features tracing"
           - "--no-default-features --features tracing"
           - "--features spake"
           - "--no-default-features --features messages,spake"
+          - "--features pkinit"
+          - "--no-default-features --features messages,pkinit"
           - "--all-features"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

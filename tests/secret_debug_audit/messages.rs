@@ -42,6 +42,7 @@ pub(super) mod tests {
         krb_priv::{EncKrbPrivPartOptions, ipv4_host_address},
         messages::KrbErrorInfo,
         pac::NtlmSupplementalCredential,
+        transport::kkdcp::ProxyMessage,
     };
 
     use crate::tests::{pattern, redacted, render};
@@ -62,7 +63,19 @@ pub(super) mod tests {
         extension_preauth_input_redacts_padata()?;
         #[cfg(feature = "tokio")]
         tokio_clients_redact_passwords()?;
+        kdc_proxy_message_redacts_its_kerberos_message()?;
         authenticated_service_owners_redact_credentials()
+    }
+
+    /// A KDC-PROXY-MESSAGE, built or decoded, shows the length of its Kerberos message,
+    /// never its bytes.
+    #[test]
+    fn kdc_proxy_message_redacts_its_kerberos_message() -> Result<(), Box<dyn Error>> {
+        let message = pattern(219);
+        let built = ProxyMessage::new(&message, Some(b"TEST.GOKRB5"), None);
+        redacted(&built, &[&message]);
+        redacted(&ProxyMessage::decode(&built.encode()?)?, &[&message]);
+        Ok(())
     }
 
     /// Tokio clients and their credential enum redact a retained password.
