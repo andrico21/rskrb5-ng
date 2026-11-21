@@ -170,3 +170,10 @@ path = "fuzz_targets/spake_message.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "otp_challenge"
+path = "fuzz_targets/otp_challenge.rs"
+test = false
+doc = false
+bench = false

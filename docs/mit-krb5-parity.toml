@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 86
+implemented = 87
 partial = 42
-absent = 25
+absent = 24
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -559,13 +559,59 @@ id = "MIT-preauth-8"
 area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "OTP client interaction and OTP-over-FAST protocol support"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "OTP dependency types enabled but no client factor/responder exchange."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "preauth::otp::Challenge",
+  "preauth::otp::Challenge::decode",
+  "preauth::otp::Challenge::request",
+  "preauth::otp::Policy",
+  "preauth::otp::Response",
+  "preauth::otp::Responder",
+  "preauth::otp::Responders",
+  "preauth::otp::Token",
+  "preauth::otp::Format",
+  "preauth::otp::PinMode",
+  "client::stepwise::InitCreds::with_otp",
+  "client::stepwise::Prompt",
+  "client::stepwise::Answer",
+  "error::Otp",
+]
+test_names = [
+  "tests/otp/wire.rs::mit_encodings_round_trip_through_the_message_types",
+  "tests/otp/wire.rs::mit_minimal_challenge_decodes",
+  "tests/otp/wire.rs::mit_maximal_challenge_drops_the_unsupported_token",
+  "tests/otp/wire.rs::flags_select_the_supported_tokens",
+  "tests/otp/wire.rs::malformed_flags_are_refused",
+  "tests/otp/wire.rs::token_fields_filter_and_report",
+  "tests/otp/wire.rs::challenges_are_bounded",
+  "tests/otp/wire.rs::malformed_challenges_are_refused",
+  "tests/otp/wire.rs::request_carries_the_token_and_the_encrypted_nonce",
+  "tests/otp/wire.rs::pin_modes_decide_where_the_pin_goes",
+  "tests/otp/wire.rs::answers_are_validated_before_a_request_is_built",
+  "tests/otp/wire.rs::responses_are_redacted",
+  "tests/otp/exchange.rs::otp_login_inside_fast_completes",
+  "tests/otp/exchange.rs::a_refused_value_ends_the_exchange",
+  "tests/otp/exchange.rs::the_answer_selects_the_token",
+  "tests/otp/exchange.rs::a_separate_pin_is_sent_in_its_own_field",
+  "tests/otp/exchange.rs::an_invalid_answer_sends_nothing",
+  "tests/otp/exchange.rs::otp_without_fast_fails_before_sending",
+  "tests/otp/exchange.rs::otp_with_required_fast_and_no_armor_fails_before_sending",
+  "tests/otp/exchange.rs::an_unarmored_challenge_is_never_answered",
+  "tests/otp/exchange.rs::otp_is_never_answered_unasked",
+  "tests/otp/exchange.rs::bad_challenges_end_the_exchange",
+  "tests/otp/exchange.rs::an_unexpected_otp_answer_is_refused",
+  "tests/otp/exchange.rs::the_responder_adapter_drives_a_login",
+  "tests/otp/exchange.rs::the_exchange_keeps_no_secret",
+  "tests/policy/outgoing_inventory.rs::outgoing_padata_types_are_refused_or_admitted_exactly",
+  "tests/secret_debug_audit/otp.rs::otp_answer_redacts_credentials",
+  "tests/interop_otp/scenarios.rs::otp_login_inside_fast_earns_the_otp_indicator",
+  "tests/interop_otp/scenarios.rs::a_wrong_token_value_is_refused",
+  "tests/interop_otp/scenarios.rs::without_fast_no_otp_is_offered",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Tokens that need `nextOTP`, `combine`, `must-encrypt-nonce`, `check-digit`, hashed OTP values (`supportedHashAlg`, `iterationCount`) or base64 values, and tokens whose vendor or challenge is not printable ASCII, are dropped and counted, as MIT does (preauth_otp.c:869-897), so the RFC 6560 section 3.6 key derivations from the OTP value are not implemented (MIT has none either); the PIN-change message (`PA-OTP-PIN-CHANGE`, RFC 6560 section 4.3) is not handled, as in MIT. Stricter than MIT 1.22.2: OTP is only ever sent inside FAST (MIT fails with ENOENT without an armor key, preauth_otp.c:1084-1087, and so does this client, before it sends anything); a token that sets both `collect-pin` and `do-not-collect-pin` (RFC 6560 section 4.1), a flags string that is not 32 to 64 bits, a negative `otp-length`, an empty `otp-challenge`, a repeated `PA-OTP-CHALLENGE`, a challenge with trailing bytes and a challenge over the size, token-count and field bounds of `Policy` are refused; the user's answer is checked against the token's length, format and PIN mode before a request is built (MIT checks only when it picks the token itself, preauth_otp.c:451-470), and a PIN is never sent to a token that must not collect one; an OTP value is tried once (a refusal ends the exchange). With an OTP policy installed the exchange answers OTP before the encrypted challenge and the encrypted timestamp unless `preferred_preauth_types` names another offered mechanism first (MIT answers the first usable offer in the KDC's order). The names are `otp::Challenge`, `otp::Response`, `otp::Responder` and `otp::Policy` (module_name_repetitions). The OTP value is held in zeroizing owners; the `rasn` containers of the request copy it as plain bytes (register row FU-OTP-P02)."
 disposition = "WP-08"
 closing_plan = 2
 closing_todo = 10

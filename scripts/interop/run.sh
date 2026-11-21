@@ -218,6 +218,8 @@ cmd_all() {
   # Y1-05: a fixture that died after its startup check fails the run, even
   # when no scenario asked for it.
   interop_check_alive || status=1
+  # FU-IOP-P21: a daemon that stays up and stops answering fails the run too.
+  interop_check_protocols || status=1
   trap - EXIT
   cmd_down || status=1
   if ((status != 0)); then

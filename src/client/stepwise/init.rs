@@ -32,6 +32,9 @@ use crate::{
     preauth::{encrypted_challenge::EncryptedChallenge, fast::PA_ENCRYPTED_CHALLENGE},
 };
 
+/// The engine side of OTP preauthentication (RFC 6560).
+#[path = "otp.rs"]
+mod otp;
 /// The engine side of SPAKE preauthentication (RFC 9588).
 #[path = "spake.rs"]
 mod spake;
@@ -54,6 +57,8 @@ pub(super) enum State {
     PasswordForChallenge,
     /// The preauthenticated request is out; its key is in `reply_key`.
     Final(Box<BuiltAsReq>),
+    /// The OTP challenge is put to the caller; the answer becomes the request.
+    Otp(Box<otp::Pending>),
     /// A PA-SPAKE support message is out; the KDC answers with its challenge.
     Spake(Box<spake::Round>),
     /// Finished or failed; no further step is possible.
@@ -84,6 +89,7 @@ pub(super) fn new(
         strengthen_key: None,
         trace: None,
         authenticated_client: None,
+        otp: None,
     }
 }
 
@@ -107,6 +113,7 @@ pub(super) fn debug(engine: &InitCreds<'_>, formatter: &mut fmt::Formatter<'_>) 
         .field("kdc_time_offset", &engine.time_offset)
         .field("preauth", &engine.preauth)
         .field("armor", &engine.armor.is_some())
+        .field("otp", &engine.otp.is_some())
         .finish_non_exhaustive()
 }
 
@@ -117,6 +124,7 @@ const fn state_name(state: &State) -> &'static str {
         State::PasswordForInitial | State::PasswordForReply(_) | State::PasswordForChallenge => {
             "a password answer"
         }
+        State::Otp(_) => "an OTP answer",
         State::Initial(_) | State::Discovery | State::Final(..) | State::Spake(_) => "a KDC reply",
         State::Done => "nothing (the exchange is finished)",
     }
@@ -178,6 +186,7 @@ fn advance(engine: &mut InitCreds<'_>, input: StepInput<'_>) -> Result<ExchangeS
             let reply = held(engine.held_reply.take())?;
             challenge(engine, &reply)
         }
+        (State::Otp(pending), StepInput::Answer(answer)) => otp::answer(engine, &pending, answer),
         (State::Spake(round), StepInput::Reply(reply)) => spake::reply(engine, *round, reply),
         (State::Final(request), StepInput::Reply(reply)) => {
             let reply_key = held(engine.reply_key.take())?;
@@ -202,6 +211,7 @@ fn advance(engine: &mut InitCreds<'_>, input: StepInput<'_>) -> Result<ExchangeS
 /// # Errors
 /// Returns the typed failure of the step; the exchange cannot continue after it.
 fn start(engine: &mut InitCreds<'_>) -> Result<ExchangeStep, Error> {
+    otp::require_armor(engine)?;
     let service = service(engine);
     if awaiting_password(engine) && engine.options.request.assume_preauthentication() {
         return Ok(prompt(engine, State::PasswordForInitial));
@@ -323,6 +333,9 @@ fn initial_reply_key(
 /// # Errors
 /// Returns the typed failure of the step; the exchange cannot continue after it.
 fn challenge(engine: &mut InitCreds<'_>, reply: &[u8]) -> Result<ExchangeStep, Error> {
+    if let Some(step) = otp::offer(engine, reply)? {
+        return Ok(step);
+    }
     if awaiting_password(engine) {
         engine.held_reply = Some(Zeroizing::new(reply.to_vec()));
         return Ok(prompt(engine, State::PasswordForChallenge));
@@ -435,6 +448,9 @@ fn accept(engine: &mut InitCreds<'_>, answer: Answer) -> Result<(), Error> {
         }
         Answer::Password(_) => Err(Error::UnexpectedStepInput {
             expected: "a KDC reply",
+        }),
+        Answer::Otp(_) => Err(Error::UnexpectedStepInput {
+            expected: "a password answer",
         }),
     }
 }

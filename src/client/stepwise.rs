@@ -40,7 +40,10 @@ use crate::{
     error::Client as Error,
     extensions::{PreauthSession, ProviderError},
     keytab::{EncryptionKey, Keytab},
-    preauth::spake::Policy as SpakePolicy,
+    preauth::{
+        otp::{Challenge, Policy, Response},
+        spake::Policy as SpakePolicy,
+    },
     trace::{ExchangeKind, Guard},
 };
 
@@ -173,6 +176,14 @@ pub enum Prompt {
         /// The client whose password is needed.
         client: Principal,
     },
+    /// The KDC offers OTP tokens: choose one and answer with [`Answer::Otp`]. The
+    /// challenge carries no secret.
+    Otp {
+        /// The client that logs in.
+        client: Principal,
+        /// The tokens to choose from.
+        challenge: Challenge,
+    },
 }
 
 /// The caller's answer to a [`Prompt`]. Its `Debug` output is redacted and its
@@ -181,6 +192,8 @@ pub enum Prompt {
 pub enum Answer {
     /// A password, for [`Prompt::Password`].
     Password(Password),
+    /// The chosen token, its OTP value and its PIN, for [`Prompt::Otp`].
+    Otp(Response),
 }
 
 impl fmt::Debug for Answer {
@@ -188,6 +201,7 @@ impl fmt::Debug for Answer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Password(_) => f.write_str("Answer::Password([REDACTED])"),
+            Self::Otp(_) => f.write_str("Answer::Otp([REDACTED])"),
         }
     }
 }
@@ -508,6 +522,8 @@ pub struct InitCreds<'registry> {
     trace: Option<trace::Tracer>,
     /// The client the armor authenticated in the newest reply.
     authenticated_client: Option<Principal>,
+    /// The OTP policy, when the exchange may answer an OTP challenge.
+    otp: Option<Policy>,
 }
 
 impl fmt::Debug for InitCreds<'_> {
@@ -564,6 +580,17 @@ impl<'registry> InitCreds<'registry> {
         A: ArmoredExchange + 'registry,
     {
         self.armor = Some(Box::new(armor));
+        self
+    }
+
+    /// Answer the KDC's OTP challenge (RFC 6560) under `policy`: the exchange asks
+    /// with [`Prompt::Otp`] and sends the answer inside FAST, never unarmored. It
+    /// needs [`with_armor`](Self::with_armor); without armor the first step fails
+    /// with [`Error::Otp`] before anything is sent. OTP needs no password.
+    #[inline]
+    #[must_use]
+    pub const fn with_otp(mut self, policy: Policy) -> Self {
+        self.otp = Some(policy);
         self
     }
 
