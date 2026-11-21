@@ -1,6 +1,8 @@
-//! Without the `pkinit` feature nothing is parsed, signed or agreed: every
-//! operation returns [`Error::Unavailable`], so the engine never sends a
-//! PA-PK-AS-REQ and no configured identity or anchor is silently ignored.
+//! The operations without the leaf: every call is [`Error::Unavailable`].
+//!
+//! Without the `pkinit` feature nothing is parsed, signed or agreed, so the
+//! engine never sends a PA-PK-AS-REQ and no configured identity or anchor is
+//! silently ignored.
 
 use alloc::sync::Arc;
 

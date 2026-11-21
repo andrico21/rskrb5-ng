@@ -94,7 +94,6 @@ mod keys;
 #[cfg(feature = "pkinit")]
 #[path = "pkinit/ops.rs"]
 mod ops;
-/// The operations without the leaf: every call is [`Error::Unavailable`].
 #[cfg(not(feature = "pkinit"))]
 #[path = "pkinit/unavailable.rs"]
 mod ops;
@@ -623,6 +622,13 @@ impl AnonymousOptions {
 /// Returns [`Error::Unavailable`](crate::error::Pkinit::Unavailable) without
 /// the leaf, and [`Error::TooLarge`](crate::error::Pkinit::TooLarge) or
 /// [`Error::Malformed`](crate::error::Pkinit::Malformed) for anything else.
+#[cfg_attr(
+    not(feature = "pkinit"),
+    expect(
+        clippy::missing_const_for_fn,
+        reason = "deliberate: preauth::pkinit::outgoing - const only without the leaf, whose DER admission is not const"
+    )
+)]
 pub(crate) fn outgoing(value: &[u8]) -> Result<(), Error> {
     ops::outgoing(value)
 }
