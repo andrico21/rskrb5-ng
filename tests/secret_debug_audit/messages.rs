@@ -67,14 +67,14 @@ pub(super) mod tests {
         authenticated_service_owners_redact_credentials()
     }
 
-    /// A KDC-PROXY-MESSAGE shows the length of its Kerberos message, never its bytes.
+    /// A KDC-PROXY-MESSAGE, built or decoded, shows the length of its Kerberos message,
+    /// never its bytes.
     #[test]
     fn kdc_proxy_message_redacts_its_kerberos_message() -> Result<(), Box<dyn Error>> {
         let message = pattern(219);
-        redacted(
-            &ProxyMessage::new(&message, Some(b"TEST.GOKRB5"), None),
-            &[&message],
-        );
+        let built = ProxyMessage::new(&message, Some(b"TEST.GOKRB5"), None);
+        redacted(&built, &[&message]);
+        redacted(&ProxyMessage::decode(&built.encode()?)?, &[&message]);
         Ok(())
     }
 
