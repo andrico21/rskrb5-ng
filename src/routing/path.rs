@@ -26,8 +26,8 @@ impl RealmPath {
     /// [`Self::MAX_REALMS`], and [`Error::PathLoop`] for a configured path that
     /// names a realm twice.
     #[inline]
-    pub fn walk(config: &Config, client: &str, server: &str) -> Result<Self, Error> {
-        Self::configured(config, client, server)?
+    pub fn walk(capaths: &Capaths, client: &str, server: &str) -> Result<Self, Error> {
+        Self::configured(capaths, client, server)?
             .map_or_else(|| Self::hierarchical(client, server), Ok)
     }
 
@@ -39,8 +39,8 @@ impl RealmPath {
     ///
     /// Returns the errors of [`Self::walk`].
     #[inline]
-    pub fn client(config: &Config, client: &str, server: &str) -> Result<Self, Error> {
-        Self::configured(config, client, server)?
+    pub fn client(capaths: &Capaths, client: &str, server: &str) -> Result<Self, Error> {
+        Self::configured(capaths, client, server)?
             .map_or_else(|| Self::checked(vec![client.to_owned(), server.to_owned()]), Ok)
     }
 
@@ -51,9 +51,9 @@ impl RealmPath {
     ///
     /// Returns the errors of [`Self::walk`].
     #[inline]
-    pub fn configured(config: &Config, client: &str, server: &str) -> Result<Option<Self>, Error> {
+    pub fn configured(capaths: &Capaths, client: &str, server: &str) -> Result<Option<Self>, Error> {
         endpoints(client, server)?;
-        let Some(route) = config.capath(client, server) else {
+        let Some(route) = capaths.get(client).and_then(|servers| servers.get(server)) else {
             return Ok(None);
         };
         let mut realms = vec![client.to_owned()];

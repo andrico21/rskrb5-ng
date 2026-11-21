@@ -2,7 +2,8 @@
 //! hierarchy, the DOMAIN-X500-COMPRESS transited encoding, and the certificate
 //! identity of certificate `S4U2Self`.
 //!
-//! Everything here is always compiled and uses no dependency: the client walks
+//! Everything here is always compiled and uses no dependency. The paths read
+//! the typed `[capaths]` section (`Config::capaths`): the client walks
 //! [`RealmPath::client`] when it asks for cross-realm TGTs, an acceptor checks a
 //! decoded [`transited`] list against [`RealmPath::walk`] (the service's
 //! `CapathsTransit` does), and a certificate `S4U2Self` request carries a
@@ -21,7 +22,7 @@
 use core::fmt;
 
 use crate::{
-    config::{Config, section_values::Route},
+    config::section_values::{Capaths, Route},
     error::Routing as Error,
     extensions::ProviderError,
 };

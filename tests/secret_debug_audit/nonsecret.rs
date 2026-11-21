@@ -158,7 +158,7 @@ pub(super) const FIELDS: &[(&str, &str, &str)] = &[
         "Public principal-name metadata.",
     ),
     (
-        "src/service.rs::TransitPolicy",
+        "src/service/transit.rs::TrustedPair",
         "client_realm",
         "Realm-routing policy metadata.",
     ),

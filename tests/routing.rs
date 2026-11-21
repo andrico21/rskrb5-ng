@@ -2,6 +2,8 @@
 //! realm paths, DOMAIN-X500-COMPRESS transited encodings and the certificate
 //! identity of certificate `S4U2Self`.
 
+extern crate alloc;
+
 use core::error::Error;
 
 /// Error type of the `Result`-returning tests.
@@ -39,3 +41,25 @@ mod transited;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 #[path = "routing/certificate.rs"]
 mod certificate;
+
+/// Forged AP-REQs with a chosen transited path.
+#[cfg(test)]
+#[cfg(feature = "messages")]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[path = "routing/forge.rs"]
+mod forge;
+
+/// Acceptor transit validation: the multi-pair policy and `[capaths]`.
+#[cfg(test)]
+#[cfg(feature = "messages")]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "routing/acceptor.rs"]
+mod acceptor;

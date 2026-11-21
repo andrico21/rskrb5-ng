@@ -19,12 +19,13 @@ use rasn::types::Integer;
 
 use crate::{
     ap_rep,
-    config::{Config, parameters::DefaultName, restrictions},
+    config::{Config, parameters::DefaultName, restrictions, section_values::Capaths},
     crypto::{CryptoPolicy, Use},
     der::decode_complete,
     error,
     keytab::{self, EncryptionKey, Keytab},
     pac::{self, Pac},
+    routing::{RealmPath, transited},
     trace::Guard,
 };
 
@@ -681,100 +682,7 @@ impl SharedReplayCache {
     }
 }
 
-/// Caller-owned policy for unchecked cross-realm transit (RFC 4120 section 2.7).
-///
-/// Implementations must validate both endpoint realms and the complete encoded
-/// path. Empty contents mean direct cross-realm transit, not same-realm use.
-/// Unsupported encodings must be rejected unless the implementation understands
-/// their semantics. This policy is called only when the KDC has not set
-/// TRANSITED-POLICY-CHECKED and either the endpoint realms differ or the
-/// transited path is nonempty: a same-realm ticket with a nonempty unchecked
-/// path needs the same explicit approval.
-pub trait TransitValidator: Debug + Send + Sync {
-    /// Return whether this realm path is explicitly trusted by the application.
-    fn accepts(
-        &self,
-        client_realm: &str,
-        service_realm: &str,
-        transited: &rasn_kerberos::TransitedEncoding,
-    ) -> bool;
-}
-
-/// Explicit trust in exact DOMAIN-X500-COMPRESS paths between two realms.
-///
-/// Active Directory does not set TRANSITED-POLICY-CHECKED (MS-KILE 3.1.5.4).
-/// Attach this opt-in through [`Validator::with_transit_validator`]; the default
-/// still rejects unchecked cross-realm tickets, as required by RFC 4120 §2.7.
-/// Paths are matched byte-for-byte, not decoded or inferred from realm suffixes.
-#[derive(Clone, Debug)]
-#[non_exhaustive]
-pub struct TransitPolicy {
-    /// Trusted client endpoint realm, compared case-sensitively.
-    client_realm: String,
-    /// Trusted service endpoint realm, compared case-sensitively.
-    service_realm: String,
-    /// Complete trusted DOMAIN-X500-COMPRESS encodings, including direct paths.
-    paths: Vec<Vec<u8>>,
-}
-
-impl TransitPolicy {
-    /// Trust only a direct cross-realm ticket between the named endpoint realms.
-    ///
-    /// Requires encoding type 1 (DOMAIN-X500-COMPRESS) with empty contents.
-    /// Empty endpoint names and all other encodings are rejected.
-    #[must_use]
-    #[inline]
-    pub fn direct(client_realm: &str, service_realm: &str) -> Self {
-        Self {
-            client_realm: client_realm.to_owned(),
-            service_realm: service_realm.to_owned(),
-            paths: vec![Vec::new()],
-        }
-    }
-
-    /// Trust a caller-supplied allow-list of complete DOMAIN-X500-COMPRESS paths.
-    ///
-    /// Each entry is the exact RFC 4120 §3.3.3.2 encoded path, not an individual
-    /// realm. Include an empty entry explicitly to permit direct transit. An
-    /// empty allow-list rejects every unchecked path. Unknown encoding types
-    /// are always rejected, even if their contents match an allowed entry.
-    #[must_use]
-    #[inline]
-    pub fn domain_x500_paths<I, P>(client_realm: &str, service_realm: &str, paths: I) -> Self
-    where
-        I: IntoIterator<Item = P>,
-        P: AsRef<[u8]>,
-    {
-        Self {
-            client_realm: client_realm.to_owned(),
-            service_realm: service_realm.to_owned(),
-            paths: paths
-                .into_iter()
-                .map(|path| path.as_ref().to_vec())
-                .collect(),
-        }
-    }
-}
-
-impl TransitValidator for TransitPolicy {
-    #[inline]
-    fn accepts(
-        &self,
-        client_realm: &str,
-        service_realm: &str,
-        transited: &rasn_kerberos::TransitedEncoding,
-    ) -> bool {
-        !self.client_realm.is_empty()
-            && !self.service_realm.is_empty()
-            && client_realm == self.client_realm
-            && service_realm == self.service_realm
-            && transited.r#type == 1
-            && self
-                .paths
-                .iter()
-                .any(|path| path.as_slice() == transited.contents.as_ref())
-    }
-}
+include!("service/transit.rs");
 
 /// AP-REQ validator backed by a service keytab.
 pub struct Validator<'keytab> {
@@ -1148,6 +1056,8 @@ impl Validator<'static> {
     /// The configured `[libdefaults] clockskew` becomes the acceptance window;
     /// [`Self::new`] keeps the gokrb5-compatible 300 s default.
     /// The configured permitted list and legacy flags become the runtime policy.
+    /// A `[capaths]` section validates unchecked cross-realm transit for the
+    /// pairs it lists ([`CapathsTransit::configured_only`]).
     ///
     /// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
     /// ignores them (`secure_getenv`); see the secure-environment decision of
@@ -1167,6 +1077,7 @@ impl Validator<'static> {
             DefaultName::Keytab,
         )?)
         .with_crypto_policy(policy)
+        .with_profile_capaths(config)
         .with_max_clock_skew(config.libdefaults.clockskew)
     }
 
@@ -1182,6 +1093,8 @@ impl Validator<'static> {
     /// `config.libdefaults.default_keytab_name`. The configured
     /// `[libdefaults] clockskew` becomes the acceptance window.
     /// The configured permitted list and legacy flags also apply to acceptance.
+    /// A `[capaths]` section validates unchecked cross-realm transit for the
+    /// pairs it lists ([`CapathsTransit::configured_only`]).
     ///
     /// In a set-uid or set-gid process the variables named here are ignored, as MIT 1.22.2
     /// ignores them (`secure_getenv`); see the secure-environment decision of
@@ -1198,7 +1111,20 @@ impl Validator<'static> {
             .map_err(|error| restrictions::configuration_policy(&error))?;
         Self::from_keytab(keytab::default_keytab_name(&config.libdefaults)?)
             .with_crypto_policy(policy)
+            .with_profile_capaths(config)
             .with_max_clock_skew(config.libdefaults.clockskew)
+    }
+
+    /// Validate unchecked cross-realm transit with the profile's `[capaths]`
+    /// (configured pairs only) when the profile has that section.
+    fn with_profile_capaths(self, config: &Config) -> Self {
+        if config.capaths.is_empty() {
+            self
+        } else {
+            self.with_transit_validator(Arc::new(
+                CapathsTransit::from_config(config).configured_only(),
+            ))
+        }
     }
 
     /// Create a validator by loading the file keytab named by `KRB5_KTNAME`.

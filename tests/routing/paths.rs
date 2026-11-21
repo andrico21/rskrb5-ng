@@ -173,7 +173,7 @@ fn walks_match_the_mit_vectors() -> Result<(), TestError> {
     let config = Config::parse(MIT_CAPATHS)?;
     for (client, server, expected) in WALKS {
         // When the path between the two realms is walked.
-        let path = RealmPath::walk(&config, client, server)?;
+        let path = RealmPath::walk(&config.capaths, client, server)?;
         // Then it lists MIT's realms in MIT's order.
         assert_eq!(path.realms(), expected, "{client} -> {server}");
     }
@@ -188,8 +188,8 @@ fn same_or_empty_realm_has_no_path() -> Result<(), TestError> {
     // Given a profile without `[capaths]`.
     let config = Config::parse("")?;
     // When a path to the same realm or from an empty realm is walked.
-    let same = RealmPath::walk(&config, "EXAMPLE.COM", "EXAMPLE.COM");
-    let empty = RealmPath::walk(&config, "", "EXAMPLE.COM");
+    let same = RealmPath::walk(&config.capaths, "EXAMPLE.COM", "EXAMPLE.COM");
+    let empty = RealmPath::walk(&config.capaths, "", "EXAMPLE.COM");
     // Then both are refused by name.
     assert!(matches!(same, Err(Routing::SameRealm)), "{same:?}");
     assert!(matches!(empty, Err(Routing::EmptyRealm)), "{empty:?}");
@@ -205,9 +205,9 @@ fn client_path_is_capaths_or_direct() -> Result<(), TestError> {
     // Given MIT's test profile.
     let config = Config::parse(MIT_CAPATHS)?;
     // When client paths are built for a configured and an unconfigured pair.
-    let configured = RealmPath::client(&config, "LCS.MIT.EDU", "KABLOOEY.KERBEROS.COM")?;
-    let direct = RealmPath::client(&config, "ATHENA.MIT.EDU", "HACK.EXAMPLE.COM")?;
-    let explicit_direct = RealmPath::client(&config, "LCS.MIT.EDU", "ATHENA.MIT.EDU")?;
+    let configured = RealmPath::client(&config.capaths, "LCS.MIT.EDU", "KABLOOEY.KERBEROS.COM")?;
+    let direct = RealmPath::client(&config.capaths, "ATHENA.MIT.EDU", "HACK.EXAMPLE.COM")?;
+    let explicit_direct = RealmPath::client(&config.capaths, "LCS.MIT.EDU", "ATHENA.MIT.EDU")?;
     // Then the configured one has its intermediates and the others have none.
     assert_eq!(
         configured.realms(),
@@ -238,8 +238,8 @@ fn looping_capaths_are_refused() -> Result<(), TestError> {
         let config = Config::parse(&format!("[capaths]\n A.TEST = {{\n  {route}\n }}\n"))?;
         // When the path is walked for the client and for the acceptor.
         for result in [
-            RealmPath::walk(&config, "A.TEST", "B.TEST"),
-            RealmPath::client(&config, "A.TEST", "B.TEST"),
+            RealmPath::walk(&config.capaths, "A.TEST", "B.TEST"),
+            RealmPath::client(&config.capaths, "A.TEST", "B.TEST"),
         ] {
             // Then the loop is named.
             assert!(
@@ -261,7 +261,7 @@ fn overlong_capaths_are_refused() -> Result<(), TestError> {
     }
     let config = Config::parse(&format!("[capaths]\n A.TEST = {{\n{hops} }}\n"))?;
     // When the path is walked.
-    let result = RealmPath::walk(&config, "A.TEST", "B.TEST");
+    let result = RealmPath::walk(&config.capaths, "A.TEST", "B.TEST");
     // Then the bound is named.
     assert!(
         matches!(result, Err(Routing::PathTooLong { max }) if max == RealmPath::MAX_REALMS),
@@ -278,7 +278,7 @@ fn overlong_capaths_are_refused() -> Result<(), TestError> {
 fn transited_realms_must_lie_on_the_path() -> Result<(), TestError> {
     // Given the configured path LCS -> ATHENA -> KERBEROS -> KABLOOEY.
     let config = Config::parse(MIT_CAPATHS)?;
-    let path = RealmPath::walk(&config, "LCS.MIT.EDU", "KABLOOEY.KERBEROS.COM")?;
+    let path = RealmPath::walk(&config.capaths, "LCS.MIT.EDU", "KABLOOEY.KERBEROS.COM")?;
     let owned = |names: &[&str]| {
         names
             .iter()
