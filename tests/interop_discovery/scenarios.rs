@@ -110,7 +110,8 @@ fn uri_records_discover_the_test_kdc_before_srv() -> Result<(), Box<dyn Error>> 
         let realm = user.realm.clone();
         let port = kdc_port()?;
         let transport = transport()?;
-        // Given URI lookup on, the zone's `_kerberos` URI records name the KDC over UDP and TCP.
+        // Given URI lookup on, the zone's `_kerberos` URI records name the KDC over UDP and TCP
+        // and the KDC proxy over MS-KKDCP, a stream (MIT `locate_kdc.c:683-690`).
         let uri = profile(&realm, true, None, false)?;
         let endpoints = transport
             .discover_kdcs(&uri, &realm, KdcProtocol::Auto)
@@ -118,13 +119,19 @@ fn uri_records_discover_the_test_kdc_before_srv() -> Result<(), Box<dyn Error>> 
         assert_eq!(
             endpoints
                 .iter()
-                .map(|endpoint| endpoint.protocol)
+                .map(|endpoint| (endpoint.protocol, endpoint.proxy.is_some()))
                 .collect::<Vec<_>>(),
-            [KdcProtocol::Udp, KdcProtocol::Tcp]
+            [
+                (KdcProtocol::Udp, false),
+                (KdcProtocol::Tcp, false),
+                (KdcProtocol::Tcp, true)
+            ]
         );
         for endpoint in &endpoints {
             assert_eq!(endpoint.source, KdcEndpointSource::DnsUri);
-            assert_eq!(endpoint.port, port);
+            if endpoint.proxy.is_none() {
+                assert_eq!(endpoint.port, port);
+            }
         }
         // And with URI lookup off the same KDC comes from the SRV records.
         let srv = profile(&realm, false, None, false)?;
@@ -175,7 +182,7 @@ fn the_site_records_answer_before_the_realm_records() -> Result<(), Box<dyn Erro
         let site = transport
             .discover_kdcs(&sited, &realm, KdcProtocol::Auto)
             .await?;
-        assert_eq!(generic.len(), 2, "the realm's URI records: {generic:?}");
+        assert_eq!(generic.len(), 3, "the realm's URI records: {generic:?}");
         assert_eq!(site.len(), 1, "the site's URI record: {site:?}");
         assert_eq!(
             site.first().map(|endpoint| endpoint.protocol),
@@ -186,7 +193,7 @@ fn the_site_records_answer_before_the_realm_records() -> Result<(), Box<dyn Erro
         let fallback = transport
             .discover_kdcs(&unknown, &realm, KdcProtocol::Auto)
             .await?;
-        assert_eq!(fallback.len(), 2, "{fallback:?}");
+        assert_eq!(fallback.len(), 3, "{fallback:?}");
         // The SRV records of the site name the same KDC.
         let srv_site = profile(&realm, false, Some(SITE), false)?;
         let by_srv = transport
