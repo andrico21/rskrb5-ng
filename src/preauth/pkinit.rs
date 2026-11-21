@@ -257,9 +257,10 @@ impl ConfiguredIdentities {
     /// # Errors
     ///
     /// Returns [`Error::UnsupportedLocation`](crate::error::Pkinit::UnsupportedLocation)
-    /// for `PKCS11:` (D8) and `PKCS12:` locations and for an `ENV:` variable
-    /// that names one, and [`Error::Io`](crate::error::Pkinit::Io) for an
-    /// unreadable `DIR:` location.
+    /// for `PKCS11:` (D8) and `PKCS12:` locations, for an `ENV:` variable that
+    /// names one and for configured `pkinit_cert_match` rules (not evaluated),
+    /// and [`Error::Io`](crate::error::Pkinit::Io) for an unreadable `DIR:`
+    /// location.
     #[inline]
     pub fn from_config(config: &Config, realm: &str) -> Result<Self, Error> {
         config::identities(config, realm).map(|files| Self { files })

@@ -59,6 +59,9 @@ tests = [
   "tests/pkinit.rs",
   "tests/pkinit/",
 ]
+seams = [
+  { file = "src/config/realm_values.rs", item = "fn missing_leaf", call = "then_some" },
+]
 
 [package.metadata.rskrb5-ng.leaf-features.spake]
 minimal = ["messages"]

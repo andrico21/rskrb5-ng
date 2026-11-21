@@ -4,6 +4,7 @@
 //! 1.22.2 `pkinit_clnt.c:71-171` `pa_pkinit_gen_req` and `:494-644`
 //! `pkinit_as_rep_parse`).
 
+use core::fmt;
 use std::time::SystemTime;
 
 use super::{Credential, Exchange, ops};
@@ -32,6 +33,18 @@ pub(crate) struct RequestInput<'input> {
     pub freshness: Option<&'input [u8]>,
 }
 
+impl fmt::Debug for RequestInput<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RequestInput")
+            .field("client", self.client)
+            .field("body_bytes", &self.body.len())
+            .field("nonce", &self.nonce)
+            .field("time", &self.time)
+            .field("freshness_bytes", &self.freshness.map(<[u8]>::len))
+            .finish()
+    }
+}
+
 /// What a reply needs from the engine.
 pub(crate) struct ReplyInput<'input> {
     /// The DER PA-PK-AS-REP.
@@ -46,6 +59,19 @@ pub(crate) struct ReplyInput<'input> {
     pub etype: i32,
     /// The time of the check.
     pub now: SystemTime,
+}
+
+impl fmt::Debug for ReplyInput<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ReplyInput")
+            .field("pk_as_rep_bytes", &self.pk_as_rep.len())
+            .field("request_bytes", &self.request.len())
+            .field("client", self.client)
+            .field("server", self.server)
+            .field("etype", &self.etype)
+            .field("now", &self.now)
+            .finish()
+    }
 }
 
 /// The PA-PK-AS-REQ value for one request; a fresh ephemeral key replaces

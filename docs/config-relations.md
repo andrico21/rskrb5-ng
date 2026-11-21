@@ -76,19 +76,19 @@ both modes. Parsed values do not imply an implemented mechanism.
 | realms | sitename | string | unset | discovery::locate::sitename | Effective site-first DNS names for KDC, admin and kpasswd discovery | sitename |
 | realms | v4_instance_convert | rejected subsection | unset | protocol::relation | Permanent V4 conversion rejection before composition | v4_instance_convert |
 | realms | v4_realm | rejected string | unset | protocol::relation | Permanent V4 conversion rejection before composition | v4_realm |
-| realms | pkinit_anchors | location list | unset | plan 2 WP-06 | No PKINIT trust acceptance occurs; diagnostic | pkinit_anchors |
-| realms | pkinit_cert_match | certificate rule list | unset | plan 2 WP-06 | No certificate selected; expressions retained without execution; diagnostic | pkinit_cert_match |
-| realms | pkinit_eku_checking | kpKDC&#124;kpServerAuth&#124;none | kpKDC | plan 2 WP-06 | No certificate accepted even when EKU relaxation requested; diagnostic | pkinit_eku_checking |
-| realms | pkinit_dh_min_bits | 1024&#124;2048&#124;4096&#124;P-256&#124;P-384&#124;P-521 | 2048 | plan 2 WP-06 | No DH or ECDH performed; diagnostic | pkinit_dh_min_bits |
-| realms | pkinit_identities | identity location list | unset | plan 2 WP-06 | No identity loaded or environment reference resolved; diagnostic | pkinit_identities |
-| realms | pkinit_kdc_hostname | hostname list | unset | plan 2 WP-06 | No certificate hostname acceptance occurs; diagnostic | pkinit_kdc_hostname |
-| realms | pkinit_pool | location list | unset | plan 2 WP-06 | No chain building or certificate acceptance; diagnostic | pkinit_pool |
-| realms | pkinit_require_crl_checking | boolean | false | plan 2 WP-06 | No certificate accepted, so CRL requirement cannot be bypassed; diagnostic | pkinit_require_crl_checking |
-| realms | pkinit_revoke | location list | unset | plan 2 WP-06 | No certificate accepted; diagnostic | pkinit_revoke |
-| realms | pkinit_identity | identity location | unset | plan 2 WP-06 | KDC identity remains inert; diagnostic | pkinit_identity |
-| realms | pkinit_allow_upn | boolean | false (KDC) | plan 2 WP-06 | No certificate authorization occurs; diagnostic | pkinit_allow_upn |
-| realms | pkinit_indicator | string list | unset | plan 2 WP-06 | No KDC issuance or PKINIT authentication; diagnostic | pkinit_indicator |
-| realms | pkinit_require_freshness | boolean | false (KDC) | plan 2 WP-06 | No PKINIT authentication accepted; diagnostic | pkinit_require_freshness |
+| realms | pkinit_anchors | location list | unset | KdcTrust::from_config; Exchange::from_config (leaf pkinit) | Effective: FILE, DIR and ENV anchors the KDC chain must reach; none configured is NoAnchors; without the pkinit leaf FeatureUnavailable and no PKINIT | pkinit_anchors |
+| realms | pkinit_cert_match | certificate rule list | unset | ConfiguredIdentities::from_config (leaf pkinit) | Matching rules are not evaluated (no admitted regex engine): a configured rule is a typed UnsupportedLocation error, never skipped; without the leaf FeatureUnavailable | pkinit_cert_match |
+| realms | pkinit_eku_checking | kpKDC&#124;kpServerAuth&#124;none | kpKDC | CertificatePolicy::from_config (leaf pkinit) | Effective: kpKDC (default) and kpServerAuth require the EKU and digitalSignature even when the SAN names the TGS (stricter than MIT); none skips the EKU check | pkinit_eku_checking |
+| realms | pkinit_dh_min_bits | 1024&#124;2048&#124;4096&#124;P-256&#124;P-384&#124;P-521 | 2048 | CertificatePolicy::from_config; DhGroup::from_min_bits (leaf pkinit) | Effective group choice as MIT maps it; 1024 bits or fewer are refused (DhGroupTooSmall, floor 2048, stricter than MIT); unknown values InvalidDhGroup | pkinit_dh_min_bits |
+| realms | pkinit_identities | identity location list | unset | ConfiguredIdentities::from_config; Exchange::from_config (leaf pkinit) | Effective FILE cert[,key], DIR *.crt/*.key and ENV references, tried in order; PKCS11 (D8) and PKCS12 are typed UnsupportedLocation errors | pkinit_identities |
+| realms | pkinit_kdc_hostname | hostname list | unset | CertificatePolicy::from_config (leaf pkinit) | Effective: a KDC certificate dNSName SAN matching a listed hostname (case-insensitive) is accepted in place of the id-pkinit-san | pkinit_kdc_hostname |
+| realms | pkinit_pool | location list | unset | KdcTrust::from_config (leaf pkinit) | Effective: FILE, DIR and ENV intermediates for chain building, bounded by MAX_CERTIFICATES | pkinit_pool |
+| realms | pkinit_require_crl_checking | boolean | false | CertificatePolicy::from_config (leaf pkinit) | Effective: true fails a chain certificate whose issuer has no current CRL (RevocationUnknown); a listed certificate is always Revoked | pkinit_require_crl_checking |
+| realms | pkinit_revoke | location list | unset | KdcTrust::from_config (leaf pkinit) | Effective: FILE, DIR and ENV CRLs applied to the KDC chain; a stale CRL fails as RevocationUnknown | pkinit_revoke |
+| realms | pkinit_identity | identity location | unset | plan 2 WP-06 (KDC only, D1) | KDC-side relation (MIT kdc.conf): this client never consumes it; diagnostic, Strict rejects | pkinit_identity |
+| realms | pkinit_allow_upn | boolean | false (KDC) | plan 2 WP-06 (KDC only, D1) | KDC-side relation (MIT kdc.conf): this client never consumes it; diagnostic, Strict rejects | pkinit_allow_upn |
+| realms | pkinit_indicator | string list | unset | plan 2 WP-06 (KDC only, D1) | KDC-side relation (MIT kdc.conf): this client never consumes it; diagnostic, Strict rejects | pkinit_indicator |
+| realms | pkinit_require_freshness | boolean | false (KDC) | plan 2 WP-06 (KDC only, D1) | KDC-side relation (MIT kdc.conf): this client never consumes it; diagnostic, Strict rejects | pkinit_require_freshness |
 | realms | pkinit_win2k | rejected boolean | false | protocol::relation | Removed draft-9 PKINIT, enabled value permanently rejected | pkinit_win2k |
 | realms | pkinit_draft9 | rejected boolean | false | protocol::relation | Removed draft-9 PKINIT, enabled value permanently rejected | pkinit_draft9 |
 

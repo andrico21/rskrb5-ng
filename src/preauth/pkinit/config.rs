@@ -198,12 +198,23 @@ pub(super) fn trust(config: &Config, realm: &str) -> Result<KdcTrust, Error> {
 /// `pkinit_identities` of `realm` as `(certificate, key)` pairs: `FILE:cert[,key]`,
 /// and for `DIR:` each `*.crt` with its `*.key` (MIT `pkinit_get_certs_dir`).
 ///
+/// `pkinit_cert_match` rules select among identities with POSIX regular
+/// expressions (MIT `pkinit_matching.c`); no regex engine is admitted, so a
+/// configured rule is refused rather than skipped.
+///
 /// # Errors
-/// Returns the location and directory errors.
+/// Returns the location and directory errors, and
+/// [`Error::UnsupportedLocation`] when `pkinit_cert_match` is set.
 pub(super) fn identities(
     config: &Config,
     realm: &str,
 ) -> Result<Vec<(PathBuf, Option<PathBuf>)>, Error> {
+    if relation(config, realm, "pkinit_cert_match").is_some() {
+        return Err(unsupported(
+            "pkinit_cert_match",
+            "certificate matching rules",
+        ));
+    }
     let Some(Value::Locations(locations)) = relation(config, realm, "pkinit_identities") else {
         return Ok(Vec::new());
     };

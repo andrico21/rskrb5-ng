@@ -63,6 +63,12 @@ pub(super) fn decode(
         _ => Value::Text(first.to_owned()),
     };
     drop(realm.relations.insert(name.to_owned(), value));
+    if let Some(feature) = missing_leaf(consumer) {
+        return Ok(Some(ConfigDiagnostic::FeatureUnavailable {
+            relation: name,
+            feature,
+        }));
+    }
     if consumer.starts_with("plan 2 ") {
         Ok(Some(ConfigDiagnostic::NotYetEffective {
             relation: name,
@@ -71,6 +77,13 @@ pub(super) fn decode(
     } else {
         Ok(None)
     }
+}
+
+/// The leaf feature a relation's consumer needs, when this build lacks it
+/// (plan 2 "Disabled leaves": `FeatureUnavailable`).
+fn missing_leaf(consumer: &str) -> Option<&'static str> {
+    let pkinit = cfg!(feature = "pkinit");
+    (consumer.ends_with("(leaf pkinit)") && !pkinit).then_some("pkinit")
 }
 
 /// Promote a deferred diagnostic without inventing a second classification system.

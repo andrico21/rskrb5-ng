@@ -102,6 +102,24 @@ fn refused_identity_locations_are_typed_errors() -> Result<(), TestError> {
 }
 
 #[test]
+fn certificate_matching_rules_are_refused_not_skipped() -> Result<(), TestError> {
+    // Given identities and a pkinit_cert_match rule, which this client cannot
+    // evaluate, when the identities are read, then the rule is a typed error.
+    let profile = config(&format!(
+        " pkinit_identities = FILE:{}\n pkinit_cert_match = <EKU>pkinit",
+        fixture("client.pem")
+    ))?;
+    assert!(matches!(
+        ConfiguredIdentities::from_config(&profile, REALM),
+        Err(Pkinit::UnsupportedLocation {
+            relation: "pkinit_cert_match",
+            ..
+        })
+    ));
+    Ok(())
+}
+
+#[test]
 fn file_identities_pair_certificate_and_key() -> Result<(), TestError> {
     let certificate = fixture("client.pem");
     let key = fixture("client.key");
