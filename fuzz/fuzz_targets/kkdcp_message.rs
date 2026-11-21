@@ -22,9 +22,15 @@ fuzz_target!(|data: &[u8]| {
     match selector & 0x03 {
         0 => {
             if let Ok(message) = ProxyMessage::decode(input) {
-                let encoded = message.encode().expect("a decoded message encodes");
-                let again = ProxyMessage::decode(&encoded).expect("an encoded message decodes");
-                assert_eq!(again, message, "decode and encode round-trip");
+                let again = message
+                    .encode()
+                    .ok()
+                    .and_then(|encoded| ProxyMessage::decode(&encoded).ok());
+                assert_eq!(
+                    again.as_ref(),
+                    Some(&message),
+                    "decode and encode round-trip"
+                );
             }
         }
         1 => {
@@ -37,7 +43,7 @@ fuzz_target!(|data: &[u8]| {
             let text = String::from_utf8_lossy(input);
             if let Ok(Some(url)) = Url::parse(&text) {
                 let shown = url.to_string();
-                let again = Url::parse(&shown).expect("a shown URL parses");
+                let again = Url::parse(&shown).ok().flatten();
                 assert_eq!(again, Some(url), "a URL survives its display form");
             }
         }
