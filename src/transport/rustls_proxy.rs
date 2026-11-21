@@ -1,7 +1,7 @@
 //! The built-in KDC proxy transport: HTTPS with rustls and the pure-Rust `RustCrypto`
 //! provider (the `kkdcp-rustls` leaf, owner decision D7).
 //!
-//! [`RustlsTransport`] connects to the proxy URL's host and port, runs TLS 1.3 or 1.2
+//! `RustlsTransport` connects to the proxy URL's host and port, runs TLS 1.3 or 1.2
 //! with SNI, verifies the proxy's certificate chain against the request's
 //! `http_anchors` and its own configured roots and the certificate against the URL's
 //! host name, POSTs the KDC-PROXY-MESSAGE over HTTP/1.1 and returns the body of a
