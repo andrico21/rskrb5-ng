@@ -82,6 +82,7 @@ fn pkinit_error(outcome: &Result<Principal, ClientError>) -> Option<&Pkinit> {
     }
 }
 
+/// A certificate login completes and echoes the freshness token.
 #[test]
 fn certificate_login_completes_with_the_freshness_token() -> Result<(), TestError> {
     // Given a KDC that offers a freshness token and a client with a certificate.
@@ -113,6 +114,7 @@ fn certificate_login_completes_with_the_freshness_token() -> Result<(), TestErro
     Ok(())
 }
 
+/// No freshness token is sent when the KDC offers none.
 #[test]
 fn no_freshness_token_is_sent_when_none_is_offered() -> Result<(), TestError> {
     let mut kdc = Kdc::new(Behaviour::Honest, false);
@@ -128,6 +130,7 @@ fn no_freshness_token_is_sent_when_none_is_offered() -> Result<(), TestError> {
     Ok(())
 }
 
+/// A KDC certificate without the KDC EKU is rejected under kpKDC.
 #[test]
 fn kdc_certificate_without_the_kdc_eku_is_rejected_under_kp_kdc() -> Result<(), TestError> {
     // Given pkinit_eku_checking = kpKDC (the default) and a KDC certificate
@@ -147,6 +150,7 @@ fn kdc_certificate_without_the_kdc_eku_is_rejected_under_kp_kdc() -> Result<(), 
     Ok(())
 }
 
+/// A KDC certificate without the EKU is accepted under `none`.
 #[test]
 fn kdc_certificate_without_the_eku_is_accepted_under_none() -> Result<(), TestError> {
     let mut kdc = Kdc::new(Behaviour::NoEku, true);
@@ -160,6 +164,7 @@ fn kdc_certificate_without_the_eku_is_accepted_under_none() -> Result<(), TestEr
     Ok(())
 }
 
+/// Malformed or forged KDC replies are rejected.
 #[test]
 fn rejections_of_the_kdc_reply() -> Result<(), TestError> {
     let cases: [(Behaviour, Check); 5] = [
@@ -221,6 +226,7 @@ fn anonymous(kdc: &mut Kdc) -> Result<Result<Principal, ClientError>, TestError>
     run(&mut engine, kdc)
 }
 
+/// Anonymous PKINIT yields the anonymous principal.
 #[test]
 fn anonymous_pkinit_yields_the_anonymous_principal() -> Result<(), TestError> {
     // Given a KDC that issues fully anonymous tickets with PA-PKINIT-KX.
@@ -238,6 +244,7 @@ fn anonymous_pkinit_yields_the_anonymous_principal() -> Result<(), TestError> {
     Ok(())
 }
 
+/// An anonymous reply without PA-PKINIT-KX is rejected.
 #[test]
 fn anonymous_reply_without_the_key_exchange_is_rejected() -> Result<(), TestError> {
     for behaviour in [Behaviour::MissingKx, Behaviour::WrongKx] {
@@ -254,6 +261,7 @@ fn anonymous_reply_without_the_key_exchange_is_rejected() -> Result<(), TestErro
     Ok(())
 }
 
+/// Realm-exposed anonymity requires the anonymous reply name.
 #[test]
 fn realm_exposed_anonymity_requires_the_anonymous_name() -> Result<(), TestError> {
     // Given a keytab client that asks for realm-exposed anonymity.
@@ -299,6 +307,7 @@ fn realm_exposed_anonymity_requires_the_anonymous_name() -> Result<(), TestError
     Ok(())
 }
 
+/// The anonymous armor source obtains an anonymous TGT.
 #[test]
 fn anonymous_armor_source_obtains_an_anonymous_tgt() -> Result<(), TestError> {
     // Given the anonymous-armor provider over a blocking transport to the KDC.

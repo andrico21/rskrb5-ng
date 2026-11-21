@@ -73,6 +73,7 @@ fn hex(text: &[u8]) -> Result<Vec<u8>, TestError> {
         .collect()
 }
 
+/// The RFC 8636 KDF reproduces MIT's `pkinit_kdf_test.c` vectors.
 #[test]
 fn rfc8636_kdf_vectors() -> Result<(), TestError> {
     // Given MIT's RFC 8636 inputs: a 256-byte zero secret, lha@SU.SE and
@@ -123,6 +124,7 @@ fn rfc8636_kdf_vectors() -> Result<(), TestError> {
     Ok(())
 }
 
+/// RFC 4556 octetstring2key concatenates counted SHA-1 blocks.
 #[test]
 fn octetstring2key_concatenates_counted_sha1_blocks() -> Result<(), TestError> {
     // RFC 4556 section 3.2.3.1: SHA-1(0x00 || Z) || SHA-1(0x01 || Z) ...
@@ -145,6 +147,7 @@ fn octetstring2key_concatenates_counted_sha1_blocks() -> Result<(), TestError> {
     Ok(())
 }
 
+/// The MODP 2048 agreement matches the OpenSSL-derived secret.
 #[test]
 fn modp_2048_agreement_matches_openssl() -> Result<(), TestError> {
     // Given OpenSSL's modp_2048 private exponent of side a and public value of side b.
@@ -164,6 +167,7 @@ fn modp_2048_agreement_matches_openssl() -> Result<(), TestError> {
     Ok(())
 }
 
+/// The P-256 agreement matches the OpenSSL-derived secret.
 #[test]
 fn p256_agreement_matches_openssl() -> Result<(), TestError> {
     let private = hex(fixture!("ec-a.priv.hex"))?;
@@ -172,6 +176,7 @@ fn p256_agreement_matches_openssl() -> Result<(), TestError> {
     Ok(())
 }
 
+/// Invalid DH and EC public values are refused before agreement.
 #[test]
 fn invalid_public_values_are_refused() -> Result<(), TestError> {
     let (ephemeral, _) = dh::generate(DhGroup::Modp2048)?;
@@ -214,6 +219,7 @@ fn invalid_public_values_are_refused() -> Result<(), TestError> {
     Ok(())
 }
 
+/// OpenSSL CMS `SignedData` verifies; tampered or truncated data is refused.
 #[test]
 fn openssl_cms_signed_data_verifies() -> Result<(), TestError> {
     // Given OpenSSL's `cms -sign` of id-pkinit-DHKeyData by the KDC key.
@@ -292,6 +298,7 @@ fn validate(
     chain::validate(&leaf, (&[], &roots, crls), require_crl, now())
 }
 
+/// Chain validation refuses expired, untrusted and revoked certificates.
 #[test]
 fn chain_validation_rules() -> Result<(), TestError> {
     let crl = CertificateList::from_der(&pem::decode_vec(fixture!("crl-ec.pem"))?.1)?;
@@ -325,6 +332,7 @@ fn chain_validation_rules() -> Result<(), TestError> {
     Ok(())
 }
 
+/// The KDC certificate needs the EKU, the TGS name or a configured hostname.
 #[test]
 fn kdc_identity_rules() -> Result<(), TestError> {
     let realm = "TEST.RSKRB5";
@@ -367,6 +375,7 @@ fn kdc_identity_rules() -> Result<(), TestError> {
     Ok(())
 }
 
+/// SEC1 and PKCS#8 software keys load only with their own certificate.
 #[test]
 fn software_identities_and_outgoing_requests() -> Result<(), TestError> {
     // SEC1 and PKCS#8 keys load; a key that is not the certificate's is refused.
@@ -397,6 +406,7 @@ fn software_identities_and_outgoing_requests() -> Result<(), TestError> {
     Ok(())
 }
 
+/// The anonymous key exchange must match the reply session key.
 #[test]
 fn anonymous_key_exchange_must_match_the_session_key() -> Result<(), TestError> {
     // A PA-PKINIT-KX that does not decrypt, or names another key, fails.

@@ -46,7 +46,7 @@ pub(super) mod tests {
     }
 
     pub(crate) fn run_audit() -> Result<(), Box<dyn Error>> {
-        anonymous_armor_source_redacts_its_transport()?;
+        anonymous_armor_source_redacts_its_transport();
         exchange_redacts_its_identity()
     }
 
@@ -71,9 +71,8 @@ pub(super) mod tests {
     }
 
     /// The anonymous-armor source names neither its transport's contents nor
-    /// its anchors.
-    #[test]
-    fn anonymous_armor_source_redacts_its_transport() -> Result<(), Box<dyn Error>> {
+    /// its anchors (run by `run_audit`, which the owner audit calls).
+    fn anonymous_armor_source_redacts_its_transport() {
         let secret = pattern(225);
         let anchor = pattern(241);
         redacted(
@@ -84,6 +83,5 @@ pub(super) mod tests {
             ),
             &[&secret, &anchor],
         );
-        Ok(())
     }
 }

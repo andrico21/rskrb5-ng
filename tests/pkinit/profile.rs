@@ -33,6 +33,7 @@ fn fixture(name: &str) -> String {
     )
 }
 
+/// `pkinit_dh_min_bits` maps like MIT's, with a 2048-bit floor.
 #[test]
 fn dh_min_bits_maps_like_mit_with_a_2048_floor() -> Result<(), TestError> {
     // Given MIT's parse_dh_min_bits values, when each is mapped, then the
@@ -59,6 +60,7 @@ fn dh_min_bits_maps_like_mit_with_a_2048_floor() -> Result<(), TestError> {
     Ok(())
 }
 
+/// The realm `pkinit_*` relations shape the certificate policy.
 #[test]
 fn realm_relations_shape_the_certificate_policy() -> Result<(), TestError> {
     // Given the client-side pkinit relations of a realm.
@@ -83,6 +85,7 @@ fn realm_relations_shape_the_certificate_policy() -> Result<(), TestError> {
     Ok(())
 }
 
+/// Refused identity locations are typed errors.
 #[test]
 fn refused_identity_locations_are_typed_errors() -> Result<(), TestError> {
     for location in ["PKCS11:module_name=/usr/lib/p11.so", "PKCS12:/tmp/user.p12"] {
@@ -101,6 +104,7 @@ fn refused_identity_locations_are_typed_errors() -> Result<(), TestError> {
     Ok(())
 }
 
+/// `pkinit_cert_match` rules are refused, never skipped.
 #[test]
 fn certificate_matching_rules_are_refused_not_skipped() -> Result<(), TestError> {
     // Given identities and a pkinit_cert_match rule, which this client cannot
@@ -119,6 +123,7 @@ fn certificate_matching_rules_are_refused_not_skipped() -> Result<(), TestError>
     Ok(())
 }
 
+/// FILE identities pair a certificate with its key.
 #[test]
 fn file_identities_pair_certificate_and_key() -> Result<(), TestError> {
     let certificate = fixture("client.pem");
@@ -139,6 +144,7 @@ fn file_identities_pair_certificate_and_key() -> Result<(), TestError> {
     Ok(())
 }
 
+/// A realm without anchors is a typed error.
 #[test]
 fn missing_anchors_are_a_typed_error() -> Result<(), TestError> {
     let profile = config(" pkinit_eku_checking = kpKDC")?;
@@ -149,6 +155,7 @@ fn missing_anchors_are_a_typed_error() -> Result<(), TestError> {
     Ok(())
 }
 
+/// Anchors, pool certificates and CRLs load from files.
 #[cfg(feature = "pkinit")]
 #[test]
 fn anchors_pool_and_crls_load_from_files() -> Result<(), TestError> {
@@ -178,6 +185,7 @@ fn anchors_pool_and_crls_load_from_files() -> Result<(), TestError> {
     Ok(())
 }
 
+/// Without the leaf every PKINIT operation is unavailable.
 #[cfg(not(feature = "pkinit"))]
 #[test]
 fn without_the_leaf_every_operation_is_unavailable() -> Result<(), TestError> {
