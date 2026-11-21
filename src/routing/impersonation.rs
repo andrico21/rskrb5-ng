@@ -14,7 +14,7 @@ use core::{fmt, str};
 
 use super::{
     CertificateIdentity,
-    s4u::{PA_S4U_X509_USER, PaS4uX509User, UserId, verify_reply},
+    s4u::{PA_S4U_X509_USER, PaS4uX509User, REQUEST_USAGE, UserId, verify_reply},
 };
 use crate::{
     client::{
@@ -286,7 +286,7 @@ pub(crate) async fn s4u2self(
         );
         let mut padata = vec![rasn_kerberos::PaData {
             r#type: PA_S4U_X509_USER,
-            value: PaS4uX509User::sign(user_id.clone(), tgt.session_key())?
+            value: PaS4uX509User::sign(user_id.clone(), tgt.session_key(), REQUEST_USAGE)?
                 .encode_der()?
                 .into(),
         }];
@@ -578,7 +578,15 @@ fn tgt_realm(tgt: &AsRepSession) -> Result<String, Error> {
 /// The enterprise form of `service` for a foreign realm (MIT
 /// `convert_to_enterprise`, `s4u_creds.c:399-418`).
 fn enterprise(service: &Principal, realm: &str) -> Principal {
-    Principal::new(realm, NT_ENTERPRISE, [service.name()])
+    Principal::new(
+        realm,
+        NT_ENTERPRISE,
+        [format!(
+            "{}@{}",
+            service.components.join("/"),
+            service.realm
+        )],
+    )
 }
 
 /// A random request nonce.

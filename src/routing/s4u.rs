@@ -93,22 +93,24 @@ impl UserId {
 }
 
 impl PaS4uX509User {
-    /// Checksum `user_id` with `key`, the TGS-REQ authenticator subkey (its
-    /// enctype's mandatory checksum, key usage [`REQUEST_USAGE`]).
+    /// Checksum `user_id` with `key` (the request's TGT session key, or the
+    /// subkey when the request has one: MIT KDC `kdc_util.c:1428-1430`) under its
+    /// enctype's mandatory checksum and key usage `usage` ([`REQUEST_USAGE`] for a
+    /// request, [`REPLY_USAGE`] for a KDC's answer).
     ///
     /// # Errors
     ///
     /// Returns [`Error::UnsupportedEtype`] for a key without an implemented
     /// enctype, and an encoding or checksum error.
     #[inline]
-    pub fn sign(user_id: UserId, key: &EncryptionKey) -> Result<Self, Error> {
+    pub fn sign(user_id: UserId, key: &EncryptionKey, usage: u32) -> Result<Self, Error> {
         let etype = KerberosEtype::from_etype_id(key.etype())
             .ok_or(Error::UnsupportedEtype(key.etype()))?;
         let message = der::encode(&user_id).map_err(|error| Error::Encode {
             target: "S4UUserID",
             message: error.to_string(),
         })?;
-        let checksum = etype.checksum(key.value(), &message, REQUEST_USAGE)?;
+        let checksum = etype.checksum(key.value(), &message, usage)?;
         Ok(Self {
             user_id,
             checksum: rasn_kerberos::Checksum {

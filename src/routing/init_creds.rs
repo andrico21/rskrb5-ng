@@ -19,7 +19,8 @@
 //! An invalid proof (a wrong key, a bad AP-REQ, a ticket for another service)
 //! is always an error.
 
-use std::time::SystemTime;
+use core::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use zeroize::Zeroizing;
 
@@ -133,8 +134,19 @@ pub(crate) fn check(ticket: &TgsRepSession, keytab: &Keytab) -> Result<(), Error
         .ok_or(Error::UnsupportedEtype(ticket.session_key().etype()))?;
     let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
-    let now = SystemTime::now();
-    let built = build_ap_req_with_confounder(ticket, ApReq::default(), now, 0, &confounder)?;
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_before_epoch| Error::TimeOverflow)?;
+    let now = UNIX_EPOCH
+        .checked_add(Duration::from_secs(elapsed.as_secs()))
+        .ok_or(Error::TimeOverflow)?;
+    let built = build_ap_req_with_confounder(
+        ticket,
+        ApReq::default(),
+        now,
+        elapsed.subsec_micros(),
+        &confounder,
+    )?;
     let accepted = Validator::new(keytab)
         .with_now(now)
         .validate_ap_req(built.der())

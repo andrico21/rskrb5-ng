@@ -85,3 +85,28 @@ mod kdc;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 #[path = "routing/referrals.rs"]
 mod referrals;
+
+/// An in-memory KDC behind the MS-KKDCP proxy seam.
+#[cfg(test)]
+#[cfg(feature = "tokio")]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::too_long_first_doc_paragraph,
+    clippy::too_many_lines,
+    reason = "test code is not rendered API documentation; the fake KDC answers every request kind in one match"
+)]
+#[path = "routing/proxy_kdc.rs"]
+mod proxy_kdc;
+
+/// Delegation, user-to-user tickets and `verify_init_creds` through the Tokio client.
+#[cfg(test)]
+#[cfg(feature = "tokio")]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    clippy::too_long_first_doc_paragraph,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "routing/delegation.rs"]
+mod delegation;
