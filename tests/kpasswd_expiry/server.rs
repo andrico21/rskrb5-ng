@@ -14,7 +14,7 @@ use rasn::der;
 use rskrb5_ng::{
     ap_rep::encode_build_ap_rep_with_confounder,
     ap_req::decrypt_ap_req_authenticator,
-    client::AP_REQ_AUTHENTICATOR_USAGE,
+    client::{AP_REQ_AUTHENTICATOR_USAGE, Password},
     config::Config,
     kadmin::{self, ChangePasswdData, Request, build_krb_priv_with_confounder},
     keytab::EncryptionKey,
@@ -82,8 +82,11 @@ pub(super) fn config(kdc: Option<&str>, kpasswd: &str) -> Result<Config, TestErr
 pub(super) struct Seen {
     /// The authenticator of the AP-REQ, for the reply's echoed time.
     pub authenticator: rasn_kerberos::Authenticator,
-    /// The decrypted `ChangePasswdData`.
+    /// The decrypted request: the `ChangePasswdData` of a set-password, or the password of a
+    /// change-password (no target fields).
     pub change_data: ChangePasswdData,
+    /// The protocol version of the frame: 1 (change) or `0xff80` (set).
+    pub version: u16,
 }
 
 /// Decrypt a kpasswd request under the changepw session key.
@@ -94,10 +97,22 @@ pub(super) fn open_request(request: &[u8]) -> Result<Seen, TestError> {
     let subkey = authenticator.subkey.as_ref().ok_or("reply key included")?;
     let reply_key = EncryptionKey::new(subkey.r#type, subkey.value.as_ref().to_vec());
     let enc_part = kadmin::decrypt_krb_priv_enc_part(parsed.krb_priv(), &reply_key)?;
-    let change_data = ChangePasswdData::decode_der(enc_part.user_data.as_ref())?;
+    let version = u16::from_be_bytes(
+        request
+            .get(2..4)
+            .ok_or("frame header")?
+            .try_into()
+            .map_err(|_unused| "frame header")?,
+    );
+    let change_data = if version == 1 {
+        ChangePasswdData::new(Password::from_vec(enc_part.user_data.as_ref().to_vec()))
+    } else {
+        ChangePasswdData::decode_der(enc_part.user_data.as_ref())?
+    };
     Ok(Seen {
         authenticator,
         change_data,
+        version,
     })
 }
 

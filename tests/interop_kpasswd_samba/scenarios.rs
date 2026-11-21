@@ -70,6 +70,14 @@ fn password(key: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     Ok(harness::var(key)?.into_bytes())
 }
 
+/// Replaces `error` by its `Display` text: libtest prints a returned error
+/// through `Debug`, which for the client errors names only the variant.
+fn shown(error: Box<dyn Error>) -> Box<dyn Error> {
+    let text = error.to_string();
+    drop(error);
+    text.into()
+}
+
 /// The old password is refused and the new one logs in with a pre-authenticated TGT.
 async fn assert_replaced(
     config: &Config,
@@ -112,33 +120,35 @@ fn an_ordinary_user_changes_their_own_password() -> Result<(), Box<dyn Error>> {
     )? {
         return Ok(());
     }
-    runtime()?.block_on(async {
-        let config = config()?;
-        let account = user("INTEROP_SAMBA_USER_KPASSWD_SELF")?;
-        let old = password("INTEROP_SAMBA_USER_KPASSWD_SELF_PASSWORD")?;
-        let new = password("INTEROP_SAMBA_USER_KPASSWD_SELF_NEW_PASSWORD")?;
-        let mut client = Tokio::with_password(
-            config.clone(),
-            KdcProtocol::Tcp,
-            account.clone(),
-            old.clone(),
-        )
-        .with_transport(transport());
-
-        let result = client
-            .change_password(
-                Password::from_vec(new.clone()),
-                ipv4_host_address(Ipv4Addr::LOCALHOST.octets()),
+    runtime()?
+        .block_on(async {
+            let config = config()?;
+            let account = user("INTEROP_SAMBA_USER_KPASSWD_SELF")?;
+            let old = password("INTEROP_SAMBA_USER_KPASSWD_SELF_PASSWORD")?;
+            let new = password("INTEROP_SAMBA_USER_KPASSWD_SELF_NEW_PASSWORD")?;
+            let mut client = Tokio::with_password(
+                config.clone(),
+                KdcProtocol::Tcp,
+                account.clone(),
+                old.clone(),
             )
-            .await?;
+            .with_transport(transport());
 
-        assert_eq!(
-            result.code, KPASSWD_SUCCESS,
-            "kpasswd result code {}: {}",
-            result.code, result.text
-        );
-        assert_replaced(&config, &account, old, new).await
-    })
+            let result = client
+                .change_password(
+                    Password::from_vec(new.clone()),
+                    ipv4_host_address(Ipv4Addr::LOCALHOST.octets()),
+                )
+                .await?;
+
+            assert_eq!(
+                result.code, KPASSWD_SUCCESS,
+                "kpasswd result code {}: {}",
+                result.code, result.text
+            );
+            assert_replaced(&config, &account, old, new).await
+        })
+        .map_err(shown)
 }
 
 /// The domain administrator resets another account's password with the RFC 3244 target
@@ -152,32 +162,34 @@ fn an_administrators_targeted_reset_sets_another_accounts_password() -> Result<(
     )? {
         return Ok(());
     }
-    runtime()?.block_on(async {
-        let config = config()?;
-        let target = user("INTEROP_SAMBA_USER_SETPW_TARGET")?;
-        let old = password("INTEROP_SAMBA_USER_SETPW_TARGET_PASSWORD")?;
-        let new = password("INTEROP_SAMBA_USER_SETPW_TARGET_NEW_PASSWORD")?;
-        let mut administrator = Tokio::with_password(
-            config.clone(),
-            KdcProtocol::Tcp,
-            user("INTEROP_SAMBA_USER_ADMIN_PRINCIPAL")?,
-            password("INTEROP_SAMBA_USER_ADMIN_PASSWORD")?,
-        )
-        .with_transport(transport());
-
-        let result = administrator
-            .change_password_for(
-                target.clone(),
-                Password::from_vec(new.clone()),
-                ipv4_host_address(Ipv4Addr::LOCALHOST.octets()),
+    runtime()?
+        .block_on(async {
+            let config = config()?;
+            let target = user("INTEROP_SAMBA_USER_SETPW_TARGET")?;
+            let old = password("INTEROP_SAMBA_USER_SETPW_TARGET_PASSWORD")?;
+            let new = password("INTEROP_SAMBA_USER_SETPW_TARGET_NEW_PASSWORD")?;
+            let mut administrator = Tokio::with_password(
+                config.clone(),
+                KdcProtocol::Tcp,
+                user("INTEROP_SAMBA_USER_ADMIN_PRINCIPAL")?,
+                password("INTEROP_SAMBA_USER_ADMIN_PASSWORD")?,
             )
-            .await?;
+            .with_transport(transport());
 
-        assert_eq!(
-            result.code, KPASSWD_SUCCESS,
-            "kpasswd result code {}: {}",
-            result.code, result.text
-        );
-        assert_replaced(&config, &target, old, new).await
-    })
+            let result = administrator
+                .change_password_for(
+                    target.clone(),
+                    Password::from_vec(new.clone()),
+                    ipv4_host_address(Ipv4Addr::LOCALHOST.octets()),
+                )
+                .await?;
+
+            assert_eq!(
+                result.code, KPASSWD_SUCCESS,
+                "kpasswd result code {}: {}",
+                result.code, result.text
+            );
+            assert_replaced(&config, &target, old, new).await
+        })
+        .map_err(shown)
 }

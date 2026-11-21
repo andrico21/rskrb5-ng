@@ -14,8 +14,13 @@ pub(super) fn observe_frame(bytes: &[u8]) {
 impl fmt::Debug for Request {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self { ap_req, krb_priv } = self;
+        let Self {
+            ap_req,
+            krb_priv,
+            version,
+        } = self;
         f.debug_struct("Request")
+            .field("version", version)
             .field("ticket_etype", &ap_req.ticket.enc_part.etype)
             .field("authenticator_len", &ap_req.authenticator.cipher.len())
             .field("private_len", &krb_priv.enc_part.cipher.len())

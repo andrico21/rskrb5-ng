@@ -123,6 +123,14 @@ impl ExpiryResponder for Scripted {
     }
 }
 
+/// Replaces `error` by its `Display` text: libtest prints a returned error
+/// through `Debug`, which for the client errors names only the variant.
+fn shown(error: Box<dyn Error>) -> Box<dyn Error> {
+    let text = error.to_string();
+    drop(error);
+    text.into()
+}
+
 /// The old password is refused and the new one logs in with a pre-authenticated TGT.
 async fn assert_replaced(
     config: &Config,
@@ -169,49 +177,54 @@ fn an_expired_password_is_changed_and_the_login_starts_over() -> Result<(), Box<
     )? {
         return Ok(());
     }
-    runtime()?.block_on(async {
-        let direct = config(&harness::var("INTEROP_MIT_KDC")?)?;
-        let tap = KdcTap::start(KdcProtocol::Tcp, &harness::var("INTEROP_MIT_KDC")?).await?;
-        let tapped = config(tap.endpoint())?;
-        let principal = account("expiredpw")?;
-        let (old, new) = (derived("expiredpw")?, derived("expiredpw-new")?);
-        let mut client = Tokio::with_password(
-            tapped,
-            KdcProtocol::Tcp,
-            principal.clone(),
-            old.as_bytes().to_vec(),
-        )
-        .with_transport(transport());
-        let mut responder = Scripted::offering(slice::from_ref(&new));
-
-        let session = client
-            .login_with_expiry(
-                &mut responder,
-                ipv4_host_address(Ipv4Addr::LOCALHOST.octets()),
+    runtime()?
+        .block_on(async {
+            let direct = config(&harness::var("INTEROP_MIT_KDC")?)?;
+            let tap = KdcTap::start(KdcProtocol::Tcp, &harness::var("INTEROP_MIT_KDC")?).await?;
+            let tapped = config(tap.endpoint())?;
+            let principal = account("expiredpw")?;
+            let (old, new) = (derived("expiredpw")?, derived("expiredpw-new")?);
+            let mut client = Tokio::with_password(
+                tapped,
+                KdcProtocol::Tcp,
+                principal.clone(),
+                old.as_bytes().to_vec(),
             )
-            .await?;
+            .with_transport(transport());
+            let mut responder = Scripted::offering(slice::from_ref(&new));
 
-        assert_eq!(session.client(), &principal);
-        assert_ticket_flag("pre-authent", FLAG_PRE_AUTHENT, session.ticket_flags())?;
-        assert_eq!(responder.prompts, [(EXPIRED_BANNER.to_owned(), 3)]);
-        assert_eq!(responder.notices.len(), 1);
-        // The proof of every login is the encrypted timestamp: the failed login, the
-        // kadmin/changepw ticket and the login that followed the change.
-        let requests = tap.as_req_padata()?;
-        assert_eq!(
-            requests.len(),
-            6,
-            "a probe and a proof for each of three AS exchanges"
-        );
-        for proof in [1_usize, 3, 5] {
+            let session = client
+                .login_with_expiry(
+                    &mut responder,
+                    ipv4_host_address(Ipv4Addr::LOCALHOST.octets()),
+                )
+                .await?;
+
+            assert_eq!(session.client(), &principal);
+            assert_ticket_flag("pre-authent", FLAG_PRE_AUTHENT, session.ticket_flags())?;
+            assert_eq!(responder.prompts, [(EXPIRED_BANNER.to_owned(), 3)]);
+            assert_eq!(responder.notices.len(), 1);
+            // The proof of every login is the encrypted timestamp (a KDC that answers the first
+            // request with KDC_ERR_KEY_EXP is asked again at its primary, so the number of
+            // requests is not pinned): the failed login, the kadmin/changepw ticket and the login
+            // that followed the change each sent one, and the last request is the restart's.
+            let requests = tap.as_req_padata()?;
+            let proofs = requests
+                .iter()
+                .filter(|padata| padata.contains(&PA_ENC_TIMESTAMP))
+                .count();
+            assert!(
+                requests.len() >= 6 && proofs >= 3,
+                "three AS exchanges with a proof each: {requests:?}"
+            );
             assert_negotiated_padata(
-                "the preauthenticated AS-REQ",
+                "the AS-REQ of the restarted login",
                 PA_ENC_TIMESTAMP,
-                requests.get(proof).map_or(&[][..], Vec::as_slice),
+                requests.last().map_or(&[][..], Vec::as_slice),
             )?;
-        }
-        assert_replaced(&direct, &principal, &old, &new).await
-    })
+            assert_replaced(&direct, &principal, &old, &new).await
+        })
+        .map_err(shown)
 }
 
 /// A new password the policy refuses is a soft error with the server's reason, put to the
@@ -224,37 +237,41 @@ fn a_password_policy_rejection_is_put_to_the_responder_again() -> Result<(), Box
     )? {
         return Ok(());
     }
-    runtime()?.block_on(async {
-        let config = config(&harness::var("INTEROP_MIT_KDC")?)?;
-        let principal = account("expiredpolicy")?;
-        let (old, new) = (derived("expiredpolicy")?, derived("expiredpolicy-new")?);
-        let mut client = Tokio::with_password(
-            config.clone(),
-            KdcProtocol::Tcp,
-            principal.clone(),
-            old.as_bytes().to_vec(),
-        )
-        .with_transport(transport());
-        let mut responder = Scripted::offering(&["short".to_owned(), new.clone()]);
-
-        let _session = client
-            .login_with_expiry(
-                &mut responder,
-                ipv4_host_address(Ipv4Addr::LOCALHOST.octets()),
+    runtime()?
+        .block_on(async {
+            let config = config(&harness::var("INTEROP_MIT_KDC")?)?;
+            let principal = account("expiredpolicy")?;
+            let (old, new) = (derived("expiredpolicy")?, derived("expiredpolicy-new")?);
+            let mut client = Tokio::with_password(
+                config.clone(),
+                KdcProtocol::Tcp,
+                principal.clone(),
+                old.as_bytes().to_vec(),
             )
-            .await?;
+            .with_transport(transport());
+            let mut responder = Scripted::offering(&["short".to_owned(), new.clone()]);
 
-        let [first, (banner, tries_left)] = responder.prompts.as_slice() else {
-            return Err(format!("expected two prompts, got {}", responder.prompts.len()).into());
-        };
-        assert_eq!(first, &(EXPIRED_BANNER.to_owned(), 3));
-        assert!(
-            banner.starts_with("Password change rejected: ") && banner.contains("short"),
-            "the server's policy reason reaches the responder: {banner}"
-        );
-        assert_eq!(*tries_left, 2);
-        assert_replaced(&config, &principal, &old, &new).await
-    })
+            let _session = client
+                .login_with_expiry(
+                    &mut responder,
+                    ipv4_host_address(Ipv4Addr::LOCALHOST.octets()),
+                )
+                .await?;
+
+            let [first, (banner, tries_left)] = responder.prompts.as_slice() else {
+                return Err(
+                    format!("expected two prompts, got {}", responder.prompts.len()).into(),
+                );
+            };
+            assert_eq!(first, &(EXPIRED_BANNER.to_owned(), 3));
+            assert!(
+                banner.starts_with("Password change rejected: ") && banner.contains("short"),
+                "the server's policy reason reaches the responder: {banner}"
+            );
+            assert_eq!(*tries_left, 2);
+            assert_replaced(&config, &principal, &old, &new).await
+        })
+        .map_err(shown)
 }
 
 /// A password that is about to expire logs in as usual and the KDC's expiry time reaches the
@@ -267,41 +284,43 @@ fn an_impending_expiry_reaches_the_responder() -> Result<(), Box<dyn Error>> {
     )? {
         return Ok(());
     }
-    runtime()?.block_on(async {
-        let config = config(&harness::var("INTEROP_MIT_KDC")?)?;
-        let principal = account("expiringpw")?;
-        let mut client = Tokio::with_password(
-            config,
-            KdcProtocol::Tcp,
-            principal.clone(),
-            derived("expiringpw")?.into_bytes(),
-        )
-        .with_transport(transport());
-        let mut responder = Scripted::default();
-
-        let session = client
-            .login_with_expiry(
-                &mut responder,
-                ipv4_host_address(Ipv4Addr::LOCALHOST.octets()),
+    runtime()?
+        .block_on(async {
+            let config = config(&harness::var("INTEROP_MIT_KDC")?)?;
+            let principal = account("expiringpw")?;
+            let mut client = Tokio::with_password(
+                config,
+                KdcProtocol::Tcp,
+                principal.clone(),
+                derived("expiringpw")?.into_bytes(),
             )
-            .await?;
+            .with_transport(transport());
+            let mut responder = Scripted::default();
 
-        assert_eq!(session.client(), &principal);
-        assert!(responder.prompts.is_empty(), "nothing needs changing");
-        let [notice] = responder.notices.as_slice() else {
-            return Err(format!("expected one notice, got {}", responder.notices.len()).into());
-        };
-        let expires = notice
-            .password()
-            .ok_or("the KDC reports the password expiry")?;
-        let expected = UNIX_EPOCH + Duration::from_secs(EXPIRING_AT);
-        let distance = expires
-            .duration_since(expected)
-            .unwrap_or_else(|error| error.duration());
-        assert!(
-            distance <= Duration::from_hours(24),
-            "the expiry {expires:?} is the day {expected:?} of the principal"
-        );
-        Ok::<_, Box<dyn Error>>(())
-    })
+            let session = client
+                .login_with_expiry(
+                    &mut responder,
+                    ipv4_host_address(Ipv4Addr::LOCALHOST.octets()),
+                )
+                .await?;
+
+            assert_eq!(session.client(), &principal);
+            assert!(responder.prompts.is_empty(), "nothing needs changing");
+            let [notice] = responder.notices.as_slice() else {
+                return Err(format!("expected one notice, got {}", responder.notices.len()).into());
+            };
+            let expires = notice
+                .password()
+                .ok_or("the KDC reports the password expiry")?;
+            let expected = UNIX_EPOCH + Duration::from_secs(EXPIRING_AT);
+            let distance = expires
+                .duration_since(expected)
+                .unwrap_or_else(|error| error.duration());
+            assert!(
+                distance <= Duration::from_hours(24),
+                "the expiry {expires:?} is the day {expected:?} of the principal"
+            );
+            Ok::<_, Box<dyn Error>>(())
+        })
+        .map_err(shown)
 }

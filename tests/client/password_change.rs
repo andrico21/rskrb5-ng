@@ -86,8 +86,14 @@ TEST.GOKRB5 = {{
         let reply_key = EncryptionKey::new(subkey.r#type, subkey.value.as_ref().to_vec());
         let enc_part = decrypt_krb_priv_enc_part(parsed.krb_priv(), &reply_key)
             .context("KRB-PRIV payload decrypts")?;
-        let change_data = ChangePasswdData::decode_der(enc_part.user_data.as_ref())
-            .context("ChangePasswdData decodes")?;
+        // A change of the client's own password is the version 1 protocol: the KRB-PRIV
+        // carries the password itself; a set-password carries a `ChangePasswdData`.
+        let change_data = if parsed.version() == 1 {
+            ChangePasswdData::new(Password::from_vec(enc_part.user_data.as_ref().to_vec()))
+        } else {
+            ChangePasswdData::decode_der(enc_part.user_data.as_ref())
+                .context("ChangePasswdData decodes")?
+        };
         Ok((authenticator, change_data))
     }
 
@@ -209,6 +215,8 @@ TEST.GOKRB5 = {{
             .context("KRB-PRIV decrypts")?;
         let enc_part: rasn_kerberos::EncKrbPrivPart =
             der::decode(&krb_priv_bytes).context("EncKrbPrivPart decodes")?;
+        // With target fields this is an RFC 3244 set-password: version 0xff80, a ChangePasswdData.
+        assert_eq!(parsed.version(), 0xff80);
         let decoded_change_data =
             ChangePasswdData::decode_der(enc_part.user_data.as_ref()).context("payload decodes")?;
 
@@ -270,10 +278,10 @@ TEST.GOKRB5 = {{
             .context("KRB-PRIV decrypts")?;
         let enc_part: rasn_kerberos::EncKrbPrivPart =
             der::decode(&krb_priv_bytes).context("EncKrbPrivPart decodes")?;
-        let decoded_change_data =
-            ChangePasswdData::decode_der(enc_part.user_data.as_ref()).context("payload decodes")?;
-
-        assert_eq!(decoded_change_data, change_data);
+        // Without target fields this is the change of the client's own password: version 1,
+        // the password itself in the KRB-PRIV (MIT `chpw.c:21-76`).
+        assert_eq!(parsed.version(), 1);
+        assert_eq!(enc_part.user_data.as_ref(), b"newpassword");
         assert_eq!(enc_part.seq_number, Some(42));
         Ok(())
     }
