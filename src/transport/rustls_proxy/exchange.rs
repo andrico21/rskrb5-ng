@@ -10,8 +10,8 @@ use core::{
     convert::Infallible,
     error::Error as StdError,
     future::poll_fn,
-    pin::{Pin, pin},
-    task::{Context, Poll, ready},
+    pin::Pin,
+    task::{Context, Poll},
 };
 use std::io;
 
@@ -46,9 +46,14 @@ impl Read for Io {
         let mut scratch = [0_u8; READ_CHUNK];
         let room = buf.remaining().min(READ_CHUNK);
         let mut read = ReadBuf::new(scratch.get_mut(..room).unwrap_or_default());
-        ready!(Pin::new(&mut self.get_mut().0).poll_read(cx, &mut read))?;
-        buf.put_slice(read.filled());
-        Poll::Ready(Ok(()))
+        match Pin::new(&mut self.get_mut().0).poll_read(cx, &mut read) {
+            Poll::Ready(Ok(())) => {
+                buf.put_slice(read.filled());
+                Poll::Ready(Ok(()))
+            }
+            Poll::Ready(Err(error)) => Poll::Ready(Err(error)),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
@@ -119,7 +124,7 @@ async fn body(response: hyper::Response<Incoming>, limit: usize) -> Result<Vec<u
             status: response.status().as_u16(),
         });
     }
-    let mut incoming = pin!(response.into_body());
+    let mut incoming = Box::pin(response.into_body());
     let mut collected = Vec::new();
     while let Some(frame) = poll_fn(|context| incoming.as_mut().poll_frame(context)).await {
         let Ok(data) = frame.map_err(maybe)?.into_data() else {
@@ -172,11 +177,11 @@ pub(super) async fn post(
         .await
         .map_err(|error| Error::NotDelivered(Box::new(error)))?;
     let limit = request.max_response;
-    let mut exchange = pin!(async move {
+    let mut exchange = Box::pin(async move {
         let response = sender.send_request(message).await.map_err(maybe)?;
         body(response, limit).await
     });
-    let mut driver = pin!(connection);
+    let mut driver = Box::pin(connection);
     let mut closed = false;
     poll_fn(|cx| {
         if let Poll::Ready(result) = exchange.as_mut().poll(cx) {
