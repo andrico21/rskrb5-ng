@@ -75,8 +75,8 @@ everything else is timeless or a dated record.
   `--all-features` entry. `feature_closures.py check-ci` keeps the matrix complete.
 - **CI jobs:** the blocking and the advisory sets are the ones named in project rule 8;
   `overlay_facts.py` compares them with the jobs of `.github/workflows/ci.yml`.
-- **Fuzz targets:** `fuzz/fuzz_targets/` holds 25 `.rs` files and `fuzz/Cargo.toml` declares
-  24 `[[bin]]` targets. `session_ticket.rs` is a shared helper module, not a target.
+- **Fuzz targets:** `fuzz/fuzz_targets/` holds 26 `.rs` files and `fuzz/Cargo.toml` declares
+  25 `[[bin]]` targets. `session_ticket.rs` is a shared helper module, not a target.
 - **Review backlog:** closed. The row and key totals are in `docs/review/README.md`
   "Totals".
 - **Ambient inputs:** 15 audited reader functions (17 reader/variable inventory entries
