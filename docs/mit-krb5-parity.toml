@@ -2974,7 +2974,7 @@ rust_symbols = [
   "kadmin::result_text::AdPasswordPolicy",
 ]
 test_names = [
-  "tests/kpasswd_expiry/self_change.rs::a_self_change_sends_no_target_fields",
+  "tests/kpasswd_expiry/self_change.rs::a_self_change_is_the_change_password_protocol",
   "tests/kpasswd_expiry/self_change.rs::another_principal_is_a_targeted_set_password",
   "tests/kpasswd_expiry/policy_kinds.rs::the_same_libdefaults_refusal_has_one_kind_on_every_path",
   "tests/kpasswd_expiry/result_policy.rs::an_ad_policy_becomes_mits_sentences",
