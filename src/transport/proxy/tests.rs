@@ -96,6 +96,10 @@ fn unsafe_urls_are_refused() {
         "https://kdc.example.com:x/",
         "https://[fe80::1%eth0]:443/",
         "https://[2001:db8::1/",
+        "https:// kdc.example.com/p",
+        "https://kdc\u{0}.example.com/p",
+        "https://kdc\texample.com:1/p",
+        "https://[ \u{0}\u{0}\u{0}]:01/:bp",
         long.as_str(),
     ] {
         let outcome = Url::parse(value);

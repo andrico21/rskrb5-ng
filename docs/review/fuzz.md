@@ -31,6 +31,7 @@ the chosen entry point, so one target covers a family of related decoders.
 | `kcm_reply` | a KCM daemon's reply byte stream | the blocking KCM client (`Client::call`, `read_frame`, `read_exact`) over the input as the whole reply stream, once for each reply shape: cache name, UUID list, default principal, one credential, counted credential list, KDC offset and empty (`Shape::decode` of each), with the reply limit lowered to 64 KiB; the announced length is checked before the body is allocated |
 | `keyring_index` | the payload of the `krb_ccache:primary` key of a `KEYRING:` collection | `ccache::keyring::index::parse`, then `encode` and `parse` again on accepted input (the version, the length and the name of the primary cache; MIT `cc_keyring.c:541-571`) |
 | `fast_reply` | replies to an armored AS request (RFC 6113 FAST) | the stepwise AS engine armored by `preauth::fast::Exchange` with a fixed armor ticket: the raw reply (outer AS-REP or KRB-ERROR, METHOD-DATA, `PA-FX-FAST-REPLY`), and the fuzzed bytes sealed as the `KrbFastResponse` under the conversation's armor key inside a KRB-ERROR or an AS-REP (`KrbFastResponse`, `PA-FX-ERROR`, the cookie bound, `KrbFastFinished` and its ticket checksum); no fuzzed reply may complete the exchange |
+| `kkdcp_message` | a proxy's KDC-PROXY-MESSAGE (MS-KKDCP) and the text of an `https://` server entry or DNS URI target, one selector byte then bytes or text | `transport::kkdcp::ProxyMessage::decode` (then encode and decode again must give the same message), `transport::kkdcp::decode_reply` (an accepted reply is non-empty and shorter than its message), and `transport::proxy::Url::parse` (an accepted URL parses again from its display form to the same URL) |
 | `spake_message` | a KDC's PA-SPAKE value (RFC 9588) | `preauth::spake::Message::decode` twice (deterministic), then a fresh `Client` permitting all four groups answers the value twice (`Client::process`): support message for empty or out-of-policy values, response for a challenge in a permitted group, which decodes and validates the edwards25519, P-256, P-384 or P-521 element and derives `K'[0]` and `K'[1]`; a second challenge must be refused |
 | `name_parse` | names and values as text | `Principal::parse_user`, `Principal::parse_service`, `CacheName::parse`, `keytab::Name::parse`, `KdcEndpoint::configured`, `Tokio::with_dns_server`, `config::parse_duration`, `config::parse_boolean`, `crypto::s2kparams_to_iterations` |
 | `discovery_uri` | the data DNS hands to server discovery, one selector byte then bytes or text | `discovery::uri::parse` (a `krb5srv:flags:transport:host` URI record target) and `host_port` on an accepted target, `split_rdata` (URI record data), `realm_from_txt` (the first string of a TXT realm record) and `host_port` on arbitrary text; the target text, the host and the realm stay within their bounds |
@@ -107,6 +108,7 @@ timeout artifact:
 | `keyring_index` | 6,296,962 (todo 13 of plan 2, 2026-11-19) | 121 s | 0 |
 | `fast_reply` | 28,010 (todo 7 of plan 2, 2026-11-20) | 121 s | 0 |
 | `spake_message` | 336,637 (todo 9 of plan 2, 2026-11-20) | 121 s | 0 |
+| `kkdcp_message` | 6,458,968 (todo 16 of plan 2, 2026-11-21) | 121 s | 0 |
 
 ### Round-2 session admission repair (FU-FUZ-R02)
 
@@ -188,6 +190,21 @@ binary from the seeds alone reaches all six mapped functions (`decode_request`
 8, `keys::decode` 3, `keys::open` 5, `error_reply` 4, `fast_response` 5,
 `reply::unwrap` 7). `EncryptedChallenge::verify_reply` is mapped to its tests:
 a one-reply exchange never reaches the final round.
+
+### KDC proxy messages (todo 16 of plan 2)
+
+`kkdcp_message` fuzzes what an MS-KKDCP proxy and a DNS URI record can hand the
+client: the KDC-PROXY-MESSAGE codec (`ProxyMessage::decode`, bounded at 1 MiB
+before decoding, complete DER only), the reply framing behind it (`decode_reply`:
+the four-byte record mark must equal the length of the message behind it), and
+the `https://` URL parser of server entries and `kkdcp` URI targets
+(`Url::parse`). The seeds are MIT 1.22.2's reference encoding of a
+KDC-PROXY-MESSAGE (`src/tests/asn.1/reference_encode.out:69`), two framed replies
+and three URLs. The first 120-second run found a host part with a space and NUL
+bytes that `Url::parse` accepted and whose display form parsed differently; the
+parser now refuses any host-part byte outside visible ASCII (red run and fix in
+the task-16 evidence log), and the rerun recorded above found nothing. Coverage
+proof: `task-16-kkdcp-coverage.tsv` in the execution evidence.
 
 ### SPAKE messages (todo 9 of plan 2)
 
@@ -594,6 +611,9 @@ does.
 | `rskrb5_ng::pac::ndr::ensure_zero_trailing` | `src/pac/ndr.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::ndr::ndr_len` | `src/pac/ndr.rs` | `pac_parse` |  |
 | `rskrb5_ng::preauth::spake::Message::decode` | `src/preauth/spake.rs` | `spake_message` |  |
+| `rskrb5_ng::transport::kkdcp::ProxyMessage::decode` | `src/transport/kkdcp.rs` | `kkdcp_message` |  |
+| `rskrb5_ng::transport::kkdcp::decode_reply` | `src/transport/kkdcp.rs` | `kkdcp_message` |  |
+| `rskrb5_ng::transport::proxy::Url::parse` | `src/transport/proxy.rs` | `kkdcp_message` |  |
 | `rskrb5_ng::preauth::spake::wire::decode` | `src/preauth/spake/wire.rs` | `spake_message` |  |
 | `rskrb5_ng::pac::ndr::read_claim_entry_descriptor` | `src/pac/ndr.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::ndr::read_counted_supplemental_credentials` | `src/pac/ndr.rs` | `pac_parse` |  |

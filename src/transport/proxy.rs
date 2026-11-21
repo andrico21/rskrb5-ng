@@ -80,8 +80,8 @@ impl Url {
     ///
     /// Returns [`Error::InvalidUrl`] for a URL longer than [`MAX_URL`], with no host,
     /// with user information, a `?` or `#` before the path, a host or port that does
-    /// not parse, a zone id in an IP literal, or a path byte that is not visible ASCII
-    /// or is `#`.
+    /// not parse, a host-part byte that is not visible ASCII, a zone id in an IP literal,
+    /// or a path byte that is not visible ASCII or is `#`.
     #[inline]
     pub fn parse(value: &str) -> Result<Option<Self>, Error> {
         let trimmed = value.trim();
@@ -94,6 +94,9 @@ impl Url {
         let (authority, path) = rest.split_once('/').unwrap_or((rest, ""));
         if authority.is_empty() {
             return Err(invalid("the URL names no host"));
+        }
+        if !authority.bytes().all(|byte| byte.is_ascii_graphic()) {
+            return Err(invalid("the host part holds a byte outside visible ASCII"));
         }
         if authority.contains(['@', '?', '#']) {
             return Err(invalid(
