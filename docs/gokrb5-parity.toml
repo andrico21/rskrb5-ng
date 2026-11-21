@@ -18,8 +18,8 @@ last_reviewed = "2026-11-01"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 19
-partial = 16
+implemented = 21
+partial = 14
 absent = 0
 rejected = 0
 omitted = 0
@@ -469,11 +469,24 @@ id = "GO-client-3"
 area = "client"
 upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
 capability = "TGS, referrals, U2U, S4U, service ticket cache"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "TGS, referrals, S4U and the service-ticket cache with JSON and removal exist; there is no dedicated U2U request constructor or flow (P2-17)."
-rust_symbols = []
-test_names = ["tests/client/tgs_exchange.rs::process_tgs_rep_with_referral_accepts_intermediate_tgt", "tests/client/tgs_exchange.rs::builds_s4u2proxy_tgs_req_with_evidence_ticket"]
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "client::Tokio::user_to_user_ticket",
+  "client::transport::Tokio::get_user_to_user_ticket",
+  "client::stepwise::TicketOptions::with_user_to_user",
+  "client::Tokio::get_service_ticket",
+  "client::Tokio::s4u2self",
+  "client::Tokio::delegate",
+]
+test_names = [
+  "tests/client/tgs_exchange.rs::process_tgs_rep_with_referral_accepts_intermediate_tgt",
+  "tests/client/tgs_exchange.rs::builds_s4u2proxy_tgs_req_with_evidence_ticket",
+  "tests/routing/delegation.rs::user_to_user_ticket_is_sealed_in_the_target_tgt_session_key",
+  "tests/interop_routing/scenarios.rs::user_to_user_ticket_is_sealed_in_the_target_session_key",
+  "tests/interop_routing_samba/scenarios.rs::service_referral_crosses_the_trust",
+]
 feature_flags = ["tokio"]
 security_divergence = ""
 disposition = "WP-11"
@@ -691,11 +704,19 @@ id = "GO-messages-1"
 area = "messages"
 upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
 capability = "Kerberos wire message marshal/unmarshal"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "AS/TGS/AP/KRB-SAFE/KRB-PRIV/KRB-CRED/KRB-ERROR codecs and builders exist; there is no dedicated U2U request constructor, only raw additional-ticket and option bits (P2-17)."
-rust_symbols = []
-test_names = ["tests/kdc_req.rs::decodes_gokrb5_as_req_fixtures", "tests/asn1_fixture_matrix.rs::rasn_kerberos_roundtrips_expected_gokrb5_asn1_fixtures"]
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "client::stepwise::TicketOptions::with_user_to_user",
+  "client::transport::Tokio::get_user_to_user_ticket",
+]
+test_names = [
+  "tests/kdc_req.rs::decodes_gokrb5_as_req_fixtures",
+  "tests/asn1_fixture_matrix.rs::rasn_kerberos_roundtrips_expected_gokrb5_asn1_fixtures",
+  "tests/routing/delegation.rs::user_to_user_ticket_is_sealed_in_the_target_tgt_session_key",
+  "tests/interop_routing/scenarios.rs::user_to_user_ticket_is_sealed_in_the_target_session_key",
+]
 feature_flags = ["messages"]
 security_divergence = ""
 disposition = "WP-11"

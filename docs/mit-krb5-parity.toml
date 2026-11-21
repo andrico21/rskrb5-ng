@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 91
-partial = 41
-absent = 21
+implemented = 97
+partial = 36
+absent = 20
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -134,13 +134,34 @@ id = "MIT-client-5"
 area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Cross-realm TGT path configuration via `capaths`; hierarchical and non-hierarchical traversal"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Explicit acceptor TransitPolicy exists and [capaths] is parsed into a typed graph, but no configured path construction or profile-driven transit validation."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "routing::RealmPath",
+  "routing::RealmPath::walk",
+  "routing::RealmPath::client",
+  "routing::RealmPath::hierarchical",
+  "routing::transited::decode",
+  "routing::transited::encode",
+  "service::CapathsTransit",
+  "service::TransitPolicy",
+  "client::stepwise::TicketOptions::with_realm_path",
+]
+test_names = [
+  "tests/routing/paths.rs::walks_match_the_mit_vectors",
+  "tests/routing/paths.rs::transited_realms_must_lie_on_the_path",
+  "tests/routing/transited.rs::expansions_match_the_mit_vectors",
+  "tests/routing/acceptor.rs::capaths_transit_rejects_a_path_not_in_capaths",
+  "tests/routing/acceptor.rs::multi_pair_policy_trusts_each_listed_pair_only",
+  "tests/routing/referrals.rs::capaths_path_backs_off_to_the_configured_hop",
+  "tests/routing/referrals.rs::service_referral_is_followed_to_the_referred_realm",
+  "tests/interop_routing/scenarios.rs::capaths_route_reaches_the_far_realm_and_its_transit_is_validated",
+  "tests/interop_routing/scenarios.rs::unchecked_cross_realm_ticket_is_validated_with_capaths",
+  "tests/interop_routing_samba/scenarios.rs::service_referral_crosses_the_trust",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Stricter than MIT 1.22.2: a configured path that names a realm twice or an endpoint as an intermediate is refused (MIT builds it, walk_rtree.c:229-291); paths hold at most 32 realms, a transited encoding at most 4,096 bytes and 64 realms of at most 512 bytes; a trailing escape, inner NUL bytes and non-UTF-8 names are refused (MIT chk_trans.c tolerates them). The profile-driven acceptor (Validator::from_default_keytab_name, from_default_keytab) admits unchecked transit only on the pairs [capaths] lists (CapathsTransit::configured_only), where MIT also accepts a hierarchical path (rd_req_dec.c:606-610); CapathsTransit::from_config keeps the MIT hierarchy fallback. The client crosses only the configured path or the direct one and follows KDC referrals, as MIT (walk_rtree.c:93-142, get_creds.c:561-977); a referral to a realm already reached is refused (get_creds.c:612-614). Transit is validated only by the acceptor, which decrypts the ticket; a client cannot see the path of a service ticket."
 disposition = "WP-11"
 closing_plan = 2
 closing_todo = 17
@@ -151,13 +172,27 @@ id = "MIT-client-6"
 area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "S4U2Self protocol transition / impersonation"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "PA-FOR-USER/principal S4U exists; no certificate S4U identity. P2-8 delivered the certificate types (preauth::pkinit::Identity DER chains and the x509-cert parsing of the pkinit leaf); the PA-S4U-X509-USER certificate request is P2-17's (closer)."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "routing::CertificateIdentity",
+  "routing::CertificateInspector",
+  "routing::impersonation::S4uIdentity",
+  "routing::s4u::PaS4uX509User",
+  "routing::s4u::verify_reply",
+  "client::Tokio::s4u2self_identity",
+  "client::Tokio::s4u2self",
+]
+test_names = [
+  "tests/routing/delegation.rs::cross_realm_s4u2self_crosses_back_to_the_service_realm",
+  "tests/routing/delegation.rs::certificate_s4u2self_binds_the_user_the_kdc_names",
+  "tests/routing/certificate.rs::inspector_decides_and_its_refusal_is_carried",
+  "tests/interop_routing_samba/scenarios.rs::rbcd_with_the_default_profile_reaches_only_the_allowed_target",
+  "tests/interop_routing_samba/scenarios.rs::delegation_workflow_reaches_the_rbcd_target_only",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "The impersonated user is bound to the decrypted evidence: the KDC's PA-S4U-X509-USER answer must echo the nonce under a keyed checksum and name a user (MIT verify_s4u2self_reply, s4u_creds.c:272-397), and the service's keytab must find that user in the ticket it decrypts (MIT trusts the reply's cname after the checksum). The certificate identity (routing::CertificateIdentity) is bounded to 64 KiB, parsed by nobody in the always-compiled path and checked before sending only through the CertificateInspector seam the pkinit leaf can implement; certificate S4U2Self is proven against the in-memory KDC of tests/routing (the pinned MIT KDC has no certificate mapping and Samba's was not exercised)."
 disposition = "WP-11"
 closing_plan = 2
 closing_todo = 17
@@ -187,13 +222,23 @@ id = "MIT-client-8"
 area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Resource-Based Constrained Delegation (RBCD), including client-side cross-realm S4U2Proxy"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Raw RBCD PAC mask/padata and proxy primitives, no complete cross-realm RBCD workflow/proof."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "client::Tokio::delegate",
+  "routing::impersonation::Delegation",
+  "routing::impersonation::DelegationOptions",
+  "client::pa_pac_options_padata",
+]
+test_names = [
+  "tests/routing/delegation.rs::cross_realm_rbcd_reaches_the_target_realm",
+  "tests/routing/delegation.rs::rbcd_to_an_untrusting_target_is_refused",
+  "tests/interop_routing_samba/scenarios.rs::delegation_workflow_reaches_the_rbcd_target_only",
+  "tests/interop_routing_samba/scenarios.rs::rbcd_with_the_default_profile_reaches_only_the_allowed_target",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Delegation asks a forwardable evidence ticket from a forwardable TGT (re-logging in with the client's credentials when the TGT is not forwardable), which Samba requires even for RBCD (Samba 4.22.11 mssfu.c:492-499) and Windows does not; MIT asks it only with KRB5_GC_FORWARDABLE (s4u_creds.c:503-504). A cross-realm proxy TGT carried to the target realm is not decrypted by the service (it is sealed for the KDCs); the evidence it stands for was bound in the first request. Cross-realm RBCD is proven against the in-memory KDC of tests/routing; the Samba forest trust is exercised for same-realm RBCD only."
 disposition = "WP-11"
 closing_plan = 2
 closing_todo = 17
@@ -291,13 +336,20 @@ id = "MIT-client-12"
 area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Verify initial credentials against a host/service keytab (`krb5_verify_init_creds`)"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "Generic AP validation is not verify-init-creds orchestration; verify_ap_req_nofail = true fails closed until it exists."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "client::Tokio::verify_init_creds",
+  "routing::init_creds::VerifyOptions",
+  "routing::init_creds::Verification",
+]
+test_names = [
+  "tests/routing/delegation.rs::verify_init_creds_follows_the_nofail_truth_table",
+  "tests/interop_routing/scenarios.rs::verify_init_creds_accepts_the_host_keytab_and_rejects_a_wrong_one",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Secure default (plan 2 todo 17): an unset verify_ap_req_nofail requires verification, so a keytab without a host key is an error, where MIT 1.22.2 then returns success (vfy_increds.c:313-314); only an explicit false tolerates it. An invalid proof (wrong key, refused AP-REQ) is always an error, as in MIT."
 disposition = "WP-11"
 closing_plan = 2
 closing_todo = 17
@@ -2265,13 +2317,21 @@ id = "MIT-config-42"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`verify_ap_req_nofail`"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "true requires unavailable verify-init-creds orchestration and errors; false diagnostic (consumer: plan 2 WP-11)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::verify_ap_req_nofail"]
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "config::LibDefaults::with_verify_ap_req_nofail",
+  "config::LibDefaults::with_verify_ap_req_nofail_explicit",
+  "client::Tokio::verify_init_creds",
+]
+test_names = [
+  "tests/config/relations_c2.rs::verify_ap_req_nofail",
+  "tests/routing/delegation.rs::verify_init_creds_follows_the_nofail_truth_table",
+  "tests/interop_routing/scenarios.rs::verify_init_creds_accepts_the_host_keytab_and_rejects_a_wrong_one",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Unset behaves as true (verification required); MIT's default is false (vfy_increds.c:313-314)."
 disposition = "WP-11"
 closing_plan = 2
 closing_todo = 17
@@ -2525,13 +2585,25 @@ id = "MIT-config-53"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`[capaths]` explicit non-hierarchical cross-realm paths"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "Profile-driven cross-realm routing and transit validation; [capaths] is parsed into a typed graph with a diagnostic."
-rust_symbols = []
-test_names = ["tests/config/section_composition_d.rs::capaths"]
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "config::Config::capath",
+  "routing::RealmPath::configured",
+  "service::CapathsTransit::from_config",
+  "service::Validator::from_default_keytab_name",
+]
+test_names = [
+  "tests/config/section_composition_d.rs::capaths",
+  "tests/routing/paths.rs::client_path_is_capaths_or_direct",
+  "tests/routing/paths.rs::looping_capaths_are_refused",
+  "tests/routing/acceptor.rs::configured_acceptor_uses_the_profile_capaths",
+  "tests/interop_routing/scenarios.rs::capaths_route_reaches_the_far_realm_and_its_transit_is_validated",
+  "tests/interop_routing/scenarios.rs::unchecked_cross_realm_ticket_is_validated_with_capaths",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Loops and paths over 32 realms are refused; the profile-driven acceptor trusts only the listed pairs (see MIT-client-5)."
 disposition = "WP-11"
 closing_plan = 2
 closing_todo = 17
@@ -3081,7 +3153,7 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "GSS S4U impersonation and proxy credentials"
 implementation_status = "partial"
 evidence_status = "unproven"
-missing = "Client S4U exchange exists, no GSS acquire-impersonate credential/RBCD integration."
+missing = "P2-17 delivered the krb5 delegation workflow (client::Tokio::delegate and s4u2self_identity: forwardable evidence, PA-PAC-OPTIONS RBCD, cross-realm S4U2Self and S4U2Proxy, certificate S4U2Self); the GSS acquire-impersonate credential and its RBCD integration remain for P2-19 (closer), with P2-18's credential model."
 rust_symbols = []
 test_names = []
 feature_flags = []
