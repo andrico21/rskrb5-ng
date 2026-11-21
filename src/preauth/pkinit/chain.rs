@@ -34,7 +34,7 @@ use x509_cert::{
 };
 
 use super::{
-    super::{CertificatePolicy, EkuChecking, MAX_CERTIFICATES, MAX_CHAIN_LENGTH},
+    CertificatePolicy, EkuChecking, MAX_CERTIFICATES, MAX_CHAIN_LENGTH,
     asn1::Krb5PrincipalName,
     keys::{self, Hash, Kind},
 };

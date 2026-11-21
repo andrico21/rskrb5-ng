@@ -15,46 +15,15 @@ use zeroize::Zeroizing;
 
 use super::{
     CertificatePolicy, DhGroup, Identity, KEY_USAGE_PA_PKINIT_KX, KdcTrust, MAX_MESSAGE_BYTES,
-    Signer,
+    Signer, asn1, chain, cms, dh,
     exchange::{ReplyInput, RequestInput},
+    kdf, keys,
 };
 use crate::{
     crypto::{KerberosEtype, prf, selection},
     error::{Crypto, Pkinit as Error, Policy, RejectedFeature, RejectionReason},
     keytab::EncryptionKey,
 };
-
-/// RFC 4556 and RFC 8636 messages.
-#[path = "asn1.rs"]
-mod asn1;
-/// The bounded path validator and the KDC identity checks.
-#[path = "chain.rs"]
-mod chain;
-/// CMS `SignedData`.
-#[path = "cms.rs"]
-mod cms;
-/// Key agreement.
-#[path = "dh.rs"]
-mod dh;
-/// The RFC 8636 KDF and `octetstring2key`.
-#[path = "kdf.rs"]
-mod kdf;
-/// Signatures, the software signer and PEM.
-#[path = "keys.rs"]
-mod keys;
-/// The RFC 3526 primes.
-#[path = "primes.rs"]
-mod primes;
-/// Known-answer and negative tests of the operations.
-#[cfg(test)]
-#[path = "tests.rs"]
-#[expect(
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
-    reason = "test code is not rendered API documentation"
-)]
-#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
-mod tests;
 
 /// The client's ephemeral key-agreement key, erased when dropped.
 pub(super) struct Ephemeral(dh::Ephemeral);

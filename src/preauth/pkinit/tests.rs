@@ -50,7 +50,7 @@ fn certificate(pem: &[u8]) -> Result<Certificate, TestError> {
 }
 
 /// Parsed anchors of PEM fixtures.
-fn parsed(pems: &[&[u8]]) -> Result<Vec<Parsed>, TestError> {
+fn loaded(pems: &[&[u8]]) -> Result<Vec<Parsed>, TestError> {
     let mut out = Vec::new();
     for pem in pems {
         for der in keys::pem_certificates(pem)? {
@@ -292,7 +292,7 @@ fn validate(
         structure: "fixture",
         reason: "unreadable",
     })?;
-    let roots = parsed(anchors).map_err(|_detail| Error::Malformed {
+    let roots = loaded(anchors).map_err(|_detail| Error::Malformed {
         structure: "fixture",
         reason: "unreadable",
     })?;
@@ -411,7 +411,7 @@ fn anonymous_key_exchange_must_match_the_session_key() -> Result<(), TestError> 
     let session = EncryptionKey::new(18, vec![0x32; 32]);
     let empty = Encode::to_der(&DerUint::new(&[0])?)?;
     assert!(matches!(
-        super::verify_anonymous(&empty, &reply, &session),
+        super::ops::verify_anonymous(&empty, &reply, &session),
         Err(Error::Anonymous { reason: _ })
     ));
     Ok(())

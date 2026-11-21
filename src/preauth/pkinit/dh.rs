@@ -29,7 +29,7 @@ use spki::{AlgorithmIdentifierOwned, SubjectPublicKeyInfoOwned};
 use zeroize::{Zeroize as _, Zeroizing};
 
 use super::{
-    super::DhGroup,
+    DhGroup,
     primes::{MODP_2048, MODP_4096},
 };
 use crate::error::Pkinit as Error;

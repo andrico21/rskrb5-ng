@@ -27,7 +27,7 @@ use spki::SubjectPublicKeyInfoOwned;
 use x509_cert::Certificate;
 use zeroize::Zeroizing;
 
-use super::super::{
+use super::{
     MAX_CERTIFICATE_BYTES, MAX_CERTIFICATES, MAX_CRL_BYTES, MIN_RSA_BITS, SignatureAlgorithm,
     Signer,
 };

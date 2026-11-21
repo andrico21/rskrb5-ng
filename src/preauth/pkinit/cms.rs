@@ -25,10 +25,7 @@ use x509_cert::{
 };
 
 use super::{
-    super::{
-        CertificatePolicy, Identity, KdcTrust, MAX_CERTIFICATES, MAX_MESSAGE_BYTES,
-        SignatureAlgorithm,
-    },
+    CertificatePolicy, Identity, KdcTrust, MAX_CERTIFICATES, MAX_MESSAGE_BYTES, SignatureAlgorithm,
     chain::{self, Parsed},
     keys::{self, Hash},
 };

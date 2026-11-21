@@ -60,12 +60,36 @@ use crate::{
 /// The anonymous FAST armor source.
 #[path = "pkinit/armor.rs"]
 mod armor;
+/// RFC 4556 and RFC 8636 messages.
+#[cfg(feature = "pkinit")]
+#[path = "pkinit/asn1.rs"]
+mod asn1;
+/// The bounded path validator and the KDC identity checks.
+#[cfg(feature = "pkinit")]
+#[path = "pkinit/chain.rs"]
+mod chain;
+/// CMS `SignedData`.
+#[cfg(feature = "pkinit")]
+#[path = "pkinit/cms.rs"]
+mod cms;
 /// Configuration of the client half from `[realms]` and `[libdefaults]`.
 #[path = "pkinit/config.rs"]
 mod config;
+/// Key agreement.
+#[cfg(feature = "pkinit")]
+#[path = "pkinit/dh.rs"]
+mod dh;
 /// The exchange state and its engine-facing calls.
 #[path = "pkinit/exchange.rs"]
 pub(crate) mod exchange;
+/// The RFC 8636 KDF and `octetstring2key`.
+#[cfg(feature = "pkinit")]
+#[path = "pkinit/kdf.rs"]
+mod kdf;
+/// Signatures, the software signer and PEM.
+#[cfg(feature = "pkinit")]
+#[path = "pkinit/keys.rs"]
+mod keys;
 /// The cryptographic and parsing operations of the leaf.
 #[cfg(feature = "pkinit")]
 #[path = "pkinit/ops.rs"]
@@ -74,6 +98,21 @@ mod ops;
 #[cfg(not(feature = "pkinit"))]
 #[path = "pkinit/unavailable.rs"]
 mod ops;
+/// The RFC 3526 primes.
+#[cfg(feature = "pkinit")]
+#[path = "pkinit/primes.rs"]
+mod primes;
+/// Known-answer and negative tests of the operations.
+#[cfg(test)]
+#[cfg(feature = "pkinit")]
+#[path = "pkinit/tests.rs"]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests;
 
 /// `PA-PK-AS-REQ` (RFC 4556 section 3.2.1).
 pub const PA_PK_AS_REQ: i32 = 16;
