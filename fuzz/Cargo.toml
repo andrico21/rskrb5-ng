@@ -185,3 +185,10 @@ path = "fuzz_targets/otp_challenge.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "routing_transit"
+path = "fuzz_targets/routing_transit.rs"
+test = false
+doc = false
+bench = false
