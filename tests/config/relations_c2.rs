@@ -35,7 +35,6 @@ mod tests {
                 "plugin_base_dir" => assert_eq!(defaults.plugin_base_dir, *value),
                 "kdc_timesync" => assert_eq!(defaults.kdc_time_sync, value.parse::<i32>()?),
                 "noaddresses" => assert!(defaults.no_addresses.is_enabled()),
-                "verify_ap_req_nofail" => assert!(!defaults.verify_ap_req_nofail.is_enabled()),
                 "client_aware_channel_bindings" => {
                     assert!(!defaults.client_aware_channel_bindings.is_enabled());
                 }
@@ -124,7 +123,6 @@ mod tests {
         k5login_directory, "plan 2 WP-17", ["/first", "/second"];
         kcm_mach_service, "plan 2 WP-09", ["org.example.kcm", "-"];
         plugin_base_dir, "plan 2 WP-16", ["/never-load", "%{LIBDIR}/krb5/plugins"];
-        verify_ap_req_nofail, "plan 2 WP-11", ["false", "off"];
         client_aware_channel_bindings, "plan 2 WP-12", ["false", "off"];
     }
 

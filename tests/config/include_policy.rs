@@ -34,7 +34,10 @@ mod tests {
             let directory = root.join(name);
             fs::create_dir_all(&directory)?;
             let child = directory.join(format!("{name}.conf"));
-            fs::write(&child, "[libdefaults]\nverify_ap_req_nofail = true\n")?;
+            fs::write(
+                &child,
+                "[libdefaults]\nclient_aware_channel_bindings = true\n",
+            )?;
             for (directive, target) in [("include", &child), ("includedir", &directory)] {
                 for separator in [" ", "\t"] {
                     for indent in ["", " \t"] {
@@ -47,8 +50,8 @@ mod tests {
                                 if !matches!(
                                     Config::parse_with_mode(&text, mode),
                                     Err(Failure::NotYetEffective {
-                                        relation: "verify_ap_req_nofail",
-                                        package: "plan 2 WP-11",
+                                        relation: "client_aware_channel_bindings",
+                                        package: "plan 2 WP-12",
                                     })
                                 ) {
                                     missed.push(format!("{mode:?}: {text}"));

@@ -94,6 +94,7 @@ pub(super) fn with_home(home: Option<String>) -> LibDefaults {
         ticket_lifetime: Duration::from_hours(24),
         udp_preference_limit: 1465,
         verify_ap_req_nofail: Toggle::Disabled,
+        verify_ap_req_nofail_explicit: Toggle::Disabled,
         enctype_parse_mode: ParseMode::Compatible,
         enctype_diagnostics: Vec::new(),
         #[cfg(feature = "serde")]

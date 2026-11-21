@@ -104,6 +104,7 @@ pub(super) fn parse_lines(
             }
             "verify_ap_req_nofail" => {
                 this.verify_ap_req_nofail = Toggle::from_bool(parse_boolean(value)?);
+                this.verify_ap_req_nofail_explicit = Toggle::Enabled;
             }
             _ => super::libdefaults::c2::parse(this, line)?,
         }

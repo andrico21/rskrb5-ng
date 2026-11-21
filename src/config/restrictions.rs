@@ -30,10 +30,6 @@ pub(crate) const fn configuration_policy(error: &Error) -> Policy {
 pub(crate) fn defaults(value: &LibDefaults) -> Result<(), Error> {
     for (name, restricted) in [
         (
-            "verify_ap_req_nofail",
-            value.verify_ap_req_nofail.is_enabled(),
-        ),
-        (
             "client_aware_channel_bindings",
             value.client_aware_channel_bindings.is_enabled(),
         ),

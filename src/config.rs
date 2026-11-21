@@ -865,9 +865,16 @@ pub struct LibDefaults {
     pub ticket_lifetime: Duration,
     /// UDP preference limit.
     pub udp_preference_limit: i32,
-    /// Whether AP-REQ verification failure should be fatal.
-    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::verify"))]
+    /// Whether `verify_init_creds` fails when it cannot verify (no host key):
+    /// MIT's `verify_ap_req_nofail`. It applies only when
+    /// [`Self::verify_ap_req_nofail_explicit`] is set; unset, verification is
+    /// required (`routing::verify`).
     pub verify_ap_req_nofail: Toggle,
+    /// Whether the profile or the caller set [`Self::verify_ap_req_nofail`];
+    /// unset, `verify_init_creds` requires verification as if it were `true`.
+    /// Serialized `LibDefaults` that lack this field deserialize it as `false`.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub verify_ap_req_nofail_explicit: Toggle,
     /// Mode applied to secure unsupported enctype selections.
     #[cfg_attr(feature = "serde", serde(default))]
     pub enctype_parse_mode: ParseMode,
@@ -1105,6 +1112,12 @@ impl LibDefaults {
     #[inline]
     pub const fn with_udp_preference_limit(self, value: i32) -> Self {
         builders::with_udp_preference_limit(self, value)
+    }
+    /// Sets `verify_ap_req_nofail_explicit`, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_verify_ap_req_nofail_explicit(self, value: Toggle) -> Self {
+        builders::with_verify_ap_req_nofail_explicit(self, value)
     }
     /// Sets `verify_ap_req_nofail`, preserving the other fields.
     #[must_use]

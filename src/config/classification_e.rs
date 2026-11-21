@@ -17,7 +17,7 @@ mod tests {
 
     /// Libdefaults: safe assignment and optional genuinely stronger assignment.
     /// None means no valid value tightens current behavior; table rationale explains why.
-    const LIB: [(&str, &str, Option<&str>); 8] = [
+    const LIB: [(&str, &str, Option<&str>); 7] = [
         ("default_rcache_name", "none:", Some("dfl:")),
         ("enforce_ok_as_delegate", "true", None),
         ("ignore_acceptor_hostname", "false", None),
@@ -25,7 +25,6 @@ mod tests {
         ("k5login_directory", "/unread", None),
         ("kcm_mach_service", "-", None),
         ("plugin_base_dir", "%{LIBDIR}/unloaded", None),
-        ("verify_ap_req_nofail", "false", Some("true")),
     ];
 
     /// Realm values are restrictions on absent mechanisms, except encrypted timestamp.
@@ -77,7 +76,6 @@ mod tests {
         for (relation, assignment, package) in [
             ("client_aware_channel_bindings", "true", "plan 2 WP-12"),
             ("default_rcache_name", "dfl:", "plan 2 WP-20"),
-            ("verify_ap_req_nofail", "true", "plan 2 WP-11"),
         ] {
             // Given the tightened relation and a refused preauthentication plugin restriction.
             let input = format!(

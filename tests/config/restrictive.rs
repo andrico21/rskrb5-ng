@@ -55,14 +55,9 @@ mod tests {
     #[test]
     fn restrictive_defaults_fail_before_requests() -> Result<(), Box<dyn Error>> {
         let runtime = Builder::new_current_thread().enable_all().build()?;
-        for field in [
-            "verify_ap_req_nofail",
-            "client_aware_channel_bindings",
-            "default_rcache_name",
-        ] {
+        for field in ["client_aware_channel_bindings", "default_rcache_name"] {
             let mut config = Config::new();
             match field {
-                "verify_ap_req_nofail" => config.libdefaults.verify_ap_req_nofail = Toggle::Enabled,
                 "client_aware_channel_bindings" => {
                     config.libdefaults.client_aware_channel_bindings = Toggle::Enabled;
                 }
@@ -84,7 +79,6 @@ mod tests {
                 "request accepted {field}"
             );
             let (relation, package) = match field {
-                "verify_ap_req_nofail" => ("verify_ap_req_nofail", "plan 2 WP-11"),
                 "client_aware_channel_bindings" => {
                     ("client_aware_channel_bindings", "plan 2 WP-12")
                 }
