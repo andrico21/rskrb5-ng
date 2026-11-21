@@ -54,7 +54,7 @@ fn dh_min_bits_maps_like_mit_with_a_2048_floor() -> Result<(), TestError> {
     ));
     assert!(matches!(
         DhGroup::from_min_bits("8192"),
-        Err(Pkinit::InvalidDhGroup { .. })
+        Err(Pkinit::InvalidDhGroup { value: _ })
     ));
     Ok(())
 }
@@ -75,7 +75,7 @@ fn realm_relations_shape_the_certificate_policy() -> Result<(), TestError> {
     assert!(
         !profile.diagnostics().iter().any(|item| matches!(
             item,
-            ConfigDiagnostic::NotYetEffective { relation, .. } if relation.starts_with("pkinit_")
+            ConfigDiagnostic::NotYetEffective { relation, package: _ } if relation.starts_with("pkinit_")
         )),
         "{:?}",
         profile.diagnostics()
@@ -92,7 +92,7 @@ fn refused_identity_locations_are_typed_errors() -> Result<(), TestError> {
                 ConfiguredIdentities::from_config(&profile, REALM),
                 Err(Pkinit::UnsupportedLocation {
                     relation: "pkinit_identities",
-                    ..
+                    location: _
                 })
             ),
             "{location}"
@@ -113,7 +113,7 @@ fn certificate_matching_rules_are_refused_not_skipped() -> Result<(), TestError>
         ConfiguredIdentities::from_config(&profile, REALM),
         Err(Pkinit::UnsupportedLocation {
             relation: "pkinit_cert_match",
-            ..
+            location: _
         })
     ));
     Ok(())
@@ -129,7 +129,10 @@ fn file_identities_pair_certificate_and_key() -> Result<(), TestError> {
     let identities = ConfiguredIdentities::from_config(&profile, REALM)?;
     assert_eq!(identities.files().len(), 2, "both locations");
     assert_eq!(
-        identities.files().first().and_then(|(_, key)| key.clone()),
+        identities
+            .files()
+            .first()
+            .and_then(|(_, path)| path.clone()),
         Some(key.into()),
         "the key path after the comma"
     );
@@ -141,7 +144,7 @@ fn missing_anchors_are_a_typed_error() -> Result<(), TestError> {
     let profile = config(" pkinit_eku_checking = kpKDC")?;
     assert!(matches!(
         KdcTrust::from_config(&profile, REALM),
-        Err(Pkinit::NoAnchors { .. })
+        Err(Pkinit::NoAnchors { realm: _ })
     ));
     Ok(())
 }
@@ -169,7 +172,7 @@ fn anchors_pool_and_crls_load_from_files() -> Result<(), TestError> {
         Some(fixture("client.key").as_ref()),
     );
     assert!(
-        matches!(mismatched, Err(Pkinit::Identity { .. })),
+        matches!(mismatched, Err(Pkinit::Identity { reason: _ })),
         "{mismatched:?}"
     );
     Ok(())

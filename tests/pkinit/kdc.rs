@@ -1,11 +1,12 @@
-//! A fake KDC for PKINIT (RFC 4556, RFC 6112, RFC 8636), independent of the
-//! crate's PKINIT code: its own ASN.1 definitions, its own CMS assembly with
+//! A fake KDC for PKINIT (RFC 4556, RFC 6112, RFC 8636).
+//!
+//! It is independent of the crate's PKINIT code: its own ASN.1 definitions, its own CMS assembly with
 //! the `cms` crate, `p256` for ECDH and the KDC signature, and its own
 //! RFC 8636 KDF over `sha2`. The KDC key and certificates are the OpenSSL
 //! fixtures of `fixtures/generate.sh`.
 
-use core::{error::Error, time::Duration};
-use std::time::UNIX_EPOCH;
+use core::{error::Error, ops::Mul as _, time::Duration};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use cms::{
     cert::{CertificateChoices, IssuerAndSerialNumber},
@@ -18,27 +19,31 @@ use cms::{
 use der::{
     Decode as _, Encode as _,
     asn1::{Any as DerAny, ObjectIdentifier, OctetString as DerOctetString, SetOfVec},
+    pem,
 };
 use p256::{
     ecdsa::{Signature, SigningKey, signature::Signer as _},
     elliptic_curve::{pkcs8::DecodePrivateKey as _, sec1::ToSec1Point as _},
 };
 use rasn::{
-    AsnType, Decode, Decoder as _, Encode, Encoder as _,
+    AsnType, Decode, Decoder as _, Encode, Encoder as _, der as rasn_der,
     types::{Any, BitString, Integer, ObjectIdentifier as RasnOid, OctetString, SequenceOf},
 };
 use rasn_kerberos::{
-    AsReq, EncryptedData, KerberosString, KerberosTime, PaData, PrincipalName, Realm,
+    AsReq, EncryptedData, EncryptionKey as KeyBlock, KerberosString, KerberosTime, KrbError,
+    PaData, PrincipalName, Realm,
 };
 use rskrb5_ng::{
+    client::KdcTransport,
     crypto::{KerberosEtype, prf},
+    error::Client as ClientError,
     keytab::EncryptionKey,
     preauth::pkinit::{
         KEY_USAGE_PA_PKINIT_KX, PA_AS_FRESHNESS, PA_PK_AS_REP, PA_PK_AS_REQ, PA_PKINIT_KX,
     },
 };
 use sha2::{Digest as _, Sha256};
-use x509_cert::Certificate;
+use x509_cert::{Certificate, attr::Attribute};
 
 /// A boxed test failure.
 pub(crate) type TestError = Box<dyn Error>;
@@ -49,10 +54,13 @@ pub(crate) const REALM: &str = "TEST.RSKRB5";
 pub(crate) const FRESHNESS: &[u8] = b"kdc-freshness-token";
 /// `KDC_ERR_PREAUTH_REQUIRED`.
 const PREAUTH_REQUIRED: i32 = 25;
-/// The KDC clock.
-const START: u64 = 1_893_553_445;
-/// The reply's end time.
-const END: u64 = 1_893_557_045;
+/// The KDC clock: now, in whole seconds (the client checks the KDC
+/// certificate at the real time, so the scenarios run at it too).
+fn start() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs())
+}
 
 /// A fixture file.
 macro_rules! fixture {
@@ -93,7 +101,7 @@ pub(crate) enum Behaviour {
 
 /// `AlgorithmIdentifier`.
 #[derive(AsnType, Clone, Debug, Decode, Encode)]
-struct AlgorithmIdentifier {
+pub(crate) struct AlgorithmIdentifier {
     /// The algorithm.
     algorithm: RasnOid,
     /// The parameters.
@@ -116,7 +124,7 @@ struct PaPkAsReq {
 
 /// `PAChecksum2`.
 #[derive(AsnType, Clone, Debug, Decode, Encode)]
-struct PaChecksum2 {
+pub(crate) struct PaChecksum2 {
     /// The digest.
     #[rasn(tag(explicit(0)))]
     checksum: OctetString,
@@ -130,27 +138,27 @@ struct PaChecksum2 {
 pub(crate) struct PkAuthenticator {
     /// Microseconds.
     #[rasn(tag(explicit(0)))]
-    cusec: Integer,
+    pub cusec: Integer,
     /// Client time.
     #[rasn(tag(explicit(1)))]
-    ctime: KerberosTime,
+    pub ctime: KerberosTime,
     /// Nonce.
     #[rasn(tag(explicit(2)))]
-    pub(crate) nonce: u32,
+    pub nonce: u32,
     /// SHA-1 of the body.
     #[rasn(tag(explicit(3)))]
-    pub(crate) pa_checksum: Option<OctetString>,
+    pub pa_checksum: Option<OctetString>,
     /// The freshness token.
     #[rasn(tag(explicit(4)))]
-    pub(crate) freshness_token: Option<OctetString>,
+    pub freshness_token: Option<OctetString>,
     /// SHA-256 of the body.
     #[rasn(tag(explicit(5)))]
-    pa_checksum2: Option<PaChecksum2>,
+    pub pa_checksum2: Option<PaChecksum2>,
 }
 
 /// `KDFAlgorithmId`.
 #[derive(AsnType, Clone, Debug, Decode, Encode)]
-struct KdfAlgorithmId {
+pub(crate) struct KdfAlgorithmId {
     /// The KDF.
     #[rasn(tag(explicit(0)))]
     kdf_id: RasnOid,
@@ -161,19 +169,19 @@ struct KdfAlgorithmId {
 pub(crate) struct AuthPack {
     /// The authenticator.
     #[rasn(tag(explicit(0)))]
-    pub(crate) pk_authenticator: PkAuthenticator,
+    pub pk_authenticator: PkAuthenticator,
     /// The client's SPKI.
     #[rasn(tag(explicit(1)))]
-    client_public_value: Option<Any>,
+    pub client_public_value: Option<Any>,
     /// CMS types.
     #[rasn(tag(explicit(2)))]
-    supported_cms_types: Option<SequenceOf<AlgorithmIdentifier>>,
+    pub supported_cms_types: Option<SequenceOf<AlgorithmIdentifier>>,
     /// DH nonce.
     #[rasn(tag(explicit(3)))]
-    client_dh_nonce: Option<OctetString>,
+    pub client_dh_nonce: Option<OctetString>,
     /// KDFs.
     #[rasn(tag(explicit(4)))]
-    supported_kdfs: Option<SequenceOf<KdfAlgorithmId>>,
+    pub supported_kdfs: Option<SequenceOf<KdfAlgorithmId>>,
 }
 
 /// `DHRepInfo`.
@@ -263,7 +271,7 @@ pub(crate) struct Kdc {
     behaviour: Behaviour,
     /// Whether it offers a freshness token.
     freshness: bool,
-    /// The AuthPacks it received.
+    /// The `AuthPack`s it received.
     auth_packs: Vec<AuthPack>,
     /// Whether every received paChecksum matched the body.
     checksums_match: bool,
@@ -280,7 +288,7 @@ impl Kdc {
         }
     }
 
-    /// The AuthPacks received.
+    /// The `AuthPack`s received.
     pub(crate) fn auth_packs(&self) -> &[AuthPack] {
         &self.auth_packs
     }
@@ -295,7 +303,7 @@ impl Kdc {
     /// # Errors
     /// Returns the decoding and building errors.
     pub(crate) fn answer(&mut self, bytes: &[u8]) -> Result<Vec<u8>, TestError> {
-        let request: AsReq = rasn::der::decode(bytes)?;
+        let request: AsReq = rasn_der::decode(bytes)?;
         let padata = request.0.padata.clone().unwrap_or_default();
         let Some(pk) = padata.iter().find(|entry| entry.r#type == PA_PK_AS_REQ) else {
             let mut offers = vec![
@@ -307,7 +315,7 @@ impl Kdc {
             }
             return krb_error(PREAUTH_REQUIRED, &offers);
         };
-        let pa: PaPkAsReq = rasn::der::decode(&pk.value)?;
+        let pa: PaPkAsReq = rasn_der::decode(&pk.value)?;
         let info = ContentInfo::from_der(&pa.signed_auth_pack)?;
         let signed: SignedData = info.content.decode_as()?;
         let content: DerOctetString = signed
@@ -315,8 +323,8 @@ impl Kdc {
             .econtent
             .ok_or("no AuthPack")?
             .decode_as()?;
-        let auth_pack: AuthPack = rasn::der::decode(content.as_bytes())?;
-        let body = rasn::der::encode(&request.0.req_body)?;
+        let auth_pack: AuthPack = rasn_der::decode(content.as_bytes())?;
+        let body = rasn_der::encode(&request.0.req_body)?;
         let sha1 = sha1::Sha1::digest(&body).to_vec();
         let sha256 = Sha256::digest(&body).to_vec();
         let authenticator = &auth_pack.pk_authenticator;
@@ -338,7 +346,7 @@ impl Kdc {
         self.reply(&request, bytes, spki_der.as_bytes(), nonce)
     }
 
-    /// The AS-REP for the AuthPack's ECDH public value.
+    /// The AS-REP for the `AuthPack`'s ECDH public value.
     fn reply(
         &self,
         request: &AsReq,
@@ -352,7 +360,7 @@ impl Kdc {
             .into_option()
             .ok_or("scalar")?;
         let kdc_public = p256::PublicKey::from_secret_scalar(&kdc_secret);
-        let shared = (client_point.to_projective() * *kdc_secret).to_affine();
+        let shared = client_point.to_projective().mul(*kdc_secret).to_affine();
         let shared_bytes = shared.to_sec1_point(false);
         let z = shared_bytes.as_bytes().get(1..33).ok_or("x")?.to_vec();
         let key_info = KdcDhKeyInfo {
@@ -364,9 +372,9 @@ impl Kdc {
             },
             dh_key_expiration: None,
         };
-        let mut signed = self.sign(&rasn::der::encode(&key_info)?)?;
+        let mut signed = self.sign(&rasn_der::encode(&key_info)?)?;
         if self.behaviour == Behaviour::MalformedCms {
-            signed.truncate(signed.len() / 2);
+            signed.truncate(64);
         }
         let rep = if self.behaviour == Behaviour::EncKeyPack {
             PaPkAsRep::EncKeyPack(signed.into())
@@ -379,7 +387,7 @@ impl Kdc {
                 }),
             })
         };
-        let rep_der = rasn::der::encode(&rep)?;
+        let rep_der = rasn_der::encode(&rep)?;
         let anonymous = request.0.req_body.cname.as_ref().is_some_and(|name| {
             name.string
                 .iter()
@@ -398,43 +406,53 @@ impl Kdc {
             let kx = seal(
                 &reply_key,
                 KEY_USAGE_PA_PKINIT_KX,
-                &rasn::der::encode(&rasn_kerberos::EncryptionKey {
+                &rasn_der::encode(&KeyBlock {
                     r#type: 18,
                     value: sealed_key.value().to_vec().into(),
                 })?,
             )?;
             if self.behaviour != Behaviour::MissingKx {
-                padata.push(offer(PA_PKINIT_KX, rasn::der::encode(&kx)?));
+                padata.push(offer(PA_PKINIT_KX, rasn_der::encode(&kx)?));
             }
             session
         } else {
             EncryptionKey::new(18, vec![0x5a_u8; 32])
         };
-        as_rep(request, &reply_key, &session, padata, anonymous)
+        let naming = if anonymous {
+            Naming::Anonymous
+        } else {
+            Naming::Client
+        };
+        as_rep(request, &reply_key, &session, padata, naming)
     }
 
-    /// The DER `ContentInfo` of a SignedData of `content` (id-pkinit-DHKeyData).
+    /// The DER `ContentInfo` of a `SignedData` of `content`.
     fn sign(&self, content: &[u8]) -> Result<Vec<u8>, TestError> {
         let (pem, key): (&[u8], &[u8]) = match self.behaviour {
             Behaviour::NoEku => (fixture!("kdc-noeku.pem"), fixture!("kdc-noeku.key")),
             Behaviour::WrongSan => (fixture!("kdc-wrongsan.pem"), fixture!("kdc-wrongsan.key")),
             Behaviour::Untrusted => (fixture!("kdc-untrusted.pem"), fixture!("kdc-untrusted.key")),
-            _ => (fixture!("kdc.pem"), fixture!("kdc.key")),
+            Behaviour::Honest
+            | Behaviour::EncKeyPack
+            | Behaviour::WrongNonce
+            | Behaviour::MalformedCms
+            | Behaviour::MissingKx
+            | Behaviour::WrongKx => (fixture!("kdc.pem"), fixture!("kdc.key")),
         };
-        let (_, cert_der) = der::pem::decode_vec(pem)?;
+        let (_, cert_der) = pem::decode_vec(pem)?;
         let certificate = Certificate::from_der(&cert_der)?;
-        let (_, key_der) = der::pem::decode_vec(key)?;
+        let (_, key_der) = pem::decode_vec(key)?;
         let secret = p256::SecretKey::from_sec1_der(&key_der)
             .or_else(|_sec1| p256::SecretKey::from_pkcs8_der(&key_der))?;
         let signing = SigningKey::from(&secret);
         let content_type = ObjectIdentifier::new("1.3.6.1.5.2.3.2")?;
         let digest = Sha256::digest(content).to_vec();
         let attributes = SetOfVec::try_from(vec![
-            x509_cert::attr::Attribute {
+            Attribute {
                 oid: ObjectIdentifier::new("1.2.840.113549.1.9.3")?,
                 values: SetOfVec::try_from(vec![DerAny::encode_from(&content_type)?])?,
             },
-            x509_cert::attr::Attribute {
+            Attribute {
                 oid: ObjectIdentifier::new("1.2.840.113549.1.9.4")?,
                 values: SetOfVec::try_from(vec![DerAny::encode_from(&DerOctetString::new(
                     digest,
@@ -461,7 +479,7 @@ impl Kdc {
             signature: DerOctetString::new(signature.to_der().as_bytes())?,
             unsigned_attrs: None,
         };
-        let signed = SignedData {
+        let signed_data = SignedData {
             version: CmsVersion::V3,
             digest_algorithms: SetOfVec::try_from(vec![sha256])?,
             encap_content_info: EncapsulatedContentInfo {
@@ -476,15 +494,41 @@ impl Kdc {
         };
         Ok(ContentInfo {
             content_type: ObjectIdentifier::new("1.2.840.113549.1.7.2")?,
-            content: DerAny::encode_from(&signed)?,
+            content: DerAny::encode_from(&signed_data)?,
         }
         .to_der()?)
     }
 }
 
+/// An AS-REP without preauthentication for the DER AS-REQ `bytes`, in `key`,
+/// naming the client as `naming`.
+///
+/// # Errors
+/// Returns the decoding and building errors.
+pub(crate) fn plain_reply(
+    bytes: &[u8],
+    key: &EncryptionKey,
+    naming: Naming,
+) -> Result<Vec<u8>, TestError> {
+    let request: AsReq = rasn_der::decode(bytes)?;
+    let session = EncryptionKey::new(18, vec![0x5a_u8; 32]);
+    as_rep(&request, key, &session, Vec::new(), naming)
+}
+
+/// A blocking transport to a fake KDC.
+pub(crate) struct Transport(pub Kdc);
+
+impl KdcTransport for Transport {
+    fn send(&mut self, _realm: &str, request: &[u8]) -> Result<Vec<u8>, ClientError> {
+        self.0
+            .answer(request)
+            .map_err(|error| ClientError::Transport(error.to_string()))
+    }
+}
+
 /// The DER `KRB5PrincipalName` of `realm` and `name`.
 fn principal(realm: &str, name: &PrincipalName) -> Result<OctetString, TestError> {
-    Ok(rasn::der::encode(&Krb5PrincipalName {
+    Ok(rasn_der::encode(&Krb5PrincipalName {
         realm: KerberosString::try_from(realm.to_owned())?,
         name: name.clone(),
     })?
@@ -513,14 +557,14 @@ fn kdf(
         },
         party_u: principal(&client_realm, body.cname.as_ref().ok_or("cname")?)?,
         party_v: principal(&realm, body.sname.as_ref().ok_or("sname")?)?,
-        supp: rasn::der::encode(&SuppPubInfo {
+        supp: rasn_der::encode(&SuppPubInfo {
             enctype: 18,
             as_req: request_der.to_vec().into(),
             pk_as_rep: rep_der.to_vec().into(),
         })?
         .into(),
     };
-    let encoded = rasn::der::encode(&info)?;
+    let encoded = rasn_der::encode(&info)?;
     let block = Sha256::new()
         .chain_update(1_u32.to_be_bytes())
         .chain_update(z)
@@ -585,12 +629,12 @@ fn tgs() -> Result<PrincipalName, TestError> {
 
 /// A KRB-ERROR with `code` and METHOD-DATA `offers`.
 fn krb_error(code: i32, offers: &[PaData]) -> Result<Vec<u8>, TestError> {
-    Ok(rasn::der::encode(&rasn_kerberos::KrbError {
+    Ok(rasn_der::encode(&KrbError {
         pvno: Integer::from(5_i32),
         msg_type: Integer::from(30_i32),
         ctime: None,
         cusec: None,
-        stime: kerberos_time(START)?,
+        stime: kerberos_time(start())?,
         susec: Integer::from(0_i32),
         error_code: code,
         crealm: None,
@@ -598,8 +642,19 @@ fn krb_error(code: i32, offers: &[PaData]) -> Result<Vec<u8>, TestError> {
         realm: KerberosString::try_from(REALM.to_owned())?,
         sname: tgs()?,
         e_text: None,
-        e_data: Some(rasn::der::encode(&offers.to_vec())?.into()),
+        e_data: Some(rasn_der::encode(&offers.to_vec())?.into()),
     })?)
+}
+
+/// The client name an AS-REP carries.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Naming {
+    /// The request's client.
+    Client,
+    /// `WELLKNOWN/ANONYMOUS@WELLKNOWN:ANONYMOUS`.
+    Anonymous,
+    /// `WELLKNOWN/ANONYMOUS` in the request's realm.
+    RealmExposed,
 }
 
 /// The AS-REP for `request` in `reply_key` with `session` and `padata`.
@@ -608,23 +663,24 @@ fn as_rep(
     reply_key: &EncryptionKey,
     session: &EncryptionKey,
     padata: Vec<PaData>,
-    anonymous: bool,
+    naming: Naming,
 ) -> Result<Vec<u8>, TestError> {
     let body = &request.0.req_body;
     let sname = body.sname.clone().ok_or("sname")?;
-    let (crealm, cname) = if anonymous {
-        (
+    let anonymous_name = PrincipalName {
+        r#type: 11,
+        string: vec![
+            KerberosString::try_from("WELLKNOWN".to_owned())?,
+            KerberosString::try_from("ANONYMOUS".to_owned())?,
+        ],
+    };
+    let (crealm, cname) = match naming {
+        Naming::Client => (body.realm.clone(), body.cname.clone().ok_or("cname")?),
+        Naming::Anonymous => (
             KerberosString::try_from("WELLKNOWN:ANONYMOUS".to_owned())?,
-            PrincipalName {
-                r#type: 11,
-                string: vec![
-                    KerberosString::try_from("WELLKNOWN".to_owned())?,
-                    KerberosString::try_from("ANONYMOUS".to_owned())?,
-                ],
-            },
-        )
-    } else {
-        (body.realm.clone(), body.cname.clone().ok_or("cname")?)
+            anonymous_name,
+        ),
+        Naming::RealmExposed => (body.realm.clone(), anonymous_name),
     };
     let part = rasn_kerberos::EncAsRepPart(rasn_kerberos::EncKdcRepPart {
         key: rasn_kerberos::EncryptionKey {
@@ -633,22 +689,22 @@ fn as_rep(
         },
         last_req: vec![rasn_kerberos::LastReqValue {
             r#type: 0,
-            value: kerberos_time(START)?,
+            value: kerberos_time(start())?,
         }],
         nonce: body.nonce,
         key_expiration: None,
         flags: rasn_kerberos::TicketFlags(rasn_kerberos::KerberosFlags::from_slice(&[0_u8; 4])),
-        auth_time: kerberos_time(START)?,
-        start_time: Some(kerberos_time(START)?),
-        end_time: kerberos_time(END)?,
+        auth_time: kerberos_time(start())?,
+        start_time: Some(kerberos_time(start())?),
+        end_time: kerberos_time(start().saturating_add(3600))?,
         renew_till: None,
         srealm: body.realm.clone(),
         sname: sname.clone(),
         caddr: None,
         encrypted_pa_data: None,
     });
-    let enc = seal(reply_key, 3, &rasn::der::encode(&part)?)?;
-    Ok(rasn::der::encode(&rasn_kerberos::AsRep(
+    let enc = seal(reply_key, 3, &rasn_der::encode(&part)?)?;
+    Ok(rasn_der::encode(&rasn_kerberos::AsRep(
         rasn_kerberos::KdcRep {
             pvno: Integer::from(5_i32),
             msg_type: Integer::from(11_i32),

@@ -1,33 +1,42 @@
-//! The PKINIT scenarios against the fake KDC: certificate login, anonymous
-//! PKINIT, and every rejection the client owes (wrong EKU, wrong SAN,
+//! The PKINIT scenarios against the fake KDC.
+//!
+//! Certificate login, anonymous PKINIT, and every rejection the client owes (wrong EKU, wrong SAN,
 //! untrusted chain, RSA key transport, wrong nonce, malformed CMS, a wrong
 //! or missing anonymous key exchange).
 
-use core::time::Duration;
-use std::time::UNIX_EPOCH;
+use std::time::SystemTime;
 
 use rskrb5_ng::{
     client::{
+        AsRepSession,
         options::AsReq,
         principal::Principal,
         stepwise::{ExchangeStep, InitCreds, InitCredsOptions, StepInput},
     },
     error::{Client as ClientError, Pkinit},
-    preauth::pkinit::{
-        AnonymousOptions, CertificatePolicy, DhGroup, EkuChecking, Exchange, Identity, KdcTrust,
+    keytab::{EncryptionKey, Entry as KeytabEntry, Keytab, Principal as KeytabPrincipal},
+    preauth::{
+        fast::AnonymousArmor as _,
+        pkinit::{
+            AnonymousArmorSource, AnonymousOptions, CertificatePolicy, DhGroup, EkuChecking,
+            Exchange, Identity, KDC_OPTION_REQUEST_ANONYMOUS, KdcTrust,
+        },
     },
 };
 
-use crate::kdc::{Behaviour, CA_EC, CLIENT_KEY, CLIENT_PEM, FRESHNESS, Kdc, REALM, TestError};
+use crate::kdc::{
+    Behaviour, CA_EC, CLIENT_KEY, CLIENT_PEM, FRESHNESS, Kdc, Naming, REALM, TestError, Transport,
+    plain_reply,
+};
+
+/// A check of the PKINIT error a scenario ends with.
+type Check = fn(&Pkinit) -> bool;
 
 /// The request template: AES256 only.
-fn request() -> Result<AsReq, TestError> {
-    let now = UNIX_EPOCH
-        .checked_add(Duration::from_secs(1_893_553_447))
-        .ok_or("time")?;
-    Ok(AsReq::new(now, 0x1234_5678)
+fn request() -> AsReq {
+    AsReq::new(SystemTime::now(), 0x1234_5678)
         .with_etypes(vec![18_i32])
-        .with_fast_negotiation(false))
+        .with_fast_negotiation(false)
 }
 
 /// The client principal.
@@ -80,7 +89,7 @@ fn certificate_login_completes_with_the_freshness_token() -> Result<(), TestErro
     let mut engine = InitCreds::with_pkinit(
         client(),
         exchange(CertificatePolicy::default())?,
-        InitCredsOptions::new(request()?),
+        InitCredsOptions::new(request()),
     );
     // When the exchange runs.
     let outcome = run(&mut engine, &mut kdc)?;
@@ -110,7 +119,7 @@ fn no_freshness_token_is_sent_when_none_is_offered() -> Result<(), TestError> {
     let mut engine = InitCreds::with_pkinit(
         client(),
         exchange(CertificatePolicy::default())?,
-        InitCredsOptions::new(request()?),
+        InitCredsOptions::new(request()),
     );
     let outcome = run(&mut engine, &mut kdc)?;
     assert!(outcome.is_ok(), "{outcome:?}");
@@ -127,7 +136,7 @@ fn kdc_certificate_without_the_kdc_eku_is_rejected_under_kp_kdc() -> Result<(), 
     let mut engine = InitCreds::with_pkinit(
         client(),
         exchange(CertificatePolicy::default().with_eku_checking(EkuChecking::KpKdc))?,
-        InitCredsOptions::new(request()?),
+        InitCredsOptions::new(request()),
     );
     // When the exchange runs, then the reply is refused for its key purpose.
     let outcome = run(&mut engine, &mut kdc)?;
@@ -144,7 +153,7 @@ fn kdc_certificate_without_the_eku_is_accepted_under_none() -> Result<(), TestEr
     let mut engine = InitCreds::with_pkinit(
         client(),
         exchange(CertificatePolicy::default().with_eku_checking(EkuChecking::None))?,
-        InitCredsOptions::new(request()?),
+        InitCredsOptions::new(request()),
     );
     let outcome = run(&mut engine, &mut kdc)?;
     assert!(outcome.is_ok(), "{outcome:?}");
@@ -153,21 +162,33 @@ fn kdc_certificate_without_the_eku_is_accepted_under_none() -> Result<(), TestEr
 
 #[test]
 fn rejections_of_the_kdc_reply() -> Result<(), TestError> {
-    let cases: [(Behaviour, fn(&Pkinit) -> bool); 5] = [
+    let cases: [(Behaviour, Check); 5] = [
         (Behaviour::WrongSan, |error| {
-            matches!(error, Pkinit::KdcName { .. })
+            matches!(error, Pkinit::KdcName { realm: _ })
         }),
         (Behaviour::Untrusted, |error| {
-            matches!(error, Pkinit::Certificate { .. })
+            matches!(error, Pkinit::Certificate { reason: _ })
         }),
         (Behaviour::EncKeyPack, |error| {
             matches!(error, Pkinit::Policy(_))
         }),
         (Behaviour::WrongNonce, |error| {
-            matches!(error, Pkinit::NonceMismatch { .. })
+            matches!(
+                error,
+                Pkinit::NonceMismatch {
+                    expected: _,
+                    actual: _
+                }
+            )
         }),
         (Behaviour::MalformedCms, |error| {
-            matches!(error, Pkinit::Malformed { .. })
+            matches!(
+                error,
+                Pkinit::Malformed {
+                    structure: _,
+                    reason: _
+                }
+            )
         }),
     ];
     for (behaviour, check) in cases {
@@ -175,7 +196,7 @@ fn rejections_of_the_kdc_reply() -> Result<(), TestError> {
         let mut engine = InitCreds::with_pkinit(
             client(),
             exchange(CertificatePolicy::default())?,
-            InitCredsOptions::new(request()?),
+            InitCredsOptions::new(request()),
         );
         let outcome = run(&mut engine, &mut kdc)?;
         assert!(
@@ -188,7 +209,7 @@ fn rejections_of_the_kdc_reply() -> Result<(), TestError> {
 
 /// An anonymous exchange against `kdc`.
 fn anonymous(kdc: &mut Kdc) -> Result<Result<Principal, ClientError>, TestError> {
-    let options = InitCredsOptions::new(request()?).with_anonymous(AnonymousOptions::Full);
+    let options = InitCredsOptions::new(request()).with_anonymous(AnonymousOptions::Full);
     let mut engine = InitCreds::with_pkinit(
         AnonymousOptions::client(REALM),
         Exchange::anonymous(
@@ -223,9 +244,79 @@ fn anonymous_reply_without_the_key_exchange_is_rejected() -> Result<(), TestErro
         let mut kdc = Kdc::new(behaviour, true);
         let outcome = anonymous(&mut kdc)?;
         assert!(
-            matches!(pkinit_error(&outcome), Some(Pkinit::Anonymous { .. })),
+            matches!(
+                pkinit_error(&outcome),
+                Some(Pkinit::Anonymous { reason: _ })
+            ),
             "{behaviour:?}: {outcome:?}"
         );
     }
+    Ok(())
+}
+
+#[test]
+fn realm_exposed_anonymity_requires_the_anonymous_name() -> Result<(), TestError> {
+    // Given a keytab client that asks for realm-exposed anonymity.
+    let key = EncryptionKey::new(18, vec![0x21_u8; 32]);
+    let mut keytab = Keytab::new();
+    keytab.entries_mut().push(KeytabEntry::new(
+        KeytabPrincipal::new(REALM, 1, vec!["pkinituser".to_owned()]),
+        0,
+        3,
+        key.clone(),
+        3,
+    ));
+    let options = InitCredsOptions::new(request()).with_anonymous(AnonymousOptions::RealmExposed);
+    assert_ne!(
+        options.request().kdc_option_bits() & KDC_OPTION_REQUEST_ANONYMOUS,
+        0,
+        "request-anonymous is set"
+    );
+    for (naming, accepted) in [(Naming::RealmExposed, true), (Naming::Client, false)] {
+        let mut engine = InitCreds::with_keytab(client(), keytab.clone(), options.clone());
+        let Ok(ExchangeStep::Outbound(outbound)) = engine.step(StepInput::Start) else {
+            return Err("no request".into());
+        };
+        let reply = plain_reply(outbound.message(), &key, naming)?;
+        // When the KDC names the client as `naming`, then only the anonymous
+        // name in the client's realm completes.
+        match engine.step(StepInput::Reply(&reply)) {
+            Ok(ExchangeStep::Complete(session)) => {
+                assert!(accepted, "{naming:?} completed");
+                assert_eq!(
+                    session.client(),
+                    &AnonymousOptions::RealmExposed.expected_client(REALM),
+                    "anonymous client"
+                );
+            }
+            Err(ClientError::PrincipalMismatch {
+                expected: _,
+                actual: _,
+            }) => assert!(!accepted, "{naming:?}"),
+            other => return Err(format!("{naming:?}: {other:?}").into()),
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn anonymous_armor_source_obtains_an_anonymous_tgt() -> Result<(), TestError> {
+    // Given the anonymous-armor provider over a blocking transport to the KDC.
+    let mut source = AnonymousArmorSource::new(
+        Transport(Kdc::new(Behaviour::Honest, true)),
+        KdcTrust::from_pem(CA_EC)?,
+        CertificatePolicy::default().with_group(DhGroup::P256),
+    );
+    // When FAST asks it for the realm's armor ticket.
+    let ticket: AsRepSession = source
+        .armor_ticket(REALM)
+        .map_err(|error| error.to_string())?;
+    // Then it is an anonymous TGT of the realm's TGS.
+    assert_eq!(
+        ticket.client(),
+        &AnonymousOptions::Full.expected_client(REALM),
+        "client"
+    );
+    assert_eq!(ticket.service(), &Principal::tgt_service(REALM), "service");
     Ok(())
 }

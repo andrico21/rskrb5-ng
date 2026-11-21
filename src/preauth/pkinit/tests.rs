@@ -4,10 +4,10 @@
 //! carries them; OpenSSL 3.5.5 key agreements and CMS from
 //! `tests/pkinit/fixtures/generate.sh` (independent of this crate).
 
-use core::time::Duration;
+use core::{error::Error as StdError, slice, str, time::Duration};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use der::Decode as _;
+use der::{Decode as _, Encode, asn1::Uint as DerUint, pem};
 use p256::elliptic_curve::PrimeField as _;
 use x509_cert::{Certificate, crl::CertificateList};
 
@@ -19,11 +19,11 @@ use crate::{
     client::principal::Principal,
     error::Pkinit as Error,
     keytab::EncryptionKey,
-    preauth::pkinit::{CertificatePolicy, EkuChecking, KdcTrust},
+    preauth::pkinit::{CertificatePolicy, DhGroup, EkuChecking, KdcTrust},
 };
 
 /// A boxed test failure.
-type TestError = Box<dyn core::error::Error>;
+type TestError = Box<dyn StdError>;
 
 /// A fixture file.
 macro_rules! fixture {
@@ -36,7 +36,7 @@ macro_rules! fixture {
 /// the expired one's.
 fn now() -> SystemTime {
     UNIX_EPOCH
-        .checked_add(Duration::from_secs(1_795_219_200))
+        .checked_add(Duration::from_hours(498_672))
         .unwrap_or(UNIX_EPOCH)
 }
 
@@ -62,11 +62,13 @@ fn parsed(pems: &[&[u8]]) -> Result<Vec<Parsed>, TestError> {
 
 /// Bytes of a hex fixture.
 fn hex(text: &[u8]) -> Result<Vec<u8>, TestError> {
-    let text = core::str::from_utf8(text)?.trim();
-    (0..text.len())
+    let digits = str::from_utf8(text)?.trim();
+    (0..digits.len())
         .step_by(2)
         .map(|start| {
-            let pair = text.get(start..start.saturating_add(2)).ok_or("odd hex")?;
+            let pair = digits
+                .get(start..start.saturating_add(2))
+                .ok_or("odd hex")?;
             Ok(u8::from_str_radix(pair, 16)?)
         })
         .collect()
@@ -156,8 +158,8 @@ fn modp_2048_agreement_matches_openssl() -> Result<(), TestError> {
         .copy_from_slice(&private);
     let secret = crypto_bigint::U2048::from_be_slice(&padded);
     let public = hex(fixture!("dh-b.pub.hex"))?;
-    let integer = der::asn1::Uint::new(&public)?;
-    let encoded = der::Encode::to_der(&integer)?;
+    let integer = DerUint::new(&public)?;
+    let encoded = Encode::to_der(&integer)?;
     // When this client agrees, then the secret is OpenSSL's, padded to 256 bytes.
     let shared = dh::agree(
         &dh::Ephemeral::Modp2048(Box::new(zeroize::Zeroizing::new(secret))),
@@ -182,7 +184,7 @@ fn p256_agreement_matches_openssl() -> Result<(), TestError> {
 
 #[test]
 fn invalid_public_values_are_refused() -> Result<(), TestError> {
-    let (ephemeral, _) = dh::generate(crate::preauth::pkinit::DhGroup::Modp2048)?;
+    let (ephemeral, _) = dh::generate(DhGroup::Modp2048)?;
     let p_minus_two = {
         let mut bytes = super::primes::MODP_2048.to_vec();
         if let Some(last) = bytes.last_mut() {
@@ -190,9 +192,8 @@ fn invalid_public_values_are_refused() -> Result<(), TestError> {
         }
         bytes
     };
-    let encode = |bytes: &[u8]| -> Result<Vec<u8>, TestError> {
-        Ok(der::Encode::to_der(&der::asn1::Uint::new(bytes)?)?)
-    };
+    let encode =
+        |bytes: &[u8]| -> Result<Vec<u8>, TestError> { Ok(Encode::to_der(&DerUint::new(bytes)?)?) };
     // 1, p-1 and p-2 (outside the prime-order subgroup), and a non-INTEGER.
     let mut p_minus_one = super::primes::MODP_2048.to_vec();
     if let Some(last) = p_minus_one.last_mut() {
@@ -209,7 +210,7 @@ fn invalid_public_values_are_refused() -> Result<(), TestError> {
             Err(Error::PublicValue)
         ));
     }
-    let (curve, _) = dh::generate(crate::preauth::pkinit::DhGroup::P256)?;
+    let (curve, _) = dh::generate(DhGroup::P256)?;
     let mut off_curve = hex(fixture!("ec-b.pub.hex"))?;
     if let Some(last) = off_curve.last_mut() {
         *last ^= 1;
@@ -250,16 +251,22 @@ fn openssl_cms_signed_data_verifies() -> Result<(), TestError> {
     }
     assert!(matches!(
         cms::verify(&tampered, cms::DH_KEY_DATA, &context),
-        Err(Error::Signature { .. })
+        Err(Error::Signature { what: _ })
     ));
-    let truncated = original.get(..original.len() / 2).ok_or("half")?;
+    let truncated = original.get(..64).ok_or("prefix")?;
     assert!(matches!(
         cms::verify(truncated, cms::DH_KEY_DATA, &context),
-        Err(Error::Malformed { .. })
+        Err(Error::Malformed {
+            structure: _,
+            reason: _
+        })
     ));
     assert!(matches!(
         cms::verify(original, cms::AUTH_DATA, &context),
-        Err(Error::Malformed { .. })
+        Err(Error::Malformed {
+            structure: _,
+            reason: _
+        })
     ));
     let other = KdcTrust::new(keys::pem_certificates(fixture!("ca-other.pem"))?);
     let untrusted = cms::Context {
@@ -269,7 +276,7 @@ fn openssl_cms_signed_data_verifies() -> Result<(), TestError> {
     };
     assert!(matches!(
         cms::verify(original, cms::DH_KEY_DATA, &untrusted),
-        Err(Error::Certificate { .. })
+        Err(Error::Certificate { reason: _ })
     ));
     Ok(())
 }
@@ -285,16 +292,16 @@ fn validate(
         structure: "fixture",
         reason: "unreadable",
     })?;
-    let anchors = parsed(anchors).map_err(|_detail| Error::Malformed {
+    let roots = parsed(anchors).map_err(|_detail| Error::Malformed {
         structure: "fixture",
         reason: "unreadable",
     })?;
-    chain::validate(&leaf, (&[], &anchors, crls), require_crl, now())
+    chain::validate(&leaf, (&[], &roots, crls), require_crl, now())
 }
 
 #[test]
 fn chain_validation_rules() -> Result<(), TestError> {
-    let crl = CertificateList::from_der(&der::pem::decode_vec(fixture!("crl-ec.pem"))?.1)?;
+    let crl = CertificateList::from_der(&pem::decode_vec(fixture!("crl-ec.pem"))?.1)?;
     let ca: &[u8] = fixture!("ca-ec.pem");
     // Valid chains: EC under the EC root, EC under the RSA-3072 root.
     validate(fixture!("kdc.pem"), &[ca], &[], false)?;
@@ -304,15 +311,15 @@ fn chain_validation_rules() -> Result<(), TestError> {
         &[],
         false,
     )?;
-    validate(fixture!("kdc.pem"), &[ca], &[crl.clone()], true)?;
+    validate(fixture!("kdc.pem"), &[ca], slice::from_ref(&crl), true)?;
     // Expired, untrusted, revoked, and unknown revocation status.
     assert!(matches!(
         validate(fixture!("kdc-expired.pem"), &[ca], &[], false),
-        Err(Error::Certificate { .. })
+        Err(Error::Certificate { reason: _ })
     ));
     assert!(matches!(
         validate(fixture!("kdc-untrusted.pem"), &[ca], &[], false),
-        Err(Error::Certificate { .. })
+        Err(Error::Certificate { reason: _ })
     ));
     assert!(matches!(
         validate(fixture!("kdc-revoked.pem"), &[ca], &[crl], false),
@@ -345,7 +352,7 @@ fn kdc_identity_rules() -> Result<(), TestError> {
     let server = certificate(fixture!("kdc-serverauth.pem"))?;
     assert!(matches!(
         chain::kdc_identity(&server, realm, &strict),
-        Err(Error::KdcName { .. })
+        Err(Error::KdcName { realm: _ })
     ));
     let hosts = strict
         .clone()
@@ -362,7 +369,7 @@ fn kdc_identity_rules() -> Result<(), TestError> {
     // Another realm's TGS.
     assert!(matches!(
         chain::kdc_identity(&certificate(fixture!("kdc-wrongsan.pem"))?, realm, &strict),
-        Err(Error::KdcName { .. })
+        Err(Error::KdcName { realm: _ })
     ));
     Ok(())
 }
@@ -384,12 +391,15 @@ fn software_identities_and_outgoing_requests() -> Result<(), TestError> {
     )?);
     assert!(matches!(
         keys::software_signer(fixture!("kdc.key"), certificates.first()),
-        Err(Error::Identity { .. })
+        Err(Error::Identity { reason: _ })
     ));
     // Only a DER PA-PK-AS-REQ is admitted outgoing.
     assert!(matches!(
         super::outgoing(&[0x47; 32]),
-        Err(Error::Malformed { .. })
+        Err(Error::Malformed {
+            structure: _,
+            reason: _
+        })
     ));
     Ok(())
 }
@@ -399,9 +409,10 @@ fn anonymous_key_exchange_must_match_the_session_key() -> Result<(), TestError> 
     // A PA-PKINIT-KX that does not decrypt, or names another key, fails.
     let reply = EncryptionKey::new(18, vec![0x31; 32]);
     let session = EncryptionKey::new(18, vec![0x32; 32]);
+    let empty = Encode::to_der(&DerUint::new(&[0])?)?;
     assert!(matches!(
-        super::verify_anonymous(&[0x30, 0x00], &reply, &session),
-        Err(Error::Anonymous { .. })
+        super::verify_anonymous(&empty, &reply, &session),
+        Err(Error::Anonymous { reason: _ })
     ));
     Ok(())
 }

@@ -57,6 +57,9 @@ use crate::{
     client::principal::Principal, config::Config, error::Pkinit as Error, extensions::ProviderError,
 };
 
+/// The anonymous FAST armor source.
+#[path = "pkinit/armor.rs"]
+mod armor;
 /// Configuration of the client half from `[realms]` and `[libdefaults]`.
 #[path = "pkinit/config.rs"]
 mod config;
@@ -569,6 +572,48 @@ impl AnonymousOptions {
 /// [`Error::Malformed`](crate::error::Pkinit::Malformed) for anything else.
 pub(crate) fn outgoing(value: &[u8]) -> Result<(), Error> {
     ops::outgoing(value)
+}
+
+/// Anonymous FAST armor (RFC 6113 section 5.4.1.1 with RFC 6112): the armor
+/// TGT of a realm, from anonymous PKINIT over a blocking transport.
+///
+/// It is the [`AnonymousArmor`](trait@crate::preauth::fast::AnonymousArmor)
+/// hook of FAST (MIT `kinit -n` for the armor cache, then `kinit -T`): use it
+/// as `ArmorSource::Anonymous`. Each call runs one fully anonymous PKINIT
+/// exchange for the requested realm and authenticates the KDC with `trust`
+/// and `policy`. With the Tokio transport, obtain the anonymous TGT with
+/// `drive_tokio` first and armor with `ArmorSource::Ticket` instead. Its
+/// `Debug` output names no key.
+pub struct AnonymousArmorSource<T> {
+    /// The blocking transport to the realm's KDCs.
+    transport: T,
+    /// The KDC trust.
+    trust: KdcTrust,
+    /// The KDC certificate and group policy.
+    policy: CertificatePolicy,
+}
+
+impl<T> AnonymousArmorSource<T> {
+    /// An armor source over `transport` that trusts KDCs per `trust` and `policy`.
+    #[inline]
+    #[must_use]
+    pub const fn new(transport: T, trust: KdcTrust, policy: CertificatePolicy) -> Self {
+        Self {
+            transport,
+            trust,
+            policy,
+        }
+    }
+}
+
+impl<T> fmt::Debug for AnonymousArmorSource<T> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AnonymousArmorSource")
+            .field("trust", &self.trust)
+            .field("policy", &self.policy)
+            .finish_non_exhaustive()
+    }
 }
 
 /// `KRB5_NT_WELLKNOWN` (RFC 6111).

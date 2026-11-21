@@ -10,12 +10,18 @@
 #![cfg(feature = "messages")]
 
 /// The fake KDC.
-#[cfg(all(test, feature = "pkinit"))]
+#[cfg(test)]
+#[cfg(feature = "pkinit")]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
 #[path = "pkinit/kdc.rs"]
 mod kdc;
 
 /// The exchange scenarios.
-#[cfg(all(test, feature = "pkinit"))]
+#[cfg(test)]
+#[cfg(feature = "pkinit")]
 #[expect(
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
