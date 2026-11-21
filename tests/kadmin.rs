@@ -476,10 +476,13 @@ mod tests {
 
         let enc_part =
             decrypt_krb_priv_enc_part(parsed.krb_priv(), &reply_key).context("payload decrypts")?;
-        let decoded_data =
-            ChangePasswdData::decode_der(enc_part.user_data.as_ref()).context("payload decodes")?;
-
-        assert_eq!(decoded_data, change_data);
+        // No target fields: the version 1 change-password protocol (MIT `chpw.c:21-76`): the
+        // KRB-PRIV carries the new password itself.
+        assert_eq!(parsed.version(), 1);
+        assert_eq!(
+            enc_part.user_data.as_ref(),
+            change_data.new_passwd().to_vec()
+        );
         assert_eq!(enc_part.sender_address, sender_address);
         assert_eq!(enc_part.seq_number, Some(101));
         Ok(())
@@ -536,9 +539,13 @@ mod tests {
 
         let enc_part = decrypt_krb_priv_enc_part(parsed.krb_priv(), &reply_key)
             .context("KRB-PRIV decrypts")?;
-        let decoded_data =
-            ChangePasswdData::decode_der(enc_part.user_data.as_ref()).context("payload decodes")?;
-        assert_eq!(decoded_data, change_data);
+        // No target fields: the version 1 change-password protocol (MIT `chpw.c:21-76`): the
+        // KRB-PRIV carries the new password itself.
+        assert_eq!(parsed.version(), 1);
+        assert_eq!(
+            enc_part.user_data.as_ref(),
+            change_data.new_passwd().to_vec()
+        );
         assert_eq!(enc_part.seq_number, Some(42));
         assert_eq!(enc_part.sender_address, ipv4_host_address([127, 0, 0, 1]));
         assert_eq!(
@@ -816,15 +823,15 @@ mod tests {
         .context("gokrb5-compatible message builder")?;
 
         let parsed = Request::parse(built.der()).context("message parses")?;
-        let encoded = ChangePasswdData::decode_der(
+        // No target fields: version 1, the KRB-PRIV carries the new password itself.
+        assert_eq!(parsed.version(), 1);
+        assert_eq!(
             decrypt_krb_priv_enc_part(parsed.krb_priv(), built.reply_key())
                 .context("KRB-PRIV decrypts")?
                 .user_data
                 .as_ref(),
-        )
-        .context("payload decodes")?;
-
-        assert_eq!(encoded, change_data);
+            change_data.new_passwd().to_vec()
+        );
         Ok(())
     }
 
@@ -832,8 +839,8 @@ mod tests {
     #[test]
     fn kpasswd_request_rejects_malformed_frames() {
         assert!(matches!(
-            Request::parse(&[0, 6, 0, 1, 0, 0]),
-            Err(KadminError::InvalidRequestVersion(1))
+            Request::parse(&[0, 6, 0, 2, 0, 0]),
+            Err(KadminError::InvalidRequestVersion(2))
         ));
 
         assert!(matches!(

@@ -359,6 +359,10 @@ pub enum Client {
     /// Delivery or reply validation failed after entering a mutation exchange.
     #[error("password mutation outcome is unknown: {0}")]
     KpasswdOutcomeUnknown(#[source] Box<Self>),
+    /// An earlier password change may have reached the server and its outcome was never
+    /// confirmed: it is not replayed until the caller verifies it and acknowledges it.
+    #[error("an earlier password change may have reached the server; verify its outcome first")]
+    PasswordChangePending,
     /// A kpasswd AP-REP did not echo the AP-REQ authenticator timestamp.
     #[error("kpasswd AP-REP timestamp mismatch: expected {expected:?}, got {actual:?}")]
     KpasswdApRepTimestampMismatch {

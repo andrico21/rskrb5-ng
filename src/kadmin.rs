@@ -20,6 +20,8 @@ mod reply;
 mod request;
 /// Result code interpretation.
 mod result;
+/// The code and the text of a result: typed kind, Active Directory policy, message.
+pub mod result_text;
 /// Password-specific zeroizing DER writer.
 mod secret_der;
 
@@ -27,8 +29,12 @@ use codec::{
     ap_req_error, encryption_key_to_rasn, kerberos_string, krb_priv_error, random_key_material,
 };
 
-/// Password-change request protocol version (`0xff80`).
+/// Set-password request protocol version (`0xff80`, RFC 3244): the payload is a
+/// [`ChangePasswdData`] that names the target.
 pub const CHANGE_PASSWORD_REQUEST_VERSION: u16 = 0xff80;
+/// Change-password protocol version (1, draft-ietf-cat-kerb-chg-password-02): the KRB-PRIV
+/// carries the new password itself, for the client's own password.
+pub const CHANGE_PASSWORD_VERSION: u16 = 1;
 /// Password-change reply protocol version.
 pub const CHANGE_PASSWORD_REPLY_VERSION: u16 = 1;
 /// Password change succeeded.
@@ -244,8 +250,10 @@ pub struct ChangePasswdMessageOptions {
 pub struct Request {
     /// AP-REQ authenticating the password-change request.
     ap_req: rasn_kerberos::ApReq,
-    /// KRB-PRIV carrying encrypted `ChangePasswdData`.
+    /// KRB-PRIV carrying the encrypted `ChangePasswdData`, or the new password itself.
     krb_priv: rasn_kerberos::KrbPriv,
+    /// The protocol version of the frame.
+    version: u16,
 }
 
 /// Build a complete kpasswd request frame using a caller-supplied AP-REQ,
@@ -277,9 +285,24 @@ pub fn build_change_password_request_with_confounder(
                 message: source.to_string(),
             })?;
     }
-    let plaintext = secret_der::private_part(&secret_der::change_data(change_data)?, options)?;
+    // MIT `changepw.c:173-182`: a change of the client's own password (no target) is the
+    // version 1 protocol with the password itself in the KRB-PRIV (`chpw.c:21-76`); a target
+    // makes it an RFC 3244 set-password (`chpw.c:303-340`, version `0xff80`).
+    let own = change_data.targ_name().is_none() && change_data.targ_realm().is_none();
+    let (user_data, version) = if own {
+        (
+            Zeroizing::new(change_data.new_passwd().to_vec()),
+            CHANGE_PASSWORD_VERSION,
+        )
+    } else {
+        (
+            secret_der::change_data(change_data)?,
+            CHANGE_PASSWORD_REQUEST_VERSION,
+        )
+    };
+    let plaintext = secret_der::private_part(&user_data, options)?;
     let krb_priv = payload::encrypt(&plaintext, &reply_key, confounder)?;
-    build_change_password_request_from_parts(ap_req, krb_priv, reply_key)
+    build_change_password_request_from_parts(ap_req, krb_priv, reply_key, version)
 }
 
 /// Build a full kpasswd request message using a service ticket, explicit context,
@@ -409,8 +432,13 @@ fn build_change_password_request_from_parts(
     ap_req: rasn_kerberos::ApReq,
     krb_priv: rasn_kerberos::KrbPriv,
     reply_key: EncryptionKey,
+    version: u16,
 ) -> Result<BuiltChangePasswordRequest, Error> {
-    let request = Request { ap_req, krb_priv };
+    let request = Request {
+        ap_req,
+        krb_priv,
+        version,
+    };
     let der = Zeroizing::new(request.encode()?);
 
     Ok(BuiltChangePasswordRequest {

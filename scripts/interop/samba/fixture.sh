@@ -46,7 +46,8 @@
 #     FU-IOP-P15), testuser2 (HTTP/user2.user.rskrb5, AES,
 #     claims and compound-identity support bits), kpasswduser (Rust kpasswd,
 #     FU-TST-06), kpasswdcheck (self-check kpasswd), setpwtarget (targeted
-#     set-password target), s4uclient (the impersonated user), svc-s4u
+#     set-password target of the kpasswd-samba suite), kpasswdself (an
+#     ordinary user's own password change, FU-IOP-P13), s4uclient (the impersonated user), svc-s4u
 #     (HTTP/s4u.user.rskrb5, protocol transition, constrained delegation to
 #     HTTP/backend.user.rskrb5 only), svc-rbcd (HTTP/rbcd.user.rskrb5,
 #     protocol transition, no msDS-AllowedToDelegateTo: only RBCD on
@@ -196,10 +197,15 @@ fixture_samba_user_up() {
   interop_env "${prefix}_ADMIN_PASSWORD" "$(samba_new_admin_password)"
   secrets+=("${prefix}_ADMIN_PASSWORD")
   for name in USER NOPREAUTH_USER HTTP_ACCOUNT KPASSWD_USER KPASSWD_USER_NEW KPASSWD_CHECK \
-    KPASSWD_CHECK_NEW SETPW_TARGET S4U_CLIENT S4U_ACCOUNT RBCD_ACCOUNT DELEGATION_TARGET DELEGATION_DENIED; do
+    KPASSWD_CHECK_NEW SETPW_TARGET S4U_CLIENT S4U_ACCOUNT RBCD_ACCOUNT DELEGATION_TARGET DELEGATION_DENIED \
+    KPASSWD_SELF KPASSWD_SELF_NEW SETPW_TARGET_NEW; do
     interop_env "${prefix}_${name}_PASSWORD" "$(interop_new_secret)"
-    # The new kpasswduser password is the Rust client's to set: never delivered.
-    [[ "$name" == KPASSWD_USER_NEW ]] || secrets+=("${prefix}_${name}_PASSWORD")
+    # The new passwords of kpasswduser, kpasswdself and setpwtarget are the Rust
+    # client's to set (suites samba and kpasswd-samba): never delivered.
+    case "$name" in
+      KPASSWD_USER_NEW | KPASSWD_SELF_NEW | SETPW_TARGET_NEW) ;;
+      *) secrets+=("${prefix}_${name}_PASSWORD") ;;
+    esac
   done
   secrets+=(INTEROP_SAMBA_RES_ADMIN_PASSWORD INTEROP_SAMBA_RES_USER_PASSWORD)
   samba_start user "$image" "$kdc" "$kpasswd" "$ldap" "$ldaps" "${secrets[@]}" || return 1
@@ -223,6 +229,7 @@ fixture_samba_user_up() {
   interop_env "${prefix}_HTTP_KEYTAB" "$out/http.keytab"
   interop_env "${prefix}_KPASSWD_USER" kpasswduser
   interop_env "${prefix}_SETPW_TARGET" setpwtarget
+  interop_env "${prefix}_KPASSWD_SELF" kpasswdself
   interop_env "${prefix}_S4U_CLIENT" s4uclient
   interop_env "${prefix}_S4U_ACCOUNT" svc-s4u
   interop_env "${prefix}_S4U_SERVICE" HTTP/s4u.user.rskrb5

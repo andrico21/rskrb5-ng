@@ -1,5 +1,6 @@
 //! Fuzz the kadmin frame parsers on arbitrary input: `Reply`,
-//! `ChangePasswordResult` (numeric result code and raw result text) and `Request`.
+//! `ChangePasswordResult` (numeric result code and raw result text, read as MIT's
+//! user message and as the Active Directory policy structure) and `Request`.
 //! None may panic; every input must return `Ok`/`Err`.
 //! An accepted reply is also processed the way the password-change client
 //! reads it: the KRB-ERROR or KRB-PRIV result is decrypted and the AP-REP is
@@ -76,7 +77,17 @@ fuzz_target!(|data: &[u8]| {
         }
     }
     if let Ok(result) = ChangePasswordResult::parse(data) {
-        drop(result);
+        drop(result.message());
+        if let Some(policy) = result.ad_policy() {
+            let _fields = (
+                policy.min_length(),
+                policy.history(),
+                policy.properties(),
+                policy.expire(),
+                policy.min_age(),
+                policy.requires_complexity(),
+            );
+        }
     }
     if let Ok(request) = Request::parse(data) {
         drop(request);

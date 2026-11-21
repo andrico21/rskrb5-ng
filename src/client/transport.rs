@@ -1297,10 +1297,13 @@ impl Tokio {
     /// # Errors
     ///
     /// Before any I/O it returns [`Error::Config`] when the configuration is
-    /// refused or a request list names an enctype outside the permitted list
+    /// refused for a reason other than a permanently rejected `[libdefaults]`
+    /// choice or a request list names an enctype outside the permitted list
     /// ([`crate::error::Config::EnctypeNotPermitted`]) and [`Error::Crypto`]
-    /// carrying the typed policy refusal when the crypto policy does not permit
-    /// an encryption type of the request's keys. Then returns the pre-delivery
+    /// carrying the typed policy refusal when `[libdefaults]` makes a choice the
+    /// policy permanently rejects (as [`Self::exchange_as_req_with_config`] and
+    /// [`Self::exchange_tgs_req_with_config`] report it) or the crypto policy does
+    /// not permit an encryption type of the request's keys. Then returns the pre-delivery
     /// errors of [`Self::exchange_kpasswd_request_with_config`]
     /// and the same authenticated outcome classification as
     /// [`Self::exchange_kpasswd_result`]. Invalid or unauthenticated replies
@@ -1323,7 +1326,7 @@ impl Tokio {
         options: &RequestOptions,
     ) -> Result<kadmin::ChangePasswordResult, Error> {
         restrictions::config(config)?;
-        let policy = super::crypto_policy::configured_requests(&config.libdefaults)?;
+        let policy = super::crypto_policy::configured(&config.libdefaults)?;
         password_result::outgoing(request, &policy)?;
         let reply = self
             .exchange_kpasswd_request_with_config(config, protocol, realm, request.request())

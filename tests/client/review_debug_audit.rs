@@ -69,7 +69,7 @@ mod tests {
             (
                 "src/client/credential_debug.rs",
                 "AsRepSession",
-                "client,service,session_key,ticket,ticket_flags,auth_time,start_time,end_time,renew_till,key_expiration",
+                "client,service,session_key,ticket,ticket_flags,auth_time,start_time,end_time,renew_till,key_expiration,expiry",
             ),
             (
                 "src/client.rs",
@@ -79,7 +79,7 @@ mod tests {
             (
                 "src/client.rs",
                 "Tokio",
-                "config,import_policy_error,protocol,transport,client,credentials,tgt,tgt_sessions,service_tickets,assume_preauthentication,fast_negotiation,trace",
+                "config,import_policy_error,protocol,transport,client,credentials,tgt,tgt_sessions,service_tickets,assume_preauthentication,fast_negotiation,trace,unresolved_password_change",
             ),
             (
                 "src/client/negotiate.rs",

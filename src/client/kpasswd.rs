@@ -17,8 +17,14 @@ use crate::{
     messages,
 };
 
+/// Password and account expiry as a KDC reports it.
+pub mod last_req;
+/// Password expiry through a responder.
+#[cfg(feature = "tokio")]
+pub mod password_expiry;
 /// Request authenticator construction and KRB-PRIV options.
 mod request;
+
 use request::{build_kpasswd_ap_req_with_confounder, kpasswd_krb_priv_options};
 
 #[cfg(feature = "tokio")]

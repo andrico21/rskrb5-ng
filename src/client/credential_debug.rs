@@ -144,6 +144,7 @@ impl fmt::Debug for AsRepSession {
             end_time,
             renew_till,
             key_expiration,
+            expiry,
         } = self;
         f.debug_struct("AsRepSession")
             .field("client", client)
@@ -156,6 +157,7 @@ impl fmt::Debug for AsRepSession {
             .field("end_time", end_time)
             .field("renew_till", renew_till)
             .field("key_expiration", key_expiration)
+            .field("expiry", expiry)
             .finish_non_exhaustive()
     }
 }

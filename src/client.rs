@@ -119,10 +119,15 @@ pub mod stepwise;
 /// KDC endpoint discovery and asynchronous transport.
 pub mod transport;
 #[cfg(feature = "tokio")]
-use self::kpasswd::{RequestOptions, build_kpasswd_request, validated_result};
+use self::kpasswd::{
+    RequestOptions, build_kpasswd_request,
+    password_expiry::{ExpiryResponder, Turns},
+    validated_result,
+};
 #[cfg(feature = "tokio")]
 use self::transport::{KdcEndpoint, KdcProtocol, Tokio as TokioKdcTransport};
 use self::{
+    kpasswd::last_req::ExpiryNotice,
     options::{ApReq, AsReq, TgsReq},
     principal::Principal,
 };
@@ -170,6 +175,8 @@ pub const PA_PAC_OPTIONS: i32 = 167;
 pub const PA_FOR_USER: i32 = 129;
 /// KDC error code for additional preauthentication required.
 pub const KDC_ERR_PREAUTH_REQUIRED: i32 = 25;
+/// KDC error code for a client key (password) that has expired (RFC 4120 `KDC_ERR_KEY_EXPIRED`).
+pub const KDC_ERR_KEY_EXPIRED: i32 = 23;
 /// KDC error code indicating the client should retry over TCP.
 pub const KRB_ERR_RESPONSE_TOO_BIG: i32 = 52;
 /// Key usage for AS-REQ encrypted timestamp preauthentication.
@@ -657,6 +664,8 @@ pub struct AsRepSession {
     renew_till: Option<SystemTime>,
     /// Session key expiration time, when supplied.
     key_expiration: Option<SystemTime>,
+    /// Password and account expiry from the reply's `last-req` and `key-expiration`.
+    expiry: ExpiryNotice,
 }
 impl AsRepSession {
     /// Borrow the client identity.
@@ -770,7 +779,21 @@ impl AsRepSession {
             end_time,
             renew_till: None,
             key_expiration: None,
+            expiry: ExpiryNotice::DEFAULT,
         }
+    }
+    /// Password and account expiry the KDC reported in the reply.
+    #[inline]
+    #[must_use]
+    pub const fn expiry_notice(&self) -> &ExpiryNotice {
+        &self.expiry
+    }
+    /// Sets the reported expiry, preserving the other fields.
+    #[must_use]
+    #[inline]
+    pub const fn with_expiry_notice(mut self, value: ExpiryNotice) -> Self {
+        self.expiry = value;
+        self
     }
     /// Sets `start_time`, preserving the other fields.
     #[must_use]
@@ -1275,6 +1298,8 @@ pub struct Tokio {
     fast_negotiation: bool,
     /// Redacted trace events of this client's logins and ticket requests.
     trace: Guard,
+    /// Whether a password change may have reached the server without a confirmed result.
+    unresolved_password_change: bool,
 }
 #[cfg(feature = "tokio")]
 impl fmt::Debug for Tokio {
@@ -1293,6 +1318,7 @@ impl fmt::Debug for Tokio {
             assume_preauthentication,
             fast_negotiation,
             trace,
+            unresolved_password_change,
         } = self;
         f.debug_struct("TokioClient")
             .field("import_policy_error", import_policy_error)
@@ -1307,6 +1333,7 @@ impl fmt::Debug for Tokio {
             .field("assume_preauthentication", assume_preauthentication)
             .field("fast_negotiation", fast_negotiation)
             .field("trace", trace)
+            .field("unresolved_password_change", unresolved_password_change)
             .finish()
     }
 }
@@ -1873,6 +1900,7 @@ impl Tokio {
             assume_preauthentication: false,
             fast_negotiation: true,
             trace: Guard::disabled(),
+            unresolved_password_change: false,
         }
     }
     #[must_use]
@@ -2945,6 +2973,9 @@ impl Tokio {
         new_password: Password,
         mut options: RequestOptions,
     ) -> Result<kadmin::ChangePasswordResult, Error> {
+        if self.unresolved_password_change {
+            return Err(Error::PasswordChangePending);
+        }
         let client = self.client.clone();
         let service = Principal::new(
             target.realm.clone(),
@@ -2979,15 +3010,27 @@ impl Tokio {
             }
             None => self.get_service_ticket(service).await?,
         };
-        let change_data = kadmin::ChangePasswdData::for_target(
-            Password::from_vec(new_password.as_bytes().to_vec()),
-            target.name_type,
-            target.components.iter().map(String::as_str),
-            &target.realm,
-        )?;
+        let payload_password = Password::from_vec(new_password.as_bytes().to_vec());
+        // The client's own password is a change (MIT `changepw.c:308-315` sends no target);
+        // naming oneself as the RFC 3244 target is a set-password that Samba and Active
+        // Directory refuse without the Reset-Password right.
+        let change_data = if principal_matches(&target, &self.client) {
+            kadmin::ChangePasswdData::new(payload_password)
+        } else {
+            kadmin::ChangePasswdData::for_target(
+                payload_password,
+                target.name_type,
+                target.components.iter().map(String::as_str),
+                &target.realm,
+            )?
+        };
         options.crypto_policy = Some(crypto_policy::configured(&self.config.libdefaults)?);
         let request = build_kpasswd_request(&ticket, &change_data, &options)?;
-        let reply = self
+        // From here the request may reach the server. Dropping this future before a
+        // result is classified leaves the flag set: the change is never replayed
+        // until the caller has verified the outcome and acknowledged it.
+        self.unresolved_password_change = true;
+        let reply = match self
             .transport
             .exchange_kpasswd_request_with_config(
                 &self.config,
@@ -2995,11 +3038,21 @@ impl Tokio {
                 &target.realm,
                 request.request(),
             )
-            .await?;
+            .await
+        {
+            Ok(reply) => reply,
+            Err(error) => {
+                // Only a request that may have been delivered leaves the outcome unknown.
+                self.unresolved_password_change = matches!(error, Error::KpasswdOutcomeUnknown(_));
+                return Err(error);
+            }
+        };
         // Delivery has occurred: unsigned refusals are unauthenticated diagnostics,
         // not proof of rollback. Wrap validator failures once, before ensure_success.
         let result = validated_result(&reply, &request, &options, request.crypto_policy())
             .map_err(|source| Error::KpasswdOutcomeUnknown(Box::new(source)))?;
+        // An authenticated result, success or rejection, is a confirmed outcome.
+        self.unresolved_password_change = false;
         result.ensure_success()?;
 
         if update_password_credential {
@@ -3009,6 +3062,104 @@ impl Tokio {
         }
         drop(new_password);
         Ok(result)
+    }
+
+    /// Log in like [`Self::login`], and change an expired password through `responder`.
+    ///
+    /// When the KDC answers `KDC_ERR_KEY_EXPIRED` to a password login, this follows MIT
+    /// (`gic_pwd.c:171-343`): it gets a `kadmin/changepw` ticket with the old password (an AS
+    /// reply the KDC could only seal under that password), asks the responder for a new
+    /// one, sends the change, and starts the login over with the new password only after
+    /// the server's authenticated success; the stored password becomes the new one. A
+    /// rejection by password policy (`KPASSWD_SOFTERROR`) is put to the responder again,
+    /// three answers in all. After the login `responder` hears the expiry the KDC reported.
+    ///
+    /// `sender_address` is the address of this host that the kpasswd request names.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::PasswordChangePending`] before anything is sent while an earlier
+    /// change is unconfirmed, [`Error::Responder`] when the responder fails, the errors
+    /// of [`Self::login`] and of [`Self::change_password_with_options`], and the last
+    /// `PasswordChangeFailed` when three answers were rejected. A change whose outcome is
+    /// unknown ends the flow with [`Error::KpasswdOutcomeUnknown`]; it is never repeated
+    /// and the AS is not restarted. KDC errors other than the expiry, and an expiry of a
+    /// keytab credential, are returned as they are.
+    ///
+    /// # Security
+    ///
+    /// The `KDC_ERR_KEY_EXPIRED` error is unauthenticated: it can only make the client ask
+    /// for a new password, and nothing is sent until the `kadmin/changepw` AS reply has
+    /// decrypted under the old password. The AS is restarted only after a kpasswd
+    /// reply that authenticated under that ticket's session key.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe once the change request is sent: dropping the future then leaves the
+    /// outcome unknown, the next call returns [`Error::PasswordChangePending`] and sends
+    /// nothing until [`Self::acknowledge_password_change_outcome`]. Before the request is
+    /// sent, nothing on the server has changed.
+    #[inline]
+    pub async fn login_with_expiry<R>(
+        &mut self,
+        responder: &mut R,
+        sender_address: rasn_kerberos::HostAddress,
+    ) -> Result<&AsRepSession, Error>
+    where
+        R: ExpiryResponder + ?Sized,
+    {
+        if self.unresolved_password_change {
+            return Err(Error::PasswordChangePending);
+        }
+        match self.login().await.map(|_session| ()) {
+            Ok(()) => {}
+            Err(Error::Kdc(error))
+                if error.error_code() == KDC_ERR_KEY_EXPIRED
+                    && matches!(self.credentials, Some(TokioClientCredentials::Password(_))) =>
+            {
+                let mut turns = Turns::new();
+                loop {
+                    let Some(answer) = turns.ask(responder, &self.client)? else {
+                        return Err(turns.exhausted());
+                    };
+                    let (timestamp, cusec) = current_preauth_time()?;
+                    let options = RequestOptions::new(
+                        timestamp,
+                        cusec,
+                        random_nonce()?,
+                        sender_address.clone(),
+                    );
+                    match self.change_password_with_options(answer, options).await {
+                        Ok(_result) => {
+                            // Authenticated success: only now does the AS start over.
+                            let _session = self.login().await?;
+                            break;
+                        }
+                        Err(failure) => turns.rejected(failure)?,
+                    }
+                }
+            }
+            Err(error) => return Err(error),
+        }
+        // The TGT the login just cached: no further exchange.
+        let session = self.affirm_login().await?;
+        responder.expiry_notice(session.expiry_notice());
+        Ok(session)
+    }
+
+    /// Whether a password change may have reached the server without a confirmed result:
+    /// its request was sent and the reply was lost, unauthenticated or never read.
+    #[inline]
+    #[must_use]
+    pub const fn has_unresolved_password_change(&self) -> bool {
+        self.unresolved_password_change
+    }
+
+    /// Record that the caller verified the outcome of the earlier password change, for
+    /// example with a fresh login, so that a change may be made again.
+    #[inline]
+    pub const fn acknowledge_password_change_outcome(&mut self) {
+        self.unresolved_password_change = false;
     }
 }
 
@@ -4465,6 +4616,7 @@ pub fn process_as_rep(
             .as_ref()
             .map(system_time_from_kerberos_time)
             .transpose()?,
+        expiry: ExpiryNotice::from_enc_part(&enc_part)?,
     })
 }
 
@@ -4670,6 +4822,7 @@ fn process_tgs_rep_inner(
             .as_ref()
             .map(system_time_from_kerberos_time)
             .transpose()?,
+        expiry: ExpiryNotice::DEFAULT,
     })
 }
 
@@ -5655,6 +5808,7 @@ fn ccache_credential_session(credential: &ccache::Credential) -> AsRepSession {
         renew_till: (credential.times().renew_till != 0)
             .then(|| system_time_from_u32_seconds(credential.times().renew_till)),
         key_expiration: None,
+        expiry: ExpiryNotice::DEFAULT,
     }
 }
 
@@ -5851,6 +6005,7 @@ mod tests {
             end_time: now,
             renew_till: None,
             key_expiration: None,
+            expiry: super::ExpiryNotice::default(),
         })
     }
 
