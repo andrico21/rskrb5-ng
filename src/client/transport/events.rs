@@ -46,6 +46,7 @@ struct Installed<'held> {
     held: &'held mut Option<Guard>,
 }
 
+// Drop audit: a short std mutex section with no I/O and no panic (poison is ignored).
 impl Drop for Installed<'_> {
     fn drop(&mut self) {
         *self.held = install(self.outer.take());
