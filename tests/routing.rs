@@ -2,6 +2,7 @@
 //! realm paths, DOMAIN-X500-COMPRESS transited encodings and the certificate
 //! identity of certificate `S4U2Self`.
 
+#[cfg(feature = "messages")]
 extern crate alloc;
 
 use core::error::Error;

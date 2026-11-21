@@ -7,7 +7,7 @@
 //! wrong one; and a user-to-user ticket sealed in the target's TGT session
 //! key. Gated by `INTEROP=1`; `INTEROP_REQUIRED=1` turns an unreachable
 //! fixture into a failure naming it.
-#![cfg(feature = "tokio")]
+#![cfg(all(feature = "tokio", feature = "spnego"))]
 
 extern crate alloc;
 
