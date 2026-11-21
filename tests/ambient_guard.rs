@@ -109,6 +109,12 @@ pub(crate) mod tests {
             "KRB5_CLIENT_KTNAME_ENV",
         ),
         (
+            "src/preauth/pkinit/config.rs",
+            "pkinit_env_location",
+            "the variable an ENV: location names",
+            "name",
+        ),
+        (
             "src/trace.rs",
             "Options::from_env",
             "KRB5_TRACE",
@@ -753,6 +759,7 @@ pub(crate) mod tests {
             ],
             "KRB5_CLIENT_KTNAME" => &["with_keytab_name", "with_client_keytab_from_config"],
             "KRB5_TRACE" => &["with_file", "new"],
+            "the variable an ENV: location names" => &["new", "from_pem", "with_provider"],
             "HOME" => &["new", "with_home"],
             "TMPDIR" | "TEMP" | "APPDATA" => &[
                 "expand",

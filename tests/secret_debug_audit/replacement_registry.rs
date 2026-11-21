@@ -143,6 +143,21 @@ pub(super) const CONTRACTS: &[(&str, &str, &str)] = &[
         "Appends a registered mechanism's PA-DATA to the request template in place; no credential value is replaced or dropped.",
     ),
     (
+        "src/client/stepwise/pkinit.rs::start",
+        "certificate_login_completes_with_the_freshness_token",
+        "Builds the first request from a clone of the request template with an empty PA-AS-FRESHNESS added to the clone; no credential slot or template field is replaced.",
+    ),
+    (
+        "src/client/stepwise/pkinit.rs::offer",
+        "certificate_login_completes_with_the_freshness_token",
+        "Builds the PA-PK-AS-REQ from a clone of the request template and fills the empty pkinit_pending slot with the ephemeral private value and nonce; nothing held is replaced (send moves the pending request into the next state), and the value's erasure relies on Zeroizing's Drop contract.",
+    ),
+    (
+        "src/client/stepwise/pkinit.rs::reply",
+        "anonymous_pkinit_yields_the_anonymous_principal",
+        "Takes the pending ephemeral value out of its slot and consumes it in the key agreement; the derived reply key is a local dropped after the AS-REP is decrypted, its erasure relying on EncryptionKey's Drop contract (ZeroizeOnDrop) and the Zeroizing shared secret's.",
+    ),
+    (
         "src/client/stepwise/spake.rs::offer",
         "spake_exchange_completes_with_the_strengthened_reply_key",
         "Reads a clone of the SPAKE policy and the preferred order from the options and hands the exchange to advance; no option, credential or template field is replaced, and the reply-key slot is filled only by advance, empty before.",
