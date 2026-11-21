@@ -221,6 +221,7 @@ mod tests {
             Location::File(fixture("missing.pem").display().to_string()),
             Location::File(fixture("gen.sh").display().to_string()),
             Location::Pkcs11("module_name=never".to_owned()),
+            Location::Environment("CARGO_MANIFEST_DIR".to_owned()),
         ] {
             let outcome = post(
                 &RustlsTransport::new(),

@@ -3,18 +3,22 @@
 //!
 //! `FILE:path` is a PEM file whose `CERTIFICATE` blocks are anchors; `DIR:path` is a
 //! directory whose files not starting with `.` are such PEM files, at least one of
-//! which must load; `ENV:name` names an environment variable whose value is a
-//! `FILE:` or `DIR:` location (read through the secure-environment guard, MIT
-//! `secure_getenv`). Reads are bounded in bytes per file and in files per directory.
+//! which must load. Reads are bounded in bytes per file and in files per directory.
+//! `ENV:name` is refused: the crate reads the environment only through its explicit
+//! `*_from_env` entry points, never inside a request, so the caller resolves the
+//! variable and passes `FILE:`/`DIR:` or [`RustlsTransport::with_pem_roots`]
+//! (MIT reads it with `secure_getenv`).
+//!
+//! [`RustlsTransport::with_pem_roots`]: super::RustlsTransport::with_pem_roots
 
-use std::{env, fs, io::Read as _, path::Path};
+use std::{fs, io::Read as _, path::Path};
 
 use rustls::{
     RootCertStore,
     pki_types::{CertificateDer, pem::PemObject as _},
 };
 
-use crate::{config::section_values::Location, error::KdcProxy as Error, secure_env};
+use crate::{config::section_values::Location, error::KdcProxy as Error};
 
 /// The largest anchor file read, in bytes.
 const MAX_FILE: u64 = 1024 * 1024;
@@ -121,30 +125,17 @@ fn directory(roots: &mut RootCertStore, path: &Path, anchor: &str) -> Result<(),
 ///
 /// # Errors
 ///
-/// Returns [`Error::Anchor`] for a location that does not load, an `ENV:` variable
-/// that is unset, empty, unreadable in a restricted process or names another `ENV:`,
-/// and a PKCS#11 or PKCS#12 location, which is no trust anchor.
+/// Returns [`Error::Anchor`] for a location that does not load, an `ENV:` location
+/// (no environment read happens inside a request), and a PKCS#11 or PKCS#12
+/// location, which is no trust anchor.
 pub(super) fn load(roots: &mut RootCertStore, location: &Location) -> Result<(), Error> {
     match location {
         Location::File(path) => file(roots, Path::new(path), &format!("FILE:{path}")),
         Location::Directory(path) => directory(roots, Path::new(path), &format!("DIR:{path}")),
-        Location::Environment(name) => {
-            let anchor = format!("ENV:{name}");
-            let value = secure_env::ambient(|| env::var_os(name))
-                .and_then(|value| value.into_string().ok())
-                .filter(|value| !value.is_empty())
-                .ok_or_else(|| refused(&anchor, "the variable is unset or not text"))?;
-            if let Some(path) = value.strip_prefix("FILE:") {
-                file(roots, Path::new(path), &anchor)
-            } else if let Some(path) = value.strip_prefix("DIR:") {
-                directory(roots, Path::new(path), &anchor)
-            } else {
-                Err(refused(
-                    &anchor,
-                    "the variable names no FILE: or DIR: location",
-                ))
-            }
-        }
+        Location::Environment(name) => Err(refused(
+            &format!("ENV:{name}"),
+            "an ENV: location is not read; resolve it and pass FILE:, DIR: or PEM roots",
+        )),
         Location::Pkcs12(_) | Location::Pkcs11(_) => Err(refused(
             "PKCS",
             "a PKCS#11 or PKCS#12 location is not a trust anchor",

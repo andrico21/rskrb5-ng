@@ -2361,7 +2361,7 @@ test_names = [
   "tests/interop_kkdcp/scenarios.rs::unrelated_ca_is_refused",
 ]
 feature_flags = ["kkdcp-rustls"]
-security_divergence = "`FILE:`, `DIR:` and `ENV:` anchors as MIT 1.22.2 `load_anchor` (`src/plugins/tls/k5tls/openssl.c:343-408`), read with bounds (1 MiB per file, 1,024 directory entries; `ENV:` through the secure-environment guard, as MIT's `secure_getenv`, and only to a `FILE:` or `DIR:` location); every request carries the realm's anchors to the KDC proxy transport, so a caller's transport receives them too. Stricter than MIT: an unset relation is not the system CA store; with no roots configured on the built-in transport the request fails with `KdcProxy::NoAnchors`, and a `PKCS11:` or `PKCS12:` value is refused."
+security_divergence = "`FILE:` and `DIR:` anchors as MIT 1.22.2 `load_anchor` (`src/plugins/tls/k5tls/openssl.c:391-400`), read with bounds (1 MiB per file, 1,024 directory entries); every request carries the realm's anchors to the KDC proxy transport, so a caller's transport receives them too, `ENV:` locations included. Stricter than MIT: an unset relation is not the system CA store; with no roots configured on the built-in transport the request fails with `KdcProxy::NoAnchors`; the built-in transport refuses an `ENV:` location (MIT reads it with `secure_getenv`, `openssl.c:401-405`) because the crate reads the environment only through explicit entry points, never inside a request (EXECUTOR decision, register FU-KDP-P05), and a `PKCS11:` or `PKCS12:` value is refused."
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 16

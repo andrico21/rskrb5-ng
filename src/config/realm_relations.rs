@@ -49,7 +49,7 @@ pub(crate) const REALM_RELATIONS: [(&str, &str, &str, &str, &str, &str); 28] = [
         "location list",
         "system CA set",
         "transport::proxy::Request::anchors",
-        "Effective: every KDC proxy request carries the realm's anchors; the built-in rustls transport trusts only them (FILE:, DIR:, ENV:) or its configured roots, and an unset relation with no roots is NoAnchors, never the system CA set",
+        "Effective: every KDC proxy request carries the realm's anchors; the built-in rustls transport trusts only them (FILE:, DIR:; ENV: is refused) or its configured roots, and an unset relation with no roots is NoAnchors, never the system CA set",
         "http_anchors",
     ),
     (
