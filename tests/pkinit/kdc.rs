@@ -97,6 +97,8 @@ pub(crate) enum Behaviour {
     MissingKx,
     /// A PA-PKINIT-KX key that is not the one the session key was made from.
     WrongKx,
+    /// An AS-REP to the first request, without any preauthentication.
+    NoPreauth,
 }
 
 /// `AlgorithmIdentifier`.
@@ -306,6 +308,15 @@ impl Kdc {
         let request: AsReq = rasn_der::decode(bytes)?;
         let padata = request.0.padata.clone().unwrap_or_default();
         let Some(pk) = padata.iter().find(|entry| entry.r#type == PA_PK_AS_REQ) else {
+            if self.behaviour == Behaviour::NoPreauth {
+                return as_rep(
+                    &request,
+                    &EncryptionKey::new(18, vec![0x33_u8; 32]),
+                    &EncryptionKey::new(18, vec![0x5a_u8; 32]),
+                    Vec::new(),
+                    Naming::Client,
+                );
+            }
             let mut offers = vec![
                 offer(PA_PK_AS_REQ, Vec::new()),
                 offer(PA_PKINIT_KX, Vec::new()),
@@ -437,7 +448,8 @@ impl Kdc {
             | Behaviour::WrongNonce
             | Behaviour::MalformedCms
             | Behaviour::MissingKx
-            | Behaviour::WrongKx => (fixture!("kdc.pem"), fixture!("kdc.key")),
+            | Behaviour::WrongKx
+            | Behaviour::NoPreauth => (fixture!("kdc.pem"), fixture!("kdc.key")),
         };
         let (_, cert_der) = pem::decode_vec(pem)?;
         let certificate = Certificate::from_der(&cert_der)?;

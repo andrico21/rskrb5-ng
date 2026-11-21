@@ -167,7 +167,7 @@ fn kdc_certificate_without_the_eku_is_accepted_under_none() -> Result<(), TestEr
 /// Malformed or forged KDC replies are rejected.
 #[test]
 fn rejections_of_the_kdc_reply() -> Result<(), TestError> {
-    let cases: [(Behaviour, Check); 5] = [
+    let cases: [(Behaviour, Check); 6] = [
         (Behaviour::WrongSan, |error| {
             matches!(error, Pkinit::KdcName { realm: _ })
         }),
@@ -194,6 +194,9 @@ fn rejections_of_the_kdc_reply() -> Result<(), TestError> {
                     reason: _
                 }
             )
+        }),
+        (Behaviour::NoPreauth, |error| {
+            matches!(error, Pkinit::Unexpected { reason: _ })
         }),
     ];
     for (behaviour, check) in cases {
