@@ -6,9 +6,10 @@ use std::io;
 use tokio::net::{ToSocketAddrs, lookup_host};
 
 use super::{
-    Error, KdcEndpoint, KdcProtocol, MAX_UDP_DATAGRAM, TcpFraming, Tokio, non_empty_kdc_response,
-    tcp_request_length, udp,
+    Config, Error, KdcEndpoint, KdcProtocol, MAX_UDP_DATAGRAM, TcpFraming, Tokio, events,
+    non_empty_kdc_response, proxied, tcp_request_length, udp,
 };
+use crate::trace::TransportStep;
 
 /// Try password endpoints only while delivery is definitely unattempted.
 ///
@@ -19,7 +20,7 @@ use super::{
 /// NOT cancel-safe: a delivered password request may already have committed.
 pub(super) async fn send_to_endpoints(
     transport: &Tokio,
-    realm: &str,
+    (config, realm): (&Config, &str),
     protocol: KdcProtocol,
     endpoints: Vec<KdcEndpoint>,
     request: &[u8],
@@ -29,17 +30,32 @@ pub(super) async fn send_to_endpoints(
         if let Some(expired) = transport.budget_exhausted() {
             return Err(expired);
         }
-        let result = transport
-            .send_password_once(
-                endpoint.protocol,
-                (endpoint.host.as_str(), endpoint.port),
-                request,
-            )
-            .await;
+        events::at(TransportStep::Sending, &endpoint, request.len());
+        let result = match &endpoint.proxy {
+            Some(url) => proxied::send_password(transport, (config, realm), url, request).await,
+            None => {
+                transport
+                    .send_password_once(
+                        endpoint.protocol,
+                        (endpoint.host.as_str(), endpoint.port),
+                        request,
+                    )
+                    .await
+            }
+        };
         match result {
-            Ok(response) => return Ok(response),
-            Err(error @ Error::KpasswdOutcomeUnknown(_)) => return Err(error),
-            Err(error) => failures.push(format!("{}: {error}", endpoint.authority())),
+            Ok(response) => {
+                events::at(TransportStep::Answered, &endpoint, response.len());
+                return Ok(response);
+            }
+            Err(error @ Error::KpasswdOutcomeUnknown(_)) => {
+                events::at(TransportStep::Unanswered, &endpoint, 0);
+                return Err(error);
+            }
+            Err(error) => {
+                events::at(TransportStep::Unanswered, &endpoint, 0);
+                failures.push(format!("{}: {error}", endpoint.target()));
+            }
         }
     }
     Err(Error::KdcEndpointFailures {
@@ -138,10 +154,11 @@ where
         });
     }
     let socket = transport.with_transport_timeout(udp::connect(addr)).await?;
+    let limit = udp::reply_limit(&socket, transport.udp_response_limit)?;
     let reply = transport
         .with_transport_timeout(async {
             let _: usize = socket.send(request).await?;
-            Ok::<_, Error>(udp::receive(&socket, transport.udp_response_limit).await)
+            Ok::<_, Error>(udp::receive(&socket, limit).await)
         })
         .await
         .map_err(|error| Error::KpasswdOutcomeUnknown(Box::new(error)))?;
@@ -180,7 +197,9 @@ fn is_udp_refusal(error: &Error) -> bool {
 mod tests {
     use core::error::Error as StdError;
 
-    use super::{Error, KdcEndpoint, KdcProtocol, Tokio, io, is_udp_refusal, send_to_endpoints};
+    use super::{
+        Config, Error, KdcEndpoint, KdcProtocol, Tokio, io, is_udp_refusal, send_to_endpoints,
+    };
     use crate::client::transport::closed_port_tests::reserve_closed_tcp_port;
 
     /// Every pre-delivery failure identifies the endpoint that failed.
@@ -196,9 +215,10 @@ mod tests {
             .map(|address| KdcEndpoint::configured(KdcProtocol::Tcp, address))
             .collect::<Result<Vec<_>, _>>()?;
         // When failover exhausts both without sending a mutation.
+        let config = Config::parse("")?;
         let outcome = send_to_endpoints(
             &Tokio::new(),
-            "TEST.GOKRB5",
+            (&config, "TEST.GOKRB5"),
             KdcProtocol::Tcp,
             endpoints,
             b"request",

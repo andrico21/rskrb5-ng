@@ -54,6 +54,10 @@ mod tests {
                     realm.relations.get("sitename"),
                     Some(&Value::Text((*input).to_owned()))
                 ),
+                ("http_anchors", "locations") => assert!(matches!(
+                    realm.relations.get("http_anchors"),
+                    Some(Value::Locations(locations)) if locations.len() == 1
+                )),
                 _ => return Err(format!("unreviewed effective relation {name}").into()),
             }
             for parsed in [&config, &strict] {
@@ -72,6 +76,7 @@ mod tests {
         )+};
     }
     effective_cases! {
+        http_anchors, "locations", ["FILE:/ca", "DIR:/ca", "ENV:CA_BUNDLE"];
         master_kdc, "list", ["master.example", "other.example:88"];
         primary_kdc, "list", ["primary.example", "other.example:88"];
         sitename, "text", ["Site-A", "Site-B"];
@@ -88,7 +93,6 @@ mod tests {
     cases! {
         auth_to_local, "list", ["DEFAULT", "RULE:[1:$1](.*)s/a/b/"];
         default_domain, "text", ["example.test", "other.test"];
-        http_anchors, "locations", ["FILE:/ca", "DIR:/ca", "ENV:CA_BUNDLE"];
         pkinit_anchors, "locations", ["FILE:/ca", "DIR:/ca"];
         pkinit_cert_match, "list", ["<SUBJECT>.*", "&&<EKU>msScLogin,clientAuth<KU>digitalSignature"];
         pkinit_eku_checking, "choice", ["kpKDC", "kpServerAuth", "none"];

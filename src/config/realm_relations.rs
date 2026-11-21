@@ -48,8 +48,8 @@ pub(crate) const REALM_RELATIONS: [(&str, &str, &str, &str, &str, &str); 28] = [
         "http_anchors",
         "location list",
         "system CA set",
-        "plan 2 WP-10",
-        "No HTTPS proxy connection exists; trust restrictions cannot be bypassed; diagnostic",
+        "transport::proxy::Request::anchors",
+        "Effective: every KDC proxy request carries the realm's anchors; the built-in rustls transport trusts only them (FILE:, DIR:; ENV: is refused) or its configured roots, and an unset relation with no roots is NoAnchors, never the system CA set",
         "http_anchors",
     ),
     (
@@ -57,7 +57,7 @@ pub(crate) const REALM_RELATIONS: [(&str, &str, &str, &str, &str, &str); 28] = [
         "endpoint list",
         "DNS discovery when enabled",
         "Config::configured_kdcs; transport::Tokio::discover_kdcs",
-        "Existing network endpoint consumer; Unix sockets/proxies remain WP-10",
+        "Effective network endpoint consumer; https:// entries go through the MS-KKDCP KDC proxy; Unix sockets are not supported",
         "kdc",
     ),
     (
@@ -65,7 +65,7 @@ pub(crate) const REALM_RELATIONS: [(&str, &str, &str, &str, &str, &str); 28] = [
         "endpoint list",
         "DNS then admin_server port 464",
         "Config::configured_kpasswd_servers",
-        "Effective configured password endpoint selection",
+        "Effective configured password endpoint selection; https:// entries go through the MS-KKDCP KDC proxy with outcome-unknown kept",
         "kpasswd_server",
     ),
     (

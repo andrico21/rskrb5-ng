@@ -44,6 +44,20 @@ maintained replacement is adopted (plan 2), at the latest with the next rasn \
 upgrade, and remove this entry together with the equal one in .cargo/audit.toml.\
 """
 
+[[advisories.ignore]]
+id = "RUSTSEC-2024-0436"
+reason = """\
+RUSTSEC-2024-0436 (2024-10-07) is an INFO advisory of type unmaintained against \
+paste, all versions (locked: 1.0.15): a maintenance notice, not a vulnerability. \
+paste is a proc macro that rustls-rustcrypto 0.1.0-pre.0 (the kkdcp-rustls leaf, \
+optional, never in the default build) uses at compile time to concatenate \
+identifiers in its cipher-suite and verifier macros; it ships no code into the \
+crate and parses no input at run time. No maintained release exists (the \
+advisory names pastey and with_builtin_macros as alternatives); remove this \
+entry, and the equal one in .cargo/audit.toml, when rustls-rustcrypto drops \
+paste. Admission record: docs/dependency-admission.md#rustls-rustcrypto.\
+"""
+
 [licenses]
 confidence-threshold = 0.93
 # Exactly the subset of the core sample and rmcp-server-kit's list that this
@@ -51,7 +65,7 @@ confidence-threshold = 0.93
 # Dev-only dependencies are outside the license check (cargo-deny's
 # `include-dev` default), so axum's matchit (`MIT AND BSD-3-Clause`) adds nothing.
 # BSD-3-Clause is the licence of `keyutils-raw` (docs/dependency-admission.md#keyutils-raw).
-allow = ["MIT", "Apache-2.0", "BSD-3-Clause", "Unicode-3.0"]
+allow = ["MIT", "Apache-2.0", "BSD-3-Clause", "ISC", "Unicode-3.0"]
 
 [bans]
 multiple-versions = "deny"   # unavoidable duplicates go into `skip`, each with a reason

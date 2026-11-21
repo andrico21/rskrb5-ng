@@ -249,6 +249,9 @@ mod tests {
         if identity.starts_with("src/service") || identity.starts_with("src/preauth") {
             return cfg!(feature = "messages");
         }
+        if identity.starts_with("src/transport") {
+            return cfg!(feature = "messages");
+        }
         if identity.starts_with("src/http.rs") {
             return cfg!(feature = "http")
                 && (!identity.contains("TowerError")
@@ -1289,6 +1292,7 @@ mod tests {
         "src/preauth/encrypted_challenge.rs::EncryptedChallenge",
         "src/preauth/spake.rs::Message",
         "src/preauth/spake.rs::Step",
+        "src/transport/kkdcp.rs::ProxyMessage",
         "src/client/password.rs::Secret",
         "src/client/kpasswd.rs::BuiltKpasswdRequest",
         "src/client/kpasswd.rs::VerifiedKpasswdApRep",

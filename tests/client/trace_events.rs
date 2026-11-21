@@ -218,7 +218,16 @@ mod tests {
         .with_trace(guard);
         let _session = client.login().await?;
         task.await??;
-        assert_eq!(names(&sink), ["exchange-started", "completed"]);
+        assert_eq!(
+            names(&sink),
+            [
+                "exchange-started",
+                "transport",
+                "transport",
+                "transport",
+                "completed"
+            ]
+        );
         let (second_guard, second_sink) = captured();
         let mut expired = sample_tgt_session()?;
         expired.set_end_time(timestamp(1_000)?);
@@ -234,6 +243,82 @@ mod tests {
             "{failure:?}"
         );
         assert_eq!(names(&second_sink), ["exchange-started", "failed"]);
+        Ok(())
+    }
+
+    /// The transport traces where a login's request went (FU-TRC-P01).
+    ///
+    /// The realm's endpoints, the send and the answer are traced with sizes only, and
+    /// the endpoint and realm are withheld unless the guard allows identities.
+    #[tokio::test]
+    async fn tokio_client_traces_transport_steps_without_secrets() -> Result<(), TestError> {
+        for identities in [true, false] {
+            // Given a KDC on a loopback stream and a guard over a capture sink.
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let address = listener.local_addr()?;
+            let task = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await?;
+                let size = stream.read_u32().await?;
+                let mut bytes = vec![0; usize::try_from(size)?];
+                let _read = stream.read_exact(&mut bytes).await?;
+                let built = built_request_from_der(der::decode(&bytes)?, &bytes)?;
+                let reply = synthetic_as_rep_with_reply_key(
+                    &built,
+                    built.nonce(),
+                    built.service(),
+                    &reply_key()?,
+                )?;
+                stream.write_u32(u32::try_from(reply.len())?).await?;
+                stream.write_all(&reply).await?;
+                Ok::<(u32, usize), TestError>((size, reply.len()))
+            });
+            let sink = Memory::new();
+            let guard = Guard::new(sink.clone(), Options::new().with_identities(identities));
+            let mut client = Tokio::from_tgt_session(
+                config_with_kdc_server(&address.to_string())?,
+                KdcProtocol::Tcp,
+                sample_tgt_session()?,
+            )
+            .with_keytab_credential(keytab_with_reply_key(3)?)
+            .with_trace(guard);
+            // When the client logs in.
+            let session = client.login().await?.clone();
+            let (sent, answered) = task.await??;
+            // Then the transport steps sit between the exchange's start and its end.
+            let (endpoint, realm) = if identities {
+                (address.to_string(), "TEST.GOKRB5".to_owned())
+            } else {
+                ("-".to_owned(), "-".to_owned())
+            };
+            assert_eq!(
+                sink.lines(),
+                [
+                    sink.lines().first().cloned().unwrap_or_default(),
+                    format!("transport step=located wire=tcp target={realm} size=1"),
+                    format!("transport step=sending wire=tcp target={endpoint} size={sent}"),
+                    format!("transport step=answered wire=tcp target={endpoint} size={answered}"),
+                    sink.lines().last().cloned().unwrap_or_default(),
+                ]
+            );
+            assert_eq!(
+                names(&sink),
+                [
+                    "exchange-started",
+                    "transport",
+                    "transport",
+                    "transport",
+                    "completed"
+                ]
+            );
+            let text = sink.lines().join("\n");
+            for secret in [
+                hex_encode(session.session_key().value())?,
+                hex_encode(session.ticket())?,
+                hex_encode(reply_key()?.value())?,
+            ] {
+                assert!(!text.contains(&secret), "{secret} reached the sink");
+            }
+        }
         Ok(())
     }
 }

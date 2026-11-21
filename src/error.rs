@@ -1,7 +1,7 @@
 //! Typed errors grouped by Kerberos domain.
 use core::str::Utf8Error;
 #[cfg(feature = "messages")]
-use core::time::Duration;
+use core::{error::Error as StdError, time::Duration};
 #[cfg(feature = "messages")]
 use std::time::SystemTime;
 use std::{env, io, path::PathBuf, time::SystemTimeError};
@@ -687,6 +687,9 @@ pub enum Client {
     /// are not enumerated: configure `extra_addresses`.
     #[error("noaddresses = false requires extra_addresses; interface addresses are not enumerated")]
     NoRequestAddresses,
+    /// The MS-KKDCP KDC proxy failed.
+    #[error("the KDC proxy failed: {0}")]
+    KdcProxy(#[from] KdcProxy),
 }
 /// Configuration parsing error.
 #[derive(Debug, thiserror::Error)]
@@ -1537,6 +1540,74 @@ pub enum Kcm {
     /// A KCM transport is installed already: the first installation wins.
     #[error("a KCM transport is installed already")]
     TransportInstalled,
+}
+
+#[cfg(feature = "messages")]
+/// MS-KKDCP KDC proxy failures (`transport::kkdcp`, `transport::proxy`).
+///
+/// A KDC proxy transport reports a failure before the request could reach the
+/// proxy as [`Self::NotDelivered`] and any later one as [`Self::MaybeDelivered`]
+/// (or one of the response variants), so a password change through the proxy
+/// keeps its outcome-unknown classification.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum KdcProxy {
+    /// The realm names an `https://` server and no KDC proxy transport is
+    /// available: none was set and the `kkdcp-rustls` feature is not compiled in.
+    #[error("no KDC proxy transport is available for {url}")]
+    Unavailable {
+        /// The proxy URL.
+        url: String,
+    },
+    /// A configured `https://` server is not a URL this crate sends to.
+    #[error("invalid KDC proxy URL: {reason}")]
+    InvalidUrl {
+        /// What is wrong, without the URL text.
+        reason: &'static str,
+    },
+    /// A KDC-PROXY-MESSAGE does not decode, or its framing is wrong.
+    #[error("malformed KDC-PROXY-MESSAGE: {reason}")]
+    Malformed {
+        /// What is wrong, without message bytes.
+        reason: &'static str,
+    },
+    /// A message or a proxy response is longer than its bound.
+    #[error("KDC proxy message of {actual} bytes exceeds {limit}")]
+    TooLarge {
+        /// The length seen, or the bound plus one when the length is unknown.
+        actual: usize,
+        /// The bound.
+        limit: usize,
+    },
+    /// The realm sets no `http_anchors` and the transport has no configured
+    /// roots: there is no implicit trust store.
+    #[error("no trust anchors for the KDC proxy of realm {realm}")]
+    NoAnchors {
+        /// The realm.
+        realm: String,
+    },
+    /// An `http_anchors` value cannot be loaded.
+    #[error("cannot load KDC proxy trust anchor {anchor}: {reason}")]
+    Anchor {
+        /// The anchor value as configured.
+        anchor: String,
+        /// What is wrong.
+        reason: &'static str,
+    },
+    /// The proxy answered with an HTTP status other than 200; a redirect is
+    /// never followed.
+    #[error("the KDC proxy answered HTTP status {status}")]
+    Status {
+        /// The HTTP status code.
+        status: u16,
+    },
+    /// The request failed before any byte of it could reach the proxy (name
+    /// resolution, connect, TLS handshake or certificate verification).
+    #[error("the KDC proxy request was not delivered")]
+    NotDelivered(#[source] Box<dyn StdError + Send + Sync>),
+    /// The request failed after it may have reached the proxy.
+    #[error("the KDC proxy request may have been delivered")]
+    MaybeDelivered(#[source] Box<dyn StdError + Send + Sync>),
 }
 
 #[cfg(feature = "messages")]

@@ -86,6 +86,7 @@ pub(crate) async fn resolve(
             host,
             port,
             source: KdcEndpointSource::DnsSrv,
+            proxy: None,
         }));
     }
     Ok(Resolved {

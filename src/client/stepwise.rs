@@ -49,7 +49,7 @@ use crate::{
 mod init;
 /// Request options and their profile defaults.
 #[path = "stepwise/options.rs"]
-mod options;
+pub(super) mod options;
 /// MIT's `preferred_preauth_types` ordering.
 #[path = "stepwise/order.rs"]
 mod order;
