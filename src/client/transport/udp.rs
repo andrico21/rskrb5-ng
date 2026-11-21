@@ -254,13 +254,11 @@ mod tests {
 
     /// Each family's maximum is the default limit, and one byte more is refused.
     #[test]
-    fn family_maxima_bound_the_default_limit() {
-        use core::net::{Ipv4Addr, Ipv6Addr};
-
+    fn family_maxima_bound_the_default_limit() -> Result<(), Box<dyn StdError>> {
         let families = [
-            (IpAddr::V4(Ipv4Addr::LOCALHOST), 65_507),
-            (IpAddr::V6(Ipv6Addr::LOCALHOST), 0xFFF7),
-            (IpAddr::V6(Ipv4Addr::LOCALHOST.to_ipv6_mapped()), 65_507),
+            ("127.0.0.1".parse::<IpAddr>()?, 65_507),
+            ("::1".parse::<IpAddr>()?, 0xFFF7),
+            ("::ffff:127.0.0.1".parse::<IpAddr>()?, 65_507),
         ];
         for (ip, maximum) in families {
             let limit = super::family_maximum(ip);
@@ -277,6 +275,7 @@ mod tests {
                 "{ip}: one byte over the maximum is refused"
             );
         }
+        Ok(())
     }
 
     /// An IPv4 KDC reply of 65,507 bytes, the IPv4 maximum, is accepted.

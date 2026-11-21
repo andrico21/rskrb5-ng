@@ -47,6 +47,7 @@ mod dns_literal_tests;
     reason = "test code is not rendered API documentation"
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "transport/tests/encts.rs"]
 mod encts_tests;
 /// Trace events of the transport.
 mod events;
@@ -72,6 +73,7 @@ mod proxied;
     reason = "test code is not rendered API documentation"
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "transport/tests/proxy.rs"]
 mod proxy_tests;
 /// Configured realm protocol preference.
 mod realm_auto;

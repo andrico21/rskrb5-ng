@@ -106,12 +106,18 @@ fn reply_bytes_are_bounded_and_complete() -> Result<(), Box<dyn StdError>> {
     Ok(())
 }
 
-/// A request longer than the bound is refused before it is framed.
+/// A request at the bound is framed, and one byte longer is refused before it is.
 #[test]
-fn request_is_bounded() {
+fn request_is_bounded() -> Result<(), Box<dyn StdError>> {
+    let framed = encode_request(&vec![0x6a; MAX_MESSAGE], "R")?;
+    assert!(
+        framed.len() > MAX_MESSAGE,
+        "the framing adds its mark and fields"
+    );
     let request = vec![0; MAX_MESSAGE.saturating_add(1)];
     assert!(matches!(
         encode_request(&request, "R"),
         Err(Error::TooLarge { actual, limit: MAX_MESSAGE }) if actual == request.len()
     ));
+    Ok(())
 }

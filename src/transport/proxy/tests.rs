@@ -79,7 +79,9 @@ fn other_entries_are_not_proxy_urls() -> Result<(), Box<dyn StdError>> {
 /// User information, queries or fragments before the path, request-line bytes in the
 /// path, zone ids, bad ports and overlong URLs are refused.
 #[test]
-fn unsafe_urls_are_refused() {
+fn unsafe_urls_are_refused() -> Result<(), Box<dyn StdError>> {
+    let plain = Url::parse("https://kdc.example.com/KdcProxy")?.ok_or("not a proxy URL")?;
+    assert_eq!(plain.host(), "kdc.example.com", "the safe form parses");
     let long = format!("https://kdc.example.com/{}", "a".repeat(2048));
     for value in [
         "https://",
@@ -108,4 +110,5 @@ fn unsafe_urls_are_refused() {
             "{value:?}: {outcome:?}"
         );
     }
+    Ok(())
 }
