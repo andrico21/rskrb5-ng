@@ -549,3 +549,56 @@ interop_check_alive() {
   done
   return "$status"
 }
+
+# ------------------------------------------------ protocol-level liveness --
+# FU-IOP-P21 (plan 2 todo 10). interop_check_alive proves a container still
+# runs; a daemon that stays up and stops answering passes it. After it, `all`
+# calls interop_check_protocols: every registered fixture that serves a protocol
+# and has an `interop_probe_<id>` function (id = the fixture name with '-'
+# replaced by '_') must give one real protocol answer, or the run fails naming
+# the fixture. Probes: radius (an Access-Request accepted and one rejected, the
+# fixture's own selfcheck), mit-kdc (an AS-REQ answered by a KRB-ERROR), kcm (a
+# KCM GET_DEFAULT_CACHE request over the socket) and kdcproxy (an MS-KKDCP
+# AS-REQ relayed over HTTPS, scripts/interop/probe.py). A fixture without a probe
+# function is checked by interop_check_alive only.
+
+# interop_probe_radius: radiusd answers an Access-Request in its container.
+interop_probe_radius() {
+  local container out
+  container="$(interop_container_name radius)"
+  out="$(interop_rt exec "$container" /opt/interop/radius/selfcheck.sh 2>&1)" ||
+    interop_die "fixture radius (container $container) is running but radiusd answers no Access-Request: $(tail -n 2 <<<"$out" | tr '\n' ' ')" || return 1
+}
+
+# interop_probe_mit_kdc: the KDC answers an AS-REQ over TCP with a Kerberos reply.
+interop_probe_mit_kdc() {
+  local out
+  out="$(python3 "$INTEROP_ROOT/scripts/interop/probe.py" kdc "${INTEROP_MIT_KDC:?}" "${INTEROP_MIT_REALM:?}" 2>&1)" ||
+    interop_die "fixture mit-kdc (container $(interop_container_name mit-kdc)) is running but gives no Kerberos answer: $out" || return 1
+}
+
+# interop_probe_kcm: sssd_kcm answers a protocol request on its socket.
+interop_probe_kcm() {
+  local out
+  out="$(net_kcm_host_probe "${INTEROP_KCM_SOCKET:?}" 2>&1)" && [[ "$out" == *"GET_DEFAULT_CACHE status 0 "* ]] ||
+    interop_die "fixture kcm (container $(interop_container_name kcm)) is running but the daemon gives no KCM answer: $out" || return 1
+}
+
+# interop_probe_kdcproxy: the proxy relays an AS-REQ to the KDC over HTTPS.
+interop_probe_kdcproxy() {
+  local out
+  out="$(python3 "$INTEROP_ROOT/scripts/interop/probe.py" kdcproxy "${INTEROP_KDCPROXY_URL:?}" "${INTEROP_KDCPROXY_CA:?}" "${INTEROP_KDCPROXY_REALM:?}" 2>&1)" ||
+    interop_die "fixture kdcproxy (container $(interop_container_name kdcproxy)) is running but relays no KDC answer: $out" || return 1
+}
+
+# interop_check_protocols: runs the probe of every registered fixture that has
+# one and fails, naming each fixture, unless every probe answered.
+interop_check_protocols() {
+  local fixture probe status=0
+  for fixture in "${INTEROP_FIXTURES[@]}"; do
+    probe="interop_probe_${fixture//-/_}"
+    declare -F "$probe" >/dev/null || continue
+    "$probe" || status=1
+  done
+  return "$status"
+}

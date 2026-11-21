@@ -40,7 +40,7 @@ pub(in super::super) struct Pending {
 /// Returns [`Otp::ArmorRequired`].
 pub(super) fn require_armor(engine: &InitCreds<'_>) -> Result<(), Error> {
     if engine.otp.is_some() && engine.armor.is_none() {
-        return Err(Otp::ArmorRequired.into());
+        return Err(Error::Otp(Otp::ArmorRequired));
     }
     Ok(())
 }
@@ -54,7 +54,7 @@ fn armor_key(engine: &InitCreds<'_>) -> Result<EncryptionKey, Error> {
         .armor
         .as_ref()
         .and_then(|armor| armor.armor_key().cloned())
-        .ok_or_else(|| Otp::ArmorRequired.into())
+        .ok_or(Error::Otp(Otp::ArmorRequired))
 }
 
 /// Whether the caller's `preferred_preauth_types` leave OTP first among the offers.
