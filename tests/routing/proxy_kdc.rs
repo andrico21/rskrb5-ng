@@ -41,6 +41,15 @@ const S_PRINCIPAL_UNKNOWN: i32 = 7;
 /// `KDC_ERR_BADOPTION`.
 const BADOPTION: i32 = 13;
 
+/// What the KDC issues: the ticket's principal, its client, the key that seals
+/// it instead of the service's own, and the reply padata.
+type Issue = (
+    Principal,
+    Principal,
+    Option<EncryptionKey>,
+    Option<Vec<rasn_kerberos::PaData>>,
+);
+
 /// One issued ticket: its ciphertext, client and session key.
 struct Issued {
     /// The ticket's `enc-part` ciphertext, which identifies it.
@@ -265,100 +274,129 @@ impl Kdc {
                 .try_into()?,
         );
         let s4u = padata.iter().find(|entry| entry.r#type == PA_S4U_X509_USER);
-        let (issued_for, client, seal, reply_padata) = if let Some(element) = s4u {
-            let user_id = PaS4uX509User::decode_der(&element.value)?.user_id;
-            let user = match &user_id.cname {
-                Some(cname) => principal(&user_id.crealm, cname)?,
-                None => self
-                    .state()
-                    .certificate_user
-                    .clone()
-                    .ok_or("no certificate user")?,
-            };
-            let issued_for = if requested.name_type == 10_i32 {
-                let (_, home) = requested
-                    .components
-                    .first()
-                    .and_then(|name| name.split_once('@'))
-                    .ok_or("enterprise")?;
-                if !self.trusted(realm, home) {
-                    return error(realm, &requested, S_PRINCIPAL_UNKNOWN);
-                }
-                Principal::new(realm, 2, ["krbtgt", home])
-            } else {
-                requested
-            };
-            let reply = UserId::new(user_id.nonce, Some(name(&user)?), text(&user.realm)?, None);
-            let answer = PaS4uX509User::sign(reply, &header_key, REPLY_USAGE)?;
-            (
-                issued_for,
+        let second = body.additional_tickets.as_deref().and_then(<[_]>::first);
+        let decision = if let Some(element) = s4u {
+            self.s4u2self(realm, requested.clone(), (&element.value, &header_key))?
+        } else if options & 0x0002_0000 != 0 {
+            self.s4u2proxy(
+                realm,
+                requested.clone(),
+                (second.ok_or("evidence")?, &header_client),
+            )?
+        } else if options & 0x0000_0008 != 0 {
+            let (_, second_key) = self.lookup(second.ok_or("second ticket")?)?;
+            Ok((requested.clone(), header_client, Some(second_key), None))
+        } else if self.issues(realm, &requested) {
+            Ok((requested.clone(), header_client, None, None))
+        } else {
+            Err(S_PRINCIPAL_UNKNOWN)
+        };
+        match decision {
+            Ok(issue) => self.tgs_rep(body, (options, &header_key), issue),
+            Err(code) => error(realm, &requested, code),
+        }
+    }
+
+    /// Whether the KDC of `realm` issues a plain ticket for `requested`: a
+    /// cross-realm TGT along a trust, or a known service.
+    fn issues(&self, realm: &str, requested: &Principal) -> bool {
+        match requested.components.as_slice() {
+            [first, to] if first == "krbtgt" => self.trusted(realm, to),
+            _ => self.state().services.iter().any(|(service, _)| {
+                service.realm == requested.realm && service.components == requested.components
+            }),
+        }
+    }
+
+    /// An `S4U2Self` request: the user the KDC names (from the request or the
+    /// certificate), a referral to the service's realm for an enterprise name,
+    /// and the checksummed `PA-S4U-X509-USER` answer.
+    fn s4u2self(
+        &self,
+        realm: &str,
+        requested: Principal,
+        element: (&[u8], &EncryptionKey),
+    ) -> Result<Result<Issue, i32>, TestError> {
+        let user_id = PaS4uX509User::decode_der(element.0)?.user_id;
+        let user = match &user_id.cname {
+            Some(cname) => principal(&user_id.crealm, cname)?,
+            None => self
+                .state()
+                .certificate_user
+                .clone()
+                .ok_or("no certificate user")?,
+        };
+        let issued_for = if requested.name_type == 10_i32 {
+            let (_, home) = requested
+                .components
+                .first()
+                .and_then(|enterprise| enterprise.split_once('@'))
+                .ok_or("enterprise")?;
+            if !self.trusted(realm, home) {
+                return Ok(Err(S_PRINCIPAL_UNKNOWN));
+            }
+            Principal::new(realm, 2, ["krbtgt", home])
+        } else {
+            requested
+        };
+        let reply = UserId::new(user_id.nonce, Some(name(&user)?), text(&user.realm)?, None);
+        let answer = PaS4uX509User::sign(reply, element.1, REPLY_USAGE)?;
+        Ok(Ok((
+            issued_for,
+            user,
+            None,
+            Some(vec![rasn_kerberos::PaData {
+                r#type: PA_S4U_X509_USER,
+                value: der::encode(&answer)?.into(),
+            }]),
+        )))
+    }
+
+    /// An `S4U2Proxy` request: a proxy TGT to the target's realm when the
+    /// target lives elsewhere, else the delegated ticket when the target trusts
+    /// the service.
+    fn s4u2proxy(
+        &self,
+        realm: &str,
+        requested: Principal,
+        tickets: (&rasn_kerberos::Ticket, &Principal),
+    ) -> Result<Result<Issue, i32>, TestError> {
+        let (user, _) = self.lookup(tickets.0)?;
+        let elsewhere = self
+            .state()
+            .services
+            .iter()
+            .find(|(service, _)| {
+                service.components == requested.components && service.realm != realm
+            })
+            .map(|(service, _)| service.realm.clone());
+        if let Some(target) = elsewhere.filter(|_| requested.realm == realm) {
+            return Ok(Ok((
+                Principal::new(realm, 2, ["krbtgt", target.as_str()]),
                 user,
                 None,
-                Some(vec![rasn_kerberos::PaData {
-                    r#type: PA_S4U_X509_USER,
-                    value: der::encode(&answer)?.into(),
-                }]),
-            )
-        } else if options & 0x0002_0000 != 0 {
-            let evidence = body
-                .additional_tickets
-                .as_deref()
-                .and_then(<[_]>::first)
-                .ok_or("evidence")?;
-            let (user, _) = self.lookup(evidence)?;
-            if requested.realm == realm
-                && self.state().services.iter().any(|(service, _)| {
-                    service.components == requested.components && service.realm != realm
-                })
-            {
-                let target = self
-                    .state()
-                    .services
-                    .iter()
-                    .find(|(service, _)| service.components == requested.components)
-                    .map(|(service, _)| service.realm.clone())
-                    .ok_or("target")?;
-                (
-                    Principal::new(realm, 2, ["krbtgt", target.as_str()]),
-                    user,
-                    None,
-                    None,
-                )
-            } else {
-                let allowed = self.state().delegations.iter().any(|(service, target)| {
-                    service.components == header_client.components
-                        && target.components == requested.components
-                });
-                if !allowed {
-                    return error(realm, &requested, BADOPTION);
-                }
-                (requested, user, None, None)
-            }
-        } else if options & 0x0000_0008 != 0 {
-            let second = body
-                .additional_tickets
-                .as_deref()
-                .and_then(<[_]>::first)
-                .ok_or("second ticket")?;
-            let (_, second_key) = self.lookup(second)?;
-            (requested, header_client, Some(second_key), None)
-        } else if requested
-            .components
-            .first()
-            .is_some_and(|first| first == "krbtgt")
-        {
-            let to = requested.components.get(1).ok_or("krbtgt realm")?.clone();
-            if !self.trusted(realm, &to) {
-                return error(realm, &requested, S_PRINCIPAL_UNKNOWN);
-            }
-            (requested, header_client, None, None)
-        } else if self.state().services.iter().any(|(service, _)| {
-            service.realm == requested.realm && service.components == requested.components
-        }) {
-            (requested, header_client, None, None)
+                None,
+            )));
+        }
+        let allowed = self.state().delegations.iter().any(|(service, target)| {
+            service.components == tickets.1.components && target.components == requested.components
+        });
+        Ok(if allowed {
+            Ok((requested, user, None, None))
         } else {
-            return error(realm, &requested, S_PRINCIPAL_UNKNOWN);
-        };
+            Err(BADOPTION)
+        })
+    }
+
+    /// The TGS-REP issuing `issue` for the request `body`, sealed in the header key.
+    fn tgs_rep(
+        &self,
+        body: &rasn_kerberos::KdcReqBody,
+        header: (u32, &EncryptionKey),
+        issue: Issue,
+    ) -> Result<Vec<u8>, TestError> {
+        let (issued_for, client, seal, reply_padata) = issue;
+        let (options, header_key) = header;
         let (ticket, key) = self.issue(&issued_for, &client, seal.as_ref())?;
         let now = time(SystemTime::now())?;
         let part = rasn_kerberos::EncTgsRepPart(rasn_kerberos::EncKdcRepPart {

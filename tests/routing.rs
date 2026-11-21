@@ -93,8 +93,7 @@ mod referrals;
 #[expect(
     clippy::missing_errors_doc,
     clippy::too_long_first_doc_paragraph,
-    clippy::too_many_lines,
-    reason = "test code is not rendered API documentation; the fake KDC answers every request kind in one match"
+    reason = "test code is not rendered API documentation"
 )]
 #[path = "routing/proxy_kdc.rs"]
 mod proxy_kdc;

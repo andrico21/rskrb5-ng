@@ -322,59 +322,68 @@ fn unchecked_cross_realm_ticket_is_validated_with_capaths() -> Result<(), Box<dy
                 0,
                 "the KDC left TRANSITED-POLICY-CHECKED unset"
             );
-            let keytab_path = harness::var("INTEROP_MIT_HTTP_KEYTAB")?;
-            let keytab = Keytab::load(&keytab_path)?;
-            let listed = format!("[capaths]\n {other} = {{\n  {test} = .\n }}\n");
-            let unlisted = format!("[capaths]\n {test} = {{\n  {other} = .\n }}\n");
-            for (case, policy) in [
-                ("no transit policy", None),
-                (
-                    "an unrelated [capaths] pair",
-                    Some(CapathsTransit::from_config(&three_realms(&unlisted)?).configured_only()),
-                ),
-            ] {
-                let header =
-                    spnego::init_sec_context(&ticket, spnego::InitiatorContextOptions::new())?;
-                let mut acceptor = Validator::new(&keytab).with_now(SystemTime::now());
-                if let Some(validator) = policy {
-                    acceptor = acceptor.with_transit_validator(Arc::new(validator));
-                }
-                let refused = spnego::accept_sec_context_header(&mut acceptor, header.header_ref());
-                assert!(
-                    matches!(&refused, Err(error) if error.to_string().contains("transit")),
-                    "{case}: expected the transit refusal, got {:?}",
-                    refused.as_ref().map(|_| ()).map_err(ToString::to_string)
-                );
-            }
-            let header = spnego::init_sec_context(&ticket, spnego::InitiatorContextOptions::new())?;
-            let mut routed = Validator::new(&keytab)
-                .with_now(SystemTime::now())
-                .with_transit_validator(Arc::new(
-                    CapathsTransit::from_config(&three_realms(&listed)?).configured_only(),
-                ));
-            let accepted = spnego::accept_sec_context_header(&mut routed, header.header_ref())?;
-            assert_eq!(
-                accepted.ap_req().client().realm,
-                other,
-                "the TEST acceptor sees the OTHER user"
-            );
-            let profile = three_realms(&format!(
-                "[libdefaults]\n default_keytab_name = FILE:{keytab_path}\n{listed}"
-            ))?;
-            let profiled_header =
-                spnego::init_sec_context(&ticket, spnego::InitiatorContextOptions::new())?;
-            let mut configured =
-                Validator::from_default_keytab_name(&profile)?.with_now(SystemTime::now());
-            let admitted =
-                spnego::accept_sec_context_header(&mut configured, profiled_header.header_ref())?;
-            assert_eq!(
-                admitted.ap_req().client().realm,
-                other,
-                "the profile-driven acceptor admits it"
-            );
+            assert_acceptor_validates_transit(&ticket, &test, &other)?;
             Ok::<_, Box<dyn Error>>(())
         })
         .map_err(shown)
+}
+
+/// The TEST acceptor refuses the unchecked OTHER ticket without a policy and
+/// with an unrelated `[capaths]` pair, and admits it with the listed direct
+/// route, both through `CapathsTransit` and the profile-driven acceptor.
+fn assert_acceptor_validates_transit(
+    ticket: &TgsRepSession,
+    test: &str,
+    other: &str,
+) -> Result<(), Box<dyn Error>> {
+    let keytab_path = harness::var("INTEROP_MIT_HTTP_KEYTAB")?;
+    let keytab = Keytab::load(&keytab_path)?;
+    let listed = format!("[capaths]\n {other} = {{\n  {test} = .\n }}\n");
+    let unlisted = format!("[capaths]\n {test} = {{\n  {other} = .\n }}\n");
+    for (case, policy) in [
+        ("no transit policy", None),
+        (
+            "an unrelated [capaths] pair",
+            Some(CapathsTransit::from_config(&three_realms(&unlisted)?).configured_only()),
+        ),
+    ] {
+        let header = spnego::init_sec_context(ticket, spnego::InitiatorContextOptions::new())?;
+        let mut acceptor = Validator::new(&keytab).with_now(SystemTime::now());
+        if let Some(validator) = policy {
+            acceptor = acceptor.with_transit_validator(Arc::new(validator));
+        }
+        let refused = spnego::accept_sec_context_header(&mut acceptor, header.header_ref());
+        assert!(
+            matches!(&refused, Err(error) if error.to_string().contains("transit")),
+            "{case}: expected the transit refusal, got {:?}",
+            refused.as_ref().map(|_| ()).map_err(ToString::to_string)
+        );
+    }
+    let header = spnego::init_sec_context(ticket, spnego::InitiatorContextOptions::new())?;
+    let mut routed = Validator::new(&keytab)
+        .with_now(SystemTime::now())
+        .with_transit_validator(Arc::new(
+            CapathsTransit::from_config(&three_realms(&listed)?).configured_only(),
+        ));
+    let accepted = spnego::accept_sec_context_header(&mut routed, header.header_ref())?;
+    assert_eq!(
+        accepted.ap_req().client().realm,
+        other,
+        "the TEST acceptor sees the OTHER user"
+    );
+    let profile = three_realms(&format!(
+        "[libdefaults]\n default_keytab_name = FILE:{keytab_path}\n{listed}"
+    ))?;
+    let profiled_header = spnego::init_sec_context(ticket, spnego::InitiatorContextOptions::new())?;
+    let mut configured = Validator::from_default_keytab_name(&profile)?.with_now(SystemTime::now());
+    let admitted =
+        spnego::accept_sec_context_header(&mut configured, profiled_header.header_ref())?;
+    assert_eq!(
+        admitted.ap_req().client().realm,
+        other,
+        "the profile-driven acceptor admits it"
+    );
+    Ok(())
 }
 
 /// MIT-client-12 and MIT-config-42: `verify_init_creds` obtains a ticket for
