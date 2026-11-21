@@ -130,6 +130,10 @@ mod fast;
 #[path = "secret_debug_audit/otp.rs"]
 mod otp;
 
+#[cfg(all(test, feature = "messages"))]
+#[path = "secret_debug_audit/pkinit.rs"]
+mod pkinit;
+
 #[cfg(all(test, feature = "spnego"))]
 #[path = "secret_debug_audit/tokens.rs"]
 mod tokens;
@@ -189,6 +193,8 @@ mod tests {
         super::fast::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         #[cfg(feature = "messages")]
         super::otp::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
+        #[cfg(feature = "messages")]
+        super::pkinit::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         #[cfg(feature = "spnego")]
         super::tokens::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -1298,6 +1304,8 @@ mod tests {
         "src/preauth/encrypted_challenge.rs::EncryptedChallenge",
         "src/preauth/otp.rs::Response",
         "src/preauth/otp.rs::Responders",
+        "src/preauth/pkinit.rs::AnonymousArmorSource",
+        "src/preauth/pkinit.rs::Exchange",
         "src/preauth/spake.rs::Message",
         "src/preauth/spake.rs::Step",
         "src/transport/kkdcp.rs::ProxyMessage",

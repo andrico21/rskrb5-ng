@@ -29,19 +29,10 @@ mod tests {
     ];
 
     /// Realm values are restrictions on absent mechanisms, except encrypted timestamp.
-    const REALM: [(&str, &str, Option<&str>); 16] = [
+    const REALM: [(&str, &str, Option<&str>); 7] = [
         ("auth_to_local", "DEFAULT", None),
         ("auth_to_local_names", "{\n Alice = alice\n }", None),
         ("default_domain", "example.test", None),
-        ("pkinit_anchors", "FILE:/ca", None),
-        ("pkinit_cert_match", "<SUBJECT>restricted", None),
-        ("pkinit_eku_checking", "kpKDC", None),
-        ("pkinit_dh_min_bits", "P-521", None),
-        ("pkinit_identities", "FILE:/identity", None),
-        ("pkinit_kdc_hostname", "kdc.example", None),
-        ("pkinit_pool", "FILE:/pool", None),
-        ("pkinit_require_crl_checking", "true", None),
-        ("pkinit_revoke", "FILE:/crl", None),
         ("pkinit_identity", "FILE:/identity", None),
         ("pkinit_allow_upn", "false", None),
         ("pkinit_indicator", "strong", None),

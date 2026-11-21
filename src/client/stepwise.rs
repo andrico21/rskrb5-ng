@@ -42,6 +42,7 @@ use crate::{
     keytab::{EncryptionKey, Keytab},
     preauth::{
         otp::{Challenge, Policy, Response},
+        pkinit::{AnonymousOptions, Exchange as PkinitExchange, exchange::Pending},
         spake::Policy as SpakePolicy,
     },
     trace::{ExchangeKind, Guard},
@@ -272,6 +273,8 @@ pub struct InitCredsOptions {
     spake: Option<SpakePolicy>,
     /// Realms whose `disable_encrypted_timestamp` is set (MIT `encts_disabled`).
     timestamp_disabled: Vec<String>,
+    /// Anonymous credentials (RFC 6112), when requested.
+    anonymous: Option<AnonymousOptions>,
 }
 
 impl fmt::Debug for InitCredsOptions {
@@ -284,6 +287,7 @@ impl fmt::Debug for InitCredsOptions {
             .field("preferred_preauth_types", &self.preferred_preauth_types)
             .field("spake", &self.spake)
             .field("timestamp_disabled", &self.timestamp_disabled)
+            .field("anonymous", &self.anonymous)
             .finish()
     }
 }
@@ -410,6 +414,24 @@ impl InitCredsOptions {
     pub const fn spake_policy(&self) -> Option<&SpakePolicy> {
         self.spake.as_ref()
     }
+
+    /// Ask for anonymous credentials (RFC 6112, MIT
+    /// `krb5_get_init_creds_opt_set_anonymous`): sets `request-anonymous` and
+    /// requires the ticket's client to be the anonymous name `anonymous`
+    /// implies. A fully anonymous exchange also verifies the KDC's
+    /// `PA-PKINIT-KX`.
+    #[inline]
+    #[must_use]
+    pub fn with_anonymous(self, anonymous: AnonymousOptions) -> Self {
+        options::with_anonymous(self, anonymous)
+    }
+
+    /// The anonymous request, when set.
+    #[inline]
+    #[must_use]
+    pub const fn anonymous(&self) -> Option<AnonymousOptions> {
+        self.anonymous
+    }
 }
 
 /// Options of one TGS exchange.
@@ -524,6 +546,10 @@ pub struct InitCreds<'registry> {
     authenticated_client: Option<Principal>,
     /// The OTP policy, when the exchange may answer an OTP challenge.
     otp: Option<Policy>,
+    /// The PKINIT exchange of a certificate or anonymous login.
+    pkinit: Option<Box<PkinitExchange>>,
+    /// The ephemeral key and nonce of the PA-PK-AS-REQ in flight.
+    pkinit_pending: Option<Pending>,
 }
 
 impl fmt::Debug for InitCreds<'_> {
@@ -551,6 +577,20 @@ impl<'registry> InitCreds<'registry> {
     #[must_use]
     pub fn with_keytab(client: Principal, keytab: Keytab, options: InitCredsOptions) -> Self {
         init::new(client, (None, Some(keytab)), options)
+    }
+
+    /// A PKINIT exchange for `client` (RFC 4556): certificate login, or
+    /// anonymous PKINIT (RFC 6112) with [`PkinitExchange::anonymous`] and
+    /// [`AnonymousOptions::client`] as `client`. The reply key comes from the
+    /// KDC's signed Diffie-Hellman value; no password is ever asked for.
+    #[inline]
+    #[must_use]
+    pub fn with_pkinit(
+        client: Principal,
+        pkinit: PkinitExchange,
+        options: InitCredsOptions,
+    ) -> Self {
+        init::with_pkinit(init::new(client, (None, None), options), pkinit)
     }
 
     /// Consult `session`'s registered mechanisms for the PA types the KDC offers,

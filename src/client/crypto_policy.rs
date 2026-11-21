@@ -14,7 +14,7 @@ use crate::{
     crypto::{CryptoPolicy, Use, selection},
     error::{Config as ConfigError, Policy},
     keytab::EncryptionKey,
-    preauth::{fast, otp, spake},
+    preauth::{fast, otp, pkinit, spake},
     ticket,
 };
 
@@ -43,6 +43,9 @@ pub(super) fn padata(policy: &CryptoPolicy, data: &[rasn_kerberos::PaData]) -> R
             }
             // RFC 9588: a client sends only a support message or a response; the
             // response's factor is sealed in a key of the reply key's enctype.
+            // RFC 4556: the client sends only a DER PA-PK-AS-REQ; its CMS signs and
+            // its key agreement keys nothing under a Kerberos enctype.
+            pkinit::PA_PK_AS_REQ => pkinit::outgoing(&entry.value).map_err(Error::Pkinit)?,
             spake::PA_SPAKE => {
                 if let Some(etype) = spake::outgoing(&entry.value)? {
                     policy.check_use(etype, Use::ReplyKey)?;
@@ -81,7 +84,7 @@ pub(super) fn padata(policy: &CryptoPolicy, data: &[rasn_kerberos::PaData]) -> R
             // opaque nested encryption; the message claims no more than the refusal.
             5..=9
             | 12..=13
-            | 16..=17
+            | 17_i32
             | 30..=31
             | 41_i32
             | 130_i32

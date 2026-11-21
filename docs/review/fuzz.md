@@ -34,6 +34,7 @@ the chosen entry point, so one target covers a family of related decoders.
 | `kkdcp_message` | a proxy's KDC-PROXY-MESSAGE (MS-KKDCP) and the text of an `https://` server entry or DNS URI target, one selector byte then bytes or text | `transport::kkdcp::ProxyMessage::decode` (then encode and decode again must give the same message), `transport::kkdcp::decode_reply` (an accepted reply is non-empty and shorter than its message), and `transport::proxy::Url::parse` (an accepted URL parses again from its display form to the same URL) |
 | `spake_message` | a KDC's PA-SPAKE value (RFC 9588) | `preauth::spake::Message::decode` twice (deterministic), then a fresh `Client` permitting all four groups answers the value twice (`Client::process`): support message for empty or out-of-policy values, response for a challenge in a permitted group, which decodes and validates the edwards25519, P-256, P-384 or P-521 element and derives `K'[0]` and `K'[1]`; a second challenge must be refused |
 | `otp_challenge` | a KDC's `PA-OTP-CHALLENGE` value (RFC 6560) | `preauth::otp::Challenge::decode` twice (deterministic) and once under a tight policy (token count, field and challenge bounds), then an accepted challenge answers every token and one index past the list, with a value and with a value and a PIN, under an AES256 armor key (`Challenge::request`): every request built is an OTP padata of the request type |
+| `pkinit_reply` | the KDC's reply to a PA-PK-AS-REQ (RFC 4556 PKINIT) | the stepwise AS engine with a certificate `preauth::pkinit::Exchange` after a fixed `PREAUTH_REQUIRED`: mode 0 the raw reply (AS-REP or KRB-ERROR, the PA-PK-AS-REP lookup), mode 1 the bytes as the PA-PK-AS-REP value of an AS-REP (`PA-PK-AS-REP`, `DHRepInfo`, the CMS `ContentInfo` and `SignedData`, X.509 certificates and CRLs, the bounded path validator, `KDCDHKeyInfo` and the key agreement); no fuzzed reply may complete the exchange |
 | `name_parse` | names and values as text | `Principal::parse_user`, `Principal::parse_service`, `CacheName::parse`, `keytab::Name::parse`, `KdcEndpoint::configured`, `Tokio::with_dns_server`, `config::parse_duration`, `config::parse_boolean`, `crypto::s2kparams_to_iterations` |
 | `discovery_uri` | the data DNS hands to server discovery, one selector byte then bytes or text | `discovery::uri::parse` (a `krb5srv:flags:transport:host` URI record target) and `host_port` on an accepted target, `split_rdata` (URI record data), `realm_from_txt` (the first string of a TXT realm record) and `host_port` on arbitrary text; the target text, the host and the realm stay within their bounds |
 
@@ -111,6 +112,7 @@ timeout artifact:
 | `spake_message` | 336,637 (todo 9 of plan 2, 2026-11-20) | 121 s | 0 |
 | `kkdcp_message` | 6,458,968 (todo 16 of plan 2, 2026-11-21) | 121 s | 0 |
 | `otp_challenge` | 1,658,639 (todo 10 of plan 2, 2026-11-21) | 121 s | 0 |
+| `pkinit_reply` | 4,823 (todo 8 of plan 2, 2026-11-21) | 121 s | 0 |
 
 ### Round-2 session admission repair (FU-FUZ-R02)
 
@@ -228,6 +230,19 @@ minimal and maximal challenges (`src/tests/asn.1/reference_encode.out`), a
 challenge with two PIN-collecting tokens, one that sets both PIN flags, an empty
 value and a truncated one. Coverage proof: record `task-10-otp-coverage.tsv` in
 the execution evidence.
+
+### PKINIT replies (todo 8 of plan 2)
+
+`pkinit_reply` fuzzes the KDC's answer to a PA-PK-AS-REQ: every input runs a
+fresh certificate exchange (the OpenSSL client fixture of `tests/pkinit`, an
+ephemeral P-256 key and an ECDSA signature per input, which keeps the rate near
+40 inputs a second), answers the fixed `PREAUTH_REQUIRED`, and feeds the fuzzed
+bytes as the reply or as the PA-PK-AS-REP value of an AS-REP. The seeds are an
+OpenSSL `cms -sign` SignedData inside a `DHRepInfo` (it verifies and chains to
+the fixture anchor, then fails on its content), an `encKeyPack` (refused by
+policy) and a KRB-ERROR. The run of 2026-11-21 made 4,823 executions in 121 s
+with no artifact. Coverage proof: `task-8-pkinit-coverage.tsv` in the
+execution evidence.
 
 ### Earlier campaign crashes
 
@@ -624,6 +639,9 @@ does.
 | `rskrb5_ng::pac::ndr::RpcUnicodeStringDescriptor::read` | `src/pac/ndr.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::ndr::ensure_zero_trailing` | `src/pac/ndr.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::ndr::ndr_len` | `src/pac/ndr.rs` | `pac_parse` |  |
+| `rskrb5_ng::preauth::pkinit::chain::parse` | `src/preauth/pkinit/chain.rs` | `pkinit_reply` |  |
+| `rskrb5_ng::preauth::pkinit::chain::parse_crls` | `src/preauth/pkinit/chain.rs` | `pkinit_reply` |  |
+| `rskrb5_ng::preauth::pkinit::config::read` | `src/preauth/pkinit/config.rs` | - | reads a bounded local file named by the profile (`pkinit_identities`, `pkinit_anchors`, `pkinit_pool`, `pkinit_revoke`); its PEM content is decoded by `keys::pem_certificates`, whose certificates are re-parsed by `chain::parse` in `pkinit_reply` |
 | `rskrb5_ng::preauth::spake::Message::decode` | `src/preauth/spake.rs` | `spake_message` |  |
 | `rskrb5_ng::transport::kkdcp::ProxyMessage::decode` | `src/transport/kkdcp.rs` | `kkdcp_message` |  |
 | `rskrb5_ng::transport::kkdcp::decode_reply` | `src/transport/kkdcp.rs` | `kkdcp_message` |  |

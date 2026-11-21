@@ -683,6 +683,12 @@ pub enum Client {
     /// (RFC 6560); there is no retry of an OTP value.
     #[error("OTP preauthentication failed")]
     Otp(#[from] Otp),
+    /// PKINIT or anonymous PKINIT failed (RFC 4556, RFC 6112).
+    ///
+    /// There is no fallback to another mechanism after it (MIT
+    /// `disable_fallback`).
+    #[error("PKINIT preauthentication failed")]
+    Pkinit(#[from] Pkinit),
     /// Encrypted timestamp is disabled for the client realm
     /// (`[realms] disable_encrypted_timestamp`), and the KDC offered no other
     /// usable mechanism.
@@ -2714,6 +2720,158 @@ pub enum Otp {
     /// The armor key could not encrypt the nonce.
     #[error("sealing the OTP nonce failed")]
     Seal(#[from] Fast),
+}
+#[cfg(feature = "messages")]
+/// PKINIT error (RFC 4556, RFC 5349, RFC 6112, RFC 8070, RFC 8636; `preauth::pkinit`).
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum Pkinit {
+    /// The `pkinit` leaf feature is not compiled in.
+    #[error("PKINIT needs the `pkinit` Cargo feature")]
+    Unavailable,
+    /// The KDC did not offer PA-PK-AS-REQ.
+    #[error("the KDC does not offer PKINIT")]
+    NotOffered,
+    /// No trust anchor is configured.
+    ///
+    /// MIT: "No `pkinit_anchors` supplied".
+    #[error("no pkinit_anchors are configured for realm {realm}")]
+    NoAnchors {
+        /// The realm.
+        realm: String,
+    },
+    /// The client identity cannot be used.
+    #[error("unusable PKINIT identity: {reason}")]
+    Identity {
+        /// Why, without key material.
+        reason: &'static str,
+    },
+    /// A configured identity, trust or selector location cannot be honoured.
+    #[error("{relation} location {location} is not supported")]
+    UnsupportedLocation {
+        /// The relation.
+        relation: &'static str,
+        /// The location type, such as `PKCS11`.
+        location: String,
+    },
+    /// `pkinit_dh_min_bits` asks for a group below the 2048-bit floor.
+    #[error("Diffie-Hellman groups of {bits} bits are refused; the floor is 2048")]
+    DhGroupTooSmall {
+        /// The requested size.
+        bits: u32,
+    },
+    /// `pkinit_dh_min_bits` names no supported group.
+    #[error("unknown pkinit_dh_min_bits value {value}")]
+    InvalidDhGroup {
+        /// The configured value.
+        value: String,
+    },
+    /// A PKINIT structure is malformed or breaks an RFC rule.
+    #[error("malformed PKINIT {structure}: {reason}")]
+    Malformed {
+        /// The structure.
+        structure: &'static str,
+        /// The broken rule.
+        reason: &'static str,
+    },
+    /// An input exceeds its bound.
+    #[error("PKINIT {structure} exceeds {limit} bytes")]
+    TooLarge {
+        /// The structure.
+        structure: &'static str,
+        /// The bound in bytes.
+        limit: usize,
+    },
+    /// An algorithm is not supported or not permitted.
+    #[error("unsupported PKINIT algorithm {algorithm}")]
+    UnsupportedAlgorithm {
+        /// The algorithm OID or name.
+        algorithm: String,
+    },
+    /// A signature does not verify (MIT `KRB5KDC_ERR_INVALID_SIG`).
+    #[error("the {what} signature does not verify")]
+    Signature {
+        /// What was signed.
+        what: &'static str,
+    },
+    /// The KDC certificate chain is not acceptable.
+    #[error("the KDC certificate is not trusted: {reason}")]
+    Certificate {
+        /// Why, without certificate contents.
+        reason: &'static str,
+    },
+    /// A KDC certificate is revoked (MIT `KRB5KDC_ERR_REVOKED_CERTIFICATE`).
+    #[error("a KDC chain certificate is revoked")]
+    Revoked,
+    /// No CRL covers a chain certificate while CRL checking is required.
+    ///
+    /// MIT `KRB5KDC_ERR_REVOCATION_STATUS_UNKNOWN`.
+    #[error("the revocation status of a KDC chain certificate is unknown")]
+    RevocationUnknown,
+    /// The KDC certificate does not name the realm's KDC.
+    ///
+    /// Neither the realm's TGS nor a configured `pkinit_kdc_hostname` (MIT
+    /// `KRB5KDC_ERR_KDC_NAME_MISMATCH`).
+    #[error("the KDC certificate does not name the KDC of realm {realm}")]
+    KdcName {
+        /// The realm.
+        realm: String,
+    },
+    /// The KDC certificate lacks the required key purpose.
+    ///
+    /// The EKU or the `digitalSignature` key usage (MIT
+    /// `KRB5KDC_ERR_INCONSISTENT_KEY_PURPOSE`).
+    #[error("the KDC certificate lacks the required key purpose")]
+    KeyPurpose,
+    /// The KDC's Diffie-Hellman or ECDH public value is invalid.
+    #[error("the KDC's key-agreement public value is invalid")]
+    PublicValue,
+    /// The KDC's signed nonce differs from the request's.
+    #[error("the PKINIT reply nonce {actual} does not match the request nonce {expected}")]
+    NonceMismatch {
+        /// The request nonce.
+        expected: u32,
+        /// The reply nonce.
+        actual: u32,
+    },
+    /// The anonymous reply fails RFC 6112.
+    ///
+    /// MIT `KRB5_KDCREP_MODIFIED`, "Reply has wrong form of session key for
+    /// anonymous request".
+    #[error("the anonymous PKINIT reply is invalid: {reason}")]
+    Anonymous {
+        /// Why.
+        reason: &'static str,
+    },
+    /// The reply came before a request, or the state is spent.
+    #[error("unexpected PKINIT reply: {reason}")]
+    Unexpected {
+        /// Why.
+        reason: &'static str,
+    },
+    /// An identity provider or signer failed.
+    #[error("the PKINIT identity provider or signer failed")]
+    Provider(#[source] ProviderError),
+    /// A PKINIT file could not be read.
+    #[error("cannot read PKINIT file {path}")]
+    Io {
+        /// The path.
+        path: PathBuf,
+        /// The cause.
+        #[source]
+        source: io::Error,
+    },
+    /// The key derivation or the anonymous key check failed.
+    #[error("PKINIT key derivation failed")]
+    Crypto(#[from] Crypto),
+    /// The random generator failed.
+    #[error("random generator failed")]
+    Random(#[from] getrandom::Error),
+    /// The KDC answered with a permanently rejected mode.
+    ///
+    /// RSA key transport (`encKeyPack`, D2).
+    #[error("PKINIT reply refused by policy: {0}")]
+    Policy(#[from] Policy),
 }
 #[cfg(feature = "spnego")]
 /// SPNEGO/GSS token processing error.

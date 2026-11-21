@@ -60,6 +60,19 @@ tests = [
   "tests/kkdcp/",
 ]
 
+[package.metadata.rskrb5-ng.leaf-features.pkinit]
+minimal = ["messages"]
+modules = ["src/preauth/pkinit.rs", "src/preauth/pkinit/"]
+tests = [
+  "tests/interop_pkinit.rs",
+  "tests/interop_pkinit/",
+  "tests/pkinit.rs",
+  "tests/pkinit/",
+]
+seams = [
+  { file = "src/config/realm_values.rs", item = "fn missing_leaf", call = "then_some" },
+]
+
 [package.metadata.rskrb5-ng.leaf-features.spake]
 minimal = ["messages"]
 modules = ["src/preauth/spake.rs", "src/preauth/spake/"]
@@ -98,6 +111,21 @@ kkdcp-rustls = [
   "dep:tokio-rustls",
 ]
 messages = ["dep:chrono", "dep:rasn", "dep:rasn-kerberos"]
+pkinit = [
+  "dep:cms",
+  "dep:crypto-bigint",
+  "dep:der",
+  "dep:p256",
+  "dep:p384",
+  "dep:p521",
+  "dep:rsa",
+  "dep:spki",
+  "dep:x509-cert",
+  "p256/ecdsa",
+  "p256/pkcs8",
+  "p384/ecdsa",
+  "p384/pkcs8",
+]
 spake = ["dep:curve25519-dalek", "dep:p256", "dep:p384", "dep:p521"]
 spnego = ["messages", "dep:base64"]
 http = ["spnego", "dep:http_types"]
@@ -114,13 +142,23 @@ chrono = { version = "0.4", default-features = false, features = [
   "std",
 ], optional = true }
 cmac = { version = "0.8.0", features = ["zeroize"], optional = true }
+cms = { version = "=0.3.0-rc.2", default-features = false, optional = true }
 compcol = { version = "0.7", default-features = false, features = [
   "lznt1",
   "xpress",
   "xpress_huffman",
 ] }
+crypto-bigint = { version = "0.7.11", default-features = false, features = [
+  "zeroize",
+], optional = true }
 curve25519-dalek = { version = "5.0.0", default-features = false, features = [
   "precomputed-tables",
+  "zeroize",
+], optional = true }
+der = { version = "0.8.3", default-features = false, features = [
+  "alloc",
+  "oid",
+  "pem",
   "zeroize",
 ], optional = true }
 des = "0.9.0"
@@ -154,6 +192,10 @@ pbkdf2 = "0.13"
 rasn = { version = "0.29", optional = true }
 rasn-kerberos = { version = "0.29", features = ["otp"], optional = true }
 rc4 = "0.2.0"
+rsa = { version = "0.10.0", default-features = false, features = [
+  "encoding",
+  "pkcs1v15",
+], optional = true }
 # TLS of the built-in KDC proxy transport (the `kkdcp-rustls` leaf), with the
 # pure-Rust RustCrypto provider; no ring, no aws-lc. Admission records:
 # docs/dependency-admission.md#rustls, #rustls-rustcrypto and #tokio-rustls.
@@ -170,6 +212,9 @@ serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 sha1 = "0.11.0"
 sha2 = "0.11.0"
+spki = { version = "0.8.1", default-features = false, features = [
+  "alloc",
+], optional = true }
 thiserror = "2"
 tokio = { version = "1.47", features = [
   "net",
@@ -183,6 +228,7 @@ tokio-rustls = { version = "0.26.6", default-features = false, features = [
 ], optional = true }
 tower_layer = { package = "tower-layer", version = "0.3", optional = true }
 tower_service = { package = "tower-service", version = "0.3", optional = true }
+x509-cert = { version = "0.3.1", default-features = false, optional = true }
 # The adapter to the application's `tracing` subscriber (the `tracing` leaf). Only
 # the `std` feature: no span macros, no proc macro. Admission record:
 # docs/dependency-admission.md#tracing.

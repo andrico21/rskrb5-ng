@@ -14,6 +14,7 @@ libfuzzer-sys = "0.4"
 rskrb5-ng = { version = "0.3.0", path = "..", features = [
   "camellia",
   "http",
+  "pkinit",
   "spake",
 ] }
 
@@ -160,6 +161,13 @@ bench = false
 [[bin]]
 name = "kkdcp_message"
 path = "fuzz_targets/kkdcp_message.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pkinit_reply"
+path = "fuzz_targets/pkinit_reply.rs"
 test = false
 doc = false
 bench = false
