@@ -1,10 +1,14 @@
 //! A fake kpasswd server over loopback TCP: framing, replies and the requests it opens.
 
 use core::{
+    future::pending,
     sync::atomic::{AtomicUsize, Ordering},
     time::Duration,
 };
-use std::{sync::Arc, time::SystemTime};
+extern crate alloc;
+
+use alloc::sync::Arc;
+use std::{io::ErrorKind, time::SystemTime};
 
 use rasn::der;
 use rskrb5_ng::{
@@ -26,7 +30,7 @@ use tokio::{
 use super::{
     TestError,
     realm::{Realm, kerberos_time},
-    support::{REALM, changepw_key},
+    support::{REALM, changepw_key, held},
 };
 
 /// Read one length-prefixed request; `None` when the peer closed before a new one.
@@ -34,7 +38,7 @@ async fn read_frame(socket: &mut TcpStream) -> Result<Option<Vec<u8>>, TestError
     let mut header = [0_u8; 4];
     match timeout(Duration::from_secs(10), socket.read_exact(&mut header)).await? {
         Ok(_) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+        Err(error) if error.kind() == ErrorKind::UnexpectedEof => return Ok(None),
         Err(error) => return Err(error.into()),
     }
     let mut request = vec![0_u8; usize::try_from(u32::from_be_bytes(header))?];
@@ -67,9 +71,7 @@ pub(super) async fn write_response(
 
 /// A configuration pointing `TEST.GOKRB5` at the given KDC and kpasswd servers over TCP.
 pub(super) fn config(kdc: Option<&str>, kpasswd: &str) -> Result<Config, TestError> {
-    let kdc_line = kdc
-        .map(|addr| format!(" kdc = {addr}\n"))
-        .unwrap_or_default();
+    let kdc_line = kdc.map_or_else(String::new, |addr| format!(" kdc = {addr}\n"));
     Ok(Config::parse(&format!(
         "[libdefaults]\n dns_lookup_kdc = false\n udp_preference_limit = 1\n\
          [realms]\n {REALM} = {{\n{kdc_line} kpasswd_server = {kpasswd}\n }}\n"
@@ -79,9 +81,9 @@ pub(super) fn config(kdc: Option<&str>, kpasswd: &str) -> Result<Config, TestErr
 /// What a fake kpasswd server saw in one request.
 pub(super) struct Seen {
     /// The authenticator of the AP-REQ, for the reply's echoed time.
-    pub(super) authenticator: rasn_kerberos::Authenticator,
+    pub authenticator: rasn_kerberos::Authenticator,
     /// The decrypted `ChangePasswdData`.
-    pub(super) change_data: ChangePasswdData,
+    pub change_data: ChangePasswdData,
 }
 
 /// Decrypt a kpasswd request under the changepw session key.
@@ -206,13 +208,13 @@ pub(super) enum Behavior {
 }
 
 /// Serve the KDC side of `realm` on `listener`: every connection answers requests until it closes.
-pub(super) fn spawn_kdc(listener: TcpListener, realm: Arc<Realm>) {
+pub(super) fn spawn_kdc(listener: TcpListener, account: Arc<Realm>) {
     drop(tokio::spawn(async move {
         loop {
             let Ok((mut socket, _)) = listener.accept().await else {
                 return;
             };
-            let realm = Arc::clone(&realm);
+            let realm = Arc::clone(&account);
             drop(tokio::spawn(async move {
                 while let Ok(Some(request)) = read_frame(&mut socket).await {
                     let Ok(reply) = realm.answer(&request) else {
@@ -231,14 +233,13 @@ pub(super) fn spawn_kdc(listener: TcpListener, realm: Arc<Realm>) {
 /// the returned counter is the number of requests received.
 pub(super) fn spawn_kpasswd(
     listener: TcpListener,
-    realm: Arc<Realm>,
+    account: Arc<Realm>,
     script: Vec<Behavior>,
 ) -> Arc<AtomicUsize> {
     let received = Arc::new(AtomicUsize::new(0));
     let counter = Arc::clone(&received);
     drop(tokio::spawn(async move {
-        let mut script = script.into_iter();
-        let mut held = Vec::new();
+        let mut turns = script.into_iter();
         loop {
             let Ok((request, mut socket)) = read_request(&listener).await else {
                 return;
@@ -247,34 +248,40 @@ pub(super) fn spawn_kpasswd(
             let Ok(seen) = open_request(&request) else {
                 return;
             };
-            let behavior = script.next().unwrap_or(Behavior::Succeed);
-            let applied = |realm: &Realm| -> Result<(), TestError> {
-                *realm.password.lock().map_err(|_| "poisoned")? =
-                    seen.change_data.new_passwd().to_vec();
-                *realm.expired.lock().map_err(|_| "poisoned")? = false;
-                Ok(())
+            let behavior = turns.next().unwrap_or(Behavior::Succeed);
+            let apply = || {
+                *held(&account.password) = seen.change_data.new_passwd().to_vec();
+                *held(&account.expired) = false;
             };
             let reply = match behavior {
-                Behavior::Succeed => applied(&realm)
-                    .and_then(|()| authenticated_reply(&seen, 0, b"password changed")),
+                Behavior::Succeed => {
+                    apply();
+                    authenticated_reply(&seen, 0, b"password changed")
+                }
                 Behavior::Soft(text) => authenticated_reply(&seen, 4, text),
                 Behavior::UnsignedSuccess => unauthenticated_reply(0, b"password changed"),
                 Behavior::ForgedSuccess => forged_reply(&seen, 0, b"password changed"),
                 Behavior::Lose => {
-                    drop(applied(&realm));
+                    apply();
                     drop(socket);
                     continue;
                 }
                 Behavior::Hold(arrived) => {
-                    let _: Result<(), ()> = arrived.send(());
-                    held.push(socket);
+                    if arrived.send(()).is_err() {
+                        return;
+                    }
+                    // Keep the connection open and never answer.
+                    drop(tokio::spawn(async move {
+                        let _open = socket;
+                        pending::<()>().await;
+                    }));
                     continue;
                 }
             };
-            let Ok(reply) = reply else {
+            let Ok(answer) = reply else {
                 return;
             };
-            if write_response(&mut socket, &reply).await.is_err() {
+            if write_response(&mut socket, &answer).await.is_err() {
                 return;
             }
         }

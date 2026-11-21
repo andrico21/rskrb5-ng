@@ -83,19 +83,15 @@ pub(super) const DELEGATIONS: &[(&str, &str)] = &[
     ),
     (
         "src/client.rs::Tokio::login_with_expiry",
-        "delegates:src/client.rs::Tokio::change_expired_password",
+        "delegates:src/client.rs::Tokio::login",
+    ),
+    (
+        "src/client.rs::Tokio::login_with_expiry",
+        "delegates:src/client.rs::Tokio::change_password_with_options",
     ),
     (
         "src/client.rs::Tokio::login_with_expiry",
         "delegates:src/client.rs::Tokio::affirm_login",
-    ),
-    (
-        "src/client.rs::Tokio::change_expired_password",
-        "delegates:src/client.rs::Tokio::change_password_with_options",
-    ),
-    (
-        "src/client.rs::Tokio::change_expired_password",
-        "delegates:src/client.rs::Tokio::login",
     ),
     (
         "src/client/stepwise.rs::InitCreds::step",

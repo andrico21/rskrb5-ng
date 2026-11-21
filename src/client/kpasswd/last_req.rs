@@ -64,7 +64,7 @@ impl ExpiryNotice {
     /// from the ambiguous `key-expiration` field.
     #[inline]
     #[must_use]
-    pub const fn from_last_req(&self) -> bool {
+    pub const fn is_last_req(&self) -> bool {
         self.from_last_req
     }
 
@@ -135,14 +135,14 @@ impl fmt::Display for ExpiryWarning {
                 "Warning: Your password will expire in less than one hour on {when}"
             )
         } else if seconds < 2 * 86_400 {
-            let hours = seconds / 3600;
+            let hours = seconds.div_euclid(3600);
             let plural = if seconds < 7200 { "" } else { "s" };
             write!(
                 f,
                 "Warning: Your password will expire in {hours} hour{plural} on {when}"
             )
         } else {
-            let days = seconds / 86_400;
+            let days = seconds.div_euclid(86_400);
             write!(
                 f,
                 "Warning: Your password will expire in {days} days on {when}"

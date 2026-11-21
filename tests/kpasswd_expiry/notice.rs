@@ -4,12 +4,13 @@
 //! the password expiry and 7 and -7 the account expiry; when none is present the
 //! ambiguous `key-expiration` field stands for the password.
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use core::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use rskrb5_ng::{
     client::{
         AsRepSession, KdcTransport, Password,
-        kpasswd::expiry::ExpiryNotice,
+        kpasswd::last_req::ExpiryNotice,
         options::AsReq,
         stepwise::{Answer, InitCreds, InitCredsOptions, Prompt, Responder, drive},
     },
@@ -20,6 +21,7 @@ use rskrb5_ng::{
 use super::{
     TestError,
     realm::{ExpiryFields, Realm},
+    support::held,
 };
 
 /// A transport that hands every request to the fake realm.
@@ -61,7 +63,7 @@ fn at(seconds: u64) -> Result<SystemTime, TestError> {
 /// session and the password expiries the responder heard.
 fn login(fields: ExpiryFields) -> Result<(AsRepSession, Vec<SystemTime>), TestError> {
     let realm = Realm::new(b"old-password", false);
-    *realm.expiry.lock().map_err(|_| "poisoned")? = fields;
+    *held(&realm.expiry) = fields;
     let mut exchange = InitCreds::with_password(
         Realm::account(),
         Some(Password::copy_from_str("old-password")),
@@ -116,27 +118,28 @@ fn an_account_expiry_alone_is_not_heard_as_a_password_expiry() -> Result<(), Tes
 /// The session carries what the reply said, and where it came from.
 #[test]
 fn the_session_reports_what_the_kdc_said_and_where_it_came_from() -> Result<(), TestError> {
-    let (session, _heard) = login(ExpiryFields {
+    let (both, _) = login(ExpiryFields {
         key_expiration: Some(at(2_000_000_000)?),
         last_req_password: Some(at(1_900_000_000)?),
         last_req_account: Some(at(2_100_000_000)?),
     })?;
-    let notice = session.expiry_notice();
-    assert_eq!(notice.password(), Some(at(1_900_000_000)?));
-    assert_eq!(notice.account(), Some(at(2_100_000_000)?));
-    assert!(notice.from_last_req());
+    assert_eq!(both.expiry_notice().password(), Some(at(1_900_000_000)?));
+    assert_eq!(both.expiry_notice().account(), Some(at(2_100_000_000)?));
+    assert!(both.expiry_notice().is_last_req());
 
-    let (session, _heard) = login(ExpiryFields {
+    let (key_only, _) = login(ExpiryFields {
         key_expiration: Some(at(2_000_000_000)?),
         ..ExpiryFields::default()
     })?;
-    let notice = session.expiry_notice();
-    assert_eq!(notice.password(), Some(at(2_000_000_000)?));
-    assert_eq!(notice.account(), None);
-    assert!(!notice.from_last_req());
+    assert_eq!(
+        key_only.expiry_notice().password(),
+        Some(at(2_000_000_000)?)
+    );
+    assert_eq!(key_only.expiry_notice().account(), None);
+    assert!(!key_only.expiry_notice().is_last_req());
 
-    let (session, _heard) = login(ExpiryFields::default())?;
-    assert_eq!(session.expiry_notice(), &ExpiryNotice::default());
+    let (silent, _) = login(ExpiryFields::default())?;
+    assert_eq!(silent.expiry_notice(), &ExpiryNotice::default());
     Ok(())
 }
 
@@ -145,22 +148,22 @@ fn the_session_reports_what_the_kdc_said_and_where_it_came_from() -> Result<(), 
 fn the_warning_follows_mit_rules_and_wording() -> Result<(), TestError> {
     let now = at(1_800_000_000)?;
     let after = |seconds: u64| at(1_800_000_000 + seconds);
-    let notice = |fields: ExpiryFields| -> Result<ExpiryNotice, TestError> {
+    let reported = |fields: ExpiryFields| -> Result<ExpiryNotice, TestError> {
         Ok(*login(fields)?.0.expiry_notice())
     };
     let key_expiration = |seconds: u64| -> Result<ExpiryNotice, TestError> {
-        notice(ExpiryFields {
+        reported(ExpiryFields {
             key_expiration: Some(after(seconds)?),
             ..ExpiryFields::default()
         })
     };
     let last_req = |seconds: u64| -> Result<ExpiryNotice, TestError> {
-        notice(ExpiryFields {
+        reported(ExpiryFields {
             last_req_password: Some(after(seconds)?),
             ..ExpiryFields::default()
         })
     };
-    let banner = |notice: ExpiryNotice| notice.warning(now).map(|warning| warning.to_string());
+    let banner = |expiry: ExpiryNotice| expiry.warning(now).map(|warning| warning.to_string());
 
     // A week or more away through key-expiration: silent. Within the week: a banner.
     assert_eq!(banner(key_expiration(8 * 86_400)?), None);

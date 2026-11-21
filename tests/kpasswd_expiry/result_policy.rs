@@ -4,7 +4,7 @@
 
 use rskrb5_ng::kadmin::{
     ChangePasswordResult,
-    policy::{AdPasswordPolicy, ResultCode},
+    result_text::{AdPasswordPolicy, ResultCode},
 };
 
 use super::TestError;
@@ -116,13 +116,11 @@ fn the_ad_policy_fields_are_typed_and_malformed_ones_are_not_policies() -> Resul
     assert_eq!(parsed, AdPasswordPolicy::new(5, 13, 1, 0, 864_000_000_000));
     assert!(parsed.requires_complexity());
     // Wrong length, or the two leading bytes not zero: ordinary text.
-    assert!(
-        result(4, &ad_policy(5, 13, 1, 0)[..29])?
-            .ad_policy()
-            .is_none()
-    );
+    let mut short = ad_policy(5, 13, 1, 0);
+    let _: Option<u8> = short.pop();
+    assert!(result(4, &short)?.ad_policy().is_none());
     let mut shifted = ad_policy(5, 13, 1, 0);
-    shifted[1] = 1;
+    drop(shifted.splice(0..2, [0_u8, 1_u8]));
     assert!(result(4, &shifted)?.ad_policy().is_none());
     assert!(result(4, b"This is a valid string.")?.ad_policy().is_none());
     Ok(())

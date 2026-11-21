@@ -65,10 +65,10 @@ fn the_same_libdefaults_refusal_has_one_kind_on_every_path() -> Result<(), TestE
             "unauthenticated safe_checksum_type",
             {
                 let mut config = Config::new();
-                config.libdefaults.safe_checksum_type = 1;
+                config.libdefaults.safe_checksum_type = 1_i32;
                 config
             },
-            Refusal::TypedPolicy(RejectedFeature::UnauthenticatedChecksum { id: 1 }),
+            Refusal::TypedPolicy(RejectedFeature::UnauthenticatedChecksum { id: 1_i32 }),
         ),
         (
             "unknown enctype name",

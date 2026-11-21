@@ -1,7 +1,10 @@
 //! Fixed sessions and requests: a client that already holds a `kadmin/changepw` ticket.
 
 use core::time::Duration;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    sync::{Mutex, MutexGuard, PoisonError},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use rskrb5_ng::{
     client::{
@@ -108,4 +111,9 @@ pub(super) fn built_request() -> Result<(BuiltKpasswdRequest, RequestOptions), T
         &[0x44; 16],
     )?;
     Ok((built, options))
+}
+
+/// The value of a mutex, whether or not a panicking test poisoned it.
+pub(super) fn held<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }

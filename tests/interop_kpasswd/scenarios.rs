@@ -1,14 +1,17 @@
 //! Expired and expiring passwords of the MIT fixture, changed through its kpasswd service.
 
-use core::{error::Error, net::Ipv4Addr, time::Duration};
-use std::{collections::VecDeque, time::UNIX_EPOCH};
+extern crate alloc;
+
+use alloc::collections::VecDeque;
+use core::{error::Error, net::Ipv4Addr, slice, time::Duration};
+use std::{io, time::UNIX_EPOCH};
 
 use rskrb5_ng::{
     client::{
         Password, Tokio,
         kpasswd::{
-            expiry::ExpiryNotice,
-            responder::{ExpiryResponder, NewPasswordPrompt},
+            last_req::ExpiryNotice,
+            password_expiry::{ExpiryResponder, NewPasswordPrompt},
         },
         principal::Principal,
         transport::{KdcProtocol, Tokio as TokioKdcTransport},
@@ -47,7 +50,7 @@ const EXPIRED_BANNER: &str = "Password expired.  You must change it now.";
 const EXPIRING_AT: u64 = 2_128_636_800;
 
 /// The current-thread Tokio runtime the scenarios run on.
-fn runtime() -> std::io::Result<Runtime> {
+fn runtime() -> io::Result<Runtime> {
     Builder::new_current_thread()
         .enable_io()
         .enable_time()
@@ -64,7 +67,7 @@ fn transport() -> TokioKdcTransport {
 fn derived(name: &str) -> Result<String, Box<dyn Error>> {
     let admin = harness::var("INTEROP_MIT_ADMIN_PASSWORD")?;
     let digest = Sha256::digest(format!("rskrb5-interop kpasswd {name} v1{admin}").as_bytes());
-    Ok(hex::encode(digest)[..32].to_owned())
+    Ok(hex::encode(digest).chars().take(32).collect())
 }
 
 /// The realm's KDC at `kdc` and its kpasswd service. The realm also offers SPAKE first
@@ -179,7 +182,7 @@ fn an_expired_password_is_changed_and_the_login_starts_over() -> Result<(), Box<
             old.as_bytes().to_vec(),
         )
         .with_transport(transport());
-        let mut responder = Scripted::offering(std::slice::from_ref(&new));
+        let mut responder = Scripted::offering(slice::from_ref(&new));
 
         let session = client
             .login_with_expiry(
@@ -241,9 +244,10 @@ fn a_password_policy_rejection_is_put_to_the_responder_again() -> Result<(), Box
             )
             .await?;
 
-        assert_eq!(responder.prompts.len(), 2);
-        assert_eq!(responder.prompts[0], (EXPIRED_BANNER.to_owned(), 3));
-        let (banner, tries_left) = &responder.prompts[1];
+        let [first, (banner, tries_left)] = responder.prompts.as_slice() else {
+            return Err(format!("expected two prompts, got {}", responder.prompts.len()).into());
+        };
+        assert_eq!(first, &(EXPIRED_BANNER.to_owned(), 3));
         assert!(
             banner.starts_with("Password change rejected: ") && banner.contains("short"),
             "the server's policy reason reaches the responder: {banner}"

@@ -1,10 +1,8 @@
 //! A fake realm: an AS exchange that checks the pre-authentication against the
 //! account's current password, and the account's expiry state.
 
-use std::{
-    sync::Mutex,
-    time::{Duration, SystemTime},
-};
+use core::time::Duration;
+use std::{sync::Mutex, time::SystemTime};
 
 use chrono::{DateTime, FixedOffset, Utc};
 use rasn::{der, types::Integer};
@@ -19,7 +17,7 @@ use rskrb5_ng::{
 
 use super::{
     TestError,
-    support::{REALM, changepw_key, ticket_for},
+    support::{REALM, changepw_key, held, ticket_for},
 };
 
 /// RFC 4120 `KDC_ERR_KEY_EXPIRED`.
@@ -33,32 +31,32 @@ const SALT: &str = "TEST.GOKRB5testuser1";
 #[derive(Clone, Copy, Default)]
 pub(super) struct ExpiryFields {
     /// The `key-expiration` field.
-    pub(super) key_expiration: Option<SystemTime>,
+    pub key_expiration: Option<SystemTime>,
     /// A `last-req` entry of type 6 (password expiration).
-    pub(super) last_req_password: Option<SystemTime>,
+    pub last_req_password: Option<SystemTime>,
     /// A `last-req` entry of type 7 (account expiration).
-    pub(super) last_req_account: Option<SystemTime>,
+    pub last_req_account: Option<SystemTime>,
 }
 
 /// One AS request the KDC answered.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct AsSeen {
     /// The requested service, joined with `/`.
-    pub(super) service: String,
+    pub service: String,
     /// Whether the PA-ENC-TIMESTAMP decrypted under the account's current password.
-    pub(super) preauthenticated: bool,
+    pub preauthenticated: bool,
 }
 
 /// The state of the account and the requests seen.
 pub(super) struct Realm {
     /// The account's current password.
-    pub(super) password: Mutex<Vec<u8>>,
+    pub password: Mutex<Vec<u8>>,
     /// Whether the password has expired: tickets other than `kadmin/changepw` are refused.
-    pub(super) expired: Mutex<bool>,
+    pub expired: Mutex<bool>,
     /// The expiry fields of a TGT reply.
-    pub(super) expiry: Mutex<ExpiryFields>,
+    pub expiry: Mutex<ExpiryFields>,
     /// Every AS request answered, in order.
-    seen: Mutex<Vec<AsSeen>>,
+    pub seen: Mutex<Vec<AsSeen>>,
 }
 
 impl Realm {
@@ -73,17 +71,16 @@ impl Realm {
     }
 
     /// The AS requests answered so far.
-    pub(super) fn requests(&self) -> Result<Vec<AsSeen>, TestError> {
-        Ok(self.seen.lock().map_err(|_| "poisoned")?.clone())
+    pub(super) fn requests(&self) -> Vec<AsSeen> {
+        held(&self.seen).clone()
     }
 
     /// Remember a request.
-    fn record(&self, service: &[String], preauthenticated: bool) -> Result<(), TestError> {
-        self.seen.lock().map_err(|_| "poisoned")?.push(AsSeen {
+    fn record(&self, service: &[String], preauthenticated: bool) {
+        held(&self.seen).push(AsSeen {
             service: service.join("/"),
             preauthenticated,
         });
-        Ok(())
     }
 
     /// The account.
@@ -95,7 +92,7 @@ impl Realm {
     pub(super) fn key_info() -> PreauthKeyInfo {
         PreauthKeyInfo::new(18)
             .with_salt(Some(SALT.to_owned()))
-            .with_s2kparams(Some(vec![0, 0, 16, 0]))
+            .with_s2kparams(Some(vec![0_u8, 0_u8, 16_u8, 0_u8]))
     }
 
     /// The reply key of the account for `password`.
@@ -119,7 +116,7 @@ impl Realm {
             .iter()
             .map(|part| String::from_utf8_lossy(part.as_bytes()).into_owned())
             .collect();
-        let password = self.password.lock().map_err(|_| "poisoned")?.clone();
+        let password = held(&self.password).clone();
         let key = Self::key_for(&password)?;
         let timestamp = decoded
             .0
@@ -127,27 +124,27 @@ impl Realm {
             .iter()
             .flatten()
             .find(|padata| padata.r#type == PA_ENC_TIMESTAMP);
-        let Some(timestamp) = timestamp else {
-            self.record(&service, false)?;
+        let Some(proof_padata) = timestamp else {
+            self.record(&service, false);
             return preauth_required(&service);
         };
-        let proof: rasn_kerberos::EncryptedData = der::decode(&timestamp.value)?;
+        let proof: rasn_kerberos::EncryptedData = der::decode(&proof_padata.value)?;
         let preauthenticated = AesSha1Etype::from_etype_id(18)
             .ok_or("AES-SHA1")?
             .decrypt_message(key.value(), &proof.cipher, 1)
             .is_ok();
-        self.record(&service, preauthenticated)?;
+        self.record(&service, preauthenticated);
         if !preauthenticated {
             return krb_error(KDC_ERR_PREAUTH_FAILED, &service, None);
         }
         let changepw = service == ["kadmin", "changepw"];
-        if *self.expired.lock().map_err(|_| "poisoned")? && !changepw {
+        if *held(&self.expired) && !changepw {
             return krb_error(KDC_ERR_KEY_EXPIRED, &service, None);
         }
         let expiry = if changepw {
             ExpiryFields::default()
         } else {
-            *self.expiry.lock().map_err(|_| "poisoned")?
+            *held(&self.expiry)
         };
         as_rep(&decoded, &service, &key, expiry)
     }
@@ -155,8 +152,8 @@ impl Realm {
 
 /// A Kerberos time for `time`.
 pub(super) fn kerberos_time(time: SystemTime) -> Result<rasn_kerberos::KerberosTime, TestError> {
-    let utc: DateTime<Utc> = time.into();
-    let utc = DateTime::<Utc>::from_timestamp(utc.timestamp(), 0).ok_or("time")?;
+    let instant: DateTime<Utc> = time.into();
+    let utc = DateTime::<Utc>::from_timestamp(instant.timestamp(), 0).ok_or("time")?;
     let offset = FixedOffset::east_opt(0).ok_or("offset")?;
     Ok(rasn_kerberos::KerberosTime(utc.with_timezone(&offset)))
 }
@@ -200,12 +197,12 @@ fn krb_error(
     })?)
 }
 
-/// KDC_ERR_PREAUTH_REQUIRED offering ETYPE-INFO2 and PA-ENC-TIMESTAMP.
+/// `KDC_ERR_PREAUTH_REQUIRED` offering `ETYPE-INFO2` and `PA-ENC-TIMESTAMP`.
 fn preauth_required(service: &[String]) -> Result<Vec<u8>, TestError> {
     let info = rasn_kerberos::EtypeInfo2::from([rasn_kerberos::EtypeInfo2Entry {
         etype: 18,
         salt: Some(string(SALT)?),
-        s2kparams: Some(vec![0_u8, 0, 16, 0].into()),
+        s2kparams: Some(vec![0_u8, 0_u8, 16_u8, 0_u8].into()),
     }]);
     let methods = rasn_kerberos::MethodData::from([
         rasn_kerberos::PaData {
@@ -242,7 +239,10 @@ fn as_rep(
         r#type: 0,
         value: kerberos_time(now.checked_sub(Duration::from_hours(1)).ok_or("time")?)?,
     }];
-    for (kind, value) in [(6, expiry.last_req_password), (7, expiry.last_req_account)] {
+    for (kind, value) in [
+        (6_i32, expiry.last_req_password),
+        (7_i32, expiry.last_req_account),
+    ] {
         if let Some(time) = value {
             last_req.push(rasn_kerberos::LastReqValue {
                 r#type: kind,

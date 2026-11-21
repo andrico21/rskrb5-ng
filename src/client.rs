@@ -120,11 +120,14 @@ pub mod stepwise;
 pub mod transport;
 #[cfg(feature = "tokio")]
 use self::kpasswd::{
-    RequestOptions, build_kpasswd_request, expiry::ExpiryNotice, validated_result,
+    RequestOptions, build_kpasswd_request,
+    password_expiry::{ExpiryResponder, Turns},
+    validated_result,
 };
 #[cfg(feature = "tokio")]
 use self::transport::{KdcEndpoint, KdcProtocol, Tokio as TokioKdcTransport};
 use self::{
+    kpasswd::last_req::ExpiryNotice,
     options::{ApReq, AsReq, TgsReq},
     principal::Principal,
 };
@@ -3056,6 +3059,104 @@ impl Tokio {
         drop(new_password);
         Ok(result)
     }
+
+    /// Log in like [`Self::login`], and change an expired password through `responder`.
+    ///
+    /// When the KDC answers `KDC_ERR_KEY_EXPIRED` to a password login, this follows MIT
+    /// (`gic_pwd.c:171-343`): it gets a `kadmin/changepw` ticket with the old password (an AS
+    /// reply the KDC could only seal under that password), asks the responder for a new
+    /// one, sends the change, and starts the login over with the new password only after
+    /// the server's authenticated success; the stored password becomes the new one. A
+    /// rejection by password policy (`KPASSWD_SOFTERROR`) is put to the responder again,
+    /// three answers in all. After the login `responder` hears the expiry the KDC reported.
+    ///
+    /// `sender_address` is the address of this host that the kpasswd request names.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::PasswordChangePending`] before anything is sent while an earlier
+    /// change is unconfirmed, [`Error::Responder`] when the responder fails, the errors
+    /// of [`Self::login`] and of [`Self::change_password_with_options`], and the last
+    /// `PasswordChangeFailed` when three answers were rejected. A change whose outcome is
+    /// unknown ends the flow with [`Error::KpasswdOutcomeUnknown`]; it is never repeated
+    /// and the AS is not restarted. KDC errors other than the expiry, and an expiry of a
+    /// keytab credential, are returned as they are.
+    ///
+    /// # Security
+    ///
+    /// The `KDC_ERR_KEY_EXPIRED` error is unauthenticated: it can only make the client ask
+    /// for a new password, and nothing is sent until the `kadmin/changepw` AS reply has
+    /// decrypted under the old password. The AS is restarted only after a kpasswd
+    /// reply that authenticated under that ticket's session key.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe once the change request is sent: dropping the future then leaves the
+    /// outcome unknown, the next call returns [`Error::PasswordChangePending`] and sends
+    /// nothing until [`Self::acknowledge_password_change_outcome`]. Before the request is
+    /// sent, nothing on the server has changed.
+    #[inline]
+    pub async fn login_with_expiry<R>(
+        &mut self,
+        responder: &mut R,
+        sender_address: rasn_kerberos::HostAddress,
+    ) -> Result<&AsRepSession, Error>
+    where
+        R: ExpiryResponder + ?Sized,
+    {
+        if self.unresolved_password_change {
+            return Err(Error::PasswordChangePending);
+        }
+        match self.login().await.map(|_session| ()) {
+            Ok(()) => {}
+            Err(Error::Kdc(error))
+                if error.error_code() == KDC_ERR_KEY_EXPIRED
+                    && matches!(self.credentials, Some(TokioClientCredentials::Password(_))) =>
+            {
+                let mut turns = Turns::new();
+                loop {
+                    let Some(answer) = turns.ask(responder, &self.client)? else {
+                        return Err(turns.exhausted());
+                    };
+                    let (timestamp, cusec) = current_preauth_time()?;
+                    let options = RequestOptions::new(
+                        timestamp,
+                        cusec,
+                        random_nonce()?,
+                        sender_address.clone(),
+                    );
+                    match self.change_password_with_options(answer, options).await {
+                        Ok(_result) => {
+                            // Authenticated success: only now does the AS start over.
+                            let _session = self.login().await?;
+                            break;
+                        }
+                        Err(failure) => turns.rejected(failure)?,
+                    }
+                }
+            }
+            Err(error) => return Err(error),
+        }
+        // The TGT the login just cached: no further exchange.
+        let session = self.affirm_login().await?;
+        responder.expiry_notice(session.expiry_notice());
+        Ok(session)
+    }
+
+    /// Whether a password change may have reached the server without a confirmed result:
+    /// its request was sent and the reply was lost, unauthenticated or never read.
+    #[inline]
+    #[must_use]
+    pub const fn has_unresolved_password_change(&self) -> bool {
+        self.unresolved_password_change
+    }
+
+    /// Record that the caller verified the outcome of the earlier password change, for
+    /// example with a fresh login, so that a change may be made again.
+    #[inline]
+    pub const fn acknowledge_password_change_outcome(&mut self) {
+        self.unresolved_password_change = false;
+    }
 }
 
 /// JSON shape of one service ticket in [`Tokio::service_ticket_cache_json`].
@@ -5900,7 +6001,7 @@ mod tests {
             end_time: now,
             renew_till: None,
             key_expiration: None,
-            expiry: Default::default(),
+            expiry: super::ExpiryNotice::default(),
         })
     }
 

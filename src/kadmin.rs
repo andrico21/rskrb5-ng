@@ -14,14 +14,14 @@ mod credential_debug;
 pub mod password;
 /// Password payload ownership and encoding.
 mod payload;
-/// Password-policy mapping of a result.
-pub mod policy;
 /// Reply parsing and result handling.
 mod reply;
 /// Request frame and option implementations.
 mod request;
 /// Result code interpretation.
 mod result;
+/// The code and the text of a result: typed kind, Active Directory policy, message.
+pub mod result_text;
 /// Password-specific zeroizing DER writer.
 mod secret_der;
 

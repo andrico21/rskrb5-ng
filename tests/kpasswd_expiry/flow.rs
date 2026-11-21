@@ -7,19 +7,22 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
     time::Duration,
 };
-use std::{collections::VecDeque, sync::Arc, time::SystemTime};
+extern crate alloc;
+
+use alloc::{collections::VecDeque, sync::Arc};
+use std::time::SystemTime;
 
 use rskrb5_ng::{
     client::{
         Password, Tokio,
         kpasswd::{
-            expiry::ExpiryNotice,
-            responder::{ExpiryResponder, NewPasswordPrompt},
+            last_req::ExpiryNotice,
+            password_expiry::{ExpiryResponder, NewPasswordPrompt},
         },
     },
     error::{Client as Error, Kadmin},
     extensions::ProviderError,
-    kadmin::policy::ResultCode,
+    kadmin::result_text::ResultCode,
     krb_priv::ipv4_host_address,
 };
 use tokio::{net::TcpListener, sync::oneshot, time::timeout};
@@ -29,6 +32,7 @@ use super::{
     realm::{AsSeen, ExpiryFields, Realm},
     runtime,
     server::{self, Behavior},
+    support::held,
 };
 
 /// The account's password before the change.
@@ -103,9 +107,9 @@ async fn fixture(expired: bool, script: Vec<Behavior>) -> Result<Fixture, TestEr
 }
 
 /// The AS requests as `(service, preauthenticated)` pairs.
-fn as_requests(realm: &Realm) -> Result<Vec<(String, bool)>, TestError> {
-    Ok(realm
-        .requests()?
+fn as_requests(realm: &Realm) -> Vec<(String, bool)> {
+    realm
+        .requests()
         .into_iter()
         .map(
             |AsSeen {
@@ -113,7 +117,7 @@ fn as_requests(realm: &Realm) -> Result<Vec<(String, bool)>, TestError> {
                  preauthenticated,
              }| (service, preauthenticated),
         )
-        .collect())
+        .collect()
 }
 
 /// The sequence of one password login for `service`: the probe, then the proof.
@@ -147,12 +151,9 @@ fn an_expired_password_is_changed_and_the_login_restarts_with_the_new_one() -> R
         expected.extend(login_for(tgt));
         expected.extend(login_for(changepw));
         expected.extend(login_for(tgt));
-        assert_eq!(as_requests(&fixture.realm)?, expected);
+        assert_eq!(as_requests(&fixture.realm), expected);
         assert_eq!(fixture.kpasswd.load(Ordering::SeqCst), 1);
-        assert_eq!(
-            *fixture.realm.password.lock().map_err(|_| "poisoned")?,
-            NEW.as_bytes()
-        );
+        assert_eq!(*held(&fixture.realm.password), NEW.as_bytes());
         assert_eq!(
             responder.prompts,
             [("Password expired.  You must change it now.".to_owned(), 3)]
@@ -162,8 +163,8 @@ fn an_expired_password_is_changed_and_the_login_restarts_with_the_new_one() -> R
         // The client keeps the new password for its next login: the realm checks the proof
         // against the account's current password.
         let _session = fixture.client.login().await?;
-        let requests = as_requests(&fixture.realm)?;
-        assert_eq!(requests[6..], login_for(tgt));
+        let requests = as_requests(&fixture.realm);
+        assert_eq!(requests.get(6..), Some(login_for(tgt).as_slice()));
         Ok(())
     })
 }
@@ -174,7 +175,7 @@ fn a_login_that_needs_no_change_reports_the_expiry_and_asks_for_nothing() -> Res
     runtime()?.block_on(async {
         let mut fixture = fixture(false, vec![]).await?;
         let soon = SystemTime::UNIX_EPOCH + Duration::from_secs(2_000_000_000);
-        *fixture.realm.expiry.lock().map_err(|_| "poisoned")? = ExpiryFields {
+        *held(&fixture.realm.expiry) = ExpiryFields {
             last_req_password: Some(soon),
             ..ExpiryFields::default()
         };
@@ -185,11 +186,13 @@ fn a_login_that_needs_no_change_reports_the_expiry_and_asks_for_nothing() -> Res
             .login_with_expiry(&mut responder, sender())
             .await?;
 
-        assert!(responder.prompts.is_empty());
+        assert_eq!(responder.prompts, []);
         assert_eq!(fixture.kpasswd.load(Ordering::SeqCst), 0);
-        assert_eq!(responder.notices.len(), 1);
-        assert_eq!(responder.notices[0].password(), Some(soon));
-        assert!(responder.notices[0].from_last_req());
+        let [notice] = responder.notices.as_slice() else {
+            return Err("one notice".into());
+        };
+        assert_eq!(notice.password(), Some(soon));
+        assert!(notice.is_last_req());
         Ok(())
     })
 }
@@ -242,14 +245,19 @@ fn three_soft_errors_end_the_flow_without_a_restart() -> Result<(), TestError> {
             .login_with_expiry(&mut responder, sender())
             .await;
 
-        let Err(Error::Kadmin(Kadmin::PasswordChangeFailed { code, .. })) = result else {
+        let Err(Error::Kadmin(Kadmin::PasswordChangeFailed {
+            code,
+            text: _,
+            text_raw: _,
+        })) = result
+        else {
             return Err(format!("expected the last rejection, got {result:?}").into());
         };
         assert_eq!(ResultCode::from(code), ResultCode::SoftError);
         assert_eq!(responder.prompts.len(), 3);
         assert_eq!(fixture.kpasswd.load(Ordering::SeqCst), 3);
         // Every AS request was for the failed login or for kadmin/changepw: none is a restart.
-        let restarts = as_requests(&fixture.realm)?
+        let restarts = as_requests(&fixture.realm)
             .iter()
             .filter(|(service, _)| service == "krbtgt/TEST.GOKRB5")
             .count();
@@ -325,7 +333,7 @@ fn an_unauthenticated_change_success_does_not_restart_the_as() -> Result<(), Tes
                 "{result:?}"
             );
             assert_eq!(fixture.kpasswd.load(Ordering::SeqCst), 1);
-            let last = as_requests(&fixture.realm)?
+            let last = as_requests(&fixture.realm)
                 .last()
                 .map(|(service, _)| service.clone());
             assert_eq!(
@@ -357,7 +365,7 @@ fn a_lost_reply_is_never_replayed_by_the_flow_or_by_the_next_call() -> Result<()
         );
         assert_eq!(fixture.kpasswd.load(Ordering::SeqCst), 1);
         assert!(fixture.client.has_unresolved_password_change());
-        let requests_before = as_requests(&fixture.realm)?.len();
+        let requests_before = as_requests(&fixture.realm).len();
 
         // The next attempt does not prompt and does not touch the network.
         let again = fixture
@@ -370,7 +378,7 @@ fn a_lost_reply_is_never_replayed_by_the_flow_or_by_the_next_call() -> Result<()
         );
         assert_eq!(responder.prompts.len(), 1);
         assert_eq!(fixture.kpasswd.load(Ordering::SeqCst), 1);
-        assert_eq!(as_requests(&fixture.realm)?.len(), requests_before);
+        assert_eq!(as_requests(&fixture.realm).len(), requests_before);
 
         // Verified by the caller, the marker is cleared and a change may be made again.
         fixture.client.acknowledge_password_change_outcome();
@@ -383,8 +391,8 @@ fn a_lost_reply_is_never_replayed_by_the_flow_or_by_the_next_call() -> Result<()
 #[test]
 fn a_cancelled_flow_leaves_the_outcome_unknown() -> Result<(), TestError> {
     runtime()?.block_on(async {
-        let (arrived, request_arrived) = oneshot::channel();
-        let mut fixture = fixture(true, vec![Behavior::Hold(arrived)]).await?;
+        let (signal, request_arrived) = oneshot::channel();
+        let mut fixture = fixture(true, vec![Behavior::Hold(signal)]).await?;
         let mut responder = Script::of(&[NEW]);
 
         {
@@ -392,8 +400,8 @@ fn a_cancelled_flow_leaves_the_outcome_unknown() -> Result<(), TestError> {
             // Cancel the flow the moment the server has the request.
             tokio::select! {
                 result = flow => return Err(format!("the flow ended first: {result:?}").into()),
-                arrived = timeout(Duration::from_secs(10), request_arrived) => {
-                    arrived??;
+                waited = timeout(Duration::from_secs(10), request_arrived) => {
+                    waited??;
                 }
             }
         }

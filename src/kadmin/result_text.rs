@@ -1,6 +1,4 @@
-//! Password-policy mapping of a kpasswd result (MIT `chpw.c:245-275,372-510`).
-
-use super::ChangePasswordResult;
+//! The result code and result text of a kpasswd reply (MIT `chpw.c:245-275,372-510`).
 
 /// The length of the Active Directory policy structure (MIT `AD_POLICY_INFO_LENGTH`).
 const AD_POLICY_INFO_LENGTH: usize = 30;
@@ -69,9 +67,10 @@ impl ResultCode {
     }
 }
 
-/// The Active Directory password policy a server sends in the result text of a
-/// rejection: a packed 30-byte structure that starts with two zero bytes, so that the
-/// text looks empty to a reader that expects UTF-8.
+/// The Active Directory password policy in the result text of a rejection.
+///
+/// A packed 30-byte structure that starts with two zero bytes, so that the text looks
+/// empty to a reader that expects UTF-8.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct AdPasswordPolicy {
@@ -152,23 +151,21 @@ impl AdPasswordPolicy {
     /// Read the structure from result text; `None` unless it is exactly 30 bytes that
     /// start with two zero bytes (MIT `decode_ad_policy_info`).
     fn parse(text: &[u8]) -> Option<Self> {
-        let [0, 0, rest @ ..] = text else {
+        let fields: &[u8; AD_POLICY_INFO_LENGTH] = text.try_into().ok()?;
+        let [0, 0, rest @ ..] = fields else {
             return None;
         };
-        let (min_length, rest) = rest.split_first_chunk::<4>()?;
-        let (history, rest) = rest.split_first_chunk::<4>()?;
-        let (properties, rest) = rest.split_first_chunk::<4>()?;
-        let (expire, rest) = rest.split_first_chunk::<8>()?;
-        let (min_age, rest) = rest.split_first_chunk::<8>()?;
-        (rest.is_empty() && text.len() == AD_POLICY_INFO_LENGTH).then(|| {
-            Self::new(
-                u32::from_be_bytes(*min_length),
-                u32::from_be_bytes(*history),
-                u32::from_be_bytes(*properties),
-                u64::from_be_bytes(*expire),
-                u64::from_be_bytes(*min_age),
-            )
-        })
+        let (min_length, after_length) = rest.split_first_chunk::<4>()?;
+        let (history, after_history) = after_length.split_first_chunk::<4>()?;
+        let (properties, after_properties) = after_history.split_first_chunk::<4>()?;
+        let (expire, min_age) = after_properties.split_first_chunk::<8>()?;
+        Some(Self::new(
+            u32::from_be_bytes(*min_length),
+            u32::from_be_bytes(*history),
+            u32::from_be_bytes(*properties),
+            u64::from_be_bytes(*expire),
+            u64::from_be_bytes(min_age.try_into().ok()?),
+        ))
     }
 
     /// MIT's sentences for the policy; empty when the policy asks for nothing.
@@ -203,7 +200,7 @@ impl AdPasswordPolicy {
             });
         }
         if self.min_age > 0 {
-            let days = (self.min_age / AD_POLICY_TIME_TO_DAYS).max(1);
+            let days = self.min_age.div_euclid(AD_POLICY_TIME_TO_DAYS).max(1);
             sentence(&if days == 1 {
                 "The password can only be changed once a day.".to_owned()
             } else {
@@ -214,36 +211,22 @@ impl AdPasswordPolicy {
     }
 }
 
-impl ChangePasswordResult {
-    /// The result code as a typed kind.
-    #[inline]
-    #[must_use]
-    pub fn kind(&self) -> ResultCode {
-        ResultCode::from(self.code)
-    }
-
-    /// The Active Directory password policy in the result text, if it carries one.
-    #[inline]
-    #[must_use]
-    pub fn ad_policy(&self) -> Option<AdPasswordPolicy> {
-        AdPasswordPolicy::parse(&self.text_raw)
-    }
-
-    /// A message for the user (MIT `krb5_chpw_message`): the sentences of an Active
-    /// Directory policy; else the text when it is valid UTF-8 without NUL; else generic
-    /// advice.
-    #[inline]
-    #[must_use]
-    pub fn message(&self) -> String {
-        if let Some(policy) = self.ad_policy() {
-            let sentences = policy.sentences();
-            if !sentences.is_empty() {
-                return sentences;
-            }
-        }
-        match core::str::from_utf8(&self.text_raw) {
-            Ok(text) if !text.is_empty() && !text.contains('\0') => text.to_owned(),
-            _ => "Try a more complex password, or contact your administrator.".to_owned(),
+/// The message of a result text (MIT `krb5_chpw_message`): the sentences of an Active
+/// Directory policy; else the text when it is valid UTF-8 without NUL; else generic advice.
+pub(super) fn message(text: &[u8]) -> String {
+    if let Some(policy) = AdPasswordPolicy::parse(text) {
+        let sentences = policy.sentences();
+        if !sentences.is_empty() {
+            return sentences;
         }
     }
+    match str::from_utf8(text) {
+        Ok(printable) if !printable.is_empty() && !printable.contains('\0') => printable.to_owned(),
+        _ => "Try a more complex password, or contact your administrator.".to_owned(),
+    }
+}
+
+/// The Active Directory policy in a result text, if it carries one.
+pub(super) fn ad_policy(text: &[u8]) -> Option<AdPasswordPolicy> {
+    AdPasswordPolicy::parse(text)
 }
