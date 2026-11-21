@@ -1,0 +1,41 @@
+//! Cross-realm routing (WP-11, plan 2 todo 17): `[capaths]` and hierarchical
+//! realm paths, DOMAIN-X500-COMPRESS transited encodings and the certificate
+//! identity of certificate `S4U2Self`.
+
+use core::error::Error;
+
+/// Error type of the `Result`-returning tests.
+type TestError = Box<dyn Error + Send + Sync>;
+
+/// MIT 1.22.2 realm-path vectors (`walktree-tests`) and the path bounds.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "routing/paths.rs"]
+mod paths;
+
+/// MIT 1.22.2 transited-expansion vectors (`transit-tests`) and the codec bounds.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "routing/transited.rs"]
+mod transited;
+
+/// The certificate identity of certificate S4U2Self and its inspection seam.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "routing/certificate.rs"]
+mod certificate;

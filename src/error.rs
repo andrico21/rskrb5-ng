@@ -3204,3 +3204,59 @@ pub enum Ticket {
     #[error("crypto error: {0}")]
     Crypto(#[from] Crypto),
 }
+/// Realm-path, transited-encoding or certificate-identity failure (WP-11).
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum Routing {
+    /// A realm name is empty.
+    #[error("empty realm name")]
+    EmptyRealm,
+    /// A realm has no cross-realm path to itself.
+    #[error("no cross-realm path from a realm to itself")]
+    SameRealm,
+    /// A configured path names a realm twice or an endpoint as an intermediate.
+    #[error("realm path loops through {realm}")]
+    PathLoop {
+        /// The realm the path reaches a second time.
+        realm: String,
+    },
+    /// A path holds more realms than the bound.
+    #[error("realm path exceeds {max} realms")]
+    PathTooLong {
+        /// The bound, endpoints included.
+        max: usize,
+    },
+    /// A transited encoding is longer than the bound.
+    #[error("transited encoding exceeds {max} bytes")]
+    TransitedTooLong {
+        /// The bound in bytes.
+        max: usize,
+    },
+    /// A transited realm name grows past the bound.
+    #[error("transited realm name exceeds {max} bytes")]
+    TransitedRealmTooLong {
+        /// The bound in bytes.
+        max: usize,
+    },
+    /// A transited encoding names more realms than the bound.
+    #[error("transited encoding names more than {max} realms")]
+    TransitedTooManyRealms {
+        /// The bound, expanded realms included.
+        max: usize,
+    },
+    /// A transited encoding is malformed.
+    #[error("malformed transited encoding: {reason}")]
+    MalformedTransited {
+        /// What is wrong with it.
+        reason: &'static str,
+    },
+    /// A certificate identity is empty or larger than the bound.
+    #[error("a certificate identity holds 1 to {max} DER bytes")]
+    CertificateSize {
+        /// The bound in bytes.
+        max: usize,
+    },
+    /// The certificate inspector refused the certificate.
+    #[error("the certificate inspector refused the certificate: {0}")]
+    CertificateRejected(#[source] ProviderError),
+}
