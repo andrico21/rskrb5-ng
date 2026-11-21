@@ -27,6 +27,8 @@ use crate::{
     extensions::ProviderError,
 };
 
+#[cfg(feature = "messages")]
+pub mod s4u;
 pub mod transited;
 
 include!("routing/path.rs");
