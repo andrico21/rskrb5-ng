@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 83
-partial = 44
-absent = 26
+implemented = 87
+partial = 43
+absent = 23
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -153,7 +153,7 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "S4U2Self protocol transition / impersonation"
 implementation_status = "partial"
 evidence_status = "unproven"
-missing = "PA-FOR-USER/principal S4U exists; no certificate S4U identity."
+missing = "PA-FOR-USER/principal S4U exists; no certificate S4U identity. P2-8 delivered the certificate types (preauth::pkinit::Identity DER chains and the x509-cert parsing of the pkinit leaf); the PA-S4U-X509-USER certificate request is P2-17's (closer)."
 rust_symbols = []
 test_names = []
 feature_flags = []
@@ -204,13 +204,21 @@ id = "MIT-client-9"
 area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Anonymous and realm-exposed anonymous initial credentials"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "AS options lack anonymous identity/policy orchestration."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "preauth::pkinit::AnonymousOptions",
+  "client::stepwise::InitCredsOptions::with_anonymous",
+  "client::stepwise::InitCreds::with_pkinit",
+]
+test_names = [
+  "tests/pkinit/scenarios.rs::realm_exposed_anonymity_requires_the_anonymous_name",
+  "tests/pkinit/scenarios.rs::anonymous_pkinit_yields_the_anonymous_principal",
+  "tests/interop_pkinit/scenarios.rs::anonymous_pkinit_issues_the_anonymous_principal",
+]
+feature_flags = ["pkinit"]
+security_divergence = "Realm-exposed anonymity (a normal login with request-anonymous) accepts only WELLKNOWN/ANONYMOUS in the client realm as the reply client; MIT 1.22.2 KDCs do not issue such tickets, so it is verified against the test KDC only (doc/user/user_commands/kinit.rst -n)."
 disposition = "WP-06"
 closing_plan = 2
 closing_todo = 8
@@ -431,14 +439,20 @@ id = "MIT-preauth-3"
 area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "FAST anonymous armor via anonymous PKINIT"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "P2-7 delivered the anonymous-armor hook (`preauth::fast::AnonymousArmor`, `ArmorSource::Anonymous`, asked for each realm the exchange armors); anonymous PKINIT behind it is the closing todo P2-8's."
-rust_symbols = ["preauth::fast::AnonymousArmor", "preauth::fast::ArmorSource"]
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "preauth::fast::AnonymousArmor",
+  "preauth::fast::ArmorSource",
+  "preauth::pkinit::AnonymousArmorSource",
+]
 test_names = [
   "tests/fast/exchange.rs::client_referrals_are_followed_only_when_armored_and_asked_for",
+  "tests/pkinit/scenarios.rs::anonymous_armor_source_obtains_an_anonymous_tgt",
+  "tests/interop_pkinit/scenarios.rs::anonymous_armor_carries_the_encrypted_challenge",
 ]
-feature_flags = []
+feature_flags = ["pkinit"]
 security_divergence = ""
 disposition = "WP-06"
 closing_plan = 2
@@ -478,13 +492,40 @@ id = "MIT-preauth-5"
 area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "PKINIT certificate authentication (RSA and supported ECC paths)"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "PKINIT excluded by current code; implement current ECC/DH, not removed RSA mode."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "preauth::pkinit::Exchange",
+  "preauth::pkinit::Identity",
+  "preauth::pkinit::IdentityProvider",
+  "preauth::pkinit::Signer",
+  "preauth::pkinit::KdcTrust",
+  "preauth::pkinit::CertificatePolicy",
+  "preauth::pkinit::DhGroup",
+  "preauth::pkinit::ConfiguredIdentities",
+  "client::stepwise::InitCreds::with_pkinit",
+  "error::Pkinit",
+]
+test_names = [
+  "src/preauth/pkinit/tests.rs::rfc8636_kdf_vectors",
+  "src/preauth/pkinit/tests.rs::octetstring2key_concatenates_counted_sha1_blocks",
+  "src/preauth/pkinit/tests.rs::modp_2048_agreement_matches_openssl",
+  "src/preauth/pkinit/tests.rs::p256_agreement_matches_openssl",
+  "src/preauth/pkinit/tests.rs::invalid_public_values_are_refused",
+  "src/preauth/pkinit/tests.rs::openssl_cms_signed_data_verifies",
+  "src/preauth/pkinit/tests.rs::chain_validation_rules",
+  "src/preauth/pkinit/tests.rs::kdc_identity_rules",
+  "src/preauth/pkinit/tests.rs::software_identities_and_outgoing_requests",
+  "tests/pkinit/scenarios.rs::certificate_login_completes_with_the_freshness_token",
+  "tests/pkinit/scenarios.rs::no_freshness_token_is_sent_when_none_is_offered",
+  "tests/pkinit/scenarios.rs::kdc_certificate_without_the_kdc_eku_is_rejected_under_kp_kdc",
+  "tests/pkinit/scenarios.rs::kdc_certificate_without_the_eku_is_accepted_under_none",
+  "tests/pkinit/scenarios.rs::rejections_of_the_kdc_reply",
+  "tests/interop_pkinit/scenarios.rs::certificate_login_earns_the_pkinit_indicator",
+]
+feature_flags = ["pkinit"]
+security_divergence = "Stricter than MIT 1.22.2: the KDC certificate must carry the EKU pkinit_eku_checking asks for (and digitalSignature) also when its id-pkinit-san names the TGS (MIT skips the EKU check then, pkinit_clnt.c:395-399,584-601); finite-field groups below 2048 bits are refused (pkinit_dh_min_bits = 1024 is DhGroupTooSmall); SHA-1 signatures and RSA keys below 2048 bits are refused on certificates and CMS; a stale CRL fails as RevocationUnknown; the bounded in-crate path validator replaces OpenSSL X509_verify_cert (rules in src/preauth/pkinit/chain.rs). Built-in software identities sign with EC keys (P-256, P-384); RSA client keys sign through the Signer trait (D8). RSA key transport (encKeyPack) stays rejected (D2). The TD-DH-PARAMETERS retry with another group (pkinit_client_tryagain) is not implemented: the KDC refusal is returned as the KDC error."
 disposition = "WP-06"
 closing_plan = 2
 closing_todo = 8
@@ -495,13 +536,22 @@ id = "MIT-preauth-6"
 area = "preauth"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Anonymous PKINIT"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "No certificate-less anonymous exchange."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "preauth::pkinit::Exchange",
+  "preauth::pkinit::AnonymousOptions",
+  "client::stepwise::InitCredsOptions::with_anonymous",
+]
+test_names = [
+  "tests/pkinit/scenarios.rs::anonymous_pkinit_yields_the_anonymous_principal",
+  "tests/pkinit/scenarios.rs::anonymous_reply_without_the_key_exchange_is_rejected",
+  "src/preauth/pkinit/tests.rs::anonymous_key_exchange_must_match_the_session_key",
+  "tests/interop_pkinit/scenarios.rs::anonymous_pkinit_issues_the_anonymous_principal",
+]
+feature_flags = ["pkinit"]
+security_divergence = "Stricter than MIT 1.22.2: the reply client must be exactly WELLKNOWN/ANONYMOUS@WELLKNOWN:ANONYMOUS (MIT accepts any canonicalized name for a request-anonymous request, get_in_tkt.c:227-238) and its session key is checked against PA-PKINIT-KX in constant time (MIT memcmp, get_in_tkt.c:147-203). The client always sends an unsigned SignedData (RFC 6112), never the pre-1.10 bare ContentInfo."
 disposition = "WP-06"
 closing_plan = 2
 closing_todo = 8
@@ -2361,14 +2411,26 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "`[realms]`: PKINIT identity/trust/cert-auth options"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "PKINIT; realm pkinit_* relations are parsed with diagnostics and enabled pkinit_win2k/pkinit_draft9 values are rejected (D2)."
-rust_symbols = []
+missing = "pkinit_cert_match rule evaluation: the rules are POSIX regular expressions (MIT pkinit_matching.c) and no regex engine is admitted, so a configured rule is a typed UnsupportedLocation error, never skipped; closer: plan 2 todo 28 (configuration consumers complete) once a regex engine is admitted (the localauth leaf of todo 25). The client relations pkinit_anchors, pkinit_pool, pkinit_revoke, pkinit_identities, pkinit_eku_checking, pkinit_dh_min_bits, pkinit_kdc_hostname and pkinit_require_crl_checking are effective (P2-8); pkinit_identity, pkinit_allow_upn, pkinit_indicator and pkinit_require_freshness are KDC-side (D1) and keep their diagnostic."
+rust_symbols = [
+  "preauth::pkinit::KdcTrust::from_config",
+  "preauth::pkinit::CertificatePolicy::from_config",
+  "preauth::pkinit::ConfiguredIdentities::from_config",
+  "preauth::pkinit::DhGroup::from_min_bits",
+]
 test_names = [
   "tests/config/sections_d.rs::pkinit_invalid_enums_fail",
   "tests/config/realm_relations_d.rs::pkinit_anchors",
   "tests/config/realm_relations_d.rs::pkinit_identities",
+  "tests/pkinit/profile.rs::dh_min_bits_maps_like_mit_with_a_2048_floor",
+  "tests/pkinit/profile.rs::realm_relations_shape_the_certificate_policy",
+  "tests/pkinit/profile.rs::refused_identity_locations_are_typed_errors",
+  "tests/pkinit/profile.rs::certificate_matching_rules_are_refused_not_skipped",
+  "tests/pkinit/profile.rs::file_identities_pair_certificate_and_key",
+  "tests/pkinit/profile.rs::missing_anchors_are_a_typed_error",
+  "tests/pkinit/profile.rs::anchors_pool_and_crls_load_from_files",
 ]
-feature_flags = []
+feature_flags = ["pkinit"]
 security_divergence = ""
 disposition = "WP-06"
 closing_plan = 2
