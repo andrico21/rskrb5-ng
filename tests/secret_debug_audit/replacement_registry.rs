@@ -34,6 +34,26 @@ pub(super) const DELEGATIONS: &[(&str, &str)] = &[
         "delegates:src/client.rs::Tokio::ensure_tgt",
     ),
     (
+        "src/client.rs::Tokio::s4u2self_identity",
+        "delegates:src/client.rs::Tokio::ensure_tgt",
+    ),
+    (
+        "src/client.rs::Tokio::delegate",
+        "delegates:src/client.rs::Tokio::ensure_tgt",
+    ),
+    (
+        "src/client.rs::Tokio::user_to_user_ticket",
+        "delegates:src/client.rs::Tokio::ensure_tgt",
+    ),
+    (
+        "src/client.rs::Tokio::user_to_user_ticket",
+        "delegates:src/client.rs::Tokio::cache_tgt_session",
+    ),
+    (
+        "src/client.rs::Tokio::verify_init_creds",
+        "delegates:src/client.rs::Tokio::get_service_ticket",
+    ),
+    (
         "src/client.rs::Tokio::s4u2proxy",
         "delegates:src/client.rs::Tokio::s4u2proxy_with_options",
     ),

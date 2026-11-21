@@ -134,6 +134,10 @@ mod otp;
 #[path = "secret_debug_audit/pkinit.rs"]
 mod pkinit;
 
+#[cfg(all(test, feature = "tokio"))]
+#[path = "secret_debug_audit/routing.rs"]
+mod routing;
+
 #[cfg(all(test, feature = "spnego"))]
 #[path = "secret_debug_audit/tokens.rs"]
 mod tokens;
@@ -195,6 +199,8 @@ mod tests {
         super::otp::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         #[cfg(feature = "messages")]
         super::pkinit::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
+        #[cfg(feature = "tokio")]
+        super::routing::tests::run_audit();
         #[cfg(feature = "spnego")]
         super::tokens::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -248,6 +254,12 @@ mod tests {
     fn active(identity: &str) -> bool {
         if identity.starts_with("src/ccache/kcm") {
             return cfg!(unix);
+        }
+        if identity.starts_with("src/routing/impersonation") {
+            return cfg!(feature = "tokio");
+        }
+        if identity.starts_with("src/routing/s4u") {
+            return cfg!(feature = "messages");
         }
         if identity.starts_with("src/pac") {
             return cfg!(feature = "messages");
@@ -1283,6 +1295,7 @@ mod tests {
         "src/client.rs::KdcError",
         "src/client.rs::AsRepSession",
         "src/client.rs::ReferralTgsResult",
+        "src/routing/impersonation.rs::Delegation",
         "src/client.rs::BuiltApReq",
         "src/client.rs::BuiltAsReq",
         "src/client.rs::BuiltTgsReq",

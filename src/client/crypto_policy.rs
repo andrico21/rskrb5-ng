@@ -335,10 +335,6 @@ pub(super) fn delegated(
     ))) & super::KDC_OPTION_CNAME_IN_ADDL_TKT
         != 0
     {
-        let keys = request
-            .delegation_keytab
-            .as_ref()
-            .ok_or(Error::DelegationKeyRequired)?;
         let evidence = request
             .message
             .0
@@ -350,7 +346,16 @@ pub(super) fn delegated(
         request
             .crypto_policy
             .check_use(evidence.enc_part.etype, Use::TicketKey)?;
-        super::validate_delegated_ticket(evidence, &request.client, keys)?;
+        // A cross-realm proxy TGT carried to the target realm (MIT 1.22.2
+        // `s4u_creds.c:1087-1108`) is sealed for the KDCs; the evidence it stands
+        // for was bound when the first S4U2Proxy request of the delegation sent it.
+        if !super::is_tgt_wire(&evidence.sname) {
+            let keys = request
+                .delegation_keytab
+                .as_ref()
+                .ok_or(Error::DelegationKeyRequired)?;
+            super::validate_delegated_ticket(evidence, &request.client, keys)?;
+        }
     }
     Ok(())
 }

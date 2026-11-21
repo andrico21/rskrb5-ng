@@ -427,6 +427,11 @@ impl TgsReq {
     pub const fn nonce(&self) -> u32 {
         self.nonce
     }
+    /// Replace the nonce (each request of a multi-request exchange needs its own).
+    #[inline]
+    pub const fn set_nonce(&mut self, value: u32) {
+        self.nonce = value;
+    }
     /// Borrow requested encryption types.
     #[inline]
     #[must_use]

@@ -27,6 +27,10 @@ use crate::{
     extensions::ProviderError,
 };
 
+#[cfg(feature = "tokio")]
+pub mod impersonation;
+#[cfg(feature = "tokio")]
+pub mod init_creds;
 #[cfg(feature = "messages")]
 pub mod s4u;
 pub mod transited;

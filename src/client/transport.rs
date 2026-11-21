@@ -1913,11 +1913,69 @@ impl Tokio {
         config: &Config,
         protocol: KdcProtocol,
         tgt: &AsRepSession,
-        mut service: Principal,
-        mut options: TgsReq,
+        service: Principal,
+        options: TgsReq,
         max_referrals: usize,
     ) -> Result<ReferralTgsResult, Error> {
-        options.set_crypto_policy(Ok(super::crypto_policy::configured(&config.libdefaults)?));
+        self.ticket_exchange(
+            config,
+            protocol,
+            (tgt, service),
+            (options, max_referrals, None),
+        )
+        .await
+    }
+
+    /// Acquire a user-to-user ticket for `target.0`, sealed in the session key of
+    /// `target.1`, the target's TGT (RFC 4120 section 3.7, ENC-TKT-IN-SKEY),
+    /// reaching its realm as [`Self::get_service_ticket_with_referral_trace_limit`]
+    /// does, with a limit of 5 referrals.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Decode`] when `target.1` is not a DER Ticket, and the
+    /// errors of [`Self::get_service_ticket_with_referral_trace_limit`].
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: it takes `&self` and changes no client state. Dropping the
+    /// future abandons the exchange and closes its sockets; a KDC that already
+    /// answered keeps no state the caller depends on, so the exchange can be
+    /// repeated.
+    #[inline]
+    pub async fn get_user_to_user_ticket(
+        &self,
+        config: &Config,
+        protocol: KdcProtocol,
+        tgt: &AsRepSession,
+        target: (Principal, &[u8]),
+        options: TgsReq,
+    ) -> Result<ReferralTgsResult, Error> {
+        let (service, second_ticket) = target;
+        self.ticket_exchange(
+            config,
+            protocol,
+            (tgt, service),
+            (options, DEFAULT_MAX_REFERRALS, Some(second_ticket)),
+        )
+        .await
+    }
+
+    /// One TGS exchange through referrals and the `[capaths]` client path.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Self::get_service_ticket_with_referral_trace_limit`].
+    async fn ticket_exchange(
+        &self,
+        config: &Config,
+        protocol: KdcProtocol,
+        request: (&AsRepSession, Principal),
+        options: (TgsReq, usize, Option<&[u8]>),
+    ) -> Result<ReferralTgsResult, Error> {
+        let (tgt, mut service) = request;
+        let (mut template, max_referrals, second_ticket) = options;
+        template.set_crypto_policy(Ok(super::crypto_policy::configured(&config.libdefaults)?));
         let current_realm = tgt_realm(tgt).ok_or_else(|| Error::InvalidReferralTicket {
             service: tgt.service.name(),
         })?;
@@ -1929,13 +1987,16 @@ impl Tokio {
             };
             service.realm = mapped.unwrap_or_else(|| current_realm.clone());
         }
-        let mut ticket_options = TicketOptions::new(options).with_max_referrals(max_referrals);
+        let mut ticket_options = TicketOptions::new(template).with_max_referrals(max_referrals);
         if current_realm != service.realm {
             ticket_options = ticket_options.with_realm_path(RealmPath::client(
                 &config.capaths,
                 &current_realm,
                 &service.realm,
             )?);
+        }
+        if let Some(ticket) = second_ticket {
+            ticket_options = ticket_options.with_user_to_user(ticket)?;
         }
         let mut exchange = TicketCreds::new(tgt.clone(), service, ticket_options)?;
         let ticket = drive_tokio(self, (config, protocol), &mut exchange, &mut NoResponder).await?;

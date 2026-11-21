@@ -46,6 +46,10 @@ use crate::{
     config::{credential_names, parameters::DefaultName},
     file_name,
     keytab::configured_keytab,
+    routing::{
+        impersonation::{self, Delegation, DelegationOptions, S4uIdentity},
+        init_creds::{self, Verification, VerifyOptions},
+    },
     secure_env,
     trace::{ExchangeKind, Guard},
 };
@@ -2545,6 +2549,10 @@ impl Tokio {
         Ok(ticket)
     }
     /// Acquire an `S4U2Self` ticket for an impersonated user using the current service TGT.
+    ///
+    /// The request asks for a forwardable ticket whatever the profile's
+    /// `forwardable` says, because it is the evidence of a later `S4U2Proxy`;
+    /// use [`Self::s4u2self_with_options`] for explicit options.
     /// # Errors
     ///
     /// Returns [`Error::Random`] when the nonce cannot be generated, and the errors
@@ -2557,7 +2565,11 @@ impl Tokio {
     #[inline]
     pub async fn s4u2self(&mut self, user: Principal) -> Result<TgsRepSession, Error> {
         let options = self.tgs_req_options()?;
-        self.s4u2self_with_options(user, options).await
+        // FU-IOP-P11: evidence for S4U2Proxy must be forwardable (Samba refuses
+        // it otherwise, even for resource-based constrained delegation).
+        let bits = options.kdc_option_bits() | 0x4000_0000;
+        self.s4u2self_with_options(user, options.with_kdc_option_bits(bits))
+            .await
     }
     /// Acquire an `S4U2Self` ticket using explicit TGS request options.
     /// # Errors
@@ -2639,6 +2651,163 @@ impl Tokio {
             )
             .await
     }
+    /// `S4U2Self` for a user principal or a user certificate, across realms
+    /// (MIT 1.22.2 `krb5_get_credentials_for_user`); see
+    /// [`crate::routing::impersonation`].
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of acquiring the service TGT, of the referral to the
+    /// user's realm and of each `S4U2Self` exchange, and
+    /// [`Error::DelegationKeyRequired`] for a client without a keytab.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: the issued ticket is returned, not cached; a TGT acquired on the
+    /// way is cached only after its exchange completes.
+    #[inline]
+    pub async fn s4u2self_identity(
+        &mut self,
+        identity: S4uIdentity,
+        options: DelegationOptions,
+    ) -> Result<TgsRepSession, Error> {
+        let service_tgt = self.ensure_tgt().await?;
+        let request = self.tgs_req_options()?;
+        let session = self.delegation_session();
+        impersonation::s4u2self(
+            &session,
+            &service_tgt,
+            &identity,
+            (request, options.forwardable()),
+        )
+        .await
+    }
+
+    /// Delegate: `S4U2Self` for `identity`, then `S4U2Proxy` to `target` in the
+    /// user's name, resource-based constrained delegation included and across
+    /// realms (MIT 1.22.2 `s4u_creds.c:420-645,984-1145`).
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Self::s4u2self_identity`] and of each
+    /// `S4U2Proxy` exchange; a KDC that does not allow the delegation answers
+    /// with [`Error::Kdc`].
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: the tickets are returned, not cached; a TGT acquired on the
+    /// way is cached only after its exchange completes.
+    #[inline]
+    pub async fn delegate(
+        &mut self,
+        identity: S4uIdentity,
+        target: Principal,
+        options: DelegationOptions,
+    ) -> Result<Delegation, Error> {
+        let service_tgt = self.ensure_tgt().await?;
+        let request = self.tgs_req_options()?;
+        let session = self.delegation_session();
+        let evidence = impersonation::s4u2self(
+            &session,
+            &service_tgt,
+            &identity,
+            (request.clone(), options.forwardable()),
+        )
+        .await?;
+        let ticket = impersonation::s4u2proxy(
+            &session,
+            &service_tgt,
+            (&evidence, target),
+            (request, options.resource_based()),
+        )
+        .await?;
+        Ok(Delegation::new(evidence, ticket))
+    }
+
+    /// Verify this client's initial credentials against a host keytab (MIT
+    /// 1.22.2 `krb5_verify_init_creds`); see [`crate::routing::init_creds`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::VerifyInitCredsNoHostKey`] when the keytab holds no key
+    /// to verify with and `verify_ap_req_nofail` is not `false`,
+    /// [`Error::VerifyInitCredsRejected`] when the host key refuses the
+    /// AP-REQ, and the errors of acquiring the TGT and the service ticket.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: the service ticket is cached only after its exchange
+    /// completes; nothing else changes.
+    #[inline]
+    pub async fn verify_init_creds(
+        &mut self,
+        keytab: &Keytab,
+        options: VerifyOptions,
+    ) -> Result<Verification, Error> {
+        let realm = self.client.realm.clone();
+        let Some(servers) = init_creds::servers(&self.config, &realm, keytab, options)? else {
+            return Ok(Verification::Skipped);
+        };
+        let mut last = Error::VerifyInitCredsNoHostKey;
+        for server in servers {
+            match self.get_service_ticket(server.clone()).await {
+                Ok(ticket) => match init_creds::check(&ticket, keytab) {
+                    Ok(()) => return Ok(Verification::Verified(server)),
+                    Err(error) => last = error,
+                },
+                Err(error) => last = error,
+            }
+        }
+        Err(last)
+    }
+
+    /// A user-to-user ticket for `service`, sealed in the session key of
+    /// `second_ticket`, the target's TGT (RFC 4120 section 3.7,
+    /// ENC-TKT-IN-SKEY), across realms like [`Self::get_service_ticket`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Decode`] when `second_ticket` is not a DER Ticket, and
+    /// the errors of acquiring the TGT and of each TGS exchange.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: the ticket is returned, not cached; referral TGTs are cached
+    /// only after their exchanges complete.
+    #[inline]
+    pub async fn user_to_user_ticket(
+        &mut self,
+        service: Principal,
+        second_ticket: &[u8],
+    ) -> Result<TgsRepSession, Error> {
+        let tgt = self.ensure_tgt().await?;
+        let result = self
+            .transport
+            .get_user_to_user_ticket(
+                &self.config,
+                self.protocol,
+                &tgt,
+                (service, second_ticket),
+                self.tgs_req_options()?,
+            )
+            .await?;
+        let (ticket, referral_tgts) = result.into_parts();
+        for referral_tgt in referral_tgts {
+            self.cache_tgt_session(referral_tgt)?;
+        }
+        Ok(ticket)
+    }
+
+    /// The transport, profile and keytab a delegation runs with.
+    const fn delegation_session(&self) -> impersonation::Session<'_> {
+        impersonation::Session::new(&self.transport, &self.config, self.protocol).with_keytab(
+            match &self.credentials {
+                Some(TokioClientCredentials::Keytab(keytab)) => Some(keytab),
+                Some(TokioClientCredentials::Password(_)) | None => None,
+            },
+        )
+    }
+
     /// Build a SPNEGO HTTP `Authorization` header for a service.
     /// # Errors
     ///
@@ -3618,8 +3787,12 @@ pub fn build_tgs_req_with_confounder(
 pub fn build_s4u2self_req(
     service_tgt: &AsRepSession,
     user: Principal,
-    options: TgsReq,
+    mut options: TgsReq,
 ) -> Result<BuiltTgsReq, Error> {
+    // The request carries its own PA-FOR-USER; a caller's is replaced, not sent.
+    options
+        .padata_mut()
+        .retain(|padata| padata.r#type != PA_FOR_USER);
     let policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
     crypto_policy::padata(&policy, options.padata())?;
     crypto_policy::session(&policy, service_tgt, Use::SessionKey)?;
@@ -3645,12 +3818,13 @@ pub fn build_s4u2self_req_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<BuiltTgsReq, Error> {
-    let policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
-    crypto_policy::padata(&policy, options.padata())?;
-    crypto_policy::session(&policy, service_tgt, Use::SessionKey)?;
+    // The request carries its own PA-FOR-USER; a caller's is replaced, not sent.
     options
         .padata_mut()
         .retain(|padata| padata.r#type != PA_FOR_USER);
+    let policy = crypto_policy::request(options.crypto_policy(), options.etypes())?;
+    crypto_policy::padata(&policy, options.padata())?;
+    crypto_policy::session(&policy, service_tgt, Use::SessionKey)?;
     options
         .padata_mut()
         .push(pa_for_user_padata(&user, &service_tgt.session_key)?);
@@ -4831,7 +5005,7 @@ fn process_tgs_rep_inner(
 /// # Errors
 /// Returns key lookup/decryption errors, or `DelegationPrincipalMismatch` when
 /// the protected ticket client differs from the requested/evidence identity.
-fn validate_delegated_ticket(
+pub(crate) fn validate_delegated_ticket(
     ticket: &rasn_kerberos::Ticket,
     expected: &Principal,
     keys: &Keytab,
@@ -5602,6 +5776,11 @@ fn host_addresses(addresses: &[IpAddr]) -> Option<Vec<rasn_kerberos::HostAddress
             })
             .collect()
     })
+}
+
+/// Whether a wire principal name is a TGS name `krbtgt/<realm>`.
+fn is_tgt_wire(name: &rasn_kerberos::PrincipalName) -> bool {
+    matches!(name.string.as_slice(), [first, _] if first.as_bytes() == b"krbtgt")
 }
 
 /// Whether a principal is a `krbtgt/<realm>` service.

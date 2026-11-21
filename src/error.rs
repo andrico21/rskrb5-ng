@@ -417,6 +417,20 @@ pub enum Client {
         /// Maximum number of referrals followed.
         max: usize,
     },
+    /// The KDC's `PA-S4U-X509-USER` reply does not match the request: a
+    /// missing element, another nonce, an invalid checksum or no user name
+    /// (MIT 1.22.2 `KRB5_KDCREP_MODIFIED`, `s4u_creds.c:272-397`).
+    #[error("the S4U2Self reply identity does not match the request")]
+    S4uReplyModified,
+    /// `verify_init_creds` found no key to verify with (no `host/*` principal
+    /// or no key for the named server) and `verify_ap_req_nofail` is not
+    /// `false` (MIT 1.22.2 `vfy_increds.c:296-314`).
+    #[error("no host key to verify the initial credentials with")]
+    VerifyInitCredsNoHostKey,
+    /// The host keytab refused the AP-REQ of `verify_init_creds`: the
+    /// credentials did not come from the KDC that shares the host key.
+    #[error("the host keytab refused the initial credentials: {0}")]
+    VerifyInitCredsRejected(#[source] Box<Service>),
     /// The configured cross-realm path cannot be used (WP-11).
     #[error("routing error: {0}")]
     Routing(#[from] Routing),

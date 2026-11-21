@@ -5,7 +5,8 @@
 //! The request element names the user and the TGS-REQ nonce under a keyed
 //! checksum of the request's authenticator subkey (key usage 26); the KDC
 //! answers with the same element naming the user it found, under key usage 27
-//! when the request set `USE_REPLY_KEY_USAGE`.
+//! when the request set `USE_REPLY_KEY_USAGE`. [`verify_reply`] binds the user
+//! of the issued ticket to that checksum-protected name.
 
 use rasn::{
     AsnType, Decode, Decoder as _, Encode, Encoder as _, der,
@@ -13,8 +14,9 @@ use rasn::{
 };
 
 use crate::{
-    crypto::{CryptoPolicy, Use, selection},
+    crypto::{CryptoPolicy, KerberosEtype, Use, selection},
     error::{Client as Error, Crypto},
+    keytab::EncryptionKey,
 };
 
 /// `PA-S4U-X509-USER` padata type.
@@ -91,6 +93,31 @@ impl UserId {
 }
 
 impl PaS4uX509User {
+    /// Checksum `user_id` with `key`, the TGS-REQ authenticator subkey (its
+    /// enctype's mandatory checksum, key usage [`REQUEST_USAGE`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::UnsupportedEtype`] for a key without an implemented
+    /// enctype, and an encoding or checksum error.
+    #[inline]
+    pub fn sign(user_id: UserId, key: &EncryptionKey) -> Result<Self, Error> {
+        let etype = KerberosEtype::from_etype_id(key.etype())
+            .ok_or(Error::UnsupportedEtype(key.etype()))?;
+        let message = der::encode(&user_id).map_err(|error| Error::Encode {
+            target: "S4UUserID",
+            message: error.to_string(),
+        })?;
+        let checksum = etype.checksum(key.value(), &message, REQUEST_USAGE)?;
+        Ok(Self {
+            user_id,
+            checksum: rasn_kerberos::Checksum {
+                r#type: etype.checksum_type_id(),
+                checksum: checksum.into(),
+            },
+        })
+    }
+
     /// Decode a DER `PA-S4U-X509-USER`.
     ///
     /// # Errors
@@ -140,4 +167,48 @@ impl PaS4uX509User {
         policy.check_use(etype.etype_id(), Use::SessionKey)?;
         Ok(())
     }
+}
+
+/// Verify the KDC's `PA-S4U-X509-USER` reply and return the identity it names.
+///
+/// MIT 1.22.2 `verify_s4u2self_reply` (`s4u_creds.c:272-397`): the reply must
+/// echo the request nonce, carry a valid keyed checksum of `key` over its
+/// identity, and name a user.
+///
+/// # Errors
+///
+/// Returns [`Error::S4uReplyModified`] for a missing element when the request
+/// asked for one, a nonce mismatch, an invalid checksum or an empty user name,
+/// and the decode errors of [`PaS4uX509User::decode_der`].
+#[inline]
+pub fn verify_reply(request: &UserId, reply: &[u8], key: &EncryptionKey) -> Result<UserId, Error> {
+    let element = PaS4uX509User::decode_der(reply)?;
+    if element.user_id.nonce != request.nonce {
+        return Err(Error::S4uReplyModified);
+    }
+    let usage = if element.user_id.uses_reply_usage() {
+        REPLY_USAGE
+    } else {
+        REQUEST_USAGE
+    };
+    let etype = selection::checksum(element.checksum.r#type)
+        .map_err(Crypto::from)?
+        .filter(|etype| etype.etype_id() == key.etype())
+        .ok_or(Error::S4uReplyModified)?;
+    let message = der::encode(&element.user_id).map_err(|error| Error::Encode {
+        target: "S4UUserID",
+        message: error.to_string(),
+    })?;
+    if !etype.verify_checksum(key.value(), &message, &element.checksum.checksum, usage) {
+        return Err(Error::S4uReplyModified);
+    }
+    if element
+        .user_id
+        .cname
+        .as_ref()
+        .is_none_or(|name| name.string.is_empty())
+    {
+        return Err(Error::S4uReplyModified);
+    }
+    Ok(element.user_id)
 }
