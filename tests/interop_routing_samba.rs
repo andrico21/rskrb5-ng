@@ -2,14 +2,10 @@
 //!
 //! Plan 2 todo 17 (WP-11): the KDC referral a request for a RES.RSKRB5
 //! service gets from USER.RSKRB5 is followed to RES for the service
-//! (FU-IOP-P12); the RES acceptor validates the cross-realm ticket, which AD
-//! leaves without TRANSITED-POLICY-CHECKED, with `[capaths]` (FU-SVC-08);
-//! resource-based constrained delegation reaches the allowed target and is
-//! refused for another (FU-IOP-P11). Gated by `INTEROP=1`;
+//! (FU-IOP-P12); resource-based constrained delegation reaches the allowed
+//! target and is refused for another (FU-IOP-P11). Gated by `INTEROP=1`;
 //! `INTEROP_REQUIRED=1` turns an unreachable fixture into a failure naming it.
 #![cfg(feature = "tokio")]
-
-extern crate alloc;
 
 /// Child-process runner for the tests that change the environment.
 #[path = "support/env.rs"]

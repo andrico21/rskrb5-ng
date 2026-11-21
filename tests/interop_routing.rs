@@ -9,6 +9,8 @@
 //! fixture into a failure naming it.
 #![cfg(feature = "tokio")]
 
+extern crate alloc;
+
 /// Child-process runner for the tests that change the environment.
 #[path = "support/env.rs"]
 mod child_env;

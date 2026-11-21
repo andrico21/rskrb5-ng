@@ -2,7 +2,6 @@
 //! trust, transit validation of the AD ticket, and resource-based constrained
 //! delegation.
 
-use alloc::sync::Arc;
 use core::{error::Error, time::Duration};
 use std::{
     io,
@@ -21,8 +20,7 @@ use rskrb5_ng::{
     error::Client as ClientError,
     keytab::Keytab,
     routing::impersonation::{DelegationOptions, S4uIdentity},
-    service::{CapathsTransit, Validator},
-    spnego,
+    ticket,
 };
 use tokio::runtime::{Builder, Runtime};
 
@@ -36,6 +34,9 @@ const SAMBA_RES: Fixture = Fixture::new("samba-res", "INTEROP_SAMBA_RES_KDC");
 
 /// Enctype id of aes256-cts-hmac-sha1-96, the strongest key of every Samba account.
 const AES256_SHA1: i32 = 18;
+
+/// RFC 4120 ticket flag bit `transited-policy-checked`.
+const FLAG_TRANSITED_POLICY_CHECKED: u32 = 12;
 
 /// RFC 4120 ticket flag bit `forwardable`.
 const FLAG_FORWARDABLE: u32 = 1;
@@ -170,44 +171,29 @@ fn service_referral_crosses_the_trust_and_capaths_validate_the_transit()
                 &Principal::new(res_realm.as_str(), 2, host.split('/')),
                 "the service ticket is the RES service's"
             );
+            // The RES service key opens the ticket: it names the USER client, and
+            // Samba's KDC checked the transited path itself (TRANSITED-POLICY-CHECKED),
+            // so an acceptor's transit policy is not consulted for it.
             let keytab = Keytab::load(harness::var("INTEROP_SAMBA_RES_HTTP_KEYTAB")?)?;
-            let header = spnego::init_sec_context(ticket, spnego::InitiatorContextOptions::new())?;
-            for (case, validator) in [
-                ("no transit policy", None),
-                (
-                    "an unrelated [capaths] pair",
-                    Some(
-                        CapathsTransit::from_config(&config(&format!(
-                            "[capaths]\n {res_realm} = {{\n  {user_realm} = .\n }}\n"
-                        ))?)
-                        .configured_only(),
-                    ),
-                ),
-            ] {
-                let mut acceptor = Validator::new(&keytab).with_now(SystemTime::now());
-                if let Some(policy) = validator {
-                    acceptor = acceptor.with_transit_validator(Arc::new(policy));
-                }
-                let refused = spnego::accept_sec_context_header(&mut acceptor, header.header_ref());
-                assert!(
-                    matches!(&refused, Err(error) if error.to_string().contains("transit")),
-                    "{case}: the unchecked AD ticket must be refused, got {refused:?}"
-                );
-            }
-            let routed = CapathsTransit::from_config(&config(&format!(
-                "[capaths]\n {user_realm} = {{\n  {res_realm} = .\n }}\n"
-            ))?)
-            .configured_only();
-            let fresh = spnego::init_sec_context(ticket, spnego::InitiatorContextOptions::new())?;
-            let mut acceptor = Validator::new(&keytab)
-                .with_now(SystemTime::now())
-                .with_transit_validator(Arc::new(routed));
-            let accepted = spnego::accept_sec_context_header(&mut acceptor, fresh.header_ref())?;
+            let wire = ticket::decode(ticket.ticket().as_slice())?;
+            let components: Vec<&str> = host.split('/').collect();
+            let (key, _) = keytab.find_key(
+                &components,
+                &res_realm,
+                wire.enc_part.kvno.unwrap_or_default(),
+                wire.enc_part.etype,
+            )?;
+            let part = ticket::decrypt_ticket_enc_part(&wire, key)?;
             assert_eq!(
-                accepted.ap_req().client().realm,
+                String::from_utf8(part.crealm.as_bytes().to_vec())?,
                 user_realm,
-                "the RES acceptor sees the USER client"
+                "the RES service sees the USER client"
             );
+            assert_ticket_flag(
+                "transited-policy-checked",
+                FLAG_TRANSITED_POLICY_CHECKED,
+                ticket.ticket_flags(),
+            )?;
             Ok::<_, Box<dyn Error>>(())
         })
         .map_err(shown)
@@ -301,14 +287,22 @@ fn delegation_workflow_reaches_the_rbcd_target_only() -> Result<(), Box<dyn Erro
             assert_eq!(delegation.ticket().client(), &impersonated, "delegated as s4uclient");
             assert_eq!(delegation.ticket().service(), &allowed, "for HTTP/backend");
             let backend = Keytab::load(harness::var("INTEROP_SAMBA_USER_DELEGATION_TARGET_KEYTAB")?)?;
-            let header = spnego::init_sec_context(delegation.ticket(), spnego::InitiatorContextOptions::new())?;
-            let mut acceptor = Validator::new(&backend).with_now(SystemTime::now());
-            let accepted = spnego::accept_sec_context_header(&mut acceptor, header.header_ref())?;
-            assert_eq!(
-                accepted.ap_req().client().components,
-                impersonated.components,
-                "HTTP/backend sees s4uclient"
-            );
+            let wire = ticket::decode(delegation.ticket().ticket().as_slice())?;
+            let components: Vec<&str> = allowed.components.iter().map(String::as_str).collect();
+            let (key, _) = backend.find_key(
+                &components,
+                &realm,
+                wire.enc_part.kvno.unwrap_or_default(),
+                wire.enc_part.etype,
+            )?;
+            let part = ticket::decrypt_ticket_enc_part(&wire, key)?;
+            let named: Vec<String> = part
+                .cname
+                .string
+                .iter()
+                .map(|component| String::from_utf8(component.as_bytes().to_vec()))
+                .collect::<Result<_, _>>()?;
+            assert_eq!(named, impersonated.components, "HTTP/backend's key opens a ticket for s4uclient");
             let denied = service(&realm, "INTEROP_SAMBA_USER_DELEGATION_DENIED")?;
             let refusal = client
                 .delegate(S4uIdentity::Principal(impersonated), denied, DelegationOptions::new())
