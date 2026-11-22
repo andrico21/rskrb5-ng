@@ -177,7 +177,7 @@ everything else is timeless or a dated record.
 13. **Ambient inputs:** library code reads the environment only in named
     ambient-discovery constructors (`KRB5_CONFIG`, `KRB5CCNAME`, `KRB5_KTNAME`,
     `KRB5_CLIENT_KTNAME`, `KRB5_TRACE` in `trace::Options::from_env`, and `HOME` in
-    `LibDefaults::from_env`) and in the credential
+    `ccache::selection::default_k5identity`) and in the credential
     template expansion (`TMPDIR` on non-Windows, `TEMP` and `APPDATA` on Windows, in
     `resolve_credential_template`). Each one is documented
     with an `# Ambient input` section and pinned by a guard test. There are no implicit

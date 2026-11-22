@@ -192,7 +192,9 @@ The client-keytab default is the template
 (v0.2.2 filled in the `UID` environment variable when the value was built, so
 an unset variable gave `/usr/local/var/krb5/user/0/client.keytab`), and
 `k5login_directory` defaults to empty (FU-DOC-R72).
-Use the new `LibDefaults::from_env()` only when HOME discovery is intended.
+`LibDefaults::from_env()` reads no environment variable either: since WP-17 it
+equals `LibDefaults::new()`, and the `localauth` leaf takes an account's home
+from its `AccountResolver`, never from `HOME`.
 The `*_without_env` twins were removed ("Removed configuration twins"). Remaining
 configuration/credential discovery entry points document `# Ambient input`.
 
@@ -1031,8 +1033,9 @@ drop(validator);
 
 `Config::new`, `Config::parse` and `LibDefaults::new` are environment-free, so
 their `*_without_env` twins are gone. Named ambient discovery remains explicit:
-`Config::load_from_env` and `Config::load_default` read `KRB5_CONFIG`, and
-`LibDefaults::from_env` reads `HOME`.
+`Config::load_from_env` and `Config::load_default` read `KRB5_CONFIG`;
+`LibDefaults::from_env` reads nothing since WP-17 (it equals
+`LibDefaults::new`).
 
 | Removed | Use |
 | --- | --- |
@@ -2186,7 +2189,7 @@ readable and writable; the types named under "Credential field privacy" and in
 | `client::PreauthKeyInfo` | `new(etype)`; `with_salt`, `with_s2kparams` |
 | `client::KdcError` | `new(stime, susec, error_code, service)`; `with_ctime`, `with_cusec`, `with_text`, `with_client`, `with_e_data`, `with_method_data`, `with_preauth_key_info` |
 | `client::PrunedSessions` | Existing `Default`; `with_primary_tgt`, `with_tgt_sessions`, `with_service_tickets` |
-| `config::LibDefaults` | `Default` and `new` are environment-free (`new_without_env` was removed); use `from_env()` explicitly for HOME discovery. Use `with_<field>` for public fields, or the derived ID methods described above. |
+| `config::LibDefaults` | `Default` and `new` are environment-free (`new_without_env` was removed); `from_env()` equals `new()` since WP-17 and reads no `HOME`. Use `with_<field>` for public fields, or the derived ID methods described above. |
 | `config::Config` | Existing `new`/`Default` or config parsing; modify public fields after construction |
 | `config::Realm` | `Realm::new(realm) -> Result` (new; rejects an empty name; v0.2.2 had no public constructor) or config parsing; modify public fields after construction |
 | `service::ApRepOptions` | Existing `Default`; `with_subkey`, `with_sequence_number`, `with_kvno` |
