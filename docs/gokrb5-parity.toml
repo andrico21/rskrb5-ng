@@ -18,8 +18,8 @@ last_reviewed = "2026-11-01"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 23
-partial = 12
+implemented = 25
+partial = 10
 absent = 0
 rejected = 0
 omitted = 0
@@ -287,7 +287,7 @@ upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
 capability = "`[libdefaults]` values"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "Every [libdefaults] relation is parsed with a typed value and a consumer, a diagnostic or an error (P1-15, docs/config-relations.md); P2-4 made forwardable, proxiable, renew_lifetime, ticket_lifetime, noaddresses, extra_addresses, kdc_default_options, kdc_timesync and preferred_preauth_types effective in the exchange options; P2-25 made k5login_authoritative and k5login_directory effective (the `localauth` leaf: LocalAuthorizer::from_config); the consumers still missing close across P2-15 and P2-18, and P2-28 closes the row."
+missing = "Every [libdefaults] relation is parsed with a typed value and a consumer, a diagnostic or an error (P1-15, docs/config-relations.md); P2-4 made forwardable, proxiable, renew_lifetime, ticket_lifetime, noaddresses, extra_addresses, kdc_default_options, kdc_timesync and preferred_preauth_types effective in the exchange options; P2-25 made k5login_authoritative and k5login_directory effective (the `localauth` leaf: LocalAuthorizer::from_config); P2-18 made enforce_ok_as_delegate, ignore_acceptor_hostname and client_aware_channel_bindings effective (gss::InitiatorOptions::from_config, gss::AcceptorOptions::from_config); the consumers still missing close in P2-15, and P2-28 closes the row."
 rust_symbols = ["config::LibDefaults", "config::Config::diagnostics"]
 test_names = ["tests/config/relations_c1.rs::canonicalize", "tests/config/diagnostics_e.rs::unknown_paths_preserve_scope_and_finality", "src/config/diagnostic_tests.rs::every_diagnostic_promotes_to_error", "tests/config/name_case.rs::upper_libdefaults_relation_is_not_honoured"]
 feature_flags = []
@@ -635,11 +635,23 @@ id = "GO-spnego-2"
 area = "spnego"
 upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
 capability = "Kerberos GSS mechanism tokens, AP-REQ and AP-REP"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "AP-REQ checksum and flags, AP-REP verification and MIC checks exist; an advertised delegation flag cannot carry or import credentials (DelegationRequiresCredential) until P2-18."
-rust_symbols = ["spnego::InitiatorContext"]
-test_names = ["tests/http.rs::completion_verifies_acceptor_mic", "tests/http.rs::blocking_mutual_wrapper_rejects_a_missing_ap_rep"]
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "spnego::InitiatorContext",
+  "gss::Initiator",
+  "gss::Acceptor",
+  "gss::ContextFlags",
+  "gss::EstablishedContext::delegated_credential",
+]
+test_names = [
+  "tests/http.rs::completion_verifies_acceptor_mic",
+  "tests/http.rs::blocking_mutual_wrapper_rejects_a_missing_ap_rep",
+  "tests/gss/delegation.rs::a_forwardable_tgt_is_delegated",
+  "tests/gss/spnego.rs::spnego_contexts_are_gss_contexts",
+  "tests/interop_gss/scenarios.rs::rust_spnego_over_gss_negotiates_with_the_mit_acceptor",
+]
 feature_flags = ["spnego"]
 security_divergence = ""
 disposition = "WP-12"
@@ -780,11 +792,23 @@ id = "GO-gssapi-1"
 area = "gssapi"
 upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
 capability = "GSS mechanism, OIDs, status and context flags"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Fixed Kerberos tokens, OIDs and context flags exist; there is no general mechanism or context interface and no complete GSS status mapping (P2-18)."
-rust_symbols = ["spnego::Krb5TokenId"]
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "spnego::Krb5TokenId",
+  "gss::Initiator",
+  "gss::Acceptor",
+  "gss::EstablishedContext",
+  "gss::ContextFlags",
+  "gss::indicate_mechs",
+  "error::Gss::major_status",
+]
+test_names = [
+  "tests/gss/inquiry.rs::mechanisms_and_name_types_are_reported",
+  "tests/gss/contexts.rs::mutual_contexts_establish_and_name_both_ends",
+  "tests/interop_gss/scenarios.rs::rust_gss_initiator_is_accepted_by_the_mit_acceptor",
+]
 feature_flags = ["spnego"]
 security_divergence = ""
 disposition = "WP-12"
