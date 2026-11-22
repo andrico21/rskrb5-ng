@@ -112,6 +112,27 @@ impl Verified {
         &self.pac
     }
 
+    /// The number of info buffers the PAC declares.
+    #[inline]
+    #[must_use]
+    pub const fn c_buffers(&self) -> u32 {
+        self.pac.c_buffers()
+    }
+
+    /// The PAC format version.
+    #[inline]
+    #[must_use]
+    pub const fn version(&self) -> u32 {
+        self.pac.version()
+    }
+
+    /// The types of the info buffers, in table order.
+    #[inline]
+    #[must_use]
+    pub fn buffer_types(&self) -> Vec<u32> {
+        self.pac.buffer_types()
+    }
+
     /// Borrow the validation info, when the KDC sent it.
     #[inline]
     #[must_use]
