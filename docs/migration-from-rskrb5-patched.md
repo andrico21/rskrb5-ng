@@ -80,9 +80,10 @@ RC4-HMAC or DES3 opt-in permission (FU-MSG-R02).
 
 An explicit `auth_to_local_names = { ... }` subsection selects deferred local
 authorization even if it is empty (FU-CFG-R14). Compatible parsing reports one
-`NotYetEffective` diagnostic per admitted map; Strict parsing rejects it with
-relation `auth_to_local_names` and package `plan 2 WP-17`. Omit the subsection
-when no local-name mapping is intended. Finalized, discarded later scopes do
+`FeatureUnavailable` diagnostic per admitted map in a build without the
+`localauth` leaf (none with it, where the map is effective); Strict parsing
+rejects it with relation `auth_to_local_names` and feature `localauth`. Omit
+the subsection when no local-name mapping is intended. Finalized, discarded later scopes do
 not select it. This diagnostic policy is stricter than MIT's profile getter,
 which simply finds no relation in an empty subsection.
 
@@ -90,8 +91,8 @@ Principal keys such as `krb4_get_tickets` or `pkinit_draft9` inside a realm's
 `auth_to_local_names` map now parse as names (FU-CFG-R13). Their case and first
 mapping value are retained. The exemption is limited to that exact mapping
 path; enabled protocol selectors elsewhere, including discarded scopes, fail
-permanently. Local authorization is deferred to WP-17 and Strict mode rejects
-its diagnostic.
+permanently. Local authorization needs the `localauth` leaf; a build without
+it reports `FeatureUnavailable` and Strict mode rejects the diagnostic.
 
 A local principal literally named `module` in that exact map is mapping data
 (FU-CFG-R16); real `module` declarations elsewhere are rejected.
