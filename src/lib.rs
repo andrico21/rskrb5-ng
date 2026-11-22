@@ -93,6 +93,8 @@ pub mod kdc_rep;
 #[cfg(feature = "messages")]
 pub mod kdc_req;
 pub mod keytab;
+#[cfg(feature = "localauth")]
+pub mod localauth;
 #[cfg(feature = "messages")]
 pub mod krb_cred;
 #[cfg(feature = "messages")]

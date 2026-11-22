@@ -3284,3 +3284,43 @@ pub enum Routing {
     #[error("the certificate inspector refused the certificate: {0}")]
     CertificateRejected(#[source] ProviderError),
 }
+/// Local authorization and name translation error (WP-17, `localauth`).
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum LocalAuth {
+    /// A rule value is neither `DEFAULT` nor `RULE:...` (MIT `KRB5_CONFIG_BADFORMAT`).
+    #[error("unsupported auth_to_local rule type: {kind}")]
+    UnsupportedRuleType {
+        /// The text before the first colon, or the whole value.
+        kind: String,
+    },
+    /// A RULE is malformed.
+    #[error("malformed auth_to_local rule: {reason}")]
+    MalformedRule {
+        /// What is wrong, without the rule text.
+        reason: &'static str,
+    },
+    /// A rule or an input exceeds a bound.
+    #[error("auth_to_local {what} exceeds the limit of {limit}")]
+    LimitExceeded {
+        /// What grew past the bound.
+        what: &'static str,
+        /// The bound.
+        limit: usize,
+    },
+    /// The regular-expression compiler refused a pattern.
+    #[error("auth_to_local regular expression rejected: {message}")]
+    InvalidRegex {
+        /// The compiler's message.
+        message: String,
+    },
+    /// No mapping or rule produced a local name (MIT `KRB5_LNAME_NOTRANS`).
+    #[error("no local name for the principal")]
+    NoTranslation,
+    /// A translation is not a usable local account name.
+    #[error("translated local name is not usable: {reason}")]
+    InvalidLocalName {
+        /// Why: empty, too long or containing NUL.
+        reason: &'static str,
+    },
+}
