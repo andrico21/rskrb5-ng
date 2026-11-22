@@ -25,6 +25,15 @@ mod child_env;
 #[path = "interop/harness.rs"]
 mod harness;
 
+/// The accounts of the fixture rebuilt on the host.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[path = "interop_localauth/homes.rs"]
+mod homes;
+
 /// The local-authorization scenario.
 #[cfg(test)]
 #[expect(

@@ -155,7 +155,7 @@ impl AuthToLocalRule {
     /// [`MAX_MATCHES`] replacements.
     #[inline]
     pub fn apply(&self, principal: &Principal, default_realm: &str) -> Result<String, Error> {
-        rule::evaluate(&self.kind, principal, default_realm)
+        rule::eval::evaluate(&self.kind, principal, default_realm)
     }
 }
 

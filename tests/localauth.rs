@@ -47,6 +47,18 @@ mod rules;
 #[path = "localauth/k5login.rs"]
 mod k5login;
 
+/// The `.k5login` file contents: bounds and the exact line match.
+#[cfg(test)]
+#[cfg(unix)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "localauth/k5login_content.rs"]
+mod k5login_content;
+
 /// The built-in modules as providers of the extension registry.
 #[cfg(test)]
 #[expect(

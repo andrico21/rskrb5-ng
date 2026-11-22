@@ -1,16 +1,9 @@
 //! A verified client of the MIT KDC as a local account: this crate against MIT's own answers.
 
 use alloc::sync::Arc;
-use core::{
-    error::Error,
-    sync::atomic::{AtomicU32, Ordering},
-    time::Duration,
-};
+use core::{error::Error, time::Duration};
 use std::{
-    env, fs,
-    os::unix::fs::{MetadataExt as _, PermissionsExt as _, symlink},
-    path::{Path, PathBuf},
-    process::{self, Command},
+    process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -24,15 +17,18 @@ use rskrb5_ng::{
     config::Config,
     error::LocalAuth,
     localauth::{
-        Account, Authorization, Denial, LocalAuthorizer, LocalNameMapper, Module, authorize_local,
-        k5login::Fault, principal_to_local_name, table::StaticAccounts,
+        Authorization, Denial, LocalAuthorizer, LocalNameMapper, Module, authorize_local,
+        k5login::Fault, principal_to_local_name,
     },
 };
 use tokio::runtime::{Builder, Runtime};
 
-use crate::harness::{
-    self, Fixture, assert_negotiated_enctype, assert_negotiated_padata, assert_ticket_flag,
-    kdc_tap::KdcTap,
+use crate::{
+    harness::{
+        self, Fixture, assert_negotiated_enctype, assert_negotiated_padata, assert_ticket_flag,
+        kdc_tap::KdcTap,
+    },
+    homes::{Scratch, accounts},
 };
 
 extern crate alloc;
@@ -54,35 +50,6 @@ const FLAG_PRE_AUTHENT: u32 = 10;
 
 /// The probe MIT's own functions are asked through.
 const PROBE: &str = "/opt/krb5/bin/localauth-probe";
-
-/// Makes every scratch directory of a process distinct.
-static COUNTER: AtomicU32 = AtomicU32::new(0);
-
-/// A directory that is removed when it goes out of scope.
-struct Scratch {
-    /// The directory.
-    path: PathBuf,
-}
-
-impl Scratch {
-    /// A new empty directory.
-    fn new() -> Result<Self, Box<dyn Error>> {
-        let path = env::temp_dir().join(format!(
-            "interop-localauth-{}-{}-{}",
-            process::id(),
-            COUNTER.fetch_add(1, Ordering::Relaxed),
-            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
-        ));
-        fs::create_dir_all(&path)?;
-        Ok(Self { path })
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        drop(fs::remove_dir_all(&self.path));
-    }
-}
 
 /// Run `arguments` in the MIT container; its trimmed standard output.
 fn mit(arguments: &[&str]) -> Result<String, Box<dyn Error>> {
@@ -109,71 +76,6 @@ fn mit(arguments: &[&str]) -> Result<String, Box<dyn Error>> {
 fn name(text: &str) -> Name {
     let (components, realm) = text.rsplit_once('@').unwrap_or((text, ""));
     Name::new(realm, 1, components.split('/').map(str::to_owned).collect())
-}
-
-/// The state of an account's `.k5login`, rebuilt on the host.
-#[derive(Clone, Copy, Debug)]
-enum State {
-    /// No file.
-    Missing,
-    /// Owned by the account, mode 0644, lists the verified client.
-    Listed,
-    /// Lists the client but the account's uid is not the owner's.
-    Foreign,
-    /// Owned by the account, mode 0666.
-    Wide,
-    /// A symbolic link to a file that lists the client.
-    Link,
-}
-
-/// The accounts of `provision.d/85-localauth.sh`, with the state of each file.
-const ACCOUNTS: [(&str, State); 6] = [
-    ("lauthmapped", State::Missing),
-    ("lauthnone", State::Missing),
-    ("lauthlist", State::Listed),
-    ("lauthother", State::Foreign),
-    ("lauthwide", State::Wide),
-    ("lauthlink", State::Link),
-];
-
-/// The accounts rebuilt under `root`, as the resolver the authorizer is given.
-fn accounts(root: &Path, client: &str) -> Result<StaticAccounts, Box<dyn Error>> {
-    let mut table = StaticAccounts::new();
-    let line = format!("{client}\n");
-    for (account, state) in ACCOUNTS {
-        let home = root.join(account);
-        fs::create_dir_all(&home)?;
-        let file = home.join(".k5login");
-        let write = |path: &Path, mode: u32| -> Result<(), Box<dyn Error>> {
-            fs::write(path, &line)?;
-            fs::set_permissions(path, fs::Permissions::from_mode(mode))?;
-            Ok(())
-        };
-        let uid = fs::metadata(&home)?.uid();
-        let account_uid = match state {
-            State::Missing => uid,
-            State::Listed => {
-                write(&file, 0o644)?;
-                uid
-            }
-            State::Foreign => {
-                write(&file, 0o644)?;
-                uid.wrapping_add(1)
-            }
-            State::Wide => {
-                write(&file, 0o666)?;
-                uid
-            }
-            State::Link => {
-                let real = home.join("k5login.real");
-                write(&real, 0o644)?;
-                symlink(&real, &file)?;
-                uid
-            }
-        };
-        table = table.with_account(account, Account::new(account_uid, home));
-    }
-    Ok(table)
 }
 
 /// The current-thread runtime of the scenario.
@@ -347,7 +249,7 @@ fn verified_client_is_authorized_as_mit_authorizes_it() -> Result<(), Box<dyn Er
         "[libdefaults]\n default_realm = {realm}\n\n{fragment}\n"
     ))?;
     let scratch = Scratch::new()?;
-    let resolver = Arc::new(accounts(&scratch.path, &client_text)?);
+    let resolver = Arc::new(accounts(scratch.path(), &client_text)?);
     let authorizer = LocalAuthorizer::from_config(&config, resolver)?;
     for row in rows() {
         let principal = row.principal.map_or_else(|| client.clone(), name);

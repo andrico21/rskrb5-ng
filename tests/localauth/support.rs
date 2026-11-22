@@ -98,3 +98,53 @@ pub(crate) fn authorizer(
         resolver,
     )?)
 }
+
+/// Homes with a `.k5login` of a chosen content and mode, and the decision for it (Unix only).
+#[cfg(unix)]
+pub(crate) mod homes {
+    use std::{
+        fs,
+        os::unix::fs::{MetadataExt as _, PermissionsExt as _},
+        path::Path,
+    };
+
+    use rskrb5_ng::{
+        ccache::Principal,
+        localauth::{Authorization, Denial, Module, authorize_local, k5login::Fault},
+    };
+
+    use super::{Scratch, TestError, authorizer, principal, resolver};
+
+    /// The account the scenarios authorize.
+    pub(crate) const USER: &str = "lauth";
+
+    /// Granted by the `.k5login` module.
+    pub(crate) const LISTED: Authorization = Authorization::Authorized(Module::K5login);
+
+    /// Refused by the `.k5login` module for `fault`.
+    pub(crate) const fn refused(fault: Fault) -> Authorization {
+        Authorization::Denied(Denial::K5login(fault))
+    }
+
+    /// The principal every scenario authorizes.
+    pub(crate) fn alice() -> Principal {
+        principal("alice@KRBTEST.COM")
+    }
+
+    /// A home directory with a `.k5login` of `content` and `mode`, and the
+    /// user id that owns it (this process's).
+    pub(crate) fn home_with(content: &[u8], mode: u32) -> Result<(Scratch, u32), TestError> {
+        let home = Scratch::new("home")?;
+        let file = home.path().join(".k5login");
+        fs::write(&file, content)?;
+        fs::set_permissions(&file, fs::Permissions::from_mode(mode))?;
+        let owner = fs::metadata(&file)?.uid();
+        Ok((home, owner))
+    }
+
+    /// The decision for `alice` as `USER` with `uid` and `home`.
+    pub(crate) fn decide(uid: u32, home: &Path) -> Result<Authorization, TestError> {
+        let authorizer = authorizer("", resolver(USER, uid, home))?;
+        Ok(authorize_local(&authorizer, &alice(), USER))
+    }
+}
