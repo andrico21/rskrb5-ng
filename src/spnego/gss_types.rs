@@ -3,7 +3,6 @@
 /// It wraps the [`gss::Initiator`]'s tokens in SPNEGO and verifies the
 /// acceptor's `mechListMIC` with the established GSS context, which it then
 /// yields.
-#[derive(Debug)]
 #[non_exhaustive]
 pub struct Initiator {
     /// The Kerberos initiator.
@@ -55,7 +54,6 @@ impl Initiator {
 }
 
 /// Where a SPNEGO [`Acceptor`] is.
-#[derive(Debug)]
 #[non_exhaustive]
 pub enum AcceptStep {
     /// Send this `NegTokenResp` (`accept-incomplete`) and pass the initiator's
@@ -69,7 +67,6 @@ pub enum AcceptStep {
 ///
 /// Its contexts are [`gss::EstablishedContext`]s, and a `NegTokenInit` without
 /// an optimistic token is continued with the initiator's next `NegTokenResp`.
-#[derive(Debug)]
 #[non_exhaustive]
 pub struct Acceptor<'keytab> {
     /// The Kerberos acceptor.
@@ -102,5 +99,38 @@ impl<'keytab> Acceptor<'keytab> {
     #[inline]
     pub fn accept_sec_context(&mut self, input_token: &[u8]) -> Result<AcceptStep, error::Gss> {
         gss_contexts::accept(self, input_token)
+    }
+}
+
+impl fmt::Debug for Initiator {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Initiator")
+            .field("inner", &self.inner)
+            .field("offered_len", &self.offered.as_ref().map(Vec::len))
+            .finish()
+    }
+}
+
+impl fmt::Debug for AcceptStep {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Continue(token) => f
+                .debug_struct("Continue")
+                .field("token_len", &token.len())
+                .finish(),
+            Self::Complete(accepted) => f.debug_tuple("Complete").field(accepted).finish(),
+        }
+    }
+}
+
+impl fmt::Debug for Acceptor<'_> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Acceptor")
+            .field("inner", &self.inner)
+            .field("waiting", &self.waiting.is_some())
+            .finish()
     }
 }

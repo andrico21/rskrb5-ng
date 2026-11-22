@@ -3,7 +3,7 @@
 /// The variants name the RFC 2743 major status they correspond to where one
 /// applies; the wrapped domain errors carry the Kerberos-level cause.
 #[cfg(feature = "spnego")]
-#[derive(Debug, thiserror::Error)]
+#[derive(thiserror::Error)]
 #[non_exhaustive]
 pub enum Gss {
     /// A name could not be imported or used (`GSS_S_BAD_NAME`).

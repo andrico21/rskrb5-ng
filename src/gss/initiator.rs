@@ -38,26 +38,27 @@ const SENT_FLAGS: ContextFlags = ContextFlags::from_bits(
         | ContextFlags::EXTENDED_ERROR.bits(),
 );
 
-/// What the initiator keeps between the AP-REQ and the AP-REP.
+/// What the initiator keeps between the AP-REQ and the AP-REP: the context
+/// without the acceptor's part, and the authenticator time the AP-REP echoes.
 pub(super) struct Pending {
-    /// The ticket session key.
-    session_key: EncryptionKey,
-    /// The initiator subkey.
-    subkey: EncryptionKey,
-    /// The initiator's sequence number.
-    sequence: u32,
+    /// The context, its acceptor subkey and receive window not yet known.
+    context: EstablishedContext,
     /// The authenticator's whole-second time.
     ctime: SystemTime,
     /// The authenticator's microseconds.
     cusec: u32,
+}
+
+/// The parts of a new initiator context.
+struct Parts {
+    /// The ticket the context is for.
+    ticket: TgsRepSession,
+    /// The initiator subkey.
+    subkey: EncryptionKey,
+    /// The initiator's sequence number.
+    sequence: u32,
     /// The context flags.
     flags: ContextFlags,
-    /// The client.
-    client: Principal,
-    /// The service.
-    service: Principal,
-    /// When the ticket expires.
-    expires: SystemTime,
     /// The runtime enctype policy.
     policy: CryptoPolicy,
 }
@@ -310,50 +311,46 @@ fn first(initiator: &mut Initiator, credential: &Credential) -> Result<InitStep,
         &authenticator,
         flags.contains(ContextFlags::MUTUAL),
     )?;
-    let pending = Pending {
-        session_key: ticket.session_key().clone(),
+    let context = established(Parts {
+        ticket,
         subkey,
         sequence,
-        ctime,
-        cusec,
         flags,
-        client: ticket.client().clone(),
-        service: ticket.service().clone(),
-        expires: ticket.end_time(),
         policy,
-    };
+    });
     if flags.contains(ContextFlags::MUTUAL) {
-        initiator.state = InitState::AwaitingReply(Box::new(pending));
+        initiator.state = InitState::AwaitingReply(Box::new(Pending {
+            context,
+            ctime,
+            cusec,
+        }));
         return Ok(InitStep::Continue(token));
     }
-    let base = u64::from(pending.sequence);
-    initiator.state = InitState::Established(Box::new(established(pending, None, base)));
+    initiator.state = InitState::Established(Box::new(context));
     Ok(InitStep::Complete(Some(token)))
 }
 
-/// The initiator's context after the AP-REP (or without one).
-fn established(
-    pending: Pending,
-    acceptor_subkey: Option<EncryptionKey>,
-    receive_base: u64,
-) -> EstablishedContext {
-    let flags = pending.flags | ContextFlags::PROT_READY;
+/// The initiator's context; without an AP-REP it receives from its own
+/// sequence number (MIT `init_sec_context.c:632-641`).
+fn established(parts: Parts) -> EstablishedContext {
+    let flags = parts.flags | ContextFlags::PROT_READY;
+    let sequence = u64::from(parts.sequence);
     EstablishedContext {
         initiated: true,
-        source: Name::from_principal(&pending.client),
-        target: Name::from_principal(&pending.service),
+        source: Name::from_principal(parts.ticket.client()),
+        target: Name::from_principal(parts.ticket.service()),
         flags,
-        session_key: pending.session_key,
-        initiator_subkey: Some(pending.subkey),
-        acceptor_subkey,
-        send_sequence: u64::from(pending.sequence),
+        session_key: parts.ticket.session_key().clone(),
+        initiator_subkey: Some(parts.subkey),
+        acceptor_subkey: None,
+        send_sequence: sequence,
         window: seq::Window::new(
-            receive_base,
+            sequence,
             flags.contains(ContextFlags::REPLAY),
             flags.contains(ContextFlags::SEQUENCE),
         ),
-        expires: pending.expires,
-        crypto_policy: pending.policy,
+        expires: parts.ticket.end_time(),
+        crypto_policy: parts.policy,
         delegated: None,
         pac: None,
     }
@@ -366,19 +363,24 @@ fn established(
 /// Returns [`Error::DefectiveToken`] for a token that is not an AP-REP, and the
 /// AP-REP decryption, policy and timestamp errors.
 fn reply(pending: Pending, token: &[u8]) -> Result<(EstablishedContext, InitStep), Error> {
+    let Pending {
+        mut context,
+        ctime,
+        cusec: sent_cusec,
+    } = pending;
     let mech = Krb5MechToken::decode(token)?;
     if mech.token_id() != Krb5TokenId::ApRep {
         return Err(Error::DefectiveToken(
             "the acceptor did not answer with an AP-REP",
         ));
     }
-    let policy = &pending.policy;
+    let policy = &context.crypto_policy;
     let wire = ap_rep::decode(mech.message())?;
     policy.check_use(wire.enc_part.etype, Use::SessionKey)?;
-    let part = ap_rep::decrypt_ap_rep_enc_part(&wire, &pending.session_key)?;
+    let part = ap_rep::decrypt_ap_rep_enc_part(&wire, &context.session_key)?;
     let echoed = from_kerberos(&part.ctime);
     let cusec = part.cusec.to_string().parse::<u32>().ok();
-    if echoed != Some(pending.ctime) || cusec != Some(pending.cusec) {
+    if echoed != Some(ctime) || cusec != Some(sent_cusec) {
         return Err(Error::DefectiveToken(
             "the AP-REP does not echo the authenticator",
         ));
@@ -390,9 +392,11 @@ fn reply(pending: Pending, token: &[u8]) -> Result<(EstablishedContext, InitStep
         }
         None => None,
     };
-    let base = part.seq_number.map_or(0, u64::from);
-    Ok((
-        established(pending, acceptor_subkey, base),
-        InitStep::Complete(None),
-    ))
+    context.acceptor_subkey = acceptor_subkey;
+    context.window = seq::Window::new(
+        part.seq_number.map_or(0, u64::from),
+        context.flags.contains(ContextFlags::REPLAY),
+        context.flags.contains(ContextFlags::SEQUENCE),
+    );
+    Ok((context, InitStep::Complete(None)))
 }

@@ -360,13 +360,22 @@ impl<'keytab> Acceptor<'keytab> {
 }
 
 /// A context the [`Acceptor`] established, and the token to answer with.
-#[derive(Debug)]
 #[non_exhaustive]
 pub struct Accepted {
     /// The established context.
     context: EstablishedContext,
     /// The AP-REP token, under mutual authentication.
     output_token: Option<Vec<u8>>,
+}
+
+impl fmt::Debug for Accepted {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Accepted")
+            .field("context", &self.context)
+            .field("output_token_len", &self.output_token.as_ref().map(Vec::len))
+            .finish()
+    }
 }
 
 impl Accepted {

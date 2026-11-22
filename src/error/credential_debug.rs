@@ -31,6 +31,16 @@ impl fmt::Debug for super::Spnego {
     }
 }
 
+#[cfg(feature = "spnego")]
+impl fmt::Debug for super::Gss {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Gss")
+            .field(&discriminant(self))
+            .finish_non_exhaustive()
+    }
+}
+
 #[cfg(feature = "http")]
 impl fmt::Debug for super::Http {
     #[inline]
