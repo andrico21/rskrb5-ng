@@ -184,6 +184,19 @@ mod tests {
         endpoint("admin_server")
     }
 
+    /// Whether a diagnostic of `config` defers a relation to a later package.
+    fn deferred(config: &Config) -> bool {
+        config.diagnostics().iter().any(|item| {
+            matches!(
+                item,
+                ConfigDiagnostic::NotYetEffective {
+                    relation: _,
+                    package: _
+                }
+            )
+        })
+    }
+
     /// Local mapping keys preserve case and first-wins selection.
     #[test]
     fn auth_to_local_names() -> Result<(), Box<dyn Error>> {
@@ -248,13 +261,7 @@ mod tests {
                     Some(expected)
                 );
                 assert!(
-                    !config.diagnostics().iter().any(|item| matches!(
-                        item,
-                        ConfigDiagnostic::NotYetEffective {
-                            relation: _,
-                            package: _
-                        }
-                    )),
+                    !deferred(&config),
                     "the names are never deferred to WP-17 any more"
                 );
             }
