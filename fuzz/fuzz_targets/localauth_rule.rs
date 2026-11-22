@@ -32,11 +32,11 @@ fuzz_target!(|data: &[u8]| {
     if let Ok(name) = rule.apply(&principal, REALM) {
         assert!(name.len() <= MAX_SELECTION_BYTES, "result bound");
     }
-    if let Ok(mapper) = LocalNameMapper::new(Some(REALM.to_owned())).with_rules(vec![rule]) {
-        if let Ok(local) = principal_to_local_name(&mapper, &principal) {
-            assert!(!local.is_empty(), "no empty account name");
-            assert!(local.len() <= MAX_LOCAL_NAME_BYTES, "account name bound");
-            assert!(!local.contains('\0'), "no NUL in an account name");
-        }
+    if let Ok(mapper) = LocalNameMapper::new(Some(REALM.to_owned())).with_rules(vec![rule])
+        && let Ok(local) = principal_to_local_name(&mapper, &principal)
+    {
+        assert!(!local.is_empty(), "no empty account name");
+        assert!(local.len() <= MAX_LOCAL_NAME_BYTES, "account name bound");
+        assert!(!local.contains('\0'), "no NUL in an account name");
     }
 });
