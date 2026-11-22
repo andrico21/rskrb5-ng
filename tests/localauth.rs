@@ -47,3 +47,14 @@ mod rules;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 #[path = "localauth/k5login.rs"]
 mod k5login;
+
+/// `HOME` never selects the `.k5login` file.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "localauth/home.rs"]
+mod home;
