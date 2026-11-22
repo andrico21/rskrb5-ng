@@ -18,7 +18,9 @@ use std::{
 use rskrb5_ng::{
     ccache::Principal,
     config::Config,
-    localauth::{Account, AccountResolver, LocalAuthorizer, LocalNameMapper, table::StaticAccounts},
+    localauth::{
+        Account, AccountResolver, LocalAuthorizer, LocalNameMapper, table::StaticAccounts,
+    },
 };
 
 /// The error type of the `Result`-returning tests.
@@ -83,10 +85,7 @@ impl Drop for Scratch {
 
 /// A resolver that knows `name` with `uid` and `home`.
 pub(crate) fn resolver(name: &str, uid: u32, home: &Path) -> Arc<dyn AccountResolver> {
-    Arc::new(StaticAccounts::new().with_account(
-        name,
-        Account::new(uid, home.to_path_buf()),
-    ))
+    Arc::new(StaticAccounts::new().with_account(name, Account::new(uid, home.to_path_buf())))
 }
 
 /// An authorizer over [`config`] with `realm_lines` and `resolver`.
@@ -94,5 +93,8 @@ pub(crate) fn authorizer(
     realm_lines: &str,
     resolver: Arc<dyn AccountResolver>,
 ) -> Result<LocalAuthorizer, TestError> {
-    Ok(LocalAuthorizer::from_config(&config(realm_lines)?, resolver)?)
+    Ok(LocalAuthorizer::from_config(
+        &config(realm_lines)?,
+        resolver,
+    )?)
 }

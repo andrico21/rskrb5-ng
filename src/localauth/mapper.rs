@@ -2,13 +2,12 @@
 
 use alloc::collections::BTreeMap;
 
+use super::{AuthToLocalRule, LocalNameMapper, MAX_LOCAL_NAME_BYTES, MAX_RULES, unparse};
 use crate::{
     ccache::Principal,
     config::{Config, section_values::Value},
     error::LocalAuth as Error,
 };
-
-use super::{AuthToLocalRule, LocalNameMapper, MAX_LOCAL_NAME_BYTES, MAX_RULES, unparse};
 
 /// A translation that may be used as an account name.
 ///
@@ -85,7 +84,8 @@ impl LocalNameMapper {
     /// [`MAX_RULES`] of them.
     #[inline]
     pub fn from_config(config: &Config) -> Result<Self, Error> {
-        let default_realm = Some(config.libdefaults.default_realm.clone()).filter(|realm| !realm.is_empty());
+        let default_realm =
+            Some(config.libdefaults.default_realm.clone()).filter(|realm| !realm.is_empty());
         let mut mapper = Self::new(default_realm.clone());
         let Some(realm) = default_realm.as_deref().and_then(|name| config.realm(name)) else {
             return Ok(mapper);
@@ -124,10 +124,7 @@ impl LocalNameMapper {
     /// [`Error::NoTranslation`], [`Error::InvalidLocalName`] and the errors of
     /// the rules.
     pub(super) fn by_rules(&self, principal: &Principal) -> Result<String, Error> {
-        let realm = self
-            .default_realm
-            .as_deref()
-            .ok_or(Error::NoTranslation)?;
+        let realm = self.default_realm.as_deref().ok_or(Error::NoTranslation)?;
         let default = [AuthToLocalRule::default_rule()];
         let rules = if self.rules.is_empty() {
             default.as_slice()

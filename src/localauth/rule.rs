@@ -8,12 +8,11 @@
 
 use regex::{Regex, RegexBuilder};
 
-use crate::{ccache::Principal, error::LocalAuth as Error};
-
 use super::{
-    MAX_MATCHES, MAX_PATTERN_BYTES, MAX_REPLACEMENT_BYTES, MAX_RULE_BYTES,
-    MAX_SELECTION_BYTES, MAX_SUBSTITUTIONS, unparse,
+    MAX_MATCHES, MAX_PATTERN_BYTES, MAX_REPLACEMENT_BYTES, MAX_RULE_BYTES, MAX_SELECTION_BYTES,
+    MAX_SUBSTITUTIONS, unparse,
 };
+use crate::{ccache::Principal, error::LocalAuth as Error};
 
 /// The compiled-size limit of a pattern in bytes.
 const REGEX_SIZE_LIMIT: usize = 0x10_0000;
@@ -111,7 +110,9 @@ const fn is_space(character: char) -> bool {
 ///
 /// [`Error::MalformedRule`] for a syntax error.
 fn selector_at(rest: &str) -> Result<(Selector, &str), Error> {
-    let body = rest.strip_prefix('[').ok_or_else(|| malformed("selector"))?;
+    let body = rest
+        .strip_prefix('[')
+        .ok_or_else(|| malformed("selector"))?;
     let digits = body.bytes().take_while(u8::is_ascii_digit).count();
     let (number, after) = body
         .split_at_checked(digits)
@@ -125,7 +126,9 @@ fn selector_at(rest: &str) -> Result<(Selector, &str), Error> {
         .ok_or_else(|| malformed("selector colon"))?;
     let mut parts = Vec::new();
     loop {
-        let stop = format.find(['$', ']']).ok_or_else(|| malformed("selector end"))?;
+        let stop = format
+            .find(['$', ']'])
+            .ok_or_else(|| malformed("selector end"))?;
         let (literal, tail) = format
             .split_at_checked(stop)
             .ok_or_else(|| malformed("selector"))?;
@@ -135,7 +138,9 @@ fn selector_at(rest: &str) -> Result<(Selector, &str), Error> {
         if let Some(after_bracket) = tail.strip_prefix(']') {
             return Ok((Selector { count, parts }, after_bracket));
         }
-        let reference = tail.strip_prefix('$').ok_or_else(|| malformed("selector"))?;
+        let reference = tail
+            .strip_prefix('$')
+            .ok_or_else(|| malformed("selector"))?;
         let width = reference.bytes().take_while(u8::is_ascii_digit).count();
         let (index, remainder) = reference
             .split_at_checked(width)
@@ -158,7 +163,9 @@ fn selector_at(rest: &str) -> Result<(Selector, &str), Error> {
 ///
 /// [`Error::MalformedRule`], [`Error::LimitExceeded`] or [`Error::InvalidRegex`].
 fn edit_at(rest: &str) -> Result<(Edit, &str), Error> {
-    let body = rest.strip_prefix("s/").ok_or_else(|| malformed("substitution"))?;
+    let body = rest
+        .strip_prefix("s/")
+        .ok_or_else(|| malformed("substitution"))?;
     let (pattern, after_pattern) = body
         .split_once('/')
         .ok_or_else(|| malformed("substitution pattern"))?;
@@ -211,7 +218,13 @@ pub(super) fn compile(text: &str) -> Result<Kind, Error> {
             Err(malformed("RULE needs a colon"))
         } else {
             Err(Error::UnsupportedRuleType {
-                kind: text.split(':').next().unwrap_or_default().chars().take(32).collect(),
+                kind: text
+                    .split(':')
+                    .next()
+                    .unwrap_or_default()
+                    .chars()
+                    .take(32)
+                    .collect(),
             })
         };
     };

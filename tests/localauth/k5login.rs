@@ -23,9 +23,9 @@ mod unix {
         config::Config,
         localauth::{
             Account, Authorization, Denial, LocalAuthorizer, LocalNameMapper, Module,
-            table::StaticAccounts,
             authorize_local,
             k5login::{Fault, MAX_FILE_BYTES, MAX_LINE_BYTES, MAX_LINES},
+            table::StaticAccounts,
         },
     };
 
@@ -140,11 +140,28 @@ mod unix {
         let target = b"alice@KRBTEST.COM\n";
         let lines = |count: usize| [b"x\n".repeat(count), target.to_vec()].concat();
         let long = |width: usize| [vec![b'y'; width], b"\n".to_vec(), target.to_vec()].concat();
-        assert_eq!(decide_content(&lines(MAX_LINES - 1))?, LISTED, "the last allowed line");
-        assert_eq!(decide_content(&lines(MAX_LINES))?, refused(Fault::TooManyLines));
-        assert_eq!(decide_content(&long(MAX_LINE_BYTES))?, LISTED, "the longest allowed line");
-        assert_eq!(decide_content(&long(MAX_LINE_BYTES + 1))?, refused(Fault::LineTooLong));
-        assert_eq!(decide_content(&vec![b'z'; MAX_FILE_BYTES + 1])?, refused(Fault::TooLarge));
+        assert_eq!(
+            decide_content(&lines(MAX_LINES - 1))?,
+            LISTED,
+            "the last allowed line"
+        );
+        assert_eq!(
+            decide_content(&lines(MAX_LINES))?,
+            refused(Fault::TooManyLines)
+        );
+        assert_eq!(
+            decide_content(&long(MAX_LINE_BYTES))?,
+            LISTED,
+            "the longest allowed line"
+        );
+        assert_eq!(
+            decide_content(&long(MAX_LINE_BYTES + 1))?,
+            refused(Fault::LineTooLong)
+        );
+        assert_eq!(
+            decide_content(&vec![b'z'; MAX_FILE_BYTES + 1])?,
+            refused(Fault::TooLarge)
+        );
         Ok(())
     }
 
@@ -153,9 +170,8 @@ mod unix {
     /// in `krb5_unparse_name`.
     #[test]
     fn line_match_is_exact() -> Result<(), TestError> {
-        let listed = |content: &[u8]| -> Result<bool, TestError> {
-            Ok(decide_content(content)? == LISTED)
-        };
+        let listed =
+            |content: &[u8]| -> Result<bool, TestError> { Ok(decide_content(content)? == LISTED) };
         assert!(listed(b"alice@KRBTEST.COM")?, "no final newline");
         assert!(!listed(b" alice@KRBTEST.COM\n")?, "leading space");
         assert!(!listed(b"alice@KRBTEST.COM \n")?, "trailing space");
@@ -179,7 +195,10 @@ mod unix {
         let (home, owner) = home_with(b"bob@KRBTEST.COM\n", 0o600)?;
         let same = principal("lauth@KRBTEST.COM");
         let strict = authorizer("", resolver(USER, owner, home.path()))?;
-        assert_eq!(authorize_local(&strict, &same, USER), refused(Fault::NotListed));
+        assert_eq!(
+            authorize_local(&strict, &same, USER),
+            refused(Fault::NotListed)
+        );
         let lax = strict.with_k5login_authoritative(false);
         assert_eq!(
             authorize_local(&lax, &same, USER),
@@ -250,8 +269,14 @@ mod unix {
         fs::set_permissions(&file, fs::Permissions::from_mode(0o600))?;
         let strict = authorizer("", resolver(USER, owner, home.path()))?
             .with_k5login_directory(Some(directory.path().to_path_buf()));
-        assert_eq!(authorize_local(&strict, &alice(), USER), refused(Fault::NotListed));
-        assert_eq!(authorize_local(&strict, &principal("bob@KRBTEST.COM"), USER), LISTED);
+        assert_eq!(
+            authorize_local(&strict, &alice(), USER),
+            refused(Fault::NotListed)
+        );
+        assert_eq!(
+            authorize_local(&strict, &principal("bob@KRBTEST.COM"), USER),
+            LISTED
+        );
         for name in [".", "..", "../x", "a/b"] {
             let table = StaticAccounts::new()
                 .with_account(name, Account::new(owner, home.path().to_path_buf()));
@@ -285,7 +310,10 @@ mod unix {
         );
         assert!(!lax.k5login_authoritative());
         assert_eq!(lax.k5login_directory(), None);
-        assert_eq!(lax.resolver().lookup(USER), Some(Account::new(owner, home.path().to_path_buf())));
+        assert_eq!(
+            lax.resolver().lookup(USER),
+            Some(Account::new(owner, home.path().to_path_buf()))
+        );
         let directory = Scratch::new("profile-dir")?;
         let file = directory.path().join(USER);
         fs::write(&file, b"alice@KRBTEST.COM\n")?;

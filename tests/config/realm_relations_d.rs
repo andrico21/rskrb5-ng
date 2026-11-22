@@ -248,10 +248,13 @@ mod tests {
                     Some(expected)
                 );
                 assert!(
-                    !config
-                        .diagnostics()
-                        .iter()
-                        .any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation: _, package: _ })),
+                    !config.diagnostics().iter().any(|item| matches!(
+                        item,
+                        ConfigDiagnostic::NotYetEffective {
+                            relation: _,
+                            package: _
+                        }
+                    )),
                     "the names are never deferred to WP-17 any more"
                 );
             }

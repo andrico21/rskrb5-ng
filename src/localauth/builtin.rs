@@ -9,13 +9,12 @@
 
 use alloc::sync::Arc;
 
+use super::{LocalAuthorizer, LocalNameMapper, k5login};
 use crate::{
     ccache::Principal,
     error::LocalAuth as Error,
     extensions::{Decision, Extension, LocalAuth, ProviderError},
 };
-
-use super::{LocalAuthorizer, LocalNameMapper, k5login};
 
 /// The `names` module: `auth_to_local_names`.
 #[derive(Debug)]

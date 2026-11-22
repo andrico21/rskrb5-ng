@@ -15,7 +15,10 @@ use crate::support::{TestError, mapper, principal};
 
 /// What `principal_to_local_name` answers for `text` under `realm_lines`.
 fn translate(realm_lines: &str, text: &str) -> Result<Result<String, LocalAuth>, TestError> {
-    Ok(principal_to_local_name(&mapper(realm_lines)?, &principal(text)))
+    Ok(principal_to_local_name(
+        &mapper(realm_lines)?,
+        &principal(text),
+    ))
 }
 
 /// `translate` expecting a translation.
@@ -37,7 +40,10 @@ fn none(realm_lines: &str, text: &str) -> Result<bool, TestError> {
 fn default_rule_works_in_the_default_realm_only() -> Result<(), TestError> {
     assert_eq!(local("", "user@KRBTEST.COM")?, "user");
     assert_eq!(local("", "user/KRBTEST.COM@KRBTEST.COM")?, "user");
-    assert!(none("", "user/KRBTEST.COM/x@KRBTEST.COM")?, "three components");
+    assert!(
+        none("", "user/KRBTEST.COM/x@KRBTEST.COM")?,
+        "three components"
+    );
     assert!(none("", "user/X@KRBTEST.COM")?, "second component mismatch");
     assert!(none("", "user@X")?, "realm mismatch");
     Ok(())
@@ -81,7 +87,10 @@ fn names_of_another_realms_section_are_ignored() -> Result<(), TestError> {
 /// `t_localauth.py` "explicit default" and `auth_to_local` "invalid".
 #[test]
 fn explicit_default_and_invalid_types() -> Result<(), TestError> {
-    assert_eq!(local(" auth_to_local = DEFAULT", "user@KRBTEST.COM")?, "user");
+    assert_eq!(
+        local(" auth_to_local = DEFAULT", "user@KRBTEST.COM")?,
+        "user"
+    );
     assert!(matches!(
         AuthToLocalRule::parse("RULE"),
         Err(LocalAuth::MalformedRule { reason: _ })
@@ -129,7 +138,10 @@ fn match_string_is_anchored_at_both_ends() -> Result<(), TestError> {
 #[test]
 fn substitutions_once_globally_and_in_sequence() -> Result<(), TestError> {
     assert_eq!(
-        local(" auth_to_local = RULE:s/birds/bees/", "thebirdsbirdsbirds@X")?,
+        local(
+            " auth_to_local = RULE:s/birds/bees/",
+            "thebirdsbirdsbirds@X"
+        )?,
         "thebeesbirdsbirds"
     );
     assert_eq!(

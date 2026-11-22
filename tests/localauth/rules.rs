@@ -7,8 +7,9 @@ use rskrb5_ng::{
     ccache::Principal,
     error::LocalAuth,
     localauth::{
-        AuthToLocalRule, LocalNameMapper, MAX_LOCAL_NAME_BYTES, MAX_MATCHES, MAX_PATTERN_BYTES, MAX_REPLACEMENT_BYTES,
-        MAX_RULE_BYTES, MAX_RULES, MAX_SELECTION_BYTES, MAX_SUBSTITUTIONS, principal_to_local_name,
+        AuthToLocalRule, LocalNameMapper, MAX_LOCAL_NAME_BYTES, MAX_MATCHES, MAX_PATTERN_BYTES,
+        MAX_REPLACEMENT_BYTES, MAX_RULE_BYTES, MAX_RULES, MAX_SELECTION_BYTES, MAX_SUBSTITUTIONS,
+        principal_to_local_name,
     },
 };
 
@@ -16,7 +17,8 @@ use crate::support::{TestError, config, principal};
 
 /// A mapper whose only rule is `rule`.
 fn only(rule: &str) -> Result<LocalNameMapper, TestError> {
-    Ok(LocalNameMapper::new(Some("R".to_owned())).with_rules(vec![AuthToLocalRule::parse(rule)?])?)
+    Ok(LocalNameMapper::new(Some("R".to_owned()))
+        .with_rules(vec![AuthToLocalRule::parse(rule)?])?)
 }
 
 /// The translation of `text` by the single rule `rule`.
@@ -50,7 +52,8 @@ fn malformed_rules_are_refused_at_parse_time() {
         assert!(
             matches!(
                 AuthToLocalRule::parse(rule),
-                Err(LocalAuth::MalformedRule { reason: _ } | LocalAuth::UnsupportedRuleType { kind: _ })
+                Err(LocalAuth::MalformedRule { reason: _ }
+                    | LocalAuth::UnsupportedRuleType { kind: _ })
             ),
             "{rule:?} must be refused"
         );
@@ -99,14 +102,35 @@ fn size_bounds_refuse_and_the_bound_itself_parses() -> Result<(), TestError> {
     };
     let over = |bound: usize| bound.saturating_add(1);
     assert!(parses(format!("RULE:({})", "a".repeat(MAX_PATTERN_BYTES))));
-    assert!(limit(format!("RULE:({})", "a".repeat(over(MAX_PATTERN_BYTES)))));
-    assert!(limit(format!("RULE:s/{}/x/", "a".repeat(over(MAX_PATTERN_BYTES)))));
-    assert!(parses(format!("RULE:s/a/{}/", "b".repeat(MAX_REPLACEMENT_BYTES))));
-    assert!(limit(format!("RULE:s/a/{}/", "b".repeat(over(MAX_REPLACEMENT_BYTES)))));
-    assert!(parses(format!("RULE:{}", "s/a/b/".repeat(MAX_SUBSTITUTIONS))));
-    assert!(limit(format!("RULE:{}", "s/a/b/".repeat(over(MAX_SUBSTITUTIONS)))));
+    assert!(limit(format!(
+        "RULE:({})",
+        "a".repeat(over(MAX_PATTERN_BYTES))
+    )));
+    assert!(limit(format!(
+        "RULE:s/{}/x/",
+        "a".repeat(over(MAX_PATTERN_BYTES))
+    )));
+    assert!(parses(format!(
+        "RULE:s/a/{}/",
+        "b".repeat(MAX_REPLACEMENT_BYTES)
+    )));
+    assert!(limit(format!(
+        "RULE:s/a/{}/",
+        "b".repeat(over(MAX_REPLACEMENT_BYTES))
+    )));
+    assert!(parses(format!(
+        "RULE:{}",
+        "s/a/b/".repeat(MAX_SUBSTITUTIONS)
+    )));
+    assert!(limit(format!(
+        "RULE:{}",
+        "s/a/b/".repeat(over(MAX_SUBSTITUTIONS))
+    )));
     assert!(limit(format!("RULE:{}", " ".repeat(MAX_RULE_BYTES))));
-    drop(AuthToLocalRule::parse(&format!("RULE:({})", "a".repeat(MAX_PATTERN_BYTES)))?);
+    drop(AuthToLocalRule::parse(&format!(
+        "RULE:({})",
+        "a".repeat(MAX_PATTERN_BYTES)
+    ))?);
     Ok(())
 }
 
@@ -153,7 +177,10 @@ fn empty_matches_terminate() -> Result<(), TestError> {
 #[test]
 fn selection_string_is_bounded() -> Result<(), TestError> {
     let at_limit = principal(&format!("{}@R", "a".repeat(MAX_SELECTION_BYTES)));
-    let over = principal(&format!("{}@R", "a".repeat(MAX_SELECTION_BYTES.saturating_add(1))));
+    let over = principal(&format!(
+        "{}@R",
+        "a".repeat(MAX_SELECTION_BYTES.saturating_add(1))
+    ));
     let mapper = only("RULE:[1:$1]s/a+/u/")?;
     assert_eq!(principal_to_local_name(&mapper, &at_limit)?, "u");
     assert!(matches!(
@@ -169,9 +196,15 @@ fn unusable_translations_are_refused() -> Result<(), TestError> {
     let invalid = |result: Result<String, LocalAuth>| {
         matches!(result, Err(LocalAuth::InvalidLocalName { reason: _ }))
     };
-    assert!(invalid(principal_to_local_name(&only("RULE:s/.*//")?, &principal("a@R"))));
+    assert!(invalid(principal_to_local_name(
+        &only("RULE:s/.*//")?,
+        &principal("a@R")
+    )));
     let long = format!("RULE:s/^/{}/", "x".repeat(MAX_LOCAL_NAME_BYTES));
-    assert!(invalid(principal_to_local_name(&only(&long)?, &principal("a@R"))));
+    assert!(invalid(principal_to_local_name(
+        &only(&long)?,
+        &principal("a@R")
+    )));
     let nul = Principal::new("R", 1, vec!["a\0b".to_owned()]);
     let default = LocalNameMapper::new(Some("R".to_owned()));
     assert!(invalid(principal_to_local_name(&default, &nul)));

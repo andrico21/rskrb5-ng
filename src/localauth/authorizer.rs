@@ -3,12 +3,11 @@
 use alloc::sync::Arc;
 use std::path::{Path, PathBuf};
 
-use crate::{ccache::Principal, config::Config, error::LocalAuth as Error};
-
 use super::{
     AccountResolver, Authorization, Denial, LocalAuthorizer, LocalNameMapper, MAX_LOCAL_NAME_BYTES,
     Module, k5login,
 };
+use crate::{ccache::Principal, config::Config, error::LocalAuth as Error};
 
 impl LocalAuthorizer {
     /// An authorizer with MIT's defaults: authoritative `.k5login` files in

@@ -20,7 +20,9 @@ mod unix {
 
     use rskrb5_ng::{
         config::{Config, LibDefaults},
-        localauth::{Authorization, Denial, LocalAuthorizer, Module, authorize_local, k5login::Fault},
+        localauth::{
+            Authorization, Denial, LocalAuthorizer, Module, authorize_local, k5login::Fault,
+        },
     };
 
     use crate::support::{REALM, Scratch, TestError, principal, resolver};

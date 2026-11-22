@@ -24,8 +24,8 @@ use rskrb5_ng::{
     config::Config,
     error::LocalAuth,
     localauth::{
-        Account, Authorization, Denial, LocalAuthorizer, LocalNameMapper, Module,
-        authorize_local, k5login::Fault, principal_to_local_name, table::StaticAccounts,
+        Account, Authorization, Denial, LocalAuthorizer, LocalNameMapper, Module, authorize_local,
+        k5login::Fault, principal_to_local_name, table::StaticAccounts,
     },
 };
 use tokio::runtime::{Builder, Runtime};
@@ -195,8 +195,9 @@ fn verified_client() -> Result<Name, Box<dyn Error>> {
     let password = harness::var("INTEROP_MIT_PREAUTH_USER_PASSWORD")?.into_bytes();
     runtime()?.block_on(async {
         let tap = KdcTap::start(KdcProtocol::Tcp, kdc.as_str()).await?;
-        let nonce = u32::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos() & 0x00ff_ffff)?
-            | 0x2500_0000;
+        let nonce =
+            u32::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos() & 0x00ff_ffff)?
+                | 0x2500_0000;
         let options = AsReq::new(SystemTime::now(), nonce)
             .with_ticket_lifetime(Duration::from_hours(1))
             .with_etypes(vec![AES256_SHA2]);
@@ -213,11 +214,21 @@ fn verified_client() -> Result<Name, Box<dyn Error>> {
             .map_err(|failure| format!("password login of {user}: {failure}"))?;
         // The login that produced the ticket answered the KDC with the encrypted timestamp.
         let sent = tap.as_req_padata()?;
-        let answered = sent.last().ok_or("the login sent no AS-REQ through the relay")?;
-        assert_negotiated_padata("the AS-REQ that obtained the TGT", PA_ENC_TIMESTAMP, answered)?;
+        let answered = sent
+            .last()
+            .ok_or("the login sent no AS-REQ through the relay")?;
+        assert_negotiated_padata(
+            "the AS-REQ that obtained the TGT",
+            PA_ENC_TIMESTAMP,
+            answered,
+        )?;
         assert_ticket_flag("initial", FLAG_INITIAL, session.ticket_flags())?;
         assert_ticket_flag("pre-authent", FLAG_PRE_AUTHENT, session.ticket_flags())?;
-        assert_negotiated_enctype("TGT session key", AES256_SHA2, session.session_key().etype())?;
+        assert_negotiated_enctype(
+            "TGT session key",
+            AES256_SHA2,
+            session.session_key().etype(),
+        )?;
         let client = session.client();
         Ok::<_, Box<dyn Error>>(Name::new(
             client.realm.clone(),
@@ -243,15 +254,60 @@ struct Row {
 fn rows() -> [Row; 9] {
     let denied = |fault| Authorization::Denied(Denial::K5login(fault));
     [
-        Row { principal: None, account: "lauthlist", mit: true, ours: Authorization::Authorized(Module::K5login) },
-        Row { principal: None, account: "lauthnone", mit: true, ours: Authorization::Authorized(Module::An2ln) },
-        Row { principal: None, account: "lauthmapped", mit: false, ours: Authorization::Denied(Denial::NoModuleAllowed) },
-        Row { principal: None, account: "lauthother", mit: false, ours: denied(Fault::WrongOwner) },
-        Row { principal: None, account: "lauthwide", mit: true, ours: denied(Fault::WritableByOthers) },
-        Row { principal: None, account: "lauthlink", mit: true, ours: denied(Fault::Symlink) },
-        Row { principal: None, account: "lauthnosuch", mit: false, ours: denied(Fault::UnknownAccount) },
-        Row { principal: Some("kpasswduser@TEST.RSKRB5"), account: "lauthlist", mit: false, ours: denied(Fault::NotListed) },
-        Row { principal: Some("testuser1@TEST.RSKRB5"), account: "lauthmapped", mit: true, ours: Authorization::Authorized(Module::An2ln) },
+        Row {
+            principal: None,
+            account: "lauthlist",
+            mit: true,
+            ours: Authorization::Authorized(Module::K5login),
+        },
+        Row {
+            principal: None,
+            account: "lauthnone",
+            mit: true,
+            ours: Authorization::Authorized(Module::An2ln),
+        },
+        Row {
+            principal: None,
+            account: "lauthmapped",
+            mit: false,
+            ours: Authorization::Denied(Denial::NoModuleAllowed),
+        },
+        Row {
+            principal: None,
+            account: "lauthother",
+            mit: false,
+            ours: denied(Fault::WrongOwner),
+        },
+        Row {
+            principal: None,
+            account: "lauthwide",
+            mit: true,
+            ours: denied(Fault::WritableByOthers),
+        },
+        Row {
+            principal: None,
+            account: "lauthlink",
+            mit: true,
+            ours: denied(Fault::Symlink),
+        },
+        Row {
+            principal: None,
+            account: "lauthnosuch",
+            mit: false,
+            ours: denied(Fault::UnknownAccount),
+        },
+        Row {
+            principal: Some("kpasswduser@TEST.RSKRB5"),
+            account: "lauthlist",
+            mit: false,
+            ours: denied(Fault::NotListed),
+        },
+        Row {
+            principal: Some("testuser1@TEST.RSKRB5"),
+            account: "lauthmapped",
+            mit: true,
+            ours: Authorization::Authorized(Module::An2ln),
+        },
     ]
 }
 
@@ -273,15 +329,23 @@ const TRANSLATIONS: [(&str, &str, &str, bool); 6] = [
 /// `localauth-probe` in the container, so the comparison is live.
 #[test]
 fn verified_client_is_authorized_as_mit_authorizes_it() -> Result<(), Box<dyn Error>> {
-    if !harness::require("verified_client_is_authorized_as_mit_authorizes_it", &[MIT_KDC])? {
+    if !harness::require(
+        "verified_client_is_authorized_as_mit_authorizes_it",
+        &[MIT_KDC],
+    )? {
         return Ok(());
     }
     let client = verified_client()?;
     let client_text = client.principal_string();
-    assert_eq!(client_text, "preauthuser@TEST.RSKRB5", "the AS reply names the logged-in user");
+    assert_eq!(
+        client_text, "preauthuser@TEST.RSKRB5",
+        "the AS reply names the logged-in user"
+    );
     let realm = harness::var("INTEROP_MIT_REALM")?;
     let fragment = mit(&["cat", "/etc/krb5.conf.d/85-localauth.conf"])?;
-    let config = Config::parse(&format!("[libdefaults]\n default_realm = {realm}\n\n{fragment}\n"))?;
+    let config = Config::parse(&format!(
+        "[libdefaults]\n default_realm = {realm}\n\n{fragment}\n"
+    ))?;
     let scratch = Scratch::new()?;
     let resolver = Arc::new(accounts(&scratch.path, &client_text)?);
     let authorizer = LocalAuthorizer::from_config(&config, resolver)?;
@@ -310,7 +374,11 @@ fn verified_client_is_authorized_as_mit_authorizes_it() -> Result<(), Box<dyn Er
         };
         assert_eq!(mit_answer, mit_expected, "MIT an2ln {text}");
         assert_eq!(ours, ours_expected, "principal_to_local_name {text}");
-        assert_eq!(mit_answer != ours, stricter, "{text}: the declared difference");
+        assert_eq!(
+            mit_answer != ours,
+            stricter,
+            "{text}: the declared difference"
+        );
     }
     Ok(())
 }

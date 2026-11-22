@@ -46,7 +46,11 @@ pub(super) fn with_realm(principal: &Principal) -> String {
 /// result could then be taken for the name of another principal.
 #[must_use]
 pub(super) fn without_realm(principal: &Principal) -> Option<String> {
-    if principal.components.iter().any(|component| component.contains('@')) {
+    if principal
+        .components
+        .iter()
+        .any(|component| component.contains('@'))
+    {
         return None;
     }
     let mut out = String::new();

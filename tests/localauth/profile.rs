@@ -12,15 +12,22 @@ use rskrb5_ng::config::{Config, ConfigDiagnostic, ParseMode};
 fn check(text: &str, relation: &'static str) -> Result<(), Box<dyn Error>> {
     let config = Config::parse(text)?;
     let strict = Config::parse_with_mode(text, ParseMode::Strict);
-    let deferred = config
-        .diagnostics()
-        .iter()
-        .any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation: _, package: _ }));
-    assert!(!deferred, "{relation} is no longer deferred to WP-17");
-    let unavailable = config.diagnostics().contains(&ConfigDiagnostic::FeatureUnavailable {
-        relation,
-        feature: "localauth",
+    let deferred = config.diagnostics().iter().any(|item| {
+        matches!(
+            item,
+            ConfigDiagnostic::NotYetEffective {
+                relation: _,
+                package: _
+            }
+        )
     });
+    assert!(!deferred, "{relation} is no longer deferred to WP-17");
+    let unavailable = config
+        .diagnostics()
+        .contains(&ConfigDiagnostic::FeatureUnavailable {
+            relation,
+            feature: "localauth",
+        });
     if cfg!(feature = "localauth") {
         assert!(!unavailable, "{relation}: the leaf is compiled in");
         drop(strict?);

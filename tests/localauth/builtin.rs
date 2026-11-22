@@ -8,6 +8,7 @@
 #![cfg(feature = "localauth")]
 
 use alloc::sync::Arc;
+use std::path::Path;
 
 use rskrb5_ng::{
     ccache::Principal,
@@ -17,8 +18,6 @@ use rskrb5_ng::{
 };
 
 use crate::support::{Scratch, TestError, config, principal, resolver};
-
-use std::path::Path;
 
 extern crate alloc;
 
@@ -53,8 +52,14 @@ fn registry_translates_like_the_mapper() -> Result<(), TestError> {
     let lines = " auth_to_local_names = {\n  preauthuser = lauthnone\n }\n auth_to_local = RULE:[1:$1@$0](testuser1@KRBTEST.COM)s/.*/lauthmapped/\n auth_to_local = DEFAULT";
     let (registry, config) = registry(lines, home.path(), 0)?;
     let name = |text: &str| registry.local_name(&config, &principal(text));
-    assert_eq!(name("preauthuser@KRBTEST.COM")?.as_deref(), Some("lauthnone"));
-    assert_eq!(name("testuser1@KRBTEST.COM")?.as_deref(), Some("lauthmapped"));
+    assert_eq!(
+        name("preauthuser@KRBTEST.COM")?.as_deref(),
+        Some("lauthnone")
+    );
+    assert_eq!(
+        name("testuser1@KRBTEST.COM")?.as_deref(),
+        Some("lauthmapped")
+    );
     assert_eq!(name("someone@KRBTEST.COM")?.as_deref(), Some("someone"));
     assert_eq!(name("someone@OTHER")?, None);
     Ok(())
@@ -71,11 +76,18 @@ impl LocalAuth for Veto {
     }
 
     fn userok(&self, _principal: &Principal, local_name: &str) -> Result<Decision, ProviderError> {
-        Ok(if local_name == "lauth" { Decision::Deny } else { Decision::Pass })
+        Ok(if local_name == "lauth" {
+            Decision::Deny
+        } else {
+            Decision::Pass
+        })
     }
 
     fn local_name(&self, principal: &Principal) -> Result<Option<String>, ProviderError> {
-        Ok((principal.components.first().map(String::as_str) == Some("special")).then(|| "mapped".to_owned()))
+        Ok(
+            (principal.components.first().map(String::as_str) == Some("special"))
+                .then(|| "mapped".to_owned()),
+        )
     }
 }
 
@@ -91,9 +103,14 @@ fn application_modules_combine_with_the_built_ins() -> Result<(), TestError> {
     for module in builtin::modules(&authorizer) {
         registry.register(module)?;
     }
-    assert!(!registry.authorize_local(&config, &principal("lauth@KRBTEST.COM"), "lauth"), "the veto denies the an2ln account");
+    assert!(
+        !registry.authorize_local(&config, &principal("lauth@KRBTEST.COM"), "lauth"),
+        "the veto denies the an2ln account"
+    );
     assert_eq!(
-        registry.local_name(&config, &principal("special@KRBTEST.COM"))?.as_deref(),
+        registry
+            .local_name(&config, &principal("special@KRBTEST.COM"))?
+            .as_deref(),
         Some("mapped"),
         "the first registered module answers first"
     );
@@ -110,9 +127,8 @@ mod unix {
 
     use rskrb5_ng::{config::Config, extensions::Interface};
 
-    use crate::support::{REALM, Scratch, TestError, principal};
-
     use super::registry;
+    use crate::support::{REALM, Scratch, TestError, principal};
 
     /// `krb5_kuserok` through the registry: the `.k5login` module allows or
     /// denies, and `an2ln` allows the translated account.
@@ -124,12 +140,20 @@ mod unix {
         fs::set_permissions(&file, fs::Permissions::from_mode(0o600))?;
         let owner = fs::metadata(&file)?.uid();
         let (registry, config) = registry("", home.path(), owner)?;
-        let ok = |text: &str, account: &str| registry.authorize_local(&config, &principal(text), account);
+        let ok = |text: &str, account: &str| {
+            registry.authorize_local(&config, &principal(text), account)
+        };
         assert!(ok("bob@KRBTEST.COM", "lauth"), "listed in .k5login");
-        assert!(!ok("lauth@KRBTEST.COM", "lauth"), "the authoritative .k5login refuses the an2ln account");
+        assert!(
+            !ok("lauth@KRBTEST.COM", "lauth"),
+            "the authoritative .k5login refuses the an2ln account"
+        );
         fs::remove_file(&file)?;
         assert!(ok("lauth@KRBTEST.COM", "lauth"), "no file: an2ln allows");
-        assert!(!ok("bob@KRBTEST.COM", "lauth"), "no file: nothing allows bob");
+        assert!(
+            !ok("bob@KRBTEST.COM", "lauth"),
+            "no file: nothing allows bob"
+        );
         Ok(())
     }
 
@@ -148,7 +172,10 @@ mod unix {
         ))?;
         assert!(registry.authorize_local(&disabled, &principal("lauth@KRBTEST.COM"), "lauth"));
         assert!(!registry.authorize_local(&disabled, &principal("bob@KRBTEST.COM"), "lauth"));
-        assert_eq!(registry.enabled(Interface::LocalAuth, &disabled), ["names", "auth_to_local", "an2ln"]);
+        assert_eq!(
+            registry.enabled(Interface::LocalAuth, &disabled),
+            ["names", "auth_to_local", "an2ln"]
+        );
         Ok(())
     }
 }

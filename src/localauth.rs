@@ -35,14 +35,19 @@
 //!   different principals, and the explicit and `DEFAULT` mappings apply only
 //!   to principals of the default realm.
 //!
+//! # Cancel safety
+//!
+//! Every function here is synchronous and finishes before it returns. The
+//! `.k5login` read is a blocking file read bounded by [`k5login::MAX_FILE_BYTES`]:
+//! an async caller runs it on a blocking thread.
+//!
 //! # Platforms
 //!
 //! The `.k5login` module needs Unix file ownership and modes. On other
 //! platforms it never allows or denies (MIT 1.22.2 `localauth_k5login.c:164`
 //! does the same on Windows) and only the `an2ln` rule can authorize.
 
-use alloc::sync::Arc;
-use alloc::collections::BTreeMap;
+use alloc::{collections::BTreeMap, sync::Arc};
 use core::fmt::Debug;
 use std::path::PathBuf;
 

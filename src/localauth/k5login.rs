@@ -8,10 +8,6 @@
 //! the open, and one past the bounds below.
 
 use std::io;
-
-use crate::ccache::Principal;
-
-use super::LocalAuthorizer;
 #[cfg(unix)]
 use std::{
     fs::{self, File},
@@ -22,6 +18,8 @@ use std::{
 
 #[cfg(unix)]
 use super::Account;
+use super::LocalAuthorizer;
+use crate::ccache::Principal;
 
 /// The largest `.k5login` file read, in bytes.
 pub const MAX_FILE_BYTES: usize = 0x10_0000;
@@ -207,7 +205,10 @@ fn inspect_file(path: &Path, account: &Account, principal: &Principal) -> Result
         return Err(Fault::TooLarge);
     }
     let mut contents = Vec::new();
-    let _: usize = file.take(limit).read_to_end(&mut contents).map_err(unreadable)?;
+    let _: usize = file
+        .take(limit)
+        .read_to_end(&mut contents)
+        .map_err(unreadable)?;
     judge(Some(&contents), principal)
 }
 
