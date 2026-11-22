@@ -4,10 +4,9 @@
 //! The mapping scenarios carry the expected values of MIT krb5 1.22.2's own
 //! `src/tests/t_localauth.py`; the rule, `.k5login` and home-directory
 //! scenarios are the negative paths of the delivery contract.
-#![cfg(feature = "localauth")]
 
 /// Principals, accounts and a fixture directory.
-#[cfg(test)]
+#[cfg(all(test, feature = "localauth"))]
 #[expect(
     clippy::missing_errors_doc,
     reason = "test code is not rendered API documentation"
@@ -16,7 +15,7 @@
 mod support;
 
 /// MIT's mapping fixtures through `krb5.conf` text.
-#[cfg(test)]
+#[cfg(all(test, feature = "localauth"))]
 #[expect(
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
@@ -27,7 +26,7 @@ mod support;
 mod mapping;
 
 /// Malformed, hostile and over-bound rules.
-#[cfg(test)]
+#[cfg(all(test, feature = "localauth"))]
 #[expect(
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
@@ -38,7 +37,7 @@ mod mapping;
 mod rules;
 
 /// The `.k5login` module: ownership, modes, symlinks, bounds and the line match.
-#[cfg(test)]
+#[cfg(all(test, feature = "localauth"))]
 #[expect(
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
@@ -49,7 +48,7 @@ mod rules;
 mod k5login;
 
 /// `HOME` never selects the `.k5login` file.
-#[cfg(test)]
+#[cfg(all(test, feature = "localauth"))]
 #[expect(
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
@@ -58,3 +57,14 @@ mod k5login;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 #[path = "localauth/home.rs"]
 mod home;
+
+/// The four relations, with and without the leaf.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "localauth/profile.rs"]
+mod profile;

@@ -10,7 +10,7 @@ use rskrb5_ng::{
     },
 };
 
-use crate::support::{TestError, principal};
+use crate::support::{TestError, config, principal};
 
 /// A mapper whose only rule is `rule`.
 fn only(rule: &str) -> Result<LocalNameMapper, TestError> {
@@ -187,6 +187,28 @@ fn at_sign_in_a_component_is_ambiguous() -> Result<(), TestError> {
     assert!(matches!(
         principal_to_local_name(&only("RULE:")?, &tricky),
         Err(LocalAuth::NoTranslation)
+    ));
+    Ok(())
+}
+
+/// A malformed or over-numerous profile value is refused when the mapper is
+/// built from the configuration, not when a principal first meets it.
+#[test]
+fn from_config_refuses_malformed_and_excess_rules() -> Result<(), TestError> {
+    for value in ["RULE:[1:$1", "RULE:(abc", "RULE:s/a/b"] {
+        let profile = config(&format!(" auth_to_local = {value}"))?;
+        assert!(
+            matches!(
+                LocalNameMapper::from_config(&profile),
+                Err(LocalAuth::MalformedRule { reason: _ })
+            ),
+            "{value}"
+        );
+    }
+    let many = " auth_to_local = DEFAULT\n".repeat(MAX_RULES.saturating_add(1));
+    assert!(matches!(
+        LocalNameMapper::from_config(&config(&many)?),
+        Err(LocalAuth::LimitExceeded { what: _, limit: _ })
     ));
     Ok(())
 }

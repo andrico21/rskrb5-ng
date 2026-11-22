@@ -21,7 +21,7 @@ pub(super) fn classify(defaults: &mut LibDefaults, selected: &[String]) -> Resul
         if !selected.iter().any(|key| key == name) {
             continue;
         }
-        if let Some(feature) = missing_leaf(name) {
+        if let Some(feature) = missing_leaf(name).or_else(|| missing_localauth_leaf(name)) {
             let diagnostic = ConfigDiagnostic::FeatureUnavailable {
                 relation: name,
                 feature,
@@ -60,4 +60,12 @@ pub(super) fn classify(defaults: &mut LibDefaults, selected: &[String]) -> Resul
 fn missing_leaf(relation: &str) -> Option<&'static str> {
     let spake = cfg!(feature = "spake");
     (relation == "spake_preauth_groups" && !spake).then_some("spake")
+}
+
+/// The `localauth` leaf, when `relation` is one of its consumers and this
+/// build lacks it (plan 2 "Disabled leaves": `FeatureUnavailable`).
+fn missing_localauth_leaf(relation: &str) -> Option<&'static str> {
+    let localauth = cfg!(feature = "localauth");
+    (matches!(relation, "k5login_authoritative" | "k5login_directory") && !localauth)
+        .then_some("localauth")
 }

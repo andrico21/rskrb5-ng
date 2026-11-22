@@ -63,7 +63,7 @@ pub(super) fn decode(
         _ => Value::Text(first.to_owned()),
     };
     drop(realm.relations.insert(name.to_owned(), value));
-    if let Some(feature) = missing_leaf(consumer) {
+    if let Some(feature) = missing_leaf(consumer).or_else(|| missing_localauth_leaf(consumer)) {
         return Ok(Some(ConfigDiagnostic::FeatureUnavailable {
             relation: name,
             feature,
@@ -84,6 +84,13 @@ pub(super) fn decode(
 fn missing_leaf(consumer: &str) -> Option<&'static str> {
     let pkinit = cfg!(feature = "pkinit");
     (consumer.ends_with("(leaf pkinit)") && !pkinit).then_some("pkinit")
+}
+
+/// The `localauth` leaf, when a relation's consumer needs it and this build
+/// lacks it (plan 2 "Disabled leaves": `FeatureUnavailable`).
+pub(super) fn missing_localauth_leaf(consumer: &str) -> Option<&'static str> {
+    let localauth = cfg!(feature = "localauth");
+    (consumer.ends_with("(leaf localauth)") && !localauth).then_some("localauth")
 }
 
 /// Promote a deferred diagnostic without inventing a second classification system.

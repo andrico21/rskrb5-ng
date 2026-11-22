@@ -128,26 +128,32 @@ mod tests {
         Ok(())
     }
 
-    /// Explicit local-name maps select the deferred consumer even without leaves.
+    /// Explicit local-name maps select the `localauth` consumer, with or without the leaf.
+    ///
+    /// The leaf makes them effective (no diagnostic); a build without it reports
+    /// `FeatureUnavailable` and strict mode refuses it. Never `NotYetEffective`.
     #[test]
-    fn local_name_map_scopes_select_deferred_consumer() -> Result<(), Box<dyn Error>> {
+    fn local_name_map_scopes_select_the_leaf_consumer() -> Result<(), Box<dyn Error>> {
         for contents in ["", "Alice = local", "Alice = local\nBob = other"] {
             let text = format!("[realms]\nR = {{\nauth_to_local_names = {{\n{contents}\n}}\n}}");
             let config = Config::parse(&text)?;
-            assert_eq!(
-                config.diagnostics(),
-                &[ConfigDiagnostic::NotYetEffective {
-                    relation: "auth_to_local_names",
-                    package: "plan 2 WP-17",
-                }]
-            );
-            assert!(matches!(
-                Config::parse_with_mode(&text, ParseMode::Strict),
-                Err(ConfigError::NotYetEffective {
-                    relation: "auth_to_local_names",
-                    package: "plan 2 WP-17"
-                })
-            ));
+            let unavailable = [ConfigDiagnostic::FeatureUnavailable {
+                relation: "auth_to_local_names",
+                feature: "localauth",
+            }];
+            let strict = Config::parse_with_mode(&text, ParseMode::Strict);
+            if config.diagnostics().is_empty() {
+                drop(strict?);
+            } else {
+                assert_eq!(config.diagnostics(), &unavailable);
+                assert!(matches!(
+                    strict,
+                    Err(ConfigError::FeatureUnavailable {
+                        relation: "auth_to_local_names",
+                        feature: "localauth"
+                    })
+                ));
+            }
         }
         for text in [
             "[realms]\nR = {\n}",

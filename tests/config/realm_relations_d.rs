@@ -138,7 +138,6 @@ mod tests {
         )+};
     }
     cases! {
-        auth_to_local, "list", ["DEFAULT", "RULE:[1:$1](.*)s/a/b/"];
         default_domain, "text", ["example.test", "other.test"];
         pkinit_identity, "locations", ["FILE:/cert,/key", "PKCS12:/server"];
         pkinit_allow_upn, "bool", ["true", "false"];
@@ -248,12 +247,12 @@ mod tests {
                         .map(String::as_str),
                     Some(expected)
                 );
-                assert_eq!(
-                    config.diagnostics(),
-                    &[ConfigDiagnostic::NotYetEffective {
-                        relation: "auth_to_local_names",
-                        package: "plan 2 WP-17",
-                    }]
+                assert!(
+                    !config
+                        .diagnostics()
+                        .iter()
+                        .any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation: _, package: _ })),
+                    "the names are never deferred to WP-17 any more"
                 );
             }
         }
