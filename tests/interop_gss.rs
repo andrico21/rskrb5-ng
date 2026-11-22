@@ -8,7 +8,7 @@
 //! contexts, and per-message tokens in both directions. Every scenario asserts
 //! the negotiated mechanism. Gated by `INTEROP=1`; `INTEROP_REQUIRED=1` turns
 //! an unreachable fixture into a failure naming it.
-#![cfg(feature = "tokio")]
+#![cfg(all(feature = "spnego", feature = "tokio"))]
 
 /// Child-process runner for the tests that change the environment.
 #[path = "support/env.rs"]

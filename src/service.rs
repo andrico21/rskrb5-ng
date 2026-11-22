@@ -126,8 +126,8 @@ impl ValidatedApReq {
     pub const fn crypto_policy(&self) -> &CryptoPolicy {
         &self.crypto_policy
     }
-    /// Replace the reply-admission policy (crate tests only).
-    #[cfg(test)]
+    /// Replace the reply-admission policy (the SPNEGO crate tests only).
+    #[cfg(all(test, feature = "spnego"))]
     pub(crate) fn set_crypto_policy(&mut self, value: CryptoPolicy) {
         self.crypto_policy = value;
     }
