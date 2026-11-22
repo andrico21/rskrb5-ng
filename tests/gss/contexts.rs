@@ -35,7 +35,9 @@ fn mutual_contexts_establish_and_name_both_ends() -> Result<(), TestError> {
         InitiatorOptions::new(),
         (AcceptorOptions::new(), &[HOST], None),
     )?;
-    // then the acceptor answered with an AP-REP token,
+    // then the first token is an RFC 2743 initial context token,
+    assert_eq!(pair.first.first(), Some(&0x60), "the token is GSS-framed");
+    // and the acceptor answered with an AP-REP token,
     assert!(
         pair.reply.is_some(),
         "mutual authentication sends an AP-REP"

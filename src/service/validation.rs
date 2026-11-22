@@ -120,6 +120,16 @@ impl Validator<'_> {
             .map_err(Error::from)?;
 
         let ticket_service = principal_from_parts(&ap_req.ticket.realm, &ap_req.ticket.sname)?;
+        #[cfg(feature = "spnego")]
+        if let Some(rule) = &self.acceptor_name
+            && !rule.matches(&ticket_service.realm, &ticket_service.components)
+        {
+            return Err(Error::WrongPrincipal {
+                expected: rule.display(),
+                actual: format!("{}@{}", ticket_service.name(), ticket_service.realm),
+            }
+            .into());
+        }
         let (keytab_components, service_key) = self.ticket_key(&ticket_service, &ap_req.ticket)?;
 
         let enc_ticket =

@@ -134,12 +134,21 @@ fn desired_names_and_replay_caches_are_checked() -> Result<(), TestError> {
 
 /// The `client_keytab` and `password` keys make an initiator credential for the
 /// desired name, which acquires its tickets from the KDC when it is used; they
-/// need that name.
+/// need that name, and a client keytab must hold its key (MIT
+/// `can_get_initial_creds`, `acquire_cred.c:324-350`).
 #[test]
 fn keytab_and_password_initiators_need_a_name() -> Result<(), TestError> {
     let directory = scratch("client-keytab")?;
     let keytab_path = directory.join("client.keytab");
-    keytab(&[HOST]).save(&keytab_path)?;
+    let mut client_keys = keytab(&[]);
+    client_keys.entries_mut().push(rskrb5_ng::keytab::Entry::new(
+        rskrb5_ng::keytab::Principal::new("EXAMPLE.COM", 1, ["alice"]),
+        0,
+        1,
+        rskrb5_ng::keytab::EncryptionKey::new(18, vec![0x41; 32]),
+        1,
+    ));
+    client_keys.save(&keytab_path)?;
     let alice = Name::import(b"alice@EXAMPLE.COM", NameType::Principal)?;
     for store in [
         CredStore::new().with("client_keytab", &format!("FILE:{}", keytab_path.display()))?,
@@ -166,6 +175,14 @@ fn keytab_and_password_initiators_need_a_name() -> Result<(), TestError> {
             Err(Gss::NoCredential(_))
         ));
     }
+    // A client keytab without the name's key is no credential.
+    let service_keys = directory.join("service.keytab");
+    keytab(&[HOST]).save(&service_keys)?;
+    let wrong = CredStore::new().with("client_keytab", &format!("FILE:{}", service_keys.display()))?;
+    assert!(matches!(
+        Credential::acquire_cred_from(Some(&alice), CredentialUsage::Initiate, &wrong),
+        Err(Gss::NoCredential(_))
+    ));
     fs::remove_dir_all(&directory)?;
     Ok(())
 }

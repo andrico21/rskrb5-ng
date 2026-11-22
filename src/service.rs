@@ -687,6 +687,8 @@ impl SharedReplayCache {
 }
 
 include!("service/transit.rs");
+#[cfg(feature = "spnego")]
+include!("service/acceptor_name.rs");
 
 /// AP-REQ validator backed by a service keytab.
 pub struct Validator<'keytab> {
@@ -716,6 +718,9 @@ pub struct Validator<'keytab> {
     pac_kdc_key: Option<EncryptionKey>,
     /// Redacted trace events of the validations.
     trace: Guard,
+    /// The GSS acceptor name a ticket's server must match, when one is named.
+    #[cfg(feature = "spnego")]
+    acceptor_name: Option<AcceptorName>,
 }
 
 impl<'keytab> Validator<'keytab> {
@@ -796,7 +801,15 @@ impl<'keytab> Validator<'keytab> {
             pac_policy: VerificationPolicy::acceptor(),
             pac_kdc_key: None,
             trace: Guard::disabled(),
+            #[cfg(feature = "spnego")]
+            acceptor_name: None,
         }
+    }
+
+    /// Accept only tickets whose server matches `rule` (a named GSS acceptor).
+    #[cfg(feature = "spnego")]
+    pub(crate) fn set_acceptor_name(&mut self, rule: AcceptorName) {
+        self.acceptor_name = Some(rule);
     }
 
     /// Override the validation clock. Useful for deterministic tests.

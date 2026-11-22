@@ -5966,7 +5966,7 @@ fn configured_default_ccache_name(config: &Config) -> Result<String, Error> {
 /// Returns [`Error::CCache`] when `KRB5CCNAME` is not valid Unicode and
 /// [`Error::NoDefaultCCacheName`] when neither source names a cache.
 #[cfg(feature = "tokio")]
-fn default_ccache_name(config: &Config) -> Result<String, Error> {
+pub(crate) fn default_ccache_name(config: &Config) -> Result<String, Error> {
     match secure_env::ambient(|| env::var(KRB5CCNAME_ENV)) {
         Ok(cache_name) => file_name::expand_path_tokens(&cache_name)
             .map_err(|_source| error::Ccache::IdentityUnavailable.into()),
@@ -5990,7 +5990,7 @@ fn default_ccache_name(config: &Config) -> Result<String, Error> {
 /// Returns [`Error::DefaultClientKeytabName`] when `KRB5_CLIENT_KTNAME` is not
 /// valid Unicode.
 #[cfg(feature = "tokio")]
-fn default_client_keytab_name(config: &Config) -> Result<Keytab, Error> {
+pub(crate) fn default_client_keytab_name(config: &Config) -> Result<Keytab, Error> {
     match secure_env::ambient(|| env::var(KRB5_CLIENT_KTNAME_ENV)) {
         Ok(keytab_name) => Ok(Keytab::load_name(keytab_name)?),
         Err(env::VarError::NotPresent) => Ok(configured_keytab(

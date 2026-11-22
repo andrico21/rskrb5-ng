@@ -92,6 +92,10 @@ pub enum Any {
     #[cfg(feature = "spnego")]
     #[error("SPNEGO error: {0}")]
     Spnego(#[from] Spnego),
+    /// GSS-API Kerberos mechanism processing failed.
+    #[cfg(feature = "spnego")]
+    #[error("GSS-API error: {0}")]
+    Gss(#[from] Gss),
     /// Ticket message processing failed.
     #[cfg(feature = "messages")]
     #[error("Ticket error: {0}")]
