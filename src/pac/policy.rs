@@ -364,7 +364,7 @@ impl<'keys> Verification<'keys> {
         self
     }
 
-    /// Supply the bytes the ticket signature covers, from [`ticket_signature_input`].
+    /// Supply the bytes the ticket signature covers, from `ticket_signature_input`.
     #[inline]
     #[must_use]
     pub const fn with_ticket_signature_input(mut self, input: &'keys [u8]) -> Self {

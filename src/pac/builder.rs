@@ -76,7 +76,7 @@ impl<'keys> Signing<'keys> {
         self
     }
 
-    /// Supply the bytes the ticket signature covers, from [`ticket_signature_input`].
+    /// Supply the bytes the ticket signature covers, from `ticket_signature_input`.
     #[inline]
     #[must_use]
     pub const fn with_ticket_signature_input(mut self, input: &'keys [u8]) -> Self {
@@ -188,6 +188,12 @@ impl Builder {
     /// Add, or check, the client info, then the signatures, and return the signed PAC
     /// (MIT `krb5_pac_sign_ext`, and for a [`TicketKind::Service`] ticket
     /// `krb5_kdc_sign_ticket`'s ticket signature and full checksum).
+    ///
+    /// # Security
+    ///
+    /// Signing with the KDC key makes the PAC look as if the KDC issued it: only a KDC, or a test,
+    /// holds that key. The builder owns its buffers in erasing storage and the signed PAC keeps its
+    /// bytes in erasing storage too; the keys stay the caller's.
     ///
     /// # Errors
     ///

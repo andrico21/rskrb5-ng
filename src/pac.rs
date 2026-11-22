@@ -1,8 +1,20 @@
-//! Microsoft Privilege Attribute Certificate (PAC) parsing.
+//! Microsoft Privilege Attribute Certificate (PAC): parsing, explicit-policy verification and
+//! building.
 //!
-//! This module covers the PAC surface that gokrb5 consumes on the service
-//! path: the PAC container, `KERB_VALIDATION_INFO`, client information,
-//! UPN/DNS information, PAC signatures, and AES server checksum verification.
+//! [`Pac::parse`] and [`Pac::parse_and_process`] read a PAC container and its buffers. The result
+//! is unverified data: nothing in a parsed [`Pac`] is authorization. [`Pac::verify_ext`] checks it
+//! under a [`VerificationPolicy`] (which of the server, KDC, ticket and full signatures must
+//! verify, which buffers must be present, whether the client info must name the ticket's client)
+//! and returns a [`Verified`] PAC, which says which checks passed ([`Verified::checks`]). The
+//! acceptor (`service::Validator`) exposes only [`Verified`] PACs.
+//! [`Builder`] assembles and signs a PAC ([`Builder::sign`], `Builder::sign_ticket`) as MIT's
+//! `krb5_pac_sign_ext` and `krb5_kdc_sign_ticket` do; KDC issuance policy is not part of it.
+//! `Request` is the typed `PA-PAC-REQUEST` padata, [`AttributesInfo`] and [`RequestorSid`] decode
+//! the PAC attribute buffers and [`IdentityAttributes`] is a mutable, serializable view of a
+//! verified PAC's identity.
+//!
+//! The names differ from the plan's `PacBuilder`, `PacVerificationPolicy` and `VerifiedPac`
+//! because the lint profile refuses an item name that repeats its module's name.
 
 use alloc::{collections::BTreeMap, fmt};
 use core::time::Duration;
