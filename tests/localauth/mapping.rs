@@ -1,11 +1,12 @@
-//! MIT 1.22.2 `src/tests/t_localauth.py`: the expected values of its
-//! `krb5_aname_to_localname` cases, driven through `krb5.conf` text, plus the
-//! one case where this crate is stricter than MIT.
+//! MIT 1.22.2 `t_localauth.py`: its `krb5_aname_to_localname` cases.
+//!
+//! The expected values are MIT's own (`src/tests/t_localauth.py`), driven
+//! through `krb5.conf` text, plus the one case where this crate is stricter.
 
 use rskrb5_ng::{
     config::Config,
     error::LocalAuth,
-    localauth::{LocalNameMapper, principal_to_local_name},
+    localauth::{AuthToLocalRule, LocalNameMapper, principal_to_local_name},
 };
 
 use crate::support::{TestError, mapper, principal};
@@ -40,8 +41,9 @@ fn default_rule_works_in_the_default_realm_only() -> Result<(), TestError> {
     Ok(())
 }
 
-/// `t_localauth.py` "auth_to_local_names": the name without realm is the key,
-/// case-sensitively.
+/// `t_localauth.py` `auth_to_local_names`: the name without realm is the key.
+///
+/// The match is case-sensitive.
 #[test]
 fn names_map_by_case_sensitive_name() -> Result<(), TestError> {
     let names = " auth_to_local_names = {\n  user = abcd\n }";
@@ -74,17 +76,17 @@ fn names_of_another_realms_section_are_ignored() -> Result<(), TestError> {
     Ok(())
 }
 
-/// `t_localauth.py` "explicit default" and "auth_to_local invalid".
+/// `t_localauth.py` "explicit default" and `auth_to_local` "invalid".
 #[test]
 fn explicit_default_and_invalid_types() -> Result<(), TestError> {
     assert_eq!(local(" auth_to_local = DEFAULT", "user@KRBTEST.COM")?, "user");
     assert!(matches!(
-        rskrb5_ng::localauth::AuthToLocalRule::parse("RULE"),
-        Err(LocalAuth::MalformedRule { .. })
+        AuthToLocalRule::parse("RULE"),
+        Err(LocalAuth::MalformedRule { reason: _ })
     ));
     assert!(matches!(
-        rskrb5_ng::localauth::AuthToLocalRule::parse("UNRECOGNIZED:stuff"),
-        Err(LocalAuth::UnsupportedRuleType { .. })
+        AuthToLocalRule::parse("UNRECOGNIZED:stuff"),
+        Err(LocalAuth::UnsupportedRuleType { kind: _ })
     ));
     Ok(())
 }

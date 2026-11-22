@@ -23,9 +23,9 @@ use std::{
 use super::{Account, LocalAuthorizer};
 
 /// The largest `.k5login` file read, in bytes.
-pub const MAX_FILE_BYTES: usize = 1_048_576;
+pub const MAX_FILE_BYTES: usize = 0x10_0000;
 /// The most lines in a `.k5login` file.
-pub const MAX_LINES: usize = 16_384;
+pub const MAX_LINES: usize = 0x4000;
 /// The longest line of a `.k5login` file, newline excluded: MIT reads with a
 /// `BUFSIZ` (8192) buffer and cannot match a longer line.
 pub const MAX_LINE_BYTES: usize = 8191;
@@ -115,6 +115,11 @@ enum Found {
 }
 
 /// The verdict on the bytes of a file (`None`: there is none).
+///
+/// # Errors
+///
+/// [`Fault::NotListed`] when the bytes do not list the principal, and the
+/// bound faults of [`lists`].
 fn judge(contents: Option<&[u8]>, principal: &Principal) -> Result<Found, Fault> {
     let Some(bytes) = contents else {
         return Ok(Found::Missing);
@@ -128,16 +133,19 @@ fn judge(contents: Option<&[u8]>, principal: &Principal) -> Result<Found, Fault>
 
 /// A refusal is final only while `k5login_authoritative` holds
 /// (`localauth_k5login.c:159-160`).
-fn classify(outcome: Result<Found, Fault>, authoritative: bool) -> Verdict {
+const fn classify(outcome: Result<Found, Fault>, authoritative: bool) -> Verdict {
     match outcome {
         Ok(Found::Listed) => Verdict::Listed,
-        Ok(Found::Missing) => Verdict::Silent,
         Err(fault) if authoritative => Verdict::Refused(fault),
-        Err(_) => Verdict::Silent,
+        Ok(Found::Missing) | Err(_) => Verdict::Silent,
     }
 }
 
 /// The file of `account` for the local name `name`.
+///
+/// # Errors
+///
+/// [`Fault::UnsafeLocalName`] or [`Fault::RelativePath`].
 #[cfg(unix)]
 fn path_of(directory: Option<&Path>, account: &Account, name: &str) -> Result<PathBuf, Fault> {
     let path = match directory {
@@ -157,6 +165,10 @@ fn path_of(directory: Option<&Path>, account: &Account, name: &str) -> Result<Pa
 }
 
 /// Inspect, open and read the file at `path`.
+///
+/// # Errors
+///
+/// The [`Fault`] that describes why the file may not be used.
 #[cfg(unix)]
 fn read_listing(path: &Path, account: &Account, principal: &Principal) -> Result<Found, Fault> {
     let unreadable = |error: io::Error| Fault::Unreadable(error.kind());

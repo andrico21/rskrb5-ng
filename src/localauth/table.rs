@@ -28,7 +28,10 @@ impl StaticAccounts {
     /// Register `name`, replacing an earlier entry of the same name.
     #[must_use]
     #[inline]
-    pub fn with_account(mut self, name: impl Into<String>, account: Account) -> Self {
+    pub fn with_account<N>(mut self, name: N, account: Account) -> Self
+    where
+        N: Into<String>,
+    {
         drop(self.table.insert(name.into(), account));
         self
     }

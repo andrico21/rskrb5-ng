@@ -8,6 +8,10 @@
 
 /// Principals, accounts and a fixture directory.
 #[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
 #[path = "localauth/support.rs"]
 mod support;
 

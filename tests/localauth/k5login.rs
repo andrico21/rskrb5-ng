@@ -1,16 +1,19 @@
-//! The `.k5login` module: lookup of the file, ownership, modes, symlinks,
-//! bounds and the exact line match (MIT `localauth_k5login.c:83-161`; the
-//! modes, symlink and bound checks are stricter than MIT).
+//! The `.k5login` module: file lookup, ownership, modes, symlinks, bounds.
+//!
+//! Modelled on MIT `localauth_k5login.c:83-161`; the modes, symlink and bound
+//! checks are stricter than MIT and have no MIT counterpart.
 
 #[cfg(unix)]
 mod unix {
     //! Everything that needs Unix ownership and modes.
 
+    extern crate alloc;
+
+    use alloc::sync::Arc;
     use std::{
         fs,
         os::unix::fs::{MetadataExt as _, PermissionsExt as _, symlink},
         path::Path,
-        sync::Arc,
     };
 
     use rskrb5_ng::{
@@ -18,7 +21,7 @@ mod unix {
         config::Config,
         localauth::{
             Account, Authorization, Denial, LocalAuthorizer, LocalNameMapper, Module,
-            accounts::StaticAccounts,
+            table::StaticAccounts,
             authorize_local,
             k5login::{Fault, MAX_FILE_BYTES, MAX_LINE_BYTES, MAX_LINES},
         },
@@ -117,27 +120,29 @@ mod unix {
     #[test]
     fn directory_is_not_a_regular_file() -> Result<(), TestError> {
         let home = Scratch::new("dir")?;
-        fs::create_dir(home.path().join(".k5login"))?;
+        fs::create_dir_all(home.path().join(".k5login"))?;
         let owner = fs::metadata(home.path())?.uid();
         assert_eq!(decide(owner, home.path())?, refused(Fault::NotRegular));
         Ok(())
+    }
+
+    /// The decision for `alice` over a `.k5login` of `content`, mode 0600.
+    fn decide_content(content: &[u8]) -> Result<Authorization, TestError> {
+        let (home, owner) = home_with(content, 0o600)?;
+        decide(owner, home.path())
     }
 
     /// The size, line count and line length bounds refuse and are inclusive.
     #[test]
     fn bounds_refuse_what_exceeds_them() -> Result<(), TestError> {
         let target = b"alice@KRBTEST.COM\n";
-        let filler = |lines: usize| b"x\n".repeat(lines);
-        let (home, owner) = home_with(&[filler(MAX_LINES - 1), target.to_vec()].concat(), 0o600)?;
-        assert_eq!(decide(owner, home.path())?, LISTED, "the last allowed line");
-        let (home, owner) = home_with(&[filler(MAX_LINES), target.to_vec()].concat(), 0o600)?;
-        assert_eq!(decide(owner, home.path())?, refused(Fault::TooManyLines));
-        let (home, owner) = home_with(&[vec![b'y'; MAX_LINE_BYTES], b"\n".to_vec(), target.to_vec()].concat(), 0o600)?;
-        assert_eq!(decide(owner, home.path())?, LISTED, "the longest allowed line");
-        let (home, owner) = home_with(&[vec![b'y'; MAX_LINE_BYTES + 1], b"\n".to_vec(), target.to_vec()].concat(), 0o600)?;
-        assert_eq!(decide(owner, home.path())?, refused(Fault::LineTooLong));
-        let (home, owner) = home_with(&vec![b'z'; MAX_FILE_BYTES + 1], 0o600)?;
-        assert_eq!(decide(owner, home.path())?, refused(Fault::TooLarge));
+        let lines = |count: usize| [b"x\n".repeat(count), target.to_vec()].concat();
+        let long = |width: usize| [vec![b'y'; width], b"\n".to_vec(), target.to_vec()].concat();
+        assert_eq!(decide_content(&lines(MAX_LINES - 1))?, LISTED, "the last allowed line");
+        assert_eq!(decide_content(&lines(MAX_LINES))?, refused(Fault::TooManyLines));
+        assert_eq!(decide_content(&long(MAX_LINE_BYTES))?, LISTED, "the longest allowed line");
+        assert_eq!(decide_content(&long(MAX_LINE_BYTES + 1))?, refused(Fault::LineTooLong));
+        assert_eq!(decide_content(&vec![b'z'; MAX_FILE_BYTES + 1])?, refused(Fault::TooLarge));
         Ok(())
     }
 
@@ -147,8 +152,7 @@ mod unix {
     #[test]
     fn line_match_is_exact() -> Result<(), TestError> {
         let listed = |content: &[u8]| -> Result<bool, TestError> {
-            let (home, owner) = home_with(content, 0o600)?;
-            Ok(decide(owner, home.path())? == LISTED)
+            Ok(decide_content(content)? == LISTED)
         };
         assert!(listed(b"alice@KRBTEST.COM")?, "no final newline");
         assert!(!listed(b" alice@KRBTEST.COM\n")?, "leading space");
@@ -281,12 +285,12 @@ mod unix {
         let file = directory.path().join(USER);
         fs::write(&file, b"alice@KRBTEST.COM\n")?;
         fs::set_permissions(&file, fs::Permissions::from_mode(0o600))?;
-        let text = format!(
+        let with_directory = format!(
             "[libdefaults]\n default_realm = KRBTEST.COM\n k5login_directory = {}\n",
             directory.path().display()
         );
         let configured = LocalAuthorizer::from_config(
-            &Config::parse(&text)?,
+            &Config::parse(&with_directory)?,
             resolver(USER, owner, home.path()),
         )?;
         assert_eq!(authorize_local(&configured, &alice(), USER), LISTED);

@@ -16,7 +16,7 @@ use super::{
 };
 
 /// The compiled-size limit of a pattern in bytes.
-const REGEX_SIZE_LIMIT: usize = 1_048_576;
+const REGEX_SIZE_LIMIT: usize = 0x10_0000;
 /// The nesting limit of a pattern.
 const REGEX_NEST_LIMIT: u32 = 32;
 
@@ -75,6 +75,10 @@ const fn malformed(reason: &'static str) -> Error {
 }
 
 /// Compile `pattern`, refusing what the bounds or the engine refuse.
+///
+/// # Errors
+///
+/// [`Error::LimitExceeded`] or [`Error::InvalidRegex`].
 fn compile(pattern: &str, anchored: bool) -> Result<Regex, Error> {
     if pattern.len() > MAX_PATTERN_BYTES {
         return Err(Error::LimitExceeded {
@@ -102,6 +106,10 @@ const fn is_space(character: char) -> bool {
 }
 
 /// Parse `[count:format]` at the start of `rest`; return the rest after `]`.
+///
+/// # Errors
+///
+/// [`Error::MalformedRule`] for a syntax error.
 fn parse_selector(rest: &str) -> Result<(Selector, &str), Error> {
     let body = rest.strip_prefix('[').ok_or_else(|| malformed("selector"))?;
     let digits = body.bytes().take_while(u8::is_ascii_digit).count();
@@ -132,19 +140,23 @@ fn parse_selector(rest: &str) -> Result<(Selector, &str), Error> {
         let (index, remainder) = reference
             .split_at_checked(width)
             .ok_or_else(|| malformed("selector"))?;
-        let index = index
+        let reference_index = index
             .parse::<usize>()
             .ok()
             .ok_or_else(|| malformed("selector reference"))?;
-        if index > count {
+        if reference_index > count {
             return Err(malformed("selector reference beyond the component count"));
         }
-        parts.push(Part::Reference(index));
+        parts.push(Part::Reference(reference_index));
         format = remainder;
     }
 }
 
 /// Parse one `s/regex/text/[g]` at the start of `rest`; return the rest.
+///
+/// # Errors
+///
+/// [`Error::MalformedRule`], [`Error::LimitExceeded`] or [`Error::InvalidRegex`].
 fn parse_edit(rest: &str) -> Result<(Edit, &str), Error> {
     let body = rest.strip_prefix("s/").ok_or_else(|| malformed("substitution"))?;
     let (pattern, after_pattern) = body
@@ -268,6 +280,10 @@ impl AuthToLocalRule {
 }
 
 /// `an2ln_default` (`localauth.c:264-292`).
+///
+/// # Errors
+///
+/// [`Error::NoTranslation`] outside the default realm or for another shape.
 fn default_name(principal: &Principal, default_realm: &str) -> Result<String, Error> {
     if principal.realm != default_realm {
         return Err(Error::NoTranslation);
@@ -289,6 +305,10 @@ const fn too_long(what: &'static str) -> Error {
 
 impl Compiled {
     /// `an2ln_rule` (`localauth_rule.c:272-302`).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NoTranslation`] or [`Error::LimitExceeded`].
     fn apply(&self, principal: &Principal) -> Result<String, Error> {
         let selection = self.selection(principal)?;
         if self
@@ -304,6 +324,10 @@ impl Compiled {
     }
 
     /// `aname_get_selstring` (`localauth_rule.c:205-269`).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NoTranslation`] or [`Error::LimitExceeded`].
     fn selection(&self, principal: &Principal) -> Result<String, Error> {
         let Some(selector) = &self.selector else {
             return unparse::without_realm(principal).ok_or(Error::NoTranslation);
@@ -334,6 +358,10 @@ impl Edit {
     /// `do_replacement` (`localauth_rule.c:110-133`): each search starts on
     /// the text after the previous match (so `^` matches again, as in MIT),
     /// and an empty match takes one character along so the loop ends.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::LimitExceeded`] past the replacement or result bound.
     fn apply(&self, input: &str) -> Result<String, Error> {
         let mut out = String::new();
         let mut rest = input;

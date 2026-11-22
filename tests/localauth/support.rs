@@ -1,20 +1,22 @@
 //! Principals, `krb5.conf` text, accounts and a scratch directory.
 
-use core::error::Error;
+extern crate alloc;
+
+use alloc::sync::Arc;
+use core::{
+    error::Error,
+    sync::atomic::{AtomicU32, Ordering},
+};
 use std::{
     env, fs,
     path::{Path, PathBuf},
     process,
-    sync::{
-        Arc,
-        atomic::{AtomicU32, Ordering},
-    },
 };
 
 use rskrb5_ng::{
     ccache::Principal,
     config::Config,
-    localauth::{Account, AccountResolver, LocalAuthorizer, LocalNameMapper, accounts::StaticAccounts},
+    localauth::{Account, AccountResolver, LocalAuthorizer, LocalNameMapper, table::StaticAccounts},
 };
 
 /// The error type of the `Result`-returning tests.

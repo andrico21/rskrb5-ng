@@ -3,6 +3,7 @@
 use alloc::collections::BTreeMap;
 
 use crate::{
+    ccache::Principal,
     config::{Config, section_values::Value},
     error::LocalAuth as Error,
 };
@@ -10,6 +11,10 @@ use crate::{
 use super::{AuthToLocalRule, LocalNameMapper, MAX_LOCAL_NAME_BYTES, MAX_RULES, unparse};
 
 /// A translation that may be used as an account name.
+///
+/// # Errors
+///
+/// [`Error::InvalidLocalName`] for an empty, NUL-holding or too long name.
 fn usable(name: String) -> Result<String, Error> {
     if name.is_empty() {
         Err(Error::InvalidLocalName { reason: "empty" })
@@ -43,11 +48,11 @@ impl LocalNameMapper {
     /// realm) to `local_name`, replacing an earlier one.
     #[must_use]
     #[inline]
-    pub fn with_name(
-        mut self,
-        principal_name: impl Into<String>,
-        local_name: impl Into<String>,
-    ) -> Self {
+    pub fn with_name<P, L>(mut self, principal_name: P, local_name: L) -> Self
+    where
+        P: Into<String>,
+        L: Into<String>,
+    {
         drop(self.names.insert(principal_name.into(), local_name.into()));
         self
     }
@@ -97,7 +102,12 @@ impl LocalNameMapper {
     }
 
     /// `krb5_aname_to_localname`: the explicit mapping, then the rules.
-    pub(super) fn translate(&self, principal: &crate::ccache::Principal) -> Result<String, Error> {
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NoTranslation`], [`Error::InvalidLocalName`] and the errors of
+    /// the rules.
+    pub(super) fn translate(&self, principal: &Principal) -> Result<String, Error> {
         let realm = self
             .default_realm
             .as_deref()

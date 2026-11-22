@@ -48,16 +48,17 @@ fn malformed_rules_are_refused_at_parse_time() {
         assert!(
             matches!(
                 AuthToLocalRule::parse(rule),
-                Err(LocalAuth::MalformedRule { .. } | LocalAuth::UnsupportedRuleType { .. })
+                Err(LocalAuth::MalformedRule { reason: _ } | LocalAuth::UnsupportedRuleType { kind: _ })
             ),
             "{rule:?} must be refused"
         );
     }
 }
 
-/// A pattern the regex compiler refuses is refused when the rule is parsed
-/// (MIT treats it as "rule does not apply"): back-references and look-around
-/// do not exist in the linear-time engine, groups cannot nest deeply and a
+/// A pattern the regex compiler refuses is refused when the rule is parsed.
+///
+/// MIT treats it as "rule does not apply". Back-references and look-around do
+/// not exist in the linear-time engine, groups cannot nest deeply and a
 /// pattern that expands past the compiled-size limit does not compile.
 #[test]
 fn patterns_the_engine_cannot_run_are_refused() {
@@ -75,43 +76,45 @@ fn patterns_the_engine_cannot_run_are_refused() {
         assert!(
             matches!(
                 AuthToLocalRule::parse(rule),
-                Err(LocalAuth::InvalidRegex { .. })
+                Err(LocalAuth::InvalidRegex { message: _ })
             ),
             "{rule:?} must be refused"
         );
     }
 }
 
-/// Every size bound refuses at parse time, and one byte under it still parses.
+/// Every size bound refuses at parse time, and the bound itself still parses.
 #[test]
-fn size_bounds_refuse_and_the_bound_itself_parses() -> Result<(), TestError> {
-    let at = |text: String| AuthToLocalRule::parse(&text);
-    let limit = |result: Result<AuthToLocalRule, LocalAuth>| {
-        matches!(result, Err(LocalAuth::LimitExceeded { .. }))
+fn size_bounds_refuse_and_the_bound_itself_parses() {
+    let parses = |text: String| AuthToLocalRule::parse(&text).is_ok();
+    let limit = |text: String| {
+        matches!(
+            AuthToLocalRule::parse(&text),
+            Err(LocalAuth::LimitExceeded { what: _, limit: _ })
+        )
     };
-    assert!(at(format!("RULE:({})", "a".repeat(MAX_PATTERN_BYTES))).is_ok());
-    assert!(limit(at(format!("RULE:({})", "a".repeat(MAX_PATTERN_BYTES + 1)))));
-    assert!(limit(at(format!("RULE:s/{}/x/", "a".repeat(MAX_PATTERN_BYTES + 1)))));
-    assert!(at(format!("RULE:s/a/{}/", "b".repeat(MAX_REPLACEMENT_BYTES))).is_ok());
-    assert!(limit(at(format!("RULE:s/a/{}/", "b".repeat(MAX_REPLACEMENT_BYTES + 1)))));
-    assert!(at(format!("RULE:{}", "s/a/b/".repeat(MAX_SUBSTITUTIONS))).is_ok());
-    assert!(limit(at(format!("RULE:{}", "s/a/b/".repeat(MAX_SUBSTITUTIONS + 1)))));
-    assert!(limit(at(format!("RULE:{}", " ".repeat(MAX_RULE_BYTES)))));
-    Ok(())
+    let over = |bound: usize| bound.saturating_add(1);
+    assert!(parses(format!("RULE:({})", "a".repeat(MAX_PATTERN_BYTES))));
+    assert!(limit(format!("RULE:({})", "a".repeat(over(MAX_PATTERN_BYTES)))));
+    assert!(limit(format!("RULE:s/{}/x/", "a".repeat(over(MAX_PATTERN_BYTES)))));
+    assert!(parses(format!("RULE:s/a/{}/", "b".repeat(MAX_REPLACEMENT_BYTES))));
+    assert!(limit(format!("RULE:s/a/{}/", "b".repeat(over(MAX_REPLACEMENT_BYTES)))));
+    assert!(parses(format!("RULE:{}", "s/a/b/".repeat(MAX_SUBSTITUTIONS))));
+    assert!(limit(format!("RULE:{}", "s/a/b/".repeat(over(MAX_SUBSTITUTIONS)))));
+    assert!(limit(format!("RULE:{}", " ".repeat(MAX_RULE_BYTES))));
 }
 
 /// More than `MAX_RULES` rules do not make a mapper.
 #[test]
 fn rule_count_is_bounded() {
     let rules = |count: usize| vec![AuthToLocalRule::default_rule(); count];
-    assert!(
-        LocalNameMapper::new(None)
-            .with_rules(rules(MAX_RULES))
-            .is_ok()
-    );
+    let accepted = LocalNameMapper::new(None)
+        .with_rules(rules(MAX_RULES))
+        .is_ok();
+    assert!(accepted, "the bound itself");
     assert!(matches!(
-        LocalNameMapper::new(None).with_rules(rules(MAX_RULES + 1)),
-        Err(LocalAuth::LimitExceeded { .. })
+        LocalNameMapper::new(None).with_rules(rules(MAX_RULES.saturating_add(1))),
+        Err(LocalAuth::LimitExceeded { what: _, limit: _ })
     ));
 }
 
@@ -137,7 +140,7 @@ fn empty_matches_terminate() -> Result<(), TestError> {
     let long = principal(&format!("{}@R", "a".repeat(MAX_MATCHES)));
     assert!(matches!(
         principal_to_local_name(&only("RULE:s/x*/-/g")?, &long),
-        Err(LocalAuth::LimitExceeded { .. })
+        Err(LocalAuth::LimitExceeded { what: _, limit: _ })
     ));
     Ok(())
 }
@@ -146,12 +149,12 @@ fn empty_matches_terminate() -> Result<(), TestError> {
 #[test]
 fn selection_string_is_bounded() -> Result<(), TestError> {
     let at_limit = principal(&format!("{}@R", "a".repeat(MAX_SELECTION_BYTES)));
-    let over = principal(&format!("{}@R", "a".repeat(MAX_SELECTION_BYTES + 1)));
+    let over = principal(&format!("{}@R", "a".repeat(MAX_SELECTION_BYTES.saturating_add(1))));
     let mapper = only("RULE:[1:$1]s/a+/u/")?;
     assert_eq!(principal_to_local_name(&mapper, &at_limit)?, "u");
     assert!(matches!(
         principal_to_local_name(&mapper, &over),
-        Err(LocalAuth::LimitExceeded { .. })
+        Err(LocalAuth::LimitExceeded { what: _, limit: _ })
     ));
     Ok(())
 }
@@ -160,7 +163,7 @@ fn selection_string_is_bounded() -> Result<(), TestError> {
 #[test]
 fn unusable_translations_are_refused() -> Result<(), TestError> {
     let invalid = |result: Result<String, LocalAuth>| {
-        matches!(result, Err(LocalAuth::InvalidLocalName { .. }))
+        matches!(result, Err(LocalAuth::InvalidLocalName { reason: _ }))
     };
     assert!(invalid(principal_to_local_name(&only("RULE:s/.*//")?, &principal("a@R"))));
     let long = format!("RULE:s/^/{}/", "x".repeat(MAX_LOCAL_NAME_BYTES));

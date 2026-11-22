@@ -21,7 +21,7 @@
 //!   environment: the home directory and the numeric user id of a local
 //!   account come from the caller's [`AccountResolver`], never from `HOME`,
 //!   `UID` or `USER`. The crate has no default resolver (it forbids `unsafe`
-//!   and admits no OS wrapper for `getpwnam`); [`accounts::StaticAccounts`]
+//!   and admits no OS wrapper for `getpwnam`); [`table::StaticAccounts`]
 //!   is the caller-filled table.
 //! * Every denial is a [`Denial`] value and the function never grants on an
 //!   error: a missing account, an unreadable, oversized, symlinked,
@@ -42,15 +42,17 @@
 //! does the same on Windows) and only the `an2ln` rule can authorize.
 
 use alloc::sync::Arc;
-use std::{collections::BTreeMap, path::PathBuf};
+use alloc::collections::BTreeMap;
+use core::fmt::Debug;
+use std::path::PathBuf;
 
-use crate::ccache::Principal;
+use crate::{ccache::Principal, error::LocalAuth as Error};
 
-pub mod accounts;
 mod authorizer;
 pub mod k5login;
 mod mapper;
 mod rule;
+pub mod table;
 mod unparse;
 
 /// The longest local account name that a translation may yield: MIT's
@@ -93,10 +95,10 @@ impl Account {
 
 /// The caller's account database (MIT: `getpwnam_r`).
 ///
-/// The crate has no default implementation: [`accounts::StaticAccounts`] is
+/// The crate has no default implementation: [`table::StaticAccounts`] is
 /// a table the caller fills, and a caller that has an audited passwd lookup
 /// implements this trait over it.
-pub trait AccountResolver: core::fmt::Debug + Send + Sync {
+pub trait AccountResolver: Debug + Send + Sync {
     /// The account named `local_name`, or `None` when there is none or the
     /// lookup failed (both deny, as in MIT `localauth_k5login.c:101-105`).
     fn lookup(&self, local_name: &str) -> Option<Account>;
@@ -199,6 +201,6 @@ pub fn authorize_local(
 pub fn principal_to_local_name(
     mapper: &LocalNameMapper,
     principal: &Principal,
-) -> Result<String, crate::error::LocalAuth> {
+) -> Result<String, Error> {
     mapper.translate(principal)
 }
