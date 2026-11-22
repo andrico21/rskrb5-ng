@@ -16,7 +16,12 @@ use rskrb5_ng::{
     config::Config,
     crypto::KerberosEtype,
     keytab::Keytab,
+    pac::{
+        ClientBinding, IdentityAttributes, Request, TicketKind, Verification, VerificationPolicy,
+        find_pac_in_authorization_data,
+    },
     service::{ValidatedApReq, Validator},
+    ticket,
 };
 use tokio::runtime::{Builder, Runtime};
 
@@ -215,6 +220,179 @@ fn a_claims_less_account_ticket_is_accepted() -> Result<(), Box<dyn Error>> {
                 harness::var("INTEROP_SAMBA_USER_NOPREAUTH_USER")?,
                 "the PAC names the claims-less account"
             );
+            Ok::<_, Box<dyn Error>>(())
+        })
+        .map_err(shown)
+}
+
+/// testuser1 (a user with a claim) gets a service ticket for `HTTP/user2.user.rskrb5`, validated
+/// with the account keytab and the krbtgt key of the domain under `policy`.
+fn own_domain_pac(policy: VerificationPolicy) -> Result<ValidatedApReq, Box<dyn Error>> {
+    runtime()?.block_on(async {
+        let realm = harness::var("INTEROP_SAMBA_USER_REALM")?;
+        let mut client = Tokio::with_keytab(
+            config()?,
+            KdcProtocol::Tcp,
+            user("INTEROP_SAMBA_USER_USER")?,
+            Keytab::load(harness::var("INTEROP_SAMBA_USER_USER_KEYTAB")?)?,
+        )
+        .with_transport(transport());
+        let name = harness::var("INTEROP_SAMBA_USER_HTTP_SERVICE")?;
+        let granted = client
+            .get_service_ticket(Principal::new(realm.as_str(), 2, name.split('/')))
+            .await?;
+        let krbtgt = Keytab::load(harness::var("INTEROP_SAMBA_USER_KRBTGT_KEYTAB")?)?;
+        let (kdc_key, _kvno) = krbtgt.find_key(&["krbtgt"], &realm, 0, AES256_SHA1)?;
+        let keytab = Keytab::load(harness::var("INTEROP_SAMBA_USER_HTTP_ACCOUNT_KEYTAB")?)?;
+        let account = harness::var("INTEROP_SAMBA_USER_HTTP_ACCOUNT")?;
+        Validator::new(&keytab)
+            .with_now(SystemTime::now())
+            .with_keytab_principal([account.as_str()])
+            .with_pac_kdc_key(kdc_key.clone())
+            .with_pac_policy(policy)
+            .validate_ap_req(&ap_req(&granted)?)
+            .map_err(|error| {
+                format!("the acceptor refused the Samba-issued ticket: {error}").into()
+            })
+    })
+}
+
+/// MIT-pac-2, MIT-pac-3: with the domain's krbtgt key the acceptor verifies the KDC signature, the
+/// ticket signature and the KB5020805 full checksum of the PAC Samba 4.22 issues, besides the
+/// server signature and the client info.
+#[test]
+fn the_kdc_ticket_and_full_signatures_of_a_samba_pac_verify() -> Result<(), Box<dyn Error>> {
+    if !harness::require(
+        "the_kdc_ticket_and_full_signatures_of_a_samba_pac_verify",
+        &[SAMBA_USER],
+    )? {
+        return Ok(());
+    }
+    let validated = own_domain_pac(VerificationPolicy::kdc())?;
+    let checks = validated
+        .pac()
+        .ok_or("a Samba service ticket has a PAC")?
+        .checks();
+    assert!(
+        checks.server() && checks.kdc() && checks.ticket() && checks.full() && checks.client(),
+        "every check passed: {checks:?}"
+    );
+    Ok(())
+}
+
+/// The claim Samba puts into testuser1's PAC and the AD identity read through the verified PAC as
+/// identity attributes.
+#[test]
+fn the_claims_and_identity_of_a_domain_user_read_through_the_verified_pac()
+-> Result<(), Box<dyn Error>> {
+    if !harness::require(
+        "the_claims_and_identity_of_a_domain_user_read_through_the_verified_pac",
+        &[SAMBA_USER],
+    )? {
+        return Ok(());
+    }
+    let validated = own_domain_pac(VerificationPolicy::kdc())?;
+    let attributes = IdentityAttributes::from_verified(
+        validated.pac().ok_or("a Samba service ticket has a PAC")?,
+    );
+    let user = harness::var("INTEROP_SAMBA_USER_USER")?;
+    assert_eq!(
+        attributes.get("ad:effective-name"),
+        Some([user.clone()].as_slice())
+    );
+    assert_eq!(attributes.get("pac:client-name"), Some([user].as_slice()));
+    let claim_type = harness::var("INTEROP_SAMBA_USER_CLAIM_TYPE")?;
+    let claim_value = harness::var("INTEROP_SAMBA_USER_CLAIM_VALUE")?;
+    let claim = attributes
+        .names()
+        .find(|name| name.starts_with("claim:") && name.contains(claim_type.as_str()))
+        .ok_or("the identity attributes include the Department claim")?;
+    assert_eq!(attributes.get(claim), Some([claim_value].as_slice()));
+    assert!(
+        attributes.get("upn:name").is_some(),
+        "the UPN/DNS info is read"
+    );
+    Ok(())
+}
+
+/// MIT-pac-5, MIT-pac-6: Samba 4.22.11 puts `PAC_ATTRIBUTES_INFO` and `PAC_REQUESTOR` into the PAC
+/// of a TGT and reports the client's `PA-PAC-REQUEST`: `include` sets `PAC_WAS_REQUESTED`, no
+/// request sets `PAC_WAS_GIVEN_IMPLICITLY` and `exclude` sets neither (Samba still issues the PAC);
+/// the requestor is the client's own SID. The TGT's PAC verifies under the krbtgt key.
+#[test]
+fn the_pac_attributes_of_a_tgt_report_the_pac_request_and_the_requestor()
+-> Result<(), Box<dyn Error>> {
+    if !harness::require(
+        "the_pac_attributes_of_a_tgt_report_the_pac_request_and_the_requestor",
+        &[SAMBA_USER],
+    )? {
+        return Ok(());
+    }
+    runtime()?
+        .block_on(async {
+            let realm = harness::var("INTEROP_SAMBA_USER_REALM")?;
+            let krbtgt = Keytab::load(harness::var("INTEROP_SAMBA_USER_KRBTGT_KEYTAB")?)?;
+            let (kdc_key, _kvno) = krbtgt.find_key(&["krbtgt"], &realm, 0, AES256_SHA1)?;
+            let cases = [
+                (vec![Request::include().padata()?], 1_u32, "include"),
+                (vec![], 2, "no request"),
+                (vec![Request::exclude().padata()?], 0, "exclude"),
+            ];
+            for (padata, flags, label) in cases {
+                let session = transport()
+                    .login_tgt_with_password_config(
+                        &config()?,
+                        KdcProtocol::Tcp,
+                        user("INTEROP_SAMBA_USER_USER")?,
+                        harness::var("INTEROP_SAMBA_USER_USER_PASSWORD")?.as_bytes(),
+                        AsReq::new(SystemTime::now(), nonce(1)?)
+                            .with_etypes(vec![AES256_SHA1])
+                            .with_padata(padata),
+                    )
+                    .await?;
+                let wire = ticket::decode(session.ticket().as_slice())?;
+                let part = ticket::decrypt_ticket_enc_part(&wire, kdc_key)?;
+                let pac = find_pac_in_authorization_data(
+                    part.authorization_data
+                        .as_ref()
+                        .ok_or("the TGT has authorization data")?,
+                )?
+                .ok_or("the TGT carries a PAC")?;
+                let client = ClientBinding::new(
+                    harness::var("INTEROP_SAMBA_USER_USER")?,
+                    session.auth_time(),
+                );
+                let request = Verification::new(VerificationPolicy::kdc())
+                    .with_server_key(kdc_key)
+                    .with_kdc_key(kdc_key)
+                    .with_ticket_kind(TicketKind::of_server(&["krbtgt", realm.as_str()]))
+                    .with_client(client);
+                let verified = pac.verify_ext(&request)?;
+                assert!(
+                    verified.checks().server()
+                        && verified.checks().kdc()
+                        && verified.checks().client()
+                );
+                let attributes = verified
+                    .attributes_info()
+                    .ok_or("the TGT PAC has attributes")?;
+                assert_eq!(
+                    attributes.flags(),
+                    flags,
+                    "PAC_ATTRIBUTES_INFO flags for {label}"
+                );
+                let credentials = verified.ad_credentials().ok_or("validation info")?;
+                let domain = credentials.logon_domain_id.ok_or("the logon domain SID")?;
+                assert_eq!(
+                    verified
+                        .requestor_sid()
+                        .ok_or("the requestor")?
+                        .sid()
+                        .to_string(),
+                    format!("{domain}-{}", credentials.user_id),
+                    "the requestor is the client's own SID"
+                );
+            }
             Ok::<_, Box<dyn Error>>(())
         })
         .map_err(shown)

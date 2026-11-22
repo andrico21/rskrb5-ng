@@ -15,7 +15,9 @@ use rskrb5_ng::{
     },
     config::Config,
     crypto::KerberosEtype,
-    keytab::Keytab,
+    error::{Pac as PacError, Service as ServiceError},
+    keytab::{EncryptionKey, Keytab},
+    pac::VerificationPolicy,
     service::{ValidatedApReq, Validator},
 };
 use tokio::runtime::{Builder, Runtime};
@@ -97,16 +99,20 @@ fn shown(error: Box<dyn Error>) -> Box<dyn Error> {
 }
 
 /// Fetch a service ticket for the default-PAC service and validate it as an AP-REQ.
-async fn accepted_ticket() -> Result<(ValidatedApReq, Vec<u8>), Box<dyn Error>> {
-    let mut client = client()?;
-    let ticket = client.get_service_ticket(pac_service()?).await?;
-    let request = ap_req(&ticket)?;
-    let keytab = Keytab::load(harness::var("INTEROP_MIT_PAC_KEYTAB")?)?;
-    let mut validator = Validator::new(&keytab).with_now(SystemTime::now());
-    let accepted = validator
-        .validate_ap_req(&request)
-        .map_err(|error| format!("the acceptor refused the MIT-issued ticket: {error}"))?;
-    Ok((accepted, request))
+fn accepted_ticket() -> Result<(ValidatedApReq, Vec<u8>), Box<dyn Error>> {
+    runtime()?
+        .block_on(async {
+            let mut client = client()?;
+            let ticket = client.get_service_ticket(pac_service()?).await?;
+            let request = ap_req(&ticket)?;
+            let keytab = Keytab::load(harness::var("INTEROP_MIT_PAC_KEYTAB")?)?;
+            let mut validator = Validator::new(&keytab).with_now(SystemTime::now());
+            let accepted = validator
+                .validate_ap_req(&request)
+                .map_err(|error| format!("the acceptor refused the MIT-issued ticket: {error}"))?;
+            Ok::<_, Box<dyn Error>>((accepted, request))
+        })
+        .map_err(shown)
 }
 
 /// FU-SVC-P01: the PAC MIT 1.22.2 builds for a default service (client info and checksums, no
@@ -119,22 +125,115 @@ fn a_default_mit_service_ticket_with_a_pac_is_accepted() -> Result<(), Box<dyn E
     )? {
         return Ok(());
     }
-    runtime()?
-        .block_on(async {
-            let (accepted, _request) = accepted_ticket().await?;
-            let pac = accepted
-                .pac()
-                .ok_or("a default MIT service ticket carries a PAC")?;
-            assert_eq!(
-                pac.client_info().ok_or("the PAC has client info")?.name,
-                harness::var("INTEROP_MIT_USER")?,
-                "the PAC names the ticket's client"
-            );
-            assert!(
-                pac.kerb_validation_info().is_none(),
-                "MIT builds no KERB_VALIDATION_INFO"
-            );
-            Ok::<_, Box<dyn Error>>(())
-        })
-        .map_err(shown)
+    let (accepted, _request) = accepted_ticket()?;
+    let pac = accepted
+        .pac()
+        .ok_or("a default MIT service ticket carries a PAC")?;
+    assert_eq!(
+        pac.client_info().ok_or("the PAC has client info")?.name,
+        harness::var("INTEROP_MIT_USER")?,
+        "the PAC names the ticket's client"
+    );
+    assert!(
+        pac.kerb_validation_info().is_none(),
+        "MIT builds no KERB_VALIDATION_INFO"
+    );
+    // Without the KDC key only the server signature and the client are verified.
+    let checks = pac.checks();
+    assert!(checks.server() && checks.client() && !checks.kdc());
+    Ok(())
+}
+
+/// The KDC key of the realm that signed the PAC, from the exported `krbtgt` keytab: the key of the
+/// enctype whose mandatory checksum type `checksum_type` is.
+fn kdc_key(checksum_type: u32) -> Result<EncryptionKey, Box<dyn Error>> {
+    let etype = match checksum_type {
+        15 => 17_i32,
+        16 => 18_i32,
+        19 => 19_i32,
+        20 => 20_i32,
+        other => return Err(format!("unexpected PAC checksum type {other}").into()),
+    };
+    let realm = harness::var("INTEROP_MIT_REALM")?;
+    let keytab = Keytab::load(harness::var("INTEROP_MIT_PAC_KDC_KEYTAB")?)?;
+    let (key, _kvno) = keytab.find_key(&["krbtgt", realm.as_str()], &realm, 0, etype)?;
+    Ok(key.clone())
+}
+
+/// The checksum type of the KDC signature of the accepted ticket's PAC.
+fn kdc_checksum_type(accepted: &ValidatedApReq) -> Result<u32, Box<dyn Error>> {
+    Ok(accepted
+        .pac()
+        .ok_or("the ticket carries a PAC")?
+        .pac()
+        .kdc_checksum()
+        .ok_or("the PAC has a KDC signature")?
+        .signature_type)
+}
+
+/// MIT-pac-2, MIT-pac-3: with the exported `krbtgt` key the acceptor verifies all four signatures
+/// of the PAC MIT 1.22.2 builds (server, KDC, ticket and the KB5020805 full checksum) and its
+/// client info: the ticket signature binds the PAC to the re-encoded ticket.
+#[test]
+fn the_four_signatures_of_the_mit_pac_verify_with_the_krbtgt_key() -> Result<(), Box<dyn Error>> {
+    if !harness::require(
+        "the_four_signatures_of_the_mit_pac_verify_with_the_krbtgt_key",
+        &[MIT_KDC],
+    )? {
+        return Ok(());
+    }
+    let (first, request) = accepted_ticket()?;
+    let key = kdc_key(kdc_checksum_type(&first)?)?;
+    let keytab = Keytab::load(harness::var("INTEROP_MIT_PAC_KEYTAB")?)?;
+    let accepted = Validator::new(&keytab)
+        .with_now(SystemTime::now())
+        .with_pac_kdc_key(key)
+        .with_pac_policy(VerificationPolicy::kdc())
+        .validate_ap_req(&request)
+        .map_err(|error| format!("the MIT PAC did not verify with the krbtgt key: {error}"))?;
+    let checks = accepted.pac().ok_or("a PAC")?.checks();
+    assert!(
+        checks.server() && checks.kdc() && checks.ticket() && checks.full() && checks.client(),
+        "every check passed: {checks:?}"
+    );
+    Ok(())
+}
+
+/// A PAC checked under the wrong KDC key is refused: the service's own key (same enctype) stands in
+/// for a forger's guess.
+#[test]
+fn a_pac_checked_under_the_wrong_kdc_key_is_refused() -> Result<(), Box<dyn Error>> {
+    if !harness::require(
+        "a_pac_checked_under_the_wrong_kdc_key_is_refused",
+        &[MIT_KDC],
+    )? {
+        return Ok(());
+    }
+    let (first, request) = accepted_ticket()?;
+    let keytab = Keytab::load(harness::var("INTEROP_MIT_PAC_KEYTAB")?)?;
+    let realm = harness::var("INTEROP_MIT_REALM")?;
+    let name = harness::var("INTEROP_MIT_PAC_SERVICE")?;
+    let components: Vec<&str> = name.split('/').collect();
+    let (service_key, _kvno) = keytab.find_key(
+        &components,
+        &realm,
+        0,
+        match kdc_checksum_type(&first)? {
+            16 => 18_i32,
+            _ => 20_i32,
+        },
+    )?;
+    let refused = Validator::new(&keytab)
+        .with_now(SystemTime::now())
+        .with_pac_kdc_key(service_key.clone())
+        .with_pac_policy(VerificationPolicy::kdc())
+        .validate_ap_req(&request);
+    assert!(
+        matches!(
+            refused,
+            Err(ServiceError::Pac(PacError::KdcChecksumVerificationFailed))
+        ),
+        "the wrong KDC key must fail the KDC signature"
+    );
+    Ok(())
 }
