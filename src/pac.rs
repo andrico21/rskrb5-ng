@@ -1,10 +1,22 @@
-//! Microsoft Privilege Attribute Certificate (PAC) parsing.
+//! Microsoft Privilege Attribute Certificate (PAC): parsing, explicit-policy verification and
+//! building.
 //!
-//! This module covers the PAC surface that gokrb5 consumes on the service
-//! path: the PAC container, `KERB_VALIDATION_INFO`, client information,
-//! UPN/DNS information, PAC signatures, and AES server checksum verification.
+//! [`Pac::parse`] and [`Pac::parse_and_process`] read a PAC container and its buffers. The result
+//! is unverified data: nothing in a parsed [`Pac`] is authorization. [`Pac::verify_ext`] checks it
+//! under a [`VerificationPolicy`] (which of the server, KDC, ticket and full signatures must
+//! verify, which buffers must be present, whether the client info must name the ticket's client)
+//! and returns a [`Verified`] PAC, which says which checks passed ([`Verified::checks`]). The
+//! acceptor (`service::Validator`) exposes only [`Verified`] PACs.
+//! [`Builder`] assembles and signs a PAC ([`Builder::sign`], `Builder::sign_ticket`) as MIT's
+//! `krb5_pac_sign_ext` and `krb5_kdc_sign_ticket` do; KDC issuance policy is not part of it.
+//! `Request` is the typed `PA-PAC-REQUEST` padata, [`AttributesInfo`] and [`RequestorSid`] decode
+//! the PAC attribute buffers and [`IdentityAttributes`] is a mutable, serializable view of a
+//! verified PAC's identity.
+//!
+//! The names differ from the plan's `PacBuilder`, `PacVerificationPolicy` and `VerifiedPac`
+//! because the lint profile refuses an item name that repeats its module's name.
 
-use alloc::fmt;
+use alloc::{collections::BTreeMap, fmt};
 use core::time::Duration;
 use std::{
     collections::HashSet,
@@ -15,8 +27,12 @@ use compcol::{
     Algorithm, lznt1::Lznt1, vec::decompress_to_vec_capped, xpress::Xpress,
     xpress_huffman::XpressHuffman,
 };
+#[cfg(feature = "messages")]
+use rasn::{AsnType, Decode, Decoder as _, Encode, Encoder as _, der::encode as der_encode};
 use zeroize::{Zeroize as _, Zeroizing};
 
+#[cfg(feature = "messages")]
+use crate::der::decode_complete;
 use crate::{
     crypto::{KerberosEtype, selection},
     keytab::EncryptionKey,
@@ -29,6 +45,7 @@ mod ndr;
 mod reader;
 /// Redacted, erased validation-info session keys.
 pub mod session_key;
+mod verify;
 
 #[cfg(test)]
 /// PAC mutation regression tests.
@@ -51,6 +68,13 @@ use self::{
     },
     reader::Reader,
 };
+
+include!("pac/builder.rs");
+include!("pac/identity.rs");
+include!("pac/policy.rs");
+include!("pac/verified.rs");
+#[cfg(feature = "messages")]
+include!("pac/ticket_signature.rs");
 
 /// `AD-IF-RELEVANT` authorization-data type.
 pub const AD_IF_RELEVANT: i32 = 1;
@@ -77,6 +101,14 @@ pub const INFO_TYPE_PAC_CLIENT_CLAIMS_INFO: u32 = 13;
 pub const INFO_TYPE_PAC_DEVICE_INFO: u32 = 14;
 /// PAC device claims info buffer type.
 pub const INFO_TYPE_PAC_DEVICE_CLAIMS_INFO: u32 = 15;
+/// PAC ticket signature buffer type (MS-PAC 2.8.3).
+pub const INFO_TYPE_PAC_TICKET_SIGNATURE_DATA: u32 = 16;
+/// PAC attributes info buffer type (MS-PAC 2.14).
+pub const INFO_TYPE_PAC_ATTRIBUTES_INFO: u32 = 17;
+/// PAC requestor SID buffer type (MS-PAC 2.15).
+pub const INFO_TYPE_PAC_REQUESTOR: u32 = 18;
+/// PAC full checksum buffer type (KB5020805, MS-PAC 2.8.4).
+pub const INFO_TYPE_PAC_FULL_SIGNATURE_DATA: u32 = 19;
 
 /// Microsoft unsigned HMAC-MD5 PAC checksum type.
 pub const CHECKSUM_HMAC_MD5_UNSIGNED: u32 = 0xffff_ff76;
@@ -114,6 +146,8 @@ pub const CLAIM_TYPE_ID_BOOLEAN: u16 = 6;
 const PAC_HEADER_LEN: usize = 8;
 /// Byte length of one `PAC_INFO_BUFFER` table entry.
 const PAC_INFO_BUFFER_LEN: usize = 16;
+/// Most info buffers a PAC may declare (MIT `MAX_BUFFERS`, `src/lib/krb5/krb/pac.c:32`).
+const MAX_PAC_BUFFERS: u32 = 4096;
 /// Byte length of the `SignatureType` field that precedes a PAC signature.
 const PAC_SIGNATURE_TYPE_LEN: usize = 4;
 /// Key usage of the PAC server checksum (MS-PAC 2.8.1).
@@ -168,6 +202,14 @@ pub struct Pac {
     client_claims_info: Option<ClaimsInfo>,
     /// Parsed device claims info, if present and processed.
     device_claims_info: Option<ClaimsInfo>,
+    /// Parsed ticket signature, if present and processed.
+    ticket_checksum: Option<SignatureData>,
+    /// Parsed full checksum, if present and processed.
+    full_checksum: Option<SignatureData>,
+    /// Parsed attributes info, if present and processed.
+    attributes_info: Option<AttributesInfo>,
+    /// Parsed requestor SID, if present and processed.
+    requestor_sid: Option<RequestorSid>,
 }
 
 impl Pac {
@@ -182,6 +224,12 @@ impl Pac {
     #[must_use]
     pub const fn version(&self) -> u32 {
         self.version
+    }
+    /// The types of the info buffers, in table order (MIT `krb5_pac_get_types`).
+    #[inline]
+    #[must_use]
+    pub fn buffer_types(&self) -> Vec<u32> {
+        self.buffers.iter().map(|buffer| buffer.ul_type).collect()
     }
     /// Borrow the buffer descriptors.
     #[inline]
@@ -261,6 +309,30 @@ impl Pac {
     pub const fn device_claims_info(&self) -> Option<&ClaimsInfo> {
         self.device_claims_info.as_ref()
     }
+    /// Borrow the ticket signature (parsed, not verified).
+    #[inline]
+    #[must_use]
+    pub const fn ticket_checksum(&self) -> Option<&SignatureData> {
+        self.ticket_checksum.as_ref()
+    }
+    /// Borrow the full checksum (parsed, not verified).
+    #[inline]
+    #[must_use]
+    pub const fn full_checksum(&self) -> Option<&SignatureData> {
+        self.full_checksum.as_ref()
+    }
+    /// Borrow the PAC attributes (parsed, not verified).
+    #[inline]
+    #[must_use]
+    pub const fn attributes_info(&self) -> Option<&AttributesInfo> {
+        self.attributes_info.as_ref()
+    }
+    /// Borrow the requestor SID (parsed, not verified).
+    #[inline]
+    #[must_use]
+    pub const fn requestor_sid(&self) -> Option<&RequestorSid> {
+        self.requestor_sid.as_ref()
+    }
     /// Parse the PAC header and info buffer table.
     ///
     /// # Errors
@@ -275,6 +347,7 @@ impl Pac {
         let c_buffers = reader.read_u32()?;
         let version = reader.read_u32()?;
         (version == 0).ok_or(Error::InvalidPacVersion(version))?;
+        (c_buffers <= MAX_PAC_BUFFERS).ok_or(Error::BufferCountLimit(c_buffers))?;
         let buffer_count =
             usize::try_from(c_buffers).map_err(|_out_of_range| Error::LengthOverflow)?;
         let table_len = buffer_count
@@ -303,6 +376,7 @@ impl Pac {
         for buffer in &buffers {
             buffer.validate(bytes.len())?;
         }
+        ensure_disjoint(&buffers, minimum)?;
 
         Ok(Self {
             c_buffers,
@@ -320,6 +394,10 @@ impl Pac {
             device_info: None,
             client_claims_info: None,
             device_claims_info: None,
+            ticket_checksum: None,
+            full_checksum: None,
+            attributes_info: None,
+            requestor_sid: None,
         })
     }
 
@@ -346,8 +424,12 @@ impl Pac {
     /// when a signature buffer cannot be zeroed in place.
     #[inline]
     pub fn process_buffers(&mut self) -> Result<(), Error> {
+        let mut seen = HashSet::new();
         for buffer in &self.buffers {
             let bytes = buffer.slice(&self.data)?;
+            if is_processed_type(buffer.ul_type) && !seen.insert(buffer.ul_type) {
+                return Err(Error::DuplicateBuffer(buffer.ul_type));
+            }
             match buffer.ul_type {
                 INFO_TYPE_KERB_VALIDATION_INFO if self.kerb_validation_info.is_none() => {
                     self.kerb_validation_info = Some(KerbValidationInfo::parse(bytes)?);
@@ -361,6 +443,12 @@ impl Pac {
                     let checksum = SignatureData::parse(bytes)?;
                     buffer.copy_zeroed_signature(&mut self.zero_signature_data, &checksum)?;
                     self.kdc_checksum = Some(checksum);
+                }
+                INFO_TYPE_PAC_TICKET_SIGNATURE_DATA if self.ticket_checksum.is_none() => {
+                    self.ticket_checksum = Some(SignatureData::parse(bytes)?);
+                }
+                INFO_TYPE_PAC_FULL_SIGNATURE_DATA if self.full_checksum.is_none() => {
+                    self.full_checksum = Some(SignatureData::parse(bytes)?);
                 }
                 INFO_TYPE_CREDENTIALS if self.credentials_info.is_none() => {
                     self.credentials_info = Some(CredentialsInfo::parse(bytes)?);
@@ -377,11 +465,23 @@ impl Pac {
                 INFO_TYPE_PAC_DEVICE_INFO if self.device_info.is_none() => {
                     self.device_info = Some(DeviceInfo::parse(bytes)?);
                 }
-                INFO_TYPE_PAC_CLIENT_CLAIMS_INFO if self.client_claims_info.is_none() => {
+                // Samba 4.22 sends a zero-length claims buffer for an account without claims and
+                // for every ticket issued across a trust (FU-IOP-P14): no claims, not an error.
+                INFO_TYPE_PAC_CLIENT_CLAIMS_INFO
+                    if self.client_claims_info.is_none() && !bytes.is_empty() =>
+                {
                     self.client_claims_info = Some(ClaimsInfo::parse(bytes)?);
                 }
-                INFO_TYPE_PAC_DEVICE_CLAIMS_INFO if self.device_claims_info.is_none() => {
+                INFO_TYPE_PAC_DEVICE_CLAIMS_INFO
+                    if self.device_claims_info.is_none() && !bytes.is_empty() =>
+                {
                     self.device_claims_info = Some(ClaimsInfo::parse(bytes)?);
+                }
+                INFO_TYPE_PAC_ATTRIBUTES_INFO if self.attributes_info.is_none() => {
+                    self.attributes_info = Some(AttributesInfo::parse(bytes)?);
+                }
+                INFO_TYPE_PAC_REQUESTOR if self.requestor_sid.is_none() => {
+                    self.requestor_sid = Some(RequestorSid::parse(bytes)?);
                 }
                 _ => {}
             }
@@ -398,7 +498,12 @@ impl Pac {
             .map(KerbValidationInfo::ad_credentials)
     }
 
-    /// Verify required service-side PAC buffers and the server checksum.
+    /// Verify the server checksum of a PAC that carries the buffers a service needs.
+    ///
+    /// The server checksum, KDC checksum and client info buffers must be present. No other buffer
+    /// is required: a default MIT krb5 PAC has no `KERB_VALIDATION_INFO` (FU-SVC-P01, MIT
+    /// `src/kdc/kdc_authdata.c:496-512`). Use [`Pac::verify_ext`] for an explicit policy, the KDC,
+    /// ticket and full signatures and the client binding.
     ///
     /// # Errors
     ///
@@ -414,6 +519,31 @@ impl Pac {
         Ok(())
     }
 
+    /// Verify this PAC under an explicit policy and return it as a [`Verified`].
+    ///
+    /// The request names which signatures must verify (server, KDC, ticket, full checksum), which
+    /// buffers must be present, and the client the client info must describe; see
+    /// [`VerificationPolicy`]. Parsed data is not authorization until this succeeds.
+    ///
+    /// # Security
+    ///
+    /// Signatures are compared in constant time. The KDC, ticket and full signatures need the KDC
+    /// key: a service that does not hold it can only verify the server signature, which proves the
+    /// KDC or the service wrote the PAC, not the KDC alone ([`Verified::checks`] says what was
+    /// verified).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::MissingRequiredBuffer`] or [`Error::MissingVerificationKey`] when the
+    /// policy requires a buffer or key the PAC or request lacks, a `*ChecksumVerificationFailed`
+    /// variant for the first signature that does not verify, [`Error::MissingClientBinding`] when
+    /// the policy binds the client but the request names none, and [`Error::ClientInfoMismatch`]
+    /// when the client info names another client or authentication time.
+    #[inline]
+    pub fn verify_ext(self, request: &Verification<'_>) -> Result<Verified, Error> {
+        verify::run(self, request)
+    }
+
     /// Verify the server checksum over the zero-signature PAC bytes.
     ///
     /// # Errors
@@ -422,25 +552,11 @@ impl Pac {
     /// [`Error::UnsupportedChecksumType`] for an unknown checksum type.
     #[inline]
     pub fn verify_server_checksum(&self, key: &EncryptionKey) -> Result<bool, Error> {
-        selection::reject_enctype(key.etype())?;
         let checksum = self
             .server_checksum
             .as_ref()
             .ok_or(Error::MissingRequiredBuffer("ServerChecksum"))?;
-        if let Ok(id) = i32::try_from(checksum.signature_type) {
-            selection::reject_checksum(id)?;
-        }
-        let etype = kerberos_etype_for_checksum_type(checksum.signature_type)
-            .ok_or(Error::UnsupportedChecksumType(checksum.signature_type))?;
-        if key.etype() != etype.etype_id() {
-            return Ok(false);
-        }
-        Ok(etype.verify_checksum(
-            key.value(),
-            &self.zero_signature_data,
-            &checksum.signature,
-            PAC_SERVER_CHECKSUM_KEY_USAGE,
-        ))
+        verify::verify_signature(key, checksum, &self.zero_signature_data)
     }
 
     #[must_use]
@@ -467,9 +583,6 @@ impl Pac {
     ///
     /// Returns [`Error::MissingRequiredBuffer`] naming the first absent buffer.
     const fn require_service_buffers(&self) -> Result<(), Error> {
-        if self.kerb_validation_info.is_none() {
-            return Err(Error::MissingRequiredBuffer("KerbValidationInfo"));
-        }
         if self.server_checksum.is_none() {
             return Err(Error::MissingRequiredBuffer("ServerChecksum"));
         }
@@ -480,6 +593,286 @@ impl Pac {
             return Err(Error::MissingRequiredBuffer("ClientInfo"));
         }
         Ok(())
+    }
+}
+
+/// Whether `process_buffers` interprets buffers of this type (and so accepts one of each).
+const fn is_processed_type(ul_type: u32) -> bool {
+    matches!(
+        ul_type,
+        INFO_TYPE_KERB_VALIDATION_INFO
+            | INFO_TYPE_CREDENTIALS
+            | INFO_TYPE_PAC_SERVER_SIGNATURE_DATA
+            | INFO_TYPE_PAC_KDC_SIGNATURE_DATA
+            | INFO_TYPE_PAC_CLIENT_INFO
+            | INFO_TYPE_S4U_DELEGATION_INFO
+            | INFO_TYPE_UPN_DNS_INFO
+            | INFO_TYPE_PAC_CLIENT_CLAIMS_INFO
+            | INFO_TYPE_PAC_DEVICE_INFO
+            | INFO_TYPE_PAC_DEVICE_CLAIMS_INFO
+            | INFO_TYPE_PAC_TICKET_SIGNATURE_DATA
+            | INFO_TYPE_PAC_ATTRIBUTES_INFO
+            | INFO_TYPE_PAC_REQUESTOR
+            | INFO_TYPE_PAC_FULL_SIGNATURE_DATA
+    )
+}
+
+/// Reject non-empty buffers that overlap the header and table or each other.
+///
+/// MIT rejects a buffer that starts inside the table (`pac.c:317-321`); overlap between buffers is
+/// refused here as well, so a signature range can never alias other PAC data.
+///
+/// # Errors
+///
+/// Returns [`Error::BufferOverlap`] naming the first offending buffer.
+fn ensure_disjoint(buffers: &[InfoBuffer], header_len: usize) -> Result<(), Error> {
+    let mut ranges: Vec<(usize, usize, u32)> = Vec::with_capacity(buffers.len());
+    for buffer in buffers.iter().filter(|buffer| buffer.cb_buffer_size != 0) {
+        let (offset, len) = buffer.offset_and_len()?;
+        if offset < header_len {
+            return Err(Error::BufferOverlap {
+                ul_type: buffer.ul_type,
+                offset: buffer.offset,
+            });
+        }
+        let end = offset.checked_add(len).ok_or(Error::LengthOverflow)?;
+        ranges.push((offset, end, buffer.ul_type));
+    }
+    ranges.sort_unstable();
+    for pair in ranges.windows(2) {
+        if let [(_, end, _), (start, _, ul_type)] = pair
+            && start < end
+        {
+            return Err(Error::BufferOverlap {
+                ul_type: *ul_type,
+                offset: u64::try_from(*start).map_err(|_out_of_range| Error::LengthOverflow)?,
+            });
+        }
+    }
+    Ok(())
+}
+
+// MIT krb5 1.22.2 only names the PAC_ATTRIBUTES_INFO and PAC_REQUESTOR buffer types
+// (`KRB5_PAC_ATTRIBUTES_INFO` 17 and `KRB5_PAC_REQUESTOR` 18, `src/include/krb5/krb5.hin`
+// lines 8170-8171) and never decodes them; the layouts follow MS-PAC and the Samba IDL
+// (`krb5pac.idl`).
+
+/// Most flag bits `PAC_ATTRIBUTES_INFO` may declare; Windows and Samba declare two.
+const MAX_FLAG_BITS: u32 = 1024;
+/// MS-PAC `PAC_WAS_REQUESTED`: the client asked for the PAC.
+const PAC_WAS_REQUESTED: u32 = 0x1;
+/// MS-PAC `PAC_WAS_GIVEN_IMPLICITLY`: the KDC included the PAC without a request.
+const PAC_WAS_GIVEN_IMPLICITLY: u32 = 0x2;
+/// Most sub-authorities of a SID (MS-DTYP 2.4.2).
+const MAX_SUB_AUTHORITIES: u8 = 15;
+
+/// `PAC_ATTRIBUTES_INFO`: how the PAC came to be in the ticket (MS-PAC 2.14).
+///
+/// This is claim metadata of the KDC, not authorization: read it from a
+/// [`Verified`] only.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct AttributesInfo {
+    /// Number of meaningful bits in `flags`.
+    flags_length: u32,
+    /// The flag words, least significant word first.
+    flags: Vec<u32>,
+}
+
+impl AttributesInfo {
+    /// The number of meaningful flag bits the buffer declares.
+    #[inline]
+    #[must_use]
+    pub const fn flags_length(&self) -> u32 {
+        self.flags_length
+    }
+
+    /// The first flag word (`PAC_WAS_REQUESTED` is bit 0, `PAC_WAS_GIVEN_IMPLICITLY` bit 1).
+    #[inline]
+    #[must_use]
+    pub fn flags(&self) -> u32 {
+        self.flags.first().copied().unwrap_or_default()
+    }
+
+    /// Whether the client asked for the PAC (`PA-PAC-REQUEST`, MS-KILE 3.3.5.7.4).
+    #[inline]
+    #[must_use]
+    pub fn was_requested(&self) -> bool {
+        self.flags() & PAC_WAS_REQUESTED != 0
+    }
+
+    /// Whether the KDC added the PAC without the client asking for it.
+    #[inline]
+    #[must_use]
+    pub fn was_given_implicitly(&self) -> bool {
+        self.flags() & PAC_WAS_GIVEN_IMPLICITLY != 0
+    }
+
+    /// Parse a `PAC_ATTRIBUTES_INFO` buffer: a bit count and the words that hold the bits.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Truncated`] for a short buffer, [`Error::UnreasonableNdrCount`]
+    /// when more than 1024 flag bits are declared, and
+    /// [`Error::TrailingNdrBytesAfter`] when non-zero bytes follow the flags.
+    #[inline]
+    pub fn parse(bytes: &[u8]) -> Result<Self, Error> {
+        let mut reader = Reader::new(bytes);
+        let flags_length = reader.read_u32()?;
+        if flags_length > MAX_FLAG_BITS {
+            return Err(Error::UnreasonableNdrCount {
+                target: "PAC_ATTRIBUTES_INFO.FlagsLength",
+                count: flags_length,
+            });
+        }
+        let words = flags_length.div_ceil(32);
+        let mut flags = Vec::new();
+        for _ in 0..words {
+            flags.push(reader.read_u32()?);
+        }
+        ensure_zero_trailing(&mut reader, "PAC_ATTRIBUTES_INFO")?;
+        Ok(Self {
+            flags_length,
+            flags,
+        })
+    }
+}
+
+/// `PAC_REQUESTOR`: the SID of the account that requested the ticket (MS-PAC 2.15).
+///
+/// It is claim metadata of the KDC, not authorization: read it from a
+/// [`Verified`] only.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct RequestorSid {
+    /// The requestor's SID.
+    sid: Sid,
+}
+
+impl RequestorSid {
+    /// Borrow the SID.
+    #[inline]
+    #[must_use]
+    pub const fn sid(&self) -> &Sid {
+        &self.sid
+    }
+
+    /// Parse a `PAC_REQUESTOR` buffer: one plain (not NDR-wrapped) `SID`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidSidRevision`] for a revision other than one,
+    /// [`Error::InvalidSidSubAuthorityCount`] for more than 15 sub-authorities,
+    /// [`Error::Truncated`] for a short buffer and
+    /// [`Error::TrailingNdrBytesAfter`] when non-zero bytes follow the SID.
+    #[inline]
+    pub fn parse(bytes: &[u8]) -> Result<Self, Error> {
+        let mut reader = Reader::new(bytes);
+        let revision = reader.read_u8()?;
+        let count = reader.read_u8()?;
+        if revision != 1 {
+            return Err(Error::InvalidSidRevision(revision));
+        }
+        if count > MAX_SUB_AUTHORITIES {
+            return Err(Error::InvalidSidSubAuthorityCount {
+                target: "PAC_REQUESTOR",
+                max_count: u32::from(MAX_SUB_AUTHORITIES),
+                actual_count: count,
+            });
+        }
+        let identifier_authority: [u8; 6] = reader.read_array()?;
+        let mut sub_authorities = Vec::new();
+        for _ in 0..count {
+            sub_authorities.push(reader.read_u32()?);
+        }
+        ensure_zero_trailing(&mut reader, "PAC_REQUESTOR")?;
+        Ok(Self {
+            sid: Sid {
+                revision,
+                identifier_authority,
+                sub_authorities,
+            },
+        })
+    }
+}
+
+// MS-KILE 2.2.2 `KERB-PA-PAC-REQUEST` (padata type 128) lets a client ask a KDC to include or to
+// leave out the PAC. MIT krb5 1.22.2 sends none and a KDC of its own ignores it
+// (`src/include/krb5/krb5.hin:1830` only names the type); Active Directory honours it, and Samba
+// reports the outcome in `PAC_ATTRIBUTES_INFO`.
+
+/// The `PA-PAC-REQUEST` padata type.
+#[cfg(feature = "messages")]
+pub const PA_PAC_REQUEST: i32 = 128;
+
+/// `KERB-PA-PAC-REQUEST`: whether the client wants the PAC in its tickets.
+///
+/// ```text
+/// KERB-PA-PAC-REQUEST ::= SEQUENCE { include-pac[0] BOOLEAN }
+/// ```
+#[cfg(feature = "messages")]
+#[derive(AsnType, Clone, Copy, Debug, Decode, Encode, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct Request {
+    /// Whether the KDC should include the PAC.
+    #[rasn(tag(explicit(0)))]
+    include_pac: bool,
+}
+
+#[cfg(feature = "messages")]
+impl Request {
+    /// Ask the KDC to include the PAC.
+    #[inline]
+    #[must_use]
+    pub const fn include() -> Self {
+        Self { include_pac: true }
+    }
+
+    /// Ask the KDC to leave the PAC out.
+    #[inline]
+    #[must_use]
+    pub const fn exclude() -> Self {
+        Self { include_pac: false }
+    }
+
+    /// Whether the client wants the PAC.
+    #[inline]
+    #[must_use]
+    pub const fn include_pac(self) -> bool {
+        self.include_pac
+    }
+
+    /// Decode a DER `KERB-PA-PAC-REQUEST`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::DerDecode`] when `bytes` is not exactly one `KERB-PA-PAC-REQUEST`.
+    #[inline]
+    pub fn decode_der(bytes: &[u8]) -> Result<Self, Error> {
+        decode_complete::<Self>(bytes).map_err(Error::DerDecode)
+    }
+
+    /// Encode the request as DER.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::DerEncode`] when the encoder fails.
+    #[inline]
+    pub fn encode_der(self) -> Result<Vec<u8>, Error> {
+        der_encode(&self).map_err(|source| Error::DerEncode(source.to_string()))
+    }
+
+    /// The `PA-DATA` element that carries this request in an AS-REQ.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::DerEncode`] when the encoder fails.
+    #[inline]
+    pub fn padata(self) -> Result<rasn_kerberos::PaData, Error> {
+        Ok(rasn_kerberos::PaData {
+            r#type: PA_PAC_REQUEST,
+            value: self.encode_der()?.into(),
+        })
     }
 }
 

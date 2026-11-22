@@ -229,8 +229,9 @@ const UNSUPPORTED: [i32; 22] = [
 /// client sends (141 and 144 are KDC halves and stay refused); PA-PK-AS-REQ (16) is admitted checked
 /// by PKINIT (todo 8): only a DER PA-PK-AS-REQ leaves the client; PA-FOR-USER (129),
 /// PA-S4U-X509-USER (130) and PA-PAC-OPTIONS (167) are admitted checked by S4U and RBCD
-/// (todo 17): only their own elements leave the client.
-const DECODED: [i32; 10] = [1, 2, 16, 129, 130, 136, 138, 142, 151, 167];
+/// (todo 17): only their own elements leave the client; PA-PAC-REQUEST (128) is admitted checked
+/// (todo 22): only a DER KERB-PA-PAC-REQUEST leaves the client.
+const DECODED: [i32; 11] = [1, 2, 16, 128, 129, 130, 136, 138, 142, 151, 167];
 
 /// The permanently refused draft-9 PKINIT types, refused by the selection layer before the arms.
 const DRAFT9_PKINIT: [i32; 2] = [14, 15];

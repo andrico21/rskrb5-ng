@@ -238,4 +238,44 @@ pub(super) const CONTRACTS: &[(&str, &str, &str)] = &[
         "referrals_are_followed_within_their_bound",
         "Builds the hop's request from clones of the TGT and the request template and records it as the pending request; no credential slot is replaced.",
     ),
+    (
+        "src/pac/builder.rs::Builder::add_buffer",
+        "buffers_are_unique_removable_and_bounded",
+        "Appends one buffer copy to the builder's own table; nothing held is replaced, and every buffer is a Zeroizing<Vec<u8>> that erases itself when the builder or a removed buffer is dropped (zeroize's Drop contract, not an observed first-party wipe).",
+    ),
+    (
+        "src/pac/builder.rs::Builder::remove_buffer",
+        "buffers_are_unique_removable_and_bounded",
+        "Drops the buffers of one type from the table; their erasure relies on the Zeroizing<Vec<u8>> Drop contract, not an observed first-party wipe.",
+    ),
+    (
+        "src/pac/builder.rs::Builder::sign",
+        "a_parsed_pac_can_be_resigned_under_other_keys",
+        "Drops the old signature buffers before it adds zero-filled ones and encodes the PAC into a Zeroizing buffer; the dropped buffers' erasure relies on the Zeroizing<Vec<u8>> Drop contract, not an observed first-party wipe.",
+    ),
+    (
+        "src/pac/builder.rs::Signing::with_ticket_signature_input",
+        "a_service_pac_needs_the_ticket_signature_input",
+        "Borrows the caller's ticket bytes; the request owns no copy, so nothing is erased here and the caller's allocation stays the caller's to erase (ticket_signature_input returns a Zeroizing buffer).",
+    ),
+    (
+        "src/pac/policy.rs::Verification::with_server_key",
+        "a_wrong_service_key_is_rejected",
+        "Borrows the caller's service key; the request owns no key copy, so nothing is erased here.",
+    ),
+    (
+        "src/pac/policy.rs::Verification::with_kdc_key",
+        "a_wrong_kdc_key_is_rejected",
+        "Borrows the caller's KDC key; the request owns no key copy, so nothing is erased here.",
+    ),
+    (
+        "src/pac/policy.rs::Verification::with_ticket_signature_input",
+        "a_wrong_ticket_signature_is_rejected",
+        "Borrows the caller's ticket bytes; the request owns no copy, so nothing is erased here.",
+    ),
+    (
+        "src/service.rs::Validator::with_pac_kdc_key",
+        "the_acceptor_verifies_every_signature_with_the_kdc_key",
+        "Attaching a KDC key replaces the retained optional key; the old EncryptionKey is erased by its ZeroizeOnDrop Drop contract, not an observed first-party wipe.",
+    ),
 ];

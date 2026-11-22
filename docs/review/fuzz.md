@@ -16,7 +16,7 @@ the chosen entry point, so one target covers a family of related decoders.
 | `keytab_parse` | keytab bytes | `Keytab::parse`, then `Keytab::to_bytes` on accepted input |
 | `ccache_parse` | ccache bytes, and the same bytes as a cache name | `CCache::parse`, `config_entries`, `to_bytes`; `CacheName::parse` |
 | `kpasswd_reply` | kpasswd frames | `Reply::parse`, `ChangePasswordResult::parse` with its `message` and `ad_policy` readings, `Request::parse`; an accepted reply is decrypted (`Reply::decrypt_result`) and verified (`verify_kpasswd_ap_rep`) against a fixed request |
-| `pac_parse` | PAC container, one NDR buffer, or authorization data | `Pac::parse_and_process` with the server checksum check, `Pac::parse` with `buffer_bytes`, every info-buffer parser (validation info, signatures, credentials info and the decrypted credential data, NTLM credentials, client info, UPN/DNS info, S4U delegation, device info, claims info, claims metadata and the decompressed claims set), and `find_pac_in_authorization_data` on authorization data carried in an Authenticator |
+| `pac_parse` | PAC container, one NDR buffer, PAC attributes, requestor SID, `PA-PAC-REQUEST` or authorization data | `Pac::parse_and_process` with the server checksum check and the explicit-policy `verify_ext` (server, KDC, ticket and full signatures, client binding) followed by the builder's re-signing of the parsed PAC, `Pac::parse` with `buffer_bytes`, every info-buffer parser (validation info, signatures, credentials info and the decrypted credential data, NTLM credentials, client info, UPN/DNS info, S4U delegation, device info, claims info, claims metadata and the decompressed claims set), and `AttributesInfo::parse`, `RequestorSid::parse`, `Request::decode_der` (an accepted element encodes and decodes again to itself), and `find_pac_in_authorization_data` on authorization data carried in an Authenticator |
 | `spnego_token` | Negotiate header text or SPNEGO bytes | `parse_negotiate_header`, `Token`, `NegotiationToken`, `NegTokenInit` and `NegTokenResp` decoding, `accept_sec_context_header` and `Validator::validate_ap_req` with a synthetic keytab, `ValidatedApReq::verify_ap_rep`, and a structured mode that encrypts a fuzzed `EncTicketPart` and Authenticator under the keytab and session keys so the acceptance checks behind decryption run (ticket times, addresses, transited realms, authorization data, PAC) |
 | `gss_token` | RFC 4121 tokens and AP-REP bytes | `Krb5MechToken::decode`; `MicToken` and `WrapToken` decode, verify and unwrap with AES128, AES256, AES-SHA2, DES3 and RC4 test keys; a sealed Wrap whose fuzzed plaintext is encrypted under the key; `InitiatorContext::verify_ap_rep` and `verify_ap_rep_response_header`, raw and with a fuzzed `EncAPRepPart` encrypted under the session key |
 | `http_negotiate` | `Authorization` or `WWW-Authenticate` header values | `http::accept_request` (service side) and `www_authenticate_negotiate_header`, `classify_negotiate_response` and `verify_ap_rep_response` (client side) |
@@ -93,7 +93,7 @@ timeout artifact:
 | `keytab_parse` | 2,791,355 | 121 s | 0 |
 | `ccache_parse` | 1,769,062 | 121 s | 0 |
 | `kpasswd_reply` | 1,226,962 | 121 s | 0 |
-| `pac_parse` | 839,490 | 121 s | 0 |
+| `pac_parse` | 959,198 (todo 22 of plan 2, 2026-11-22; was 839,490) | 121 s | 0 |
 | `spnego_token` | 861,077 | 121 s | 0 |
 | `gss_token` | 293,635 | 121 s | 0 |
 | `http_negotiate` | 284,293 | 121 s | 0 |
@@ -245,6 +245,22 @@ the fixture anchor, then fails on its content), an `encKeyPack` (refused by
 policy) and a KRB-ERROR. The run of 2026-11-21 made 4,823 executions in 121 s
 with no artifact. Coverage proof: `task-8-pkinit-coverage.tsv` in the
 execution evidence.
+
+### PAC API (todo 22 of plan 2)
+
+`pac_parse` gained four entry points for what a service reads from a KDC or a peer:
+`AttributesInfo::parse` and `RequestorSid::parse` (selectors 16 and 17: at most 1,024 flag bits
+and at most 15 sub-authorities), `Request::decode_der` (selector 18; an accepted
+`PA-PAC-REQUEST` encodes and decodes again to itself) and the explicit-policy verification
+(selector 19: `Pac::verify_ext` under the policy that requires every signature, with the keys and
+ticket bytes of the independent vectors, then `Builder::from_pac` re-signing the parsed PAC and
+verifying the result), besides the stricter container checks (duplicate and overlapping buffers,
+at most 4,096 buffers) that `whole_pac` and `header_only` already reach. Five seeds were added
+(one per new selector and a Samba-shaped PAC with a zero-length claims buffer). The 120-second
+run recorded above found nothing. Coverage proof: `task-22-pac-coverage.tsv` in the execution
+evidence (63 of 64 `pac_parse` rows; `KerberosEtype::verify_checksum` is reached but its row
+names the module `crypto` while the symbol is `cryptography`, a mismatch older than this todo,
+register row FU-PAC-P06).
 
 ### Cross-realm routing (todo 17 of plan 2)
 
@@ -626,6 +642,7 @@ does.
 | `rskrb5_ng::messages::principal_from_parts` | `src/messages.rs` | `krb_messages` |  |
 | `rskrb5_ng::messages::system_time_from_kerberos_time` | `src/messages.rs` | `krb_messages` |  |
 | `rskrb5_ng::messages::whole_seconds` | `src/messages.rs` | `krb_messages` |  |
+| `rskrb5_ng::pac::AttributesInfo::parse` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::ClaimsInfo::parse` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::ClaimsSet::parse` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::ClaimsSetMetadata::claims_set` | `src/pac.rs` | `pac_parse` |  |
@@ -648,6 +665,8 @@ does.
 | `rskrb5_ng::pac::Pac::process_buffers` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::Pac::verify` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::Pac::verify_server_checksum` | `src/pac.rs` | `pac_parse` |  |
+| `rskrb5_ng::pac::Request::decode_der` | `src/pac.rs` | `pac_parse` |  |
+| `rskrb5_ng::pac::RequestorSid::parse` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::S4UDelegationInfo::parse` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::SignatureData::parse` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::UpnDnsInfo::parse` | `src/pac.rs` | `pac_parse` |  |

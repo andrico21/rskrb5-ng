@@ -1,44 +1,90 @@
 //! Ticket PAC verification.
 
-use super::{EncryptionKey, Error, Pac, pac, principal_from_parts, validate_authorization_data};
+use super::{
+    EncryptionKey, Error, VerificationPolicy, Verified, pac, principal_from_parts,
+    system_time_from_kerberos_time, validate_authorization_data,
+};
 use crate::error::Pac as PacError;
+
+/// What a ticket's PAC is verified against: the validator's policy and keys, and the ticket's server.
+pub(super) struct PacCheck<'check> {
+    /// What the PAC must pass.
+    policy: &'check VerificationPolicy,
+    /// The KDC key of the validator, when it has one.
+    kdc_key: Option<&'check EncryptionKey>,
+    /// The components of the ticket's server principal.
+    server: &'check [String],
+}
+
+impl<'check> PacCheck<'check> {
+    /// Bundle the validator's PAC settings with the ticket's server.
+    pub(super) const fn new(
+        policy: &'check VerificationPolicy,
+        kdc_key: Option<&'check EncryptionKey>,
+        server: &'check [String],
+    ) -> Self {
+        Self {
+            policy,
+            kdc_key,
+            server,
+        }
+    }
+}
 
 /// Validate every ticket restriction before extracting and verifying its first PAC.
 ///
+/// The PAC must pass the validator's policy: the server signature under `key`, the KDC, ticket and
+/// full signatures when the validator holds the KDC key, and the client info against the ticket's
+/// client name and authentication time.
+///
 /// # Errors
 ///
-/// Returns authorization-policy errors, [`Error::Pac`] for PAC parsing/checksum
-/// failures, or [`Error::PacClientMismatch`] when client metadata differs from the ticket.
+/// Returns authorization-policy errors, [`Error::Pac`] for PAC parsing, signature or
+/// required-buffer failures, or [`Error::PacClientMismatch`] when client metadata differs from the
+/// ticket.
 pub(super) fn verified_ticket_pac(
     ticket: &rasn_kerberos::EncTicketPart,
     key: &EncryptionKey,
-) -> Result<Option<Pac>, Error> {
+    check: &PacCheck<'_>,
+) -> Result<Option<Verified>, Error> {
     let data = ticket.authorization_data.as_ref();
     validate_authorization_data(data, true)?;
-    let Some(elements) = data else {
-        return Ok(None);
+    let found = match data {
+        Some(elements) => pac::find_pac_in_authorization_data(elements)?,
+        None => None,
     };
-    let pac = pac::find_pac_in_authorization_data(elements)?;
-    if let Some(value) = &pac {
-        value.verify(key)?;
-        let info = value
-            .client_info()
-            .ok_or(PacError::MissingRequiredBuffer("ClientInfo"))?;
-        let client = principal_from_parts(&ticket.crealm, &ticket.cname)?;
-        let auth_ticks = ticket
-            .auth_time
-            .0
-            .timestamp()
-            .checked_add(11_644_473_600)
-            .and_then(|seconds| u64::try_from(seconds).ok())
-            .and_then(|seconds| seconds.checked_mul(10_000_000))
-            .ok_or(Error::PacClientMismatch)?;
-        if info.name != realm_less_name(&client.components) || info.client_id.ticks() != auth_ticks
-        {
-            return Err(Error::PacClientMismatch);
-        }
+    let Some(parsed) = found else {
+        return if check.policy.pac_required() {
+            Err(PacError::RequiredPacAbsent.into())
+        } else {
+            Ok(None)
+        };
+    };
+    let client = principal_from_parts(&ticket.crealm, &ticket.cname)?;
+    let binding = pac::ClientBinding::new(
+        realm_less_name(&client.components),
+        system_time_from_kerberos_time(&ticket.auth_time)
+            .map_err(|_unrepresentable| Error::PacClientMismatch)?,
+    );
+    let input = match (check.kdc_key, parsed.ticket_checksum()) {
+        (Some(_), Some(_)) => Some(pac::ticket_signature_input(ticket)?),
+        _ => None,
+    };
+    let mut request = pac::Verification::new(check.policy.clone())
+        .with_server_key(key)
+        .with_client(binding)
+        .with_ticket_kind(pac::TicketKind::of_server(check.server));
+    if let Some(kdc_key) = check.kdc_key {
+        request = request.with_kdc_key(kdc_key);
     }
-    Ok(pac)
+    if let Some(covered) = &input {
+        request = request.with_ticket_signature_input(covered);
+    }
+    match parsed.verify_ext(&request) {
+        Ok(verified) => Ok(Some(verified)),
+        Err(PacError::ClientInfoMismatch) => Err(Error::PacClientMismatch),
+        Err(other) => Err(other.into()),
+    }
 }
 
 /// Escape component delimiters so distinct principals cannot share a PAC client name.

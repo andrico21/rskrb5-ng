@@ -88,6 +88,8 @@ impl fmt::Debug for Validator<'_> {
             replay_cache,
             shared_replay_cache,
             transit_policy,
+            pac_policy,
+            pac_kdc_key,
             trace,
         } = self;
         f.debug_struct("Validator")
@@ -101,6 +103,11 @@ impl fmt::Debug for Validator<'_> {
             .field("replay_cache", replay_cache)
             .field("shared_replay_cache", shared_replay_cache)
             .field("transit_policy", transit_policy)
+            .field("pac_policy", pac_policy)
+            .field(
+                "pac_kdc_key",
+                &pac_kdc_key.as_ref().map(|_key| "[REDACTED]"),
+            )
             .field("trace", trace)
             .finish()
     }
