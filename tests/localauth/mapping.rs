@@ -3,6 +3,8 @@
 //! The expected values are MIT's own (`src/tests/t_localauth.py`), driven
 //! through `krb5.conf` text, plus the one case where this crate is stricter.
 
+#![cfg(feature = "localauth")]
+
 use rskrb5_ng::{
     config::Config,
     error::LocalAuth,

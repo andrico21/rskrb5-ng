@@ -1,6 +1,8 @@
 //! Malformed, hostile and over-bound rules and inputs: each is refused, none
 //! takes unbounded time or space.
 
+#![cfg(feature = "localauth")]
+
 use rskrb5_ng::{
     ccache::Principal,
     error::LocalAuth,

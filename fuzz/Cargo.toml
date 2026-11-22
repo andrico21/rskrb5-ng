@@ -14,6 +14,7 @@ libfuzzer-sys = "0.4"
 rskrb5-ng = { version = "0.3.0", path = "..", features = [
   "camellia",
   "http",
+  "localauth",
   "pkinit",
   "spake",
 ] }
@@ -189,6 +190,20 @@ bench = false
 [[bin]]
 name = "routing_transit"
 path = "fuzz_targets/routing_transit.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "localauth_rule"
+path = "fuzz_targets/localauth_rule.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "localauth_k5login"
+path = "fuzz_targets/localauth_k5login.rs"
 test = false
 doc = false
 bench = false

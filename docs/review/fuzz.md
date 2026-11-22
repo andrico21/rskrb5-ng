@@ -36,6 +36,8 @@ the chosen entry point, so one target covers a family of related decoders.
 | `otp_challenge` | a KDC's `PA-OTP-CHALLENGE` value (RFC 6560) | `preauth::otp::Challenge::decode` twice (deterministic) and once under a tight policy (token count, field and challenge bounds), then an accepted challenge answers every token and one index past the list, with a value and with a value and a PIN, under an AES256 armor key (`Challenge::request`): every request built is an OTP padata of the request type |
 | `pkinit_reply` | the KDC's reply to a PA-PK-AS-REQ (RFC 4556 PKINIT) | the stepwise AS engine with a certificate `preauth::pkinit::Exchange` after a fixed `PREAUTH_REQUIRED`: mode 0 the raw reply (AS-REP or KRB-ERROR, the PA-PK-AS-REP lookup), mode 1 the bytes as the PA-PK-AS-REP value of an AS-REP (`PA-PK-AS-REP`, `DHRepInfo`, the CMS `ContentInfo` and `SignedData`, X.509 certificates and CRLs, the bounded path validator, `KDCDHKeyInfo` and the key agreement); no fuzzed reply may complete the exchange |
 | `routing_transit` | a ticket's DOMAIN-X500-COMPRESS transited encoding (RFC 4120 section 3.3.3.2), a KDC's `PA-S4U-X509-USER` (MS-SFU) and the text of two realm names, one selector byte then bytes or text | `routing::transited::decode` between two fixed realms (an accepted list stays within `MAX_REALMS` and, when `encode` takes it, decodes again to the same list), `routing::s4u::PaS4uX509User::decode_der` (then encode and decode again must give the same element), and `routing::RealmPath::hierarchical` (a path starts at the first realm, ends at the second and stays within `RealmPath::MAX_REALMS`) |
+| `localauth_rule` | the text of an `auth_to_local` value, a newline, then a principal (`a/b/c` in `EXAMPLE.COM`) | `localauth::AuthToLocalRule::parse` (the bounded `RULE:[n:format](regex)s/re/text/g` grammar and the linear-time `regex` compiler), then `apply` on the principal and `principal_to_local_name` through a `LocalNameMapper` (a result stays within the selection bound, a mapped name is never empty, longer than 64 bytes or NUL-holding) |
+| `localauth_k5login` | a principal (`a/b@REALM`, up to the first newline), then the bytes of a `.k5login` file | `localauth::k5login::lists` (the size, line-count and line-length bounds and the exact line match; a file past the size bound is refused) |
 | `name_parse` | names and values as text | `Principal::parse_user`, `Principal::parse_service`, `CacheName::parse`, `keytab::Name::parse`, `KdcEndpoint::configured`, `Tokio::with_dns_server`, `config::parse_duration`, `config::parse_boolean`, `crypto::s2kparams_to_iterations` |
 | `discovery_uri` | the data DNS hands to server discovery, one selector byte then bytes or text | `discovery::uri::parse` (a `krb5srv:flags:transport:host` URI record target) and `host_port` on an accepted target, `split_rdata` (URI record data), `realm_from_txt` (the first string of a TXT realm record) and `host_port` on arbitrary text; the target text, the host and the realm stay within their bounds |
 
@@ -115,6 +117,8 @@ timeout artifact:
 | `otp_challenge` | 1,658,639 (todo 10 of plan 2, 2026-11-21) | 121 s | 0 |
 | `pkinit_reply` | 4,823 (todo 8 of plan 2, 2026-11-21) | 121 s | 0 |
 | `routing_transit` | 2,195,539 (todo 17 of plan 2, 2026-11-21) | 121 s | 0 |
+| `localauth_rule` | 283,256 (todo 25 of plan 2, 2026-11-22) | 121 s | 0 |
+| `localauth_k5login` | 2,439,093 (todo 25 of plan 2, 2026-11-22) | 121 s | 0 |
 
 ### Round-2 session admission repair (FU-FUZ-R02)
 
@@ -260,6 +264,20 @@ arbitrary names (`RealmPath::hierarchical`). The seeds are MIT 1.22.2's
 encoding of escaped and protected names. The 120-second run recorded above
 found nothing. Coverage proof: `task-17-routing-coverage.tsv` in the execution
 evidence.
+
+### Local authorization (todo 25 of plan 2)
+
+`localauth_rule` fuzzes the `auth_to_local` rule language that an administrator
+writes into `krb5.conf`: `AuthToLocalRule::parse` reads at most 2,048 bytes
+(patterns of at most 512 bytes, replacement texts of at most 256, at most 16
+substitutions) and compiles every pattern with the linear-time `regex` engine
+under a compiled-size and a nesting limit, and the accepted rule is applied to
+a principal. `localauth_k5login` fuzzes what a `.k5login` file can hold
+(`k5login::lists`: at most 1 MiB, 16,384 lines, 8,191 bytes per line). The seeds
+are MIT 1.22.2's `t_localauth.py` rules, a catastrophic-backtracking pattern
+that stays linear, and `.k5login` files with escaped components and near
+misses. The 120-second runs recorded above found nothing. Coverage proof:
+`task-25-localauth-coverage.tsv` in the execution evidence.
 
 ### Earlier campaign crashes
 
@@ -642,6 +660,8 @@ does.
 | `rskrb5_ng::pac::KerbValidationInfo::parse` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::KerbValidationInfo::read_fields` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::NtlmSupplementalCredential::parse` | `src/pac.rs` | `pac_parse` |  |
+| `rskrb5_ng::localauth::k5login::lists` | `src/localauth/k5login.rs` | `localauth_k5login` |  |
+| `rskrb5_ng::localauth::AuthToLocalRule::parse` | `src/localauth.rs` | `localauth_rule` |  |
 | `rskrb5_ng::pac::Pac::buffer_bytes` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::Pac::parse` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::Pac::parse_and_process` | `src/pac.rs` | `pac_parse` |  |

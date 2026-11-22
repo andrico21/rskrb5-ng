@@ -11,7 +11,7 @@ use regex::{Regex, RegexBuilder};
 use crate::{ccache::Principal, error::LocalAuth as Error};
 
 use super::{
-    AuthToLocalRule, MAX_MATCHES, MAX_PATTERN_BYTES, MAX_REPLACEMENT_BYTES, MAX_RULE_BYTES,
+    MAX_MATCHES, MAX_PATTERN_BYTES, MAX_REPLACEMENT_BYTES, MAX_RULE_BYTES,
     MAX_SELECTION_BYTES, MAX_SUBSTITUTIONS, unparse,
 };
 
@@ -79,7 +79,7 @@ const fn malformed(reason: &'static str) -> Error {
 /// # Errors
 ///
 /// [`Error::LimitExceeded`] or [`Error::InvalidRegex`].
-fn compile(pattern: &str, anchored: bool) -> Result<Regex, Error> {
+fn compile_pattern(pattern: &str, anchored: bool) -> Result<Regex, Error> {
     if pattern.len() > MAX_PATTERN_BYTES {
         return Err(Error::LimitExceeded {
             what: "pattern",
@@ -110,7 +110,7 @@ const fn is_space(character: char) -> bool {
 /// # Errors
 ///
 /// [`Error::MalformedRule`] for a syntax error.
-fn parse_selector(rest: &str) -> Result<(Selector, &str), Error> {
+fn selector_at(rest: &str) -> Result<(Selector, &str), Error> {
     let body = rest.strip_prefix('[').ok_or_else(|| malformed("selector"))?;
     let digits = body.bytes().take_while(u8::is_ascii_digit).count();
     let (number, after) = body
@@ -157,7 +157,7 @@ fn parse_selector(rest: &str) -> Result<(Selector, &str), Error> {
 /// # Errors
 ///
 /// [`Error::MalformedRule`], [`Error::LimitExceeded`] or [`Error::InvalidRegex`].
-fn parse_edit(rest: &str) -> Result<(Edit, &str), Error> {
+fn edit_at(rest: &str) -> Result<(Edit, &str), Error> {
     let body = rest.strip_prefix("s/").ok_or_else(|| malformed("substitution"))?;
     let (pattern, after_pattern) = body
         .split_once('/')
@@ -176,7 +176,7 @@ fn parse_edit(rest: &str) -> Result<(Edit, &str), Error> {
         .map_or((false, after_text), |tail| (true, tail));
     Ok((
         Edit {
-            pattern: compile(pattern, false)?,
+            pattern: compile_pattern(pattern, false)?,
             text: text.to_owned(),
             global,
         },
@@ -184,98 +184,86 @@ fn parse_edit(rest: &str) -> Result<(Edit, &str), Error> {
     ))
 }
 
-impl AuthToLocalRule {
-    /// Parse one `auth_to_local` value: `DEFAULT` or `RULE:...`.
-    ///
-    /// Everything is checked here, not when the rule is first used (MIT finds
-    /// syntax errors at use): the grammar, the bounds
-    /// ([`MAX_RULE_BYTES`], [`MAX_PATTERN_BYTES`], [`MAX_REPLACEMENT_BYTES`],
-    /// [`MAX_SUBSTITUTIONS`]) and the compilation of every pattern.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::UnsupportedRuleType`] for another type, [`Error::MalformedRule`]
-    /// for a syntax error, [`Error::LimitExceeded`] past a bound and
-    /// [`Error::InvalidRegex`] for a pattern the engine refuses.
-    #[inline]
-    pub fn parse(text: &str) -> Result<Self, Error> {
-        if text.len() > MAX_RULE_BYTES {
+/// Compile one `auth_to_local` value: `DEFAULT` or `RULE:...`.
+///
+/// Everything is checked here, not when the rule is first used (MIT finds
+/// syntax errors at use): the grammar, the bounds
+/// ([`MAX_RULE_BYTES`], [`MAX_PATTERN_BYTES`], [`MAX_REPLACEMENT_BYTES`],
+/// [`MAX_SUBSTITUTIONS`]) and the compilation of every pattern.
+///
+/// # Errors
+///
+/// [`Error::UnsupportedRuleType`] for another type, [`Error::MalformedRule`]
+/// for a syntax error, [`Error::LimitExceeded`] past a bound and
+/// [`Error::InvalidRegex`] for a pattern the engine refuses.
+pub(super) fn compile(text: &str) -> Result<Kind, Error> {
+    if text.len() > MAX_RULE_BYTES {
+        return Err(Error::LimitExceeded {
+            what: "rule",
+            limit: MAX_RULE_BYTES,
+        });
+    }
+    if text == "DEFAULT" {
+        return Ok(Kind::Default);
+    }
+    let Some(mut rest) = text.strip_prefix("RULE:") else {
+        return if text == "RULE" {
+            Err(malformed("RULE needs a colon"))
+        } else {
+            Err(Error::UnsupportedRuleType {
+                kind: text.split(':').next().unwrap_or_default().chars().take(32).collect(),
+            })
+        };
+    };
+    let selector = if rest.starts_with('[') {
+        let (selector, after) = selector_at(rest)?;
+        rest = after;
+        Some(selector)
+    } else {
+        None
+    };
+    let matcher = if let Some(body) = rest.strip_prefix('(') {
+        let (pattern, after) = body.split_once(')').ok_or_else(|| malformed("match"))?;
+        rest = after;
+        Some(compile_pattern(pattern, true)?)
+    } else {
+        None
+    };
+    let mut edits = Vec::new();
+    while !rest.is_empty() {
+        let (edit, after) = edit_at(rest.trim_start_matches(is_space))?;
+        if edits.len() >= MAX_SUBSTITUTIONS {
             return Err(Error::LimitExceeded {
-                what: "rule",
-                limit: MAX_RULE_BYTES,
+                what: "substitutions",
+                limit: MAX_SUBSTITUTIONS,
             });
         }
-        if text == "DEFAULT" {
-            return Ok(Self::default_rule());
-        }
-        let Some(mut rest) = text.strip_prefix("RULE:") else {
-            return if text == "RULE" {
-                Err(malformed("RULE needs a colon"))
-            } else {
-                Err(Error::UnsupportedRuleType {
-                    kind: text.split(':').next().unwrap_or_default().chars().take(32).collect(),
-                })
-            };
-        };
-        let selector = if rest.starts_with('[') {
-            let (selector, after) = parse_selector(rest)?;
-            rest = after;
-            Some(selector)
-        } else {
-            None
-        };
-        let matcher = if let Some(body) = rest.strip_prefix('(') {
-            let (pattern, after) = body.split_once(')').ok_or_else(|| malformed("match"))?;
-            rest = after;
-            Some(compile(pattern, true)?)
-        } else {
-            None
-        };
-        let mut edits = Vec::new();
-        while !rest.is_empty() {
-            let (edit, after) = parse_edit(rest.trim_start_matches(is_space))?;
-            if edits.len() >= MAX_SUBSTITUTIONS {
-                return Err(Error::LimitExceeded {
-                    what: "substitutions",
-                    limit: MAX_SUBSTITUTIONS,
-                });
-            }
-            edits.push(edit);
-            rest = after;
-        }
-        Ok(Self {
-            kind: Kind::Rule(Box::new(Compiled {
-                selector,
-                matcher,
-                edits,
-            })),
-        })
+        edits.push(edit);
+        rest = after;
     }
+    Ok(Kind::Rule(Box::new(Compiled {
+        selector,
+        matcher,
+        edits,
+    })))
+}
 
-    /// The `DEFAULT` rule.
-    #[must_use]
-    #[inline]
-    pub const fn default_rule() -> Self {
-        Self {
-            kind: Kind::Default,
-        }
-    }
-
-    /// Apply the rule to `principal` of a configuration whose default realm
-    /// is `default_realm`.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::NoTranslation`] when the rule does not apply to the principal
-    /// and [`Error::LimitExceeded`] when its selection string or a result
-    /// grows past [`MAX_SELECTION_BYTES`] or a substitution past
-    /// [`MAX_MATCHES`] replacements.
-    #[inline]
-    pub fn apply(&self, principal: &Principal, default_realm: &str) -> Result<String, Error> {
-        match &self.kind {
-            Kind::Default => default_name(principal, default_realm),
-            Kind::Rule(rule) => rule.apply(principal),
-        }
+/// Apply `kind` to `principal` of a configuration whose default realm is
+/// `default_realm`.
+///
+/// # Errors
+///
+/// [`Error::NoTranslation`] when the rule does not apply to the principal and
+/// [`Error::LimitExceeded`] when its selection string or a result grows past
+/// [`MAX_SELECTION_BYTES`] or a substitution past [`MAX_MATCHES`] replacements.
+pub(super) fn evaluate(
+    kind: &Kind,
+    principal: &Principal,
+    default_realm: &str,
+) -> Result<String, Error> {
+    match kind {
+        Kind::Default => default_name(principal, default_realm),
+        Kind::Rule(rule) => rule.apply(principal),
     }
 }
 

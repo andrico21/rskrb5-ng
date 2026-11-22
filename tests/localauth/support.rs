@@ -1,5 +1,7 @@
 //! Principals, `krb5.conf` text, accounts and a scratch directory.
 
+#![cfg(feature = "localauth")]
+
 extern crate alloc;
 
 use alloc::sync::Arc;

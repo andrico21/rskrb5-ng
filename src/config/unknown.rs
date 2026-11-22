@@ -94,17 +94,16 @@ pub(super) fn empty_scopes(
     for path in scopes {
         if matches!(path.as_slice(), [section, _, key]
             if section == "realms" && key == "auth_to_local_names")
+            && let Some(feature) = realm_values::missing_localauth_leaf("(leaf localauth)")
         {
-            if let Some(feature) = realm_values::missing_localauth_leaf("(leaf localauth)") {
-                realm_values::report(
-                    ConfigDiagnostic::FeatureUnavailable {
-                        relation: "auth_to_local_names",
-                        feature,
-                    },
-                    config.libdefaults.parse_mode(),
-                    &mut config.libdefaults.enctype_diagnostics,
-                )?;
-            }
+            realm_values::report(
+                ConfigDiagnostic::FeatureUnavailable {
+                    relation: "auth_to_local_names",
+                    feature,
+                },
+                config.libdefaults.parse_mode(),
+                &mut config.libdefaults.enctype_diagnostics,
+            )?;
         }
         let valid = match path.as_slice() {
             [section] => SECTIONS.contains(&section.as_str()) || section == "logging",

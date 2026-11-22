@@ -6,7 +6,7 @@
 //! scenarios are the negative paths of the delivery contract.
 
 /// Principals, accounts and a fixture directory.
-#[cfg(all(test, feature = "localauth"))]
+#[cfg(test)]
 #[expect(
     clippy::missing_errors_doc,
     reason = "test code is not rendered API documentation"
@@ -15,7 +15,7 @@
 mod support;
 
 /// MIT's mapping fixtures through `krb5.conf` text.
-#[cfg(all(test, feature = "localauth"))]
+#[cfg(test)]
 #[expect(
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
@@ -26,7 +26,7 @@ mod support;
 mod mapping;
 
 /// Malformed, hostile and over-bound rules.
-#[cfg(all(test, feature = "localauth"))]
+#[cfg(test)]
 #[expect(
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
@@ -37,7 +37,7 @@ mod mapping;
 mod rules;
 
 /// The `.k5login` module: ownership, modes, symlinks, bounds and the line match.
-#[cfg(all(test, feature = "localauth"))]
+#[cfg(test)]
 #[expect(
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
@@ -48,7 +48,7 @@ mod rules;
 mod k5login;
 
 /// `HOME` never selects the `.k5login` file.
-#[cfg(all(test, feature = "localauth"))]
+#[cfg(test)]
 #[expect(
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,

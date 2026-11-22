@@ -5,6 +5,8 @@
 //! hostile `HOME` that holds a decoy `.k5login`, and the constructor that
 //! reads the environment, `LibDefaults::from_env`, feeds the authorizer.
 
+#![cfg(feature = "localauth")]
+
 #[cfg(unix)]
 mod unix {
     //! Unix homes and a child process.
@@ -12,6 +14,7 @@ mod unix {
     use std::{
         env, fs,
         os::unix::fs::{MetadataExt as _, PermissionsExt as _},
+        path::Path,
         process::Command,
     };
 
@@ -30,7 +33,7 @@ mod unix {
     const CHILD: &str = "home::unix::hostile_home_never_selects_the_k5login_file";
 
     /// Write `content` to `path` with mode 0600.
-    fn write_private(path: &std::path::Path, content: &[u8]) -> Result<(), TestError> {
+    fn write_private(path: &Path, content: &[u8]) -> Result<(), TestError> {
         fs::write(path, content)?;
         fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
         Ok(())
@@ -42,7 +45,7 @@ mod unix {
         config.libdefaults = LibDefaults::from_env().with_default_realm(REALM.to_owned());
         let authorizer = LocalAuthorizer::from_config(
             &config,
-            resolver("lauth", owner.parse()?, std::path::Path::new(resolved)),
+            resolver("lauth", owner.parse()?, Path::new(resolved)),
         )?;
         assert_eq!(
             authorize_local(&authorizer, &principal("alice@KRBTEST.COM"), "lauth"),

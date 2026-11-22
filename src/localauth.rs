@@ -111,6 +111,48 @@ pub struct AuthToLocalRule {
     kind: rule::Kind,
 }
 
+impl AuthToLocalRule {
+    /// Parse one `auth_to_local` value: `DEFAULT` or `RULE:...`.
+    ///
+    /// Everything is checked here, not when the rule is first used (MIT finds
+    /// syntax errors at use): the grammar, the bounds ([`MAX_RULE_BYTES`],
+    /// [`MAX_PATTERN_BYTES`], [`MAX_REPLACEMENT_BYTES`], [`MAX_SUBSTITUTIONS`])
+    /// and the compilation of every pattern.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnsupportedRuleType`] for another type, [`Error::MalformedRule`]
+    /// for a syntax error, [`Error::LimitExceeded`] past a bound and
+    /// [`Error::InvalidRegex`] for a pattern the engine refuses.
+    #[inline]
+    pub fn parse(text: &str) -> Result<Self, Error> {
+        rule::compile(text).map(|kind| Self { kind })
+    }
+
+    /// The `DEFAULT` rule.
+    #[must_use]
+    #[inline]
+    pub const fn default_rule() -> Self {
+        Self {
+            kind: rule::Kind::Default,
+        }
+    }
+
+    /// Apply the rule to `principal` of a configuration whose default realm
+    /// is `default_realm`.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NoTranslation`] when the rule does not apply to the principal
+    /// and [`Error::LimitExceeded`] when its selection string or a result
+    /// grows past [`MAX_SELECTION_BYTES`] or a substitution past
+    /// [`MAX_MATCHES`] replacements.
+    #[inline]
+    pub fn apply(&self, principal: &Principal, default_realm: &str) -> Result<String, Error> {
+        rule::evaluate(&self.kind, principal, default_realm)
+    }
+}
+
 /// The mapping half: explicit names and rules of the default realm.
 #[derive(Clone, Debug)]
 pub struct LocalNameMapper {

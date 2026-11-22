@@ -3,6 +3,8 @@
 //! Modelled on MIT `localauth_k5login.c:83-161`; the modes, symlink and bound
 //! checks are stricter than MIT and have no MIT counterpart.
 
+#![cfg(feature = "localauth")]
+
 #[cfg(unix)]
 mod unix {
     //! Everything that needs Unix ownership and modes.

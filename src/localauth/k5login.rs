@@ -170,7 +170,7 @@ fn path_of(directory: Option<&Path>, account: &Account, name: &str) -> Result<Pa
 ///
 /// The [`Fault`] that describes why the file may not be used.
 #[cfg(unix)]
-fn read_listing(path: &Path, account: &Account, principal: &Principal) -> Result<Found, Fault> {
+fn inspect_file(path: &Path, account: &Account, principal: &Principal) -> Result<Found, Fault> {
     let unreadable = |error: io::Error| Fault::Unreadable(error.kind());
     let before = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
@@ -220,7 +220,7 @@ pub(super) fn check(authorizer: &LocalAuthorizer, principal: &Principal, name: &
         .ok_or(Fault::UnknownAccount)
         .and_then(|account| {
             let path = path_of(authorizer.directory.as_deref(), &account, name)?;
-            read_listing(&path, &account, principal)
+            inspect_file(&path, &account, principal)
         });
     classify(outcome, authorizer.authoritative)
 }
