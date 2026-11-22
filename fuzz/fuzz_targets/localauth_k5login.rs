@@ -21,8 +21,8 @@ fuzz_target!(|data: &[u8]| {
             data.get(index.saturating_add(1)..).unwrap_or_default(),
         )
     });
-    let head = String::from_utf8_lossy(head);
-    let (name, realm) = head.rsplit_once('@').unwrap_or((&head, "EXAMPLE.COM"));
+    let text = String::from_utf8_lossy(head);
+    let (name, realm) = text.rsplit_once('@').unwrap_or((&text, "EXAMPLE.COM"));
     let principal = Principal::new(realm, 1, name.split('/').map(str::to_owned).collect());
     let verdict = lists(contents, &principal);
     if contents.len() > MAX_FILE_BYTES {
