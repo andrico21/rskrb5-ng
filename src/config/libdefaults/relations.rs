@@ -162,8 +162,8 @@ pub(crate) const RELATIONS_HEAD: [(&str, &str, &str, &str, &str, &str); 21] = [
         "enforce_ok_as_delegate",
         "boolean",
         "false",
-        "plan 2 WP-12",
-        "GSS credential forwarding is unavailable; no credentials delegated, so true already satisfied; diagnostic",
+        "gss::InitiatorOptions::from_config",
+        "Effective for GSS initiators: true turns a delegation request into the delegation-policy flag, so the TGT is forwarded only to services whose ticket carries OK-AS-DELEGATE",
         "enforce_ok_as_delegate",
     ),
     (

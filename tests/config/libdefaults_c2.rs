@@ -16,7 +16,7 @@ mod tests {
     #[test]
     fn restrictions_fail_closed() -> Result<(), Box<dyn Error>> {
         for mode in [ParseMode::Compatible, ParseMode::Strict] {
-            let assignment = "client_aware_channel_bindings = true";
+            let assignment = "default_rcache_name = dfl:";
             // Given a stronger requested policy, when parsed, then reject it.
             drop(
                 Config::parse_with_mode(&format!("[libdefaults]\n {assignment}\n"), mode)

@@ -22,14 +22,6 @@ mod tests {
             let defaults = &config.libdefaults;
             match name {
                 "default_rcache_name" => assert_eq!(defaults.default_rcache_name, *value),
-                "enforce_ok_as_delegate" => assert_eq!(
-                    defaults.enforce_ok_as_delegate.is_enabled(),
-                    *value == "true"
-                ),
-                "ignore_acceptor_hostname" => assert_eq!(
-                    defaults.ignore_acceptor_hostname.is_enabled(),
-                    *value == "true"
-                ),
                 "extra_addresses" => assert_eq!(defaults.extra_addresses.len(), 2),
                 _ => {}
             }
@@ -66,6 +58,14 @@ mod tests {
                 "dns_uri_lookup" => {
                     assert_eq!(defaults.dns_uri_lookup.is_enabled(), *value == "on");
                 }
+                "enforce_ok_as_delegate" => assert_eq!(
+                    defaults.enforce_ok_as_delegate.is_enabled(),
+                    *value == "true"
+                ),
+                "ignore_acceptor_hostname" => assert_eq!(
+                    defaults.ignore_acceptor_hostname.is_enabled(),
+                    *value == "true"
+                ),
                 _ => return Err(format!("unreviewed effective relation {name}").into()),
             }
             // Then no diagnostic names the relation.
@@ -114,6 +114,8 @@ mod tests {
         dns_canonicalize_hostname, ["true", "false", "FaLlBaCk"];
         dns_lookup_realm, ["true", "false"];
         dns_uri_lookup, ["on", "nil"];
+        enforce_ok_as_delegate, ["true", "false"];
+        ignore_acceptor_hostname, ["true", "false"];
     }
 
     /// Declare independent test cases over the same diagnostic contract.
@@ -129,8 +131,6 @@ mod tests {
 
     deferred_cases! {
         default_rcache_name, "plan 2 WP-20", ["none:"];
-        enforce_ok_as_delegate, "plan 2 WP-12", ["true", "false"];
-        ignore_acceptor_hostname, "plan 2 WP-12", ["true", "false"];
     }
 
     /// Legacy permission reaches the resolved runtime policy, not just its field.

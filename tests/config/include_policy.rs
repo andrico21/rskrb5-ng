@@ -36,7 +36,7 @@ mod tests {
             let child = directory.join(format!("{name}.conf"));
             fs::write(
                 &child,
-                "[libdefaults]\nclient_aware_channel_bindings = true\n",
+                "[libdefaults]\ndefault_rcache_name = dfl:\n",
             )?;
             for (directive, target) in [("include", &child), ("includedir", &directory)] {
                 for separator in [" ", "\t"] {
@@ -50,8 +50,8 @@ mod tests {
                                 if !matches!(
                                     Config::parse_with_mode(&text, mode),
                                     Err(Failure::NotYetEffective {
-                                        relation: "client_aware_channel_bindings",
-                                        package: "plan 2 WP-12",
+                                        relation: "default_rcache_name",
+                                        package: "plan 2 WP-20",
                                     })
                                 ) {
                                     missed.push(format!("{mode:?}: {text}"));

@@ -30,10 +30,6 @@ pub(crate) const fn configuration_policy(error: &Error) -> Policy {
 pub(crate) fn defaults(value: &LibDefaults) -> Result<(), Error> {
     for (name, restricted) in [
         (
-            "client_aware_channel_bindings",
-            value.client_aware_channel_bindings.is_enabled(),
-        ),
-        (
             "default_rcache_name",
             !value.default_rcache_name.is_empty() && value.default_rcache_name != "none:",
         ),

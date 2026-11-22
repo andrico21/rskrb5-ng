@@ -32,11 +32,11 @@ both modes. Parsed values do not imply an implemented mechanism.
 | libdefaults | dns_lookup_kdc | boolean | true when built with DNS support | client::transport::discover_kdcs | Effective SRV switch; crate default false avoids ambient DNS | dns_lookup_kdc |
 | libdefaults | dns_lookup_realm | boolean | false | discovery::realm::HostRealmResolver | Effective opt-in TXT realm lookup for service hosts and fallback realms; never read when false | dns_lookup_realm |
 | libdefaults | dns_uri_lookup | boolean | true | discovery::locate::ServerLocator | Effective URI-before-SRV discovery under dns_lookup_kdc; crate default false | dns_uri_lookup |
-| libdefaults | enforce_ok_as_delegate | boolean | false | plan 2 WP-12 | GSS credential forwarding is unavailable; no credentials delegated, so true already satisfied; diagnostic | enforce_ok_as_delegate |
+| libdefaults | enforce_ok_as_delegate | boolean | false | gss::InitiatorOptions::from_config | Effective for GSS initiators: true turns a delegation request into the delegation-policy flag, so the TGT is forwarded only to services whose ticket carries OK-AS-DELEGATE | enforce_ok_as_delegate |
 | libdefaults | err_fmt | string | unset | ErrFmt::from_config; ErrFmt::report | Effective as presentation only: %M is the message, %C the MIT code of a KDC refusal (0 when the error has none), %% a percent; the typed error, its code and its sources are unchanged; empty counts as unset | err_fmt |
 | libdefaults | extra_addresses | IP address list | unset | AsReq::from_libdefaults; InitCredsOptions::from_config | Effective with noaddresses=false as the request addresses; MIT also adds interface addresses, which this library does not enumerate; ignored when noaddresses=true | extra_addresses |
 | libdefaults | forwardable | boolean | false | AsReq::from_libdefaults; TgsReq::from_libdefaults; InitCredsOptions::from_config | Effective forwardable bit; explicit false overrides raw KDC option bit | forwardable |
-| libdefaults | ignore_acceptor_hostname | boolean | false | plan 2 WP-12 | No GSS acceptor-name relaxation; strict service/keytab identity checks retained; either value diagnostic | ignore_acceptor_hostname |
+| libdefaults | ignore_acceptor_hostname | boolean | false | gss::AcceptorOptions::from_config | Effective for named GSS acceptors: true lets a host-based acceptor name take a ticket for any host of its service whose key the keytab holds; an unnamed acceptor takes every keytab principal either way | ignore_acceptor_hostname |
 | libdefaults | k5login_authoritative | boolean | true | LocalAuthorizer::from_config (leaf localauth) | Effective with the localauth leaf: false makes a refusing .k5login silent, true makes it final; without the leaf FeatureUnavailable and no local authorization | k5login_authoritative |
 | libdefaults | k5login_directory | string | unset: user home/.k5login | LocalAuthorizer::from_config (leaf localauth) | Effective with the localauth leaf: DIR/ACCOUNT replaces HOME/.k5login, the home is the AccountResolver's and never HOME; without the leaf FeatureUnavailable and no local authorization | k5login_directory |
 | libdefaults | kcm_mach_service | string | org.h5l.kcm | plan 2 WP-09 | No KCM connection exists, including when - disables Mach RPC; diagnostic | kcm_mach_service |
@@ -57,7 +57,7 @@ both modes. Parsed values do not imply an implemented mechanism.
 | libdefaults | ticket_lifetime | duration | 1 day | AsReq::from_libdefaults; TgsReq::from_libdefaults | Effective request lifetime; checked MIT intervals | ticket_lifetime |
 | libdefaults | udp_preference_limit | signed decimal i32 | 1465 | client::transport::auto_uses_udp_first | Effective only in Auto transport; negative uses MIT default, large values capped at 32700 | udp_preference_limit |
 | libdefaults | verify_ap_req_nofail | boolean | false | client::Tokio::verify_init_creds | Unset or true: a keytab without a host key is an error; false: verification is skipped then; an invalid proof always fails | verify_ap_req_nofail |
-| libdefaults | client_aware_channel_bindings | boolean | false | plan 2 WP-12 | true requires unavailable GSS channel-binding-aware signaling and errors; false diagnostic | client_aware_channel_bindings |
+| libdefaults | client_aware_channel_bindings | boolean | false | gss::InitiatorOptions::from_config | Effective for GSS initiators: true adds the MS-KILE KERB_AP_OPTIONS_CBT authorization data, so an acceptor with channel bindings refuses a token without matching ones | client_aware_channel_bindings |
 
 ## realms (28)
 

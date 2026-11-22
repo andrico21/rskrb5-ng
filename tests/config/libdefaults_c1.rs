@@ -68,8 +68,8 @@ mod tests {
     fn deferred_relations_when_strict() -> Result<(), Box<dyn StdError>> {
         // Given recognized but not implemented behavior.
         for assignment in [
-            "enforce_ok_as_delegate = true",
-            "ignore_acceptor_hostname = false",
+            "default_rcache_name = none:",
+            "kcm_mach_service = org.h5l.kcm",
         ] {
             // When parsing in strict mode.
             let result = Config::parse_with_mode(

@@ -55,52 +55,43 @@ mod tests {
     #[test]
     fn restrictive_defaults_fail_before_requests() -> Result<(), Box<dyn Error>> {
         let runtime = Builder::new_current_thread().enable_all().build()?;
-        for field in ["client_aware_channel_bindings", "default_rcache_name"] {
-            let mut config = Config::new();
-            match field {
-                "client_aware_channel_bindings" => {
-                    config.libdefaults.client_aware_channel_bindings = Toggle::Enabled;
-                }
-                _ => config.libdefaults.default_rcache_name = "FILE:/cache".to_owned(),
-            }
-            assert!(
-                serde_json::from_value::<Config>(serde_json::to_value(&config)?).is_err(),
-                "serde accepted {field}"
-            );
-            let options = AsReq::from_libdefaults(UNIX_EPOCH, 42, &config.libdefaults);
-            assert!(
-                matches!(
-                    options,
-                    Err(Client::Config(ConfigError::NotYetEffective {
-                        relation: _,
-                        package: _
-                    }))
-                ),
-                "request accepted {field}"
-            );
-            let (relation, package) = match field {
-                "client_aware_channel_bindings" => {
-                    ("client_aware_channel_bindings", "plan 2 WP-12")
-                }
-                _ => ("default_rcache_name", "plan 2 WP-20"),
-            };
-            assert!(
-                matches!(
-                    config.configured_kdcs("R"),
-                    Err(ConfigError::NotYetEffective { relation: named, package: owner })
-                        if named == relation && owner == package
-                ),
-                "admission ignored {field}"
-            );
-            assert!(
-                matches!(
-                    runtime.block_on(Transport::new().discover_kdcs(&config, "R", KdcProtocol::Tcp)),
-                    Err(Client::Config(ConfigError::NotYetEffective { relation: named, package: owner }))
-                        if named == relation && owner == package
-                ),
-                "discovery ignored {field}"
-            );
-        }
+        let mut config = Config::new();
+        config.libdefaults.default_rcache_name = "FILE:/cache".to_owned();
+        assert!(
+            serde_json::from_value::<Config>(serde_json::to_value(&config)?).is_err(),
+            "serde accepted default_rcache_name"
+        );
+        let options = AsReq::from_libdefaults(UNIX_EPOCH, 42, &config.libdefaults);
+        assert!(
+            matches!(
+                options,
+                Err(Client::Config(ConfigError::NotYetEffective {
+                    relation: _,
+                    package: _
+                }))
+            ),
+            "request accepted default_rcache_name"
+        );
+        assert!(
+            matches!(
+                config.configured_kdcs("R"),
+                Err(ConfigError::NotYetEffective { relation: "default_rcache_name", package: "plan 2 WP-20" })
+            ),
+            "admission ignored default_rcache_name"
+        );
+        assert!(
+            matches!(
+                runtime.block_on(Transport::new().discover_kdcs(&config, "R", KdcProtocol::Tcp)),
+                Err(Client::Config(ConfigError::NotYetEffective { relation: "default_rcache_name", package: "plan 2 WP-20" }))
+            ),
+            "discovery ignored default_rcache_name"
+        );
+        // `client_aware_channel_bindings` is effective (gss::InitiatorOptions::from_config):
+        // serde and request construction accept it.
+        let mut aware = Config::new();
+        aware.libdefaults.client_aware_channel_bindings = Toggle::Enabled;
+        drop(serde_json::from_value::<Config>(serde_json::to_value(&aware)?)?);
+        drop(AsReq::from_libdefaults(UNIX_EPOCH, 42, &aware.libdefaults)?);
         Ok(())
     }
 

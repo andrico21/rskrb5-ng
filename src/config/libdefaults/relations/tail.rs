@@ -9,8 +9,8 @@ pub(crate) const RELATIONS_TAIL: [(&str, &str, &str, &str, &str, &str); 22] = [
         "ignore_acceptor_hostname",
         "boolean",
         "false",
-        "plan 2 WP-12",
-        "No GSS acceptor-name relaxation; strict service/keytab identity checks retained; either value diagnostic",
+        "gss::AcceptorOptions::from_config",
+        "Effective for named GSS acceptors: true lets a host-based acceptor name take a ticket for any host of its service whose key the keytab holds; an unnamed acceptor takes every keytab principal either way",
         "ignore_acceptor_hostname",
     ),
     (
@@ -177,8 +177,8 @@ pub(crate) const RELATIONS_TAIL: [(&str, &str, &str, &str, &str, &str); 22] = [
         "client_aware_channel_bindings",
         "boolean",
         "false",
-        "plan 2 WP-12",
-        "true requires unavailable GSS channel-binding-aware signaling and errors; false diagnostic",
+        "gss::InitiatorOptions::from_config",
+        "Effective for GSS initiators: true adds the MS-KILE KERB_AP_OPTIONS_CBT authorization data, so an acceptor with channel bindings refuses a token without matching ones",
         "client_aware_channel_bindings",
     ),
 ];
