@@ -282,7 +282,7 @@ impl ClientBinding {
 }
 
 /// The keys and ticket data a PAC is verified against, with the policy that judges them.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[non_exhaustive]
 pub struct Verification<'keys> {
     /// What must pass.
@@ -297,6 +297,31 @@ pub struct Verification<'keys> {
     ticket_signature_input: Option<&'keys [u8]>,
     /// The kind of ticket that carries the PAC.
     ticket_kind: TicketKind,
+}
+
+impl fmt::Debug for Verification<'_> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            policy,
+            server_key,
+            kdc_key,
+            client,
+            ticket_signature_input,
+            ticket_kind,
+        } = self;
+        f.debug_struct("Verification")
+            .field("policy", policy)
+            .field("server_key", &server_key.map(|_key| "[REDACTED]"))
+            .field("kdc_key", &kdc_key.map(|_key| "[REDACTED]"))
+            .field("client", client)
+            .field(
+                "ticket_signature_input_len",
+                &ticket_signature_input.map(<[u8]>::len),
+            )
+            .field("ticket_kind", ticket_kind)
+            .finish()
+    }
 }
 
 impl<'keys> Verification<'keys> {

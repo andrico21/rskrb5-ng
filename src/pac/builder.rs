@@ -16,7 +16,7 @@ const SIGNATURE_TYPES: [u32; 4] = [
 ];
 
 /// The keys, client and ticket data a PAC is signed with.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[non_exhaustive]
 pub struct Signing<'keys> {
     /// The service key: server signature.
@@ -29,6 +29,29 @@ pub struct Signing<'keys> {
     ticket_signature_input: Option<&'keys [u8]>,
     /// The kind of ticket that will carry the PAC.
     ticket_kind: TicketKind,
+}
+
+impl fmt::Debug for Signing<'_> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            server_key: _,
+            kdc_key: _,
+            client,
+            ticket_signature_input,
+            ticket_kind,
+        } = self;
+        f.debug_struct("Signing")
+            .field("server_key", &"[REDACTED]")
+            .field("kdc_key", &"[REDACTED]")
+            .field("client", client)
+            .field(
+                "ticket_signature_input_len",
+                &ticket_signature_input.map(<[u8]>::len),
+            )
+            .field("ticket_kind", ticket_kind)
+            .finish()
+    }
 }
 
 impl<'keys> Signing<'keys> {

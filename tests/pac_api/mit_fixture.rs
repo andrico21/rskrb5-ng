@@ -14,7 +14,7 @@ use rskrb5_ng::{
     },
 };
 
-use super::{pac_mit_capture, vector};
+use super::{super::pac_mit_capture, vector};
 
 /// The captured ticket and its PAC.
 fn captured() -> Result<(rasn_kerberos::EncTicketPart, Pac), Box<dyn Error>> {

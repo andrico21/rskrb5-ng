@@ -6,6 +6,14 @@
 //! `interop_pac` and `interop_pac_samba` suites.
 #![cfg(feature = "messages")]
 
+/// The gokrb5 `AD_WIN2K` PAC and the service keytab that verifies it.
+#[path = "support/pac_ad_win2k.rs"]
+mod pac_ad_win2k;
+
+/// The PAC and ticket captured from MIT krb5 1.22.2.
+#[path = "support/pac_mit_capture.rs"]
+mod pac_mit_capture;
+
 /// The independently generated PAC vectors and keys.
 #[path = "support/pac_vectors.rs"]
 mod pac_vectors;
@@ -19,22 +27,11 @@ mod pac_vectors;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod pac_api {
-    /// Service tickets that carry a given PAC.
-    #[path = "../support/pac_ticket.rs"]
-    mod pac_ticket;
-
-    /// The gokrb5 `AD_WIN2K` PAC and the service keytab that verifies it.
-    #[path = "../support/pac_ad_win2k.rs"]
-    mod pac_ad_win2k;
-
-    /// The PAC and ticket captured from MIT krb5 1.22.2.
-    #[path = "../support/pac_mit_capture.rs"]
-    mod pac_mit_capture;
-
     mod acceptor;
     mod builder;
     mod identity;
     mod mit_fixture;
+    mod pac_ticket;
     mod parsing;
     mod regressions;
     mod request;

@@ -85,9 +85,9 @@ fn empty_buffers_do_not_overlap() -> Result<(), Box<dyn Error>> {
 /// A header that declares more than 4096 buffers is refused before any table is read (MIT
 /// `MAX_BUFFERS`).
 #[test]
-fn more_than_4096_buffers_are_refused() {
+fn more_than_4096_buffers_are_refused() -> Result<(), Box<dyn Error>> {
     // Given a header declaring 4097 buffers.
-    let mut bytes = 4097_u32.to_le_bytes().to_vec();
+    let mut bytes = u32::try_from(4097_i32)?.to_le_bytes().to_vec();
     bytes.extend_from_slice(&0_u32.to_le_bytes());
     // When it is parsed.
     // Then it is refused by count.
@@ -95,6 +95,7 @@ fn more_than_4096_buffers_are_refused() {
         Pac::parse(&bytes),
         Err(PacError::BufferCountLimit(4097))
     ));
+    Ok(())
 }
 
 /// The vectors' buffers are enumerated in table order (MIT `krb5_pac_get_types`).
@@ -173,7 +174,14 @@ fn malformed_attributes_are_refused() -> Result<(), Box<dyn Error>> {
 
 /// `PAC_REQUESTOR` is one plain SID with a known revision and at most 15 sub-authorities.
 #[test]
-fn malformed_requestor_sids_are_refused() {
+fn malformed_requestor_sids_are_refused() -> Result<(), Box<dyn Error>> {
+    // Given a valid SID first.
+    assert_eq!(
+        RequestorSid::parse(&[1, 0, 0, 0, 0, 0, 0, 5])?
+            .sid()
+            .to_string(),
+        "S-1-5"
+    );
     // Given a revision 2 SID, a SID with 16 sub-authorities and a truncated one.
     let revision = RequestorSid::parse(&[2, 0, 0, 0, 0, 0, 0, 5]);
     let mut many = vec![1, 16, 0, 0, 0, 0, 0, 5];
@@ -199,4 +207,5 @@ fn malformed_requestor_sids_are_refused() {
             remaining: 0
         })
     ));
+    Ok(())
 }

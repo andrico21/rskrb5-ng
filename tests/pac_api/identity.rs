@@ -7,7 +7,7 @@ use rskrb5_ng::{
     pac::{IdentityAttributes, Pac, Verification, VerificationPolicy},
 };
 
-use super::{pac_ad_win2k, vector};
+use super::{super::pac_ad_win2k, vector};
 
 /// The gokrb5 `AD_WIN2K` PAC verified under the sysHTTP key of its fixture keytab.
 fn verified_gokrb5_pac() -> Result<IdentityAttributes, Box<dyn Error>> {
@@ -62,10 +62,10 @@ fn a_verified_pac_yields_its_ad_identity_attributes() -> Result<(), Box<dyn Erro
 
 /// Attributes are added, replaced and removed like gokrb5's credential attributes.
 #[test]
-fn attributes_are_mutable() {
+fn attributes_are_mutable() -> Result<(), Box<dyn Error>> {
     // Given an empty set.
     let mut attributes = IdentityAttributes::new();
-    assert!(attributes.is_empty());
+    assert!(attributes.is_empty(), "a new set is empty");
     // When values are added, replaced and removed.
     attributes.add("role", "admin");
     attributes.add("role", "audit");
@@ -79,9 +79,14 @@ fn attributes_are_mutable() {
     );
     assert!(removed && !absent);
     attributes.set("role", Vec::new());
-    assert!(attributes.is_empty() && attributes.get("role").is_none());
+    assert!(
+        attributes.is_empty() && attributes.get("role").is_none(),
+        "an empty list removes the attribute"
+    );
     attributes.add("x", "1");
     assert_eq!(attributes.len(), 1);
+    assert_eq!(attributes.get("x").ok_or("x is set")?.len(), 1);
+    Ok(())
 }
 
 /// The set round-trips through JSON as an object of name to values.
