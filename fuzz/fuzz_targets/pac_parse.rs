@@ -192,10 +192,10 @@ fuzz_target!(|data: &[u8]| {
             }
         }
         13 => drop(ClaimsSet::parse(input)),
-        14 => drop(AttributesInfo::parse(input)),
-        15 => drop(RequestorSid::parse(input)),
-        16 => pac_request(input),
-        17 => verification(input),
+        16 => drop(AttributesInfo::parse(input)),
+        17 => drop(RequestorSid::parse(input)),
+        18 => pac_request(input),
+        19 => verification(input),
         _ => authorization_data(input),
     }
 });

@@ -93,7 +93,7 @@ timeout artifact:
 | `keytab_parse` | 2,791,355 | 121 s | 0 |
 | `ccache_parse` | 1,769,062 | 121 s | 0 |
 | `kpasswd_reply` | 1,226,962 | 121 s | 0 |
-| `pac_parse` | 839,490 | 121 s | 0 |
+| `pac_parse` | 1,053,957 (todo 22 of plan 2, 2026-11-22; was 839,490) | 121 s | 0 |
 | `spnego_token` | 861,077 | 121 s | 0 |
 | `gss_token` | 293,635 | 121 s | 0 |
 | `http_negotiate` | 284,293 | 121 s | 0 |
@@ -245,6 +245,22 @@ the fixture anchor, then fails on its content), an `encKeyPack` (refused by
 policy) and a KRB-ERROR. The run of 2026-11-21 made 4,823 executions in 121 s
 with no artifact. Coverage proof: `task-8-pkinit-coverage.tsv` in the
 execution evidence.
+
+### PAC API (todo 22 of plan 2)
+
+`pac_parse` gained four entry points for what a service reads from a KDC or a peer:
+`AttributesInfo::parse` and `RequestorSid::parse` (selectors 16 and 17: at most 1,024 flag bits
+and at most 15 sub-authorities), `Request::decode_der` (selector 18; an accepted
+`PA-PAC-REQUEST` encodes and decodes again to itself) and the explicit-policy verification
+(selector 19: `Pac::verify_ext` under the policy that requires every signature, with the keys and
+ticket bytes of the independent vectors, then `Builder::from_pac` re-signing the parsed PAC and
+verifying the result), besides the stricter container checks (duplicate and overlapping buffers,
+at most 4,096 buffers) that `whole_pac` and `header_only` already reach. Five seeds were added
+(one per new selector and a Samba-shaped PAC with a zero-length claims buffer). The 120-second
+run recorded above found nothing. Coverage proof: `task-22-pac-coverage.tsv` in the execution
+evidence (63 of 64 `pac_parse` rows; `KerberosEtype::verify_checksum` is reached but its row
+names the module `crypto` while the symbol is `cryptography`, a mismatch older than this todo,
+register row FU-PAC-P06).
 
 ### Cross-realm routing (todo 17 of plan 2)
 
