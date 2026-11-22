@@ -443,6 +443,10 @@ pub(super) fn inquire(credential: &Credential) -> CredentialInquiry {
 /// # Errors
 ///
 /// Returns the errors of [`super::Credential::acquire_service_ticket`].
+///
+/// # Cancel safety
+///
+/// Cancel-safe: the ticket is stored only after its exchange completes.
 #[cfg(feature = "tokio")]
 pub(super) async fn acquire_service_ticket(
     credential: &mut Credential,

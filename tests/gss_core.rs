@@ -4,6 +4,11 @@
 //! mechanism makes effective (plan 2 todo 18, WP-12a).
 #![cfg(feature = "spnego")]
 
+/// Turns `Option` and `Result` failures into test errors.
+#[cfg(test)]
+#[path = "support/context.rs"]
+mod context;
+
 /// The GSS core scenarios.
 #[cfg(test)]
 #[expect(

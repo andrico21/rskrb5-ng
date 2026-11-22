@@ -63,25 +63,29 @@ fn the_security_strength_factor_is_the_key_strength() -> Result<(), TestError> {
     Ok(())
 }
 
+/// Errors with the RFC 2744 major status each one names.
+const MAJOR_STATUSES: [(Gss, u32); 14] = [
+    (Gss::BadName("x"), 2_u32 << 16_u32),
+    (Gss::BadBindings, 4_u32 << 16_u32),
+    (Gss::MissingBindings, 4_u32 << 16_u32),
+    (Gss::NoCredential("x"), 7_u32 << 16_u32),
+    (Gss::UnexpectedStep("x"), 8_u32 << 16_u32),
+    (Gss::DefectiveToken("x"), 9_u32 << 16_u32),
+    (Gss::DefectiveChecksum("x"), 10_u32 << 16_u32),
+    (Gss::ContextExpired, 12_u32 << 16_u32),
+    (Gss::LegacyTokenFormat(16_i32), 16_u32 << 16_u32),
+    (Gss::DuplicateElement, 17_u32 << 16_u32),
+    (Gss::DuplicateToken(1_u64), 1_u32 << 1_u32),
+    (Gss::OldToken(1_u64), 1_u32 << 2_u32),
+    (Gss::UnsequencedToken(1_u64), 1_u32 << 3_u32),
+    (Gss::GapToken(1_u64), 1_u32 << 4_u32),
+];
+
 /// Every error names its RFC 2744 major status.
 #[test]
 fn errors_map_to_rfc_2744_major_statuses() {
-    for (error, status) in [
-        (Gss::BadName("x"), 2_u32 << 16_u32),
-        (Gss::BadBindings, 4_u32 << 16_u32),
-        (Gss::MissingBindings, 4_u32 << 16_u32),
-        (Gss::NoCredential("x"), 7_u32 << 16_u32),
-        (Gss::UnexpectedStep("x"), 8_u32 << 16_u32),
-        (Gss::DefectiveToken("x"), 9_u32 << 16_u32),
-        (Gss::DefectiveChecksum("x"), 10_u32 << 16_u32),
-        (Gss::ContextExpired, 12_u32 << 16_u32),
-        (Gss::LegacyTokenFormat(16_i32), 16_u32 << 16_u32),
-        (Gss::DuplicateElement, 17_u32 << 16_u32),
-        (Gss::DuplicateToken(1_u64), 1_u32 << 1_u32),
-        (Gss::OldToken(1_u64), 1_u32 << 2_u32),
-        (Gss::UnsequencedToken(1_u64), 1_u32 << 3_u32),
-        (Gss::GapToken(1_u64), 1_u32 << 4_u32),
-    ] {
-        assert_eq!(error.major_status(), status, "{error}");
-    }
+    assert_eq!(
+        MAJOR_STATUSES.map(|(error, _)| error.major_status()),
+        MAJOR_STATUSES.map(|(_, status)| status),
+    );
 }

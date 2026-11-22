@@ -1,8 +1,7 @@
 //! The module tree of the GSS core scenarios.
 
 /// Turns `Option` and `Result` failures into test errors.
-#[path = "../support/context.rs"]
-mod context;
+use super::context;
 
 /// Tickets, keytabs and credential caches made in process.
 #[path = "support.rs"]
