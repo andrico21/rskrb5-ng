@@ -9,10 +9,11 @@ use core::{
 
 #[cfg(feature = "tower")]
 use http_types::{Request, Response};
+#[cfg(feature = "tower")]
+use rskrb5_ng::error::Policy;
 use rskrb5_ng::{
     Config, ap_rep, ap_req,
     crypto::{CryptoPolicy, KerberosEtype},
-    error::Policy,
     keytab::EncryptionKey,
     service::{ApRepOptions, Validator},
     spnego::{self, Krb5MechToken, NegTokenInit, Token},
