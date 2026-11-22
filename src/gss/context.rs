@@ -88,20 +88,28 @@ fn usable(context: &EstablishedContext) -> Result<&EncryptionKey, Error> {
     }
 }
 
-/// Check a received token's flags: sent by the other end, with the acceptor
-/// subkey flag exactly when this context holds an acceptor subkey.
+/// The key of a received token: the acceptor subkey when its flag says so,
+/// else the initiator subkey or the session key (RFC 4121 section 4.2.2; MIT
+/// `k5unsealiov.c`).
 ///
 /// # Errors
 ///
-/// Returns [`Error::DefectiveToken`] for a key flag that does not match.
-fn received_flags(context: &EstablishedContext, flags: u8) -> Result<(), Error> {
-    let marked = flags & GSS_TOKEN_FLAG_ACCEPTOR_SUBKEY != 0;
-    if marked != context.acceptor_subkey.is_some() {
-        return Err(Error::DefectiveToken(
-            "the acceptor-subkey flag does not match the context",
-        ));
+/// Returns [`Error::DefectiveToken`] for the acceptor-subkey flag on a context
+/// without an acceptor subkey.
+fn received_key(context: &EstablishedContext, flags: u8) -> Result<EncryptionKey, Error> {
+    if flags & GSS_TOKEN_FLAG_ACCEPTOR_SUBKEY == 0 {
+        return Ok(context
+            .initiator_subkey
+            .as_ref()
+            .unwrap_or(&context.session_key)
+            .clone());
     }
-    Ok(())
+    context
+        .acceptor_subkey
+        .clone()
+        .ok_or(Error::DefectiveToken(
+            "the acceptor-subkey flag on a context without one",
+        ))
 }
 
 /// Take the next sequence number to send.
@@ -151,13 +159,13 @@ pub(super) fn verify_mic(
     token: &[u8],
 ) -> Result<(), Error> {
     bounded(token)?;
-    let current = usable(context)?.clone();
+    let _usable: &EncryptionKey = usable(context)?;
     let (sign, _) = usages(!context.initiated);
     let decoded = MicToken::decode(token, context.initiated)?;
     if decoded.flags() & GSS_TOKEN_FLAG_SEALED != 0 {
         return Err(Error::DefectiveToken("a MIC token cannot be sealed"));
     }
-    received_flags(context, decoded.flags())?;
+    let current = received_key(context, decoded.flags())?;
     let number = decoded.snd_seq_num();
     decoded
         .with_payload(message.to_vec())
@@ -198,10 +206,10 @@ pub(super) fn wrap(
 /// Returns the errors of [`super::EstablishedContext::unwrap`].
 pub(super) fn unwrap(context: &mut EstablishedContext, token: &[u8]) -> Result<Unwrapped, Error> {
     bounded(token)?;
-    let current = usable(context)?.clone();
+    let _usable: &EncryptionKey = usable(context)?;
     let (_, seal) = usages(!context.initiated);
     let decoded = WrapToken::decode(token, context.initiated)?;
-    received_flags(context, decoded.flags())?;
+    let current = received_key(context, decoded.flags())?;
     let number = decoded.snd_seq_num();
     let confidential = decoded.is_sealed();
     let message = if confidential {

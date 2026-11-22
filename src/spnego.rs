@@ -17,6 +17,7 @@ use zeroize::{Zeroize as _, Zeroizing};
 
 use crate::{
     ap_rep::{decode as decode_ap_rep, decrypt_ap_rep_enc_part},
+    gss,
     client::{TgsRepSession, build_ap_req_with_confounder, options::ApReq, principal::Principal},
     crypto::{CryptoPolicy, KerberosEtype, Use, selection},
     error,
@@ -36,6 +37,8 @@ mod der;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod erasure_tests;
+/// SPNEGO over the GSS Kerberos mechanism.
+mod gss_contexts;
 /// One-shot SPNEGO mechanism-list integrity processing.
 mod negotiation;
 /// GSS-API object identifiers.
@@ -2783,6 +2786,8 @@ fn rotate_left(bytes: &[u8], count: usize) -> Vec<u8> {
 }
 
 use crate::error::Spnego as Error;
+
+include!("spnego/gss_types.rs");
 
 /// Enforce RFC 4178 section 4.2.1 `ContextFlags` size and named-bit DER on the encode side.
 ///

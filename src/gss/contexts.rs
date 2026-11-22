@@ -208,6 +208,14 @@ impl Initiator {
         matches!(self.state, InitState::Established(_))
     }
 
+    /// The established context, for the negotiation layered on this one.
+    pub(crate) fn established_mut(&mut self) -> Option<&mut EstablishedContext> {
+        match &mut self.state {
+            InitState::Established(context) => Some(context),
+            InitState::Start | InitState::AwaitingReply(_) | InitState::Finished => None,
+        }
+    }
+
     /// The established context.
     ///
     /// # Errors
@@ -379,6 +387,18 @@ impl Accepted {
     #[must_use]
     pub fn into_context(self) -> EstablishedContext {
         self.context
+    }
+
+    /// The established context, for the negotiation layered on this one.
+    pub(crate) const fn context_mut(&mut self) -> &mut EstablishedContext {
+        &mut self.context
+    }
+
+    /// The same context answered with `token` instead, for the negotiation
+    /// layered on this one.
+    pub(crate) fn with_output_token(mut self, token: Option<Vec<u8>>) -> Self {
+        self.output_token = token;
+        self
     }
 }
 

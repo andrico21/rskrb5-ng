@@ -39,3 +39,7 @@ mod credentials;
 /// The configuration relations the mechanism consumes.
 #[path = "relations.rs"]
 mod relations;
+
+/// SPNEGO over the GSS Kerberos mechanism.
+#[path = "spnego.rs"]
+mod spnego;
