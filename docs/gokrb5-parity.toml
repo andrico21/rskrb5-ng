@@ -18,8 +18,8 @@ last_reviewed = "2026-11-01"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 21
-partial = 14
+implemented = 23
+partial = 12
 absent = 0
 rejected = 0
 omitted = 0
@@ -139,11 +139,11 @@ id = "pac"
 name = "PAC and NDR parsing"
 upstream_packages = ["pac"]
 upstream_tests = ["pac/*_test.go", "messages/Ticket_test.go", "client/client_ad_integration_test.go"]
-rskrb5_modules = ["src/pac.rs", "src/pac/reader.rs", "src/service.rs"]
-rskrb5_tests = ["tests/pac.rs", "tests/service.rs", "tests/client_ad_integration.rs"]
+rskrb5_modules = ["src/pac.rs", "src/pac/reader.rs", "src/pac/verify.rs", "src/pac/builder.rs", "src/service.rs"]
+rskrb5_tests = ["tests/pac.rs", "tests/pac_api.rs", "tests/service.rs", "tests/client_ad_integration.rs", "tests/interop_pac.rs", "tests/interop_pac_samba.rs"]
 status = "partial"
-evidence = ["unit tests cover PAC container data, validation info, credentials, UPN/DNS, S4U delegation, device info, claims, compression, server signatures, and AD credential summaries"]
-next = ["GO-pac-1 and GO-credentials-3: KDC-checksum verification and a credential-attribute model close in P2-22", "run TESTAD=1 against a maintained AD lab and keep it green before claiming full AD parity"]
+evidence = ["unit tests cover PAC container data, validation info, credentials, UPN/DNS, S4U delegation, device info, claims, compression, server signatures, and AD credential summaries", "the explicit-policy verification (server, KDC, ticket and full signatures, client binding), the builder and the identity attribute set are covered by tests/pac_api.rs with independent and MIT-captured vectors and live by the pac and pac-samba interop suites against MIT krb5 1.22.2 and Samba 4.22.11 (todo 22)"]
+next = ["run TESTAD=1 against a maintained AD lab and keep it green before claiming full AD parity"]
 
 [[area]]
 id = "docker-mit"
@@ -415,11 +415,11 @@ id = "GO-credentials-3"
 area = "credentials"
 upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
 capability = "Credentials and AD identity attributes"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "PAC AdCredentials and the validated service identity exist; there is no generic mutable credential-attribute model or serialization contract (P2-22)."
-rust_symbols = ["pac::AdCredentials"]
-test_names = ["tests/pac.rs::derives_ad_credentials_from_kerb_validation_info"]
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = ["pac::AdCredentials", "pac::IdentityAttributes", "pac::IdentityAttributes::from_verified", "pac::IdentityAttributes::add", "pac::IdentityAttributes::set", "pac::IdentityAttributes::remove", "pac::IdentityAttributes::get"]
+test_names = ["tests/pac.rs::derives_ad_credentials_from_kerb_validation_info", "tests/pac_api/identity.rs::a_verified_pac_yields_its_ad_identity_attributes", "tests/pac_api/identity.rs::attributes_are_mutable", "tests/pac_api/identity.rs::attributes_serialize_to_json_and_back", "tests/pac_api/identity.rs::attributes_hold_no_secret_material", "tests/interop_pac_samba/scenarios.rs::the_claims_and_identity_of_a_domain_user_read_through_the_verified_pac"]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-14"
@@ -746,11 +746,11 @@ id = "GO-pac-1"
 area = "pac"
 upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
 capability = "PAC container and signatures"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "Container parsing and server-checksum verification exist; the KDC checksum is parsed and required but not verified cryptographically (P2-22)."
-rust_symbols = ["pac::Pac::verify_server_checksum"]
-test_names = ["tests/pac.rs::parses_signature_data_and_zeroes_checksum_bytes"]
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = ["pac::Pac::verify_server_checksum", "pac::Pac::verify_ext", "pac::VerificationPolicy", "pac::Verified"]
+test_names = ["tests/pac.rs::parses_signature_data_and_zeroes_checksum_bytes", "tests/pac_api/verification.rs::a_service_pac_verifies_all_four_signatures_and_the_client", "tests/pac_api/verification.rs::a_wrong_kdc_key_is_rejected", "tests/pac_api/mit_fixture.rs::the_pac_mit_built_verifies_under_both_keys", "tests/interop_pac_samba/scenarios.rs::the_kdc_ticket_and_full_signatures_of_a_samba_pac_verify"]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-14"
