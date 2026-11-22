@@ -237,7 +237,7 @@ pub(super) fn accept(acceptor: &mut Acceptor<'_>, token: &[u8]) -> Result<Accept
         let etype = KerberosEtype::from_etype_id(validated.session_key().etype())
             .ok_or(Error::LegacyTokenFormat(validated.session_key().etype()))?;
         let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
-        getrandom::fill(&mut confounder)?;
+        getrandom::fill(&mut confounder).map_err(Error::Random)?;
         let reply = validated.build_ap_rep_with_confounder(&confounder, &reply_options)?;
         let mut answer = Krb5MechToken::ap_rep(reply);
         answer.set_oid(mech.oid().clone());

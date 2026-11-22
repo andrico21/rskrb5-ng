@@ -199,7 +199,7 @@ pub(super) fn wrap(
         let etype = KerberosEtype::from_etype_id(current.etype())
             .ok_or(Error::LegacyTokenFormat(current.etype()))?;
         let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
-        getrandom::fill(&mut confounder)?;
+        getrandom::fill(&mut confounder).map_err(Error::Random)?;
         token.encrypt_payload_with_confounder(&current, seal, &confounder)?;
     } else {
         token.set_checksum(&current, seal)?;

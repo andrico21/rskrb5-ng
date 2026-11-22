@@ -101,8 +101,8 @@ pub(super) fn step(
 pub(super) fn random_key(etype: i32) -> Result<EncryptionKey, Error> {
     let kind = KerberosEtype::from_etype_id(etype).ok_or(Error::LegacyTokenFormat(etype))?;
     let mut seed = Zeroizing::new(vec![0; prf::seed_len(kind)]);
-    getrandom::fill(&mut seed)?;
-    let value = prf::random_to_key(kind, &seed)?;
+    getrandom::fill(&mut seed).map_err(Error::Random)?;
+    let value = prf::random_to_key(kind, &seed).map_err(Error::Crypto)?;
     Ok(EncryptionKey::new(etype, value.to_vec()))
 }
 
@@ -113,7 +113,7 @@ pub(super) fn random_key(etype: i32) -> Result<EncryptionKey, Error> {
 /// Returns the random source error.
 pub(super) fn random_sequence() -> Result<u32, Error> {
     let mut bytes = [0; 4];
-    getrandom::fill(&mut bytes)?;
+    getrandom::fill(&mut bytes).map_err(Error::Random)?;
     Ok(u32::from_be_bytes(bytes) & 0x3fff_ffff)
 }
 
@@ -196,7 +196,7 @@ fn delegation(
     let etype = KerberosEtype::from_etype_id(session_key.etype())
         .ok_or(Error::LegacyTokenFormat(session_key.etype()))?;
     let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
-    getrandom::fill(&mut confounder)?;
+    getrandom::fill(&mut confounder).map_err(Error::Random)?;
     krb_cred::encode_encrypt_ccache_credentials_to_krb_cred_with_confounder(
         slice::from_ref(tgt),
         session_key,
@@ -216,13 +216,13 @@ fn ap_req_token(
     authenticator: &rasn_kerberos::Authenticator,
     mutual: bool,
 ) -> Result<Vec<u8>, Error> {
-    let wire_ticket = ticket::decode(ticket.ticket())?;
+    let wire_ticket = ticket::decode(ticket.ticket()).map_err(Error::Ticket)?;
     let usage = ap_req::authenticator_usage_for_ticket(&wire_ticket);
     let kvno = wire_ticket.enc_part.kvno;
     let etype = KerberosEtype::from_etype_id(ticket.session_key().etype())
         .ok_or(Error::LegacyTokenFormat(ticket.session_key().etype()))?;
     let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
-    getrandom::fill(&mut confounder)?;
+    getrandom::fill(&mut confounder).map_err(Error::Random)?;
     let bits = if mutual { MUTUAL_REQUIRED } else { 0 };
     let message = ap_req::build_ap_req_with_confounder(
         wire_ticket,
@@ -233,7 +233,7 @@ fn ap_req_token(
         kvno,
         &confounder,
     )?;
-    let der = Zeroizing::new(ap_req::encode(&message)?);
+    let der = Zeroizing::new(ap_req::encode(&message).map_err(Error::ApReq)?);
     Ok(Krb5MechToken::ap_req(der.to_vec()).encode()?)
 }
 
@@ -254,7 +254,9 @@ fn first(initiator: &mut Initiator, credential: &Credential) -> Result<InitStep,
     let ticket = cred::service_ticket(credential, &initiator.target)
         .ok_or(Error::NoCredential("no live service ticket for the target"))?;
     let policy = options.crypto_policy.clone();
-    policy.check_use(ticket.session_key().etype(), Use::SessionKey)?;
+    policy
+        .check_use(ticket.session_key().etype(), Use::SessionKey)
+        .map_err(Error::Policy)?;
     let ok_as_delegate = ticket
         .ticket_flags()
         .iter()
@@ -373,7 +375,7 @@ fn reply(pending: Pending, token: &[u8]) -> Result<(EstablishedContext, InitStep
         ));
     }
     let policy = &context.crypto_policy;
-    let wire = ap_rep::decode(mech.message())?;
+    let wire = ap_rep::decode(mech.message()).map_err(Error::ApRep)?;
     policy.check_use(wire.enc_part.etype, Use::SessionKey)?;
     let part = ap_rep::decrypt_ap_rep_enc_part(&wire, &context.session_key)?;
     let echoed = from_kerberos(&part.ctime);

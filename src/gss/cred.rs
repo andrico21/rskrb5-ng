@@ -199,7 +199,7 @@ fn initiator_from(
     store: &CredStore,
 ) -> Result<(), Error> {
     if let Some(cache_name) = &store.ccache {
-        let cache = CCache::load_name(cache_name)?;
+        let cache = CCache::load_name(cache_name).map_err(Error::Ccache)?;
         let client = Name::from_principal(&principal_of(cache.default_principal()));
         if desired.is_some_and(|name| !name.compare(&client)) {
             return Err(Error::NoCredential("the cache holds another principal"));
@@ -211,7 +211,7 @@ fn initiator_from(
     let need = Error::NoCredential("a client keytab or password needs the desired name");
     if let Some(keytab_name) = &store.client_keytab {
         let name = desired.ok_or(need)?;
-        let keytab = Keytab::load_name(keytab_name)?;
+        let keytab = Keytab::load_name(keytab_name).map_err(Error::Keytab)?;
         if !client_keytab_matches(&keytab, name) {
             return Err(Error::NoCredential(
                 "the client keytab holds no key for the name",
@@ -487,7 +487,10 @@ pub(super) async fn acquire_service_ticket(
     } else {
         return Err(Error::NoCredential("no ticket source"));
     };
-    let ticket = kerberos.get_service_ticket(service).await?;
+    let ticket = kerberos
+        .get_service_ticket(service)
+        .await
+        .map_err(Error::Client)?;
     let cache = credential
         .cache
         .get_or_insert_with(|| CCache::new(cache_principal(&client)));
