@@ -2338,6 +2338,10 @@ pub enum Pac {
     #[cfg(feature = "messages")]
     #[error("PAC authorization-data DER decode failed: {0}")]
     DerDecode(String),
+    /// The ticket could not be DER-encoded for its PAC ticket signature.
+    #[cfg(feature = "messages")]
+    #[error("PAC ticket-signature input DER encode failed: {0}")]
+    DerEncode(String),
     /// PAC lookup would decode more than eight nested authorization wrappers.
     #[cfg(feature = "messages")]
     #[error("PAC authorization-data depth exceeds eight wrappers")]

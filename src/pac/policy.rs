@@ -71,6 +71,8 @@ pub struct VerificationPolicy {
     client_binding: bool,
     /// Buffer types that must be present.
     required_buffers: Vec<u32>,
+    /// Whether a ticket without a PAC is refused.
+    pac_required: bool,
 }
 
 impl VerificationPolicy {
@@ -95,6 +97,7 @@ impl VerificationPolicy {
                 INFO_TYPE_PAC_KDC_SIGNATURE_DATA,
                 INFO_TYPE_PAC_CLIENT_INFO,
             ],
+            pac_required: false,
         }
     }
 
@@ -106,6 +109,16 @@ impl VerificationPolicy {
             .with_kdc(SignatureRequirement::Required)
             .with_ticket(SignatureRequirement::Required)
             .with_full(SignatureRequirement::Required)
+    }
+
+    /// Refuse a ticket that carries no PAC (default: accept it, as MIT does: a service marked
+    /// `+no_auth_data_required` gets none). Stripping the PAC from a ticket needs the service key,
+    /// so this guards a service whose key leaked.
+    #[inline]
+    #[must_use]
+    pub const fn with_pac_required(mut self, required: bool) -> Self {
+        self.pac_required = required;
+        self
     }
 
     /// Set the demand on the server signature.
@@ -192,6 +205,13 @@ impl VerificationPolicy {
     #[must_use]
     pub const fn client_binding(&self) -> bool {
         self.client_binding
+    }
+
+    /// Whether a ticket without a PAC is refused.
+    #[inline]
+    #[must_use]
+    pub const fn pac_required(&self) -> bool {
+        self.pac_required
     }
 
     /// The buffer types that must be present.

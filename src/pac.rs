@@ -15,8 +15,12 @@ use compcol::{
     Algorithm, lznt1::Lznt1, vec::decompress_to_vec_capped, xpress::Xpress,
     xpress_huffman::XpressHuffman,
 };
+#[cfg(feature = "messages")]
+use rasn::der::encode as der_encode;
 use zeroize::{Zeroize as _, Zeroizing};
 
+#[cfg(feature = "messages")]
+use crate::der::decode_complete;
 use crate::{
     crypto::{KerberosEtype, selection},
     keytab::EncryptionKey,
@@ -27,9 +31,9 @@ mod authorization;
 mod credential_secrets;
 mod ndr;
 mod reader;
-mod verify;
 /// Redacted, erased validation-info session keys.
 pub mod session_key;
+mod verify;
 
 #[cfg(test)]
 /// PAC mutation regression tests.
@@ -56,6 +60,8 @@ use self::{
 include!("pac/attributes.rs");
 include!("pac/policy.rs");
 include!("pac/verified.rs");
+#[cfg(feature = "messages")]
+include!("pac/ticket_signature.rs");
 
 /// `AD-IF-RELEVANT` authorization-data type.
 pub const AD_IF_RELEVANT: i32 = 1;

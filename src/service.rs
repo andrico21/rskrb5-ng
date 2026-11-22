@@ -24,7 +24,7 @@ use crate::{
     der::decode_complete,
     error,
     keytab::{self, EncryptionKey, Keytab},
-    pac::{self, Pac},
+    pac::{self, VerificationPolicy, Verified},
     routing::{RealmPath, transited},
     trace::Guard,
 };
@@ -106,7 +106,7 @@ pub struct ValidatedApReq {
     /// Authenticator timestamp including `cusec`.
     authenticator_time: SystemTime,
     /// Verified PAC from the ticket authorization data, when present.
-    pac: Option<Pac>,
+    pac: Option<Verified>,
 }
 
 impl ValidatedApReq {
@@ -184,10 +184,14 @@ impl ValidatedApReq {
     pub const fn authenticator_time(&self) -> SystemTime {
         self.authenticator_time
     }
-    /// Borrow verified PAC credentials and authorization metadata.
+    /// Borrow the PAC of the ticket, which passed the validator's PAC policy.
+    ///
+    /// The validator's [`VerificationPolicy`] decided what that means: by default the server
+    /// signature verified and the client info named the ticket's client;
+    /// [`Verified::checks`] says whether the KDC, ticket and full signatures verified as well.
     #[inline]
     #[must_use]
-    pub const fn pac(&self) -> Option<&Pac> {
+    pub const fn pac(&self) -> Option<&Verified> {
         self.pac.as_ref()
     }
     /// Borrow the ticket session key.
@@ -495,7 +499,7 @@ mod replay_quota;
 mod ticket_pac;
 mod validation;
 
-use ticket_pac::verified_ticket_pac;
+use ticket_pac::{PacCheck, verified_ticket_pac};
 
 /// Shareable in-memory AP-REQ replay cache.
 ///
@@ -706,6 +710,10 @@ pub struct Validator<'keytab> {
     shared_replay_cache: Option<SharedReplayCache>,
     /// Explicit policy for cross-realm tickets not checked by the KDC.
     transit_policy: Option<Arc<dyn TransitValidator>>,
+    /// What a ticket's PAC must pass before it is exposed.
+    pac_policy: VerificationPolicy,
+    /// The KDC (`krbtgt`) key that verifies the KDC, ticket and full signatures, when the service has it.
+    pac_kdc_key: Option<EncryptionKey>,
     /// Redacted trace events of the validations.
     trace: Guard,
 }
@@ -785,6 +793,8 @@ impl<'keytab> Validator<'keytab> {
             replay_cache: ReplayCache::new(),
             shared_replay_cache: None,
             transit_policy: None,
+            pac_policy: VerificationPolicy::acceptor(),
+            pac_kdc_key: None,
             trace: Guard::disabled(),
         }
     }
@@ -850,6 +860,35 @@ impl<'keytab> Validator<'keytab> {
     #[inline]
     pub fn with_transit_validator(mut self, validator: Arc<dyn TransitValidator>) -> Self {
         self.transit_policy = Some(validator);
+        self
+    }
+
+    /// Decide what the PAC of a ticket must pass before the validator exposes it.
+    ///
+    /// The default is [`VerificationPolicy::acceptor`]: the server signature must verify under the
+    /// keytab key and the client info must name the ticket's client and authentication time.
+    ///
+    /// # Security
+    ///
+    /// A service that does not hold the KDC key cannot verify the KDC, ticket or full signature;
+    /// give it the key with [`Self::with_pac_kdc_key`] and require those signatures in the policy
+    /// to detect a PAC forged with a stolen service key. A policy that requires a signature
+    /// without a key makes every ticket with a PAC fail.
+    #[must_use]
+    #[inline]
+    pub fn with_pac_policy(mut self, policy: VerificationPolicy) -> Self {
+        self.pac_policy = policy;
+        self
+    }
+
+    /// Give the validator the KDC (`krbtgt`) key, so the KDC, ticket and full signatures of a PAC
+    /// are verified (MS-PAC 2.8, KB5020805).
+    ///
+    /// The validator owns the key and erases it when dropped.
+    #[must_use]
+    #[inline]
+    pub fn with_pac_kdc_key(mut self, key: EncryptionKey) -> Self {
+        self.pac_kdc_key = Some(key);
         self
     }
 
