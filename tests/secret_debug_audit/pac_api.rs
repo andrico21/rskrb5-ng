@@ -3,14 +3,22 @@
 
 #[cfg(test)]
 pub(super) mod tests {
+    use std::time::UNIX_EPOCH;
+
     use rskrb5_ng::{
+        error::Pac as PacError,
         keytab::EncryptionKey,
         pac::{Builder, ClientBinding, Signing, Verification, VerificationPolicy},
     };
 
     use crate::tests::{pattern, redacted};
 
-    pub(crate) fn run_audit() -> Result<(), rskrb5_ng::error::Pac> {
+    /// Populate each owner and check its `Debug` output.
+    ///
+    /// # Errors
+    ///
+    /// Returns the builder's refusal to add the audit buffer.
+    pub(crate) fn run_audit() -> Result<(), PacError> {
         let mut builder = Builder::new();
         builder.add_buffer(100, &pattern(81))?;
         redacted(&builder, &[&pattern(81)]);
@@ -19,7 +27,7 @@ pub(super) mod tests {
             EncryptionKey::new(18, pattern(111)),
         );
         let covered = pattern(131);
-        let client = ClientBinding::new("alice", std::time::UNIX_EPOCH);
+        let client = ClientBinding::new("alice", UNIX_EPOCH);
         redacted(
             &Signing::new(&server, &kdc)
                 .with_client(client.clone())
