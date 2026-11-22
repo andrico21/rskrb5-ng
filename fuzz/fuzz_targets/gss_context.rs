@@ -36,6 +36,13 @@ const NOW: Duration = Duration::from_secs(1_893_553_447);
 /// The confounder of every encryption.
 const CONFOUNDER: [u8; 16] = [0; 16];
 
+/// The AES256 service key [`VALID_AP_REQ`]'s ticket is encrypted in (an entry
+/// of [`HTTP_KEYTAB`]).
+const TICKET_KEY: [u8; 32] = [
+    0x9c, 0xad, 0x00, 0xbb, 0xc7, 0x2d, 0x70, 0x32, 0x58, 0xe9, 0x11, 0xdc, 0x18, 0xe6, 0xd5, 0x48,
+    0x7c, 0xf7, 0x37, 0xbf, 0x67, 0xfd, 0x11, 0x1f, 0x0c, 0x24, 0x63, 0xad, 0x60, 0x33, 0xbf, 0x51,
+];
+
 /// The acceptor options of the selector bits.
 fn options(selector: u8) -> AcceptorOptions {
     let mut options = AcceptorOptions::new();
@@ -51,11 +58,11 @@ fn options(selector: u8) -> AcceptorOptions {
 
 /// The krb5 AP-REQ token of the fixture's ticket with the fuzzed DER
 /// authenticator encrypted under its session key, and the authenticator time.
-fn structured(input: &[u8], keytab: &Keytab) -> Option<(Vec<u8>, SystemTime)> {
+fn structured(input: &[u8]) -> Option<(Vec<u8>, SystemTime)> {
     let authenticator = ap_req::decode_authenticator(input).ok()?;
     let template = ap_req::decode(VALID_AP_REQ).ok()?;
-    let entry = keytab.entries().first()?;
-    let part = ticket::decrypt_ticket_enc_part(&template.ticket, entry.key()).ok()?;
+    let ticket_key = EncryptionKey::new(18, TICKET_KEY.to_vec());
+    let part = ticket::decrypt_ticket_enc_part(&template.ticket, &ticket_key).ok()?;
     let session_key = EncryptionKey::new(part.key.r#type, part.key.value.to_vec());
     let usage = ap_req::authenticator_usage_for_ticket(&template.ticket);
     let request = ap_req::build_ap_req_with_confounder(
@@ -88,7 +95,7 @@ fuzz_target!(|data: &[u8]| {
     let (token, now) = if selector & 0x02 == 0 {
         (input.to_vec(), fixed)
     } else {
-        let Some(built) = structured(input, &keytab) else {
+        let Some(built) = structured(input) else {
             return;
         };
         built
