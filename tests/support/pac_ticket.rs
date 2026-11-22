@@ -3,7 +3,6 @@
 //! The service key is the AES256 service key of the generated vectors, the realm `TEST.PAC`, the
 //! client `pacuser` with the authentication time the vectors name.
 
-use alloc::vec::Vec;
 use core::{error::Error, time::Duration};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -107,7 +106,7 @@ pub(crate) fn enc_ticket(
         },
         auth_time: time(auth_time)?,
         start_time: Some(time(auth_time)?),
-        end_time: time(auth_time + 36_000)?,
+        end_time: time(auth_time.checked_add(36_000).ok_or("time")?)?,
         renew_till: None,
         caddr: None,
         authorization_data,

@@ -72,7 +72,8 @@ def checksum(key: bytes, data: bytes) -> bytes:
     return hmac.new(kc, data, hashlib.sha1).digest()[:12]
 
 
-def pac(buffers, key_server, key_kdc, cksum_type_server, cksum_type_kdc, ticket_input=None):
+def pac(buffers, key_server, key_kdc, cksum_type_server, cksum_type_kdc, ticket_input=None,
+        wrong_full_key=None, signed_ticket_input=None):
     """buffers: list of (type, bytes); signature buffers are created here."""
     sig_len = 12
     items = []  # (type, bytearray)
@@ -84,11 +85,15 @@ def pac(buffers, key_server, key_kdc, cksum_type_server, cksum_type_kdc, ticket_
         index[ul_type] = len(items)
         items.append([ul_type, bytearray(data)])
 
+    # MIT order (pac_sign.c): the ticket signature first (add_ticket_signature), then sign_pac
+    # adds the server, KDC and full checksum buffers, each zero filled.
     if ticket_input is not None:
-        add(16, struct.pack("<I", cksum_type_kdc) + checksum(key_kdc, ticket_input))
-        add(19, struct.pack("<I", cksum_type_kdc) + bytes(sig_len))
+        covered = signed_ticket_input if signed_ticket_input is not None else ticket_input
+        add(16, struct.pack("<I", cksum_type_kdc) + checksum(key_kdc, covered))
     add(6, struct.pack("<I", cksum_type_server) + bytes(sig_len))
     add(7, struct.pack("<I", cksum_type_kdc) + bytes(sig_len))
+    if ticket_input is not None:
+        add(19, struct.pack("<I", cksum_type_kdc) + bytes(sig_len))
 
     def encode():
         n = len(items)
@@ -118,7 +123,8 @@ def pac(buffers, key_server, key_kdc, cksum_type_server, cksum_type_kdc, ticket_
                 entry[1][4 : 4 + len(signature)] = signature
 
     if ticket_input is not None:
-        put(19, checksum(key_kdc, encode()))  # all three zero at this point
+        full_key = wrong_full_key if wrong_full_key is not None else key_kdc
+        put(19, checksum(full_key, encode()))  # all three zero at this point
     server_sig = checksum(key_server, encode())
     put(6, server_sig)
     put(7, checksum(key_kdc, server_sig))
@@ -139,6 +145,8 @@ def sid(authority: int, subs) -> bytes:
 def rust_hex(name: str, doc: str, data: bytes) -> str:
     text = data.hex()
     chunks = [text[i : i + 96] for i in range(0, len(text), 96)]
+    if len(chunks) == 1:
+        return f'/// {doc}\npub(crate) const {name}: &str = "{chunks[0]}";\n'
     body = "\n".join(f'    "{c}",' for c in chunks)
     return f"/// {doc}\npub(crate) const {name}: &str = concat!(\n{body}\n);\n"
 
@@ -162,7 +170,7 @@ def main():
     out.append(
         rust_hex(
             "SERVICE_PAC_AES256",
-            "A MIT-shaped service-ticket PAC (client info, attributes, requestor, ticket and full checksums, server and KDC signatures; no KERB_VALIDATION_INFO), aes256-cts-hmac-sha1-96 keys (checksum type 16), client `pacuser`, authtime 2017-05-06 15:13:11 UTC.",
+            "A MIT-shaped service-ticket PAC (client info, attributes, requestor, ticket and full checksums, server and KDC signatures; no `KERB_VALIDATION_INFO`), aes256-cts-hmac-sha1-96 keys (checksum type 16), client `pacuser`, authtime 2017-05-06 15:13:11 UTC.",
             pac(
                 [(10, client_info("pacuser", authtime)), (17, flags_attr), (18, requestor)],
                 server256, kdc256, 16, 16, ticket_input,
@@ -176,6 +184,26 @@ def main():
             pac(
                 [(10, client_info("pacuser", authtime)), (17, flags_attr), (18, requestor)],
                 server128, kdc128, 15, 15, ticket_input,
+            ),
+        )
+    )
+    out.append(
+        rust_hex(
+            "WRONG_FULL_PAC_AES256",
+            "A service-ticket PAC whose server and KDC signatures are valid over its bytes but whose full checksum was computed under a different key.",
+            pac(
+                [(10, client_info("pacuser", authtime)), (17, flags_attr), (18, requestor)],
+                server256, kdc256, 16, 16, ticket_input, wrong_full_key=bytes(range(0x90, 0xB0)),
+            ),
+        )
+    )
+    out.append(
+        rust_hex(
+            "WRONG_TICKET_PAC_AES256",
+            "A service-ticket PAC whose ticket signature covers other bytes than `TICKET_INPUT`; every other signature is valid.",
+            pac(
+                [(10, client_info("pacuser", authtime)), (17, flags_attr), (18, requestor)],
+                server256, kdc256, 16, 16, ticket_input, signed_ticket_input=b"some other ticket",
             ),
         )
     )
