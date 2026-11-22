@@ -33,6 +33,8 @@ mod tests {
     use http_types::Request;
     #[cfg(feature = "http")]
     use rskrb5_ng::http;
+    #[cfg(feature = "localauth")]
+    use rskrb5_ng::localauth::AuthToLocalRule;
     #[cfg(feature = "spnego")]
     use rskrb5_ng::spnego;
     use rskrb5_ng::{
@@ -88,6 +90,12 @@ mod tests {
         RealmPath::hierarchical("A.TEST", "A.TEST")
     );
 
+    #[cfg(feature = "localauth")]
+    propagates_domain!(
+        local_auth_when_rule_type_unsupported,
+        error::LocalAuth,
+        AuthToLocalRule::parse("invalid")
+    );
     #[cfg(feature = "messages")]
     propagates_domain!(
         client_when_principal_invalid,
