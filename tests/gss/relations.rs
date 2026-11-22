@@ -104,3 +104,38 @@ fn ignore_acceptor_hostname_reaches_the_acceptor() -> Result<(), TestError> {
     );
     Ok(())
 }
+
+/// The SPNEGO header initiator, which the HTTP Negotiate clients use, sends
+/// `KERB_AP_OPTIONS_CBT` when asked, so an acceptor with bindings refuses it.
+#[test]
+fn client_aware_channel_bindings_reaches_the_spnego_header_initiator() -> Result<(), TestError> {
+    use rskrb5_ng::spnego::{self, InitiatorContextOptions, Token};
+
+    let ticket = ticket_for(HOST, &[])?;
+    let bound = || -> Result<AcceptorOptions, TestError> {
+        Ok(AcceptorOptions::new()
+            .with_channel_bindings(ChannelBindings::tls_server_end_point(&[7; 32])?))
+    };
+    let store = Credential::from_keytab(super::support::keytab(&[HOST]));
+    for (aware, refused) in [(true, true), (false, false)] {
+        // Given a SPNEGO header built with or without the assertion,
+        let context = spnego::init_sec_context(
+            &ticket,
+            InitiatorContextOptions::new().with_client_aware_channel_bindings(aware),
+        )?;
+        let Token::Init(init) = spnego::parse_negotiate_header(context.header_ref())? else {
+            return Err("a NegTokenInit".into());
+        };
+        let token = init.mech_token().ok_or("an optimistic token")?.to_vec();
+        // when an acceptor with bindings takes its Kerberos token,
+        let mut acceptor = rskrb5_ng::gss::Acceptor::new(&store, bound()?)?;
+        let result = acceptor.accept_sec_context(&token);
+        // then it is refused exactly when the initiator asserted CBT.
+        assert_eq!(
+            matches!(result, Err(Gss::BadBindings)),
+            refused,
+            "aware={aware}: {result:?}"
+        );
+    }
+    Ok(())
+}

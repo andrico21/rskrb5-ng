@@ -80,3 +80,13 @@ include!("gss/creds.rs");
 include!("gss/contexts.rs");
 
 use crate::error::Gss as Error;
+
+/// The MS-KILE `KERB_AP_OPTIONS_CBT` authorization data, for the SPNEGO header
+/// initiator.
+///
+/// # Errors
+///
+/// Returns [`Error::DefectiveToken`] when the data does not encode.
+pub(crate) fn cbt_authorization_data() -> Result<rasn_kerberos::AuthorizationData, Error> {
+    checksum::cbt_authorization_data()
+}

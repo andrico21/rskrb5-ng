@@ -636,6 +636,8 @@ pub struct ApReq {
     subkey: Option<EncryptionKey>,
     /// Optional client sequence number.
     sequence_number: Option<u32>,
+    /// Optional authenticator authorization data.
+    authorization_data: Option<rasn_kerberos::AuthorizationData>,
 }
 
 impl fmt::Debug for ApReq {
@@ -647,6 +649,7 @@ impl fmt::Debug for ApReq {
             checksum,
             subkey,
             sequence_number,
+            authorization_data,
         } = self;
         f.debug_struct("ApReq")
             .field("crypto_policy", crypto_policy)
@@ -657,6 +660,12 @@ impl fmt::Debug for ApReq {
             )
             .field("subkey", subkey)
             .field("sequence_number", sequence_number)
+            .field(
+                "authorization_data_types",
+                &authorization_data
+                    .as_ref()
+                    .map(|entries| entries.iter().map(|entry| entry.r#type).collect::<Vec<_>>()),
+            )
             .finish()
     }
 }
@@ -706,6 +715,7 @@ impl ApReq {
         Option<rasn_kerberos::Checksum>,
         Option<EncryptionKey>,
         Option<u32>,
+        Option<rasn_kerberos::AuthorizationData>,
     ) {
         let Self {
             crypto_policy,
@@ -713,6 +723,7 @@ impl ApReq {
             checksum,
             subkey,
             sequence_number,
+            authorization_data,
         } = self;
         (
             crypto_policy,
@@ -720,6 +731,7 @@ impl ApReq {
             checksum,
             subkey,
             sequence_number,
+            authorization_data,
         )
     }
     #[must_use]
@@ -732,7 +744,19 @@ impl ApReq {
             checksum: None,
             subkey: None,
             sequence_number: None,
+            authorization_data: None,
         }
+    }
+
+    /// Set or clear the authenticator authorization data.
+    #[cfg(feature = "spnego")]
+    #[must_use]
+    pub(crate) fn with_authorization_data(
+        mut self,
+        authorization_data: Option<rasn_kerberos::AuthorizationData>,
+    ) -> Self {
+        self.authorization_data = authorization_data;
+        self
     }
 
     #[must_use]
