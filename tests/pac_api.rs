@@ -27,9 +27,14 @@ mod pac_api {
     #[path = "../support/pac_ad_win2k.rs"]
     mod pac_ad_win2k;
 
+    /// The PAC and ticket captured from MIT krb5 1.22.2.
+    #[path = "../support/pac_mit_capture.rs"]
+    mod pac_mit_capture;
+
     mod acceptor;
     mod builder;
     mod identity;
+    mod mit_fixture;
     mod parsing;
     mod regressions;
     mod request;
