@@ -27,6 +27,7 @@ mod authorization;
 mod credential_secrets;
 mod ndr;
 mod reader;
+mod verify;
 /// Redacted, erased validation-info session keys.
 pub mod session_key;
 
@@ -51,6 +52,10 @@ use self::{
     },
     reader::Reader,
 };
+
+include!("pac/attributes.rs");
+include!("pac/policy.rs");
+include!("pac/verified.rs");
 
 /// `AD-IF-RELEVANT` authorization-data type.
 pub const AD_IF_RELEVANT: i32 = 1;
@@ -77,6 +82,14 @@ pub const INFO_TYPE_PAC_CLIENT_CLAIMS_INFO: u32 = 13;
 pub const INFO_TYPE_PAC_DEVICE_INFO: u32 = 14;
 /// PAC device claims info buffer type.
 pub const INFO_TYPE_PAC_DEVICE_CLAIMS_INFO: u32 = 15;
+/// PAC ticket signature buffer type (MS-PAC 2.8.3).
+pub const INFO_TYPE_PAC_TICKET_SIGNATURE_DATA: u32 = 16;
+/// PAC attributes info buffer type (MS-PAC 2.14).
+pub const INFO_TYPE_PAC_ATTRIBUTES_INFO: u32 = 17;
+/// PAC requestor SID buffer type (MS-PAC 2.15).
+pub const INFO_TYPE_PAC_REQUESTOR: u32 = 18;
+/// PAC full checksum buffer type (KB5020805, MS-PAC 2.8.4).
+pub const INFO_TYPE_PAC_FULL_SIGNATURE_DATA: u32 = 19;
 
 /// Microsoft unsigned HMAC-MD5 PAC checksum type.
 pub const CHECKSUM_HMAC_MD5_UNSIGNED: u32 = 0xffff_ff76;
@@ -114,6 +127,8 @@ pub const CLAIM_TYPE_ID_BOOLEAN: u16 = 6;
 const PAC_HEADER_LEN: usize = 8;
 /// Byte length of one `PAC_INFO_BUFFER` table entry.
 const PAC_INFO_BUFFER_LEN: usize = 16;
+/// Most info buffers a PAC may declare (MIT `MAX_BUFFERS`, `src/lib/krb5/krb/pac.c:32`).
+const MAX_PAC_BUFFERS: u32 = 4096;
 /// Byte length of the `SignatureType` field that precedes a PAC signature.
 const PAC_SIGNATURE_TYPE_LEN: usize = 4;
 /// Key usage of the PAC server checksum (MS-PAC 2.8.1).
@@ -168,6 +183,14 @@ pub struct Pac {
     client_claims_info: Option<ClaimsInfo>,
     /// Parsed device claims info, if present and processed.
     device_claims_info: Option<ClaimsInfo>,
+    /// Parsed ticket signature, if present and processed.
+    ticket_checksum: Option<SignatureData>,
+    /// Parsed full checksum, if present and processed.
+    full_checksum: Option<SignatureData>,
+    /// Parsed attributes info, if present and processed.
+    attributes_info: Option<AttributesInfo>,
+    /// Parsed requestor SID, if present and processed.
+    requestor_sid: Option<RequestorSid>,
 }
 
 impl Pac {
@@ -261,6 +284,30 @@ impl Pac {
     pub const fn device_claims_info(&self) -> Option<&ClaimsInfo> {
         self.device_claims_info.as_ref()
     }
+    /// Borrow the ticket signature (parsed, not verified).
+    #[inline]
+    #[must_use]
+    pub const fn ticket_checksum(&self) -> Option<&SignatureData> {
+        self.ticket_checksum.as_ref()
+    }
+    /// Borrow the full checksum (parsed, not verified).
+    #[inline]
+    #[must_use]
+    pub const fn full_checksum(&self) -> Option<&SignatureData> {
+        self.full_checksum.as_ref()
+    }
+    /// Borrow the PAC attributes (parsed, not verified).
+    #[inline]
+    #[must_use]
+    pub const fn attributes_info(&self) -> Option<&AttributesInfo> {
+        self.attributes_info.as_ref()
+    }
+    /// Borrow the requestor SID (parsed, not verified).
+    #[inline]
+    #[must_use]
+    pub const fn requestor_sid(&self) -> Option<&RequestorSid> {
+        self.requestor_sid.as_ref()
+    }
     /// Parse the PAC header and info buffer table.
     ///
     /// # Errors
@@ -275,6 +322,7 @@ impl Pac {
         let c_buffers = reader.read_u32()?;
         let version = reader.read_u32()?;
         (version == 0).ok_or(Error::InvalidPacVersion(version))?;
+        (c_buffers <= MAX_PAC_BUFFERS).ok_or(Error::BufferCountLimit(c_buffers))?;
         let buffer_count =
             usize::try_from(c_buffers).map_err(|_out_of_range| Error::LengthOverflow)?;
         let table_len = buffer_count
@@ -303,6 +351,7 @@ impl Pac {
         for buffer in &buffers {
             buffer.validate(bytes.len())?;
         }
+        ensure_disjoint(&buffers, minimum)?;
 
         Ok(Self {
             c_buffers,
@@ -320,6 +369,10 @@ impl Pac {
             device_info: None,
             client_claims_info: None,
             device_claims_info: None,
+            ticket_checksum: None,
+            full_checksum: None,
+            attributes_info: None,
+            requestor_sid: None,
         })
     }
 
@@ -346,42 +399,54 @@ impl Pac {
     /// when a signature buffer cannot be zeroed in place.
     #[inline]
     pub fn process_buffers(&mut self) -> Result<(), Error> {
+        let mut seen = HashSet::new();
         for buffer in &self.buffers {
             let bytes = buffer.slice(&self.data)?;
+            if is_processed_type(buffer.ul_type) && !seen.insert(buffer.ul_type) {
+                return Err(Error::DuplicateBuffer(buffer.ul_type));
+            }
             match buffer.ul_type {
-                INFO_TYPE_KERB_VALIDATION_INFO if self.kerb_validation_info.is_none() => {
+                INFO_TYPE_KERB_VALIDATION_INFO => {
                     self.kerb_validation_info = Some(KerbValidationInfo::parse(bytes)?);
                 }
-                INFO_TYPE_PAC_SERVER_SIGNATURE_DATA if self.server_checksum.is_none() => {
+                INFO_TYPE_PAC_SERVER_SIGNATURE_DATA => {
                     let checksum = SignatureData::parse(bytes)?;
                     buffer.copy_zeroed_signature(&mut self.zero_signature_data, &checksum)?;
                     self.server_checksum = Some(checksum);
                 }
-                INFO_TYPE_PAC_KDC_SIGNATURE_DATA if self.kdc_checksum.is_none() => {
+                INFO_TYPE_PAC_KDC_SIGNATURE_DATA => {
                     let checksum = SignatureData::parse(bytes)?;
                     buffer.copy_zeroed_signature(&mut self.zero_signature_data, &checksum)?;
                     self.kdc_checksum = Some(checksum);
                 }
-                INFO_TYPE_CREDENTIALS if self.credentials_info.is_none() => {
+                INFO_TYPE_PAC_TICKET_SIGNATURE_DATA => {
+                    self.ticket_checksum = Some(SignatureData::parse(bytes)?);
+                }
+                INFO_TYPE_PAC_FULL_SIGNATURE_DATA => {
+                    self.full_checksum = Some(SignatureData::parse(bytes)?);
+                }
+                INFO_TYPE_CREDENTIALS => {
                     self.credentials_info = Some(CredentialsInfo::parse(bytes)?);
                 }
-                INFO_TYPE_PAC_CLIENT_INFO if self.client_info.is_none() => {
-                    self.client_info = Some(ClientInfo::parse(bytes)?);
-                }
-                INFO_TYPE_UPN_DNS_INFO if self.upn_dns_info.is_none() => {
-                    self.upn_dns_info = Some(UpnDnsInfo::parse(bytes)?);
-                }
-                INFO_TYPE_S4U_DELEGATION_INFO if self.s4u_delegation_info.is_none() => {
+                INFO_TYPE_PAC_CLIENT_INFO => self.client_info = Some(ClientInfo::parse(bytes)?),
+                INFO_TYPE_UPN_DNS_INFO => self.upn_dns_info = Some(UpnDnsInfo::parse(bytes)?),
+                INFO_TYPE_S4U_DELEGATION_INFO => {
                     self.s4u_delegation_info = Some(S4UDelegationInfo::parse(bytes)?);
                 }
-                INFO_TYPE_PAC_DEVICE_INFO if self.device_info.is_none() => {
-                    self.device_info = Some(DeviceInfo::parse(bytes)?);
-                }
-                INFO_TYPE_PAC_CLIENT_CLAIMS_INFO if self.client_claims_info.is_none() => {
+                INFO_TYPE_PAC_DEVICE_INFO => self.device_info = Some(DeviceInfo::parse(bytes)?),
+                // Samba 4.22 sends a zero-length claims buffer for an account without claims and
+                // for every ticket issued across a trust (FU-IOP-P14): no claims, not an error.
+                INFO_TYPE_PAC_CLIENT_CLAIMS_INFO if !bytes.is_empty() => {
                     self.client_claims_info = Some(ClaimsInfo::parse(bytes)?);
                 }
-                INFO_TYPE_PAC_DEVICE_CLAIMS_INFO if self.device_claims_info.is_none() => {
+                INFO_TYPE_PAC_DEVICE_CLAIMS_INFO if !bytes.is_empty() => {
                     self.device_claims_info = Some(ClaimsInfo::parse(bytes)?);
+                }
+                INFO_TYPE_PAC_ATTRIBUTES_INFO => {
+                    self.attributes_info = Some(AttributesInfo::parse(bytes)?);
+                }
+                INFO_TYPE_PAC_REQUESTOR => {
+                    self.requestor_sid = Some(RequestorSid::parse(bytes)?);
                 }
                 _ => {}
             }
@@ -398,7 +463,12 @@ impl Pac {
             .map(KerbValidationInfo::ad_credentials)
     }
 
-    /// Verify required service-side PAC buffers and the server checksum.
+    /// Verify the server checksum of a PAC that carries the buffers a service needs.
+    ///
+    /// The server checksum, KDC checksum and client info buffers must be present. No other buffer
+    /// is required: a default MIT krb5 PAC has no `KERB_VALIDATION_INFO` (FU-SVC-P01, MIT
+    /// `src/kdc/kdc_authdata.c:496-512`). Use [`Pac::verify_ext`] for an explicit policy, the KDC,
+    /// ticket and full signatures and the client binding.
     ///
     /// # Errors
     ///
@@ -414,6 +484,31 @@ impl Pac {
         Ok(())
     }
 
+    /// Verify this PAC under an explicit policy and return it as a [`Verified`].
+    ///
+    /// The request names which signatures must verify (server, KDC, ticket, full checksum), which
+    /// buffers must be present, and the client the client info must describe; see
+    /// [`VerificationPolicy`]. Parsed data is not authorization until this succeeds.
+    ///
+    /// # Security
+    ///
+    /// Signatures are compared in constant time. The KDC, ticket and full signatures need the KDC
+    /// key: a service that does not hold it can only verify the server signature, which proves the
+    /// KDC or the service wrote the PAC, not the KDC alone ([`Verified::checks`] says what was
+    /// verified).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::MissingRequiredBuffer`] or [`Error::MissingVerificationKey`] when the
+    /// policy requires a buffer or key the PAC or request lacks, a `*ChecksumVerificationFailed`
+    /// variant for the first signature that does not verify, [`Error::MissingClientBinding`] when
+    /// the policy binds the client but the request names none, and [`Error::ClientInfoMismatch`]
+    /// when the client info names another client or authentication time.
+    #[inline]
+    pub fn verify_ext(self, request: &Verification<'_>) -> Result<Verified, Error> {
+        verify::run(self, request)
+    }
+
     /// Verify the server checksum over the zero-signature PAC bytes.
     ///
     /// # Errors
@@ -422,25 +517,11 @@ impl Pac {
     /// [`Error::UnsupportedChecksumType`] for an unknown checksum type.
     #[inline]
     pub fn verify_server_checksum(&self, key: &EncryptionKey) -> Result<bool, Error> {
-        selection::reject_enctype(key.etype())?;
         let checksum = self
             .server_checksum
             .as_ref()
             .ok_or(Error::MissingRequiredBuffer("ServerChecksum"))?;
-        if let Ok(id) = i32::try_from(checksum.signature_type) {
-            selection::reject_checksum(id)?;
-        }
-        let etype = kerberos_etype_for_checksum_type(checksum.signature_type)
-            .ok_or(Error::UnsupportedChecksumType(checksum.signature_type))?;
-        if key.etype() != etype.etype_id() {
-            return Ok(false);
-        }
-        Ok(etype.verify_checksum(
-            key.value(),
-            &self.zero_signature_data,
-            &checksum.signature,
-            PAC_SERVER_CHECKSUM_KEY_USAGE,
-        ))
+        verify::verify_signature(key, checksum, &self.zero_signature_data)
     }
 
     #[must_use]
@@ -467,9 +548,6 @@ impl Pac {
     ///
     /// Returns [`Error::MissingRequiredBuffer`] naming the first absent buffer.
     const fn require_service_buffers(&self) -> Result<(), Error> {
-        if self.kerb_validation_info.is_none() {
-            return Err(Error::MissingRequiredBuffer("KerbValidationInfo"));
-        }
         if self.server_checksum.is_none() {
             return Err(Error::MissingRequiredBuffer("ServerChecksum"));
         }
@@ -481,6 +559,62 @@ impl Pac {
         }
         Ok(())
     }
+}
+
+/// Whether `process_buffers` interprets buffers of this type (and so accepts one of each).
+const fn is_processed_type(ul_type: u32) -> bool {
+    matches!(
+        ul_type,
+        INFO_TYPE_KERB_VALIDATION_INFO
+            | INFO_TYPE_CREDENTIALS
+            | INFO_TYPE_PAC_SERVER_SIGNATURE_DATA
+            | INFO_TYPE_PAC_KDC_SIGNATURE_DATA
+            | INFO_TYPE_PAC_CLIENT_INFO
+            | INFO_TYPE_S4U_DELEGATION_INFO
+            | INFO_TYPE_UPN_DNS_INFO
+            | INFO_TYPE_PAC_CLIENT_CLAIMS_INFO
+            | INFO_TYPE_PAC_DEVICE_INFO
+            | INFO_TYPE_PAC_DEVICE_CLAIMS_INFO
+            | INFO_TYPE_PAC_TICKET_SIGNATURE_DATA
+            | INFO_TYPE_PAC_ATTRIBUTES_INFO
+            | INFO_TYPE_PAC_REQUESTOR
+            | INFO_TYPE_PAC_FULL_SIGNATURE_DATA
+    )
+}
+
+/// Reject non-empty buffers that overlap the header and table or each other.
+///
+/// MIT rejects a buffer that starts inside the table (`pac.c:317-321`); overlap between buffers is
+/// refused here as well, so a signature range can never alias other PAC data.
+///
+/// # Errors
+///
+/// Returns [`Error::BufferOverlap`] naming the first offending buffer.
+fn ensure_disjoint(buffers: &[InfoBuffer], header_len: usize) -> Result<(), Error> {
+    let mut ranges: Vec<(usize, usize, u32)> = Vec::with_capacity(buffers.len());
+    for buffer in buffers.iter().filter(|buffer| buffer.cb_buffer_size != 0) {
+        let (offset, len) = buffer.offset_and_len()?;
+        if offset < header_len {
+            return Err(Error::BufferOverlap {
+                ul_type: buffer.ul_type,
+                offset: buffer.offset,
+            });
+        }
+        let end = offset.checked_add(len).ok_or(Error::LengthOverflow)?;
+        ranges.push((offset, end, buffer.ul_type));
+    }
+    ranges.sort_unstable();
+    for pair in ranges.windows(2) {
+        if let [(_, end, _), (start, _, ul_type)] = pair
+            && start < end
+        {
+            return Err(Error::BufferOverlap {
+                ul_type: *ul_type,
+                offset: u64::try_from(*start).map_err(|_out_of_range| Error::LengthOverflow)?,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Extract and process the first `AD-WIN2K-PAC` entry from Kerberos
