@@ -23,8 +23,13 @@ mod pac_api {
     #[path = "../support/pac_ticket.rs"]
     mod pac_ticket;
 
+    /// The gokrb5 `AD_WIN2K` PAC and the service keytab that verifies it.
+    #[path = "../support/pac_ad_win2k.rs"]
+    mod pac_ad_win2k;
+
     mod acceptor;
     mod builder;
+    mod identity;
     mod parsing;
     mod regressions;
     mod request;

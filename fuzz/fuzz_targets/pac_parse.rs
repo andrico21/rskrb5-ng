@@ -4,19 +4,25 @@
 //! the whole PAC (header, buffer table and every recognized buffer, then the
 //! server checksum check with a fixed synthetic key), the bare header and
 //! buffer table, each info buffer parser on its own, the nested credential
-//! and claims decoders, and the bounded `AD-IF-RELEVANT` traversal that finds
-//! a PAC in authorization data. None may panic.
+//! and claims decoders, the PAC attributes, requestor SID and `PA-PAC-REQUEST`
+//! decoders, the explicit-policy verification and the builder's re-signing of a
+//! parsed PAC, and the bounded `AD-IF-RELEVANT` traversal that finds a PAC in
+//! authorization data. None may panic.
 
 #![no_main]
+
+use core::time::Duration;
+use std::time::UNIX_EPOCH;
 
 use libfuzzer_sys::fuzz_target;
 use rskrb5_ng::{
     ap_req,
     keytab::EncryptionKey,
     pac::{
-        self, ClaimsInfo, ClaimsSet, ClaimsSetMetadata, ClientInfo, CredentialData,
-        CredentialsInfo, DeviceInfo, KerbValidationInfo, NtlmSupplementalCredential, Pac,
-        S4UDelegationInfo, SignatureData, UpnDnsInfo,
+        self, AttributesInfo, Builder, ClaimsInfo, ClaimsSet, ClaimsSetMetadata, ClientBinding,
+        ClientInfo, CredentialData, CredentialsInfo, DeviceInfo, KerbValidationInfo,
+        NtlmSupplementalCredential, Pac, Request, RequestorSid, S4UDelegationInfo, SignatureData,
+        Signing, UpnDnsInfo, Verification, VerificationPolicy,
     },
 };
 
@@ -29,6 +35,9 @@ const KEY: [u8; 32] = [
 
 /// AES256-CTS-HMAC-SHA1-96.
 const AES256: i32 = 18;
+
+/// The bytes the ticket signature of the `tests/support/pac_vectors.rs` service vector covers.
+const TICKET_INPUT: &[u8] = b"ticket-signature-input fixture bytes: not a real ticket";
 
 /// Encode one DER element with a definite length.
 fn tlv(tag: u8, content: &[u8]) -> Vec<u8> {
@@ -105,11 +114,57 @@ fn authorization_data(input: &[u8]) {
     }
 }
 
+/// Verify a parsed PAC under the policy that requires every signature, with the keys of
+/// `tests/support/pac_vectors.rs`, then rebuild and sign it again.
+fn verification(input: &[u8]) {
+    let Ok(pac) = Pac::parse_and_process(input) else {
+        return;
+    };
+    let server = EncryptionKey::new(AES256, (0x40..0x60).collect::<Vec<u8>>());
+    let kdc = EncryptionKey::new(AES256, (0x60..0x80).collect::<Vec<u8>>());
+    let Some(authenticated) = UNIX_EPOCH.checked_add(Duration::from_secs(1_494_083_591)) else {
+        return;
+    };
+    let client = ClientBinding::new("pacuser", authenticated);
+    let request = Verification::new(VerificationPolicy::kdc())
+        .with_server_key(&server)
+        .with_kdc_key(&kdc)
+        .with_ticket_signature_input(TICKET_INPUT)
+        .with_client(client.clone());
+    drop(pac.clone().verify_ext(&request));
+    if let Ok(builder) = Builder::from_pac(&pac) {
+        let signing = Signing::new(&server, &kdc)
+            .with_client(client)
+            .with_ticket_signature_input(TICKET_INPUT);
+        if let Ok(signed) = builder.sign(&signing) {
+            drop(signed.verify_ext(&request));
+        }
+    }
+}
+
+/// Decode a `PA-PAC-REQUEST`; an accepted element encodes and decodes again to itself.
+///
+/// # Panics
+///
+/// Panics when an accepted element does not survive its own encoding: that is the defect the
+/// fuzzer looks for.
+fn pac_request(input: &[u8]) {
+    if let Ok(request) = Request::decode_der(input)
+        && let Ok(encoded) = request.encode_der()
+    {
+        assert_eq!(
+            Request::decode_der(&encoded).ok(),
+            Some(request),
+            "an accepted PA-PAC-REQUEST must encode and decode to itself"
+        );
+    }
+}
+
 fuzz_target!(|data: &[u8]| {
     let Some((selector, input)) = data.split_first() else {
         return;
     };
-    match selector & 0x0f {
+    match selector & 0x1f {
         0 => whole_pac(input),
         1 => header_only(input),
         2 => drop(KerbValidationInfo::parse(input)),
@@ -137,6 +192,10 @@ fuzz_target!(|data: &[u8]| {
             }
         }
         13 => drop(ClaimsSet::parse(input)),
+        14 => drop(AttributesInfo::parse(input)),
+        15 => drop(RequestorSid::parse(input)),
+        16 => pac_request(input),
+        17 => verification(input),
         _ => authorization_data(input),
     }
 });

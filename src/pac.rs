@@ -4,7 +4,7 @@
 //! path: the PAC container, `KERB_VALIDATION_INFO`, client information,
 //! UPN/DNS information, PAC signatures, and AES server checksum verification.
 
-use alloc::fmt;
+use alloc::{collections::BTreeMap, fmt};
 use core::time::Duration;
 use std::{
     collections::HashSet,
@@ -57,12 +57,10 @@ use self::{
     reader::Reader,
 };
 
-include!("pac/attributes.rs");
 include!("pac/builder.rs");
+include!("pac/identity.rs");
 include!("pac/policy.rs");
 include!("pac/verified.rs");
-#[cfg(feature = "messages")]
-include!("pac/request.rs");
 #[cfg(feature = "messages")]
 include!("pac/ticket_signature.rs");
 
@@ -640,6 +638,230 @@ fn ensure_disjoint(buffers: &[InfoBuffer], header_len: usize) -> Result<(), Erro
         }
     }
     Ok(())
+}
+
+// MIT krb5 1.22.2 only names the PAC_ATTRIBUTES_INFO and PAC_REQUESTOR buffer types
+// (`KRB5_PAC_ATTRIBUTES_INFO` 17 and `KRB5_PAC_REQUESTOR` 18, `src/include/krb5/krb5.hin`
+// lines 8170-8171) and never decodes them; the layouts follow MS-PAC and the Samba IDL
+// (`krb5pac.idl`).
+
+/// Most flag bits `PAC_ATTRIBUTES_INFO` may declare; Windows and Samba declare two.
+const MAX_FLAG_BITS: u32 = 1024;
+/// MS-PAC `PAC_WAS_REQUESTED`: the client asked for the PAC.
+const PAC_WAS_REQUESTED: u32 = 0x1;
+/// MS-PAC `PAC_WAS_GIVEN_IMPLICITLY`: the KDC included the PAC without a request.
+const PAC_WAS_GIVEN_IMPLICITLY: u32 = 0x2;
+/// Most sub-authorities of a SID (MS-DTYP 2.4.2).
+const MAX_SUB_AUTHORITIES: u8 = 15;
+
+/// `PAC_ATTRIBUTES_INFO`: how the PAC came to be in the ticket (MS-PAC 2.14).
+///
+/// This is claim metadata of the KDC, not authorization: read it from a
+/// [`Verified`] only.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct AttributesInfo {
+    /// Number of meaningful bits in `flags`.
+    flags_length: u32,
+    /// The flag words, least significant word first.
+    flags: Vec<u32>,
+}
+
+impl AttributesInfo {
+    /// The number of meaningful flag bits the buffer declares.
+    #[inline]
+    #[must_use]
+    pub const fn flags_length(&self) -> u32 {
+        self.flags_length
+    }
+
+    /// The first flag word (`PAC_WAS_REQUESTED` is bit 0, `PAC_WAS_GIVEN_IMPLICITLY` bit 1).
+    #[inline]
+    #[must_use]
+    pub fn flags(&self) -> u32 {
+        self.flags.first().copied().unwrap_or_default()
+    }
+
+    /// Whether the client asked for the PAC (`PA-PAC-REQUEST`, MS-KILE 3.3.5.7.4).
+    #[inline]
+    #[must_use]
+    pub fn was_requested(&self) -> bool {
+        self.flags() & PAC_WAS_REQUESTED != 0
+    }
+
+    /// Whether the KDC added the PAC without the client asking for it.
+    #[inline]
+    #[must_use]
+    pub fn was_given_implicitly(&self) -> bool {
+        self.flags() & PAC_WAS_GIVEN_IMPLICITLY != 0
+    }
+
+    /// Parse a `PAC_ATTRIBUTES_INFO` buffer: a bit count and the words that hold the bits.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Truncated`] for a short buffer, [`Error::UnreasonableNdrCount`]
+    /// when more than 1024 flag bits are declared, and
+    /// [`Error::TrailingNdrBytesAfter`] when non-zero bytes follow the flags.
+    #[inline]
+    pub fn parse(bytes: &[u8]) -> Result<Self, Error> {
+        let mut reader = Reader::new(bytes);
+        let flags_length = reader.read_u32()?;
+        if flags_length > MAX_FLAG_BITS {
+            return Err(Error::UnreasonableNdrCount {
+                target: "PAC_ATTRIBUTES_INFO.FlagsLength",
+                count: flags_length,
+            });
+        }
+        let words = flags_length.div_ceil(32);
+        let mut flags = Vec::new();
+        for _ in 0..words {
+            flags.push(reader.read_u32()?);
+        }
+        ensure_zero_trailing(&mut reader, "PAC_ATTRIBUTES_INFO")?;
+        Ok(Self {
+            flags_length,
+            flags,
+        })
+    }
+}
+
+/// `PAC_REQUESTOR`: the SID of the account that requested the ticket (MS-PAC 2.15).
+///
+/// It is claim metadata of the KDC, not authorization: read it from a
+/// [`Verified`] only.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct RequestorSid {
+    /// The requestor's SID.
+    sid: Sid,
+}
+
+impl RequestorSid {
+    /// Borrow the SID.
+    #[inline]
+    #[must_use]
+    pub const fn sid(&self) -> &Sid {
+        &self.sid
+    }
+
+    /// Parse a `PAC_REQUESTOR` buffer: one plain (not NDR-wrapped) `SID`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidSidRevision`] for a revision other than one,
+    /// [`Error::InvalidSidSubAuthorityCount`] for more than 15 sub-authorities,
+    /// [`Error::Truncated`] for a short buffer and
+    /// [`Error::TrailingNdrBytesAfter`] when non-zero bytes follow the SID.
+    #[inline]
+    pub fn parse(bytes: &[u8]) -> Result<Self, Error> {
+        let mut reader = Reader::new(bytes);
+        let revision = reader.read_u8()?;
+        let count = reader.read_u8()?;
+        if revision != 1 {
+            return Err(Error::InvalidSidRevision(revision));
+        }
+        if count > MAX_SUB_AUTHORITIES {
+            return Err(Error::InvalidSidSubAuthorityCount {
+                target: "PAC_REQUESTOR",
+                max_count: u32::from(MAX_SUB_AUTHORITIES),
+                actual_count: count,
+            });
+        }
+        let identifier_authority: [u8; 6] = reader.read_array()?;
+        let mut sub_authorities = Vec::new();
+        for _ in 0..count {
+            sub_authorities.push(reader.read_u32()?);
+        }
+        ensure_zero_trailing(&mut reader, "PAC_REQUESTOR")?;
+        Ok(Self {
+            sid: Sid {
+                revision,
+                identifier_authority,
+                sub_authorities,
+            },
+        })
+    }
+}
+
+// MS-KILE 2.2.2 `KERB-PA-PAC-REQUEST` (padata type 128) lets a client ask a KDC to include or to
+// leave out the PAC. MIT krb5 1.22.2 sends none and a KDC of its own ignores it
+// (`src/include/krb5/krb5.hin:1830` only names the type); Active Directory honours it, and Samba
+// reports the outcome in `PAC_ATTRIBUTES_INFO`.
+
+/// The `PA-PAC-REQUEST` padata type.
+#[cfg(feature = "messages")]
+pub const PA_PAC_REQUEST: i32 = 128;
+
+/// `KERB-PA-PAC-REQUEST`: whether the client wants the PAC in its tickets.
+///
+/// ```text
+/// KERB-PA-PAC-REQUEST ::= SEQUENCE { include-pac[0] BOOLEAN }
+/// ```
+#[cfg(feature = "messages")]
+#[derive(AsnType, Clone, Copy, Debug, Decode, Encode, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct Request {
+    /// Whether the KDC should include the PAC.
+    #[rasn(tag(explicit(0)))]
+    include_pac: bool,
+}
+
+#[cfg(feature = "messages")]
+impl Request {
+    /// Ask the KDC to include the PAC.
+    #[inline]
+    #[must_use]
+    pub const fn include() -> Self {
+        Self { include_pac: true }
+    }
+
+    /// Ask the KDC to leave the PAC out.
+    #[inline]
+    #[must_use]
+    pub const fn exclude() -> Self {
+        Self { include_pac: false }
+    }
+
+    /// Whether the client wants the PAC.
+    #[inline]
+    #[must_use]
+    pub const fn include_pac(self) -> bool {
+        self.include_pac
+    }
+
+    /// Decode a DER `KERB-PA-PAC-REQUEST`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::DerDecode`] when `bytes` is not exactly one `KERB-PA-PAC-REQUEST`.
+    #[inline]
+    pub fn decode_der(bytes: &[u8]) -> Result<Self, Error> {
+        decode_complete::<Self>(bytes).map_err(Error::DerDecode)
+    }
+
+    /// Encode the request as DER.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::DerEncode`] when the encoder fails.
+    #[inline]
+    pub fn encode_der(self) -> Result<Vec<u8>, Error> {
+        der_encode(&self).map_err(|source| Error::DerEncode(source.to_string()))
+    }
+
+    /// The `PA-DATA` element that carries this request in an AS-REQ.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::DerEncode`] when the encoder fails.
+    #[inline]
+    pub fn padata(self) -> Result<rasn_kerberos::PaData, Error> {
+        Ok(rasn_kerberos::PaData {
+            r#type: PA_PAC_REQUEST,
+            value: self.encode_der()?.into(),
+        })
+    }
 }
 
 /// Extract and process the first `AD-WIN2K-PAC` entry from Kerberos

@@ -16,7 +16,7 @@ the chosen entry point, so one target covers a family of related decoders.
 | `keytab_parse` | keytab bytes | `Keytab::parse`, then `Keytab::to_bytes` on accepted input |
 | `ccache_parse` | ccache bytes, and the same bytes as a cache name | `CCache::parse`, `config_entries`, `to_bytes`; `CacheName::parse` |
 | `kpasswd_reply` | kpasswd frames | `Reply::parse`, `ChangePasswordResult::parse` with its `message` and `ad_policy` readings, `Request::parse`; an accepted reply is decrypted (`Reply::decrypt_result`) and verified (`verify_kpasswd_ap_rep`) against a fixed request |
-| `pac_parse` | PAC container, one NDR buffer, or authorization data | `Pac::parse_and_process` with the server checksum check, `Pac::parse` with `buffer_bytes`, every info-buffer parser (validation info, signatures, credentials info and the decrypted credential data, NTLM credentials, client info, UPN/DNS info, S4U delegation, device info, claims info, claims metadata and the decompressed claims set), and `find_pac_in_authorization_data` on authorization data carried in an Authenticator |
+| `pac_parse` | PAC container, one NDR buffer, PAC attributes, requestor SID, `PA-PAC-REQUEST` or authorization data | `Pac::parse_and_process` with the server checksum check and the explicit-policy `verify_ext` (server, KDC, ticket and full signatures, client binding) followed by the builder's re-signing of the parsed PAC, `Pac::parse` with `buffer_bytes`, every info-buffer parser (validation info, signatures, credentials info and the decrypted credential data, NTLM credentials, client info, UPN/DNS info, S4U delegation, device info, claims info, claims metadata and the decompressed claims set), and `AttributesInfo::parse`, `RequestorSid::parse`, `Request::decode_der` (an accepted element encodes and decodes again to itself), and `find_pac_in_authorization_data` on authorization data carried in an Authenticator |
 | `spnego_token` | Negotiate header text or SPNEGO bytes | `parse_negotiate_header`, `Token`, `NegotiationToken`, `NegTokenInit` and `NegTokenResp` decoding, `accept_sec_context_header` and `Validator::validate_ap_req` with a synthetic keytab, `ValidatedApReq::verify_ap_rep`, and a structured mode that encrypts a fuzzed `EncTicketPart` and Authenticator under the keytab and session keys so the acceptance checks behind decryption run (ticket times, addresses, transited realms, authorization data, PAC) |
 | `gss_token` | RFC 4121 tokens and AP-REP bytes | `Krb5MechToken::decode`; `MicToken` and `WrapToken` decode, verify and unwrap with AES128, AES256, AES-SHA2, DES3 and RC4 test keys; a sealed Wrap whose fuzzed plaintext is encrypted under the key; `InitiatorContext::verify_ap_rep` and `verify_ap_rep_response_header`, raw and with a fuzzed `EncAPRepPart` encrypted under the session key |
 | `http_negotiate` | `Authorization` or `WWW-Authenticate` header values | `http::accept_request` (service side) and `www_authenticate_negotiate_header`, `classify_negotiate_response` and `verify_ap_rep_response` (client side) |
@@ -626,6 +626,7 @@ does.
 | `rskrb5_ng::messages::principal_from_parts` | `src/messages.rs` | `krb_messages` |  |
 | `rskrb5_ng::messages::system_time_from_kerberos_time` | `src/messages.rs` | `krb_messages` |  |
 | `rskrb5_ng::messages::whole_seconds` | `src/messages.rs` | `krb_messages` |  |
+| `rskrb5_ng::pac::AttributesInfo::parse` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::ClaimsInfo::parse` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::ClaimsSet::parse` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::ClaimsSetMetadata::claims_set` | `src/pac.rs` | `pac_parse` |  |
@@ -648,6 +649,8 @@ does.
 | `rskrb5_ng::pac::Pac::process_buffers` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::Pac::verify` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::Pac::verify_server_checksum` | `src/pac.rs` | `pac_parse` |  |
+| `rskrb5_ng::pac::Request::decode_der` | `src/pac.rs` | `pac_parse` |  |
+| `rskrb5_ng::pac::RequestorSid::parse` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::S4UDelegationInfo::parse` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::SignatureData::parse` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::UpnDnsInfo::parse` | `src/pac.rs` | `pac_parse` |  |
