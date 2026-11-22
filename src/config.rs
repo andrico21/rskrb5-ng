@@ -1133,26 +1133,19 @@ impl LibDefaults {
         defaults::new_libdefaults()
     }
 
-    /// Create defaults with an explicitly requested home-directory override.
+    /// Create the defaults of [`Self::new`]; no environment variable is read.
     ///
-    /// # Ambient input
-    /// Reads `HOME` for `k5login_directory`; unset/non-Unicode means empty.
-    /// The keytab identity template never reads `UID`.
-    /// Use [`Self::new`] and set `k5login_directory` explicitly to avoid discovery.
-    ///
-    /// In a set-uid or set-gid process `HOME` is ignored and `k5login_directory` is empty
-    /// (see the secure-environment decision of `docs/security-policy.md`). MIT 1.22.2 never
-    /// reads `HOME` for `k5login_directory` (`localauth_k5login.c:106` uses the passwd home
-    /// directory of the target user) and this crate only stores the value.
+    /// `k5login_directory` stays empty, which means the `.k5login` file of the
+    /// target user's home directory as the account database reports it. MIT
+    /// 1.22.2 never reads `HOME` for it either (`localauth_k5login.c:106` uses
+    /// the passwd home directory of the target user), and since WP-17 the
+    /// authorizer takes the home from its `AccountResolver`. Earlier versions
+    /// copied `HOME` into `k5login_directory` here; that was never MIT's
+    /// behaviour and would have made `HOME` select the file.
     #[inline]
     #[must_use]
     pub fn from_env() -> Self {
-        defaults::with_home(secure_env::ambient(|| env::var("HOME")).ok())
-    }
-
-    /// Create defaults from an optional, already-read home directory.
-    fn with_home(home: Option<String>) -> Self {
-        defaults::with_home(home)
+        Self::new()
     }
 
     /// Apply one `[libdefaults]` section's lines, recording in `enctypes` which

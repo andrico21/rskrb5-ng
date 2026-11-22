@@ -270,10 +270,12 @@ unset, as MIT 1.22.2 does through `secure_getenv`
   (`docs/review/parity-register.md`, FU-SEC-P02).
 - Windows has no set-uid or set-gid processes: never restricted.
 
-`LibDefaults::from_env` reads `HOME` for `k5login_directory`; MIT never reads
-`HOME` for it (it uses the home directory of the target user's passwd entry)
-and this crate only stores the value. `docs/config-profile.md` (Deliberate
-divergences and bounds) lists the MIT sources.
+`LibDefaults::from_env` no longer reads `HOME`: it is `LibDefaults::new`.
+MIT never reads `HOME` for `k5login_directory` (it uses the home directory of
+the target user's passwd entry, `localauth_k5login.c:106`), and the `localauth`
+leaf takes the home directory of an account from the caller's `AccountResolver`,
+never from the environment (a test runs the authorizer under a hostile `HOME`).
+`docs/config-profile.md` (Deliberate divergences and bounds) lists the MIT sources.
 
 ## Credential stores
 

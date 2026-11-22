@@ -129,11 +129,11 @@ value are value data.
   [expand_path.c:283](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/expand_path.c#L283)).
   Such programs use the explicit constructors (`Config::load_paths`,
   `CCache::load_name`, `Keytab::load_name`, a literal name).
-  `LibDefaults::from_env` reads `HOME` for `k5login_directory`, which MIT never
-  reads from the environment: it uses the home directory of the target user's
-  passwd entry
-  ([localauth_k5login.c:106](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/localauth_k5login.c#L106)).
-  This crate only stores `k5login_directory`; no lookup uses it today. Windows
+  `LibDefaults::from_env` no longer reads `HOME` for `k5login_directory`, which
+  MIT never reads from the environment: it uses the home directory of the target
+  user's passwd entry
+  ([localauth_k5login.c:106](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/localauth_k5login.c#L106)),
+  and the `localauth` leaf takes that home from the caller's `AccountResolver`. Windows
   has no set-uid or set-gid processes: MIT gets `%{TEMP}` and `%{APPDATA}` from
   `GetTempPath` and `SHGetFolderPath`
   ([expand_path.c:60](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/expand_path.c#L60),
