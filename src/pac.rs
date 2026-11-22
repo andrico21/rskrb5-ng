@@ -16,7 +16,7 @@ use compcol::{
     xpress_huffman::XpressHuffman,
 };
 #[cfg(feature = "messages")]
-use rasn::der::encode as der_encode;
+use rasn::{AsnType, Decode, Decoder as _, Encode, Encoder as _, der::encode as der_encode};
 use zeroize::{Zeroize as _, Zeroizing};
 
 #[cfg(feature = "messages")]
@@ -58,8 +58,11 @@ use self::{
 };
 
 include!("pac/attributes.rs");
+include!("pac/builder.rs");
 include!("pac/policy.rs");
 include!("pac/verified.rs");
+#[cfg(feature = "messages")]
+include!("pac/request.rs");
 #[cfg(feature = "messages")]
 include!("pac/ticket_signature.rs");
 
@@ -211,6 +214,12 @@ impl Pac {
     #[must_use]
     pub const fn version(&self) -> u32 {
         self.version
+    }
+    /// The types of the info buffers, in table order (MIT `krb5_pac_get_types`).
+    #[inline]
+    #[must_use]
+    pub fn buffer_types(&self) -> Vec<u32> {
+        self.buffers.iter().map(|buffer| buffer.ul_type).collect()
     }
     /// Borrow the buffer descriptors.
     #[inline]
