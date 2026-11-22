@@ -133,7 +133,10 @@ mod tests {
                     mode,
                 )?;
                 assert_eq!(
-                    config.libdefaults.client_aware_channel_bindings.is_enabled(),
+                    config
+                        .libdefaults
+                        .client_aware_channel_bindings
+                        .is_enabled(),
                     enabled,
                     "{value}"
                 );

@@ -1,3 +1,5 @@
+//! The configuration relations the mechanism consumes.
+//!
 //! The `[libdefaults]` relations the GSS mechanism makes effective:
 //! `client_aware_channel_bindings` and `enforce_ok_as_delegate` on the
 //! initiator, `ignore_acceptor_hostname` on the acceptor (MIT `init_ctx.c:234-242`,
@@ -94,14 +96,12 @@ fn ignore_acceptor_hostname_reaches_the_acceptor() -> Result<(), TestError> {
     )?);
     // Without it, the same acceptor refuses the ticket.
     let strict_options = AcceptorOptions::from_config(&strict("ignore_acceptor_hostname = false")?);
-    assert!(
-        establish(
-            &credential,
-            InitiatorOptions::new(),
-            (strict_options, &hosts, Some(other)),
-        )
-        .is_err()
+    let refused = establish(
+        &credential,
+        InitiatorOptions::new(),
+        (strict_options, &hosts, Some(other)),
     );
+    assert!(refused.is_err(), "a named acceptor refuses another host");
     Ok(())
 }
 

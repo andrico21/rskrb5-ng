@@ -1,3 +1,5 @@
+//! Per-message tokens of an established context.
+//!
 //! Per-message tokens of an established context (RFC 4121 section 4.2; MIT
 //! `k5sealv3.c`, `k5unsealiov.c`).
 
@@ -39,12 +41,13 @@ pub(super) fn inquire(context: &EstablishedContext) -> ContextInquiry {
         mechanism: ObjectIdentifier::krb5(),
         flags: context.flags,
         locally_initiated: context.initiated,
+        open: true,
         key_etype: key(context).etype(),
     }
 }
 
 /// The token flags this end sends.
-fn sent_flags(context: &EstablishedContext) -> u8 {
+const fn sent_flags(context: &EstablishedContext) -> u8 {
     let mut flags = 0;
     if !context.initiated {
         flags |= GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR;
@@ -88,9 +91,10 @@ fn usable(context: &EstablishedContext) -> Result<&EncryptionKey, Error> {
     }
 }
 
-/// The key of a received token: the acceptor subkey when its flag says so,
-/// else the initiator subkey or the session key (RFC 4121 section 4.2.2; MIT
-/// `k5unsealiov.c`).
+/// The key of a received token.
+///
+/// It is the acceptor subkey when the token's flag says so, else the initiator
+/// subkey or the session key (RFC 4121 section 4.2.2; MIT `k5unsealiov.c`).
 ///
 /// # Errors
 ///
@@ -104,16 +108,13 @@ fn received_key(context: &EstablishedContext, flags: u8) -> Result<EncryptionKey
             .unwrap_or(&context.session_key)
             .clone());
     }
-    context
-        .acceptor_subkey
-        .clone()
-        .ok_or(Error::DefectiveToken(
-            "the acceptor-subkey flag on a context without one",
-        ))
+    context.acceptor_subkey.clone().ok_or(Error::DefectiveToken(
+        "the acceptor-subkey flag on a context without one",
+    ))
 }
 
 /// Take the next sequence number to send.
-fn next_sequence(context: &mut EstablishedContext) -> u64 {
+const fn next_sequence(context: &mut EstablishedContext) -> u64 {
     let number = context.send_sequence;
     context.send_sequence = number.wrapping_add(1);
     number

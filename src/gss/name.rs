@@ -6,6 +6,8 @@
 //! lookups of `krb5_sname_to_principal`; exported names follow
 //! `import_name.c:264-318` and `export_name.c:28-88`.
 
+use core::str;
+
 use super::{Error, Name, NameKind, NameType, ObjectIdentifier, Principal};
 
 /// The longest principal string or exported name body, in bytes.
@@ -89,7 +91,7 @@ pub(super) fn import(bytes: &[u8], name_type: NameType) -> Result<Name, Error> {
         NameType::Enterprise => principal(text(bytes)?, true, name_type),
         NameType::Anonymous => Ok(Name {
             principal: Principal::new(ANONYMOUS_REALM, NT_WELLKNOWN, ANONYMOUS),
-            name_type,
+            imported_as: name_type,
             kind: NameKind::Principal,
             attributes: None,
         }),
@@ -98,7 +100,7 @@ pub(super) fn import(bytes: &[u8], name_type: NameType) -> Result<Name, Error> {
             bounded(bytes.len(), MAX_CERTIFICATE_LEN)?;
             Ok(Name {
                 principal: Principal::new("", NT_X500_PRINCIPAL, Vec::<String>::new()),
-                name_type,
+                imported_as: name_type,
                 kind: NameKind::Certificate(bytes.to_vec()),
                 attributes: None,
             })
@@ -168,7 +170,7 @@ const fn bounded(actual: usize, maximum: usize) -> Result<(), Error> {
 /// Returns [`Error::NameTooLong`] or [`Error::BadName`].
 fn text(bytes: &[u8]) -> Result<&str, Error> {
     bounded(bytes.len(), MAX_NAME_LEN)?;
-    core::str::from_utf8(bytes).map_err(|_invalid| Error::BadName("a name is UTF-8"))
+    str::from_utf8(bytes).map_err(|_invalid| Error::BadName("a name is UTF-8"))
 }
 
 /// A host-based name: `service@host`, or `service` for any host.
@@ -187,7 +189,7 @@ fn hostbased(value: &str) -> Result<Name, Error> {
             NT_SRV_HST,
             [service.to_owned(), host.to_ascii_lowercase()],
         ),
-        name_type: NameType::HostbasedService,
+        imported_as: NameType::HostbasedService,
         kind: NameKind::Hostbased,
         attributes: None,
     })
@@ -214,7 +216,7 @@ fn principal(value: &str, enterprise: bool, name_type: NameType) -> Result<Name,
     };
     Ok(Name {
         principal: Principal::new(realm.unwrap_or_default(), kind, components),
-        name_type,
+        imported_as: name_type,
         kind: NameKind::Principal,
         attributes: None,
     })
@@ -356,10 +358,10 @@ pub(super) fn export(name: &Name) -> Result<Vec<u8>, Error> {
 /// Returns [`Error::BadName`] for a truncated field and [`Error::NameTooLong`]
 /// above `maximum`.
 fn field(bytes: &[u8], maximum: usize) -> Result<(&[u8], &[u8]), Error> {
-    let (length, rest) = bytes
+    let (prefix, rest) = bytes
         .split_first_chunk::<4>()
         .ok_or(Error::BadName("an exported name is truncated"))?;
-    let length = usize::try_from(u32::from_be_bytes(*length))
+    let length = usize::try_from(u32::from_be_bytes(*prefix))
         .map_err(|_range| Error::BadName("an exported name is truncated"))?;
     bounded(length, maximum)?;
     rest.split_at_checked(length)
@@ -374,26 +376,26 @@ fn field(bytes: &[u8], maximum: usize) -> Result<(&[u8], &[u8]), Error> {
 /// and [`Error::NameTooLong`] for an oversized field.
 fn exported(bytes: &[u8], name_type: NameType) -> Result<Name, Error> {
     let malformed = Error::BadName("malformed exported name");
-    let (header, rest) = bytes.split_first_chunk::<4>().ok_or(malformed)?;
+    let (header, after_header) = bytes.split_first_chunk::<4>().ok_or(malformed)?;
     let composite = match *header {
         [0x04, 0x01, 0x00, 0x0b] => false,
         [0x04, 0x02, 0x00, 0x0b] => true,
         _ => return Err(Error::BadName("malformed exported name")),
     };
-    let (mechanism, rest) = rest
+    let (mechanism, after_mechanism) = after_header
         .split_first_chunk::<11>()
         .ok_or(Error::BadName("malformed exported name"))?;
     if *mechanism != KRB5_OID_DER {
         return Err(Error::BadName("an exported name of another mechanism"));
     }
-    let (body, rest) = field(rest, MAX_NAME_LEN)?;
-    let (attributes, rest) = if composite {
-        let (block, after) = field(rest, MAX_ATTRIBUTES_LEN)?;
+    let (body, after_body) = field(after_mechanism, MAX_NAME_LEN)?;
+    let (attributes, trailing) = if composite {
+        let (block, after) = field(after_body, MAX_ATTRIBUTES_LEN)?;
         (Some(block.to_vec()), after)
     } else {
-        (None, rest)
+        (None, after_body)
     };
-    if !rest.is_empty() {
+    if !trailing.is_empty() {
         return Err(Error::BadName("an exported name has trailing bytes"));
     }
     let mut imported = principal(text(body)?, false, name_type)?;

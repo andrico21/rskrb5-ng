@@ -1,3 +1,5 @@
+//! The channel-binding digest.
+//!
 //! The RFC 4121 section 4.1.1.2 channel-binding digest (MIT
 //! `kg_checksum_channel_bindings`, `util_cksum.c:30-76`).
 

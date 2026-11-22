@@ -1,3 +1,5 @@
+//! The channel-binding digest.
+//!
 //! The RFC 4121 section 4.1.1.2 channel-binding digest.
 //!
 //! The expected digests were computed independently with Python's `hashlib`
@@ -11,7 +13,15 @@ use super::context::TestError;
 
 /// Lowercase hex of `bytes`.
 fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    let digits = b"0123456789abcdef";
+    bytes.iter().fold(String::new(), |mut out, byte| {
+        for nibble in [byte >> 4_u8, byte & 0x0f_u8] {
+            if let Some(digit) = digits.get(usize::from(nibble)) {
+                out.push(char::from(*digit));
+            }
+        }
+        out
+    })
 }
 
 /// Addresses and application data hash in RFC 4121 order with little-endian
@@ -65,12 +75,20 @@ fn oversized_binding_fields_are_refused() {
     // Given 64 KiB + 1 of application data, it is refused by its length.
     assert!(matches!(
         ChannelBindings::new(vec![0; 0x0001_0001]),
-        Err(Gss::BindingTooLong { .. })
+        Err(Gss::BindingTooLong {
+            field: _,
+            maximum: _,
+            actual: _
+        })
     ));
     // Given an address longer than 255 bytes, it is refused by its length.
     assert!(matches!(
         ChannelBindings::new(Vec::new())
             .and_then(|bound| bound.with_initiator_address(2, vec![0; 256])),
-        Err(Gss::BindingTooLong { .. })
+        Err(Gss::BindingTooLong {
+            field: _,
+            maximum: _,
+            actual: _
+        })
     ));
 }

@@ -1,3 +1,5 @@
+//! The authenticator checksum and the CBT authorization data.
+//!
 //! The RFC 4121 section 4.1.1 authenticator checksum (type `0x8003`) and the
 //! MS-KILE `KERB_AP_OPTIONS_CBT` authorization data.
 //!
@@ -8,6 +10,7 @@
 //! (`accept_sec_context.c:422-448`), the encoding `make_ap_authdata`
 //! (`mk_req_ext.c:360-400`).
 
+use rasn::der;
 use zeroize::Zeroizing;
 
 use super::{ContextFlags, Error};
@@ -132,16 +135,18 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Decoded, Error> {
     }
     let bindings = take::<16>(&mut rest, fixed)?;
     let flags = u32::from_le_bytes(take::<4>(&mut rest, fixed)?);
-    let mut delegation = None;
-    if rest.len() >= 4 && flags & ContextFlags::DELEG.bits() != 0 {
+    let delegation = if rest.len() >= 4 && flags & ContextFlags::DELEG.bits() != 0 {
         let option = "a truncated delegation option";
         if u16::from_le_bytes(take::<2>(&mut rest, option)?) != DELEGATION_OPTION {
             return Err(Error::DefectiveChecksum("an unknown option"));
         }
         let length = usize::from(u16::from_le_bytes(take::<2>(&mut rest, option)?));
-        let credential = take_slice(&mut rest, length, option)?;
-        delegation = Some(Zeroizing::new(credential.to_vec()));
-    }
+        Some(Zeroizing::new(
+            take_slice(&mut rest, length, option)?.to_vec(),
+        ))
+    } else {
+        None
+    };
     let mut extensions = 0_usize;
     while !rest.is_empty() {
         extensions = extensions.saturating_add(1);
@@ -172,7 +177,7 @@ pub(super) fn cbt_authorization_data() -> Result<rasn_kerberos::AuthorizationDat
         r#type: AD_AP_OPTIONS,
         data: KERB_AP_OPTIONS_CBT.to_le_bytes().to_vec().into(),
     }];
-    let wrapped = rasn::der::encode(&inner)
+    let wrapped = der::encode(&inner)
         .map_err(|_encode| Error::DefectiveToken("authorization data does not encode"))?;
     Ok(vec![rasn_kerberos::AuthorizationDataValue {
         r#type: AD_IF_RELEVANT,
@@ -195,14 +200,14 @@ fn ap_options(
         return Err(Error::DefectiveToken("authorization data nests too deeply"));
     }
     for entry in data {
-        if entry.r#type == AD_AP_OPTIONS {
-            found.push(entry.data.to_vec());
-        } else if entry.r#type == AD_IF_RELEVANT {
-            let nested = decode_complete::<rasn_kerberos::AuthorizationData>(&entry.data)
-                .map_err(|_decode| Error::DefectiveToken("malformed AD-IF-RELEVANT"))?;
-            ap_options(&nested, depth.saturating_add(1), found)?;
-        } else {
-            continue;
+        match entry.r#type {
+            AD_AP_OPTIONS => found.push(entry.data.to_vec()),
+            AD_IF_RELEVANT => {
+                let nested = decode_complete::<rasn_kerberos::AuthorizationData>(&entry.data)
+                    .map_err(|_decode| Error::DefectiveToken("malformed AD-IF-RELEVANT"))?;
+                ap_options(&nested, depth.saturating_add(1), found)?;
+            }
+            _ => {}
         }
     }
     Ok(())

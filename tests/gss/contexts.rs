@@ -1,6 +1,10 @@
+//! Context establishment between the crate's initiator and acceptor.
+//!
 //! Context establishment between the crate's GSS initiator and acceptor: one
 //! AP-REQ and, with mutual authentication, one AP-REP (RFC 4121 section 4.1;
 //! MIT `init_sec_context.c:470-688`, `accept_sec_context.c:665-1150`).
+
+use std::time::SystemTime;
 
 use rskrb5_ng::{
     error::{Gss, Service},
@@ -63,10 +67,10 @@ fn mutual_contexts_establish_and_name_both_ends() -> Result<(), TestError> {
             !info.flags().contains(ContextFlags::DELEG),
             "nothing was delegated"
         );
-        assert_eq!(info.key_etype(), 18, "the AES256 context key");
+        assert_eq!(info.key_etype(), 18_i32, "the AES256 context key");
     }
     assert!(
-        pair.initiator.inquire().expires() > std::time::SystemTime::now(),
+        pair.initiator.inquire().expires() > SystemTime::now(),
         "the context lives as long as its ticket"
     );
     Ok(())
@@ -209,7 +213,10 @@ fn named_acceptors_take_only_their_own_tickets() -> Result<(), TestError> {
                 .as_ref()
                 .err()
                 .and_then(|error| error.downcast_ref::<Gss>()),
-            Some(Gss::Service(Service::WrongPrincipal { .. }))
+            Some(Gss::Service(Service::WrongPrincipal {
+                expected: _,
+                actual: _
+            }))
         ),
         "{refused:?}"
     );

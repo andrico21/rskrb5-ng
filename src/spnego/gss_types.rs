@@ -1,6 +1,8 @@
-/// A SPNEGO initiator over the GSS Kerberos mechanism (RFC 4178): it wraps the
-/// [`gss::Initiator`]'s tokens in SPNEGO and verifies the acceptor's
-/// `mechListMIC` with the established GSS context, which it then yields.
+/// A SPNEGO initiator over the GSS Kerberos mechanism (RFC 4178).
+///
+/// It wraps the [`gss::Initiator`]'s tokens in SPNEGO and verifies the
+/// acceptor's `mechListMIC` with the established GSS context, which it then
+/// yields.
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct Initiator {
@@ -63,9 +65,10 @@ pub enum AcceptStep {
     Complete(Box<gss::Accepted>),
 }
 
-/// A SPNEGO acceptor over the GSS Kerberos mechanism (RFC 4178): its contexts
-/// are [`gss::EstablishedContext`]s, and a `NegTokenInit` without an
-/// optimistic token is continued with the initiator's next `NegTokenResp`.
+/// A SPNEGO acceptor over the GSS Kerberos mechanism (RFC 4178).
+///
+/// Its contexts are [`gss::EstablishedContext`]s, and a `NegTokenInit` without
+/// an optimistic token is continued with the initiator's next `NegTokenResp`.
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct Acceptor<'keytab> {

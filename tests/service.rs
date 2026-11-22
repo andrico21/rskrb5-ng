@@ -2161,7 +2161,6 @@ mod service {
         Ok(())
     }
 
-
     /// Reply verification rejects invalid microseconds even when public expected fields match them.
     #[test]
     fn microseconds_rejects_invalid_reply_verification() -> Result<(), TestError> {
@@ -2179,7 +2178,6 @@ mod service {
         ));
         Ok(())
     }
-
 
     /// Builds independently encoded AP-REP input without the service builder's semantic checks.
     fn reply_with_microseconds(
@@ -2270,7 +2268,6 @@ mod service {
         ));
         Ok(())
     }
-
 
     /// AP-REP verification rejects independently encoded fractional timestamps.
     #[test]

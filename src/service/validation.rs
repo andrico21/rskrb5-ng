@@ -39,6 +39,24 @@ impl Validator<'_> {
         )?;
         Ok((components, key))
     }
+    /// Refuse a ticket for a server the named GSS acceptor does not answer for.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::WrongPrincipal`].
+    #[cfg(feature = "spnego")]
+    fn check_acceptor_name(&self, service: &Principal) -> Result<(), Error> {
+        match &self.acceptor_name {
+            Some(rule) if !rule.matches(&service.realm, &service.components) => {
+                Err(Error::WrongPrincipal {
+                    expected: rule.display(),
+                    actual: format!("{}@{}", service.name(), service.realm),
+                })
+            }
+            Some(_) | None => Ok(()),
+        }
+    }
+
     /// The PAC settings this validator verifies a ticket for `service` against.
     fn pac_check<'check>(&'check self, service: &'check Principal) -> PacCheck<'check> {
         PacCheck::new(
@@ -121,15 +139,7 @@ impl Validator<'_> {
 
         let ticket_service = principal_from_parts(&ap_req.ticket.realm, &ap_req.ticket.sname)?;
         #[cfg(feature = "spnego")]
-        if let Some(rule) = &self.acceptor_name
-            && !rule.matches(&ticket_service.realm, &ticket_service.components)
-        {
-            return Err(Error::WrongPrincipal {
-                expected: rule.display(),
-                actual: format!("{}@{}", ticket_service.name(), ticket_service.realm),
-            }
-            .into());
-        }
+        self.check_acceptor_name(&ticket_service)?;
         let (keytab_components, service_key) = self.ticket_key(&ticket_service, &ap_req.ticket)?;
 
         let enc_ticket =

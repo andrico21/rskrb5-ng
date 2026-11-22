@@ -1,3 +1,5 @@
+//! In-process fixtures.
+//!
 //! Tickets, keytabs and credential caches made in process for the GSS scenarios.
 //!
 //! Every ticket is an RFC 4120 `Ticket` encrypted under a fixed AES256 service
@@ -43,9 +45,7 @@ pub(super) const OK_AS_DELEGATE: usize = 13;
 
 /// The service key of `HTTP/<host>`, distinct per host.
 fn service_key(host: &str) -> EncryptionKey {
-    let seed = host
-        .bytes()
-        .fold(0x5c_u8, |sum, byte| sum.wrapping_add(byte));
+    let seed = host.bytes().fold(0x5c_u8, u8::wrapping_add);
     EncryptionKey::new(ETYPE, vec![seed; 32])
 }
 
@@ -259,13 +259,13 @@ pub(super) fn cache(entries: Vec<ccache::Credential>) -> CCache {
 #[derive(Debug)]
 pub(super) struct Pair {
     /// The initiator's context.
-    pub(super) initiator: EstablishedContext,
+    pub initiator: EstablishedContext,
     /// The acceptor's context.
-    pub(super) acceptor: EstablishedContext,
+    pub acceptor: EstablishedContext,
     /// The initiator's first token.
-    pub(super) first: Vec<u8>,
+    pub first: Vec<u8>,
     /// The acceptor's reply, when it sent one.
-    pub(super) reply: Option<Vec<u8>>,
+    pub reply: Option<Vec<u8>>,
 }
 
 /// Establish a context for `HTTP@<host>` with `credential`, the acceptor
@@ -283,7 +283,7 @@ pub(super) fn establish(
     let (first, waiting) = match init.init_sec_context(credential, None)? {
         InitStep::Continue(token) => (token, true),
         InitStep::Complete(Some(token)) => (token, false),
-        _ => return Err("the first step sends a token".into()),
+        InitStep::Complete(_) | _ => return Err("the first step sends a token".into()),
     };
     let (options, hosts, name) = acceptor;
     let mut store = Credential::from_keytab(keytab(hosts));

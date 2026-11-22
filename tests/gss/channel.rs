@@ -1,3 +1,5 @@
+//! The acceptor's channel-binding policy.
+//!
 //! The acceptor's channel-binding policy (RFC 4121 section 4.1.1.2, RFC 5554;
 //! MIT `accept_sec_context.c:406-621` and `doc/appdev/gssapi.rst:427-461`).
 //!

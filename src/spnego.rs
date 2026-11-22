@@ -17,10 +17,9 @@ use zeroize::{Zeroize as _, Zeroizing};
 
 use crate::{
     ap_rep::{decode as decode_ap_rep, decrypt_ap_rep_enc_part},
-    gss,
     client::{TgsRepSession, build_ap_req_with_confounder, options::ApReq, principal::Principal},
     crypto::{CryptoPolicy, KerberosEtype, Use, selection},
-    error,
+    error, gss,
     keytab::EncryptionKey,
     service::{ApRepOptions, ValidatedApReq, Validator, VerifiedApRep},
 };
@@ -2548,10 +2547,12 @@ pub fn init_sec_context_with_confounder(
         .with_subkey(options.subkey.clone())
         .with_sequence_number(Some(sequence_number))
         .with_authorization_data(if options.client_aware_channel_bindings {
-            Some(gss::cbt_authorization_data().map_err(|_encode| Error::Encode {
-                target: "AuthorizationData",
-                message: "AD-AP-OPTIONS".to_owned(),
-            })?)
+            Some(
+                gss::cbt_authorization_data().map_err(|_encode| Error::Encode {
+                    target: "AuthorizationData",
+                    message: "AD-AP-OPTIONS".to_owned(),
+                })?,
+            )
         } else {
             None
         });

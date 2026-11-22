@@ -44,7 +44,10 @@ impl fmt::Debug for InitiatorContextOptions {
             .field("ap_option_bits", ap_option_bits)
             .field("subkey", subkey)
             .field("sequence_number", sequence_number)
-            .field("client_aware_channel_bindings", client_aware_channel_bindings)
+            .field(
+                "client_aware_channel_bindings",
+                client_aware_channel_bindings,
+            )
             .finish()
     }
 }

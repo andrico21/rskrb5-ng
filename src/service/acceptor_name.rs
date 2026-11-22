@@ -1,6 +1,7 @@
-/// Which ticket server principals a named GSS acceptor takes, applied before
-/// the keytab lookup (MIT 1.22.2 `kg_acceptor_princ`, `naming_exts.c:136-168`,
-/// and `krb5_sname_match`, `sname_match.c:30-58`).
+/// Which ticket server principals a named GSS acceptor takes.
+///
+/// It applies before the keytab lookup (MIT 1.22.2 `kg_acceptor_princ`,
+/// `naming_exts.c:136-168`, and `krb5_sname_match`, `sname_match.c:30-58`).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct AcceptorName {
     /// The realm; empty matches any.

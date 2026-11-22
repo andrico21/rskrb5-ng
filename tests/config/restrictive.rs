@@ -75,14 +75,20 @@ mod tests {
         assert!(
             matches!(
                 config.configured_kdcs("R"),
-                Err(ConfigError::NotYetEffective { relation: "default_rcache_name", package: "plan 2 WP-20" })
+                Err(ConfigError::NotYetEffective {
+                    relation: "default_rcache_name",
+                    package: "plan 2 WP-20"
+                })
             ),
             "admission ignored default_rcache_name"
         );
         assert!(
             matches!(
                 runtime.block_on(Transport::new().discover_kdcs(&config, "R", KdcProtocol::Tcp)),
-                Err(Client::Config(ConfigError::NotYetEffective { relation: "default_rcache_name", package: "plan 2 WP-20" }))
+                Err(Client::Config(ConfigError::NotYetEffective {
+                    relation: "default_rcache_name",
+                    package: "plan 2 WP-20"
+                }))
             ),
             "discovery ignored default_rcache_name"
         );
@@ -90,7 +96,9 @@ mod tests {
         // serde and request construction accept it.
         let mut aware = Config::new();
         aware.libdefaults.client_aware_channel_bindings = Toggle::Enabled;
-        drop(serde_json::from_value::<Config>(serde_json::to_value(&aware)?)?);
+        drop(serde_json::from_value::<Config>(serde_json::to_value(
+            &aware,
+        )?)?);
         drop(AsReq::from_libdefaults(UNIX_EPOCH, 42, &aware.libdefaults)?);
         Ok(())
     }

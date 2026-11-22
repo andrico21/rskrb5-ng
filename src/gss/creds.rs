@@ -10,10 +10,11 @@ pub enum CredentialUsage {
     Both,
 }
 
-/// The key-value credential store of `gss_acquire_cred_from` and
-/// `gss_store_cred_into` (MIT `doc/appdev/gssapi.rst`, "Credential store
-/// extensions"): the keys `ccache`, `client_keytab`, `keytab`, `rcache` and
-/// `password`.
+/// The key-value credential store of `gss_acquire_cred_from`.
+///
+/// It is also the target of `gss_store_cred_into` (MIT `doc/appdev/gssapi.rst`,
+/// "Credential store extensions"); the keys are `ccache`, `client_keytab`,
+/// `keytab`, `rcache` and `password`.
 ///
 /// The password is held in a zeroizing owner and never shown by `Debug`.
 #[derive(Clone, Default, Eq, PartialEq)]
@@ -226,9 +227,11 @@ impl Credential {
         cred::acquire_default(desired_name, usage, config)
     }
 
-    /// Acquire a service ticket for `target` from the KDC, through the cache's
-    /// TGT, the client keytab or the password, and keep it in this credential's
-    /// cache; a client keytab or password credential acquires its TGT first.
+    /// Acquire a service ticket for `target` from the KDC and keep it.
+    ///
+    /// The ticket comes through the cache's TGT, the client keytab or the
+    /// password, and is kept in this credential's cache; a client keytab or
+    /// password credential acquires its TGT first.
     ///
     /// # Errors
     ///
@@ -249,9 +252,10 @@ impl Credential {
         cred::acquire_service_ticket(self, target, config).await
     }
 
-    /// `gss_store_cred_into`: store the initiator tickets into the store's
-    /// `ccache`. Without `overwrite`, a cache that already holds tickets is not
-    /// replaced (MIT `GSS_S_DUPLICATE_ELEMENT`).
+    /// `gss_store_cred_into`: store the initiator tickets into the store's `ccache`.
+    ///
+    /// Without `overwrite`, a cache that already holds tickets is not replaced
+    /// (MIT `GSS_S_DUPLICATE_ELEMENT`).
     ///
     /// # Errors
     ///

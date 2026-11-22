@@ -1,18 +1,23 @@
+//! Credential acquisition and storage.
+//!
 //! Credential acquisition from explicit stores and `store_cred_into` (MIT
 //! `acquire_cred.c:150-215,1150-1370`, `store_cred.c`, `cred_store.c`): the
 //! store keys `ccache`, `client_keytab`, `keytab`, `rcache` and `password`.
 
 use std::{
-    env, fs, process,
+    env, fs,
+    path::PathBuf,
+    process,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use rskrb5_ng::{
     error::Gss,
     gss::{
-        Acceptor, AcceptorOptions, CredStore, Credential, CredentialUsage, Initiator,
+        Acceptor, AcceptorOptions, CredStore, Credential, CredentialUsage, InitStep, Initiator,
         InitiatorOptions, Name, NameType,
     },
+    keytab::{EncryptionKey, Entry, Principal as KeytabPrincipal},
 };
 
 use super::{
@@ -21,7 +26,7 @@ use super::{
 };
 
 /// A fresh scratch directory.
-fn scratch(label: &str) -> Result<std::path::PathBuf, TestError> {
+fn scratch(label: &str) -> Result<PathBuf, TestError> {
     let directory = env::temp_dir().join(format!(
         "gss-{label}-{}-{}",
         process::id(),
@@ -78,9 +83,8 @@ fn credentials_come_from_the_named_stores() -> Result<(), TestError> {
     assert_eq!(initiator.inquire().usage(), CredentialUsage::Initiate);
     // and they establish a context together.
     let mut init = Initiator::new(target(HOST)?, InitiatorOptions::new());
-    let first = match init.init_sec_context(&initiator, None)? {
-        rskrb5_ng::gss::InitStep::Continue(token) => token,
-        _ => return Err("mutual authentication sends a token and waits".into()),
+    let InitStep::Continue(first) = init.init_sec_context(&initiator, None)? else {
+        return Err("mutual authentication sends a token and waits".into());
     };
     drop(Acceptor::new(&acceptor, AcceptorOptions::new())?.accept_sec_context(&first)?);
     // Used the wrong way round, each is refused.
@@ -132,20 +136,21 @@ fn desired_names_and_replay_caches_are_checked() -> Result<(), TestError> {
     Ok(())
 }
 
-/// The `client_keytab` and `password` keys make an initiator credential for the
-/// desired name, which acquires its tickets from the KDC when it is used; they
-/// need that name, and a client keytab must hold its key (MIT
+/// The `client_keytab` and `password` keys need the desired name.
+///
+/// They make an initiator credential for it, which acquires its tickets from
+/// the KDC when it is used; a client keytab must hold its key (MIT
 /// `can_get_initial_creds`, `acquire_cred.c:324-350`).
 #[test]
 fn keytab_and_password_initiators_need_a_name() -> Result<(), TestError> {
     let directory = scratch("client-keytab")?;
     let keytab_path = directory.join("client.keytab");
     let mut client_keys = keytab(&[]);
-    client_keys.entries_mut().push(rskrb5_ng::keytab::Entry::new(
-        rskrb5_ng::keytab::Principal::new("EXAMPLE.COM", 1, ["alice"]),
+    client_keys.entries_mut().push(Entry::new(
+        KeytabPrincipal::new("EXAMPLE.COM", 1, ["alice"]),
         0,
         1,
-        rskrb5_ng::keytab::EncryptionKey::new(18, vec![0x41; 32]),
+        EncryptionKey::new(18, vec![0x41; 32]),
         1,
     ));
     client_keys.save(&keytab_path)?;
@@ -178,7 +183,8 @@ fn keytab_and_password_initiators_need_a_name() -> Result<(), TestError> {
     // A client keytab without the name's key is no credential.
     let service_keys = directory.join("service.keytab");
     keytab(&[HOST]).save(&service_keys)?;
-    let wrong = CredStore::new().with("client_keytab", &format!("FILE:{}", service_keys.display()))?;
+    let wrong =
+        CredStore::new().with("client_keytab", &format!("FILE:{}", service_keys.display()))?;
     assert!(matches!(
         Credential::acquire_cred_from(Some(&alice), CredentialUsage::Initiate, &wrong),
         Err(Gss::NoCredential(_))

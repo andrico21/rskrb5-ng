@@ -1,3 +1,5 @@
+//! The krb5 mechanism's acceptor.
+//!
 //! The krb5 mechanism's acceptor (MIT 1.22.2 `accept_sec_context.c:406-621`
 //! for the checksum and channel bindings, `:665-1150` for the context and the
 //! AP-REP).
@@ -139,9 +141,11 @@ fn principal(value: &service::Principal) -> Principal {
 fn delegated(validated: &ValidatedApReq, bytes: &[u8]) -> Result<Credential, Error> {
     let policy = validated.crypto_policy();
     let opened = krb_cred::import::decode_decrypt(policy, bytes, validated.session_key()).or_else(
-        |failure| match validated.subkey() {
-            Some(subkey) => krb_cred::import::decode_decrypt(policy, bytes, subkey),
-            None => Err(failure),
+        |failure| {
+            validated.subkey().map_or_else(
+                || Err(failure),
+                |subkey| krb_cred::import::decode_decrypt(policy, bytes, subkey),
+            )
         },
     );
     let credentials = opened.map_err(Error::DelegatedCredential)?;
@@ -222,7 +226,9 @@ pub(super) fn accept(acceptor: &mut Acceptor<'_>, token: &[u8]) -> Result<Accept
         "the authenticator has no sequence number",
     ))?;
     let (send, subkey, output_token) = if flags.contains(ContextFlags::MUTUAL) {
-        let current = validated.subkey().unwrap_or(validated.session_key());
+        let current = validated
+            .subkey()
+            .unwrap_or_else(|| validated.session_key());
         let subkey = acceptor_subkey(current.etype())?;
         let send = initiator::random_sequence()?;
         let reply_options = ApRepOptions::default()

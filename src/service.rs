@@ -492,7 +492,6 @@ mod credential_replacement_tests;
 mod replay;
 mod replay_quota;
 mod ticket_pac;
-mod validation;
 /// Reply rechecks of crate-changed validated fields.
 #[cfg(test)]
 #[expect(
@@ -502,6 +501,7 @@ mod validation;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod validated_tests;
+mod validation;
 
 use ticket_pac::{PacCheck, verified_ticket_pac};
 

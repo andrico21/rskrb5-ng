@@ -1,6 +1,7 @@
-//! Reply rechecks of a validated AP-REQ whose retained fields the crate itself
-//! changes; the fields have no public mutators (FU-GSS-P01), so these checks
-//! live beside the type.
+//! Reply rechecks of a validated AP-REQ whose retained fields change.
+//!
+//! The fields have no public mutators (FU-GSS-P01), so these checks live
+//! beside the type.
 
 use core::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};

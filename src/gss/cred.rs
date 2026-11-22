@@ -1,3 +1,5 @@
+//! Credential acquisition, ticket lookup and storage.
+//!
 //! Credential acquisition, ticket lookup and storage (MIT 1.22.2
 //! `acquire_cred.c:150-215,560-760`, `store_cred.c`, `cred_store.c`).
 
@@ -53,11 +55,12 @@ fn time_of(value: u32) -> SystemTime {
 
 /// The ccache entry of a ticket session.
 pub(super) fn entry_of(ticket: &TgsRepSession) -> ccache::Credential {
-    let mut times = ccache::CredentialTimes::default();
-    times.auth_time = seconds(ticket.auth_time());
-    times.start_time = seconds(ticket.start_time());
-    times.end_time = seconds(ticket.end_time());
-    times.renew_till = ticket.renew_till().map_or(0, seconds);
+    let times = ccache::CredentialTimes {
+        auth_time: seconds(ticket.auth_time()),
+        start_time: seconds(ticket.start_time()),
+        end_time: seconds(ticket.end_time()),
+        renew_till: ticket.renew_till().map_or(0, seconds),
+    };
     ccache::Credential::new(
         cache_principal(ticket.client()),
         cache_principal(ticket.service()),

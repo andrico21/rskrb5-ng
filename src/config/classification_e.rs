@@ -67,9 +67,8 @@ mod tests {
     /// section decoding, which would otherwise name a different restriction first.
     #[test]
     fn tightened_libdefaults_relation_refused_before_sections() -> Result<(), Box<dyn Error>> {
-        for (relation, assignment, package) in [
-            ("default_rcache_name", "dfl:", "plan 2 WP-20"),
-        ] {
+        let (relation, assignment, package) = ("default_rcache_name", "dfl:", "plan 2 WP-20");
+        {
             // Given the tightened relation and a refused preauthentication plugin restriction.
             let input = format!(
                 "[libdefaults]\n {relation} = {assignment}\n[plugins]\n clpreauth = {{\n disable = encrypted_timestamp\n }}\n"

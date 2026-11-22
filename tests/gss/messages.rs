@@ -1,3 +1,5 @@
+//! Per-message tokens and their windows.
+//!
 //! Per-message tokens of an established context (RFC 4121 section 4.2) and the
 //! sequence and replay windows that guard them.
 //!
@@ -147,12 +149,18 @@ fn reflected_and_tampered_tokens_are_refused() -> Result<(), TestError> {
     // Given the initiator's own MIC, the initiator refuses it as sent by the wrong side.
     assert!(matches!(
         ends.initiator.verify_mic(b"mine", &mic),
-        Err(Gss::Spnego(Spnego::UnexpectedGssTokenSender { .. }))
+        Err(Gss::Spnego(Spnego::UnexpectedGssTokenSender {
+            expected_from_acceptor: _,
+            actual_from_acceptor: _
+        }))
     ));
     let sealed = ends.initiator.wrap(b"mine", true)?;
     assert!(matches!(
         ends.initiator.unwrap(&sealed),
-        Err(Gss::Spnego(Spnego::UnexpectedGssTokenSender { .. }))
+        Err(Gss::Spnego(Spnego::UnexpectedGssTokenSender {
+            expected_from_acceptor: _,
+            actual_from_acceptor: _
+        }))
     ));
     // Given a MIC over other bytes, or with a flipped checksum byte, it does not verify.
     assert!(matches!(

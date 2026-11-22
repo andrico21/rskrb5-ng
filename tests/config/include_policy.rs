@@ -34,10 +34,7 @@ mod tests {
             let directory = root.join(name);
             fs::create_dir_all(&directory)?;
             let child = directory.join(format!("{name}.conf"));
-            fs::write(
-                &child,
-                "[libdefaults]\ndefault_rcache_name = dfl:\n",
-            )?;
+            fs::write(&child, "[libdefaults]\ndefault_rcache_name = dfl:\n")?;
             for (directive, target) in [("include", &child), ("includedir", &directory)] {
                 for separator in [" ", "\t"] {
                     for indent in ["", " \t"] {

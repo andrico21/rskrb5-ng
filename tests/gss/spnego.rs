@@ -1,3 +1,5 @@
+//! SPNEGO over the GSS Kerberos mechanism.
+//!
 //! SPNEGO (RFC 4178) over the GSS Kerberos mechanism: `spnego::Initiator` and
 //! `spnego::Acceptor` wrap the GSS context tokens and yield GSS contexts.
 

@@ -2938,7 +2938,12 @@ impl Tokio {
         mut options: spnego::InitiatorContextOptions,
     ) -> Result<spnego::InitiatorContext, Error> {
         options = options.with_crypto_policy(crypto_policy::configured(&self.config.libdefaults)?);
-        if self.config.libdefaults.client_aware_channel_bindings.is_enabled() {
+        if self
+            .config
+            .libdefaults
+            .client_aware_channel_bindings
+            .is_enabled()
+        {
             options = options.with_client_aware_channel_bindings(true);
         }
         let ticket = self.get_service_ticket(service).await?;

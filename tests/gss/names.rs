@@ -1,3 +1,5 @@
+//! Name import, display, export, comparison and canonicalization.
+//!
 //! Name import, display, export, comparison and canonicalization for every name
 //! type MIT krb5 1.22.2 imports (`import_name.c:126-345`, `disp_name.c:28-78`,
 //! `export_name.c:28-88`, `compare_name.c`, `canon_name.c`).
@@ -9,6 +11,7 @@
 use rskrb5_ng::{
     error::Gss,
     gss::{Name, NameType},
+    spnego::oid::ObjectIdentifier,
 };
 
 use super::context::{Context as _, TestError};
@@ -84,7 +87,7 @@ fn enterprise_names_keep_the_first_at_sign() -> Result<(), TestError> {
     // then the UPN is one component and it displays with the first `@` quoted.
     assert_eq!(name.principal().components, ["alice@corp.example"]);
     assert_eq!(name.principal().realm, "EXAMPLE.COM");
-    assert_eq!(name.principal().name_type, 10);
+    assert_eq!(name.principal().name_type, 10_i32);
     assert_eq!(name.display().0, "alice\\@corp.example@EXAMPLE.COM");
     Ok(())
 }
@@ -166,7 +169,10 @@ fn malformed_exported_names_are_refused() -> Result<(), TestError> {
     assert!(
         matches!(
             Name::import(&oversized, NameType::Export),
-            Err(Gss::NameTooLong { .. })
+            Err(Gss::NameTooLong {
+                maximum: _,
+                actual: _
+            })
         ),
         "a 64 KiB name is refused by its length"
     );
@@ -178,8 +184,7 @@ fn malformed_exported_names_are_refused() -> Result<(), TestError> {
 #[test]
 fn composite_exported_names_import_the_principal() -> Result<(), TestError> {
     // Given a composite token: 04 02, the krb5 OID, the name, then an attribute blob,
-    let plain = principal("alice@EXAMPLE.COM")?.export()?;
-    let mut composite = plain.clone();
+    let mut composite = principal("alice@EXAMPLE.COM")?.export()?;
     *composite.get_mut(1).context("the token type")? = 0x02;
     composite.extend_from_slice(&3_u32.to_be_bytes());
     composite.extend_from_slice(&[1, 2, 3]);
@@ -240,7 +245,7 @@ fn uid_names_resolve_through_the_caller() -> Result<(), TestError> {
     Ok(())
 }
 
-/// A certificate name keeps the certificate bytes for S4U2Self by certificate.
+/// A certificate name keeps the certificate bytes for `S4U2Self` by certificate.
 #[test]
 fn certificate_names_keep_the_certificate() -> Result<(), TestError> {
     // Given DER certificate bytes, when imported as an X.509 name, they are kept.
@@ -276,7 +281,7 @@ fn name_types_map_to_mit_oids() -> Result<(), TestError> {
         assert_eq!(kind.oid().arcs(), arcs, "{kind:?}");
         assert_eq!(NameType::from_oid(&kind.oid()), Some(kind), "{kind:?}");
     }
-    let v2 = rskrb5_ng::spnego::oid::ObjectIdentifier::from_arcs(vec![1, 3, 6, 1, 5, 6, 2])?;
+    let v2 = ObjectIdentifier::from_arcs(vec![1, 3, 6, 1, 5, 6, 2])?;
     assert_eq!(NameType::from_oid(&v2), Some(NameType::HostbasedService));
     Ok(())
 }

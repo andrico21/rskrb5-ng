@@ -1,6 +1,7 @@
-//! GSS-API for the Kerberos V5 mechanism in pure Rust (RFC 2743, RFC 2744,
-//! RFC 4121): names, credentials, security contexts, channel bindings and
-//! credential delegation, without a native GSS library.
+//! GSS-API for the Kerberos V5 mechanism in pure Rust.
+//!
+//! RFC 2743, RFC 2744 and RFC 4121: names, credentials, security contexts,
+//! channel bindings and credential delegation, without a native GSS library.
 //!
 //! The flow follows MIT krb5 1.22.2's `gss_init_sec_context` and
 //! `gss_accept_sec_context`:
@@ -39,8 +40,8 @@
 //! IOV and AEAD tokens, the GSS PRF, context export, DCE-style establishment,
 //! the legacy token formats, name attributes and impersonation extend
 //! [`EstablishedContext`], [`Initiator`], [`Acceptor`], [`Name`] and
-//! [`Credential`] from their own submodules; IAKERB and NegoEx add their own
-//! mechanisms beside this one.
+//! [`Credential`] from their own submodules; the `IAKERB` and `NegoEx`
+//! mechanisms are added beside this one.
 
 use core::{fmt, ops::BitOr, time::Duration};
 use std::time::SystemTime;

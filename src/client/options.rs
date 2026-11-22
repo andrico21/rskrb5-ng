@@ -640,6 +640,16 @@ pub struct ApReq {
     authorization_data: Option<rasn_kerberos::AuthorizationData>,
 }
 
+/// The components of [`ApReq`] in field order.
+pub(super) type ApReqParts = (
+    Option<CryptoPolicy>,
+    u32,
+    Option<rasn_kerberos::Checksum>,
+    Option<EncryptionKey>,
+    Option<u32>,
+    Option<rasn_kerberos::AuthorizationData>,
+);
+
 impl fmt::Debug for ApReq {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -707,16 +717,7 @@ impl ApReq {
         self.sequence_number
     }
     /// Transfer option components without copying credential material.
-    pub(super) fn into_parts(
-        self,
-    ) -> (
-        Option<CryptoPolicy>,
-        u32,
-        Option<rasn_kerberos::Checksum>,
-        Option<EncryptionKey>,
-        Option<u32>,
-        Option<rasn_kerberos::AuthorizationData>,
-    ) {
+    pub(super) fn into_parts(self) -> ApReqParts {
         let Self {
             crypto_policy,
             ap_option_bits,

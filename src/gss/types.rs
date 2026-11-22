@@ -20,7 +20,7 @@ pub enum NameType {
     Principal,
     /// `GSS_KRB5_NT_ENTERPRISE_NAME`: an enterprise principal (RFC 6806).
     Enterprise,
-    /// `GSS_KRB5_NT_X509_CERT`: a DER certificate, for S4U2Self by certificate.
+    /// `GSS_KRB5_NT_X509_CERT`: a DER certificate, for `S4U2Self` by certificate.
     X509Cert,
 }
 
@@ -64,7 +64,7 @@ pub struct Name {
     /// The principal; the realm may be empty.
     principal: Principal,
     /// The type the name was imported as.
-    name_type: NameType,
+    imported_as: NameType,
     /// Host-based, certificate or plain.
     kind: NameKind,
     /// The unread attribute block of a composite exported name (RFC 6680).
@@ -110,7 +110,7 @@ impl Name {
     pub fn from_principal(principal: &Principal) -> Self {
         Self {
             principal: principal.clone(),
-            name_type: NameType::Principal,
+            imported_as: NameType::Principal,
             kind: NameKind::Principal,
             attributes: None,
         }
@@ -175,7 +175,7 @@ impl Name {
     #[inline]
     #[must_use]
     pub const fn name_type(&self) -> NameType {
-        self.name_type
+        self.imported_as
     }
 
     /// Whether this is the anonymous principal.
@@ -301,8 +301,8 @@ impl BitOr for ContextFlags {
     type Output = Self;
 
     #[inline]
-    fn bitor(self, other: Self) -> Self {
-        self.union(other)
+    fn bitor(self, rhs: Self) -> Self {
+        self.union(rhs)
     }
 }
 

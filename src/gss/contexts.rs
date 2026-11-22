@@ -180,9 +180,11 @@ impl Initiator {
         }
     }
 
-    /// One step: the first call (no input) builds the AP-REQ token from a
-    /// service ticket of `credential`; with mutual authentication, the second
-    /// verifies the acceptor's AP-REP.
+    /// One step of the context establishment.
+    ///
+    /// The first call (no input) builds the AP-REQ token from a service ticket
+    /// of `credential`; with mutual authentication, the second verifies the
+    /// acceptor's AP-REP.
     ///
     /// # Errors
     ///
@@ -402,9 +404,10 @@ impl Accepted {
     }
 }
 
-/// An established Kerberos security context: its names, flags, keys and
-/// sequence state; it protects and verifies per-message tokens (RFC 4121
-/// section 4.2).
+/// An established Kerberos security context.
+///
+/// It holds the names, flags, keys and sequence state, and protects and
+/// verifies per-message tokens (RFC 4121 section 4.2).
 ///
 /// The context key is the acceptor subkey when the acceptor sent one, else the
 /// initiator subkey, else the ticket session key. Keys and the delegated
@@ -563,6 +566,8 @@ pub struct ContextInquiry {
     flags: ContextFlags,
     /// Whether this end started the context.
     locally_initiated: bool,
+    /// Whether the context is established.
+    open: bool,
     /// The context key's enctype.
     key_etype: i32,
 }
@@ -610,11 +615,12 @@ impl ContextInquiry {
         self.locally_initiated
     }
 
-    /// Whether the context is established: always, for an established context.
+    /// Whether the context is established (`GSS_C_ESTABLISHED` of
+    /// `gss_inquire_context`).
     #[inline]
     #[must_use]
     pub const fn open(&self) -> bool {
-        true
+        self.open
     }
 
     /// The context key's enctype (`GSS_C_INQ_SSPI_SESSION_KEY`'s type).

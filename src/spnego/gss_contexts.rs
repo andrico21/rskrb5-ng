@@ -1,3 +1,5 @@
+//! SPNEGO over the GSS Kerberos mechanism.
+//!
 //! SPNEGO (RFC 4178) over the GSS Kerberos mechanism: the negotiation tokens
 //! wrap the [`crate::gss`] context tokens, and the `mechListMIC` is a GSS MIC of
 //! the established context (MIT 1.22.2 `spnego_mech.c`, `handle_mic`).
@@ -24,11 +26,7 @@ fn decode(bytes: &[u8]) -> Result<Token, Error> {
 /// # Errors
 ///
 /// Returns [`Error::InvalidMechListMic`] when it does not verify.
-fn verify_mic(
-    context: &mut gss::EstablishedContext,
-    list: &[u8],
-    mic: &[u8],
-) -> Result<(), Error> {
+fn verify_mic(context: &mut gss::EstablishedContext, list: &[u8], mic: &[u8]) -> Result<(), Error> {
     context
         .verify_mic(list, mic)
         .map_err(|_invalid| Error::InvalidMechListMic)
@@ -48,7 +46,11 @@ pub(super) fn initiate(
         let (token, waiting) = match spnego.inner.init_sec_context(credential, None)? {
             gss::InitStep::Continue(token) => (token, true),
             gss::InitStep::Complete(Some(token)) => (token, false),
-            _ => return Err(GssError::UnexpectedStep("the mechanism sent no first token")),
+            gss::InitStep::Complete(None) => {
+                return Err(GssError::UnexpectedStep(
+                    "the mechanism sent no first token",
+                ));
+            }
         };
         let encoded = Token::Init(NegTokenInit::krb5(token)).encode()?;
         spnego.offered = Some(negotiation::received_mech_types(&encoded)?);
@@ -86,7 +88,11 @@ pub(super) fn initiate(
             .ok_or(Error::MissingApRep)?;
         spnego.inner.init_sec_context(credential, Some(token))?
     };
-    if let Some(mic) = response.mech_list_mic.as_ref().map(|value| value.as_slice()) {
+    if let Some(mic) = response
+        .mech_list_mic
+        .as_ref()
+        .map(|value| value.as_slice())
+    {
         let list = spnego
             .offered
             .as_deref()
@@ -177,7 +183,11 @@ pub(super) fn accept(spnego: &mut Acceptor<'_>, bytes: &[u8]) -> Result<AcceptSt
                 .as_ref()
                 .map(|value| value.as_slice())
                 .ok_or(Error::MissingMechToken)?;
-            let mic = match response.mech_list_mic.as_ref().map(|value| value.as_slice()) {
+            let mic = match response
+                .mech_list_mic
+                .as_ref()
+                .map(|value| value.as_slice())
+            {
                 Some(received) => Some((list, received)),
                 None if mic_required => return Err(Error::MissingMechListMic.into()),
                 None => None,

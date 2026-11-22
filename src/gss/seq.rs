@@ -1,3 +1,5 @@
+//! The sequence and replay window.
+//!
 //! The 64-entry sequence and replay window of MIT 1.22.2's `g_seqstate`
 //! (`generic/util_seqstate.c:36-114`), with 64-bit RFC 4121 sequence numbers.
 //!

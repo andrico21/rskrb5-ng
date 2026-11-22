@@ -1,3 +1,5 @@
+//! Credential delegation.
+//!
 //! Credential delegation (RFC 4121 section 4.1.1.1): the initiator forwards its
 //! TGT in a KRB-CRED inside the authenticator checksum, the acceptor imports it
 //! (MIT `init_sec_context.c:240-336,537-586`, `accept_sec_context.c:161-237,555-579`).

@@ -1,7 +1,9 @@
+//! The krb5 mechanism's initiator.
+//!
 //! The krb5 mechanism's initiator (MIT 1.22.2 `init_sec_context.c:240-688`
 //! and `mutual_auth`, `init_sec_context.c:691-870`).
 
-use core::{mem, time::Duration};
+use core::{mem, slice, time::Duration};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rasn::types::Integer;
@@ -10,7 +12,8 @@ use zeroize::Zeroizing;
 
 use super::{
     ChannelBindings, ContextFlags, Credential, CredentialUsage, CryptoPolicy, EncryptionKey, Error,
-    EstablishedContext, InitState, InitStep, Initiator, Name, Principal, checksum, cred, seq,
+    EstablishedContext, InitState, InitStep, Initiator, Name, Principal, TgsRepSession, checksum,
+    cred, seq,
 };
 use crate::{
     ap_rep, ap_req,
@@ -196,12 +199,43 @@ fn delegation(
     let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     krb_cred::encode_encrypt_ccache_credentials_to_krb_cred_with_confounder(
-        &[tgt.clone()],
+        slice::from_ref(tgt),
         session_key,
         &confounder,
     )
     .map(|bytes| Some(Zeroizing::new(bytes)))
     .map_err(Error::DelegatedCredential)
+}
+
+/// The krb5 AP-REQ token of `authenticator` with the service ticket.
+///
+/// # Errors
+///
+/// Returns the ticket, AP-REQ and token encoding errors.
+fn ap_req_token(
+    ticket: &TgsRepSession,
+    authenticator: &rasn_kerberos::Authenticator,
+    mutual: bool,
+) -> Result<Vec<u8>, Error> {
+    let wire_ticket = ticket::decode(ticket.ticket())?;
+    let usage = ap_req::authenticator_usage_for_ticket(&wire_ticket);
+    let kvno = wire_ticket.enc_part.kvno;
+    let etype = KerberosEtype::from_etype_id(ticket.session_key().etype())
+        .ok_or(Error::LegacyTokenFormat(ticket.session_key().etype()))?;
+    let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
+    getrandom::fill(&mut confounder)?;
+    let bits = if mutual { MUTUAL_REQUIRED } else { 0 };
+    let message = ap_req::build_ap_req_with_confounder(
+        wire_ticket,
+        ap_req::ap_options_from_bits(bits),
+        authenticator,
+        ticket.session_key(),
+        usage,
+        kvno,
+        &confounder,
+    )?;
+    let der = Zeroizing::new(ap_req::encode(&message)?);
+    Ok(Krb5MechToken::ap_req(der.to_vec()).encode()?)
 }
 
 /// The first step: the AP-REQ token.
@@ -271,30 +305,11 @@ fn first(initiator: &mut Initiator, credential: &Credential) -> Result<InitStep,
             None
         },
     };
-    let wire_ticket = ticket::decode(ticket.ticket())?;
-    let usage = ap_req::authenticator_usage_for_ticket(&wire_ticket);
-    let kvno = wire_ticket.enc_part.kvno;
-    let etype = KerberosEtype::from_etype_id(ticket.session_key().etype())
-        .ok_or(Error::LegacyTokenFormat(ticket.session_key().etype()))?;
-    let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
-    getrandom::fill(&mut confounder)?;
-    let bits = if flags.contains(ContextFlags::MUTUAL) {
-        MUTUAL_REQUIRED
-    } else {
-        0
-    };
-    let message = ap_req::build_ap_req_with_confounder(
-        wire_ticket,
-        ap_req::ap_options_from_bits(bits),
+    let token = ap_req_token(
+        &ticket,
         &authenticator,
-        ticket.session_key(),
-        usage,
-        kvno,
-        &confounder,
-    )
-    ?;
-    let der = Zeroizing::new(ap_req::encode(&message)?);
-    let token = Krb5MechToken::ap_req(der.to_vec()).encode()?;
+        flags.contains(ContextFlags::MUTUAL),
+    )?;
     let pending = Pending {
         session_key: ticket.session_key().clone(),
         subkey,
