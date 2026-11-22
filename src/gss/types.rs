@@ -148,13 +148,14 @@ impl Name {
     }
 
     /// Whether both names name the same principal: realm and components, the
-    /// name type ignored (MIT `compare_name.c`, `krb5_principal_compare`).
+    /// name type and the imported form ignored (MIT `compare_name.c`,
+    /// `krb5_principal_compare`); certificate names compare their certificates.
     #[inline]
     #[must_use]
     pub fn compare(&self, other: &Self) -> bool {
         self.principal.realm == other.principal.realm
             && self.principal.components == other.principal.components
-            && self.kind == other.kind
+            && self.certificate() == other.certificate()
     }
 
     /// The mechanism name of this name; MIT duplicates the name (`canon_name.c`).

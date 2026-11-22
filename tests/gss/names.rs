@@ -285,3 +285,19 @@ fn name_types_map_to_mit_oids() -> Result<(), TestError> {
     assert_eq!(NameType::from_oid(&v2), Some(NameType::HostbasedService));
     Ok(())
 }
+
+/// A host-based name equals its exported form imported back: comparison is
+/// MIT's principal comparison, not the imported form (fuzz finding of the
+/// `gss_name` target, register row FU-GSS-P02).
+#[test]
+fn hostbased_names_compare_equal_to_their_exported_form() -> Result<(), TestError> {
+    for text in [&b"HTTP"[..], b"HTTP@www.example.com"] {
+        // Given a host-based name, with or without a host,
+        let name = Name::import(text, NameType::HostbasedService)?;
+        // when it is exported and imported back,
+        let back = Name::import(&name.export()?, NameType::Export)?;
+        // then both name the same principal.
+        assert!(back.compare(&name), "{}", name.display().0);
+    }
+    Ok(())
+}
