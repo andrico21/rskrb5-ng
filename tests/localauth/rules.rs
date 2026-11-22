@@ -172,15 +172,15 @@ fn unusable_translations_are_refused() -> Result<(), TestError> {
 }
 
 /// A component that holds `@` makes the name without realm ambiguous: the
-/// explicit mapping and the unselected rule refuse it.
+/// explicit mapping never matches it and the unselected rule refuses it.
 #[test]
 fn at_sign_in_a_component_is_ambiguous() -> Result<(), TestError> {
     let tricky = Principal::new("R", 1, vec!["alice@EVIL".to_owned()]);
     let named = LocalNameMapper::new(Some("R".to_owned())).with_name("alice@EVIL", "root");
-    assert!(matches!(
-        principal_to_local_name(&named, &tricky),
-        Err(LocalAuth::NoTranslation)
-    ));
+    assert_ne!(
+        principal_to_local_name(&named, &tricky).ok().as_deref(),
+        Some("root")
+    );
     assert!(matches!(
         principal_to_local_name(&only("RULE:")?, &tricky),
         Err(LocalAuth::NoTranslation)

@@ -179,16 +179,7 @@ pub fn authorize_local(
     principal: &Principal,
     local_name: &str,
 ) -> Authorization {
-    let _unused = (
-        &authorizer.mapper,
-        &authorizer.resolver,
-        authorizer.authoritative,
-        &authorizer.directory,
-        principal,
-        local_name,
-        unparse::with_realm(principal),
-    );
-    Authorization::Denied(Denial::NoModuleAllowed)
+    authorizer.authorize(principal, local_name)
 }
 
 /// Translate the verified `principal` to a local account name.
@@ -209,11 +200,5 @@ pub fn principal_to_local_name(
     mapper: &LocalNameMapper,
     principal: &Principal,
 ) -> Result<String, crate::error::LocalAuth> {
-    let _unused = (
-        &mapper.default_realm,
-        &mapper.names,
-        &mapper.rules,
-        unparse::without_realm(principal),
-    );
-    Err(crate::error::LocalAuth::NoTranslation)
+    mapper.translate(principal)
 }

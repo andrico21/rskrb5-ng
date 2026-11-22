@@ -209,7 +209,7 @@ mod unix {
         let relative = authorizer("", resolver(USER, owner, Path::new("relative/home")))?;
         assert_eq!(
             authorize_local(&relative, &alice(), USER),
-            refused(Fault::RelativeHome)
+            refused(Fault::RelativePath)
         );
         let lax = relative.with_k5login_authoritative(false);
         assert_eq!(
