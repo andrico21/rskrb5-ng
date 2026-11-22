@@ -294,7 +294,7 @@ TEST.GOKRB5 = {{
         let reply = KpasswdReply::parse(&kpasswd_reply_with_ap_rep(&built, &ap_rep)?)
             .context("kpasswd reply parses")?;
 
-        let mut verified = verify_kpasswd_ap_rep(&reply, &built)
+        let verified = verify_kpasswd_ap_rep(&reply, &built)
             .context("AP-REP verifies")?
             .context("successful reply has AP-REP")?;
 
@@ -302,9 +302,6 @@ TEST.GOKRB5 = {{
         assert_eq!(verified.cusec(), 456_789);
         assert_eq!(verified.sequence_number(), Some(99));
         assert_eq!(verified.subkey(), None);
-        let subkey = EncryptionKey::new(18, vec![0x6d; 32]);
-        verified.set_subkey(Some(subkey.clone()));
-        assert_eq!(verified.subkey(), Some(&subkey));
         Ok(())
     }
 

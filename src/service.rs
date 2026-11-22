@@ -110,20 +110,15 @@ pub struct ValidatedApReq {
 }
 
 impl ValidatedApReq {
-    /// Replace whole-second authenticator time metadata.
-    #[inline]
-    pub const fn set_authenticator_ctime(&mut self, value: SystemTime) {
+    /// Replace whole-second authenticator time metadata (crate tests only).
+    #[cfg(test)]
+    pub(crate) const fn set_authenticator_ctime(&mut self, value: SystemTime) {
         self.authenticator_ctime = value;
     }
-    /// Replace authenticator microsecond metadata.
-    #[inline]
-    pub const fn set_authenticator_cusec(&mut self, value: u32) {
+    /// Replace authenticator microsecond metadata (crate tests only).
+    #[cfg(test)]
+    pub(crate) const fn set_authenticator_cusec(&mut self, value: u32) {
         self.authenticator_cusec = value;
-    }
-    /// Replace combined authenticator time metadata.
-    #[inline]
-    pub const fn set_authenticator_time(&mut self, value: SystemTime) {
-        self.authenticator_time = value;
     }
     /// Borrow the effective cryptographic policy.
     #[inline]
@@ -131,9 +126,9 @@ impl ValidatedApReq {
     pub const fn crypto_policy(&self) -> &CryptoPolicy {
         &self.crypto_policy
     }
-    /// Replace the reply-admission policy.
-    #[inline]
-    pub fn set_crypto_policy(&mut self, value: CryptoPolicy) {
+    /// Replace the reply-admission policy (crate tests only).
+    #[cfg(test)]
+    pub(crate) fn set_crypto_policy(&mut self, value: CryptoPolicy) {
         self.crypto_policy = value;
     }
     /// Borrow the authenticated client identity.
@@ -201,9 +196,9 @@ impl ValidatedApReq {
         &self.session_key
     }
 
-    /// Replace the ticket session key, zeroing the old key.
-    #[inline]
-    pub fn set_session_key(&mut self, value: EncryptionKey) {
+    /// Replace the ticket session key, zeroing the old key (crate tests only).
+    #[cfg(test)]
+    pub(crate) fn set_session_key(&mut self, value: EncryptionKey) {
         self.session_key = value;
     }
 
@@ -214,9 +209,9 @@ impl ValidatedApReq {
         self.subkey.as_ref()
     }
 
-    /// Replace the subkey, zeroing the old key if present.
-    #[inline]
-    pub fn set_subkey(&mut self, value: Option<EncryptionKey>) {
+    /// Replace the subkey, zeroing the old key if present (crate tests only).
+    #[cfg(test)]
+    pub(crate) fn set_subkey(&mut self, value: Option<EncryptionKey>) {
         self.subkey = value;
     }
 
@@ -437,9 +432,9 @@ impl VerifiedApRep {
         self.subkey.as_ref()
     }
 
-    /// Replace the subkey, zeroing the old key if present.
-    #[inline]
-    pub fn set_subkey(&mut self, value: Option<EncryptionKey>) {
+    /// Replace the subkey, zeroing the old key if present (crate tests only).
+    #[cfg(test)]
+    pub(crate) fn set_subkey(&mut self, value: Option<EncryptionKey>) {
         self.subkey = value;
     }
 }
@@ -498,6 +493,15 @@ mod replay;
 mod replay_quota;
 mod ticket_pac;
 mod validation;
+/// Reply rechecks of crate-changed validated fields.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod validated_tests;
 
 use ticket_pac::{PacCheck, verified_ticket_pac};
 

@@ -63,6 +63,13 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 
 ### API
 
+- `service::ValidatedApReq` and `service::VerifiedApRep` no longer have public
+  setters: `ValidatedApReq::{set_authenticator_ctime, set_authenticator_cusec,
+  set_authenticator_time, set_crypto_policy, set_session_key, set_subkey}` and
+  `VerifiedApRep::set_subkey` are crate-internal (removed from the public API).
+  A validated context holds what the validator authenticated, as MIT's opaque
+  context does; build replies from it as it is (behaviour change, FU-GSS-P01).
+
 - Add opt-in `service::TransitPolicy::{direct, domain_x500_paths}` presets for
   AD cross-domain tickets without TRANSITED-POLICY-CHECKED. Both pin endpoint
   realms; the latter allow-lists exact complete encoded paths. The presets do
