@@ -38,11 +38,6 @@ impl Default for Config {
 
 /// Create default libdefaults without reading the environment.
 pub(super) fn new_libdefaults() -> LibDefaults {
-    LibDefaults::with_home(None)
-}
-
-/// Create defaults from an optional, already-read home directory.
-pub(super) fn with_home(home: Option<String>) -> LibDefaults {
     let default_enctypes = DEFAULT_ENCTYPES
         .iter()
         .map(|value| (*value).to_owned())
@@ -72,7 +67,7 @@ pub(super) fn with_home(home: Option<String>) -> LibDefaults {
         forwardable: Toggle::Disabled,
         ignore_acceptor_hostname: Toggle::Disabled,
         k5login_authoritative: Toggle::Enabled,
-        k5login_directory: home.unwrap_or_default(),
+        k5login_directory: String::new(),
         kcm_mach_service: "org.h5l.kcm".to_owned(),
         kcm_socket: "/var/run/.heim_org.h5l.kcm-socket".to_owned(),
         plugin_base_dir: "%{LIBDIR}/krb5/plugins".to_owned(),

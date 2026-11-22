@@ -138,7 +138,6 @@ mod tests {
         )+};
     }
     cases! {
-        auth_to_local, "list", ["DEFAULT", "RULE:[1:$1](.*)s/a/b/"];
         default_domain, "text", ["example.test", "other.test"];
         pkinit_identity, "locations", ["FILE:/cert,/key", "PKCS12:/server"];
         pkinit_allow_upn, "bool", ["true", "false"];
@@ -183,6 +182,19 @@ mod tests {
     #[test]
     fn admin_server() -> Result<(), Box<dyn Error>> {
         endpoint("admin_server")
+    }
+
+    /// Whether a diagnostic of `config` defers a relation to a later package.
+    fn has_deferred_diagnostic(config: &Config) -> bool {
+        config.diagnostics().iter().any(|item| {
+            matches!(
+                item,
+                ConfigDiagnostic::NotYetEffective {
+                    relation: _,
+                    package: _
+                }
+            )
+        })
     }
 
     /// Local mapping keys preserve case and first-wins selection.
@@ -248,12 +260,9 @@ mod tests {
                         .map(String::as_str),
                     Some(expected)
                 );
-                assert_eq!(
-                    config.diagnostics(),
-                    &[ConfigDiagnostic::NotYetEffective {
-                        relation: "auth_to_local_names",
-                        package: "plan 2 WP-17",
-                    }]
+                assert!(
+                    !has_deferred_diagnostic(&config),
+                    "the names are never deferred to WP-17 any more"
                 );
             }
         }

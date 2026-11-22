@@ -129,11 +129,11 @@ value are value data.
   [expand_path.c:283](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/expand_path.c#L283)).
   Such programs use the explicit constructors (`Config::load_paths`,
   `CCache::load_name`, `Keytab::load_name`, a literal name).
-  `LibDefaults::from_env` reads `HOME` for `k5login_directory`, which MIT never
-  reads from the environment: it uses the home directory of the target user's
-  passwd entry
-  ([localauth_k5login.c:106](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/localauth_k5login.c#L106)).
-  This crate only stores `k5login_directory`; no lookup uses it today. Windows
+  `LibDefaults::from_env` no longer reads `HOME` for `k5login_directory`, which
+  MIT never reads from the environment: it uses the home directory of the target
+  user's passwd entry
+  ([localauth_k5login.c:106](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/localauth_k5login.c#L106)),
+  and the `localauth` leaf takes that home from the caller's `AccountResolver`. Windows
   has no set-uid or set-gid processes: MIT gets `%{TEMP}` and `%{APPDATA}` from
   `GetTempPath` and `SHGetFolderPath`
   ([expand_path.c:60](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/src/lib/krb5/os/expand_path.c#L60),
@@ -465,8 +465,9 @@ also delivered, as described below; deferred mechanism providers remain plan 2.
 MIT defaults and relation types are sourced from the pinned
 [1.22.2 krb5.conf documentation, lines 274–420](https://github.com/krb5/krb5/blob/krb5-1.22.2-final/doc/admin/conf_files/krb5_conf.rst#L274-L420).
 The table records each default explicitly. `k5login_authoritative` now defaults
-true, matching MIT. No local-login authorization exists yet, so neither value
-grants login; k5login directory/authority are diagnostic (WP-17).
+true, matching MIT. With the `localauth` leaf both relations are effective
+(`localauth::LocalAuthorizer::from_config`); without it they are
+`FeatureUnavailable` diagnostics and nothing authorizes a login.
 
 New typed public fields preserve KCM service/socket names, the inert plugin
 directory template, optional shortname suffix, total request duration, SPAKE
@@ -578,17 +579,20 @@ HTTPS proxy transport.
 "plan 2 WP-07" }`. False is diagnostic. PKINIT trust, EKU, CRL, freshness and
 identity policies are diagnostic because no PKINIT certificate is accepted
 today; no requested restriction is bypassed by a PKINIT exchange. Authorization
-rules/names are diagnostic because no local-login grant is performed.
-An admitted `auth_to_local_names` subsection emits one WP-17 diagnostic,
-including an explicit empty map; omission and discarded later scopes emit none.
+rules and names are effective with the `localauth` leaf; without it they are
+`FeatureUnavailable` diagnostics, because no local-login grant is performed.
+An admitted `auth_to_local_names` subsection emits one such diagnostic without
+the leaf, including an explicit empty map, and none with it; omission and
+discarded later scopes emit none.
 V4 and enabled draft-9 selectors keep todo-14's permanent typed rejection.
 Every deferred diagnostic becomes an error in Strict mode.
 
 Rule languages are retained as inert strings in typed lists. `auth_to_local`
 checks its DEFAULT/RULE discriminator; certificate matching checks the initial
-MIT component discriminator. **Full regex/rule-language compilation and
-evaluation are not implemented** (WP-17/WP-06); no claim of complete semantic
-validation of those languages is made. Rule-valued relations preserve trailing
+MIT component discriminator. The `localauth` leaf compiles every `auth_to_local`
+rule with the linear-time `regex` engine when the mapper is built (WP-17);
+the certificate-matching languages stay inert strings (WP-06), and no claim of
+complete semantic validation of them is made. Rule-valued relations preserve trailing
 `*` as regex syntax instead of treating it as the legacy value-final extension;
 MIT's `tag*` final marker is supported (v0.2.2 treated `A*` as part of a realm
 name and ignored `key* = value`).

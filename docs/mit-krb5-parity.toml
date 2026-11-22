@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 104
-partial = 34
-absent = 15
+implemented = 113
+partial = 31
+absent = 9
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -1916,13 +1916,21 @@ id = "MIT-config-23"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`k5login_authoritative`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "No local-login authorization exists; neither value grants login; diagnostic (consumer: plan 2 WP-17)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::k5login_authoritative"]
-feature_flags = []
-security_divergence = ""
+missing = ""
+rust_symbols = [
+  "localauth::LocalAuthorizer",
+  "localauth::LocalAuthorizer::from_config",
+  "localauth::LocalAuthorizer::with_k5login_authoritative",
+]
+test_names = [
+  "tests/localauth/profile.rs::k5login_authoritative",
+  "tests/localauth/k5login.rs::authority_decides_what_a_refusal_means",
+  "tests/localauth/k5login.rs::the_profile_sets_authority_and_directory",
+]
+feature_flags = ["localauth"]
+security_divergence = "MIT default true is kept. A `.k5login` refusal is final only while it holds, as in MIT (localauth_k5login.c:159-160); without the `localauth` leaf the relation is FeatureUnavailable and nothing authorizes."
 disposition = "WP-17"
 closing_plan = 2
 closing_todo = 25
@@ -1933,13 +1941,22 @@ id = "MIT-config-24"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`k5login_directory`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "No local-login authorization or file lookup occurs; diagnostic (consumer: plan 2 WP-17)."
-rust_symbols = []
-test_names = ["tests/config/relations_c2.rs::k5login_directory"]
-feature_flags = []
-security_divergence = ""
+missing = ""
+rust_symbols = [
+  "localauth::LocalAuthorizer",
+  "localauth::LocalAuthorizer::from_config",
+  "localauth::LocalAuthorizer::with_k5login_directory",
+]
+test_names = [
+  "tests/localauth/profile.rs::k5login_directory",
+  "tests/localauth/k5login.rs::directory_holds_one_file_per_account",
+  "tests/localauth/home.rs::hostile_home_never_selects_the_k5login_file",
+  "src/config/fork_tests.rs::env_free_libdefaults_constructor_does_not_read_uid_or_home",
+]
+feature_flags = ["localauth"]
+security_divergence = "The home directory of an account is the AccountResolver's, never `HOME` (MIT: the passwd home, localauth_k5login.c:106); `LibDefaults::from_env` no longer copies `HOME` into `k5login_directory`. With a directory the file is `<directory>/<account>` as in MIT; an account name that is `.`, `..` or holds a path separator, and a relative directory or home, are refused (MIT relies on getpwnam)."
 disposition = "WP-17"
 closing_plan = 2
 closing_todo = 25
@@ -2434,16 +2451,24 @@ id = "MIT-config-47"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`[realms]`: `auth_to_local`, `auth_to_local_names`"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "No local authorization or name mapping executes; the relations are parsed with diagnostics."
-rust_symbols = []
-test_names = [
-  "tests/config/realm_relations_d.rs::auth_to_local",
-  "tests/config/realm_relations_d.rs::auth_to_local_names",
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "localauth::LocalNameMapper",
+  "localauth::LocalNameMapper::from_config",
+  "localauth::AuthToLocalRule",
 ]
-feature_flags = []
-security_divergence = ""
+test_names = [
+  "tests/localauth/profile.rs::auth_to_local",
+  "tests/config/realm_relations_d.rs::auth_to_local_names",
+  "tests/localauth/mapping.rs::combination_of_rules_in_order",
+  "tests/localauth/mapping.rs::names_map_by_case_sensitive_name",
+  "tests/localauth/rules.rs::from_config_refuses_malformed_and_excess_rules",
+  "tests/interop_localauth/scenarios.rs::verified_client_is_authorized_as_mit_authorizes_it",
+]
+feature_flags = ["localauth"]
+security_divergence = "Values are parsed when the mapper is built, so a malformed or over-bound rule is an error at configuration time (MIT finds it when the rule is first used); at most 64 rules. `auth_to_local_names` applies only to principals of the default realm (MIT ignores the realm, t_localauth.py `auth_to_local_names out-of-realm match`)."
 disposition = "WP-17"
 closing_plan = 2
 closing_todo = 25
@@ -3382,13 +3407,29 @@ id = "MIT-authz-1"
 area = "authz"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`.k5login` principal-to-local-account authorization"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "Parsed k5login fields only, no file authorizer."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "localauth::LocalAuthorizer",
+  "localauth::authorize_local",
+  "localauth::AccountResolver",
+  "localauth::k5login::lists",
+]
+test_names = [
+  "tests/localauth/k5login.rs::listed_principal_is_authorized",
+  "tests/localauth/k5login.rs::foreign_owner_is_refused",
+  "tests/localauth/k5login.rs::writable_by_group_or_others_is_refused",
+  "tests/localauth/k5login.rs::symlinks_are_refused",
+  "tests/localauth/k5login.rs::directory_is_not_a_regular_file",
+  "tests/localauth/k5login_content.rs::bounds_refuse_what_exceeds_them",
+  "tests/localauth/k5login_content.rs::line_match_is_exact",
+  "tests/localauth/k5login.rs::unknown_account_and_relative_home_are_refused",
+  "tests/localauth/home.rs::hostile_home_never_selects_the_k5login_file",
+  "tests/interop_localauth/scenarios.rs::verified_client_is_authorized_as_mit_authorizes_it",
+]
+feature_flags = ["localauth"]
+security_divergence = "Stricter than MIT 1.22.2: a `.k5login` that is a symbolic link, not a regular file, writable by its group or by others, replaced between the check and the open, larger than 1 MiB, with more than 16,384 lines or a line over 8,191 bytes is refused (MIT follows symlinks, checks no mode and truncates long lines at 8,191 bytes); the macOS owner exemption (UNKNOWNUID) is not applied. The crate has no default AccountResolver (no unsafe, no admitted passwd wrapper): the caller injects one. Off Unix the module is silent, as MIT on Windows."
 disposition = "WP-17"
 closing_plan = 2
 closing_todo = 25
@@ -3399,13 +3440,33 @@ id = "MIT-authz-2"
 area = "authz"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`auth_to_local` RULE and DEFAULT mapping"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "auth_to_local is parsed with a diagnostic; no RULE/DEFAULT mapping executes."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "localauth::AuthToLocalRule",
+  "localauth::AuthToLocalRule::parse",
+  "localauth::AuthToLocalRule::apply",
+  "localauth::principal_to_local_name",
+]
+test_names = [
+  "tests/localauth/mapping.rs::default_rule_works_in_the_default_realm_only",
+  "tests/localauth/mapping.rs::explicit_default_and_invalid_types",
+  "tests/localauth/mapping.rs::empty_rule_selects_the_name_without_realm",
+  "tests/localauth/mapping.rs::selection_string_and_suppressed_default",
+  "tests/localauth/mapping.rs::match_string_is_anchored_at_both_ends",
+  "tests/localauth/mapping.rs::substitutions_once_globally_and_in_sequence",
+  "tests/localauth/mapping.rs::combination_of_rules_in_order",
+  "tests/localauth/rules.rs::malformed_rules_are_refused_at_parse_time",
+  "tests/localauth/rules.rs::patterns_the_engine_cannot_run_are_refused",
+  "tests/localauth/rules.rs::size_bounds_refuse_and_the_bound_itself_parses",
+  "tests/localauth/rules.rs::catastrophic_patterns_run_in_linear_time",
+  "tests/localauth/rules.rs::empty_matches_terminate",
+  "tests/localauth/rules.rs::unusable_translations_are_refused",
+  "tests/interop_localauth/scenarios.rs::verified_client_is_authorized_as_mit_authorizes_it",
+]
+feature_flags = ["localauth"]
+security_divergence = "Linear-time `regex` (Pike VM, Unicode) instead of POSIX ERE: no back-references or look-around, and an alternation takes the first branch that matches, not the longest (MIT regcomp/regexec). Bounded: 2,048 bytes per rule, 512 per pattern, 256 per replacement, 16 substitutions, 256 replacements and 1,024 bytes of selection per rule; an empty match is replaced once and the scan moves one character on (MIT's do_replacement loops forever); `$` must be followed by digits (MIT reads `$x` as the realm); an empty, NUL-holding or over-64-byte translation, and a component holding `@` in a selection without a selector, are refused."
 disposition = "WP-17"
 closing_plan = 2
 closing_todo = 25
@@ -3416,13 +3477,23 @@ id = "MIT-authz-3"
 area = "authz"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`auth_to_local_names` explicit principal mapping"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "auth_to_local_names is parsed with a diagnostic; no mapping consumer."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "localauth::LocalNameMapper",
+  "localauth::LocalNameMapper::with_name",
+  "localauth::principal_to_local_name",
+]
+test_names = [
+  "tests/localauth/mapping.rs::names_map_by_case_sensitive_name",
+  "tests/localauth/mapping.rs::names_do_not_translate_foreign_realms",
+  "tests/localauth/mapping.rs::names_of_another_realms_section_are_ignored",
+  "tests/localauth/rules.rs::at_sign_in_a_component_is_ambiguous",
+  "tests/interop_localauth/scenarios.rs::verified_client_is_authorized_as_mit_authorizes_it",
+]
+feature_flags = ["localauth"]
+security_divergence = "Stricter than MIT: the explicit name of the default realm translates only principals of that realm (MIT ignores the realm, t_localauth.py maps `user@X` to `abcd`); a component holding `@` never matches."
 disposition = "WP-17"
 closing_plan = 2
 closing_todo = 25
@@ -3433,13 +3504,22 @@ id = "MIT-authz-4"
 area = "authz"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`an2ln` principal-name-to-local-name authorization"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "No local-name API."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "localauth::LocalAuthorizer",
+  "localauth::authorize_local",
+  "localauth::principal_to_local_name",
+]
+test_names = [
+  "tests/localauth/k5login.rs::authority_decides_what_a_refusal_means",
+  "tests/localauth/mapping.rs::default_rule_works_in_the_default_realm_only",
+  "tests/localauth/rules.rs::unusable_translations_are_refused",
+  "tests/interop_localauth/scenarios.rs::verified_client_is_authorized_as_mit_authorizes_it",
+]
+feature_flags = ["localauth"]
+security_divergence = "As MIT (localauth_an2ln.c:39-48): a principal may use the account its translation names, the translation is at most 64 bytes. It runs after the `.k5login` module, whose refusal is final while k5login_authoritative holds."
 disposition = "WP-17"
 closing_plan = 2
 closing_todo = 25
@@ -3450,13 +3530,22 @@ id = "MIT-authz-5"
 area = "authz"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`localauth` plugin interface"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "No authorizer registry."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "localauth::builtin::modules",
+  "extensions::LocalAuth",
+  "extensions::Registry::authorize_local",
+]
+test_names = [
+  "tests/localauth/builtin.rs::modules_are_registered_in_mits_order",
+  "tests/localauth/builtin.rs::registry_translates_like_the_mapper",
+  "tests/localauth/builtin.rs::application_modules_combine_with_the_built_ins",
+  "tests/localauth/k5login.rs::authority_decides_what_a_refusal_means",
+]
+feature_flags = ["localauth"]
+security_divergence = "Providers are in-process Rust traits (D3/D7); no module is loaded from a path. `default` and `rule` are typed modules that answer only inside `auth_to_local`, so they are not separate providers and `[plugins] localauth` cannot disable them on their own."
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 25
@@ -3576,13 +3665,21 @@ id = "MIT-plugin-4"
 area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`localauth` local authorization"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "No local authorizer/provider."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "localauth::builtin::modules",
+  "extensions::LocalAuth",
+  "extensions::Registry::local_name",
+]
+test_names = [
+  "tests/localauth/builtin.rs::modules_are_registered_in_mits_order",
+  "tests/localauth/builtin.rs::registry_translates_like_the_mapper",
+  "tests/localauth/builtin.rs::application_modules_combine_with_the_built_ins",
+]
+feature_flags = ["localauth"]
+security_divergence = "As MIT-authz-5: names, auth_to_local, k5login and an2ln are the built-in providers; `default` and `rule` live inside `auth_to_local`."
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 25

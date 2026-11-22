@@ -73,6 +73,11 @@ fn env_free_fields_probe_child() -> Result<(), Box<dyn error::Error>> {
     let parsed = Config::parse("[libdefaults]\n")?;
     let reading = LibDefaults::from_env();
     let mut stdout = io::stdout().lock();
+    writeln!(
+        stdout,
+        "{PROBE_PREFIX}home={}",
+        env::var("HOME").unwrap_or_default()
+    )?;
     for (name, keytab, k5login) in [
         (
             "config",
@@ -135,16 +140,17 @@ fn probe_field(lines: &[String], key: &str) -> Result<String, Box<dyn error::Err
 }
 
 /// The control, asserted by every test below: the child's environment really
-/// is hostile, so `LibDefaults::from_env` in that child follows it. Without this,
-/// an inert probe would make the env-free assertions pass for the wrong
-/// reason.
+/// is hostile, and `LibDefaults::from_env`, which no longer reads `HOME`, still
+/// ignores it. Without this, an inert probe would make the env-free assertions
+/// pass for the wrong reason.
 fn assert_the_child_environment_is_hostile(lines: &[String]) -> Result<(), Box<dyn error::Error>> {
     assert_eq!(
         probe_field(lines, "reading_client_keytab")?,
         ENV_FREE_CLIENT_KEYTAB,
         "even the opt-in constructor must preserve the identity template"
     );
-    assert_eq!(probe_field(lines, "reading_k5login")?, HOSTILE_HOME);
+    assert_eq!(probe_field(lines, "home")?, HOSTILE_HOME);
+    assert_eq!(probe_field(lines, "reading_k5login")?, "");
     Ok(())
 }
 

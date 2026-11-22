@@ -1,0 +1,2 @@
+RULE:s/(a+)+b/x/
+aaaaaaaaaaaaaaaaaaaaaaaaaaaab

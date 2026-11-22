@@ -94,11 +94,12 @@ pub(super) fn empty_scopes(
     for path in scopes {
         if matches!(path.as_slice(), [section, _, key]
             if section == "realms" && key == "auth_to_local_names")
+            && let Some(feature) = realm_values::missing_localauth_leaf("(leaf localauth)")
         {
             realm_values::report(
-                ConfigDiagnostic::NotYetEffective {
+                ConfigDiagnostic::FeatureUnavailable {
                     relation: "auth_to_local_names",
-                    package: "plan 2 WP-17",
+                    feature,
                 },
                 config.libdefaults.parse_mode(),
                 &mut config.libdefaults.enctype_diagnostics,

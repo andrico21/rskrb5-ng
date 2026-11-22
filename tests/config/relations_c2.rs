@@ -119,8 +119,6 @@ mod tests {
         )+};
     }
     deferred_cases! {
-        k5login_authoritative, "plan 2 WP-17", ["true", "false"];
-        k5login_directory, "plan 2 WP-17", ["/first", "/second"];
         kcm_mach_service, "plan 2 WP-09", ["org.example.kcm", "-"];
         plugin_base_dir, "plan 2 WP-16", ["/never-load", "%{LIBDIR}/krb5/plugins"];
         client_aware_channel_bindings, "plan 2 WP-12", ["false", "off"];

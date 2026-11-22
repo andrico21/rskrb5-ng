@@ -57,6 +57,12 @@ RUN ./configure --prefix=/opt/krb5 --sysconfdir=/etc --localstatedir=/var/lib \
         --runstatedir=/run --without-ldap --without-tcl \
     && make -j"$(nproc)" \
     && make install
+# Plan 2 todo 25 (WP-17, localauth): a probe of MIT's own krb5_kuserok and
+# krb5_aname_to_localname, installed beside the MIT tools of the image.
+COPY localauth/probe.c /src/localauth-probe.c
+RUN cc -O1 -Wall -o /opt/krb5/bin/localauth-probe /src/localauth-probe.c \
+        -I/opt/krb5/include -L/opt/krb5/lib -lkrb5 -lk5crypto -lcom_err -lkrb5support \
+        -Wl,-rpath,/opt/krb5/lib
 
 FROM ${BASE_IMAGE} AS mit
 RUN apt-get update \

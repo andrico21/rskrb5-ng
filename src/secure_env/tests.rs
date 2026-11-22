@@ -219,8 +219,8 @@ mod tests {
         result
     }
 
-    /// `HOME`: `LibDefaults::from_env` does not take `k5login_directory` from it,
-    /// and there is no default `.k5identity`, when restricted.
+    /// `HOME`: there is no default `.k5identity` when restricted, and
+    /// `LibDefaults::from_env` never takes `k5login_directory` from it.
     #[test]
     fn home_is_ignored_when_restricted() -> Result<(), Box<dyn Error>> {
         use crate::config::LibDefaults;
@@ -229,7 +229,7 @@ mod tests {
             let restricted = with_decision(Decision::Restricted, LibDefaults::from_env);
             assert_eq!(restricted.k5login_directory, "");
             let open = with_decision(Decision::Unrestricted, LibDefaults::from_env);
-            assert_eq!(open.k5login_directory, "/hostile/home");
+            assert_eq!(open.k5login_directory, "");
             #[cfg(not(windows))]
             {
                 use crate::{ccache::selection::default_k5identity, extensions::K5Identity};

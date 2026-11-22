@@ -133,6 +133,8 @@ jobs:
           - "--no-default-features --features ccache-keyring"
           - "--features kkdcp-rustls"
           - "--no-default-features --features tokio,kkdcp-rustls"
+          - "--features localauth"
+          - "--no-default-features --features localauth"
           - "--features tracing"
           - "--no-default-features --features tracing"
           - "--features spake"
