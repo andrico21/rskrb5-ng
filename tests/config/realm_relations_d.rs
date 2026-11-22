@@ -185,7 +185,7 @@ mod tests {
     }
 
     /// Whether a diagnostic of `config` defers a relation to a later package.
-    fn deferred(config: &Config) -> bool {
+    fn has_deferred_diagnostic(config: &Config) -> bool {
         config.diagnostics().iter().any(|item| {
             matches!(
                 item,
@@ -261,7 +261,7 @@ mod tests {
                     Some(expected)
                 );
                 assert!(
-                    !deferred(&config),
+                    !has_deferred_diagnostic(&config),
                     "the names are never deferred to WP-17 any more"
                 );
             }
