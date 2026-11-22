@@ -74,4 +74,7 @@ export_keytab http.keytab HTTP/user2.user.rskrb5@USER.RSKRB5
 export_keytab svc-s4u.keytab svc-s4u@USER.RSKRB5
 export_keytab svc-rbcd.keytab svc-rbcd@USER.RSKRB5
 export_keytab svc-backend.keytab HTTP/backend.user.rskrb5@USER.RSKRB5
+# The domain's KDC key, for the PAC suite (plan 2 todo 22): a test checks the KDC, ticket and full
+# signatures of a PAC the way a KDC does. The domain is disposable and its keys are generated per run.
+export_keytab krbtgt.keytab krbtgt@USER.RSKRB5
 log "accounts, SPNs, delegation, claims and keytabs of $REALM ready"

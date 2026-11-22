@@ -53,7 +53,6 @@ pub(crate) mod tests {
             "KRB5_CONFIG",
             "KRB5_CONFIG_ENV",
         ),
-        ("src/config.rs", "LibDefaults::from_env", "HOME", "HOME"),
         (
             "src/ccache.rs",
             "CCache::load_from_env",
@@ -1081,8 +1080,8 @@ pub(crate) mod tests {
         assert!({
             // Given: a real allowed reader reached through two private forwarding hops.
             let (mut items, errors) = inventory(
-                "src/config.rs",
-                "impl LibDefaults { fn from_env() { env::var(\"HOME\"); } } fn bridge() { LibDefaults::from_env(); }",
+                "src/ccache/selection.rs",
+                "fn default_k5identity() { env::var(\"HOME\"); } fn bridge() { default_k5identity(); }",
             );
             assert!(errors.is_empty(), "{errors:?}");
             let (delegates, _) = inventory(

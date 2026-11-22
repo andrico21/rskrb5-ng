@@ -88,6 +88,11 @@ mod tests {
         RealmPath::hierarchical("A.TEST", "A.TEST")
     );
 
+    propagates_domain!(
+        local_auth_when_no_translation,
+        error::LocalAuth,
+        None::<()>.ok_or(error::LocalAuth::NoTranslation)
+    );
     #[cfg(feature = "messages")]
     propagates_domain!(
         client_when_principal_invalid,

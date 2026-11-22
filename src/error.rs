@@ -2299,10 +2299,49 @@ pub enum Pac {
     /// The PAC server checksum did not verify.
     #[error("PAC service checksum verification failed")]
     ServerChecksumVerificationFailed,
+    /// The PAC KDC signature did not verify under the KDC key.
+    #[error("PAC KDC checksum verification failed")]
+    KdcChecksumVerificationFailed,
+    /// The PAC ticket signature did not verify under the KDC key.
+    #[error("PAC ticket checksum verification failed")]
+    TicketChecksumVerificationFailed,
+    /// The PAC full checksum (KB5020805) did not verify under the KDC key.
+    #[error("PAC full checksum verification failed")]
+    FullChecksumVerificationFailed,
+    /// A signature the policy requires cannot be verified because no key was supplied.
+    #[error("no key was supplied to verify the required PAC {0}")]
+    MissingVerificationKey(&'static str),
+    /// The policy binds the PAC to a client but the request names none.
+    #[error("PAC client binding is required but no client was given")]
+    MissingClientBinding,
+    /// The PAC client info names another client or authentication time than the ticket.
+    #[error("PAC client info does not match the ticket client")]
+    ClientInfoMismatch,
+    /// The policy requires a PAC and the ticket carries none.
+    #[error("the ticket carries no PAC but the policy requires one")]
+    RequiredPacAbsent,
+    /// A PAC declares more info buffers than the 4096 MIT accepts.
+    #[error("PAC declares {0} info buffers; at most 4096 are accepted")]
+    BufferCountLimit(u32),
+    /// A PAC carries two buffers of one interpreted type.
+    #[error("PAC carries more than one buffer of type {0}")]
+    DuplicateBuffer(u32),
+    /// A PAC buffer overlaps the header or table, or another buffer.
+    #[error("PAC buffer {ul_type} at offset {offset} overlaps the table or another buffer")]
+    BufferOverlap {
+        /// PAC buffer type.
+        ul_type: u32,
+        /// PAC buffer offset.
+        offset: u64,
+    },
     /// PAC authorization data failed DER decoding.
     #[cfg(feature = "messages")]
     #[error("PAC authorization-data DER decode failed: {0}")]
     DerDecode(String),
+    /// The ticket could not be DER-encoded for its PAC ticket signature.
+    #[cfg(feature = "messages")]
+    #[error("PAC ticket-signature input DER encode failed: {0}")]
+    DerEncode(String),
     /// PAC lookup would decode more than eight nested authorization wrappers.
     #[cfg(feature = "messages")]
     #[error("PAC authorization-data depth exceeds eight wrappers")]
@@ -3283,4 +3322,44 @@ pub enum Routing {
     /// The certificate inspector refused the certificate.
     #[error("the certificate inspector refused the certificate: {0}")]
     CertificateRejected(#[source] ProviderError),
+}
+/// Local authorization and name translation error (WP-17, `localauth`).
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum LocalAuth {
+    /// A rule value is neither `DEFAULT` nor `RULE:...` (MIT `KRB5_CONFIG_BADFORMAT`).
+    #[error("unsupported auth_to_local rule type: {kind}")]
+    UnsupportedRuleType {
+        /// The text before the first colon, or the whole value.
+        kind: String,
+    },
+    /// A RULE is malformed.
+    #[error("malformed auth_to_local rule: {reason}")]
+    MalformedRule {
+        /// What is wrong, without the rule text.
+        reason: &'static str,
+    },
+    /// A rule or an input exceeds a bound.
+    #[error("auth_to_local {what} exceeds the limit of {limit}")]
+    LimitExceeded {
+        /// What grew past the bound.
+        what: &'static str,
+        /// The bound.
+        limit: usize,
+    },
+    /// The regular-expression compiler refused a pattern.
+    #[error("auth_to_local regular expression rejected: {message}")]
+    InvalidRegex {
+        /// The compiler's message.
+        message: String,
+    },
+    /// No mapping or rule produced a local name (MIT `KRB5_LNAME_NOTRANS`).
+    #[error("no local name for the principal")]
+    NoTranslation,
+    /// A translation is not a usable local account name.
+    #[error("translated local name is not usable: {reason}")]
+    InvalidLocalName {
+        /// Why: empty, too long or containing NUL.
+        reason: &'static str,
+    },
 }

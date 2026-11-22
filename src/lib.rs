@@ -101,6 +101,8 @@ pub mod krb_error;
 pub mod krb_priv;
 #[cfg(feature = "messages")]
 pub mod krb_safe;
+#[cfg(feature = "localauth")]
+pub mod localauth;
 #[cfg(feature = "messages")]
 pub mod messages;
 pub mod pac;

@@ -166,6 +166,10 @@ impl fmt::Debug for Pac {
             device_info,
             client_claims_info,
             device_claims_info,
+            ticket_checksum,
+            full_checksum,
+            attributes_info,
+            requestor_sid,
         } = self;
         f.debug_struct("Pac")
             .field("c_buffers", c_buffers)
@@ -183,6 +187,10 @@ impl fmt::Debug for Pac {
             .field("device_info", device_info)
             .field("client_claims_info", client_claims_info)
             .field("device_claims_info", device_claims_info)
+            .field("ticket_checksum", ticket_checksum)
+            .field("full_checksum", full_checksum)
+            .field("attributes_info", attributes_info)
+            .field("requestor_sid", requestor_sid)
             .finish()
     }
 }

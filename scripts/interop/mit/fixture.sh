@@ -120,7 +120,8 @@ fixture_mit_kdc_up() {
 
   interop_prepare_private_dir "$out" || return 1
   local file
-  for file in http.keytab host.keytab testuser1.keytab preauthuser.keytab kinit.ccache; do
+  for file in http.keytab host.keytab testuser1.keytab preauthuser.keytab kinit.ccache \
+    pac-svc.keytab pac-krbtgt.keytab; do
     interop_copy_out "$container" "/run/interop/out/$file" "$out/$file" || return 1
   done
   interop_prepare_private_dir "$out/pki" || return 1
@@ -143,6 +144,9 @@ fixture_mit_kdc_up() {
   interop_env INTEROP_MIT_HOST_SERVICE host/mit-kdc.test.rskrb5
   interop_env INTEROP_MIT_HOST_KEYTAB "$out/host.keytab"
   interop_env INTEROP_MIT_KINIT_CCACHE "FILE:$out/kinit.ccache"
+  interop_env INTEROP_MIT_PAC_SERVICE pac/svc.test.rskrb5
+  interop_env INTEROP_MIT_PAC_KEYTAB "$out/pac-svc.keytab"
+  interop_env INTEROP_MIT_PAC_KDC_KEYTAB "$out/pac-krbtgt.keytab"
   interop_env INTEROP_MIT_ADMIN_PRINCIPAL admin/admin
   interop_env INTEROP_MIT_DISPOSABLE_PRINCIPALS "kadm5test1 kadm5test2"
   interop_mit_preauth_env "$out"

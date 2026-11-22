@@ -216,7 +216,7 @@ fixture_samba_user_up() {
   interop_rt exec "$container" /opt/interop/samba/selfcheck.sh ||
     interop_die "fixture samba-user: self-check failed (container $container)" || return 1
   samba_copy_out samba-user testuser1.keytab testuser3.keytab testuser2.keytab http.keytab \
-    svc-s4u.keytab svc-rbcd.keytab svc-backend.keytab ldaps-ca.pem || return 1
+    svc-s4u.keytab svc-rbcd.keytab svc-backend.keytab krbtgt.keytab ldaps-ca.pem || return 1
   samba_env "$prefix" user "$kdc" "$kpasswd" "$ldap" "$ldaps"
   interop_env "${prefix}_TRUST" "forest bidirectional USER.RSKRB5 RES.RSKRB5"
   interop_env "${prefix}_USER" testuser1
@@ -239,6 +239,7 @@ fixture_samba_user_up() {
   interop_env "${prefix}_RBCD_KEYTAB" "$out/svc-rbcd.keytab"
   interop_env "${prefix}_DELEGATION_TARGET" HTTP/backend.user.rskrb5
   interop_env "${prefix}_DELEGATION_TARGET_KEYTAB" "$out/svc-backend.keytab"
+  interop_env "${prefix}_KRBTGT_KEYTAB" "$out/krbtgt.keytab"
   interop_env "${prefix}_DELEGATION_DENIED" HTTP/denied.user.rskrb5
   interop_env "${prefix}_CLAIM_TYPE" Department
   interop_env "${prefix}_CLAIM_VALUE" Interop

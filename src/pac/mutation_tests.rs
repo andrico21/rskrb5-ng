@@ -123,16 +123,17 @@ fn pac_rejects_unaligned_buffer() -> Result<(), Error> {
     Ok(())
 }
 
-/// Required-buffer validation names missing logon information before checksum validation.
+/// Required-buffer validation names the missing server checksum first and never demands logon
+/// information, which a default MIT PAC lacks (FU-SVC-P01).
 #[test]
-fn pac_verification_requires_logon_info() -> Result<(), Error> {
+fn pac_verification_names_the_missing_server_checksum() -> Result<(), Error> {
     let pac = Pac::parse(&[0; 8])?;
     assert!(
         matches!(
             pac.verify(&EncryptionKey::new(17, vec![0x42; 16])),
-            Err(Error::MissingRequiredBuffer("KerbValidationInfo"))
+            Err(Error::MissingRequiredBuffer("ServerChecksum"))
         ),
-        "missing logon info misclassified"
+        "missing server checksum misclassified"
     );
     Ok(())
 }

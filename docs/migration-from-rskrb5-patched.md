@@ -80,9 +80,10 @@ RC4-HMAC or DES3 opt-in permission (FU-MSG-R02).
 
 An explicit `auth_to_local_names = { ... }` subsection selects deferred local
 authorization even if it is empty (FU-CFG-R14). Compatible parsing reports one
-`NotYetEffective` diagnostic per admitted map; Strict parsing rejects it with
-relation `auth_to_local_names` and package `plan 2 WP-17`. Omit the subsection
-when no local-name mapping is intended. Finalized, discarded later scopes do
+`FeatureUnavailable` diagnostic per admitted map in a build without the
+`localauth` leaf (none with it, where the map is effective); Strict parsing
+rejects it with relation `auth_to_local_names` and feature `localauth`. Omit
+the subsection when no local-name mapping is intended. Finalized, discarded later scopes do
 not select it. This diagnostic policy is stricter than MIT's profile getter,
 which simply finds no relation in an empty subsection.
 
@@ -90,8 +91,8 @@ Principal keys such as `krb4_get_tickets` or `pkinit_draft9` inside a realm's
 `auth_to_local_names` map now parse as names (FU-CFG-R13). Their case and first
 mapping value are retained. The exemption is limited to that exact mapping
 path; enabled protocol selectors elsewhere, including discarded scopes, fail
-permanently. Local authorization is deferred to WP-17 and Strict mode rejects
-its diagnostic.
+permanently. Local authorization needs the `localauth` leaf; a build without
+it reports `FeatureUnavailable` and Strict mode rejects the diagnostic.
 
 A local principal literally named `module` in that exact map is mapping data
 (FU-CFG-R16); real `module` declarations elsewhere are rejected.
@@ -191,7 +192,9 @@ The client-keytab default is the template
 (v0.2.2 filled in the `UID` environment variable when the value was built, so
 an unset variable gave `/usr/local/var/krb5/user/0/client.keytab`), and
 `k5login_directory` defaults to empty (FU-DOC-R72).
-Use the new `LibDefaults::from_env()` only when HOME discovery is intended.
+`LibDefaults::from_env()` reads no environment variable either: since WP-17 it
+equals `LibDefaults::new()`, and the `localauth` leaf takes an account's home
+from its `AccountResolver`, never from `HOME`.
 The `*_without_env` twins were removed ("Removed configuration twins"). Remaining
 configuration/credential discovery entry points document `# Ambient input`.
 
@@ -1030,8 +1033,9 @@ drop(validator);
 
 `Config::new`, `Config::parse` and `LibDefaults::new` are environment-free, so
 their `*_without_env` twins are gone. Named ambient discovery remains explicit:
-`Config::load_from_env` and `Config::load_default` read `KRB5_CONFIG`, and
-`LibDefaults::from_env` reads `HOME`.
+`Config::load_from_env` and `Config::load_default` read `KRB5_CONFIG`;
+`LibDefaults::from_env` reads nothing since WP-17 (it equals
+`LibDefaults::new`).
 
 | Removed | Use |
 | --- | --- |
@@ -2185,7 +2189,7 @@ readable and writable; the types named under "Credential field privacy" and in
 | `client::PreauthKeyInfo` | `new(etype)`; `with_salt`, `with_s2kparams` |
 | `client::KdcError` | `new(stime, susec, error_code, service)`; `with_ctime`, `with_cusec`, `with_text`, `with_client`, `with_e_data`, `with_method_data`, `with_preauth_key_info` |
 | `client::PrunedSessions` | Existing `Default`; `with_primary_tgt`, `with_tgt_sessions`, `with_service_tickets` |
-| `config::LibDefaults` | `Default` and `new` are environment-free (`new_without_env` was removed); use `from_env()` explicitly for HOME discovery. Use `with_<field>` for public fields, or the derived ID methods described above. |
+| `config::LibDefaults` | `Default` and `new` are environment-free (`new_without_env` was removed); `from_env()` equals `new()` since WP-17 and reads no `HOME`. Use `with_<field>` for public fields, or the derived ID methods described above. |
 | `config::Config` | Existing `new`/`Default` or config parsing; modify public fields after construction |
 | `config::Realm` | `Realm::new(realm) -> Result` (new; rejects an empty name; v0.2.2 had no public constructor) or config parsing; modify public fields after construction |
 | `service::ApRepOptions` | Existing `Default`; `with_subkey`, `with_sequence_number`, `with_kvno` |

@@ -5,7 +5,7 @@ use core::time::Duration;
 use sha2::{Digest as _, Sha256};
 
 use super::{
-    EncryptionKey, Error, Principal, ReplayKey, ValidatedApReq, Validator, abs_duration,
+    EncryptionKey, Error, PacCheck, Principal, ReplayKey, ValidatedApReq, Validator, abs_duration,
     ap_req_error, encryption_key_from_rasn, kerberos_string_to_string, microseconds_to_u32,
     principal_from_parts, system_time_from_kerberos_time, ticket_error, ticket_start_time,
     validate_authorization_data, verified_ticket_pac,
@@ -39,6 +39,15 @@ impl Validator<'_> {
         )?;
         Ok((components, key))
     }
+    /// The PAC settings this validator verifies a ticket for `service` against.
+    fn pac_check<'check>(&'check self, service: &'check Principal) -> PacCheck<'check> {
+        PacCheck::new(
+            &self.pac_policy,
+            self.pac_kdc_key.as_ref(),
+            &service.components,
+        )
+    }
+
     /// Enforce RFC 4120 section 2.7 before replay admission.
     ///
     /// # Errors
@@ -121,7 +130,7 @@ impl Validator<'_> {
         self.validate_ticket_times(&ticket_service, &enc_ticket)?;
         self.validate_client_address(&ticket_service, &enc_ticket)?;
         self.validate_transit(&ticket_service, &enc_ticket)?;
-        let pac = verified_ticket_pac(&enc_ticket, service_key)?;
+        let pac = verified_ticket_pac(&enc_ticket, service_key, &self.pac_check(&ticket_service))?;
 
         let session_key = encryption_key_from_rasn(&enc_ticket.key);
         let authenticator_usage = ap_req::authenticator_usage_for_ticket(&ap_req.ticket);

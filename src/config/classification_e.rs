@@ -17,20 +17,16 @@ mod tests {
 
     /// Libdefaults: safe assignment and optional genuinely stronger assignment.
     /// None means no valid value tightens current behavior; table rationale explains why.
-    const LIB: [(&str, &str, Option<&str>); 7] = [
+    const LIB: [(&str, &str, Option<&str>); 5] = [
         ("default_rcache_name", "none:", Some("dfl:")),
         ("enforce_ok_as_delegate", "true", None),
         ("ignore_acceptor_hostname", "false", None),
-        ("k5login_authoritative", "true", None),
-        ("k5login_directory", "/unread", None),
         ("kcm_mach_service", "-", None),
         ("plugin_base_dir", "%{LIBDIR}/unloaded", None),
     ];
 
     /// Realm values are restrictions on absent mechanisms, except encrypted timestamp.
-    const REALM: [(&str, &str, Option<&str>); 7] = [
-        ("auth_to_local", "DEFAULT", None),
-        ("auth_to_local_names", "{\n Alice = alice\n }", None),
+    const REALM: [(&str, &str, Option<&str>); 5] = [
         ("default_domain", "example.test", None),
         ("pkinit_identity", "FILE:/identity", None),
         ("pkinit_allow_upn", "false", None),

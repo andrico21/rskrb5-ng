@@ -33,6 +33,9 @@ pub enum Any {
     /// Realm-path, transited-encoding or certificate-identity handling failed.
     #[error("routing error: {0}")]
     Routing(#[from] Routing),
+    /// Local authorization or name translation failed.
+    #[error("local authorization error: {0}")]
+    LocalAuth(#[from] LocalAuth),
     /// Kerberos message helper processing failed.
     #[cfg(feature = "messages")]
     #[error("message helper error: {0}")]

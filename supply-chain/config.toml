@@ -18,6 +18,11 @@ version = "0.11.1"
 criteria = "safe-to-deploy"
 notes = "kkdcp-rustls leaf (plan 2 todo 16); docs/dependency-admission.md#rustls-rustcrypto"
 
+[[exemptions.aho-corasick]]
+version = "1.1.5"
+criteria = "safe-to-deploy"
+notes = "optional perf-literal edge of regex, in the lock and never built (localauth leaf, plan 2 todo 25); docs/dependency-admission.md#regex"
+
 [[exemptions.async-trait]]
 version = "0.1.92"
 criteria = "safe-to-deploy"
@@ -316,7 +321,7 @@ version = "1.0.7"
 criteria = "safe-to-run"
 
 [[exemptions.form_urlencoded]]
-version = "1.2.2"
+version = "1.2.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.funty]]
@@ -769,9 +774,20 @@ criteria = "safe-to-deploy"
 version = "0.5.18"
 criteria = "safe-to-deploy"
 
+[[exemptions.regex]]
+version = "1.13.1"
+criteria = "safe-to-deploy"
+notes = "localauth leaf (plan 2 todo 25); docs/dependency-admission.md#regex"
+
+[[exemptions.regex-automata]]
+version = "0.4.18"
+criteria = "safe-to-deploy"
+notes = "localauth leaf (plan 2 todo 25); docs/dependency-admission.md#regex"
+
 [[exemptions.regex-syntax]]
 version = "0.8.11"
-criteria = "safe-to-run"
+criteria = "safe-to-deploy"
+notes = "localauth leaf (plan 2 todo 25) and the dev graph; docs/dependency-admission.md#regex"
 
 [[exemptions.resolv-conf]]
 version = "0.7.6"
@@ -1067,7 +1083,7 @@ version = "0.9.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.url]]
-version = "2.5.8"
+version = "2.5.9"
 criteria = "safe-to-deploy"
 
 [[exemptions.utf8_iter]]

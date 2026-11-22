@@ -134,6 +134,10 @@ mod otp;
 #[path = "secret_debug_audit/pkinit.rs"]
 mod pkinit;
 
+#[cfg(all(test, feature = "messages"))]
+#[path = "secret_debug_audit/pac_api.rs"]
+mod pac_api;
+
 #[cfg(all(test, feature = "tokio"))]
 #[path = "secret_debug_audit/routing.rs"]
 mod routing;
@@ -199,6 +203,8 @@ mod tests {
         super::otp::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         #[cfg(feature = "messages")]
         super::pkinit::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
+        #[cfg(feature = "messages")]
+        super::pac_api::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         #[cfg(feature = "tokio")]
         super::routing::tests::run_audit();
         #[cfg(feature = "spnego")]
@@ -312,11 +318,21 @@ mod tests {
             return "rskrb5_ng::error::Any".to_owned();
         }
         let (file, owner) = identity.rsplit_once("::").unwrap_or((identity, ""));
-        let module = file
-            .strip_prefix("src/")
-            .unwrap_or(file)
-            .trim_end_matches(".rs")
-            .replace('/', "::");
+        // The `include!`d files of `src/pac.rs` define items of the `pac` module itself.
+        let module = if matches!(
+            file,
+            "src/pac/builder.rs"
+                | "src/pac/identity.rs"
+                | "src/pac/policy.rs"
+                | "src/pac/verified.rs"
+        ) {
+            "pac".to_owned()
+        } else {
+            file.strip_prefix("src/")
+                .unwrap_or(file)
+                .trim_end_matches(".rs")
+                .replace('/', "::")
+        };
         format!("rskrb5_ng::{module}::{owner}")
     }
 
@@ -1342,6 +1358,9 @@ mod tests {
         "src/messages.rs::PaReqEncPaRep",
         "src/messages.rs::PaForUser",
         "src/pac.rs::Pac",
+        "src/pac/builder.rs::Builder",
+        "src/pac/builder.rs::Signing",
+        "src/pac/policy.rs::Verification",
         "src/pac.rs::KerbValidationInfo",
         "src/pac.rs::CredentialsInfo",
         "src/pac.rs::CredentialData",
