@@ -3122,6 +3122,9 @@ test_names = [
   "tests/interop_gss/scenarios.rs::rust_gss_initiator_is_accepted_by_the_mit_acceptor",
   "tests/interop_gss/scenarios.rs::mit_enforces_the_cbt_assertion_of_a_client_aware_rust_initiator",
   "tests/interop_gss/mit_initiator.rs::mit_gss_initiator_is_accepted_by_the_rust_acceptor",
+  "tests/interop_gss_samba/scenarios.rs::a_bound_gssapi_bind_over_ldaps_is_accepted",
+  "tests/interop_gss_samba/scenarios.rs::an_unbound_gssapi_bind_over_ldaps_is_refused",
+  "tests/interop_gss_samba/scenarios.rs::a_bind_with_another_certificates_bindings_is_refused",
 ]
 feature_flags = []
 security_divergence = "AcceptorOptions::require_channel_bindings refuses a token without matching bindings; MIT only leaves GSS_C_CHANNEL_BOUND_FLAG unset (doc/appdev/gssapi.rst:436-443). A zero digest is absent, never a match, as in MIT (accept_sec_context.c:541-546)."
