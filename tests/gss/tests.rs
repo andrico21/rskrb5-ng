@@ -43,3 +43,7 @@ mod relations;
 /// SPNEGO over the GSS Kerberos mechanism.
 #[path = "spnego.rs"]
 mod spnego;
+
+/// The mechanism, name, per-OID and status inquiries.
+#[path = "inquiry.rs"]
+mod inquiry;

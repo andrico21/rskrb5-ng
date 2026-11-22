@@ -158,6 +158,18 @@ impl Name {
             && self.certificate() == other.certificate()
     }
 
+    /// `gss_inquire_mechs_for_name`: the mechanisms that take this name: krb5,
+    /// or none for a certificate name, which only `S4U2Self` takes.
+    #[inline]
+    #[must_use]
+    pub fn inquire_mechs(&self) -> Vec<ObjectIdentifier> {
+        if self.certificate().is_some() {
+            Vec::new()
+        } else {
+            vec![ObjectIdentifier::krb5()]
+        }
+    }
+
     /// The mechanism name of this name; MIT duplicates the name (`canon_name.c`).
     #[inline]
     #[must_use]

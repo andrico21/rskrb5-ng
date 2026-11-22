@@ -135,3 +135,61 @@ pub enum Gss {
     #[error("random source error: {0}")]
     Random(#[from] getrandom::Error),
 }
+
+#[cfg(feature = "spnego")]
+impl Gss {
+    /// The RFC 2744 status code of this error: a routine error in bits 16 to
+    /// 23, or, for the token-ordering errors, the supplementary bit MIT
+    /// reports with the message (`gssapi.hin`).
+    #[inline]
+    #[must_use]
+    pub const fn major_status(&self) -> u32 {
+        let routine = match self {
+            Self::BadName(_)
+            | Self::NameTooLong {
+                maximum: _,
+                actual: _,
+            }
+            | Self::UnresolvedUid(_) => 2,
+            Self::BadNameType(_) => 3,
+            Self::BadBindings
+            | Self::MissingBindings
+            | Self::BindingTooLong {
+                field: _,
+                maximum: _,
+                actual: _,
+            } => 4,
+            Self::NoCredential(_)
+            | Self::WrongCredentialUsage(_)
+            | Self::UnsupportedCredStoreKey(_)
+            | Self::DuplicateCredStoreKey(_)
+            | Self::UnsupportedReplayCache(_) => 7,
+            Self::UnexpectedStep(_) => 8,
+            Self::DefectiveToken(_)
+            | Self::TokenTooLarge {
+                maximum: _,
+                actual: _,
+            }
+            | Self::Spnego(_) => 9,
+            Self::DefectiveChecksum(_) | Self::DelegatedCredential(_) => 10,
+            Self::ContextExpired => 12,
+            Self::NotNegotiated(_) | Self::LegacyTokenFormat(_) => 16,
+            Self::DuplicateElement => 17,
+            Self::DuplicateToken(_) => return 1 << 1,
+            Self::OldToken(_) => return 1 << 2,
+            Self::UnsequencedToken(_) => return 1 << 3,
+            Self::GapToken(_) => return 1 << 4,
+            Self::Service(_)
+            | Self::ApReq(_)
+            | Self::ApRep(_)
+            | Self::Ticket(_)
+            | Self::Policy(_)
+            | Self::Client(_)
+            | Self::Ccache(_)
+            | Self::Keytab(_)
+            | Self::Crypto(_)
+            | Self::Random(_) => 13,
+        };
+        routine << 16
+    }
+}

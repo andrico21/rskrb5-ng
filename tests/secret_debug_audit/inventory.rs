@@ -17,10 +17,10 @@ pub(super) struct Owner {
 }
 
 /// Match same-scope owners or unique cross-module owner references.
-/// The module whose name a path must carry to reach an owner of an
-/// `include!`d GSS file whose short name another module also uses (the GSS
-/// `Credential`, `Initiator`, `Acceptor` and `Name` beside the ccache,
-/// keytab and SPNEGO ones), or `None` for every other owner.
+/// The module a path must name to reach an `include!`d GSS owner.
+///
+/// The GSS `Credential`, `Initiator`, `Acceptor` and `Name` share their short
+/// names with ccache, keytab and SPNEGO owners; every other owner gives `None`.
 fn qualified_module(identity: &str) -> Option<&'static str> {
     if identity.starts_with("src/gss/") {
         Some("gss")

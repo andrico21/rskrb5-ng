@@ -43,6 +43,13 @@ pub(super) fn inquire(context: &EstablishedContext) -> ContextInquiry {
         locally_initiated: context.initiated,
         open: true,
         key_etype: key(context).etype(),
+        ssf: match key(context).etype() {
+            18 | 20 | 26 => 256,
+            17 | 19 | 25 => 128,
+            16 => 112,
+            23 | 24 => 64,
+            _ => 0,
+        },
     }
 }
 

@@ -82,6 +82,21 @@ include!("gss/contexts.rs");
 
 use crate::error::Gss as Error;
 
+/// `gss_indicate_mechs`: the mechanisms this module implements, krb5.
+#[inline]
+#[must_use]
+pub fn indicate_mechs() -> Vec<ObjectIdentifier> {
+    vec![ObjectIdentifier::krb5()]
+}
+
+/// `gss_inquire_names_for_mech`: the name types `mechanism` imports, every
+/// [`NameType`] for krb5 (either of its OIDs) and none for another mechanism.
+#[inline]
+#[must_use]
+pub fn inquire_names_for_mech(mechanism: &ObjectIdentifier) -> Vec<NameType> {
+    name::types_for(mechanism)
+}
+
 /// The MS-KILE `KERB_AP_OPTIONS_CBT` authorization data, for the SPNEGO header
 /// initiator.
 ///

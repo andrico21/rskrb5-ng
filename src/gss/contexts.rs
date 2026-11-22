@@ -579,6 +579,8 @@ pub struct ContextInquiry {
     open: bool,
     /// The context key's enctype.
     key_etype: i32,
+    /// The security strength factor of the context key.
+    ssf: u32,
 }
 
 impl ContextInquiry {
@@ -637,6 +639,16 @@ impl ContextInquiry {
     #[must_use]
     pub const fn key_etype(&self) -> i32 {
         self.key_etype
+    }
+
+    /// The SASL security strength factor of the context key
+    /// (`GSS_C_SEC_CONTEXT_SASL_SSF`; MIT's enctype strengths: 256 for the
+    /// 256-bit AES and Camellia keys, 128 for the 128-bit ones, 112 for DES3,
+    /// 64 for RC4-HMAC).
+    #[inline]
+    #[must_use]
+    pub const fn ssf(&self) -> u32 {
+        self.ssf
     }
 }
 

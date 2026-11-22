@@ -68,6 +68,15 @@ pub(super) fn oid(name_type: NameType) -> ObjectIdentifier {
     ObjectIdentifier::from_static(arcs)
 }
 
+/// The name types of `mechanism`.
+pub(super) fn types_for(mechanism: &ObjectIdentifier) -> Vec<NameType> {
+    if mechanism.is_kerberos_mechanism() {
+        NAME_TYPES.iter().map(|(kind, _)| *kind).collect()
+    } else {
+        Vec::new()
+    }
+}
+
 /// The name type of `oid`.
 pub(super) fn from_oid(oid: &ObjectIdentifier) -> Option<NameType> {
     if oid.arcs() == HOSTBASED_V2 {
