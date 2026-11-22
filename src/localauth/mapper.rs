@@ -101,24 +101,33 @@ impl LocalNameMapper {
         Ok(mapper)
     }
 
-    /// `krb5_aname_to_localname`: the explicit mapping, then the rules.
+    /// The `names` module (`localauth_names.c:38-84`): the explicit mapping of
+    /// a principal of the default realm, `None` when there is none.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::InvalidLocalName`] when the configured name is not usable.
+    pub(super) fn explicit(&self, principal: &Principal) -> Option<Result<String, Error>> {
+        let realm = self.default_realm.as_deref()?;
+        (principal.realm == realm)
+            .then(|| unparse::without_realm(principal))
+            .flatten()
+            .and_then(|key| self.names.get(&key))
+            .map(|local| usable(local.clone()))
+    }
+
+    /// The `auth_to_local` module (`localauth.c:300-352`): the rules in order,
+    /// `DEFAULT` when there are none.
     ///
     /// # Errors
     ///
     /// [`Error::NoTranslation`], [`Error::InvalidLocalName`] and the errors of
     /// the rules.
-    pub(super) fn translate(&self, principal: &Principal) -> Result<String, Error> {
+    pub(super) fn by_rules(&self, principal: &Principal) -> Result<String, Error> {
         let realm = self
             .default_realm
             .as_deref()
             .ok_or(Error::NoTranslation)?;
-        let explicit = (principal.realm == realm)
-            .then(|| unparse::without_realm(principal))
-            .flatten()
-            .and_then(|key| self.names.get(&key));
-        if let Some(local) = explicit {
-            return usable(local.clone());
-        }
         let default = [AuthToLocalRule::default_rule()];
         let rules = if self.rules.is_empty() {
             default.as_slice()
@@ -133,5 +142,16 @@ impl LocalNameMapper {
             }
         }
         Err(Error::NoTranslation)
+    }
+
+    /// `krb5_aname_to_localname`: the explicit mapping, then the rules.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NoTranslation`], [`Error::InvalidLocalName`] and the errors of
+    /// the rules.
+    pub(super) fn translate(&self, principal: &Principal) -> Result<String, Error> {
+        self.explicit(principal)
+            .unwrap_or_else(|| self.by_rules(principal))
     }
 }

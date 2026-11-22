@@ -66,7 +66,7 @@ fn registry_translates_like_the_mapper() -> Result<(), TestError> {
 struct Veto;
 
 impl LocalAuth for Veto {
-    fn id(&self) -> &str {
+    fn id(&self) -> &'static str {
         "veto"
     }
 
@@ -103,8 +103,6 @@ fn application_modules_combine_with_the_built_ins() -> Result<(), TestError> {
 /// The tests that need a `.k5login` file with a Unix owner and mode.
 #[cfg(unix)]
 mod unix {
-    //! `.k5login` through the registry.
-
     use std::{
         fs,
         os::unix::fs::{MetadataExt as _, PermissionsExt as _},
