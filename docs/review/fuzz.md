@@ -93,7 +93,7 @@ timeout artifact:
 | `keytab_parse` | 2,791,355 | 121 s | 0 |
 | `ccache_parse` | 1,769,062 | 121 s | 0 |
 | `kpasswd_reply` | 1,226,962 | 121 s | 0 |
-| `pac_parse` | 1,053,957 (todo 22 of plan 2, 2026-11-22; was 839,490) | 121 s | 0 |
+| `pac_parse` | 959,198 (todo 22 of plan 2, 2026-11-22; was 839,490) | 121 s | 0 |
 | `spnego_token` | 861,077 | 121 s | 0 |
 | `gss_token` | 293,635 | 121 s | 0 |
 | `http_negotiate` | 284,293 | 121 s | 0 |
