@@ -315,7 +315,7 @@ impl BitOr for ContextFlags {
 
     #[inline]
     fn bitor(self, rhs: Self) -> Self {
-        self.union(rhs)
+        Self(self.0 | rhs.0)
     }
 }
 

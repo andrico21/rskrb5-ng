@@ -166,9 +166,7 @@ fn now() -> Result<(SystemTime, u32, KerberosTime), Error> {
 /// (`init_sec_context.c:537-586`).
 fn negotiate(requested: ContextFlags, enforce: bool, ok_as_delegate: bool) -> ContextFlags {
     let asked = if enforce && requested.contains(ContextFlags::DELEG) {
-        requested
-            .difference(ContextFlags::DELEG)
-            .union(ContextFlags::DELEG_POLICY)
+        requested.difference(ContextFlags::DELEG) | ContextFlags::DELEG_POLICY
     } else {
         requested
     };
