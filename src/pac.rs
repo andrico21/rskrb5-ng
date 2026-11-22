@@ -421,46 +421,56 @@ impl Pac {
                 return Err(Error::DuplicateBuffer(buffer.ul_type));
             }
             match buffer.ul_type {
-                INFO_TYPE_KERB_VALIDATION_INFO => {
+                INFO_TYPE_KERB_VALIDATION_INFO if self.kerb_validation_info.is_none() => {
                     self.kerb_validation_info = Some(KerbValidationInfo::parse(bytes)?);
                 }
-                INFO_TYPE_PAC_SERVER_SIGNATURE_DATA => {
+                INFO_TYPE_PAC_SERVER_SIGNATURE_DATA if self.server_checksum.is_none() => {
                     let checksum = SignatureData::parse(bytes)?;
                     buffer.copy_zeroed_signature(&mut self.zero_signature_data, &checksum)?;
                     self.server_checksum = Some(checksum);
                 }
-                INFO_TYPE_PAC_KDC_SIGNATURE_DATA => {
+                INFO_TYPE_PAC_KDC_SIGNATURE_DATA if self.kdc_checksum.is_none() => {
                     let checksum = SignatureData::parse(bytes)?;
                     buffer.copy_zeroed_signature(&mut self.zero_signature_data, &checksum)?;
                     self.kdc_checksum = Some(checksum);
                 }
-                INFO_TYPE_PAC_TICKET_SIGNATURE_DATA => {
+                INFO_TYPE_PAC_TICKET_SIGNATURE_DATA if self.ticket_checksum.is_none() => {
                     self.ticket_checksum = Some(SignatureData::parse(bytes)?);
                 }
-                INFO_TYPE_PAC_FULL_SIGNATURE_DATA => {
+                INFO_TYPE_PAC_FULL_SIGNATURE_DATA if self.full_checksum.is_none() => {
                     self.full_checksum = Some(SignatureData::parse(bytes)?);
                 }
-                INFO_TYPE_CREDENTIALS => {
+                INFO_TYPE_CREDENTIALS if self.credentials_info.is_none() => {
                     self.credentials_info = Some(CredentialsInfo::parse(bytes)?);
                 }
-                INFO_TYPE_PAC_CLIENT_INFO => self.client_info = Some(ClientInfo::parse(bytes)?),
-                INFO_TYPE_UPN_DNS_INFO => self.upn_dns_info = Some(UpnDnsInfo::parse(bytes)?),
-                INFO_TYPE_S4U_DELEGATION_INFO => {
+                INFO_TYPE_PAC_CLIENT_INFO if self.client_info.is_none() => {
+                    self.client_info = Some(ClientInfo::parse(bytes)?);
+                }
+                INFO_TYPE_UPN_DNS_INFO if self.upn_dns_info.is_none() => {
+                    self.upn_dns_info = Some(UpnDnsInfo::parse(bytes)?);
+                }
+                INFO_TYPE_S4U_DELEGATION_INFO if self.s4u_delegation_info.is_none() => {
                     self.s4u_delegation_info = Some(S4UDelegationInfo::parse(bytes)?);
                 }
-                INFO_TYPE_PAC_DEVICE_INFO => self.device_info = Some(DeviceInfo::parse(bytes)?),
+                INFO_TYPE_PAC_DEVICE_INFO if self.device_info.is_none() => {
+                    self.device_info = Some(DeviceInfo::parse(bytes)?);
+                }
                 // Samba 4.22 sends a zero-length claims buffer for an account without claims and
                 // for every ticket issued across a trust (FU-IOP-P14): no claims, not an error.
-                INFO_TYPE_PAC_CLIENT_CLAIMS_INFO if !bytes.is_empty() => {
+                INFO_TYPE_PAC_CLIENT_CLAIMS_INFO
+                    if self.client_claims_info.is_none() && !bytes.is_empty() =>
+                {
                     self.client_claims_info = Some(ClaimsInfo::parse(bytes)?);
                 }
-                INFO_TYPE_PAC_DEVICE_CLAIMS_INFO if !bytes.is_empty() => {
+                INFO_TYPE_PAC_DEVICE_CLAIMS_INFO
+                    if self.device_claims_info.is_none() && !bytes.is_empty() =>
+                {
                     self.device_claims_info = Some(ClaimsInfo::parse(bytes)?);
                 }
-                INFO_TYPE_PAC_ATTRIBUTES_INFO => {
+                INFO_TYPE_PAC_ATTRIBUTES_INFO if self.attributes_info.is_none() => {
                     self.attributes_info = Some(AttributesInfo::parse(bytes)?);
                 }
-                INFO_TYPE_PAC_REQUESTOR => {
+                INFO_TYPE_PAC_REQUESTOR if self.requestor_sid.is_none() => {
                     self.requestor_sid = Some(RequestorSid::parse(bytes)?);
                 }
                 _ => {}
