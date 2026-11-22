@@ -35,6 +35,7 @@ the chosen entry point, so one target covers a family of related decoders.
 | `spake_message` | a KDC's PA-SPAKE value (RFC 9588) | `preauth::spake::Message::decode` twice (deterministic), then a fresh `Client` permitting all four groups answers the value twice (`Client::process`): support message for empty or out-of-policy values, response for a challenge in a permitted group, which decodes and validates the edwards25519, P-256, P-384 or P-521 element and derives `K'[0]` and `K'[1]`; a second challenge must be refused |
 | `otp_challenge` | a KDC's `PA-OTP-CHALLENGE` value (RFC 6560) | `preauth::otp::Challenge::decode` twice (deterministic) and once under a tight policy (token count, field and challenge bounds), then an accepted challenge answers every token and one index past the list, with a value and with a value and a PIN, under an AES256 armor key (`Challenge::request`): every request built is an OTP padata of the request type |
 | `pkinit_reply` | the KDC's reply to a PA-PK-AS-REQ (RFC 4556 PKINIT) | the stepwise AS engine with a certificate `preauth::pkinit::Exchange` after a fixed `PREAUTH_REQUIRED`: mode 0 the raw reply (AS-REP or KRB-ERROR, the PA-PK-AS-REP lookup), mode 1 the bytes as the PA-PK-AS-REP value of an AS-REP (`PA-PK-AS-REP`, `DHRepInfo`, the CMS `ContentInfo` and `SignedData`, X.509 certificates and CRLs, the bounded path validator, `KDCDHKeyInfo` and the key agreement); no fuzzed reply may complete the exchange |
+| `routing_transit` | a ticket's DOMAIN-X500-COMPRESS transited encoding (RFC 4120 section 3.3.3.2), a KDC's `PA-S4U-X509-USER` (MS-SFU) and the text of two realm names, one selector byte then bytes or text | `routing::transited::decode` between two fixed realms (an accepted list stays within `MAX_REALMS` and, when `encode` takes it, decodes again to the same list), `routing::s4u::PaS4uX509User::decode_der` (then encode and decode again must give the same element), and `routing::RealmPath::hierarchical` (a path starts at the first realm, ends at the second and stays within `RealmPath::MAX_REALMS`) |
 | `name_parse` | names and values as text | `Principal::parse_user`, `Principal::parse_service`, `CacheName::parse`, `keytab::Name::parse`, `KdcEndpoint::configured`, `Tokio::with_dns_server`, `config::parse_duration`, `config::parse_boolean`, `crypto::s2kparams_to_iterations` |
 | `discovery_uri` | the data DNS hands to server discovery, one selector byte then bytes or text | `discovery::uri::parse` (a `krb5srv:flags:transport:host` URI record target) and `host_port` on an accepted target, `split_rdata` (URI record data), `realm_from_txt` (the first string of a TXT realm record) and `host_port` on arbitrary text; the target text, the host and the realm stay within their bounds |
 
@@ -113,6 +114,7 @@ timeout artifact:
 | `kkdcp_message` | 6,458,968 (todo 16 of plan 2, 2026-11-21) | 121 s | 0 |
 | `otp_challenge` | 1,658,639 (todo 10 of plan 2, 2026-11-21) | 121 s | 0 |
 | `pkinit_reply` | 4,823 (todo 8 of plan 2, 2026-11-21) | 121 s | 0 |
+| `routing_transit` | 2,195,539 (todo 17 of plan 2, 2026-11-21) | 121 s | 0 |
 
 ### Round-2 session admission repair (FU-FUZ-R02)
 
@@ -243,6 +245,21 @@ the fixture anchor, then fails on its content), an `encKeyPack` (refused by
 policy) and a KRB-ERROR. The run of 2026-11-21 made 4,823 executions in 121 s
 with no artifact. Coverage proof: `task-8-pkinit-coverage.tsv` in the
 execution evidence.
+
+### Cross-realm routing (todo 17 of plan 2)
+
+`routing_transit` fuzzes what an acceptor and a delegating service read from
+other parties: the transited encoding inside a ticket an acceptor decrypts
+(`transited::decode`: at most 4,096 bytes, realm names of at most 512 bytes,
+at most 64 realms with the expanded ones, refusing what MIT 1.22.2's
+`chk_trans.c` refuses plus a trailing escape, inner NUL bytes and names that
+are not UTF-8), the `PA-S4U-X509-USER` element a KDC answers an `S4U2Self`
+request with (`PaS4uX509User::decode_der`), and the realm hierarchy walk over
+arbitrary names (`RealmPath::hierarchical`). The seeds are MIT 1.22.2's
+`transit-tests` and `walktree-tests` vectors (`src/lib/krb5/krb/`) and one
+encoding of escaped and protected names. The 120-second run recorded above
+found nothing. Coverage proof: `task-17-routing-coverage.tsv` in the execution
+evidence.
 
 ### Earlier campaign crashes
 
@@ -643,6 +660,8 @@ does.
 | `rskrb5_ng::preauth::pkinit::chain::parse_crls` | `src/preauth/pkinit/chain.rs` | `pkinit_reply` |  |
 | `rskrb5_ng::preauth::pkinit::config::read` | `src/preauth/pkinit/config.rs` | - | reads a bounded local file named by the profile (`pkinit_identities`, `pkinit_anchors`, `pkinit_pool`, `pkinit_revoke`); its PEM content is decoded by `keys::pem_certificates`, whose certificates are re-parsed by `chain::parse` in `pkinit_reply` |
 | `rskrb5_ng::preauth::spake::Message::decode` | `src/preauth/spake.rs` | `spake_message` |  |
+| `rskrb5_ng::routing::s4u::PaS4uX509User::decode_der` | `src/routing/s4u.rs` | `routing_transit` |  |
+| `rskrb5_ng::routing::transited::decode` | `src/routing/transited.rs` | `routing_transit` |  |
 | `rskrb5_ng::transport::kkdcp::ProxyMessage::decode` | `src/transport/kkdcp.rs` | `kkdcp_message` |  |
 | `rskrb5_ng::transport::kkdcp::decode_reply` | `src/transport/kkdcp.rs` | `kkdcp_message` |  |
 | `rskrb5_ng::transport::proxy::Url::parse` | `src/transport/proxy.rs` | `kkdcp_message` |  |

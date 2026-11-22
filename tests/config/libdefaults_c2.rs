@@ -16,17 +16,13 @@ mod tests {
     #[test]
     fn restrictions_fail_closed() -> Result<(), Box<dyn Error>> {
         for mode in [ParseMode::Compatible, ParseMode::Strict] {
-            for assignment in [
-                "verify_ap_req_nofail = true",
-                "client_aware_channel_bindings = true",
-            ] {
-                // Given a stronger requested policy, when parsed, then reject it.
-                drop(
-                    Config::parse_with_mode(&format!("[libdefaults]\n {assignment}\n"), mode)
-                        .err()
-                        .ok_or_else(|| format!("accepted {assignment}"))?,
-                );
-            }
+            let assignment = "client_aware_channel_bindings = true";
+            // Given a stronger requested policy, when parsed, then reject it.
+            drop(
+                Config::parse_with_mode(&format!("[libdefaults]\n {assignment}\n"), mode)
+                    .err()
+                    .ok_or_else(|| format!("accepted {assignment}"))?,
+            );
         }
         Ok(())
     }

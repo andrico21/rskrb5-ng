@@ -45,6 +45,7 @@ use crate::{
         pkinit::{AnonymousOptions, Exchange as PkinitExchange, exchange::Pending},
         spake::Policy as SpakePolicy,
     },
+    routing::RealmPath,
     trace::{ExchangeKind, Guard},
 };
 
@@ -443,6 +444,8 @@ pub struct TicketOptions {
     max_referrals: usize,
     /// The ticket of the user-to-user target, encrypted in its session key.
     second_ticket: Option<rasn_kerberos::Ticket>,
+    /// The client path of `[capaths]` to cross, client realm first.
+    realm_path: Option<RealmPath>,
 }
 
 impl fmt::Debug for TicketOptions {
@@ -452,6 +455,7 @@ impl fmt::Debug for TicketOptions {
             .field("request", &self.request)
             .field("max_referrals", &self.max_referrals)
             .field("user_to_user", &self.second_ticket.is_some())
+            .field("realm_path", &self.realm_path)
             .finish()
     }
 }
@@ -465,7 +469,21 @@ impl TicketOptions {
             request,
             max_referrals: DEFAULT_MAX_REFERRALS,
             second_ticket: None,
+            realm_path: None,
         }
+    }
+
+    /// Cross this client path to the service realm (MIT 1.22.2
+    /// `get_creds.c:889-977`): ask for the TGT of the farthest realm of the path
+    /// first and, when a KDC refuses it, for the next closer one; a TGT for a
+    /// realm further along continues from there. A path whose first realm is
+    /// not the TGT's realm or whose last realm is not the service's is ignored.
+    /// [`RealmPath::client`] builds it from `[capaths]`.
+    #[inline]
+    #[must_use]
+    pub fn with_realm_path(mut self, path: RealmPath) -> Self {
+        self.realm_path = Some(path);
+        self
     }
 
     /// Follow at most `max` referrals.
@@ -686,6 +704,10 @@ pub struct TicketCreds {
     state: ticket::State,
     /// Cross-realm TGTs obtained on the way, in hop order.
     referral_tgts: Vec<TgsRepSession>,
+    /// Realms reached so far, the TGT's first (loop detection).
+    seen_realms: Vec<String>,
+    /// Where the exchange stands on its configured realm path.
+    walk: Option<ticket::Walk>,
     /// The trace of the exchange, when a guard is attached.
     trace: Option<trace::Tracer>,
 }
@@ -728,7 +750,8 @@ impl TicketCreds {
     /// Returns [`Error::UnexpectedStepInput`] for an input the exchange does
     /// not expect now, [`Error::MaxReferralDepth`] when the referral chain
     /// exceeds its bound, [`Error::InvalidReferralTicket`] for a referral back
-    /// to the same realm, and the request-building and reply-validation errors
+    /// to the same realm, [`Error::ReferralLoop`] for a referral to a realm
+    /// already reached, and the request-building and reply-validation errors
     /// of [`super::exchange_tgs_req`].
     #[inline]
     pub fn step(&mut self, input: StepInput<'_>) -> Result<ExchangeStep, Error> {

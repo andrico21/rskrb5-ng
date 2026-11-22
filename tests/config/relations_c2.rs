@@ -35,7 +35,6 @@ mod tests {
                 "plugin_base_dir" => assert_eq!(defaults.plugin_base_dir, *value),
                 "kdc_timesync" => assert_eq!(defaults.kdc_time_sync, value.parse::<i32>()?),
                 "noaddresses" => assert!(defaults.no_addresses.is_enabled()),
-                "verify_ap_req_nofail" => assert!(!defaults.verify_ap_req_nofail.is_enabled()),
                 "client_aware_channel_bindings" => {
                     assert!(!defaults.client_aware_channel_bindings.is_enabled());
                 }
@@ -124,8 +123,49 @@ mod tests {
         k5login_directory, "plan 2 WP-17", ["/first", "/second"];
         kcm_mach_service, "plan 2 WP-09", ["org.example.kcm", "-"];
         plugin_base_dir, "plan 2 WP-16", ["/never-load", "%{LIBDIR}/krb5/plugins"];
-        verify_ap_req_nofail, "plan 2 WP-11", ["false", "off"];
         client_aware_channel_bindings, "plan 2 WP-12", ["false", "off"];
+    }
+
+    /// `verify_ap_req_nofail` is effective (consumer `Tokio::verify_init_creds`).
+    ///
+    /// Both values parse in both modes without a deferred diagnostic, and the
+    /// profile records that it was set, since unset requires verification.
+    #[test]
+    fn verify_ap_req_nofail() -> Result<(), Box<dyn Error>> {
+        for mode in [ParseMode::Compatible, ParseMode::Strict] {
+            for (value, enabled) in [("true", true), ("false", false), ("off", false)] {
+                // Given an explicit value, when parsed, then it is kept and marked explicit.
+                let config = Config::parse_with_mode(
+                    &format!("[libdefaults]\n verify_ap_req_nofail = {value}\n"),
+                    mode,
+                )?;
+                let defaults = &config.libdefaults;
+                assert_eq!(
+                    defaults.verify_ap_req_nofail.is_enabled(),
+                    enabled,
+                    "{value}"
+                );
+                assert!(
+                    defaults.verify_ap_req_nofail_explicit.is_enabled(),
+                    "{value}"
+                );
+                assert!(!config.diagnostics().iter().any(|item| matches!(
+                    item,
+                    ConfigDiagnostic::NotYetEffective {
+                        relation: "verify_ap_req_nofail",
+                        package: _
+                    }
+                )));
+            }
+        }
+        // And an unset relation stays unset.
+        assert!(
+            !Config::parse("")?
+                .libdefaults
+                .verify_ap_req_nofail_explicit
+                .is_enabled()
+        );
+        Ok(())
     }
 
     /// Profile bit masks enter the request-options consumer.

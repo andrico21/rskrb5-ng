@@ -158,7 +158,12 @@ pub(super) const FIELDS: &[(&str, &str, &str)] = &[
         "Public principal-name metadata.",
     ),
     (
-        "src/service.rs::TransitPolicy",
+        "src/routing/s4u.rs::PaS4uX509User",
+        "checksum",
+        "Keyed MAC over the public S4U user identity and nonce: an integrity value the KDC checks, not key material.",
+    ),
+    (
+        "src/service/transit.rs::TrustedPair",
         "client_realm",
         "Realm-routing policy metadata.",
     ),

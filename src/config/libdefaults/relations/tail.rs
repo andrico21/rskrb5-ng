@@ -169,8 +169,8 @@ pub(crate) const RELATIONS_TAIL: [(&str, &str, &str, &str, &str, &str); 22] = [
         "verify_ap_req_nofail",
         "boolean",
         "false",
-        "plan 2 WP-11",
-        "true requires unavailable verify-init-creds orchestration and errors; false diagnostic",
+        "client::Tokio::verify_init_creds",
+        "Unset or true: a keytab without a host key is an error; false: verification is skipped then; an invalid proof always fails",
         "verify_ap_req_nofail",
     ),
     (

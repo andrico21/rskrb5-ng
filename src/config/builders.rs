@@ -251,6 +251,15 @@ pub(super) const fn with_udp_preference_limit(mut this: LibDefaults, value: i32)
     this
 }
 
+/// Sets `verify_ap_req_nofail_explicit`, preserving the other fields.
+pub(super) const fn with_verify_ap_req_nofail_explicit(
+    mut this: LibDefaults,
+    value: Toggle,
+) -> LibDefaults {
+    this.verify_ap_req_nofail_explicit = value;
+    this
+}
+
 /// Sets `verify_ap_req_nofail`, preserving the other fields.
 pub(super) const fn with_verify_ap_req_nofail(mut this: LibDefaults, value: Toggle) -> LibDefaults {
     this.verify_ap_req_nofail = value;

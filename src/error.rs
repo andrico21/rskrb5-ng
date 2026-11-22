@@ -417,6 +417,30 @@ pub enum Client {
         /// Maximum number of referrals followed.
         max: usize,
     },
+    /// The KDC's `PA-S4U-X509-USER` reply does not match the request: a
+    /// missing element, another nonce, an invalid checksum or no user name
+    /// (MIT 1.22.2 `KRB5_KDCREP_MODIFIED`, `s4u_creds.c:272-397`).
+    #[error("the S4U2Self reply identity does not match the request")]
+    S4uReplyModified,
+    /// `verify_init_creds` found no key to verify with (no `host/*` principal
+    /// or no key for the named server) and `verify_ap_req_nofail` is not
+    /// `false` (MIT 1.22.2 `vfy_increds.c:296-314`).
+    #[error("no host key to verify the initial credentials with")]
+    VerifyInitCredsNoHostKey,
+    /// The host keytab refused the AP-REQ of `verify_init_creds`: the
+    /// credentials did not come from the KDC that shares the host key.
+    #[error("the host keytab refused the initial credentials: {0}")]
+    VerifyInitCredsRejected(#[source] Box<Service>),
+    /// The configured cross-realm path cannot be used (WP-11).
+    #[error("routing error: {0}")]
+    Routing(#[from] Routing),
+    /// A TGS referral named a realm the exchange already visited (MIT 1.22.2
+    /// `get_creds.c:612-614`).
+    #[error("cross-realm referral loop through {realm}")]
+    ReferralLoop {
+        /// The realm referred to a second time.
+        realm: String,
+    },
     /// A TGS referral reply did not contain a usable `krbtgt/<realm>` service.
     #[error("invalid TGS referral ticket service: {service}")]
     InvalidReferralTicket {
@@ -3203,4 +3227,60 @@ pub enum Ticket {
     /// Crypto operation failed.
     #[error("crypto error: {0}")]
     Crypto(#[from] Crypto),
+}
+/// Realm-path, transited-encoding or certificate-identity failure (WP-11).
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum Routing {
+    /// A realm name is empty.
+    #[error("empty realm name")]
+    EmptyRealm,
+    /// A realm has no cross-realm path to itself.
+    #[error("no cross-realm path from a realm to itself")]
+    SameRealm,
+    /// A configured path names a realm twice or an endpoint as an intermediate.
+    #[error("realm path loops through {realm}")]
+    PathLoop {
+        /// The realm the path reaches a second time.
+        realm: String,
+    },
+    /// A path holds more realms than the bound.
+    #[error("realm path exceeds {max} realms")]
+    PathTooLong {
+        /// The bound, endpoints included.
+        max: usize,
+    },
+    /// A transited encoding is longer than the bound.
+    #[error("transited encoding exceeds {max} bytes")]
+    TransitedTooLong {
+        /// The bound in bytes.
+        max: usize,
+    },
+    /// A transited realm name grows past the bound.
+    #[error("transited realm name exceeds {max} bytes")]
+    TransitedRealmTooLong {
+        /// The bound in bytes.
+        max: usize,
+    },
+    /// A transited encoding names more realms than the bound.
+    #[error("transited encoding names more than {max} realms")]
+    TransitedTooManyRealms {
+        /// The bound, expanded realms included.
+        max: usize,
+    },
+    /// A transited encoding is malformed.
+    #[error("malformed transited encoding: {reason}")]
+    MalformedTransited {
+        /// What is wrong with it.
+        reason: &'static str,
+    },
+    /// A certificate identity is empty or larger than the bound.
+    #[error("a certificate identity holds 1 to {max} DER bytes")]
+    CertificateSize {
+        /// The bound in bytes.
+        max: usize,
+    },
+    /// The certificate inspector refused the certificate.
+    #[error("the certificate inspector refused the certificate: {0}")]
+    CertificateRejected(#[source] ProviderError),
 }

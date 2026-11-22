@@ -14,7 +14,9 @@ use crate::{
     crypto::{CryptoPolicy, Use, selection},
     error::{Config as ConfigError, Policy},
     keytab::EncryptionKey,
+    messages,
     preauth::{fast, otp, pkinit, spake},
+    routing::s4u,
     ticket,
 };
 
@@ -51,6 +53,11 @@ pub(super) fn padata(policy: &CryptoPolicy, data: &[rasn_kerberos::PaData]) -> R
                     policy.check_use(etype, Use::ReplyKey)?;
                 }
             }
+            // MS-SFU and MS-KILE (todo 17): the S4U and RBCD elements a client sends, each its own
+            // DER element; PA-S4U-X509-USER's checksum is keyed with a permitted enctype.
+            super::PA_FOR_USER => drop(messages::PaForUser::decode_der(&entry.value)?),
+            s4u::PA_S4U_X509_USER => s4u::PaS4uX509User::admit(policy, &entry.value)?,
+            super::PA_PAC_OPTIONS => drop(messages::PaPacOptions::decode_der(&entry.value)?),
             // RFC 6560: the one OTP type a client sends; its nonce is sealed in the armor key. The
             // challenge (141) and the PIN-change message (144) are KDC halves and stay refused.
             otp::PA_OTP_REQUEST => {
@@ -87,7 +94,6 @@ pub(super) fn padata(policy: &CryptoPolicy, data: &[rasn_kerberos::PaData]) -> R
             | 17_i32
             | 30..=31
             | 41_i32
-            | 130_i32
             | 134..=135
             | 141_i32
             | 143..=148
@@ -329,10 +335,6 @@ pub(super) fn delegated(
     ))) & super::KDC_OPTION_CNAME_IN_ADDL_TKT
         != 0
     {
-        let keys = request
-            .delegation_keytab
-            .as_ref()
-            .ok_or(Error::DelegationKeyRequired)?;
         let evidence = request
             .message
             .0
@@ -344,7 +346,16 @@ pub(super) fn delegated(
         request
             .crypto_policy
             .check_use(evidence.enc_part.etype, Use::TicketKey)?;
-        super::validate_delegated_ticket(evidence, &request.client, keys)?;
+        // A cross-realm proxy TGT carried to the target realm (MIT 1.22.2
+        // `s4u_creds.c:1087-1108`) is sealed for the KDCs; the evidence it stands
+        // for was bound when the first S4U2Proxy request of the delegation sent it.
+        if !super::is_tgt_wire(&evidence.sname) {
+            let keys = request
+                .delegation_keytab
+                .as_ref()
+                .ok_or(Error::DelegationKeyRequired)?;
+            super::validate_delegated_ticket(evidence, &request.client, keys)?;
+        }
     }
     Ok(())
 }

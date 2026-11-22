@@ -30,6 +30,9 @@ pub enum Any {
     /// PAC parsing or verification failed.
     #[error("PAC error: {0}")]
     Pac(#[from] Pac),
+    /// Realm-path, transited-encoding or certificate-identity handling failed.
+    #[error("routing error: {0}")]
+    Routing(#[from] Routing),
     /// Kerberos message helper processing failed.
     #[cfg(feature = "messages")]
     #[error("message helper error: {0}")]

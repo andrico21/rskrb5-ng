@@ -21,8 +21,8 @@ pub(crate) const SECTION_RELATIONS: [(&str, &str, &str, &str, &str, &str); 6] = 
         "capaths",
         "client -> server -> direct/via graph",
         "unset",
-        "plan 2 WP-11",
-        "No profile-driven routing/validation; current acceptor denies cross-realm without explicit policy; diagnostic",
+        "routing::RealmPath; client::transport::Tokio::get_service_ticket_with_referral_trace_limit; service::CapathsTransit; service::Validator::from_default_keytab_name",
+        "Client crosses the configured path farthest first; acceptor admits unchecked transit only on a listed pair's path; loops and paths over 32 realms fail",
         "capaths",
     ),
     (
@@ -106,7 +106,6 @@ pub(super) fn finish(
                         .or_default()
                         .insert(server.clone(), route),
                 );
-                diagnostic(config, "capaths")?;
             }
             [section, realm, subsection, name]
                 if section == "realms" && subsection == "auth_to_local_names" =>

@@ -37,7 +37,7 @@ mod tests {
     use rskrb5_ng::spnego;
     use rskrb5_ng::{
         Result, ccache::CCache, config, crypto::AesSha1Etype, error, keytab::Keytab, pac::Pac,
-        trace::Options,
+        routing::RealmPath, trace::Options,
     };
     #[cfg(feature = "messages")]
     use rskrb5_ng::{ap_rep, ap_req, client::principal::Principal, kadmin, kdc_rep, kdc_req};
@@ -81,6 +81,11 @@ mod tests {
         trace_when_destination_empty,
         error::Trace,
         Options::new().with_file("")
+    );
+    propagates_domain!(
+        routing_when_same_realm,
+        error::Routing,
+        RealmPath::hierarchical("A.TEST", "A.TEST")
     );
 
     #[cfg(feature = "messages")]

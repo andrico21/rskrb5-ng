@@ -56,7 +56,7 @@ both modes. Parsed values do not imply an implemented mechanism.
 | libdefaults | spake_preauth_groups | SPAKE group name list | edwards25519 (client) | InitCredsOptions::from_config; Exchange::configure; preauth::spake::SpakePolicy (leaf spake) | Effective SPAKE groups in preference order; an empty list disables SPAKE; without the spake leaf FeatureUnavailable and no SPAKE; unknown names rejected rather than skipped | spake_preauth_groups |
 | libdefaults | ticket_lifetime | duration | 1 day | AsReq::from_libdefaults; TgsReq::from_libdefaults | Effective request lifetime; checked MIT intervals | ticket_lifetime |
 | libdefaults | udp_preference_limit | signed decimal i32 | 1465 | client::transport::auto_uses_udp_first | Effective only in Auto transport; negative uses MIT default, large values capped at 32700 | udp_preference_limit |
-| libdefaults | verify_ap_req_nofail | boolean | false | plan 2 WP-11 | true requires unavailable verify-init-creds orchestration and errors; false diagnostic | verify_ap_req_nofail |
+| libdefaults | verify_ap_req_nofail | boolean | false | client::Tokio::verify_init_creds | Unset or true: a keytab without a host key is an error; false: verification is skipped then; an invalid proof always fails | verify_ap_req_nofail |
 | libdefaults | client_aware_channel_bindings | boolean | false | plan 2 WP-12 | true requires unavailable GSS channel-binding-aware signaling and errors; false diagnostic | client_aware_channel_bindings |
 
 ## realms (28)
@@ -97,7 +97,7 @@ both modes. Parsed values do not imply an implemented mechanism.
 | Section | Relation | Typed value | MIT default | Effective consumer / package | Fail-closed classification | Test |
 | --- | --- | --- | --- | --- | --- | --- |
 | domain_realm | domain_realm | DNS-name -> realm map | unset | Config::resolve_realm | Exact then longest suffix; dotted suffix excludes apex | domain_realm |
-| capaths | capaths | client -> server -> direct/via graph | unset | plan 2 WP-11 | No profile-driven routing/validation; current acceptor denies cross-realm without explicit policy; diagnostic | capaths |
+| capaths | capaths | client -> server -> direct/via graph | unset | routing::RealmPath; client::transport::Tokio::get_service_ticket_with_referral_trace_limit; service::CapathsTransit; service::Validator::from_default_keytab_name | Client crosses the configured path farthest first; acceptor admits unchecked transit only on a listed pair's path; loops and paths over 32 realms fail | capaths |
 | appdefaults | appdefaults | hierarchical string/boolean lookup | application-defined | Config::appdefault; Config::appdefault_boolean | Caller chooses type and consumes result; no implicit behavior | appdefaults |
 | plugins | disable | repeated module names | empty | plan 2 WP-16 | extensions::Registry::enabled filters registered providers; diagnosed until built-in consumers use it; excluding timestamp preauth fails | disable |
 | plugins | enable_only | repeated module names | all built-ins | plan 2 WP-16 | extensions::Registry::enabled keeps and orders registered providers; diagnosed until built-in consumers use it; excluding timestamp preauth fails | enable_only |

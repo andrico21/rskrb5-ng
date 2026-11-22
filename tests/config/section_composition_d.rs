@@ -50,11 +50,11 @@ mod tests {
             );
             assert_eq!(config.capath("Client", "Direct"), Some(&Route::Direct));
             assert_eq!(config.capath("client", "Server"), None);
-            assert!(config.diagnostics().iter().any(|item| matches!(
+            assert!(!config.diagnostics().iter().any(|item| matches!(
                 item,
                 ConfigDiagnostic::NotYetEffective {
                     relation: "capaths",
-                    package: "plan 2 WP-11"
+                    package: _
                 }
             )));
         }

@@ -61,7 +61,6 @@ pub(crate) fn option_bits(value: &str, line: &Line) -> Result<u32, Error> {
 /// Whether ignoring a C2 setting would weaken the currently implemented behavior.
 pub(super) fn stricter(defaults: &LibDefaults, relation: &str) -> bool {
     match relation {
-        "verify_ap_req_nofail" => defaults.verify_ap_req_nofail.is_enabled(),
         "client_aware_channel_bindings" => defaults.client_aware_channel_bindings.is_enabled(),
         _ => false,
     }

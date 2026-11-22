@@ -6,19 +6,6 @@ use serde::{Deserialize as _, Deserializer, de::Error as _};
 
 use super::{EnctypeExpr, ParseMode, Toggle};
 
-/// Refuse unimplemented mandatory AP verification.
-/// # Errors
-/// Rejects malformed or unsupported restrictions through serde.
-pub(super) fn verify<'de, D>(deserializer: D) -> Result<Toggle, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Toggle::deserialize(deserializer)?;
-    super::restrictions::reject("verify_ap_req_nofail", value.is_enabled())
-        .map_err(D::Error::custom)?;
-    Ok(value)
-}
-
 /// Refuse unimplemented channel-binding-aware signaling.
 /// # Errors
 /// Rejects malformed or unsupported restrictions through serde.
