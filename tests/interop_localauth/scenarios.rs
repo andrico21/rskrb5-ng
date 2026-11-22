@@ -196,7 +196,7 @@ fn verified_client() -> Result<Name, Box<dyn Error>> {
     runtime()?.block_on(async {
         let tap = KdcTap::start(KdcProtocol::Tcp, kdc.as_str()).await?;
         let nonce = u32::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos() & 0x00ff_ffff)?
-            | 0x8500_0000;
+            | 0x2500_0000;
         let options = AsReq::new(SystemTime::now(), nonce)
             .with_ticket_lifetime(Duration::from_hours(1))
             .with_etypes(vec![AES256_SHA2]);
