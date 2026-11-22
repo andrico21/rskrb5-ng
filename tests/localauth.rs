@@ -47,6 +47,17 @@ mod rules;
 #[path = "localauth/k5login.rs"]
 mod k5login;
 
+/// The built-in modules as providers of the extension registry.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "localauth/builtin.rs"]
+mod builtin;
+
 /// `HOME` never selects the `.k5login` file.
 #[cfg(test)]
 #[expect(

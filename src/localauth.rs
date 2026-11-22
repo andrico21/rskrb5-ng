@@ -49,6 +49,7 @@ use std::path::PathBuf;
 use crate::{ccache::Principal, error::LocalAuth as Error};
 
 mod authorizer;
+pub mod builtin;
 pub mod k5login;
 mod mapper;
 mod rule;
