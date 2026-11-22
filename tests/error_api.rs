@@ -91,7 +91,7 @@ mod tests {
     propagates_domain!(
         local_auth_when_no_translation,
         error::LocalAuth,
-        Err::<(), error::LocalAuth>(error::LocalAuth::NoTranslation)
+        None::<()>.ok_or(error::LocalAuth::NoTranslation)
     );
     #[cfg(feature = "messages")]
     propagates_domain!(
