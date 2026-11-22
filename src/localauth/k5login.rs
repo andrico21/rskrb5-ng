@@ -11,6 +11,7 @@ use std::io;
 
 use crate::ccache::Principal;
 
+use super::LocalAuthorizer;
 #[cfg(unix)]
 use std::{
     fs::{self, File},
@@ -20,7 +21,7 @@ use std::{
 };
 
 #[cfg(unix)]
-use super::{Account, LocalAuthorizer};
+use super::Account;
 
 /// The largest `.k5login` file read, in bytes.
 pub const MAX_FILE_BYTES: usize = 0x10_0000;
@@ -229,6 +230,5 @@ pub(super) fn check(authorizer: &LocalAuthorizer, principal: &Principal, name: &
 /// opinion (MIT `localauth_k5login.c:164-170`).
 #[cfg(not(unix))]
 pub(super) fn check(authorizer: &LocalAuthorizer, principal: &Principal, _name: &str) -> Verdict {
-    let _unused = (&authorizer.resolver, &authorizer.directory);
     classify(judge(None, principal), authorizer.authoritative)
 }

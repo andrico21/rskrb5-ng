@@ -277,6 +277,24 @@ leaf takes the home directory of an account from the caller's `AccountResolver`,
 never from the environment (a test runs the authorizer under a hostile `HOME`).
 `docs/config-profile.md` (Deliberate divergences and bounds) lists the MIT sources.
 
+## Local authorization
+
+The `localauth` leaf (`localauth::authorize_local`, `localauth::principal_to_local_name`)
+answers MIT's `krb5_kuserok` and `krb5_aname_to_localname`
+(`src/lib/krb5/os/localauth*.c`) for a principal the caller has verified. It
+reads no environment variable: the home directory and user id of an account come
+from the caller's `AccountResolver` (the crate has no default one, because it
+forbids `unsafe` and admits no passwd wrapper), never from `HOME`, `UID` or
+`USER`. Every failure denies. It is stricter than MIT where a decision rests on
+attacker-reachable input: a `.k5login` that is a symbolic link, not a regular
+file, writable by its group or by others, replaced between the check and the
+open, or past the size, line-count and line-length bounds is refused;
+`auth_to_local_names` translates only principals of the default realm; rules are
+compiled when the configuration is read, run on the linear-time `regex` engine
+and are bounded in size, substitutions and replacements. The differences from MIT
+are listed in the `security_divergence` of `MIT-authz-1` to `MIT-authz-5` and in
+the register rows `FU-LAU-P01` to `FU-LAU-P06`.
+
 ## Credential stores
 
 The store API (`ccache::stores::CredentialStore`, `ccache::stores::CacheCollection`,

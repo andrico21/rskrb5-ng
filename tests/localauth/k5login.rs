@@ -283,6 +283,9 @@ mod unix {
             authorize_local(&lax, &alice(), USER),
             Authorization::Denied(Denial::NoModuleAllowed)
         );
+        assert!(!lax.k5login_authoritative());
+        assert_eq!(lax.k5login_directory(), None);
+        assert_eq!(lax.resolver().lookup(USER), Some(Account::new(owner, home.path().to_path_buf())));
         let directory = Scratch::new("profile-dir")?;
         let file = directory.path().join(USER);
         fs::write(&file, b"alice@KRBTEST.COM\n")?;
@@ -296,6 +299,8 @@ mod unix {
             resolver(USER, owner, home.path()),
         )?;
         assert_eq!(authorize_local(&configured, &alice(), USER), LISTED);
+        assert!(configured.k5login_authoritative(), "MIT's default");
+        assert_eq!(configured.k5login_directory(), Some(directory.path()));
         Ok(())
     }
 }
@@ -303,7 +308,7 @@ mod unix {
 /// only the `an2ln` rule authorizes.
 #[cfg(not(unix))]
 mod portable {
-    //! The platform-unavailable case.
+    use std::fs;
 
     use rskrb5_ng::localauth::{Authorization, Denial, Module, authorize_local};
 
@@ -313,7 +318,7 @@ mod portable {
     #[test]
     fn no_k5login_module_off_unix() -> Result<(), TestError> {
         let home = Scratch::new("off-unix")?;
-        std::fs::write(home.path().join(".k5login"), b"alice@KRBTEST.COM\n")?;
+        fs::write(home.path().join(".k5login"), b"alice@KRBTEST.COM\n")?;
         let authorizer = authorizer("", resolver("lauth", 0, home.path()))?;
         assert_eq!(
             authorize_local(&authorizer, &principal("alice@KRBTEST.COM"), "lauth"),

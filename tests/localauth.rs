@@ -60,6 +60,7 @@ mod builtin;
 
 /// `HOME` never selects the `.k5login` file.
 #[cfg(test)]
+#[cfg(unix)]
 #[expect(
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,

@@ -63,7 +63,7 @@ fn malformed_rules_are_refused_at_parse_time() {
 /// not exist in the linear-time engine, groups cannot nest deeply and a
 /// pattern that expands past the compiled-size limit does not compile.
 #[test]
-fn patterns_the_engine_cannot_run_are_refused() {
+fn patterns_the_engine_cannot_run_are_refused() -> Result<(), TestError> {
     let deep = format!("RULE:s/{}a{}/x/", "(".repeat(40), ")".repeat(40));
     for rule in [
         "RULE:(a(b)",
@@ -83,11 +83,13 @@ fn patterns_the_engine_cannot_run_are_refused() {
             "{rule:?} must be refused"
         );
     }
+    drop(AuthToLocalRule::parse("RULE:s/(a|b)+c?/x/")?);
+    Ok(())
 }
 
 /// Every size bound refuses at parse time, and the bound itself still parses.
 #[test]
-fn size_bounds_refuse_and_the_bound_itself_parses() {
+fn size_bounds_refuse_and_the_bound_itself_parses() -> Result<(), TestError> {
     let parses = |text: String| AuthToLocalRule::parse(&text).is_ok();
     let limit = |text: String| {
         matches!(
@@ -104,20 +106,20 @@ fn size_bounds_refuse_and_the_bound_itself_parses() {
     assert!(parses(format!("RULE:{}", "s/a/b/".repeat(MAX_SUBSTITUTIONS))));
     assert!(limit(format!("RULE:{}", "s/a/b/".repeat(over(MAX_SUBSTITUTIONS)))));
     assert!(limit(format!("RULE:{}", " ".repeat(MAX_RULE_BYTES))));
+    drop(AuthToLocalRule::parse(&format!("RULE:({})", "a".repeat(MAX_PATTERN_BYTES)))?);
+    Ok(())
 }
 
 /// More than `MAX_RULES` rules do not make a mapper.
 #[test]
-fn rule_count_is_bounded() {
+fn rule_count_is_bounded() -> Result<(), TestError> {
     let rules = |count: usize| vec![AuthToLocalRule::default_rule(); count];
-    let accepted = LocalNameMapper::new(None)
-        .with_rules(rules(MAX_RULES))
-        .is_ok();
-    assert!(accepted, "the bound itself");
+    drop(LocalNameMapper::new(None).with_rules(rules(MAX_RULES))?);
     assert!(matches!(
         LocalNameMapper::new(None).with_rules(rules(MAX_RULES.saturating_add(1))),
         Err(LocalAuth::LimitExceeded { what: _, limit: _ })
     ));
+    Ok(())
 }
 
 /// A pattern that backtracks exponentially in other engines finishes: the

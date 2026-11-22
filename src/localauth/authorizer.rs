@@ -1,7 +1,7 @@
 //! The authorization half (`localauth.c:386-406`).
 
 use alloc::sync::Arc;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::{ccache::Principal, config::Config, error::LocalAuth as Error};
 
@@ -55,6 +55,27 @@ impl LocalAuthorizer {
         Ok(Self::new(LocalNameMapper::from_config(config)?, resolver)
             .with_k5login_authoritative(bool::from(config.libdefaults.k5login_authoritative))
             .with_k5login_directory((!directory.is_empty()).then(|| PathBuf::from(directory))))
+    }
+
+    /// Whether a refusing `.k5login` is final (`k5login_authoritative`).
+    #[must_use]
+    #[inline]
+    pub const fn k5login_authoritative(&self) -> bool {
+        self.authoritative
+    }
+
+    /// The `k5login_directory`, when one is set.
+    #[must_use]
+    #[inline]
+    pub fn k5login_directory(&self) -> Option<&Path> {
+        self.directory.as_deref()
+    }
+
+    /// The account database the authorizer asks.
+    #[must_use]
+    #[inline]
+    pub fn resolver(&self) -> &dyn AccountResolver {
+        self.resolver.as_ref()
     }
 
     /// `krb5_kuserok`.
