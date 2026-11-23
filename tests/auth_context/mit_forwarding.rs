@@ -94,7 +94,7 @@ fn mit_forwarded_tgt_is_checked_for_time_replay_and_key() -> Result<(), TestErro
     let mut plain = AuthContext::without_key(MessagePolicy::new()).with_now(at(seconds)?);
     let unprotected = plain.rd_cred(&wire()?, CredentialTransport::Protected(&channel));
     assert!(
-        matches!(unprotected, Err(Error::Cred(_))),
+        matches!(unprotected, Err(Error::NoKey)),
         "{unprotected:?}"
     );
     Ok(())
