@@ -56,17 +56,20 @@ fn mandatory_authenticator_pac_is_rejected() -> Result<(), Error> {
         pac_seen: false,
         context: super::AuthorizationContext::new(),
     };
+    let refusal = super::validate_authorization_elements(
+        &data,
+        super::AuthorizationScope {
+            critical: true,
+            ticket: false,
+            depth: 0,
+        },
+        &mut remaining,
+    )
+    .err()
+    .ok_or(Error::TimeOverflow)?;
     assert!(matches!(
-        super::validate_authorization_elements(
-            &data,
-            super::AuthorizationScope {
-                critical: true,
-                ticket: false,
-                depth: 0
-            },
-            &mut remaining
-        ),
-        Err(Error::UnsupportedAuthorizationData { kind: _ })
+        refusal,
+        Error::UnsupportedAuthorizationData { kind: _ }
     ));
     Ok(())
 }
