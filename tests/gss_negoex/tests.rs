@@ -18,3 +18,7 @@ mod flow;
 /// The `VERIFY` binding, replay and reorder refusals, and the mechanism and key policy.
 #[path = "security.rs"]
 mod security;
+
+/// `NegoEx` under SPNEGO.
+#[path = "spnego.rs"]
+mod spnego;
