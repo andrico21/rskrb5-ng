@@ -75,6 +75,10 @@ pub enum Any {
     #[cfg(feature = "messages")]
     #[error("KRB-ERROR error: {0}")]
     Krb(#[from] KrbErrorCodec),
+    /// An authenticated message operation failed.
+    #[cfg(feature = "messages")]
+    #[error("authenticated message error: {0}")]
+    AuthContext(#[from] AuthContext),
     /// KRB-PRIV processing failed.
     #[cfg(feature = "messages")]
     #[error("KRB-PRIV error: {0}")]
