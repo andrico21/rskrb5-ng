@@ -226,7 +226,7 @@ pub(super) mod tests {
     fn kadm5_objects_redact_credentials() -> Result<(), Box<dyn Error>> {
         let service_bytes = [pattern(33), pattern(49)].concat();
         let session_bytes = [pattern(65), pattern(81)].concat();
-        let service_key = EncryptionKey::new(18, service_bytes.clone());
+        let service_key = EncryptionKey::new(18, service_bytes);
         let session = EncryptionKey::new(18, session_bytes.clone());
         let ticket = ticket_for(&service_key, &session)?;
         let ticket_bytes = ticket.ticket().to_vec();
