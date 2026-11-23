@@ -3069,9 +3069,9 @@ implementation_status = "implemented"
 evidence_status = "live-local"
 missing = ""
 rust_symbols = [
-  "gss::iakerb::IakerbContext",
-  "gss::iakerb::IakerbContext::init_sec_context",
-  "gss::iakerb::IakerbContext::accept_sec_context",
+  "gss::iakerb::Context",
+  "gss::iakerb::Context::init_sec_context",
+  "gss::iakerb::Context::accept_sec_context",
   "gss::iakerb::KdcRelay",
   "gss::iakerb::RelayPolicy",
   "gss::iakerb::token::Token",
