@@ -51,6 +51,10 @@
 //        channel bindings present flag, application data, input token
 //                           -> status 0|1, context handle, output token, ret flags u32,
 //                              mech, source name, delegated cred (always 0)
+//   D accept keeping the delegated credential: cred handle (0 default), input
+//        token (one-leg krb5, no channel bindings)
+//                           -> context handle, output token, ret flags u32, mech,
+//                              source name, delegated cred handle u32 (0: none)
 //   Q inquire_context: context handle
 //                           -> source, target, lifetime u32, mech, flags u32,
 //                              locally initiated flag, open flag
@@ -191,6 +195,7 @@ static int dispatch(uint8_t command, struct field *f, size_t nf, struct out *o)
     case 'R': return cmd_release(f, nf, o);
     case 'I': return cmd_init(f, nf, o);
     case 'C': return cmd_accept(f, nf, o);
+    case 'D': return cmd_accept_deleg(f, nf, o);
     case 'Q': return cmd_inquire(f, nf, o);
     case 'm': return cmd_get_mic(f, nf, o);
     case 'v': return cmd_verify_mic(f, nf, o);
