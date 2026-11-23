@@ -24,6 +24,7 @@ use crate::{
 };
 include!("error/any.rs");
 include!("error/auth_context.rs");
+include!("error/der.rs");
 include!("error/gss.rs");
 include!("error/policy.rs");
 include!("error/replay.rs");

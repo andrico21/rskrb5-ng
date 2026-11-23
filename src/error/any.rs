@@ -33,6 +33,9 @@ pub enum Any {
     /// Realm-path, transited-encoding or certificate-identity handling failed.
     #[error("routing error: {0}")]
     Routing(#[from] Routing),
+    /// A DER element is not canonical or exceeds its budget.
+    #[error("DER error: {0}")]
+    Der(#[from] Der),
     /// A replay store or replay-cache name failed.
     #[error("replay store error: {0}")]
     Replay(#[from] Replay),

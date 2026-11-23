@@ -68,6 +68,7 @@ pub mod evaluation;
 pub mod ap_rep;
 #[cfg(feature = "messages")]
 pub mod ap_req;
+pub mod asn1;
 pub mod ccache;
 #[cfg(feature = "messages")]
 pub mod client;
