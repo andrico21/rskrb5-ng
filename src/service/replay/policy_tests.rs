@@ -50,7 +50,7 @@ fn capacity_default_and_custom_limit_are_enforced() -> Result<(), Error> {
     // Then no live evidence is evicted to admit it.
     assert!(matches!(
         outcome,
-        Err(Error::ReplayCacheCapacityExceeded { capacity: 1 })
+        Err(Error::Capacity { capacity: 1 })
     ));
     assert!(!cache.insert(key(1), [1; 32], SystemTime::UNIX_EPOCH, skew)?);
     Ok(())
@@ -93,7 +93,7 @@ fn skew_300_rejects_validator_301() -> Result<(), Error> {
     );
     // Then the requested window cannot escape retention coverage.
     assert!(
-        matches!(outcome, Err(Error::ReplayCacheSkewExceeded { maximum, requested })
+        matches!(outcome, Err(Error::SkewExceeded { maximum, requested })
         if maximum == Duration::from_secs(300) && requested == Duration::from_secs(301))
     );
     Ok(())
@@ -148,7 +148,7 @@ fn principal_capacity_preserves_other_clients() -> Result<(), Error> {
     second.cusec = 2;
     assert!(matches!(
         cache.insert(second, [2; 32], SystemTime::UNIX_EPOCH, skew),
-        Err(Error::ReplayCacheCapacityExceeded { capacity: 1 })
+        Err(Error::Capacity { capacity: 1 })
     ));
     assert!(cache.insert(key(2), [3; 32], SystemTime::UNIX_EPOCH, skew)?);
     assert!(!cache.insert(key(1), [1; 32], SystemTime::UNIX_EPOCH, skew)?);

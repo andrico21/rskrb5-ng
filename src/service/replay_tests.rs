@@ -13,7 +13,7 @@ use std::{
 use super::{Error, Principal, ReplayCache, ReplayKey};
 #[cfg(feature = "tower")]
 use crate::keytab::Keytab;
-use crate::pac::AD_WIN2K_PAC;
+use crate::{error::Replay as ReplayError, pac::AD_WIN2K_PAC};
 
 /// Shared maintenance reports poisoned admission locks instead of fabricated counts.
 #[test]
@@ -108,7 +108,7 @@ fn principal_share_boundaries_are_enforced() -> Result<(), Error> {
         }
         assert!(matches!(
             cache.insert(key("host", 1, 99, 0), digest(99), at(0), SWEEP_SKEW),
-            Err(Error::ReplayCacheCapacityExceeded { capacity: _ })
+            Err(ReplayError::Capacity { capacity: _ })
         ));
     }
     Ok(())
@@ -127,7 +127,7 @@ fn partial_expiry_keeps_the_remaining_share_counted() -> Result<(), Error> {
     assert!(cache.insert(key("host", 1, 2, 0), digest(2), at(4), SWEEP_SKEW)?);
     assert!(matches!(
         cache.insert(key("host", 1, 3, 0), digest(3), at(4), SWEEP_SKEW),
-        Err(Error::ReplayCacheCapacityExceeded { capacity: 2 })
+        Err(ReplayError::Capacity { capacity: 2 })
     ));
     Ok(())
 }
@@ -335,15 +335,15 @@ enum Outcome {
 
 impl Outcome {
     /// Classify the cache's admission result.
-    fn of(result: Result<bool, Error>) -> Self {
+    fn of(result: Result<bool, ReplayError>) -> Self {
         match result {
             Ok(true) => Self::Admitted,
             Ok(false) => Self::Replay,
-            Err(Error::ReplayCacheSkewExceeded { maximum, requested }) => {
+            Err(ReplayError::SkewExceeded { maximum, requested }) => {
                 Self::SkewExceeded { maximum, requested }
             }
-            Err(Error::ReplayCacheClockRollback) => Self::Rollback,
-            Err(Error::ReplayCacheCapacityExceeded { capacity }) => {
+            Err(ReplayError::ClockRollback) => Self::Rollback,
+            Err(ReplayError::Capacity { capacity }) => {
                 Self::CapacityExceeded { capacity }
             }
             Err(other) => Self::Unexpected(other.to_string()),

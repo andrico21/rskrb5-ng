@@ -1,6 +1,15 @@
 //! SipHash-2-4 with a 16-byte key: the hash of MIT's `file2` slot index
 //! (`k5_siphash24`, MIT 1.22.2 `src/util/support/hashtab.c`).
 
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests;
+
 /// One `SipRound` over the four state words.
 const fn round(state: [u64; 4]) -> [u64; 4] {
     let [mut v0, mut v1, mut v2, mut v3] = state;
