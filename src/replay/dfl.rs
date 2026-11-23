@@ -3,7 +3,9 @@
 use std::{env, path::PathBuf};
 
 use super::Error;
-use crate::{file_name::process_identity, secure_env};
+#[cfg(target_os = "linux")]
+use crate::file_name::process_identity;
+use crate::secure_env;
 
 /// The effective user id the `dfl` file name and owner check use.
 ///
