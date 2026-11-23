@@ -24,6 +24,7 @@ use crate::{
 };
 include!("error/any.rs");
 include!("error/gss.rs");
+include!("error/kadm5.rs");
 include!("error/policy.rs");
 mod credential_debug;
 #[cfg(feature = "messages")]

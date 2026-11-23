@@ -5,7 +5,7 @@
 
 use rskrb5_ng::{
     error::{Kadm5, Rpc},
-    kadm5::{ApiVersion, RemoteAdminClient},
+    kadm5::{ApiVersion, Privileges, RemoteAdminClient},
     rpcsec_gss::Protection,
 };
 use tokio::{io::DuplexStream, task::JoinHandle};
@@ -44,7 +44,7 @@ pub(super) fn privileges() -> Handler {
 /// A connected client and its server.
 type Connected = (
     RemoteAdminClient<DuplexStream>,
-    JoinHandle<Result<Seen, TestError>>,
+    JoinHandle<Result<Seen, String>>,
 );
 
 /// Connect a client with `protection` to a server running `script`.
@@ -80,7 +80,9 @@ async fn privacy_establishes_and_calls() -> Result<(), TestError> {
     client.destroy().await?;
     // Then the privileges arrived, every call was RPCSEC_GSS under privacy,
     // and the context was destroyed.
-    assert!(privileges.get() && privileges.add() && privileges.modify() && privileges.delete());
+    assert!(privileges.contains(
+        Privileges::GET | Privileges::ADD | Privileges::MODIFY | Privileges::DELETE
+    ));
     let seen = server.await??;
     assert_eq!(seen.service, 3);
     assert!(seen.flavors.iter().all(|flavor| *flavor == RPCSEC_GSS));
@@ -169,7 +171,7 @@ async fn corrupt_body_is_rejected() -> Result<(), TestError> {
             protection,
         )
         .await?;
-        drop(client.get_privileges().await?);
+        assert_eq!(client.get_privileges().await?.bits(), 0x0f);
         // When the client reads it, Then the GSS check refuses it.
         let result = client.get_privileges().await;
         assert!(
@@ -296,7 +298,7 @@ async fn rejected_reply_closes_the_connection() -> Result<(), TestError> {
         Protection::Privacy,
     )
     .await?;
-    drop(client.get_privileges().await?);
+    assert_eq!(client.get_privileges().await?.bits(), 0x0f);
     drop(
         client
             .get_privileges()

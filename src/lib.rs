@@ -90,6 +90,8 @@ pub mod gss;
 pub mod http;
 #[cfg(feature = "messages")]
 pub mod kadmin;
+#[cfg(all(feature = "spnego", feature = "tokio"))]
+pub mod kadm5;
 #[cfg(feature = "messages")]
 pub mod kdc_rep;
 #[cfg(feature = "messages")]
@@ -111,6 +113,8 @@ pub mod pac;
 #[cfg(feature = "messages")]
 pub mod preauth;
 pub mod routing;
+#[cfg(feature = "spnego")]
+pub mod rpcsec_gss;
 mod secure_env;
 #[cfg(feature = "messages")]
 pub mod service;

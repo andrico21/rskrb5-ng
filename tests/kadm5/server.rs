@@ -128,7 +128,7 @@ pub(super) struct Seen {
 pub(super) fn spawn(
     handler: Handler,
     script: Script,
-) -> (DuplexStream, JoinHandle<Result<Seen, TestError>>) {
+) -> (DuplexStream, JoinHandle<Result<Seen, String>>) {
     let (client, server) = duplex(1 << 16);
     (client, spawn_on(server, handler, script))
 }
@@ -138,11 +138,15 @@ pub(super) fn spawn_on<S>(
     stream: S,
     handler: Handler,
     script: Script,
-) -> JoinHandle<Result<Seen, TestError>>
+) -> JoinHandle<Result<Seen, String>>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
-    tokio::spawn(serve(stream, handler, script))
+    tokio::spawn(async move {
+        serve(stream, handler, script)
+            .await
+            .map_err(|error| error.to_string())
+    })
 }
 
 /// Read one RFC 5531 record; `None` at a clean end of stream.
@@ -161,7 +165,7 @@ async fn read_record<S: AsyncRead + Unpin>(stream: &mut S) -> Result<Option<Vec<
         }
         let word = u32::from_be_bytes(header);
         let mut fragment = vec![0; usize::try_from(word & 0x7fff_ffff)?];
-        stream.read_exact(&mut fragment).await?;
+        let _fragment_length = stream.read_exact(&mut fragment).await?;
         record.extend_from_slice(&fragment);
         if word & 0x8000_0000 != 0 {
             return Ok(Some(record));
@@ -427,7 +431,11 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
         previous: None,
     };
     let mut seen = Seen::default();
-    while let Some(record) = read_record(&mut stream).await? {
+    loop {
+        let next = read_record(&mut stream).await?;
+        let Some(record) = next else {
+            break;
+        };
         let call = parse_call(&record)?;
         seen.flavors.push(call.flavor);
         if call.flavor != RPCSEC_GSS {
@@ -484,9 +492,4 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
         write_fragments(&mut stream, &reply, size).await?;
     }
     Ok(seen)
-}
-
-/// A handler answering every call with `generic_ret` { version, code 0 }.
-pub(super) fn generic_success(version: u32) -> Handler {
-    Box::new(move |_procedure, _arguments| Writer::new().u32(version).u32(0).finish())
 }

@@ -286,7 +286,7 @@ fn policy_record_follows_the_api_version() -> Result<(), TestError> {
         .i32(72_000)
         .nullstring(Some("aes256-cts:normal"))
         .i32(0)
-        .u32(0)
+        .u32(1)
         .finish();
     let bytes = Writer::new()
         .u32(ApiVersion::V4.wire())

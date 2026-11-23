@@ -103,16 +103,6 @@ impl<'bytes> Reader<'bytes> {
         value.get(..length).context("opaque value")
     }
 
-    /// MIT's `xdr_nullstring`.
-    pub(super) fn nullstring(&mut self) -> Result<Option<String>, TestError> {
-        let bytes = self.opaque()?;
-        match bytes.split_last() {
-            None => Ok(None),
-            Some((0, text)) => Ok(Some(String::from_utf8(text.to_vec())?)),
-            Some(_) => Err("a nullstring ends with NUL".into()),
-        }
-    }
-
     /// The bytes not read yet.
     pub(super) const fn rest(&self) -> &'bytes [u8] {
         self.rest

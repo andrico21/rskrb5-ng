@@ -42,7 +42,7 @@ async fn connect(
 ) -> Result<
     (
         RemoteAdminClient<DuplexStream>,
-        JoinHandle<Result<Seen, TestError>>,
+        JoinHandle<Result<Seen, String>>,
     ),
     TestError,
 > {
