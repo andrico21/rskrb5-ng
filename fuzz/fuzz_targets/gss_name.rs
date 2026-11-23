@@ -50,5 +50,9 @@ fuzz_target!(|data: &[u8]| {
     }
     drop(name.canonicalize().with_default_realm("EXAMPLE.COM"));
     let _attributes: Option<&[u8]> = name.composite_attributes();
-    assert_eq!(NameType::from_oid(&kind.oid()), Some(*kind), "the type maps back");
+    assert_eq!(
+        NameType::from_oid(&kind.oid()),
+        Some(*kind),
+        "the type maps back"
+    );
 });

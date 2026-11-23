@@ -79,7 +79,10 @@ fn structured(input: &[u8]) -> Option<(Vec<u8>, SystemTime)> {
         .encode()
         .ok()?;
     let seconds = u64::try_from(authenticator.ctime.0.timestamp()).ok()?;
-    Some((token, SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(seconds))?))
+    Some((
+        token,
+        SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(seconds))?,
+    ))
 }
 
 fuzz_target!(|data: &[u8]| {
