@@ -69,6 +69,20 @@ doc = false
 bench = false
 
 [[bin]]
+name = "gss_iov"
+path = "fuzz_targets/gss_iov.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gss_transfer"
+path = "fuzz_targets/gss_transfer.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "gss_context"
 path = "fuzz_targets/gss_context.rs"
 test = false
