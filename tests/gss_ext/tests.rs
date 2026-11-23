@@ -22,3 +22,7 @@ mod dce;
 /// Context and credential transfer under a transfer key and a ledger.
 #[path = "transfer.rs"]
 mod transfer;
+
+/// The RFC 1964 and RFC 4757 token formats of opted-in legacy contexts.
+#[path = "legacy.rs"]
+mod legacy;

@@ -15,6 +15,7 @@ use chrono::{DateTime, FixedOffset, Utc};
 use rskrb5_ng::{
     ccache::{self, CCache, CredentialTimes},
     client::{TgsRepSession, principal::Principal},
+    config::Config,
     crypto::CryptoPolicy,
     error::Gss,
     gss::{
@@ -107,6 +108,19 @@ pub(super) fn keytab() -> Keytab {
         1,
     ));
     keytab
+}
+
+/// The policy that permits DES3 and RC4 (`allow_des3`, `allow_rc4`).
+///
+/// # Errors
+///
+/// Returns the configuration error.
+pub(super) fn legacy_policy() -> Result<CryptoPolicy, TestError> {
+    let config = Config::parse(
+        "[libdefaults]\n allow_des3 = true\n allow_rc4 = true\n \
+         permitted_enctypes = aes256-cts-hmac-sha1-96 des3-cbc-sha1 arcfour-hmac\n",
+    )?;
+    Ok(CryptoPolicy::from_libdefaults(&config.libdefaults)?)
 }
 
 /// A Kerberos string.
