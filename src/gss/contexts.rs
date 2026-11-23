@@ -680,6 +680,50 @@ impl EstablishedContext {
         prf::pseudo_random(self, key, input, length)
     }
 
+    /// `gss_export_sec_context` under the transfer contract: consume the
+    /// context and seal it under `key`.
+    ///
+    /// The blob holds the names, flags, keys, sequence window, expiry,
+    /// delegated credential and verified PAC; the importer applies the default
+    /// enctype policy, so a DES3 or RC4 context needs its policy again.
+    ///
+    /// # Security
+    ///
+    /// There is no unprotected export: the keys only leave the process sealed
+    /// under `key`, and the sending end cannot use the context afterwards.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NotNegotiated`] for a delegated credential with an
+    /// in-memory replay cache, and the serialization, random-source and
+    /// encryption errors.
+    #[inline]
+    pub fn export(self, key: &TransferKey) -> Result<TransferBlob, Error> {
+        export::export_context(self, key)
+    }
+
+    /// `gss_import_sec_context` under the transfer contract.
+    ///
+    /// # Security
+    ///
+    /// The transfer id is consumed in `ledger` only after the blob
+    /// authenticates; duplicate-use protection holds within that ledger's
+    /// scope only (see [`TransferLedger`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::TokenTooLarge`] above 1 MiB, [`Error::TransferRejected`]
+    /// for a tampered blob, another key, version or kind, and
+    /// [`Error::TransferReplayed`] for a transfer id `ledger` has consumed.
+    #[inline]
+    pub fn import(
+        blob: &TransferBlob,
+        key: &TransferKey,
+        ledger: &mut dyn TransferLedger,
+    ) -> Result<Self, Error> {
+        export::import_context(blob, key, ledger)
+    }
+
     /// The credential the initiator delegated, on the acceptor.
     #[inline]
     #[must_use]
@@ -843,5 +887,157 @@ impl Unwrapped {
     #[must_use]
     pub const fn confidential(&self) -> bool {
         self.confidential
+    }
+}
+
+/// A caller-supplied 256-bit key that seals and opens [`TransferBlob`]s.
+///
+/// It is the protocol key of the RFC 8009 `aes256-cts-hmac-sha384-192`
+/// profile; the exporting and the importing process must hold the same key.
+/// The key is erased when dropped and never shown by `Debug`.
+#[non_exhaustive]
+pub struct TransferKey {
+    /// The key bytes.
+    bytes: Zeroizing<[u8; 32]>,
+}
+
+impl fmt::Debug for TransferKey {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TransferKey").finish_non_exhaustive()
+    }
+}
+
+impl TransferKey {
+    /// The key `bytes`.
+    #[inline]
+    #[must_use]
+    pub fn new(bytes: [u8; 32]) -> Self {
+        Self {
+            bytes: Zeroizing::new(bytes),
+        }
+    }
+
+    /// A random key from the system random source.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Random`] when the random source fails.
+    #[inline]
+    pub fn generate() -> Result<Self, Error> {
+        let mut bytes = Zeroizing::new([0; 32]);
+        getrandom::fill(bytes.as_mut_slice())?;
+        Ok(Self { bytes })
+    }
+
+    /// The key bytes.
+    pub(crate) fn bytes(&self) -> &[u8] {
+        self.bytes.as_slice()
+    }
+}
+
+/// An exported security context or credential: versioned, encrypted and
+/// authenticated under a [`TransferKey`] (format: `src/gss/export.rs`).
+///
+/// It carries a random transfer id and the export time in its authenticated
+/// header; it holds ciphertext only, so its bytes may be stored or sent, but
+/// whoever holds the key and the blob holds the context.
+#[derive(Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct TransferBlob {
+    /// The header and the ciphertext.
+    bytes: Vec<u8>,
+}
+
+impl fmt::Debug for TransferBlob {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TransferBlob")
+            .field("len", &self.bytes.len())
+            .finish()
+    }
+}
+
+impl TransferBlob {
+    /// A blob received as `bytes`; it is checked when it is imported.
+    #[inline]
+    #[must_use]
+    pub const fn from_bytes(bytes: Vec<u8>) -> Self {
+        Self { bytes }
+    }
+
+    /// The blob's bytes.
+    #[inline]
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// The blob's bytes.
+    #[inline]
+    #[must_use]
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.bytes
+    }
+}
+
+/// The record of the transfer ids an importer has consumed.
+///
+/// An import authenticates the blob first and then asks the ledger to consume
+/// its transfer id; a ledger that answers `false` makes the import fail with
+/// [`Error::TransferReplayed`].
+///
+/// # Security
+///
+/// Duplicate-use protection holds only within one ledger's scope: a copy of a
+/// blob imported through a separate ledger is accepted. Processes that may
+/// import the same blob must share a ledger (a persistent or networked
+/// implementation of this trait); replay across separate ledgers is out of
+/// scope.
+pub trait TransferLedger {
+    /// Record `id`, exported at `exported`, as consumed; `Ok(false)` when it
+    /// already was.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the ledger cannot record the id; the import then
+    /// fails closed.
+    fn consume(&mut self, id: [u8; 16], exported: SystemTime) -> Result<bool, Error>;
+}
+
+/// An in-memory [`TransferLedger`] of at most 65,536 transfer ids.
+#[derive(Clone, Debug, Default)]
+#[non_exhaustive]
+pub struct MemoryTransferLedger {
+    /// The consumed ids.
+    consumed: HashSet<[u8; 16]>,
+}
+
+impl MemoryTransferLedger {
+    /// The most transfer ids one ledger records.
+    pub const CAPACITY: usize = 0x1_0000;
+
+    /// An empty ledger.
+    #[inline]
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl TransferLedger for MemoryTransferLedger {
+    /// # Errors
+    ///
+    /// Returns [`Error::TransferLedgerFull`] once [`Self::CAPACITY`] ids are
+    /// recorded: the ledger never forgets an id.
+    #[inline]
+    fn consume(&mut self, id: [u8; 16], _exported: SystemTime) -> Result<bool, Error> {
+        if self.consumed.contains(&id) {
+            return Ok(false);
+        }
+        if self.consumed.len() >= Self::CAPACITY {
+            return Err(Error::TransferLedgerFull);
+        }
+        Ok(self.consumed.insert(id))
     }
 }

@@ -106,6 +106,17 @@ pub enum Gss {
     /// A per-message token's integrity tag does not verify (`GSS_S_BAD_SIG`).
     #[error("the token's integrity tag does not verify")]
     BadSignature,
+    /// A transfer blob is malformed, of another version or kind, or does not
+    /// authenticate under the transfer key (`GSS_S_DEFECTIVE_TOKEN`).
+    #[error("transfer blob rejected: {0}")]
+    TransferRejected(&'static str),
+    /// The ledger has already consumed the blob's transfer id
+    /// (`GSS_S_DEFECTIVE_TOKEN`).
+    #[error("the transfer id was already imported")]
+    TransferReplayed,
+    /// The in-memory transfer ledger is full (`GSS_S_FAILURE`).
+    #[error("the transfer ledger is full")]
+    TransferLedgerFull,
     /// The delegated credential could not be read.
     #[error("the delegated credential could not be read: {0}")]
     DelegatedCredential(#[source] KrbCred),
@@ -179,6 +190,8 @@ impl Gss {
                 maximum: _,
                 actual: _,
             }
+            | Self::TransferRejected(_)
+            | Self::TransferReplayed
             | Self::Spnego(_) => 9,
             Self::DefectiveChecksum(_) | Self::DelegatedCredential(_) => 10,
             Self::ContextExpired => 12,
@@ -198,7 +211,8 @@ impl Gss {
             | Self::Keytab(_)
             | Self::Crypto(_)
             | Self::Random(_)
-            | Self::BadIov(_) => 13,
+            | Self::BadIov(_)
+            | Self::TransferLedgerFull => 13,
         };
         routine << 16
     }

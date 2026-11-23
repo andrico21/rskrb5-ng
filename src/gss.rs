@@ -44,7 +44,7 @@
 //! mechanisms are added beside this one.
 
 use core::{fmt, ops::BitOr, time::Duration};
-use std::time::SystemTime;
+use std::{collections::HashSet, time::SystemTime};
 
 use zeroize::Zeroizing;
 
@@ -71,6 +71,8 @@ mod context;
 mod cred;
 /// DCE-style establishment.
 mod dce;
+/// Context and credential transfer.
+mod export;
 /// The krb5 mechanism's initiator side.
 mod initiator;
 /// IOV and AEAD per-message tokens.

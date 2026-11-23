@@ -274,6 +274,36 @@ impl Credential {
         cred::inquire(self)
     }
 
+    /// `gss_export_cred` under the transfer contract of
+    /// [`EstablishedContext::export`]: consume the credential and seal its
+    /// tickets, keytabs and password under `key`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NotNegotiated`] for a credential with an in-memory
+    /// replay cache, which cannot leave its process, and the serialization,
+    /// random-source and encryption errors.
+    #[inline]
+    pub fn export(self, key: &TransferKey) -> Result<TransferBlob, Error> {
+        export::export_credential(self, key)
+    }
+
+    /// `gss_import_cred` under the transfer contract of
+    /// [`EstablishedContext::import`].
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`EstablishedContext::import`] and the cache and
+    /// keytab errors.
+    #[inline]
+    pub fn import(
+        blob: &TransferBlob,
+        key: &TransferKey,
+        ledger: &mut dyn TransferLedger,
+    ) -> Result<Self, Error> {
+        export::import_credential(blob, key, ledger)
+    }
+
     /// The initiator's credential cache.
     #[inline]
     #[must_use]

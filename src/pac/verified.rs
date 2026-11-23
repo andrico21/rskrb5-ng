@@ -98,6 +98,16 @@ pub struct Verified {
 }
 
 impl Verified {
+    /// A verified PAC restored from an authenticated context transfer, with
+    /// the results `[server, kdc, ticket, full, client]` its exporter
+    /// verified (`gss` context import only).
+    pub(crate) fn restored(pac: Pac, results: [bool; 5]) -> Self {
+        Self {
+            pac,
+            checks: VerifiedChecks::from_results(results),
+        }
+    }
+
     /// The checks this PAC passed.
     #[inline]
     #[must_use]

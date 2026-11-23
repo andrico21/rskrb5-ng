@@ -11,6 +11,8 @@
 //! `import_sec_context.c`, `export_cred.c` and `import_cred.c` export without
 //! protection and without a ledger; this crate never does).
 
+use std::{env, fs, process};
+
 use rskrb5_ng::{
     error::Gss,
     gss::{
@@ -63,8 +65,8 @@ fn an_exported_context_continues_after_import() -> Result<(), TestError> {
     );
     exchange(&mut imported, &mut ends.acceptor)?;
     // The acceptor end transfers too.
-    let blob = ends.acceptor.export(&key())?;
-    let mut acceptor = EstablishedContext::import(&blob, &key(), &mut ledger)?;
+    let acceptor_blob = ends.acceptor.export(&key())?;
+    let mut acceptor = EstablishedContext::import(&acceptor_blob, &key(), &mut ledger)?;
     assert!(!acceptor.inquire().locally_initiated());
     exchange(&mut imported, &mut acceptor)?;
     Ok(())
@@ -151,7 +153,8 @@ fn transfer_keys_and_blobs_are_redacted() -> Result<(), TestError> {
     let ends = establish(sequenced())?;
     let session = ends.initiator.session_key().value().to_vec();
     let blob = ends.initiator.export(&key())?;
-    let shown = format!("{:?} {:?}", key(), blob);
+    let transfer_key = key();
+    let shown = format!("{transfer_key:?} {blob:?}");
     assert!(!shown.contains("66, 66"));
     assert!(!shown.contains("0x42"));
     assert!(
@@ -192,14 +195,14 @@ fn credentials_transfer_under_the_same_contract() -> Result<(), TestError> {
         return Err("the initiator completes".into());
     };
     // A credential with an in-memory replay cache is refused.
-    let directory = std::env::temp_dir();
-    let path = directory.join(format!("gss-ext-transfer-{}.keytab", std::process::id()));
+    let directory = env::temp_dir();
+    let path = directory.join(format!("gss-ext-transfer-{}.keytab", process::id()));
     keytab().save(&path)?;
     let store = CredStore::new()
         .with("keytab", &format!("FILE:{}", path.display()))?
         .with("rcache", "memory:transfer")?;
     let with_rcache = Credential::acquire_cred_from(None, CredentialUsage::Accept, &store)?;
-    std::fs::remove_file(&path)?;
+    fs::remove_file(&path)?;
     assert!(matches!(
         with_rcache.export(&key()),
         Err(Gss::NotNegotiated(_))
@@ -209,12 +212,14 @@ fn credentials_transfer_under_the_same_contract() -> Result<(), TestError> {
 
 /// An oversized blob is refused before it is decrypted.
 #[test]
-fn an_oversized_blob_is_refused() -> Result<(), TestError> {
+fn an_oversized_blob_is_refused() {
     let mut ledger = MemoryTransferLedger::new();
     let huge = TransferBlob::from_bytes(vec![0; 0x0010_0001]);
     assert!(matches!(
         EstablishedContext::import(&huge, &key(), &mut ledger),
-        Err(Gss::TokenTooLarge { .. })
+        Err(Gss::TokenTooLarge {
+            maximum: 0x0010_0000,
+            actual: 0x0010_0001
+        })
     ));
-    Ok(())
 }
