@@ -1,174 +1,32 @@
 //! IAKERB against the MIT peer adapter.
 
-use core::{error::Error, fmt::Display, time::Duration};
-use std::{
-    io::{Read as _, Write as _},
-    net::{TcpStream, ToSocketAddrs as _},
-    time::Instant,
-};
+use core::{error::Error, time::Duration};
+use std::time::Instant;
 
 use rskrb5_ng::{
-    config::Config,
     error::Iakerb,
     gss::{
-        self, AcceptorOptions, ContextFlags, CredStore, Credential, CredentialUsage,
-        EstablishedContext, InitStep, InitiatorOptions, Name, NameType,
-        iakerb::{AcceptStep, Context, KdcRelay, RelayFailure, RelayPolicy},
+        ContextFlags, CredStore, Credential, CredentialUsage, InitStep, InitiatorOptions, Name,
+        NameType,
+        iakerb::{Context, RelayPolicy},
     },
     spnego::oid::ObjectIdentifier,
 };
-use tokio::{
-    runtime::{Builder, Runtime},
-    time::timeout,
-};
+use tokio::time::timeout;
 
 use crate::{
-    closed_port,
-    harness::{self, Fixture},
+    acceptor::mit_to_rust,
+    common::{
+        IAKERB, KRB5, MIT_KDC, PEER, PEER_ISO, ROUNDS, acceptor_cred, arcs, assert_mechanism,
+        blocked_config, connect_iso, connect_main, exchange, mit_target, realm, runtime,
+        user_principal,
+    },
+    harness,
     peer::{
-        Peer,
         cred::{CredRequest, Name as PeerName, Usage},
-        frame,
-        reply::Protection,
-        types::{AcceptRequest, ContextHandle, CredHandle, InitRequest, PeerError},
+        types::{AcceptRequest, PeerError},
     },
 };
-
-/// The KDC fixture, which only the acceptors reach.
-const MIT_KDC: Fixture = Fixture::new("mit-kdc", "INTEROP_MIT_KDC");
-
-/// The adapter container with a route to the KDC.
-const PEER: Fixture = Fixture::new("mit-peer", "INTEROP_MIT_PEER_ADDR");
-
-/// The adapter container without a route to the KDC.
-const PEER_ISO: Fixture = Fixture::new("mit-peer-iso", "INTEROP_MIT_PEER_ISO_ADDR");
-
-/// The krb5 mechanism.
-const KRB5: &str = "1.2.840.113554.1.2.2";
-
-/// The IAKERB mechanism.
-const IAKERB: &str = "1.3.6.1.5.2.5";
-
-/// Mutual, replay, sequence, confidentiality and integrity.
-const STANDARD_FLAGS: u32 = 0x3e;
-
-/// Most steps of one exchange: AS probe and request, TGS, the AP exchange and slack.
-const ROUNDS: usize = 12;
-
-/// The current-thread Tokio runtime the scenarios run on.
-fn runtime() -> Result<Runtime, Box<dyn Error>> {
-    Ok(Builder::new_current_thread()
-        .enable_io()
-        .enable_time()
-        .build()?)
-}
-
-/// The realm of the fixture.
-fn realm() -> Result<String, Box<dyn Error>> {
-    harness::var("INTEROP_MIT_REALM")
-}
-
-/// A profile whose only KDC is a refused loopback port.
-///
-/// The client's direct path to the KDC is blocked. The realm offers SPAKE
-/// realm-wide, and the exchanges here relay the ordinary AS exchange, so SPAKE
-/// is pinned off: the encrypted timestamp answers.
-fn blocked_config() -> Result<Config, Box<dyn Error>> {
-    let realm = realm()?;
-    let refused = closed_port::reserve_closed_tcp_port()?;
-    Ok(Config::parse(&format!(
-        "
-[libdefaults]
- default_realm = {realm}
- dns_lookup_kdc = false
- dns_lookup_realm = false
- rdns = false
- dns_canonicalize_hostname = false
- spake_preauth_groups =
-
-[realms]
- {realm} = {{
-  kdc = 127.0.0.1:{refused}
- }}
-
-[domain_realm]
- .test.rskrb5 = {realm}
-"
-    ))?)
-}
-
-/// The dotted OID `text` as arcs.
-fn arcs(text: &str) -> Result<Vec<u32>, Box<dyn Error>> {
-    Ok(text
-        .split('.')
-        .map(str::parse::<u32>)
-        .collect::<Result<_, _>>()?)
-}
-
-/// Asserts that the adapter negotiated the mechanism `expected`.
-fn assert_mechanism(expected: &str, actual: &str) -> Result<(), Box<dyn Error>> {
-    Ok(harness::assert_negotiated_mechanism(
-        &arcs(expected)?,
-        &arcs(actual)?,
-    )?)
-}
-
-/// `peeruser@TEST.RSKRB5`.
-fn user_principal() -> Result<String, Box<dyn Error>> {
-    Ok(format!(
-        "{}@{}",
-        harness::var("INTEROP_MIT_PEER_USER")?,
-        realm()?
-    ))
-}
-
-/// A connection to the adapter container with a KDC route.
-fn connect_main() -> Result<Peer<TcpStream>, Box<dyn Error>> {
-    Ok(frame::connect(&harness::var("INTEROP_MIT_PEER_ADDR")?)?)
-}
-
-/// A connection to the adapter container without a KDC route.
-fn connect_iso() -> Result<Peer<TcpStream>, Box<dyn Error>> {
-    Ok(frame::connect(&harness::var("INTEROP_MIT_PEER_ISO_ADDR")?)?)
-}
-
-/// The MIT acceptor's host-based name, `peer@mit-peer.test.rskrb5`.
-fn mit_target() -> Result<Name, Box<dyn Error>> {
-    Ok(Name::import(
-        harness::var("INTEROP_MIT_PEER_SERVICE")?.as_bytes(),
-        NameType::HostbasedService,
-    )?)
-}
-
-/// An adapter acceptor credential for the IAKERB mechanism.
-fn acceptor_cred(adapter: &mut Peer<TcpStream>) -> Result<CredHandle, Box<dyn Error>> {
-    let request = CredRequest::new(Usage::Accept)
-        .named(PeerName::hostbased(&harness::var(
-            "INTEROP_MIT_PEER_SERVICE",
-        )?))
-        .with_mechs(&[IAKERB])
-        .with_keytab(&harness::var("INTEROP_MIT_PEER_ACCEPTOR_KEYTAB_ID")?);
-    Ok(adapter.acquire(&request)?.0)
-}
-
-/// Per-message tokens both ways between `context` and the adapter's `handle`.
-fn exchange(
-    context: &mut EstablishedContext,
-    adapter: &mut Peer<TcpStream>,
-    handle: ContextHandle,
-) -> Result<(), Box<dyn Error>> {
-    let sealed = adapter.wrap(handle, Protection::new(true), b"sealed by mit")?;
-    assert_eq!(context.unwrap(sealed.token())?.message(), b"sealed by mit");
-    let ours = context.wrap(b"sealed by rust", true)?;
-    let theirs = adapter.unwrap(handle, &ours)?;
-    assert_eq!(theirs.message(), b"sealed by rust");
-    assert!(theirs.confidential(), "MIT sees a sealed message");
-    let mic = context.get_mic(b"signed by rust")?;
-    let _qop: u32 = adapter.verify_mic(handle, b"signed by rust", &mic)?;
-    let their_mic = adapter.get_mic(handle, b"signed by mit")?;
-    context.verify_mic(b"signed by mit", &their_mic)?;
-    Ok(())
-}
 
 /// The Rust IAKERB initiator completes against MIT's IAKERB acceptor.
 ///
@@ -239,143 +97,6 @@ fn rust_iakerb_initiator_completes_against_mit_with_the_direct_kdc_path_blocked(
     assert!(established.inquire().flags().contains(ContextFlags::MUTUAL));
     exchange(&mut established, &mut adapter, handle)?;
     Ok(())
-}
-
-/// The application's relay: a plain TCP client of the KDC (RFC 4120 section 7.2.2
-/// record marking), the only path the isolated initiator has to it.
-struct TcpRelay {
-    /// The KDC's `host:port`.
-    kdc: String,
-    /// How many requests were relayed.
-    relayed: usize,
-    /// The realms asked for.
-    realms: Vec<String>,
-}
-
-impl KdcRelay for TcpRelay {
-    fn relay(&mut self, realm: &str, request: &[u8]) -> Result<Vec<u8>, RelayFailure> {
-        self.relayed = self.relayed.saturating_add(1);
-        self.realms.push(realm.to_owned());
-        let other = |cause: &dyn Display| RelayFailure::Other(cause.to_string());
-        let address = self
-            .kdc
-            .to_socket_addrs()
-            .map_err(|cause| other(&cause))?
-            .next()
-            .ok_or(RelayFailure::RealmUnknown)?;
-        let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(5))
-            .map_err(|_unreachable| RelayFailure::KdcUnreachable)?;
-        stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .map_err(|cause| other(&cause))?;
-        let length = u32::try_from(request.len()).map_err(|cause| other(&cause))?;
-        stream
-            .write_all(&[&length.to_be_bytes(), request].concat())
-            .map_err(|cause| other(&cause))?;
-        let mut mark = [0_u8; 4];
-        stream
-            .read_exact(&mut mark)
-            .map_err(|_silent| RelayFailure::KdcUnreachable)?;
-        let size = usize::try_from(u32::from_be_bytes(mark)).map_err(|cause| other(&cause))?;
-        if size > 0x10_0000 {
-            return Err(RelayFailure::Other("the KDC reply is too long".to_owned()));
-        }
-        let mut reply = vec![0_u8; size];
-        stream
-            .read_exact(&mut reply)
-            .map_err(|cause| other(&cause))?;
-        Ok(reply)
-    }
-}
-
-/// The Rust acceptor credential from the keytab MIT exported.
-fn rust_acceptor() -> Result<Credential, Box<dyn Error>> {
-    let principal = harness::var("INTEROP_MIT_PEER_RUST_SERVICE")?;
-    let (service, host) = principal
-        .split_once('/')
-        .ok_or("the Rust service is service/host")?;
-    let target = Name::import(
-        format!("{service}@{host}").as_bytes(),
-        NameType::HostbasedService,
-    )?;
-    let store = CredStore::new().with(
-        "keytab",
-        &format!("FILE:{}", harness::var("INTEROP_MIT_PEER_RUST_KEYTAB")?),
-    )?;
-    Ok(Credential::acquire_cred_from(
-        Some(&target),
-        CredentialUsage::Accept,
-        &store,
-    )?)
-}
-
-/// The isolated MIT initiator's first request for the Rust acceptor: its
-/// credential is the user's password, its mechanism IAKERB.
-fn iso_request(
-    adapter: &mut Peer<TcpStream>,
-    name: PeerName,
-) -> Result<InitRequest, Box<dyn Error>> {
-    let credential = adapter.acquire(
-        &CredRequest::new(Usage::Initiate)
-            .named(name)
-            .with_mechs(&[IAKERB])
-            .with_password(harness::var("INTEROP_MIT_PEER_USER_PASSWORD")?.as_bytes()),
-    )?;
-    let target = format!(
-        "{}@{}",
-        harness::var("INTEROP_MIT_PEER_RUST_SERVICE")?,
-        realm()?
-    );
-    Ok(InitRequest::new(PeerName::principal(&target))
-        .with_cred(credential.0)
-        .with_mech(IAKERB)
-        .with_flags(STANDARD_FLAGS))
-}
-
-/// One MIT IAKERB initiator in the container without a KDC route against the
-/// Rust acceptor under `policy`; the relay is the acceptor's only way to the KDC.
-fn mit_to_rust(
-    name: PeerName,
-    policy: RelayPolicy,
-) -> Result<(Result<EstablishedContext, Iakerb>, TcpRelay), Box<dyn Error>> {
-    let mut adapter = connect_iso()?;
-    let init = iso_request(&mut adapter, name)?;
-    let store = rust_acceptor()?;
-    let mut acceptor = gss::Acceptor::new(&store, AcceptorOptions::new())?;
-    let mut context = Context::acceptor(policy);
-    let mut relay = TcpRelay {
-        kdc: harness::var("INTEROP_MIT_KDC")?,
-        relayed: 0,
-        realms: Vec::new(),
-    };
-    let mut step = adapter.init_step(&init)?;
-    let handle = step.context();
-    for _round in 0..ROUNDS {
-        match context.accept_sec_context(&mut acceptor, &mut relay, step.token()) {
-            Err(refusal) => return Ok((Err(refusal), relay)),
-            Ok(AcceptStep::Continue(reply)) => {
-                step = adapter.init_step(&init.clone().continuing(handle, &reply))?;
-            }
-            Ok(AcceptStep::Complete(accepted)) => {
-                let answer = accepted.output_token().ok_or("an AP-REP")?.to_vec();
-                let last = adapter.init_step(&init.clone().continuing(handle, &answer))?;
-                assert!(
-                    !last.continue_needed(),
-                    "the AP-REP completes MIT's context"
-                );
-                assert_mechanism(IAKERB, last.mech())?;
-                let mut established = accepted.into_context();
-                let sealed = adapter.wrap(handle, Protection::new(true), b"sealed by mit")?;
-                assert_eq!(
-                    established.unwrap(sealed.token())?.message(),
-                    b"sealed by mit"
-                );
-                return Ok((Ok(established), relay));
-            }
-            Ok(_) => return Err("an unknown acceptor step".into()),
-        }
-    }
-    Err("the exchange did not complete".into())
 }
 
 /// The MIT IAKERB initiator in the container that cannot reach the KDC completes.

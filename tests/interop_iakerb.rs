@@ -26,6 +26,28 @@ mod harness;
 #[path = "interop/peer.rs"]
 mod peer;
 
+/// Fixtures, constants and helpers of the scenarios.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "interop_iakerb/common.rs"]
+mod common;
+
+/// The Rust acceptor side of the scenarios.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "interop_iakerb/acceptor.rs"]
+mod acceptor;
+
 /// The IAKERB scenarios.
 #[cfg(test)]
 #[expect(
