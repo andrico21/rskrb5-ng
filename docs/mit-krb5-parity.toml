@@ -11,8 +11,8 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 122
-partial = 24
+implemented = 125
+partial = 21
 absent = 7
 rejected = 8
 omitted = 1
@@ -360,13 +360,29 @@ id = "MIT-client-13"
 area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "KRB-CRED marshal/unmarshal, `mk_1cred`/`mk_ncred`, `rd_cred`; forwarding/delegation credential transport"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Encrypted ccache conversion exists; full contextual forwarding/import controls and authdata/second-ticket conversion incomplete."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "messages::AuthContext",
+  "messages::CredentialTransport",
+  "messages::MessagePolicy",
+  "messages::ProtectedChannel",
+  "messages::Received",
+  "error::AuthMessage",
+]
+test_names = [
+  "tests/auth_context/forwarding.rs::credentials_round_trip_encrypted",
+  "tests/auth_context/forwarding.rs::the_null_transport_is_refused",
+  "tests/auth_context/forwarding.rs::a_proven_channel_carries_an_unencrypted_credential",
+  "tests/auth_context/forwarding.rs::credentials_with_forbidden_session_keys_are_refused",
+  "tests/auth_context/private.rs::priv_round_trips_and_reports_the_time",
+  "tests/auth_context/private.rs::safe_round_trips_and_detects_tampering",
+  "tests/auth_context/sequence.rs::heimdal_unsigned_encodings_are_accepted_like_mit",
+  "tests/interop_replay/scenarios.rs::mit_forwarded_credentials_cross_the_credential_transport",
+]
+feature_flags = ["messages"]
+security_divergence = "The NULL transport of MIT mk_ncred and rd_cred (no key, plaintext KRB-CRED) is refused unless the caller vouches for a protected channel (CredentialTransport::Protected); a credential carrying authorization data or a second ticket is not forwarded (the KRB-CRED info has no field for them); imported session keys and tickets pass the runtime crypto policy; port-qualified (ADDRPORT) addresses are not implemented."
 disposition = "WP-20"
 closing_plan = 2
 closing_todo = 27
@@ -419,13 +435,35 @@ id = "MIT-client-16"
 area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Replay cache interface: `dfl`, `file2`, `none`; replay detection and configurable cache name"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Bounded memory/shared cache only; no persistent file2/dfl/name dispatch."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "replay::Store",
+  "replay::MemoryReplayStore",
+  "replay::File2ReplayStore",
+  "replay::NoneReplayStore",
+  "replay::RcacheName",
+  "replay::Tag",
+  "replay::Evidence",
+]
+test_names = [
+  "tests/replay_store/layout.rs::six_records_land_where_the_model_puts_them",
+  "tests/replay_store/layout.rs::three_thousand_records_fill_three_tables_like_the_model",
+  "tests/replay_store/layout.rs::a_model_written_file_is_read_as_evidence",
+  "tests/replay_store/failures.rs::a_full_disk_refuses_the_authenticator",
+  "tests/replay_store/failures.rs::a_crash_between_write_and_sync_never_admits_twice",
+  "tests/replay_store/failures.rs::a_full_file_refuses_new_evidence_and_keeps_the_old",
+  "tests/replay_store/concurrency.rs::processes_sharing_one_file_admit_each_tag_once",
+  "tests/replay_store/dfl.rs::dfl_uses_the_user_file_in_the_cache_directory",
+  "tests/replay_store/name.rs::names_parse_like_mit",
+  "tests/replay_store/validator.rs::a_second_validator_on_the_same_file_refuses_the_replay",
+  "tests/interop_replay/scenarios.rs::a_cache_file_written_by_the_rust_store_is_read_by_mit",
+  "tests/interop_replay/scenarios.rs::a_cache_file_written_by_mit_is_read_by_the_rust_store",
+  "tests/interop_replay/scenarios.rs::two_rust_acceptor_processes_share_one_cache_file",
+]
+feature_flags = ["messages"]
+security_divergence = "Retention is three times the validator skew where MIT file2 keeps one skew (a future-dated authenticator cannot be replayed inside P+2s); a corrupt, truncated or unwritable cache file fails closed where MIT overwrites or ignores it; dfl checks the owner and symlink after open, not with O_NOFOLLOW; memory: is an addition; none: is an explicit opt-out only."
 disposition = "WP-20"
 closing_plan = 2
 closing_todo = 27
@@ -1656,13 +1694,20 @@ id = "MIT-config-10"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`default_rcache_name`"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "Any value except none: requires unavailable persistent/shared replay protection and errors; none: diagnostic because memory replay protection remains (consumer: plan 2 WP-20)."
-rust_symbols = []
-test_names = ["tests/config/relations_c1.rs::default_rcache_name"]
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = ["replay::RcacheName"]
+test_names = [
+  "tests/config/relations_c1.rs::default_rcache_name",
+  "tests/replay_store/config.rs::every_mit_name_is_accepted_and_selects_its_store",
+  "tests/replay_store/config.rs::the_name_variable_outranks_everything",
+  "tests/replay_store/config.rs::the_type_variable_outranks_the_profile",
+  "tests/replay_store/config.rs::a_malformed_name_is_refused_by_the_profile",
+  "tests/gss/credentials.rs::rcache_names_select_shared_or_no_replay_evidence",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "A malformed or unknown-type default_rcache_name is refused when the profile is read (MIT fails at the first krb5_rd_req); unset selects dfl: like MIT."
 disposition = "WP-20"
 closing_plan = 2
 closing_todo = 27
