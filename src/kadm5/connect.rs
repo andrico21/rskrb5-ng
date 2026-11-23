@@ -80,6 +80,11 @@ pub(super) fn admin_server(config: &Config, realm: &str) -> Result<AdminServer, 
 /// # Errors
 ///
 /// Returns the configuration, connection, RPC and GSS errors of its steps.
+///
+/// # Cancel safety
+///
+/// Cancel-safe: nothing on the server changes before the client exists; a
+/// dropped future drops the connection.
 pub(super) async fn tcp(server: &AdminServer, options: &Options) -> Result<TcpStream, Error> {
     let target = format!("{}:{}", server.host, server.port);
     let failure = |source| Error::Connect {
@@ -109,6 +114,12 @@ pub(super) async fn tcp(server: &AdminServer, options: &Options) -> Result<TcpSt
 /// # Errors
 ///
 /// Returns the configuration, connection, RPC and GSS errors of its steps.
+///
+/// # Cancel safety
+///
+/// Cancel-safe: nothing on the server changes before the client exists; a
+/// dropped future leaves `stream` mid-exchange, and `over_stream`, which owns
+/// it, drops it.
 async fn establish<S>(
     stream: &mut S,
     credential: &Credential,
@@ -150,6 +161,11 @@ where
 /// # Errors
 ///
 /// Returns the configuration, connection, RPC and GSS errors of its steps.
+///
+/// # Cancel safety
+///
+/// Cancel-safe: nothing on the server changes before the client exists; a
+/// dropped future drops the connection.
 pub(super) async fn over_stream<S>(
     mut stream: S,
     credential: &Credential,

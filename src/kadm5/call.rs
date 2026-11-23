@@ -23,6 +23,12 @@ use crate::{
 /// # Errors
 ///
 /// Returns the RPC errors of the exchange.
+///
+/// # Cancel safety
+///
+/// The client is marked interrupted before the request is written and the mark
+/// is cleared only when the exchange ends: a dropped future leaves it set, so
+/// every later call is refused before anything is sent.
 async fn exchange<S>(
     client: &mut RemoteAdminClient<S>,
     procedure: Procedure,
@@ -57,6 +63,12 @@ where
 /// [`Error::Server`] for kadmind's refusal; and for a mutation that may have
 /// been delivered and has no decodable authenticated answer
 /// [`Error::OutcomeUnknown`], the RPC and decoding errors otherwise.
+///
+/// # Cancel safety
+///
+/// Not cancel-safe for a mutation: a future dropped after the request was
+/// written leaves the client interrupted (see `exchange`), so the change is
+/// never sent again and every later call is refused.
 pub(super) async fn run<S>(
     client: &mut RemoteAdminClient<S>,
     procedure: Procedure,
@@ -100,6 +112,11 @@ where
 ///
 /// Returns [`Error::Interrupted`] after an unfinished call and the RPC
 /// errors of the exchange.
+///
+/// # Cancel safety
+///
+/// Cancel-safe: the caller consumes the client, so nothing runs after a
+/// dropped future; the connection closes with it.
 pub(super) async fn destroy<S>(client: &mut RemoteAdminClient<S>) -> Result<(), Error>
 where
     S: AsyncRead + AsyncWrite + Unpin,

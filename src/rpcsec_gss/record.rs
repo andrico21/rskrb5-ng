@@ -100,6 +100,12 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Option<DecodedRecord>, Error> {
 /// # Errors
 ///
 /// Returns [`Error::Io`] when the write fails.
+///
+/// # Cancel safety
+///
+/// Not cancel-safe: a dropped future may leave part of the record written, so
+/// the stream is no longer framed and must not be used again (the kadm5
+/// client refuses every later call).
 #[cfg(feature = "tokio")]
 pub(crate) async fn write<W>(writer: &mut W, message: &[u8]) -> Result<(), Error>
 where
@@ -118,6 +124,12 @@ where
 /// Returns [`Error::RecordTooLarge`] or [`Error::TooManyFragments`] past the
 /// bounds, before the oversized fragment's body is read, and [`Error::Io`]
 /// when the read fails or the stream ends inside the record.
+///
+/// # Cancel safety
+///
+/// Not cancel-safe: a dropped future loses the bytes already read, so the
+/// stream is no longer framed and must not be used again (the kadm5 client
+/// refuses every later call).
 #[cfg(feature = "tokio")]
 pub(crate) async fn read<R>(reader: &mut R) -> Result<Zeroizing<Vec<u8>>, Error>
 where

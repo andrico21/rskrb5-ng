@@ -160,6 +160,12 @@ where
     /// # Errors
     ///
     /// Returns the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// Cancel-safe for the server, where a read changes nothing. A future dropped
+    /// after the request was written leaves the client interrupted: every later
+    /// call fails with [`Error::Interrupted`] before anything is sent; connect again.
     #[inline]
     pub async fn get_privileges(&mut self) -> Result<Privileges, Error> {
         let arguments = wire::begin(self.version).finish();
@@ -186,6 +192,13 @@ where
     /// Returns [`Error::Policy`] for a refused tuple and
     /// [`Error::InvalidArgument`] for a password holding a NUL, before
     /// anything is sent, then the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: once the request is written the change may be applied on
+    /// the server with no answer reaching the client. A dropped future leaves the
+    /// client interrupted: every later call fails with [`Error::Interrupted`]
+    /// before anything is sent, and the change is never sent again.
     #[inline]
     pub async fn create_principal(
         &mut self,
@@ -211,6 +224,13 @@ where
     /// # Errors
     ///
     /// Returns the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: once the request is written the change may be applied on
+    /// the server with no answer reaching the client. A dropped future leaves the
+    /// client interrupted: every later call fails with [`Error::Interrupted`]
+    /// before anything is sent, and the change is never sent again.
     #[inline]
     pub async fn delete_principal(&mut self, principal: &Principal) -> Result<(), Error> {
         let arguments = wire::principal(wire::begin(self.version), principal)?.finish();
@@ -222,6 +242,13 @@ where
     /// # Errors
     ///
     /// Returns the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: once the request is written the change may be applied on
+    /// the server with no answer reaching the client. A dropped future leaves the
+    /// client interrupted: every later call fails with [`Error::Interrupted`]
+    /// before anything is sent, and the change is never sent again.
     #[inline]
     pub async fn modify_principal(&mut self, record: &PrincipalRecord) -> Result<(), Error> {
         let mask = record.mask.without(PrincipalMask::PRINCIPAL);
@@ -234,6 +261,13 @@ where
     /// # Errors
     ///
     /// Returns the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: once the request is written the change may be applied on
+    /// the server with no answer reaching the client. A dropped future leaves the
+    /// client interrupted: every later call fails with [`Error::Interrupted`]
+    /// before anything is sent, and the change is never sent again.
     #[inline]
     pub async fn rename_principal(
         &mut self,
@@ -250,6 +284,12 @@ where
     /// # Errors
     ///
     /// Returns the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// Cancel-safe for the server, where a read changes nothing. A future dropped
+    /// after the request was written leaves the client interrupted: every later
+    /// call fails with [`Error::Interrupted`] before anything is sent; connect again.
     #[inline]
     pub async fn get_principal(
         &mut self,
@@ -280,6 +320,12 @@ where
     /// # Errors
     ///
     /// Returns the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// Cancel-safe for the server, where a read changes nothing. A future dropped
+    /// after the request was written leaves the client interrupted: every later
+    /// call fails with [`Error::Interrupted`] before anything is sent; connect again.
     #[inline]
     pub async fn list_principals(
         &mut self,
@@ -295,6 +341,13 @@ where
     ///
     /// Returns [`Error::Policy`] for a refused tuple, before anything is
     /// sent, then the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: once the request is written the change may be applied on
+    /// the server with no answer reaching the client. A dropped future leaves the
+    /// client interrupted: every later call fails with [`Error::Interrupted`]
+    /// before anything is sent, and the change is never sent again.
     #[inline]
     pub async fn change_password(
         &mut self,
@@ -325,6 +378,13 @@ where
     ///
     /// Returns [`Error::Policy`] for a refused tuple, before anything is
     /// sent, then the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: once the request is written the change may be applied on
+    /// the server with no answer reaching the client. A dropped future leaves the
+    /// client interrupted: every later call fails with [`Error::Interrupted`]
+    /// before anything is sent, and the change is never sent again.
     #[inline]
     pub async fn randomize_keys(
         &mut self,
@@ -357,6 +417,13 @@ where
     ///
     /// Returns [`Error::InvalidArgument`] without keys and [`Error::Policy`]
     /// for a refused enctype, before anything is sent, then the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: once the request is written the change may be applied on
+    /// the server with no answer reaching the client. A dropped future leaves the
+    /// client interrupted: every later call fails with [`Error::Interrupted`]
+    /// before anything is sent, and the change is never sent again.
     #[inline]
     pub async fn set_keys(
         &mut self,
@@ -379,6 +446,13 @@ where
     ///
     /// Returns the errors of [`Self::set_keys`] and [`Error::Policy`] for a
     /// refused tuple.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: once the request is written the change may be applied on
+    /// the server with no answer reaching the client. A dropped future leaves the
+    /// client interrupted: every later call fails with [`Error::Interrupted`]
+    /// before anything is sent, and the change is never sent again.
     #[inline]
     pub async fn set_keys_for_keysalts(
         &mut self,
@@ -405,6 +479,13 @@ where
     /// Returns [`Error::InvalidArgument`] without keys (MIT `EINVAL`) and
     /// [`Error::Policy`] for a refused enctype or salt, before anything is
     /// sent, then the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: once the request is written the change may be applied on
+    /// the server with no answer reaching the client. A dropped future leaves the
+    /// client interrupted: every later call fails with [`Error::Interrupted`]
+    /// before anything is sent, and the change is never sent again.
     #[inline]
     pub async fn set_key_data(
         &mut self,
@@ -429,6 +510,13 @@ where
     /// # Errors
     ///
     /// Returns the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: once the request is written the change may be applied on
+    /// the server with no answer reaching the client. A dropped future leaves the
+    /// client interrupted: every later call fails with [`Error::Interrupted`]
+    /// before anything is sent, and the change is never sent again.
     #[inline]
     pub async fn purge_keys(&mut self, principal: &Principal, keep_kvno: i32) -> Result<(), Error> {
         let arguments = wire::principal(wire::begin(self.version), principal)?
@@ -442,6 +530,12 @@ where
     /// # Errors
     ///
     /// Returns the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// Cancel-safe for the server, where a read changes nothing. A future dropped
+    /// after the request was written leaves the client interrupted: every later
+    /// call fails with [`Error::Interrupted`] before anything is sent; connect again.
     #[inline]
     pub async fn get_strings(
         &mut self,
@@ -467,6 +561,13 @@ where
     ///
     /// Returns [`Error::InvalidArgument`] for a key or value holding a NUL,
     /// before anything is sent, then the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: once the request is written the change may be applied on
+    /// the server with no answer reaching the client. A dropped future leaves the
+    /// client interrupted: every later call fails with [`Error::Interrupted`]
+    /// before anything is sent, and the change is never sent again.
     #[inline]
     pub async fn set_string(
         &mut self,
@@ -493,6 +594,12 @@ where
     /// # Errors
     ///
     /// Returns the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// Cancel-safe for the server, where a read changes nothing. A future dropped
+    /// after the request was written leaves the client interrupted: every later
+    /// call fails with [`Error::Interrupted`] before anything is sent; connect again.
     #[inline]
     pub async fn get_principal_keys(
         &mut self,
@@ -519,6 +626,13 @@ where
     /// # Errors
     ///
     /// Returns the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: once the request is written the change may be applied on
+    /// the server with no answer reaching the client. A dropped future leaves the
+    /// client interrupted: every later call fails with [`Error::Interrupted`]
+    /// before anything is sent, and the change is never sent again.
     #[inline]
     pub async fn create_alias(
         &mut self,
@@ -535,6 +649,13 @@ where
     /// # Errors
     ///
     /// Returns the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: once the request is written the change may be applied on
+    /// the server with no answer reaching the client. A dropped future leaves the
+    /// client interrupted: every later call fails with [`Error::Interrupted`]
+    /// before anything is sent, and the change is never sent again.
     #[inline]
     pub async fn create_policy(&mut self, policy: &PolicyRecord) -> Result<(), Error> {
         let mask = (policy.mask | PolicyMask::POLICY).bits();
@@ -548,6 +669,13 @@ where
     /// # Errors
     ///
     /// Returns the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: once the request is written the change may be applied on
+    /// the server with no answer reaching the client. A dropped future leaves the
+    /// client interrupted: every later call fails with [`Error::Interrupted`]
+    /// before anything is sent, and the change is never sent again.
     #[inline]
     pub async fn delete_policy(&mut self, name: &str) -> Result<(), Error> {
         let arguments =
@@ -560,6 +688,13 @@ where
     /// # Errors
     ///
     /// Returns the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe: once the request is written the change may be applied on
+    /// the server with no answer reaching the client. A dropped future leaves the
+    /// client interrupted: every later call fails with [`Error::Interrupted`]
+    /// before anything is sent, and the change is never sent again.
     #[inline]
     pub async fn modify_policy(&mut self, policy: &PolicyRecord) -> Result<(), Error> {
         let mask = policy.mask.without(PolicyMask::POLICY).bits();
@@ -573,6 +708,12 @@ where
     /// # Errors
     ///
     /// Returns the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// Cancel-safe for the server, where a read changes nothing. A future dropped
+    /// after the request was written leaves the client interrupted: every later
+    /// call fails with [`Error::Interrupted`] before anything is sent; connect again.
     #[inline]
     pub async fn get_policy(&mut self, name: &str) -> Result<PolicyRecord, Error> {
         let arguments =
@@ -594,6 +735,12 @@ where
     /// # Errors
     ///
     /// Returns the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// Cancel-safe for the server, where a read changes nothing. A future dropped
+    /// after the request was written leaves the client interrupted: every later
+    /// call fails with [`Error::Interrupted`] before anything is sent; connect again.
     #[inline]
     pub async fn list_policies(&mut self, expression: Option<&str>) -> Result<Vec<String>, Error> {
         self.names(Procedure::GetPolicies, expression).await
@@ -604,6 +751,12 @@ where
     /// # Errors
     ///
     /// Returns [`Error::Interrupted`] after an unfinished call and the RPC errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// Cancel-safe: the client is consumed, so a dropped future drops the
+    /// connection before the destruction is answered and nothing can be called
+    /// after it.
     #[inline]
     pub async fn destroy(mut self) -> Result<(), Error> {
         call::destroy(&mut self).await
@@ -614,6 +767,12 @@ where
     /// # Errors
     ///
     /// Returns the policy errors of the check, or the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// As `call::run`: a future dropped after the request was written leaves
+    /// the client interrupted, and every later call is refused before anything is
+    /// sent.
     async fn done(&mut self, procedure: Procedure, arguments: &[u8]) -> Result<(), Error> {
         match call::run(self, procedure, arguments).await? {
             Response::Done => Ok(()),
@@ -632,6 +791,12 @@ where
     /// # Errors
     ///
     /// Returns the policy errors of the check, or the call errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// As `call::run`: a future dropped after the request was written leaves
+    /// the client interrupted, and every later call is refused before anything is
+    /// sent.
     async fn names(
         &mut self,
         procedure: Procedure,
