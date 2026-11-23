@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 122
-partial = 24
-absent = 7
+implemented = 125
+partial = 22
+absent = 6
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -2417,14 +2417,22 @@ id = "MIT-config-44"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`[realms]`: `admin_server`, `kdc`, `kpasswd_server`"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "Remote kadm5 consumer of admin_server (plan-2 todo 24); kdc and kpasswd_server endpoints are effective and admin_server feeds the port-464 kpasswd fallback."
-rust_symbols = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "kadm5::admin_server",
+  "kadm5::AdminServer",
+  "kadm5::RemoteAdminClient::connect",
+]
 test_names = [
   "tests/config/realm_relations_d.rs::kdc",
   "tests/config/realm_relations_d.rs::kpasswd_server",
   "tests/config/realm_relations_d.rs::admin_server",
+  "tests/kadm5/relations.rs::admin_server_selects_host_and_port",
+  "tests/kadm5/relations.rs::missing_or_malformed_admin_server_fails",
+  "tests/kadm5/relations.rs::connect_uses_admin_server",
+  "tests/interop_kadm5/scenarios.rs::administrator_operations_take_effect",
 ]
 feature_flags = []
 security_divergence = ""
@@ -3406,13 +3414,38 @@ id = "MIT-admin-3"
 area = "admin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Remote kadm5 client APIs over authenticated RPCSEC_GSS"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "Kadmin module is kpasswd framing only, no principal/policy RPC client."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "kadm5::RemoteAdminClient",
+  "kadm5::PrincipalRecord",
+  "kadm5::PolicyRecord",
+  "kadm5::KeySaltTuple",
+  "kadm5::KeyData",
+  "kadm5::Response",
+  "rpcsec_gss::RpcClient",
+  "rpcsec_gss::ProtectedCall",
+  "rpcsec_gss::Reply",
+  "rpcsec_gss::encode_record",
+  "rpcsec_gss::decode_record",
+]
+test_names = [
+  "tests/kadm5/operations.rs::every_operation_sends_mit_arguments",
+  "tests/kadm5/operations.rs::version_negotiation_falls_back",
+  "tests/kadm5/rpc.rs::privacy_establishes_and_calls",
+  "tests/kadm5/rpc.rs::integrity_establishes_and_calls",
+  "tests/kadm5/rpc.rs::reused_sequence_number_is_rejected",
+  "tests/kadm5/rpc.rs::wrong_verifier_mic_is_rejected",
+  "tests/kadm5/rpc.rs::unbounded_replies_are_refused",
+  "tests/kadm5/rpc.rs::auth_sys_only_server_is_refused",
+  "tests/kadm5/outcome.rs::unanswered_mutations_have_unknown_outcomes",
+  "tests/kadm5/codec.rs::principal_record_decodes",
+  "tests/interop_kadm5/scenarios.rs::administrator_operations_take_effect",
+  "tests/interop_kadm5/scenarios.rs::unprivileged_principal_is_refused_by_the_acl",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Only RPCSEC_GSS is sent: MIT falls back to the old AUTH_GSSAPI flavor unless KADM5_CONFIG_AUTH_NOFALLBACK is set (client_init.c rpc_auth), this client has no fallback and no AUTH_SYS/AUTH_NONE path, and the unprotected rpc_gss_svc_none service is not offered. Each reply must answer its XID, carry an RPCSEC_GSS verifier over its own sequence number and protect a body naming it (MIT checks the last two too, auth_gss.c, authgss_prot.c); a rejected reply closes the connection. A mutation without an authenticated answer after a possible delivery is OutcomeUnknown and never replayed. Records, lists and strings are bounded before allocation."
 disposition = "WP-15"
 closing_plan = 2
 closing_todo = 24
@@ -4279,13 +4312,23 @@ id = "MIT-removed-7"
 area = "removed"
 upstream_ref = "krb5-1.22.2-final"
 capability = "DES3/RC4 as default long-term key generation types"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "P2-24: remote-admin keysalt defaults and policy. Client request defaults never include DES3/RC4 (P1-14)."
-rust_symbols = []
-test_names = ["tests/policy/profile.rs::policy_defaults_and_numeric_rejection"]
+missing = ""
+rust_symbols = [
+  "kadm5::KeySaltTuple",
+  "kadm5::SaltType",
+  "kadm5::KeyOptions",
+  "kadm5::Options::with_crypto_policy",
+]
+test_names = [
+  "tests/policy/profile.rs::policy_defaults_and_numeric_rejection",
+  "tests/kadm5/keysalts.rs::removed_enctypes_and_salts_are_rejected_by_name",
+  "tests/kadm5/keysalts.rs::legacy_enctypes_need_the_opt_in",
+  "tests/kadm5/keysalts.rs::no_tuples_send_none",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Remote-admin key/salt tuples and supplied keys pass the client policy before anything is sent: single DES and RC4-EXP are refused by name (RejectedFeature), DES3 and RC4 need allow_des3/allow_rc4, and the Kerberos V4 and AFS3 salts are refused as Kerberos V4 legacy; MIT 1.22.2 client_principal.c sends any tuple and leaves the decision to kadmind. With no tuples the client sends none (kadmind defaults), as MIT."
 disposition = "WP-15"
 closing_plan = 2
 closing_todo = 24
