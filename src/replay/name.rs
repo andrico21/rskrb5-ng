@@ -1,13 +1,13 @@
 //! MIT replay-cache names (`rc_base.c:k5_rc_resolve`, `krb5_rc_default`).
 
-use super::{Error, RcacheName};
-use crate::{config::Config, file_name::expand_path_tokens, secure_env};
-use std::{env, path::PathBuf};
-
-#[cfg(feature = "messages")]
-use super::{File2ReplayStore, MemoryReplayStore, NoneReplayStore, Store};
 #[cfg(feature = "messages")]
 use alloc::sync::Arc;
+use std::{env, path::PathBuf};
+
+use super::{Error, RcacheName};
+#[cfg(feature = "messages")]
+use super::{File2ReplayStore, MemoryReplayStore, NoneReplayStore, Store};
+use crate::{config::Config, file_name::expand_path_tokens, secure_env};
 
 impl RcacheName {
     /// Parse `type:residual`: `dfl:` (residual ignored), `file2:<path>`,
@@ -60,7 +60,8 @@ impl RcacheName {
         if configured.is_empty() {
             return Ok(Self::Dfl);
         }
-        let expanded = expand_path_tokens(configured).map_err(|_unavailable| Error::IdentityUnavailable)?;
+        let expanded =
+            expand_path_tokens(configured).map_err(|_unavailable| Error::IdentityUnavailable)?;
         Self::parse(&expanded)
     }
 

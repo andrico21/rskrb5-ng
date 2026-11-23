@@ -7,13 +7,11 @@
 use alloc::sync::Arc;
 use std::path::PathBuf;
 
-use rskrb5_ng::replay::{Admission, File2ReplayStore, Store};
+use rskrb5_ng::replay::{Admission, File2ReplayStore, Store as _};
 use sha2::{Digest as _, Sha256};
 
+use super::support::{MemoryFs, evidence};
 use crate::context::TestError;
-use super::{
-    support::{MemoryFs, evidence},
-};
 
 /// The hash seed of the model: bytes 0 to 15.
 const SEED: [u8; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
@@ -21,21 +19,28 @@ const SEED: [u8; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 /// A store on a file that already holds the seed.
 fn seeded() -> (File2ReplayStore, MemoryFs) {
     let files = MemoryFs::with_bytes(&SEED);
-    let store = File2ReplayStore::new(PathBuf::from("memory"))
-        .with_file_system(Arc::new(files.clone()));
+    let store =
+        File2ReplayStore::new(PathBuf::from("memory")).with_file_system(Arc::new(files.clone()));
     (store, files)
 }
 
 /// The non-empty records of a file as `(offset, tag hex, timestamp)`.
 fn records(bytes: &[u8]) -> Vec<(usize, String, u32)> {
-    bytes
-        .chunks_exact(16)
+    let (_, rest) = bytes.split_at(16);
+    let (slots, _tail) = rest.as_chunks::<16>();
+    slots
+        .iter()
         .enumerate()
-        .skip(1)
         .filter_map(|(slot, record)| {
-            let (tag, stamp) = record.split_at(12);
-            let stamp = u32::from_be_bytes(stamp.try_into().ok()?);
-            (stamp != 0).then(|| (slot * 16, hex::encode(tag), stamp))
+            let (tag, stamp_bytes) = record.split_at(12);
+            let stamp = u32::from_be_bytes(stamp_bytes.try_into().ok()?);
+            (stamp != 0).then(|| {
+                (
+                    slot.saturating_mul(16).saturating_add(16),
+                    hex::encode(tag),
+                    stamp,
+                )
+            })
         })
         .collect()
 }
@@ -83,7 +88,10 @@ fn three_thousand_records_fill_three_tables_like_the_model() -> Result<(), TestE
         "28b3ca53a7057d32967f1434bd25cbe7d397ccc88a42ea636e394ef5e2f1f2ec"
     );
     for index in (0..3000_u32).step_by(97) {
-        assert_eq!(store.admit(&evidence(index, 1_000_000)?)?, Admission::Replayed);
+        assert_eq!(
+            store.admit(&evidence(index, 1_000_000)?)?,
+            Admission::Replayed
+        );
     }
     Ok(())
 }
@@ -106,10 +114,16 @@ fn expired_records_are_reused_after_three_skews_like_the_model() -> Result<(), T
 
     let (late_store, late_files) = seeded();
     for index in 0..3000_u32 {
-        assert_eq!(late_store.admit(&evidence(index, 1_000_000)?)?, Admission::Fresh);
+        assert_eq!(
+            late_store.admit(&evidence(index, 1_000_000)?)?,
+            Admission::Fresh
+        );
     }
     for index in 3000..3400_u32 {
-        assert_eq!(late_store.admit(&evidence(index, 1_002_701)?)?, Admission::Fresh);
+        assert_eq!(
+            late_store.admit(&evidence(index, 1_002_701)?)?,
+            Admission::Fresh
+        );
     }
 
     let reused = late_files.bytes()?;
@@ -133,7 +147,10 @@ fn a_model_written_file_is_read_as_evidence() -> Result<(), TestError> {
         .with_file_system(Arc::new(MemoryFs::with_bytes(&files.bytes()?)));
 
     for index in 0..40_u32 {
-        assert_eq!(reader.admit(&evidence(index, 1_000_001)?)?, Admission::Replayed);
+        assert_eq!(
+            reader.admit(&evidence(index, 1_000_001)?)?,
+            Admission::Replayed
+        );
     }
     assert_eq!(reader.admit(&evidence(41, 1_000_001)?)?, Admission::Fresh);
     Ok(())

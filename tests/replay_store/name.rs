@@ -1,5 +1,6 @@
 //! MIT replay-cache names.
 
+use core::time::Duration;
 use std::path::PathBuf;
 
 use rskrb5_ng::{
@@ -7,10 +8,8 @@ use rskrb5_ng::{
     replay::{Admission, RcacheName},
 };
 
+use super::support::{TempDir, evidence_with_skew};
 use crate::context::TestError;
-use super::{
-    support::{TempDir, evidence},
-};
 
 /// Pins the accepted name forms and the refusals MIT's `k5_rc_resolve` has.
 #[test]
@@ -31,7 +30,10 @@ fn names_parse_like_mit() -> Result<(), TestError> {
             path: PathBuf::from("C:\\cache")
         }
     );
-    assert!(matches!(RcacheName::parse("/var/tmp/x"), Err(Error::InvalidName)));
+    assert!(matches!(
+        RcacheName::parse("/var/tmp/x"),
+        Err(Error::InvalidName)
+    ));
     assert!(matches!(RcacheName::parse("file2:"), Err(Error::EmptyPath)));
     assert!(matches!(
         RcacheName::parse("DFL:"),
@@ -50,7 +52,7 @@ fn a_name_opens_the_store_it_names() -> Result<(), TestError> {
     let directory = TempDir::new("names")?;
     let path = directory.path().join("named.rcache2");
     let file_name = format!("file2:{}", path.display());
-    let candidate = evidence(5, 1_000_000)?;
+    let candidate = evidence_with_skew(5, 1_000_000, Duration::from_secs(300))?;
 
     let none = RcacheName::parse("none:")?.open()?;
     assert_eq!(none.admit(&candidate)?, Admission::Fresh);
@@ -60,6 +62,9 @@ fn a_name_opens_the_store_it_names() -> Result<(), TestError> {
     assert_eq!(memory.admit(&candidate)?, Admission::Replayed);
     let file = RcacheName::parse(&file_name)?.open()?;
     assert_eq!(file.admit(&candidate)?, Admission::Fresh);
-    assert_eq!(RcacheName::parse(&file_name)?.open()?.admit(&candidate)?, Admission::Replayed);
+    assert_eq!(
+        RcacheName::parse(&file_name)?.open()?.admit(&candidate)?,
+        Admission::Replayed
+    );
     Ok(())
 }

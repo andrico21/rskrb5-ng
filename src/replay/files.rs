@@ -1,15 +1,14 @@
 //! The operating-system [`FileSystem`]: a regular file under `File::lock`.
 
+#[cfg(unix)]
+use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _};
 use std::{
     fs::{File, OpenOptions, symlink_metadata},
     io::{self, Read as _, Seek as _, SeekFrom, Write as _},
     path::Path,
 };
 
-#[cfg(unix)]
-use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _};
-
-use super::{OsFileSystem, FileSystem, OpenFile};
+use super::{FileSystem, OpenFile, OsFileSystem};
 
 /// An open cache file; dropping it closes the descriptor and releases the lock.
 struct LockedFile {

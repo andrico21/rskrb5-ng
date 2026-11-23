@@ -7,14 +7,12 @@ use std::{io::ErrorKind, path::PathBuf, time::UNIX_EPOCH};
 use rskrb5_ng::{
     error::{Replay, Service as Error},
     keytab::Keytab,
-    replay::{File2ReplayStore, MemoryReplayStore, NoneReplayStore},
+    replay::{File2ReplayStore, MemoryReplayStore, NoneReplayStore, Store},
     service::Validator,
 };
 
+use super::support::{Fault, MemoryFs, TempDir};
 use crate::context::{Context as _, TestError};
-use super::{
-    support::{Fault, MemoryFs, TempDir},
-};
 
 /// The gokrb5 service keytab of `tests/service.rs`.
 const HTTP_KEYTAB: &str = concat!(
@@ -40,10 +38,7 @@ fn keytab() -> Result<Keytab, TestError> {
 }
 
 /// A validator fixed at [`NOW`] that records in `store`.
-fn validator_on<'keytab>(
-    keytab: &'keytab Keytab,
-    store: Arc<dyn rskrb5_ng::replay::Store>,
-) -> Result<Validator<'keytab>, TestError> {
+fn validator_on(keytab: &Keytab, store: Arc<dyn Store>) -> Result<Validator<'_>, TestError> {
     let now = UNIX_EPOCH
         .checked_add(Duration::from_secs(NOW))
         .context("time is representable")?;
@@ -62,7 +57,9 @@ fn a_second_validator_on_the_same_file_refuses_the_replay() -> Result<(), TestEr
     let mut first = validator_on(&keytab, Arc::new(File2ReplayStore::new(path.clone())))?;
     let mut second = validator_on(&keytab, Arc::new(File2ReplayStore::new(path)))?;
 
-    let accepted = first.validate_ap_req(AP_REQ).context("the first presentation is accepted")?;
+    let accepted = first
+        .validate_ap_req(AP_REQ)
+        .context("the first presentation is accepted")?;
     let refused = second.validate_ap_req(AP_REQ);
 
     assert_eq!(accepted.client().name(), "testuser1");
@@ -75,14 +72,22 @@ fn a_second_validator_on_the_same_file_refuses_the_replay() -> Result<(), TestEr
 fn a_store_failure_refuses_the_ap_req() -> Result<(), TestError> {
     let keytab = keytab()?;
     let files = MemoryFs::default();
-    let store = File2ReplayStore::new(PathBuf::from("memory")).with_file_system(Arc::new(files.clone()));
+    let store =
+        File2ReplayStore::new(PathBuf::from("memory")).with_file_system(Arc::new(files.clone()));
     let mut validator = validator_on(&keytab, Arc::new(store))?;
     files.inject(Fault::Open(ErrorKind::PermissionDenied))?;
 
     let outcome = validator.validate_ap_req(AP_REQ);
 
     assert!(
-        matches!(outcome, Err(Error::ReplayStore(Replay::Io { operation: "open", .. }))),
+        matches!(
+            outcome,
+            Err(Error::ReplayStore(Replay::Io {
+                operation: "open",
+                path: _,
+                source: _
+            }))
+        ),
         "{outcome:?}"
     );
     Ok(())
@@ -92,8 +97,8 @@ fn a_store_failure_refuses_the_ap_req() -> Result<(), TestError> {
 #[test]
 fn memory_stops_a_replay_and_none_is_a_deliberate_opt_out() -> Result<(), TestError> {
     let keytab = keytab()?;
-    let memory = Arc::new(MemoryReplayStore::new());
-    let mut first = validator_on(&keytab, memory.clone())?;
+    let memory: Arc<dyn Store> = Arc::new(MemoryReplayStore::new());
+    let mut first = validator_on(&keytab, Arc::clone(&memory))?;
     let mut second = validator_on(&keytab, memory)?;
     let accepted = first.validate_ap_req(AP_REQ).context("accepted once")?;
     assert_eq!(accepted.client().name(), "testuser1");

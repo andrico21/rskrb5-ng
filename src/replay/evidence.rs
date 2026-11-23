@@ -58,7 +58,12 @@ impl Presentation {
     /// Name the authenticator by its RFC 4120 section 3.2.3 replay key.
     #[must_use]
     #[inline]
-    pub const fn new(service: Principal, client: Principal, ctime_seconds: i64, cusec: u32) -> Self {
+    pub const fn new(
+        service: Principal,
+        client: Principal,
+        ctime_seconds: i64,
+        cusec: u32,
+    ) -> Self {
         Self {
             service,
             client,

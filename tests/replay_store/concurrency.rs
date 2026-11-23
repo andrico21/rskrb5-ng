@@ -1,19 +1,20 @@
 //! Cross-thread and cross-process atomicity of the file store, on real files.
 
+use core::iter::repeat_with;
 use std::{
-    env::current_exe,
+    env::{current_exe, var_os},
     fs,
+    io::{Write as _, stdout},
+    path::Path,
     process::{Command, Stdio},
     sync::Barrier,
     thread,
 };
 
-use rskrb5_ng::replay::{Admission, File2ReplayStore, Store};
+use rskrb5_ng::replay::{Admission, File2ReplayStore, Store as _};
 
+use super::support::{TempDir, evidence};
 use crate::context::{Context as _, TestError};
-use super::{
-    support::{TempDir, evidence},
-};
 
 /// Tags every worker presents.
 const TAGS: u32 = 60;
@@ -23,7 +24,7 @@ const DIRECTORY_ENV: &str = "RSKRB5_REPLAY_TEST_DIR";
 const MARKER: &str = "ADMISSION";
 
 /// Presents every tag to a store opened on `path` and lists the fresh ones.
-fn present_all(path: &std::path::Path) -> Result<Vec<u32>, TestError> {
+fn present_all(path: &Path) -> Result<Vec<u32>, TestError> {
     let store = File2ReplayStore::new(path.join("replay.rcache2"));
     let mut fresh = Vec::new();
     for index in 0..TAGS {
@@ -32,6 +33,13 @@ fn present_all(path: &std::path::Path) -> Result<Vec<u32>, TestError> {
         }
     }
     Ok(fresh)
+}
+
+/// Count one fresh admission of tag `index`.
+fn tally(counts: &mut [u32], index: usize) -> Result<(), TestError> {
+    let slot = counts.get_mut(index).context("tag index")?;
+    *slot = slot.saturating_add(1);
+    Ok(())
 }
 
 /// Pins that the first presentation is fresh and the second, from a new store on the same file, a replay.
@@ -61,24 +69,28 @@ fn threads_on_separate_stores_admit_each_tag_once() -> Result<(), TestError> {
     let barrier = Barrier::new(8);
 
     let results = thread::scope(|scope| {
-        let workers: Vec<_> = (0..8)
-            .map(|_worker| {
-                scope.spawn(|| {
-                    let _leader = barrier.wait();
-                    present_all(directory.path()).map_err(|error| error.to_string())
-                })
+        let workers: Vec<_> = repeat_with(|| {
+            scope.spawn(|| {
+                let _leader = barrier.wait();
+                present_all(directory.path()).map_err(|error| error.to_string())
             })
-            .collect();
+        })
+        .take(8)
+        .collect();
         workers
             .into_iter()
-            .map(|worker| worker.join().map_err(|_panic| "worker panicked".to_owned())?)
+            .map(|worker| {
+                worker
+                    .join()
+                    .map_err(|_panic| "worker panicked".to_owned())?
+            })
             .collect::<Result<Vec<_>, String>>()
     })?;
 
-    let mut counts = [0_u32; TAGS as usize];
+    let mut counts = vec![0_u32; usize::try_from(TAGS)?];
     for fresh in results {
         for index in fresh {
-            *counts.get_mut(usize::try_from(index)?).context("tag index")? += 1;
+            tally(&mut counts, usize::try_from(index)?)?;
         }
     }
     assert!(counts.iter().all(|count| *count == 1), "{counts:?}");
@@ -88,11 +100,11 @@ fn threads_on_separate_stores_admit_each_tag_once() -> Result<(), TestError> {
 /// Child worker of the multi-process test: presents every tag and prints the fresh ones.
 #[test]
 fn replay_worker_process() -> Result<(), TestError> {
-    let Some(directory) = std::env::var_os(DIRECTORY_ENV) else {
+    let Some(directory) = var_os(DIRECTORY_ENV) else {
         return Ok(());
     };
     for index in present_all(directory.as_ref())? {
-        println!("{MARKER} {index}");
+        writeln!(stdout(), "{MARKER} {index}")?;
     }
     Ok(())
 }
@@ -103,9 +115,14 @@ fn processes_sharing_one_file_admit_each_tag_once() -> Result<(), TestError> {
     let directory = TempDir::new("processes")?;
     let executable = current_exe()?;
     let mut children = Vec::new();
-    for _worker in 0..4 {
+    for _worker in 0_u8..4 {
         let child = Command::new(&executable)
-            .args(["replay_worker_process", "--exact", "--nocapture", "--test-threads=1"])
+            .args([
+                "replay_store::concurrency::replay_worker_process",
+                "--exact",
+                "--nocapture",
+                "--test-threads=1",
+            ])
             .env(DIRECTORY_ENV, directory.path())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -113,15 +130,22 @@ fn processes_sharing_one_file_admit_each_tag_once() -> Result<(), TestError> {
         children.push(child);
     }
 
-    let mut counts = [0_u32; TAGS as usize];
+    let mut counts = vec![0_u32; usize::try_from(TAGS)?];
     for child in children {
         let output = child.wait_with_output()?;
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-        for line in String::from_utf8(output.stdout)?.lines() {
-            if let Some(index) = line.strip_prefix(MARKER).map(str::trim) {
-                *counts
-                    .get_mut(index.parse::<usize>()?)
-                    .context("tag index")? += 1;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8(output.stdout)?;
+        assert!(stdout.contains("1 passed"), "the worker ran: {stdout}");
+        for line in stdout.lines() {
+            if let Some((_, index)) = line
+                .split_once(MARKER)
+                .map(|(head, tail)| (head, tail.trim()))
+            {
+                tally(&mut counts, index.parse::<usize>()?)?;
             }
         }
     }

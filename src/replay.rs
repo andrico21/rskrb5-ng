@@ -36,14 +36,14 @@ mod evidence;
 #[cfg(feature = "messages")]
 mod file2;
 #[cfg(feature = "messages")]
+mod files;
+#[cfg(feature = "messages")]
 mod memory;
 mod name;
 #[cfg(feature = "messages")]
 mod none;
 #[cfg(feature = "messages")]
 mod siphash;
-#[cfg(feature = "messages")]
-mod files;
 #[cfg(feature = "messages")]
 mod table;
 

@@ -247,7 +247,9 @@ fn store(file: &mut dyn OpenFile, run: &Run<'_>) -> Result<Admission, Error> {
                 .map_err(|source| io_error(run.path, "sync", source))?;
             return Ok(Admission::Fresh);
         }
-        let head = seed_bytes.first_mut().ok_or_else(|| corrupt(run.path, "no seed"))?;
+        let head = seed_bytes
+            .first_mut()
+            .ok_or_else(|| corrupt(run.path, "no seed"))?;
         *head = head.wrapping_add(1);
     }
 }

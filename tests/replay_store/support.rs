@@ -1,15 +1,16 @@
 //! Shared test material: evidence builders, a temporary directory and a fault-injecting file system.
 
 use alloc::sync::Arc;
-use core::time::Duration;
+use core::{
+    sync::atomic::{AtomicU32, Ordering},
+    time::Duration,
+};
 use std::{
+    env::temp_dir,
     fs, io,
     path::{Path, PathBuf},
     process,
-    sync::{
-        Mutex,
-        atomic::{AtomicU32, Ordering},
-    },
+    sync::{Mutex, MutexGuard},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -22,7 +23,7 @@ use sha2::{Digest as _, Sha256};
 use crate::context::{Context as _, TestError};
 
 /// The retention of three times a 900 s skew, as the layout model uses.
-pub(super) const SKEW: Duration = Duration::from_secs(900);
+pub(super) const SKEW: Duration = Duration::from_mins(15);
 
 /// The tag the reference model derives for index `index`.
 pub(super) fn tag_of(index: u32) -> Tag {
@@ -32,6 +33,15 @@ pub(super) fn tag_of(index: u32) -> Tag {
 
 /// Evidence for tag `index` presented at `seconds` since the Unix epoch.
 pub(super) fn evidence(index: u32, seconds: u64) -> Result<Evidence, TestError> {
+    evidence_with_skew(index, seconds, SKEW)
+}
+
+/// Evidence for tag `index` validated with clock skew `skew`.
+pub(super) fn evidence_with_skew(
+    index: u32,
+    seconds: u64,
+    skew: Duration,
+) -> Result<Evidence, TestError> {
     let at = UNIX_EPOCH
         .checked_add(Duration::from_secs(seconds))
         .context("time is representable")?;
@@ -39,7 +49,7 @@ pub(super) fn evidence(index: u32, seconds: u64) -> Result<Evidence, TestError> 
     let client = Principal::new("EXAMPLE.TEST".to_owned(), 1, vec![format!("user{index}")]);
     let presentation = Presentation::new(service, client, i64::try_from(seconds)?, index);
     let digest: [u8; 32] = Sha256::digest(index.to_be_bytes()).into();
-    Ok(Evidence::new(tag_of(index), digest, presentation).with_window(at, SKEW))
+    Ok(Evidence::new(tag_of(index), digest, presentation).with_window(at, skew))
 }
 
 /// A temporary directory removed on drop.
@@ -54,7 +64,7 @@ impl TempDir {
         static NEXT: AtomicU32 = AtomicU32::new(0);
         let number = NEXT.fetch_add(1, Ordering::Relaxed);
         let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-        let path = std::env::temp_dir().join(format!(
+        let path = temp_dir().join(format!(
             "rskrb5-replay-{label}-{}-{nanos}-{number}",
             process::id()
         ));
@@ -118,10 +128,7 @@ impl MemoryFs {
 
     /// Inject `fault` into the next matching operation.
     pub(super) fn inject(&self, fault: Fault) -> Result<(), TestError> {
-        self.state
-            .lock()
-            .map_err(|_poisoned| "state lock")?
-            .fault = Some(fault);
+        self.state.lock().map_err(|_poisoned| "state lock")?.fault = Some(fault);
         Ok(())
     }
 
@@ -143,17 +150,21 @@ struct Handle {
 }
 
 /// Locks the state, mapping poisoning to an I/O error.
-fn locked(state: &Mutex<State>) -> io::Result<std::sync::MutexGuard<'_, State>> {
-    state.lock().map_err(|_poisoned| io::Error::other("state lock"))
+fn locked(state: &Mutex<State>) -> io::Result<MutexGuard<'_, State>> {
+    state
+        .lock()
+        .map_err(|_poisoned| io::Error::other("state lock"))
 }
 
 impl FileSystem for MemoryFs {
     fn open_locked(&self, _path: &Path, _private: bool) -> io::Result<Box<dyn OpenFile>> {
         let mut state = locked(&self.state)?;
-        if let Some(Fault::Open(kind)) = state.fault.take_if(|fault| matches!(fault, Fault::Open(_)))
+        if let Some(Fault::Open(kind)) =
+            state.fault.take_if(|fault| matches!(fault, Fault::Open(_)))
         {
             return Err(io::Error::from(kind));
         }
+        drop(state);
         Ok(Box::new(Handle {
             state: Arc::clone(&self.state),
         }))
@@ -167,7 +178,8 @@ impl OpenFile for Handle {
 
     fn read_at(&mut self, offset: u64, buffer: &mut [u8]) -> io::Result<usize> {
         let mut state = locked(&self.state)?;
-        if let Some(Fault::Read(kind)) = state.fault.take_if(|fault| matches!(fault, Fault::Read(_)))
+        if let Some(Fault::Read(kind)) =
+            state.fault.take_if(|fault| matches!(fault, Fault::Read(_)))
         {
             return Err(io::Error::from(kind));
         }
@@ -177,6 +189,7 @@ impl OpenFile for Handle {
         if let (Some(target), Some(source)) = (buffer.get_mut(..count), available.get(..count)) {
             target.copy_from_slice(source);
         }
+        drop(state);
         Ok(count)
     }
 
@@ -197,22 +210,27 @@ impl OpenFile for Handle {
             }
             Some(Fault::Open(_) | Fault::Read(_) | Fault::Sync(_)) | None => {}
         }
-        let end = start.checked_add(keep).ok_or_else(|| io::Error::other("offset"))?;
+        let end = start
+            .checked_add(keep)
+            .ok_or_else(|| io::Error::other("offset"))?;
         if state.bytes.len() < end {
             state.bytes.resize(end, 0);
         }
         if let (Some(target), Some(source)) = (state.bytes.get_mut(start..end), data.get(..keep)) {
             target.copy_from_slice(source);
         }
+        drop(state);
         failure.map_or(Ok(()), Err)
     }
 
     fn sync(&mut self) -> io::Result<()> {
         let mut state = locked(&self.state)?;
-        if let Some(Fault::Sync(kind)) = state.fault.take_if(|fault| matches!(fault, Fault::Sync(_)))
+        if let Some(Fault::Sync(kind)) =
+            state.fault.take_if(|fault| matches!(fault, Fault::Sync(_)))
         {
             return Err(io::Error::from(kind));
         }
+        drop(state);
         Ok(())
     }
 }

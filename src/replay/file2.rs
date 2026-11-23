@@ -7,9 +7,7 @@ use std::{
     time::UNIX_EPOCH,
 };
 
-use super::{
-    Admission, Evidence, File2ReplayStore, OsFileSystem, Store, FileSystem, dfl, table,
-};
+use super::{Admission, Evidence, File2ReplayStore, FileSystem, OsFileSystem, Store, dfl, table};
 use crate::error::Replay as Error;
 
 /// MIT's size bound (`rc_file2.c:MAX_SIZE`, `INT32_MAX`).
@@ -90,7 +88,8 @@ impl Store for File2ReplayStore {
     #[inline]
     fn admit(&self, evidence: &Evidence) -> Result<Admission, Error> {
         let now = timestamp(evidence)?;
-        let retention = u32::try_from(evidence.skew.saturating_mul(3).as_secs()).unwrap_or(u32::MAX);
+        let retention =
+            u32::try_from(evidence.skew.saturating_mul(3).as_secs()).unwrap_or(u32::MAX);
         let mut file = self
             .files
             .open_locked(&self.path, self.private_file)
