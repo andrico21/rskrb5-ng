@@ -149,6 +149,6 @@ def assigned():
 
 
 root = Path(sys.argv[1])
-(root / "src/iana").mkdir(exist_ok=True)
+(root / "src/iana").mkdir(parents=True, exist_ok=True)
 for module, text in {**registered(), **assigned()}.items():
     (root / f"src/iana/{module}.rs").write_text(text, encoding="utf-8")
