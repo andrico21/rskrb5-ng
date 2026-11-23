@@ -201,8 +201,9 @@ fn nested_includes_resolve_relative_to_the_including_file() -> Result<(), TestEr
             "pub struct Guid;".to_owned(),
         ),
     ];
-    assert!(declares(&sources, "gss::negoex::Guid"));
-    assert!(!declares(&sources, "gss::negoex::guid::Guid"));
+    let cleaned = sanitized_sources(&sources)?;
+    assert!(declares_clean(&cleaned, &sources, "gss::negoex::Guid"));
+    assert!(!declares_clean(&cleaned, &sources, "gss::negoex::guid::Guid"));
     Ok(())
 }
 
