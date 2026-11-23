@@ -21,7 +21,7 @@ use rskrb5_ng::{
     gss::{
         self, AcceptorOptions, CredStore, Credential, CredentialUsage, InitStep, InitiatorOptions,
         Name, NameType,
-        iakerb::{AcceptStep, IakerbContext, KdcRelay, RelayFailure, RelayPolicy, token::Token},
+        iakerb::{AcceptStep, Context, KdcRelay, RelayFailure, RelayPolicy, token::Token},
     },
     keytab::{EncryptionKey, Keytab},
     service::Validator,
@@ -66,13 +66,13 @@ fn credential() -> Option<Credential> {
 }
 
 /// A fresh initiator and its first token, a relay request for [`REALM`].
-fn initiator(credential: &Credential) -> Option<(IakerbContext, Vec<u8>)> {
+fn initiator(credential: &Credential) -> Option<(Context, Vec<u8>)> {
     let config = Config::parse(
         "[libdefaults]\n default_realm = TEST.GOKRB5\n dns_lookup_kdc = false\n dns_lookup_realm = false\n",
     )
     .ok()?;
     let target = Name::import(b"HTTP@host.test.gokrb5", NameType::HostbasedService).ok()?;
-    let mut context = IakerbContext::initiator(&config, target, InitiatorOptions::new()).ok()?;
+    let mut context = Context::initiator(&config, target, InitiatorOptions::new()).ok()?;
     let InitStep::Continue(first) = context.init_sec_context(credential, None).ok()? else {
         return None;
     };
@@ -100,7 +100,11 @@ fn tlv(tag: u8, value: &[u8]) -> Vec<u8> {
 /// A DER INTEGER of the non-negative `value`.
 fn int(value: u32) -> Vec<u8> {
     let digits = value.to_be_bytes();
-    let skip = digits.iter().take_while(|digit| **digit == 0).count().min(3);
+    let skip = digits
+        .iter()
+        .take_while(|digit| **digit == 0)
+        .count()
+        .min(3);
     let mut body = digits.get(skip..).unwrap_or_default().to_vec();
     if body.first().is_some_and(|first| first & 0x80 != 0) {
         body.insert(0, 0);
@@ -124,7 +128,10 @@ fn authenticator(checksum: &[u8]) -> Vec<u8> {
         0x30,
         &[field(0, int(0x8003)), field(1, tlv(0x04, checksum))].concat(),
     );
-    let key = tlv(0x30, &[field(0, int(18)), field(1, tlv(0x04, &SUBKEY))].concat());
+    let key = tlv(
+        0x30,
+        &[field(0, int(18)), field(1, tlv(0x04, &SUBKEY))].concat(),
+    );
     tlv(
         0x62,
         &tlv(
@@ -170,16 +177,23 @@ fn ap_req_token(finished: &[u8]) -> Option<Vec<u8>> {
     )
     .ok()?;
     let mut token = rskrb5_ng::spnego::Krb5MechToken::ap_req(ap_req::encode(&request).ok()?);
-    token.set_oid(IakerbContext::mechanism());
+    token.set_oid(Context::mechanism());
     token.encode().ok()
 }
 
 /// The token codec: a decoded token re-encodes to one that decodes to it.
 fn codec(input: &[u8]) {
     if let Ok(token) = Token::decode(input) {
-        assert!(Token::is_iakerb(input), "a decoded token is an IAKERB token");
+        assert!(
+            Token::is_iakerb(input),
+            "a decoded token is an IAKERB token"
+        );
         if let Ok(again) = token.encode() {
-            assert_eq!(Token::decode(&again).ok(), Some(token), "a token round trips");
+            assert_eq!(
+                Token::decode(&again).ok(),
+                Some(token),
+                "a token round trips"
+            );
         }
     }
 }
@@ -206,10 +220,13 @@ fuzz_target!(|data: &[u8]| {
         Validator::new(&keytab).with_now(fixed),
         AcceptorOptions::new(),
     );
-    let mut context = IakerbContext::acceptor(policy);
+    let mut context = Context::acceptor(policy);
     if selector & 0x03 != 0 {
         let relayed = context.accept_sec_context(&mut acceptor, &mut Fixed, &first);
-        assert!(matches!(relayed, Ok(AcceptStep::Continue(_))), "the first request relays");
+        assert!(
+            matches!(relayed, Ok(AcceptStep::Continue(_))),
+            "the first request relays"
+        );
     }
     match selector & 0x03 {
         0 => {}
