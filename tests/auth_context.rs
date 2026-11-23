@@ -15,6 +15,7 @@ mod context;
 mod auth_context {
     mod addresses;
     mod forwarding;
+    mod mit_forwarding;
     mod private;
     mod sequence;
     mod support;

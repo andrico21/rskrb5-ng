@@ -196,8 +196,8 @@ fn worker_outcome(child: Child) -> Result<String, Box<dyn Error>> {
     }
     stdout
         .lines()
-        .find_map(|line| line.strip_prefix(MARKER))
-        .map(|rest| rest.trim().to_owned())
+        .find_map(|line| line.split_once(MARKER))
+        .map(|(_, rest)| rest.trim().to_owned())
         .ok_or_else(|| format!("the acceptor process printed no result: {stdout}").into())
 }
 
