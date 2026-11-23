@@ -1172,7 +1172,7 @@ impl<'keytab> NegotiateLayer<'keytab> {
             let result = if self.validator.owned_replay_cache {
                 cache.configure_owned_skew(max_clock_skew)
             } else {
-                cache.ensure_skew(max_clock_skew)
+                cache.check_skew(max_clock_skew)
             };
             result.map_err(|error| Error::Spnego(SpnegoError::Service(error)))?;
         }
@@ -1230,7 +1230,7 @@ impl<'keytab> NegotiateLayer<'keytab> {
     #[inline]
     pub fn with_shared_replay_cache(mut self, replay_cache: SharedReplayCache) -> Result<Self> {
         replay_cache
-            .ensure_skew(
+            .check_skew(
                 self.validator
                     .max_clock_skew
                     .unwrap_or(Duration::from_mins(5)),

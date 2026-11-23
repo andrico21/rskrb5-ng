@@ -1,7 +1,7 @@
-//! One acceptor process: the scenarios spawn this test binary again, filtered to
-//! this test, so two Rust acceptors in two processes share one cache file.
+//! One acceptor process of the multi-process scenarios.
 //!
-//! The process reads a Negotiate header from a file, accepts it with a keytab
+//! The scenarios spawn this test binary again, filtered to this test, so two Rust
+//! acceptors in two processes share one cache file. The process reads a Negotiate header from a file, accepts it with a keytab
 //! and a `File2ReplayStore`, and prints one line: `ACCEPTED <client>` or
 //! `REFUSED <error text>`. Without the environment it is a no-op test.
 
@@ -28,12 +28,12 @@ pub(super) const MARKER: &str = "REPLAY-WORKER";
 /// Accept the token of the environment once and print the outcome.
 #[test]
 fn acceptor_worker() -> Result<(), Box<dyn Error>> {
-    let (Some(keytab), Some(store), Some(token)) =
+    let (Some(keytab_path), Some(store), Some(token)) =
         (env::var_os(KEYTAB), env::var_os(STORE), env::var_os(TOKEN))
     else {
         return Ok(());
     };
-    let keytab = Keytab::load(keytab)?;
+    let keytab = Keytab::load(keytab_path)?;
     let header = fs::read_to_string(token)?;
     let mut validator =
         Validator::new(&keytab).with_replay_store(Arc::new(File2ReplayStore::new(store.into())))?;

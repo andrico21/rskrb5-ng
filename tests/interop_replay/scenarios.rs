@@ -5,10 +5,10 @@ use alloc::sync::Arc;
 use core::error::Error;
 use std::{
     env, fs,
-    io::Write as _,
+    io::{self, Write as _},
     net::TcpStream,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::{Child, Command, Stdio, id as process_id},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -62,7 +62,7 @@ impl Scratch {
         let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
         let path = env::temp_dir().join(format!(
             "rskrb5-replay-interop-{label}-{}-{nanos}",
-            std::process::id()
+            process_id()
         ));
         fs::create_dir_all(&path)?;
         Ok(Self { path })
@@ -113,10 +113,9 @@ fn mit_token(target: &str) -> Result<Vec<u8>, Box<dyn Error>> {
         .with_mech(SPNEGO)
         .with_flags(STANDARD_FLAGS);
     let first = adapter.init_step(&init)?;
-    assert!(
-        first.continue_needed(),
-        "mutual authentication waits for the AP-REP"
-    );
+    if !first.continue_needed() {
+        return Err("mutual authentication waits for the AP-REP".into());
+    }
     Ok(first.token().to_vec())
 }
 
@@ -138,22 +137,24 @@ fn mit_accepts(key: &str, token: &[u8]) -> Result<Result<(), String>, Box<dyn Er
         .with_keytab(&harness::var("INTEROP_MIT_PEER_ACCEPTOR_KEYTAB_ID")?);
     let (cred, _name) = adapter.acquire(&request)?;
     match adapter.accept_step(&AcceptRequest::new(token).with_cred(cred)) {
-        Ok(step) => {
-            assert_eq!(step.mech(), KRB5, "MIT negotiated the krb5 mechanism");
-            Ok(Ok(()))
-        }
-        Err(PeerError::Gss { text, .. }) => Ok(Err(text)),
+        Ok(step) if step.mech() == KRB5 => Ok(Ok(())),
+        Ok(step) => Err(format!("MIT negotiated {} instead of krb5", step.mech()).into()),
+        Err(PeerError::Gss {
+            major: _,
+            minor: _,
+            text,
+        }) => Ok(Err(text)),
         Err(other) => Err(other.into()),
     }
 }
 
 /// This crate's acceptor takes `token` in this process, over the cache file `store`.
 fn rust_accepts(
-    keytab: &Path,
+    keytab_path: &Path,
     store: &Path,
     token: &[u8],
 ) -> Result<Result<String, String>, Box<dyn Error>> {
-    let keytab = Keytab::load(keytab)?;
+    let keytab = Keytab::load(keytab_path)?;
     let mut validator = Validator::new(&keytab)
         .with_replay_store(Arc::new(File2ReplayStore::new(store.to_path_buf())))?;
     Ok(
@@ -165,11 +166,7 @@ fn rust_accepts(
 }
 
 /// Run one acceptor process (this test binary, filtered to `worker::acceptor_worker`).
-fn spawn_worker(
-    keytab: &Path,
-    store: &Path,
-    token: &Path,
-) -> Result<std::process::Child, Box<dyn Error>> {
+fn spawn_worker(keytab: &Path, store: &Path, token: &Path) -> Result<Child, Box<dyn Error>> {
     Ok(Command::new(env::current_exe()?)
         .args([
             "worker::acceptor_worker",
@@ -186,7 +183,7 @@ fn spawn_worker(
 }
 
 /// The result line of a finished worker.
-fn worker_outcome(child: std::process::Child) -> Result<String, Box<dyn Error>> {
+fn worker_outcome(child: Child) -> Result<String, Box<dyn Error>> {
     let output = child.wait_with_output()?;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     if !output.status.success() {
@@ -215,12 +212,13 @@ fn exec(
     command: &[&str],
     stdin: Option<&Path>,
 ) -> Result<Vec<u8>, Box<dyn Error>> {
-    let mut child = Command::new(runtime()?);
-    let _ = child.arg("exec");
+    let mut command_line = Command::new(runtime()?);
+    let mut options = vec!["exec"];
     if stdin.is_some() {
-        let _ = child.arg("-i");
+        options.push("-i");
     }
-    let mut process = child
+    let mut process = command_line
+        .args(options)
         .arg(harness::var(container_key)?)
         .args(command)
         .stdin(if stdin.is_some() {
@@ -308,9 +306,10 @@ fn two_rust_acceptor_processes_share_one_cache_file() -> Result<(), Box<dyn Erro
     let raced = mit_token(&target)?;
     let raced_file = scratch.join("raced.header");
     fs::write(&raced_file, header_of(&raced))?;
-    let racers = (0..4)
-        .map(|_worker| spawn_worker(&keytab, &store, &raced_file))
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut racers = Vec::new();
+    for _worker in 0_u8..4 {
+        racers.push(spawn_worker(&keytab, &store, &raced_file)?);
+    }
     let outcomes = racers
         .into_iter()
         .map(worker_outcome)
@@ -400,7 +399,7 @@ fn a_cache_file_written_by_mit_is_read_by_the_rust_store() -> Result<(), Box<dyn
     assert!(refusal.to_lowercase().contains("replay"), "{refusal}");
     assert_eq!(
         rust_accepts(&keytab, &named, &mit_token(&mit_service()?)?)?,
-        Ok(user.clone()),
+        Ok(user),
         "the Rust store accepts a fresh authenticator through the MIT-written file"
     );
 
@@ -420,10 +419,13 @@ fn a_cache_file_written_by_mit_is_read_by_the_rust_store() -> Result<(), Box<dyn
         ],
         &dfl,
     )?;
-    let refusal = rust_accepts(&keytab, &dfl, &by_default)?
+    let dfl_refusal = rust_accepts(&keytab, &dfl, &by_default)?
         .err()
         .ok_or("the Rust store accepted an authenticator MIT recorded in its dfl cache")?;
-    assert!(refusal.to_lowercase().contains("replay"), "{refusal}");
+    assert!(
+        dfl_refusal.to_lowercase().contains("replay"),
+        "{dfl_refusal}"
+    );
     Ok(())
 }
 
@@ -431,13 +433,15 @@ fn a_cache_file_written_by_mit_is_read_by_the_rust_store() -> Result<(), Box<dyn
 fn reply_fields(mut rest: &[u8]) -> Result<Vec<Vec<u8>>, Box<dyn Error>> {
     let mut fields = Vec::new();
     while !rest.is_empty() {
-        let (length, tail) = rest
+        let (prefix, after_prefix) = rest
             .split_at_checked(4)
             .ok_or("a field length is cut off")?;
-        let length = usize::try_from(u32::from_be_bytes(length.try_into()?))?;
-        let (value, tail) = tail.split_at_checked(length).ok_or("a field is cut off")?;
+        let length = usize::try_from(u32::from_be_bytes(prefix.try_into()?))?;
+        let (value, after_value) = after_prefix
+            .split_at_checked(length)
+            .ok_or("a field is cut off")?;
         fields.push(value.to_vec());
-        rest = tail;
+        rest = after_value;
     }
     Ok(fields)
 }
@@ -453,8 +457,9 @@ fn adapter_call(
         let text = reply_fields(&rest)
             .ok()
             .and_then(|parsed| parsed.last().cloned())
-            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-            .unwrap_or_default();
+            .map_or_else(String::new, |bytes| {
+                String::from_utf8_lossy(&bytes).into_owned()
+            });
         return Err(format!(
             "adapter command {} failed with status {status}: {text}",
             char::from(command)
@@ -490,16 +495,17 @@ fn mit_forwarded_credentials_cross_the_credential_transport() -> Result<(), Box<
             host.as_bytes(),
         ],
     )?;
-    let [etype, key, krb_cred, forwarded_server] = forwarded.as_slice() else {
+    let [etype_field, key, krb_cred, forwarded_server] = forwarded.as_slice() else {
         return Err("the forward reply has four fields".into());
     };
-    let etype = i32::from_be_bytes(etype.as_slice().try_into()?);
+    let etype = i32::from_be_bytes(etype_field.as_slice().try_into()?);
     if env::var_os("RSKRB5_CAPTURE").is_some() {
-        eprintln!(
+        writeln!(
+            io::stderr(),
             "interop: capture mit-krb-cred etype={etype} key={} cred={}",
             hex_of(key),
             hex_of(krb_cred)
-        );
+        )?;
     }
     assert_eq!(
         String::from_utf8_lossy(forwarded_server),
@@ -558,5 +564,5 @@ fn mit_forwarded_credentials_cross_the_credential_transport() -> Result<(), Box<
 
 /// Lowercase hex of `bytes`.
 fn hex_of(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    hex::encode(bytes)
 }
