@@ -21,13 +21,18 @@ use rskrb5_ng::{
 
 use super::{
     context::{Context as _, TestError},
-    support::{AES256_SHA1, AES256_SHA384, credential, establish_with, keytab, sequenced, target},
+    support::{
+        AES256_SHA1, AES256_SHA384, credential, establish_with, keytab, refused, sequenced, target,
+    },
 };
 
 /// The krb5 mechanism OID as it appears in a framed token.
 const KRB5_OID: [u8; 11] = [
     0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x12, 0x01, 0x02, 0x02,
 ];
+
+/// How a test makes the third leg from the acceptor's AP-REP and the genuine one.
+type Third<'make> = &'make dyn Fn(&[u8], &[u8]) -> Vec<u8>;
 
 /// The DCE-style flags.
 fn dce() -> ContextFlags {
@@ -42,11 +47,8 @@ fn framed(body: &[u8]) -> Vec<u8> {
     if length < 0x80 {
         token.push(u8::try_from(length).unwrap_or(0));
     } else {
-        token.extend_from_slice(&[
-            0x82,
-            u8::try_from(length >> 8).unwrap_or(0),
-            u8::try_from(length & 0xff).unwrap_or(0),
-        ]);
+        token.push(0x82_u8);
+        token.extend_from_slice(&u16::try_from(length).unwrap_or(0).to_be_bytes());
     }
     token.extend_from_slice(&inner);
     token
@@ -57,7 +59,9 @@ fn unframed(token: &[u8]) -> Option<Vec<u8>> {
     let at = token
         .windows(KRB5_OID.len())
         .position(|window| window == KRB5_OID)?;
-    token.get(at + KRB5_OID.len() + 2..).map(<[u8]>::to_vec)
+    token
+        .get(at.saturating_add(KRB5_OID.len()).saturating_add(2)..)
+        .map(<[u8]>::to_vec)
 }
 
 /// The three legs run, with raw tokens, and both ends end mutually
@@ -131,7 +135,7 @@ fn an_unfinished_dce_acceptor_protects_nothing() -> Result<(), TestError> {
         context.get_mic(b"early"),
         Err(Gss::UnexpectedStep(_))
     ));
-    assert!(context.pseudo_random(PrfKey::Full, b"early", 8).is_err());
+    refused(context.pseudo_random(PrfKey::Full, b"early", 8))?;
     // A normal context cannot be completed again.
     let mut pair_accept = Acceptor::from_validator(Validator::new(&keys), AcceptorOptions::new());
     let mut plain = Initiator::new(target()?, InitiatorOptions::new());
@@ -154,7 +158,7 @@ fn an_unfinished_dce_acceptor_protects_nothing() -> Result<(), TestError> {
 fn a_wrong_third_leg_is_refused() -> Result<(), TestError> {
     let credential = credential(AES256_SHA1)?;
     let keys = keytab();
-    let run = |third: &dyn Fn(&[u8], &[u8]) -> Vec<u8>| -> Result<bool, TestError> {
+    let run = |third: Third<'_>| -> Result<bool, TestError> {
         let mut init = Initiator::new(target()?, InitiatorOptions::new().with_flags(dce()));
         let mut accept = Acceptor::from_validator(Validator::new(&keys), AcceptorOptions::new());
         let InitStep::Continue(first) = init.init_sec_context(&credential, None)? else {
@@ -193,13 +197,13 @@ fn raw_and_framed_tokens_must_match_the_dce_flag() -> Result<(), TestError> {
     };
     let raw = unframed(&token).context("the AP-REQ inside the token")?;
     let mut accept = Acceptor::from_validator(Validator::new(&keys), AcceptorOptions::new());
-    assert!(accept.accept_sec_context(&raw).is_err());
+    refused(accept.accept_sec_context(&raw))?;
     let mut dce_init = Initiator::new(target()?, InitiatorOptions::new().with_flags(dce()));
     let InitStep::Continue(first) = dce_init.init_sec_context(&credential, None)? else {
         return Err("a DCE initiator waits".into());
     };
-    let mut accept = Acceptor::from_validator(Validator::new(&keys), AcceptorOptions::new());
-    assert!(accept.accept_sec_context(&framed(&first)).is_err());
+    let mut dce_accept = Acceptor::from_validator(Validator::new(&keys), AcceptorOptions::new());
+    refused(dce_accept.accept_sec_context(&framed(&first)))?;
     Ok(())
 }
 
@@ -215,7 +219,7 @@ fn dce_iov_tokens_follow_the_rrc_rule() -> Result<(), TestError> {
             IovBuffer::new(IovKind::SignOnly, b"rpc header".to_vec()),
             IovBuffer::new(IovKind::Data, b"stub data!".to_vec()),
         ];
-        ends.initiator.wrap_iov(&mut buffers, true)?;
+        assert!(ends.initiator.wrap_iov(&mut buffers, true)?);
         let header = buffers.first().context("a header")?.value().to_vec();
         let field = |at: usize| {
             header
@@ -228,7 +232,7 @@ fn dce_iov_tokens_follow_the_rrc_rule() -> Result<(), TestError> {
         assert_eq!(ec, 16);
         let trailer = header.len() - 16 - 16;
         assert_eq!(usize::from(rrc), trailer - usize::from(ec));
-        ends.acceptor.unwrap_iov(&mut buffers)?;
+        assert!(ends.acceptor.unwrap_iov(&mut buffers)?);
         assert_eq!(
             buffers.get(2).context("data")?.value(),
             b"stub data!".as_slice()
@@ -239,7 +243,7 @@ fn dce_iov_tokens_follow_the_rrc_rule() -> Result<(), TestError> {
             IovBuffer::new(IovKind::Stream, token),
             IovBuffer::empty(IovKind::Data),
         ];
-        assert!(ends.acceptor.unwrap_iov(&mut stream).is_err());
+        refused(ends.acceptor.unwrap_iov(&mut stream))?;
     }
     Ok(())
 }

@@ -438,3 +438,143 @@ impl ChannelBindings {
         bindings::digest(self)
     }
 }
+
+/// The context key [`EstablishedContext::pseudo_random`] derives from (RFC
+/// 4401 section 2; MIT `prf.c:62-75`).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
+pub enum PrfKey {
+    /// `GSS_C_PRF_KEY_FULL`: the acceptor subkey when the acceptor sent one,
+    /// else the partial key.
+    Full,
+    /// `GSS_C_PRF_KEY_PARTIAL`: the initiator subkey, else the ticket session
+    /// key.
+    Partial,
+}
+
+/// The type of an [`IovBuffer`] (`GSS_IOV_BUFFER_TYPE_*`, MIT
+/// `gssapi_ext.h:262-270`).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
+pub enum IovKind {
+    /// `GSS_IOV_BUFFER_TYPE_EMPTY`: ignored.
+    Empty,
+    /// `GSS_IOV_BUFFER_TYPE_DATA`: message data, sealed under confidentiality.
+    Data,
+    /// `GSS_IOV_BUFFER_TYPE_HEADER`: the token header.
+    Header,
+    /// `GSS_IOV_BUFFER_TYPE_MECH_PARAMS`: ignored by the krb5 mechanism.
+    MechParams,
+    /// `GSS_IOV_BUFFER_TYPE_TRAILER`: the token trailer.
+    Trailer,
+    /// `GSS_IOV_BUFFER_TYPE_PADDING`: padding, always empty for RFC 4121 tokens.
+    Padding,
+    /// `GSS_IOV_BUFFER_TYPE_STREAM`: a whole wrap token to unwrap.
+    Stream,
+    /// `GSS_IOV_BUFFER_TYPE_SIGN_ONLY`: data that is authenticated, never sealed.
+    SignOnly,
+    /// `GSS_IOV_BUFFER_TYPE_MIC_TOKEN`: the MIC token of `get_mic_iov`.
+    MicToken,
+}
+
+impl IovKind {
+    /// The `GSS_IOV_BUFFER_TYPE_*` number.
+    #[inline]
+    #[must_use]
+    pub const fn code(self) -> u32 {
+        match self {
+            Self::Empty => 0,
+            Self::Data => 1,
+            Self::Header => 2,
+            Self::MechParams => 3,
+            Self::Trailer => 7,
+            Self::Padding => 9,
+            Self::Stream => 10,
+            Self::SignOnly => 11,
+            Self::MicToken => 12,
+        }
+    }
+
+    /// The kind of a `GSS_IOV_BUFFER_TYPE_*` number, the flag bits
+    /// (`GSS_IOV_BUFFER_FLAG_MASK`) ignored.
+    #[inline]
+    #[must_use]
+    pub const fn from_code(code: u32) -> Option<Self> {
+        Some(match code & 0xffff {
+            0 => Self::Empty,
+            1 => Self::Data,
+            2 => Self::Header,
+            3 => Self::MechParams,
+            7 => Self::Trailer,
+            9 => Self::Padding,
+            10 => Self::Stream,
+            11 => Self::SignOnly,
+            12 => Self::MicToken,
+            _ => return None,
+        })
+    }
+}
+
+/// One buffer of an IOV array (`gss_iov_buffer_desc`).
+///
+/// The mechanism replaces the value of the header, trailer, padding and MIC
+/// buffers it fills, and seals or opens data buffers in place; every buffer
+/// owns its bytes (MIT's `GSS_IOV_BUFFER_FLAG_ALLOCATE` is implied). Values
+/// are erased when dropped and never shown by `Debug`.
+#[derive(Clone, Eq, PartialEq)]
+pub struct IovBuffer {
+    /// The buffer type.
+    kind: IovKind,
+    /// The bytes.
+    value: Zeroizing<Vec<u8>>,
+}
+
+impl fmt::Debug for IovBuffer {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IovBuffer")
+            .field("kind", &self.kind)
+            .field("len", &self.value.len())
+            .finish()
+    }
+}
+
+impl IovBuffer {
+    /// A buffer of `kind` holding `value`.
+    #[inline]
+    #[must_use]
+    pub fn new(kind: IovKind, value: Vec<u8>) -> Self {
+        Self {
+            kind,
+            value: Zeroizing::new(value),
+        }
+    }
+
+    /// An empty buffer of `kind`, for the mechanism to fill.
+    #[inline]
+    #[must_use]
+    pub fn empty(kind: IovKind) -> Self {
+        Self::new(kind, Vec::new())
+    }
+
+    /// The buffer type.
+    #[inline]
+    #[must_use]
+    pub const fn kind(&self) -> IovKind {
+        self.kind
+    }
+
+    /// The bytes.
+    #[inline]
+    #[must_use]
+    pub fn value(&self) -> &[u8] {
+        &self.value
+    }
+
+    /// The bytes, erased when the owner drops.
+    #[inline]
+    #[must_use]
+    pub fn into_value(self) -> Zeroizing<Vec<u8>> {
+        self.value
+    }
+}

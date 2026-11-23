@@ -405,6 +405,29 @@ impl Accepted {
         &mut self.context
     }
 
+    /// Whether the context is established: false only for a DCE-style
+    /// acceptor waiting for the initiator's AP-REP.
+    #[inline]
+    #[must_use]
+    pub const fn is_established(&self) -> bool {
+        self.context.open
+    }
+
+    /// The third leg of a DCE-style context: verify the initiator's AP-REP
+    /// and open the context (MIT `kg_accept_dce`, `accept_sec_context.c:283-360`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::UnexpectedStep`] for a context that is not waiting for
+    /// it, [`Error::DefectiveToken`] for an AP-REP that carries a subkey or
+    /// does not echo the acceptor's sequence number, and the AP-REP decoding,
+    /// decryption and policy errors. A failed third leg leaves the context
+    /// unestablished.
+    #[inline]
+    pub fn complete_dce(&mut self, token: &[u8]) -> Result<(), Error> {
+        dce::complete(self, token)
+    }
+
     /// The same context answered with `token` instead, for the negotiation
     /// layered on this one.
     pub(crate) fn with_output_token(mut self, token: Option<Vec<u8>>) -> Self {
@@ -449,6 +472,9 @@ pub struct EstablishedContext {
     delegated: Option<Box<Credential>>,
     /// The ticket's verified PAC, on the acceptor.
     pac: Option<pac::Verified>,
+    /// Whether the context is established; a DCE-style acceptor opens on the
+    /// initiator's AP-REP.
+    open: bool,
 }
 
 impl fmt::Debug for EstablishedContext {
@@ -519,6 +545,139 @@ impl EstablishedContext {
     #[inline]
     pub fn unwrap(&mut self, token: &[u8]) -> Result<Unwrapped, Error> {
         context::unwrap(self, token)
+    }
+
+    /// `gss_wrap_iov`: seal or sign `buffers` in place.
+    ///
+    /// The array needs one HEADER buffer; a TRAILER buffer receives the
+    /// trailer, otherwise the trailer is rotated into the header (RFC 4121
+    /// RRC); PADDING is emptied, as RFC 4121 tokens have none; DATA buffers
+    /// are sealed when `confidential` and `SIGN_ONLY` buffers are only covered
+    /// by the integrity tag. Returns whether the token is sealed: an array
+    /// without DATA buffers is only signed (MIT `kg_integ_only_iov`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadIov`] for a missing header, a duplicated framing
+    /// buffer, a STREAM or MIC buffer or more than 64 buffers,
+    /// [`Error::NotNegotiated`] for `SIGN_ONLY` data in a sealed Camellia
+    /// token, and the errors of [`Self::wrap`].
+    #[inline]
+    pub fn wrap_iov(&mut self, buffers: &mut [IovBuffer], confidential: bool) -> Result<bool, Error> {
+        iov::wrap(self, buffers, confidential)
+    }
+
+    /// `gss_wrap_iov_length`: size the HEADER, TRAILER and PADDING buffers as
+    /// [`Self::wrap_iov`] fills them, with zero bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns the layout and context errors of [`Self::wrap_iov`].
+    #[inline]
+    pub fn wrap_iov_length(&self, buffers: &mut [IovBuffer], confidential: bool) -> Result<bool, Error> {
+        iov::wrap_length(self, buffers, confidential)
+    }
+
+    /// `gss_unwrap_iov`: verify and open `buffers` in place and admit the
+    /// token's sequence number; returns whether the token was sealed.
+    ///
+    /// The array holds the HEADER, DATA, `SIGN_ONLY` and TRAILER buffers as
+    /// [`Self::wrap_iov`] produced them, or one STREAM buffer with a whole
+    /// token, the `SIGN_ONLY` buffers and exactly one DATA buffer that receives
+    /// the message. A refused token leaves the buffers and the window as they
+    /// were.
+    ///
+    /// # Security
+    ///
+    /// Every buffer is attacker-controlled: lengths, rotation counts and the
+    /// sealed header copy are checked, and the tag is verified in constant
+    /// time before the sequence window moves.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadIov`] for a bad layout or framing length,
+    /// [`Error::DefectiveToken`] for a malformed header, rotation or header
+    /// copy, [`Error::BadSignature`] when the tag does not verify,
+    /// [`Error::TokenTooLarge`] above 16 MiB, and the window errors of
+    /// [`Self::verify_mic`].
+    #[inline]
+    pub fn unwrap_iov(&mut self, buffers: &mut [IovBuffer]) -> Result<bool, Error> {
+        iov::unwrap(self, buffers)
+    }
+
+    /// `gss_get_mic_iov`: a MIC over the DATA and `SIGN_ONLY` buffers in array
+    /// order, into the `MIC_TOKEN` buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadIov`] without exactly one `MIC_TOKEN` buffer, and the
+    /// errors of [`Self::get_mic`].
+    #[inline]
+    pub fn get_mic_iov(&mut self, buffers: &mut [IovBuffer]) -> Result<(), Error> {
+        iov::get_mic(self, buffers)
+    }
+
+    /// `gss_verify_mic_iov`: verify the `MIC_TOKEN` buffer over the DATA and
+    /// `SIGN_ONLY` buffers and admit its sequence number.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadIov`] without exactly one `MIC_TOKEN` buffer or for
+    /// one of the wrong length, [`Error::BadSignature`] when it does not
+    /// verify, and the errors of [`Self::verify_mic`].
+    #[inline]
+    pub fn verify_mic_iov(&mut self, buffers: &[IovBuffer]) -> Result<(), Error> {
+        iov::verify_mic(self, buffers)
+    }
+
+    /// `gss_wrap_aead`: a Wrap token of `message` whose tag also covers
+    /// `associated`, which is not sent.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Self::wrap_iov`].
+    #[inline]
+    pub fn wrap_aead(
+        &mut self,
+        associated: &[u8],
+        message: &[u8],
+        confidential: bool,
+    ) -> Result<Vec<u8>, Error> {
+        iov::wrap_aead(self, associated, message, confidential)
+    }
+
+    /// `gss_unwrap_aead`: open a token of [`Self::wrap_aead`] with the same
+    /// associated data.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Self::unwrap_iov`]; a DCE-style context has no
+    /// STREAM unwrapping (MIT `k5unsealiov.c:381-384`).
+    #[inline]
+    pub fn unwrap_aead(&mut self, token: &[u8], associated: &[u8]) -> Result<Unwrapped, Error> {
+        iov::unwrap_aead(self, token, associated)
+    }
+
+    /// `gss_pseudo_random`: `length` bytes of RFC 4402 `PRF+` over `input`
+    /// and the context key `key` selects.
+    ///
+    /// # Security
+    ///
+    /// The output is as secret as the key and is erased when dropped.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::UnexpectedStep`] before the context is established,
+    /// the policy error of the key, and [`Error::Crypto`] above the 1 MiB
+    /// `PRF+` bound.
+    #[inline]
+    pub fn pseudo_random(
+        &self,
+        key: PrfKey,
+        input: &[u8],
+        length: usize,
+    ) -> Result<Zeroizing<Vec<u8>>, Error> {
+        prf::pseudo_random(self, key, input, length)
     }
 
     /// The credential the initiator delegated, on the acceptor.

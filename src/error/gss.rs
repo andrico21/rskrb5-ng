@@ -98,6 +98,14 @@ pub enum Gss {
     /// which this module does not implement (`GSS_S_UNAVAILABLE`).
     #[error("per-message tokens of encryption type {0} use the RFC 1964/4757 formats")]
     LegacyTokenFormat(i32),
+    /// An IOV array has no buffer of a required type, a duplicated header,
+    /// trailer, padding, stream or MIC buffer, or a buffer of the wrong length
+    /// (`GSS_S_FAILURE`, MIT `KRB5_BAD_MSIZE` and `EINVAL`).
+    #[error("bad IOV array: {0}")]
+    BadIov(&'static str),
+    /// A per-message token's integrity tag does not verify (`GSS_S_BAD_SIG`).
+    #[error("the token's integrity tag does not verify")]
+    BadSignature,
     /// The delegated credential could not be read.
     #[error("the delegated credential could not be read: {0}")]
     DelegatedCredential(#[source] KrbCred),
@@ -152,6 +160,7 @@ impl Gss {
             }
             | Self::UnresolvedUid(_) => 2,
             Self::BadNameType(_) => 3,
+            Self::BadSignature => 6,
             Self::BadBindings
             | Self::MissingBindings
             | Self::BindingTooLong {
@@ -188,7 +197,8 @@ impl Gss {
             | Self::Ccache(_)
             | Self::Keytab(_)
             | Self::Crypto(_)
-            | Self::Random(_) => 13,
+            | Self::Random(_)
+            | Self::BadIov(_) => 13,
         };
         routine << 16
     }

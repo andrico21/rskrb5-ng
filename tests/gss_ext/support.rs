@@ -15,8 +15,8 @@ use chrono::{DateTime, FixedOffset, Utc};
 use rskrb5_ng::{
     ccache::{self, CCache, CredentialTimes},
     client::{TgsRepSession, principal::Principal},
-    config::Config,
     crypto::CryptoPolicy,
+    error::Gss,
     gss::{
         Acceptor, AcceptorOptions, ContextFlags, Credential, EstablishedContext, InitStep,
         Initiator, InitiatorOptions, Name, NameType,
@@ -52,9 +52,6 @@ pub(super) const DES3: i32 = 16;
 
 /// rc4-hmac.
 pub(super) const RC4: i32 = 23;
-
-/// `FORWARDABLE`, ticket flag 1 (RFC 4120 section 5.3).
-pub(super) const FORWARDABLE: usize = 1;
 
 /// The service key of `HTTP/<host>`: always AES256.
 fn service_key() -> EncryptionKey {
@@ -110,16 +107,6 @@ pub(super) fn keytab() -> Keytab {
         1,
     ));
     keytab
-}
-
-/// The policy that permits DES3 and RC4 (`allow_des3`, `allow_rc4`).
-///
-/// # Errors
-///
-/// Returns the configuration error.
-pub(super) fn legacy_policy() -> Result<CryptoPolicy, TestError> {
-    let config = Config::parse("[libdefaults]\n allow_des3 = true\n allow_rc4 = true\n")?;
-    Ok(CryptoPolicy::from_libdefaults(&config.libdefaults)?)
 }
 
 /// A Kerberos string.
@@ -340,4 +327,13 @@ pub(super) fn establish_with(
 /// Returns the first error of either end.
 pub(super) fn establish(flags: ContextFlags) -> Result<Pair, TestError> {
     establish_with(AES256_SHA1, flags, &CryptoPolicy::default())
+}
+
+/// Fail unless `result` is a refusal.
+///
+/// # Errors
+///
+/// Returns a test error when the call succeeded.
+pub(super) fn refused<T>(result: Result<T, Gss>) -> Result<(), TestError> {
+    result.map_or_else(|_refusal| Ok(()), |_accepted| Err("the call was accepted".into()))
 }

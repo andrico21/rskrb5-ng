@@ -69,10 +69,16 @@ mod checksum;
 mod context;
 /// Credential acquisition and storage.
 mod cred;
+/// DCE-style establishment.
+mod dce;
 /// The krb5 mechanism's initiator side.
 mod initiator;
+/// IOV and AEAD per-message tokens.
+mod iov;
 /// Name parsing, display and export.
 mod name;
+/// The GSS pseudo-random function.
+mod prf;
 /// The sequence and replay window.
 mod seq;
 

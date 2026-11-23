@@ -11,7 +11,7 @@ use zeroize::Zeroizing;
 use super::{
     Accepted, Acceptor, AcceptorOptions, ChannelBindings, ContextFlags, Credential,
     CredentialUsage, EncryptionKey, Error, EstablishedContext, Name, Principal, bindings, checksum,
-    cred, initiator, seq,
+    cred, dce, initiator, seq,
 };
 use crate::{
     ap_req,
@@ -173,6 +173,47 @@ fn acceptor_subkey(etype: i32) -> Result<Option<EncryptionKey>, Error> {
     }
 }
 
+/// The AP-REP of a mutually authenticated context: the acceptor's sequence
+/// number and subkey, and the token, framed unless `raw`.
+///
+/// # Errors
+///
+/// Returns the key, random-source and AP-REP errors.
+fn reply(
+    validated: &ValidatedApReq,
+    mech: Option<&Krb5MechToken>,
+    dce_style: bool,
+) -> Result<(u32, Option<EncryptionKey>, Vec<u8>), Error> {
+    let current = validated
+        .subkey()
+        .unwrap_or_else(|| validated.session_key());
+    // DCE style implies an acceptor subkey (`accept_sec_context.c:933-934,1020`).
+    let subkey = if dce_style {
+        Some(initiator::random_key(current.etype())?)
+    } else {
+        acceptor_subkey(current.etype())?
+    };
+    let send = initiator::random_sequence()?;
+    let reply_options = ApRepOptions::default()
+        .with_subkey(subkey.clone())
+        .with_sequence_number(Some(send));
+    let etype = KerberosEtype::from_etype_id(validated.session_key().etype())
+        .ok_or(Error::LegacyTokenFormat(validated.session_key().etype()))?;
+    let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
+    getrandom::fill(&mut confounder).map_err(Error::Random)?;
+    let reply = validated.build_ap_rep_with_confounder(&confounder, &reply_options)?;
+    let answer = match mech {
+        Some(framed) => {
+            let mut answer = Krb5MechToken::ap_rep(reply);
+            answer.set_oid(framed.oid().clone());
+            answer.encode()?
+        }
+        // A raw AP-REP (`accept_sec_context.c:1067-1076`).
+        None => reply,
+    };
+    Ok((send, subkey, answer))
+}
+
 /// Accept the initiator's first token.
 ///
 /// # Errors
@@ -185,10 +226,19 @@ pub(super) fn accept(acceptor: &mut Acceptor<'_>, token: &[u8]) -> Result<Accept
             actual: token.len(),
         });
     }
-    let mech = Krb5MechToken::decode(token)?;
-    let request = mech
-        .ap_req_bytes()
-        .ok_or(Error::DefectiveToken("the first token is not an AP-REQ"))?;
+    // A raw AP-REQ is the DCE-style first leg (`accept_sec_context.c:770-776`).
+    let raw = dce::is_raw_ap_req(token);
+    let mech = if raw {
+        None
+    } else {
+        Some(Krb5MechToken::decode(token)?)
+    };
+    let request = match &mech {
+        Some(framed) => framed
+            .ap_req_bytes()
+            .ok_or(Error::DefectiveToken("the first token is not an AP-REQ"))?,
+        None => token,
+    };
     let mutual_option = ap_req::decode(request)?
         .ap_options
         .0
@@ -206,42 +256,38 @@ pub(super) fn accept(acceptor: &mut Acceptor<'_>, token: &[u8]) -> Result<Accept
     let checked = outcome
         .into_inner()
         .ok_or(Error::UnexpectedStep("the authenticator was not checked"))?;
+    let dce_style = checked.flags.contains(ContextFlags::DCE_STYLE);
+    if raw != dce_style {
+        // Only DCE-style initiators send raw AP-REQs (`accept_sec_context.c:855-860`).
+        return Err(Error::DefectiveToken(
+            "a raw AP-REQ needs DCE style and DCE style needs a raw AP-REQ",
+        ));
+    }
     let mut flags = checked.flags.intersection(INITIATOR_FLAGS)
         | ContextFlags::TRANS
         | ContextFlags::PROT_READY;
     if checked.bound {
         flags = flags | ContextFlags::CHANNEL_BOUND;
     }
+    // DCE style never returns a delegated credential (`accept_sec_context.c:349-351`).
     let delegated_credential = match &checked.delegation {
+        Some(_) if dce_style => None,
         Some(bytes) => {
             flags = flags | ContextFlags::DELEG;
             Some(Box::new(delegated(&validated, bytes)?))
         }
         None => None,
     };
-    if mutual_option {
+    if mutual_option || dce_style {
+        // DCE style implies mutual authentication (`accept_sec_context.c:980-981`).
         flags = flags | ContextFlags::MUTUAL;
     }
     let received = validated.sequence_number().ok_or(Error::DefectiveToken(
         "the authenticator has no sequence number",
     ))?;
     let (send, subkey, output_token) = if flags.contains(ContextFlags::MUTUAL) {
-        let current = validated
-            .subkey()
-            .unwrap_or_else(|| validated.session_key());
-        let subkey = acceptor_subkey(current.etype())?;
-        let send = initiator::random_sequence()?;
-        let reply_options = ApRepOptions::default()
-            .with_subkey(subkey.clone())
-            .with_sequence_number(Some(send));
-        let etype = KerberosEtype::from_etype_id(validated.session_key().etype())
-            .ok_or(Error::LegacyTokenFormat(validated.session_key().etype()))?;
-        let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
-        getrandom::fill(&mut confounder).map_err(Error::Random)?;
-        let reply = validated.build_ap_rep_with_confounder(&confounder, &reply_options)?;
-        let mut answer = Krb5MechToken::ap_rep(reply);
-        answer.set_oid(mech.oid().clone());
-        (send, subkey, Some(answer.encode()?))
+        let (send, subkey, answer) = reply(&validated, mech.as_ref(), dce_style)?;
+        (send, subkey, Some(answer))
     } else {
         (received, None, None)
     };
@@ -263,6 +309,7 @@ pub(super) fn accept(acceptor: &mut Acceptor<'_>, token: &[u8]) -> Result<Accept
         crypto_policy: validated.crypto_policy().clone(),
         delegated: delegated_credential,
         pac: validated.pac().cloned(),
+        open: !dce_style,
     };
     Ok(Accepted {
         context,

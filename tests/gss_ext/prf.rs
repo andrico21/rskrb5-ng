@@ -8,7 +8,7 @@
 
 use rskrb5_ng::{
     crypto::{
-        KerberosEtype,
+        CryptoPolicy, KerberosEtype,
         prf::{self, Key},
     },
     error::Gss,
@@ -47,9 +47,9 @@ fn the_full_key_is_the_acceptor_subkey() -> Result<(), TestError> {
     assert_ne!(full.as_slice(), partial.as_slice());
     // Without mutual authentication there is no acceptor subkey.
     let single = establish(ContextFlags::CONF | ContextFlags::INTEG)?;
-    let full = single.acceptor.pseudo_random(PrfKey::Full, b"x", 32)?;
-    let partial = single.acceptor.pseudo_random(PrfKey::Partial, b"x", 32)?;
-    assert_eq!(full.as_slice(), partial.as_slice());
+    let single_full = single.acceptor.pseudo_random(PrfKey::Full, b"x", 32)?;
+    let single_partial = single.acceptor.pseudo_random(PrfKey::Partial, b"x", 32)?;
+    assert_eq!(single_full.as_slice(), single_partial.as_slice());
     Ok(())
 }
 
@@ -59,7 +59,7 @@ fn the_full_key_is_the_acceptor_subkey() -> Result<(), TestError> {
 fn the_stream_is_rfc_4402_prf_plus() -> Result<(), TestError> {
     for ends in [
         establish(sequenced())?,
-        establish_with(AES256_SHA384, sequenced(), &Default::default())?,
+        establish_with(AES256_SHA384, sequenced(), &CryptoPolicy::default())?,
     ] {
         let key = ends.initiator.session_key();
         let etype = KerberosEtype::from_etype_id(key.etype()).context("known enctype")?;
