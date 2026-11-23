@@ -69,6 +69,8 @@ mod checksum;
 mod context;
 /// Credential acquisition and storage.
 mod cred;
+/// IAKERB: Kerberos through an application-mediated KDC relay.
+pub mod iakerb;
 /// The krb5 mechanism's initiator side.
 mod initiator;
 /// Name parsing, display and export.
