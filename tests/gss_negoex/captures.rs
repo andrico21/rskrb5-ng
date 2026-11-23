@@ -151,7 +151,7 @@ fn mit_initiator_token_parses() -> Result<(), TestError> {
     let Some(Message::Nego(nego)) = parsed.first() else {
         return Err("the first message is INITIATOR_NEGO".into());
     };
-    let offered: Vec<[u8; 16]> = nego.schemes().iter().map(|s| *s.as_bytes()).collect();
+    let offered: Vec<[u8; 16]> = nego.schemes().iter().map(|scheme| *scheme.as_bytes()).collect();
     assert_eq!(
         offered,
         [
@@ -163,7 +163,7 @@ fn mit_initiator_token_parses() -> Result<(), TestError> {
     let Some(Message::Verify(verify)) = parsed.get(4) else {
         return Err("the last message is VERIFY".into());
     };
-    assert_eq!(verify.checksum_type(), 16, "the AES-256 SHA-1 checksum type");
+    assert_eq!(verify.checksum_type(), 16_i32, "the AES-256 SHA-1 checksum type");
     assert_eq!(verify.checksum().len(), 12);
     assert_eq!(conversation.next_sequence(), 5);
     Ok(())
