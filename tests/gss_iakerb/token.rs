@@ -3,7 +3,7 @@
 
 use rskrb5_ng::{error::Iakerb, gss::iakerb::token::Token};
 
-use super::context::TestError;
+use super::context::{Context as _, TestError};
 
 /// The IAKERB mechanism OID `1.3.6.1.5.2.5` as a DER OBJECT IDENTIFIER.
 const OID: [u8; 8] = [0x06, 0x06, 0x2b, 0x06, 0x01, 0x05, 0x02, 0x05];
@@ -83,7 +83,7 @@ fn a_discovery_token_round_trips_with_empty_fields() -> Result<(), TestError> {
 /// Only the IAKERB mechanism with token id `05 01` is an IAKERB token (MIT
 /// `iakerb_is_iakerb_token`).
 #[test]
-fn other_mechanisms_and_token_ids_are_not_iakerb() {
+fn other_mechanisms_and_token_ids_are_not_iakerb() -> Result<(), TestError> {
     // Given the layout with the krb5 OID instead,
     let krb5_oid = [
         0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x12, 0x01, 0x02, 0x02,
@@ -95,27 +95,28 @@ fn other_mechanisms_and_token_ids_are_not_iakerb() {
     );
     // then it is not an IAKERB token and does not decode as one,
     assert!(!Token::is_iakerb(&krb5));
-    assert!(matches!(
-        Token::decode(&krb5),
-        Err(Iakerb::WrongMechanism(_))
-    ));
+    let error = Token::decode(&krb5)
+        .err()
+        .context("a krb5 token must not decode as IAKERB")?;
+    assert!(matches!(error, Iakerb::WrongMechanism(_)));
     // and the layout with the AP-REQ token id is not one either.
     let ap_req = frame(&OID, [0x01, 0x00], &[header(), MESSAGE.to_vec()].concat());
     assert!(!Token::is_iakerb(&ap_req));
-    assert!(matches!(
-        Token::decode(&ap_req),
-        Err(Iakerb::WrongMechanism(_))
-    ));
+    let wrong_id = Token::decode(&ap_req)
+        .err()
+        .context("an AP-REQ token id must not decode as IAKERB")?;
+    assert!(matches!(wrong_id, Iakerb::WrongMechanism(_)));
+    Ok(())
 }
 
 /// Every prefix of a valid token, trailing bytes, a header that is not a
 /// sequence and an oversized token are errors, not panics.
 #[test]
-fn malformed_tokens_are_errors() {
+fn malformed_tokens_are_errors() -> Result<(), TestError> {
     let valid = expected();
     for end in 0..valid.len() {
         assert!(
-            Token::decode(valid.get(..end).unwrap_or_default()).is_err(),
+            Token::decode(valid.get(..end).context("a prefix")?).is_err(),
             "the {end}-byte prefix"
         );
     }
@@ -123,27 +124,31 @@ fn malformed_tokens_are_errors() {
     trailing.push(0);
     assert!(Token::decode(&trailing).is_err(), "a trailing byte");
     let mut not_a_sequence = valid;
-    if let Some(tag) = not_a_sequence.get_mut(12) {
-        *tag = 0x31;
-    }
+    *not_a_sequence.get_mut(12).context("the header tag")? = 0x31;
     assert!(Token::decode(&not_a_sequence).is_err(), "a SET header");
     let mut large = vec![0x60, 0x83, 0x04, 0x00, 0x00];
     large.resize(0x4_0010, 0);
+    let error = Token::decode(&large)
+        .err()
+        .context("an oversized token must not decode")?;
     assert!(matches!(
-        Token::decode(&large),
-        Err(Iakerb::TokenTooLarge {
+        error,
+        Iakerb::TokenTooLarge {
             maximum: 0x4_0000,
             actual: _
-        })
+        }
     ));
+    Ok(())
 }
 
 /// A realm above 255 bytes does not encode.
 #[test]
-fn an_oversized_realm_does_not_encode() {
+fn an_oversized_realm_does_not_encode() -> Result<(), TestError> {
     let realm = "R".repeat(256);
-    assert!(matches!(
-        Token::new(&realm, None, Vec::new()).encode(),
-        Err(Iakerb::BadToken(_))
-    ));
+    let error = Token::new(&realm, None, Vec::new())
+        .encode()
+        .err()
+        .context("an oversized realm must not encode")?;
+    assert!(matches!(error, Iakerb::BadToken(_)));
+    Ok(())
 }
