@@ -349,8 +349,6 @@ mod tests {
             "src/gss/types.rs" | "src/gss/creds.rs" | "src/gss/contexts.rs"
         ) {
             "gss".to_owned()
-        } else if file == "src/gss/iakerb/context.rs" {
-            "gss::iakerb".to_owned()
         } else if file == "src/spnego/gss_types.rs" {
             "spnego".to_owned()
         } else if file == "src/error/gss.rs" || file == "src/error/iakerb.rs" {
@@ -1481,7 +1479,7 @@ mod tests {
         "src/spnego.rs::InitiatorContextOptions",
         "src/error/gss.rs::Gss",
         "src/error/iakerb.rs::Iakerb",
-        "src/gss/iakerb/context.rs::AcceptStep",
+        "src/gss/iakerb.rs::AcceptStep",
         "src/gss/creds.rs::CredStore",
         "src/gss/creds.rs::Credential",
         "src/gss/contexts.rs::Initiator",
