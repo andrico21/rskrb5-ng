@@ -63,7 +63,7 @@ both modes. Parsed values do not imply an implemented mechanism.
 
 | Section | Relation | Typed value | MIT default | Effective consumer / package | Fail-closed classification | Test |
 | --- | --- | --- | --- | --- | --- | --- |
-| realms | admin_server | endpoint list | unset | Realm::parse kpasswd fallback | Effective port-464 fallback; kadm5 administration remains WP-15 | admin_server |
+| realms | admin_server | endpoint list | unset | Realm::parse kpasswd fallback; kadm5::admin_server (RemoteAdminClient::connect) | Effective: the port-464 kpasswd fallback, and the remote kadm5 client's server (the first value, host, host:port or [address]:port, port 749 when none; no DNS, as MIT's kadm5 client) | admin_server |
 | realms | auth_to_local | rule list | DEFAULT | LocalNameMapper::from_config (leaf localauth) | Effective with the localauth leaf: values in order, DEFAULT when none, malformed or over-bound rules rejected; without the leaf FeatureUnavailable and no mapping | auth_to_local |
 | realms | auth_to_local_names | case-sensitive string map | unset | LocalNameMapper::from_config (leaf localauth) | Effective with the localauth leaf: the name without realm of a default-realm principal is the key (MIT also maps foreign realms); without the leaf FeatureUnavailable and no mapping | auth_to_local_names |
 | realms | default_domain | string | unset | plan 2 WP-17 | Legacy V4 mapping not performed; diagnostic | default_domain |
