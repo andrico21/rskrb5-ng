@@ -1,9 +1,9 @@
 //! IAKERB against the MIT peer adapter.
 
-use core::{error::Error, time::Duration};
+use core::{error::Error, fmt::Display, time::Duration};
 use std::{
-    io::{Read, Write},
-    net::{TcpStream, ToSocketAddrs},
+    io::{Read as _, Write as _},
+    net::{TcpStream, ToSocketAddrs as _},
     time::Instant,
 };
 
@@ -13,7 +13,7 @@ use rskrb5_ng::{
     gss::{
         self, AcceptorOptions, ContextFlags, CredStore, Credential, CredentialUsage,
         EstablishedContext, InitStep, InitiatorOptions, Name, NameType,
-        iakerb::{AcceptStep, IakerbContext, KdcRelay, RelayFailure, RelayPolicy},
+        iakerb::{AcceptStep, Context, KdcRelay, RelayFailure, RelayPolicy},
     },
     spnego::oid::ObjectIdentifier,
 };
@@ -68,10 +68,11 @@ fn realm() -> Result<String, Box<dyn Error>> {
     harness::var("INTEROP_MIT_REALM")
 }
 
-/// A profile whose only KDC is a refused loopback port: the client's direct path
-/// to the KDC is blocked. The realm offers SPAKE realm-wide, and the exchanges
-/// here relay the ordinary AS exchange, so SPAKE is pinned off: the encrypted
-/// timestamp answers.
+/// A profile whose only KDC is a refused loopback port.
+///
+/// The client's direct path to the KDC is blocked. The realm offers SPAKE
+/// realm-wide, and the exchanges here relay the ordinary AS exchange, so SPAKE
+/// is pinned off: the encrypted timestamp answers.
 fn blocked_config() -> Result<Config, Box<dyn Error>> {
     let realm = realm()?;
     let refused = closed_port::reserve_closed_tcp_port()?;
@@ -169,8 +170,9 @@ fn exchange(
     Ok(())
 }
 
-/// The Rust IAKERB initiator completes a context against MIT's IAKERB acceptor
-/// while its direct path to the KDC is blocked: a direct AS exchange of the same
+/// The Rust IAKERB initiator completes against MIT's IAKERB acceptor.
+///
+/// Its direct path to the KDC is blocked: a direct AS exchange of the same
 /// profile and credential fails, and the AS and TGS exchanges of the initiator
 /// go through the acceptor, which has the route.
 #[test]
@@ -183,7 +185,8 @@ fn rust_iakerb_initiator_completes_against_mit_with_the_direct_kdc_path_blocked(
         return Ok(());
     }
     let config = blocked_config()?;
-    let store = CredStore::new().with("password", &harness::var("INTEROP_MIT_PEER_USER_PASSWORD")?)?;
+    let store =
+        CredStore::new().with("password", &harness::var("INTEROP_MIT_PEER_USER_PASSWORD")?)?;
     let name = Name::import(user_principal()?.as_bytes(), NameType::Principal)?;
     let mut credential =
         Credential::acquire_cred_from(Some(&name), CredentialUsage::Initiate, &store)?;
@@ -201,7 +204,7 @@ fn rust_iakerb_initiator_completes_against_mit_with_the_direct_kdc_path_blocked(
         "a direct AS exchange reaches no KDC through the blocked profile: {direct:?}"
     );
     // when the IAKERB initiator talks to the MIT acceptor through the test,
-    let mut initiator = IakerbContext::initiator(&config, mit_target()?, InitiatorOptions::new())?;
+    let mut initiator = Context::initiator(&config, mit_target()?, InitiatorOptions::new())?;
     let mut adapter = connect_main()?;
     let accept = AcceptRequest::new(b"").with_cred(acceptor_cred(&mut adapter)?);
     let InitStep::Continue(mut token) = initiator.init_sec_context(&credential, None)? else {
@@ -224,7 +227,10 @@ fn rust_iakerb_initiator_completes_against_mit_with_the_direct_kdc_path_blocked(
         }
     }
     // then MIT proxied the AS and TGS exchanges before the AP exchange,
-    assert!(steps >= 4, "two AS requests, a TGS request and the AP-REQ: {steps} steps");
+    assert!(
+        steps >= 4,
+        "two AS requests, a TGS request and the AP-REQ: {steps} steps"
+    );
     let handle = context.ok_or("the adapter never ran")?;
     assert_mechanism(IAKERB, adapter.inquire(handle)?.mech())?;
     assert_eq!(adapter.inquire(handle)?.source(), user_principal()?);
@@ -248,9 +254,9 @@ struct TcpRelay {
 
 impl KdcRelay for TcpRelay {
     fn relay(&mut self, realm: &str, request: &[u8]) -> Result<Vec<u8>, RelayFailure> {
-        self.relayed += 1;
+        self.relayed = self.relayed.saturating_add(1);
         self.realms.push(realm.to_owned());
-        let other = |cause: &dyn core::fmt::Display| RelayFailure::Other(cause.to_string());
+        let other = |cause: &dyn Display| RelayFailure::Other(cause.to_string());
         let address = self
             .kdc
             .to_socket_addrs()
@@ -305,7 +311,10 @@ fn rust_acceptor() -> Result<Credential, Box<dyn Error>> {
 
 /// The isolated MIT initiator's first request for the Rust acceptor: its
 /// credential is the user's password, its mechanism IAKERB.
-fn iso_request(adapter: &mut Peer<TcpStream>, name: PeerName) -> Result<InitRequest, Box<dyn Error>> {
+fn iso_request(
+    adapter: &mut Peer<TcpStream>,
+    name: PeerName,
+) -> Result<InitRequest, Box<dyn Error>> {
     let credential = adapter.acquire(
         &CredRequest::new(Usage::Initiate)
             .named(name)
@@ -333,7 +342,7 @@ fn mit_to_rust(
     let init = iso_request(&mut adapter, name)?;
     let store = rust_acceptor()?;
     let mut acceptor = gss::Acceptor::new(&store, AcceptorOptions::new())?;
-    let mut context = IakerbContext::acceptor(policy);
+    let mut context = Context::acceptor(policy);
     let mut relay = TcpRelay {
         kdc: harness::var("INTEROP_MIT_KDC")?,
         relayed: 0,
@@ -350,11 +359,17 @@ fn mit_to_rust(
             Ok(AcceptStep::Complete(accepted)) => {
                 let answer = accepted.output_token().ok_or("an AP-REP")?.to_vec();
                 let last = adapter.init_step(&init.clone().continuing(handle, &answer))?;
-                assert!(!last.continue_needed(), "the AP-REP completes MIT's context");
+                assert!(
+                    !last.continue_needed(),
+                    "the AP-REP completes MIT's context"
+                );
                 assert_mechanism(IAKERB, last.mech())?;
                 let mut established = accepted.into_context();
                 let sealed = adapter.wrap(handle, Protection::new(true), b"sealed by mit")?;
-                assert_eq!(established.unwrap(sealed.token())?.message(), b"sealed by mit");
+                assert_eq!(
+                    established.unwrap(sealed.token())?.message(),
+                    b"sealed by mit"
+                );
                 return Ok((Ok(established), relay));
             }
             Ok(_) => return Err("an unknown acceptor step".into()),
@@ -363,9 +378,10 @@ fn mit_to_rust(
     Err("the exchange did not complete".into())
 }
 
-/// The MIT IAKERB initiator in the container that cannot reach the KDC
-/// completes a context against the Rust acceptor, whose relay carries the AS
-/// and TGS exchanges; a krb5 credential in the same container fails.
+/// The MIT IAKERB initiator in the container that cannot reach the KDC completes.
+///
+/// The Rust acceptor's relay carries the AS and TGS exchanges; a krb5
+/// credential in the same container fails.
 #[test]
 fn mit_iakerb_initiator_without_a_kdc_route_completes_against_the_rust_acceptor()
 -> Result<(), Box<dyn Error>> {
@@ -385,10 +401,20 @@ fn mit_iakerb_initiator_without_a_kdc_route_completes_against_the_rust_acceptor(
             .with_keytab(&harness::var("INTEROP_MIT_PEER_USER_KEYTAB_ID")?),
     );
     assert!(
-        matches!(blocked, Err(PeerError::Gss { .. })),
+        matches!(
+            blocked,
+            Err(PeerError::Gss {
+                major: _,
+                minor: _,
+                text: _
+            })
+        ),
         "the isolated container reaches no KDC: {blocked:?}"
     );
-    assert!(started.elapsed() < Duration::from_secs(9), "the block fails fast");
+    assert!(
+        started.elapsed() < Duration::from_secs(9),
+        "the block fails fast"
+    );
     // when IAKERB runs through the Rust acceptor and its relay,
     let (outcome, relay) = mit_to_rust(
         PeerName::principal(&user_principal()?),
@@ -396,12 +422,24 @@ fn mit_iakerb_initiator_without_a_kdc_route_completes_against_the_rust_acceptor(
     )?;
     // then the context stands, the relay carried the AS and TGS requests for the realm,
     let context = outcome?;
-    assert!(relay.relayed >= 3, "AS probe, AS request and TGS request: {}", relay.relayed);
-    assert!(relay.realms.iter().all(|asked| *asked == realm().unwrap_or_default()));
+    assert!(
+        relay.relayed >= 3,
+        "AS probe, AS request and TGS request: {}",
+        relay.relayed
+    );
+    assert!(
+        relay
+            .realms
+            .iter()
+            .all(|asked| *asked == realm().unwrap_or_default())
+    );
     // and the Rust acceptor sees the user MIT authenticated through the KDC.
     let info = context.inquire();
     assert_eq!(info.source().display().0, user_principal()?);
-    assert_eq!(IakerbContext::mechanism(), ObjectIdentifier::from_arcs(arcs(IAKERB)?)?);
+    assert_eq!(
+        Context::mechanism(),
+        ObjectIdentifier::from_arcs(arcs(IAKERB)?)?
+    );
     Ok(())
 }
 
@@ -421,7 +459,11 @@ fn mit_realm_discovery_completes_against_the_rust_acceptor() -> Result<(), Box<d
         RelayPolicy::new(&realm()?)?,
     )?;
     let context = outcome?;
-    assert!(relay.relayed >= 3, "the exchanges were relayed: {}", relay.relayed);
+    assert!(
+        relay.relayed >= 3,
+        "the exchanges were relayed: {}",
+        relay.relayed
+    );
     assert_eq!(context.inquire().source().display().0, user_principal()?);
     Ok(())
 }
