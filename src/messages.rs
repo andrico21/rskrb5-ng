@@ -1,6 +1,7 @@
 //! Kerberos message/type wrappers that need gokrb5-compatible DER behavior.
 
 mod auth_context;
+mod clock;
 mod credential_debug;
 /// Signed key-version conversion for encrypted data.
 mod encrypted_data;

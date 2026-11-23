@@ -5,7 +5,7 @@ use zeroize::Zeroizing;
 
 use super::{
     AuthContext, CredentialTransport, Received,
-    private_safe::{kerberos_time, system_time},
+    clock::{kerberos_time, system_time},
     secret_der::SecretDer,
 };
 use crate::{

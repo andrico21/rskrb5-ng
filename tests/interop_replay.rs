@@ -37,7 +37,25 @@ mod peer;
     reason = "test code is not rendered API documentation"
 )]
 #[path = "interop_replay/worker.rs"]
-mod worker;
+pub(crate) mod worker;
+
+/// Container commands and cache file copies.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[path = "interop_replay/containers.rs"]
+mod containers;
+
+/// Helpers of the replay scenarios.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[path = "interop_replay/support.rs"]
+mod support;
 
 /// The replay scenarios.
 #[cfg(test)]
