@@ -212,14 +212,17 @@ fn credentials_transfer_under_the_same_contract() -> Result<(), TestError> {
 
 /// An oversized blob is refused before it is decrypted.
 #[test]
-fn an_oversized_blob_is_refused() {
+fn an_oversized_blob_is_refused() -> Result<(), TestError> {
+    let ends = establish(sequenced())?;
+    let mut bytes = ends.initiator.export(&key())?.into_bytes();
+    bytes.resize(0x0010_0001, 0);
     let mut ledger = MemoryTransferLedger::new();
-    let huge = TransferBlob::from_bytes(vec![0; 0x0010_0001]);
     assert!(matches!(
-        EstablishedContext::import(&huge, &key(), &mut ledger),
+        EstablishedContext::import(&TransferBlob::from_bytes(bytes), &key(), &mut ledger),
         Err(Gss::TokenTooLarge {
             maximum: 0x0010_0000,
             actual: 0x0010_0001
         })
     ));
+    Ok(())
 }

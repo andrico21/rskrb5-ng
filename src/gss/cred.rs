@@ -95,34 +95,6 @@ pub(super) fn session_of(entry: &ccache::Credential) -> TgsRepSession {
     .with_renew_till((times.renew_till != 0).then(|| time_of(times.renew_till)))
 }
 
-/// The `verify` store key: the keytab and host principal that verify
-/// password-acquired initial credentials (MIT `verify_initial_cred`,
-/// `acquire_cred.c:592-607`).
-#[derive(Clone)]
-pub(super) struct Verify {
-    /// The keytab with the host key.
-    keytab: Keytab,
-    /// The host principal; `None` tries every host key of the keytab.
-    server: Option<Principal>,
-}
-
-impl Verify {
-    /// Verify against `keytab`, with `server` or any host key.
-    pub(super) const fn new(keytab: Keytab, server: Option<Principal>) -> Self {
-        Self { keytab, server }
-    }
-
-    /// The keytab with the host key.
-    pub(super) const fn keytab(&self) -> &Keytab {
-        &self.keytab
-    }
-
-    /// The host principal.
-    pub(super) const fn server(&self) -> Option<&Principal> {
-        self.server.as_ref()
-    }
-}
-
 /// A credential with nothing in it yet.
 pub(super) const fn empty(usage: CredentialUsage) -> Credential {
     Credential {
@@ -133,7 +105,8 @@ pub(super) const fn empty(usage: CredentialUsage) -> Credential {
         password: None,
         keytab: None,
         replay: None,
-        verify: None,
+        verify_keytab: None,
+        verify_server: None,
         impersonator: None,
     }
 }
@@ -148,7 +121,8 @@ pub(super) fn duplicate(credential: &Credential) -> Credential {
         password: credential.password.clone(),
         keytab: credential.keytab.clone(),
         replay: credential.replay.clone(),
-        verify: credential.verify.clone(),
+        verify_keytab: credential.verify_keytab.clone(),
+        verify_server: credential.verify_server.clone(),
         impersonator: credential.impersonator.as_deref().map(|inner| Box::new(duplicate(inner))),
     }
 }
@@ -340,10 +314,8 @@ pub(super) fn acquire_from(
         } else {
             Some(Name::import(requested.as_bytes(), super::NameType::Principal)?.principal().clone())
         };
-        credential.verify = Some(Box::new(Verify::new(
-            Keytab::load_name(keytab_name)?,
-            server,
-        )));
+        credential.verify_keytab = Some(Keytab::load_name(keytab_name)?);
+        credential.verify_server = server;
     }
     Ok(credential)
 }
@@ -556,12 +528,12 @@ pub(super) async fn acquire_service_ticket(
             client.clone(),
             password.to_vec(),
         );
-        if let Some(verify) = &credential.verify {
+        if let Some(host_keys) = &credential.verify_keytab {
             let mut options = VerifyOptions::new().with_nofail(true);
-            if let Some(server) = verify.server() {
+            if let Some(server) = &credential.verify_server {
                 options = options.with_server(server.clone());
             }
-            drop(password_client.verify_init_creds(verify.keytab(), options).await?);
+            drop(password_client.verify_init_creds(host_keys, options).await?);
         }
         password_client
     } else {

@@ -877,6 +877,14 @@ mod tests {
             "Borrows the validator mutably for replay admission; no keytab key or other credential storage of the acceptor is replaced.",
         ),
         (
+            "src/gss/contexts.rs::Accepted::complete_dce",
+            "Forwards to src/gss/dce.rs::complete, which carries its own exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/gss/dce.rs::complete",
+            "Sets the context's open flag and clears the sent AP-REP token (a public token, no key); no key or credential of the context is replaced.",
+        ),
+        (
             "src/gss/contexts.rs::EstablishedContext::take_delegated_credential",
             "Moves the delegated credential out to the caller (Option::take); the credential is handed over, not dropped, and the caller's owner erases it.",
         ),
@@ -1478,6 +1486,8 @@ mod tests {
         "src/gss/contexts.rs::Accepted",
         "src/gss/contexts.rs::EstablishedContext",
         "src/gss/contexts.rs::Unwrapped",
+        "src/gss/contexts.rs::TransferKey",
+        "src/gss/types.rs::IovBuffer",
         "src/spnego/gss_types.rs::Initiator",
         "src/spnego/gss_types.rs::Acceptor",
         "src/spnego/gss_types.rs::AcceptStep",

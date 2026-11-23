@@ -111,9 +111,11 @@ pub struct Credential {
     keytab: Option<Keytab>,
     /// The acceptor's replay cache.
     replay: Option<SharedReplayCache>,
-    /// The keytab and host principal that verify password-acquired initial
-    /// credentials (the `verify` store key).
-    verify: Option<Box<cred::Verify>>,
+    /// The keytab that verifies password-acquired initial credentials (the
+    /// `verify` store key).
+    verify_keytab: Option<Keytab>,
+    /// The host principal of the verification; `None` tries every host key.
+    verify_server: Option<Principal>,
     /// The impersonator of a proxy credential: its tickets are `S4U2Proxy`
     /// tickets in the name of this credential's client.
     impersonator: Option<Box<Self>>,
@@ -135,7 +137,7 @@ impl fmt::Debug for Credential {
                 "keytab_entries",
                 &self.keytab.as_ref().map(|keys| keys.entries().len()),
             )
-            .field("verify", &self.verify.is_some())
+            .field("verify", &self.verify_keytab.is_some())
             .field(
                 "impersonator",
                 &self.impersonator.as_ref().and_then(|cred| cred.name.as_ref()),
@@ -175,7 +177,8 @@ impl Credential {
             password: None,
             keytab: Some(keytab),
             replay: None,
-            verify: None,
+            verify_keytab: None,
+            verify_server: None,
             impersonator: None,
         }
     }

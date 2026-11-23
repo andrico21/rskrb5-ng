@@ -97,6 +97,10 @@ fn impersonator_client(
 /// # Errors
 ///
 /// Returns the errors of [`super::Credential::acquire_impersonate_name`].
+///
+/// # Cancel safety
+///
+/// cancel-safe: the credential is built only after the exchange completes.
 #[cfg(feature = "tokio")]
 pub(super) async fn acquire(
     impersonator: &Credential,

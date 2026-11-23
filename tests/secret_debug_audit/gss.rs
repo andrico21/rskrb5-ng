@@ -14,8 +14,8 @@ pub(super) mod tests {
         client::{KdcError, TgsRepSession, principal::Principal},
         error::{Client as ClientError, Gss, Spnego as SpnegoError},
         gss::{
-            self, AcceptorOptions, CredStore, Credential, InitStep, InitiatorOptions, Name,
-            NameType,
+            self, AcceptorOptions, CredStore, Credential, InitStep, InitiatorOptions, IovBuffer,
+            IovKind, Name, NameType, TransferKey,
         },
         keytab::{self, EncryptionKey, Keytab},
         spnego::{self, AcceptStep},
@@ -164,6 +164,11 @@ pub(super) mod tests {
                 .with_e_data(Some(secret.clone().into())),
         )))));
         redacted(&error, &[&secret]);
+        let iov_bytes = pattern(145);
+        redacted(&IovBuffer::new(IovKind::Data, iov_bytes.clone()), &[&iov_bytes]);
+        let transfer_bytes = [pattern(161), pattern(177)].concat();
+        let transfer_key = TransferKey::new(<[u8; 32]>::try_from(transfer_bytes.as_slice())?);
+        redacted(&transfer_key, &[&transfer_bytes]);
         Ok(())
     }
 }

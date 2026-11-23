@@ -7,7 +7,7 @@
 
 use zeroize::Zeroizing;
 
-use super::{Error, EstablishedContext, PrfKey, context};
+use super::{Error, EstablishedContext, PrfKey};
 use crate::crypto::{KerberosEtype, Use, prf};
 
 /// `gss_pseudo_random`.
@@ -21,7 +21,7 @@ pub(super) fn pseudo_random(
     input: &[u8],
     length: usize,
 ) -> Result<Zeroizing<Vec<u8>>, Error> {
-    context::established(context)?;
+    super::context::established(context)?;
     let partial = context
         .initiator_subkey
         .as_ref()

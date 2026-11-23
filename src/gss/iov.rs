@@ -21,7 +21,7 @@ use sha2::{Sha256, Sha384};
 use zeroize::Zeroizing;
 
 use super::{
-    ContextFlags, EncryptionKey, Error, EstablishedContext, IovBuffer, IovKind, Unwrapped, context,
+    ContextFlags, EncryptionKey, Error, EstablishedContext, IovBuffer, IovKind, Unwrapped
 };
 use crate::{
     crypto::{AesSha2Etype, KerberosEtype},
@@ -476,9 +476,9 @@ fn bounded(buffers: &[IovBuffer]) -> Result<(), Error> {
     let actual = buffers
         .iter()
         .fold(0_usize, |total, buffer| total.saturating_add(buffer.value.len()));
-    if actual > context::MAX_TOKEN_LEN {
+    if actual > super::context::MAX_TOKEN_LEN {
         return Err(Error::TokenTooLarge {
-            maximum: context::MAX_TOKEN_LEN,
+            maximum: super::context::MAX_TOKEN_LEN,
             actual,
         });
     }
@@ -527,7 +527,7 @@ pub(super) fn wrap_length(
     confidential: bool,
 ) -> Result<bool, Error> {
     let layout = layout(buffers, IovKind::Header)?;
-    let etype = etype_of(context::usable(context)?)?;
+    let etype = etype_of(super::context::usable(context)?)?;
     let sealed = confidential && has_data(buffers);
     let dce = context.flags.contains(ContextFlags::DCE_STYLE);
     let frame = framing(etype, sealed, dce, layout.trailer.is_some());
@@ -555,14 +555,14 @@ pub(super) fn wrap(
 ) -> Result<bool, Error> {
     let layout = layout(buffers, IovKind::Header)?;
     bounded(buffers)?;
-    let key = context::usable(context)?.clone();
+    let key = super::context::usable(context)?.clone();
     let etype = etype_of(&key)?;
     let sealed = confidential && has_data(buffers);
     let dce = context.flags.contains(ContextFlags::DCE_STYLE);
     let frame = framing(etype, sealed, dce, layout.trailer.is_some());
-    let (_, seal) = context::usages(context.initiated);
+    let (_, seal) = super::context::usages(context.initiated);
     let sequence = context.send_sequence;
-    let mut flags = context::sent_flags(context);
+    let mut flags = super::context::sent_flags(context);
     if let Some(index) = layout.padding {
         set(buffers, index, Vec::new());
     }
@@ -642,7 +642,7 @@ fn received(
     if header.get(filler).is_none_or(|bytes| bytes.iter().any(|byte| *byte != 0xff)) {
         return Err(defective("a bad filler"));
     }
-    let key = context::received_key(context, flags)?;
+    let key = super::context::received_key(context, flags)?;
     let etype = etype_of(&key)?;
     Ok((key, etype))
 }
@@ -657,13 +657,13 @@ fn open(
     buffers: &mut [IovBuffer],
     layout: &Layout,
 ) -> Result<bool, Error> {
-    let _usable: &EncryptionKey = context::usable(context)?;
+    let _usable: &EncryptionKey = super::context::usable(context)?;
     if layout.padding.is_some_and(|index| !get(buffers, index).is_empty()) {
         return Err(Error::DefectiveToken("a PADDING buffer in an RFC 4121 token"));
     }
     let header = get(buffers, layout.header).to_vec();
     let (key, etype) = received(context, &header, TOK_WRAP)?;
-    let (_, seal) = context::usages(!context.initiated);
+    let (_, seal) = super::context::usages(!context.initiated);
     let flags = header.get(2).copied().unwrap_or_default();
     let (ec, rrc) = (usize::from(field(&header, 4)), usize::from(field(&header, 6)));
     let dce = context.flags.contains(ContextFlags::DCE_STYLE);
@@ -861,11 +861,11 @@ pub(super) fn unwrap(context: &mut EstablishedContext, buffers: &mut [IovBuffer]
 pub(super) fn get_mic(context: &mut EstablishedContext, buffers: &mut [IovBuffer]) -> Result<(), Error> {
     let layout = layout(buffers, IovKind::MicToken)?;
     bounded(buffers)?;
-    let key = context::usable(context)?.clone();
+    let key = super::context::usable(context)?.clone();
     let etype = etype_of(&key)?;
-    let (sign, _) = context::usages(context.initiated);
+    let (sign, _) = super::context::usages(context.initiated);
     let sequence = context.send_sequence;
-    let header = header_bytes(TOK_MIC, context::sent_flags(context), [0xffff, 0xffff], sequence);
+    let header = header_bytes(TOK_MIC, super::context::sent_flags(context), [0xffff, 0xffff], sequence);
     let checksum = etype.checksum(key.value(), &checksum_input(buffers, &header), sign)?;
     set(buffers, layout.header, [header, checksum].concat());
     context.send_sequence = sequence.wrapping_add(1);
@@ -880,13 +880,13 @@ pub(super) fn get_mic(context: &mut EstablishedContext, buffers: &mut [IovBuffer
 pub(super) fn verify_mic(context: &mut EstablishedContext, buffers: &[IovBuffer]) -> Result<(), Error> {
     let layout = layout(buffers, IovKind::MicToken)?;
     bounded(buffers)?;
-    let _usable: &EncryptionKey = context::usable(context)?;
+    let _usable: &EncryptionKey = super::context::usable(context)?;
     let token = get(buffers, layout.header);
     let (key, etype) = received(context, token, TOK_MIC)?;
     if token.get(2).is_some_and(|flags| flags & GSS_TOKEN_FLAG_SEALED != 0) {
         return Err(Error::DefectiveToken("a MIC token cannot be sealed"));
     }
-    let (sign, _) = context::usages(!context.initiated);
+    let (sign, _) = super::context::usages(!context.initiated);
     let (header, checksum) = token.split_at(HEADER_LEN);
     if checksum.len() != etype.hmac_len() {
         return Err(Error::BadIov("a MIC token of the wrong length"));

@@ -18,7 +18,7 @@ use md5::Md5;
 use rc4::{Rc4, StreamCipher as _};
 use zeroize::Zeroizing;
 
-use super::{EncryptionKey, Error, EstablishedContext, Unwrapped, context};
+use super::{EncryptionKey, Error, EstablishedContext, Unwrapped};
 use crate::{
     crypto::{Des3CbcSha1KdEtype, Use, kerb_checksum_hmac_md5},
     error::{Policy, RejectedFeature, RejectionReason},
@@ -92,8 +92,8 @@ impl Algorithm {
 pub(super) fn select(
     context: &EstablishedContext,
 ) -> Result<Option<(Algorithm, EncryptionKey)>, Error> {
-    context::established(context)?;
-    let key = context::key(context);
+    super::context::established(context)?;
+    let key = super::context::key(context);
     let algorithm = match key.etype() {
         16_i32 => Algorithm::Des3,
         23_i32 => Algorithm::Rc4,

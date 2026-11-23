@@ -29,7 +29,7 @@ use zeroize::Zeroizing;
 
 use super::{
     CCache, ContextFlags, Credential, CredentialUsage, EncryptionKey, Error, EstablishedContext,
-    Keytab, Name, NameKind, NameType, Principal, TransferBlob, TransferKey, TransferLedger, cred, pac,
+    Keytab, Name, NameKind, NameType, Principal, TransferBlob, TransferKey, TransferLedger, pac,
     seq,
 };
 use crate::crypto::{AesSha2Etype, CryptoPolicy};
@@ -384,10 +384,10 @@ fn put_credential(writer: &mut Writer, credential: &Credential) -> Result<(), Er
         writer.optional(bytes.as_deref().map(Vec::as_slice))?;
     }
     writer.optional(credential.password.as_deref().map(Vec::as_slice))?;
-    writer.flag(credential.verify.is_some());
-    if let Some(verify) = &credential.verify {
-        writer.bytes(&Zeroizing::new(verify.keytab().to_bytes()?))?;
-        let server = verify.server().map(Name::from_principal);
+    writer.flag(credential.verify_keytab.is_some());
+    if let Some(host_keys) = &credential.verify_keytab {
+        writer.bytes(&Zeroizing::new(host_keys.to_bytes()?))?;
+        let server = credential.verify_server.as_ref().map(Name::from_principal);
         writer.optional_name(server.as_ref())?;
     }
     let impersonator = match &credential.impersonator {
@@ -420,14 +420,14 @@ fn get_credential(reader: &mut Reader<'_>) -> Result<Credential, Error> {
     let password = reader
         .optional()?
         .map(|bytes| Zeroizing::new(bytes.to_vec()));
-    let verify = if reader.flag()? {
-        let verify_keytab = Keytab::parse(reader.bytes()?)?;
+    let (verify_keytab, verify_server) = if reader.flag()? {
+        let host_keys = Keytab::parse(reader.bytes()?)?;
         let server = reader
             .optional_name()?
             .map(|verify_name| verify_name.principal().clone());
-        Some(Box::new(cred::Verify::new(verify_keytab, server)))
+        (Some(host_keys), server)
     } else {
-        None
+        (None, None)
     };
     let impersonator = match reader.optional()? {
         Some(bytes) => {
@@ -446,7 +446,8 @@ fn get_credential(reader: &mut Reader<'_>) -> Result<Credential, Error> {
         password,
         keytab,
         replay: None,
-        verify,
+        verify_keytab,
+        verify_server,
         impersonator,
     })
 }
