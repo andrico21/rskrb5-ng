@@ -11,6 +11,10 @@ mod wire;
 #[path = "negoextest.rs"]
 mod negoextest;
 
+/// Tokens captured from MIT krb5 1.22.2.
+#[path = "captures.rs"]
+mod captures;
+
 /// The exchange between two contexts (MIT's `t_negoex.py`).
 #[path = "flow.rs"]
 mod flow;
