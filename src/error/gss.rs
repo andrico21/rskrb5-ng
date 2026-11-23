@@ -134,6 +134,9 @@ pub enum Gss {
     /// The system random source failed.
     #[error("random source error: {0}")]
     Random(#[from] getrandom::Error),
+    /// `NegoEx` negotiation failed.
+    #[error("NegoEx error: {0}")]
+    Negoex(#[from] Negoex),
 }
 
 #[cfg(feature = "spnego")]
@@ -189,6 +192,7 @@ impl Gss {
             | Self::Keytab(_)
             | Self::Crypto(_)
             | Self::Random(_) => 13,
+            Self::Negoex(inner) => return inner.major_status(),
         };
         routine << 16
     }

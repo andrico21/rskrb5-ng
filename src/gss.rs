@@ -73,6 +73,8 @@ mod cred;
 mod initiator;
 /// Name parsing, display and export.
 mod name;
+/// `NegoEx` (MS-NEGOEX) mechanism negotiation.
+pub mod negoex;
 /// The sequence and replay window.
 mod seq;
 

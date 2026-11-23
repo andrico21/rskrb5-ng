@@ -321,7 +321,7 @@ fn an_unknown_checksum_scheme_is_refused() -> Result<(), TestError> {
 fn sequence_and_conversation_are_enforced_atomically() -> Result<(), TestError> {
     let mut conversation = accepting();
     let first = nego(0, 0, [0; 32], &[SCHEME_A]);
-    conversation.parse(&first)?;
+    drop(conversation.parse(&first)?);
     assert!(matches!(
         refusal(&mut conversation, &first)?,
         Negoex::MessageOutOfSequence { expected: 1, actual: 0 }
