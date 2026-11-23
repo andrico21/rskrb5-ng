@@ -35,7 +35,7 @@ use tokio::{
     runtime::{Builder, Runtime},
 };
 
-use crate::harness::{self, Fixture, assert_negotiated_padata, kdc_tap::KdcTap};
+use crate::harness::{self, Fixture, kdc_tap::KdcTap};
 
 /// The fixture KDC, reached on `INTEROP_MIT_KDC`.
 const MIT_KDC: Fixture = Fixture::new("mit-kdc", "INTEROP_MIT_KDC");
@@ -43,8 +43,8 @@ const MIT_KDC: Fixture = Fixture::new("mit-kdc", "INTEROP_MIT_KDC");
 /// The fixture's kadmind, on `INTEROP_MIT_KADMIN`.
 const MIT_KADMIN: Fixture = Fixture::new("mit-kdc", "INTEROP_MIT_KADMIN");
 
-/// PA type of the encrypted timestamp (RFC 4120 section 5.2.7.2).
-const PA_ENC_TIMESTAMP: i32 = 2;
+/// PA type of SPAKE (RFC 9588 section 4).
+const PA_SPAKE: i32 = 151;
 
 /// aes256-cts-hmac-sha1-96.
 const AES256_SHA1: i32 = 18;
@@ -65,8 +65,8 @@ fn runtime() -> io::Result<Runtime> {
 }
 
 /// The realm with its KDC at `kdc` and its kadmind. The realm also offers
-/// SPAKE first (plan 2 todo 9): an empty group list keeps the AS exchange for
-/// `kadmin/admin` on the encrypted timestamp the scenarios prove.
+/// SPAKE first (plan 2 todo 9): an empty group list keeps SPAKE out of the AS
+/// exchange for `kadmin/admin`.
 fn config(kdc: &str) -> Result<Config, Box<dyn Error>> {
     let realm = harness::var("INTEROP_MIT_REALM")?;
     Ok(Config::parse(&format!(
@@ -126,8 +126,13 @@ fn principal(name: &str) -> Result<Principal, Box<dyn Error>> {
 
 /// A `kadmin/admin` credential of `client` from an AS exchange with
 /// `password` through a recording relay, as MIT's `kadm5_init_with_password`
-/// gets it; asserts the exchange used the encrypted timestamp.
-async fn admin_credential(client: &Principal, password: &str) -> Result<Credential, Box<dyn Error>> {
+/// gets it. The fixture's `admin/admin` and `testuser1` do not require
+/// preauthentication, so the KDC answers the first AS-REQ; asserts that no
+/// request of the exchange answered SPAKE, which the profile pins off.
+async fn admin_credential(
+    client: &Principal,
+    password: &str,
+) -> Result<Credential, Box<dyn Error>> {
     let upstream = harness::var("INTEROP_MIT_KDC")?;
     let tap = KdcTap::start(KdcProtocol::Tcp, &upstream).await?;
     let tapped = config(tap.endpoint())?;
@@ -146,8 +151,12 @@ async fn admin_credential(client: &Principal, password: &str) -> Result<Credenti
         )
         .await?;
     let requests = tap.as_req_padata()?;
-    let last = requests.last().ok_or("no AS-REQ was sent")?;
-    assert_negotiated_padata("the kadmin/admin AS exchange", PA_ENC_TIMESTAMP, last)?;
+    if requests.is_empty() {
+        return Err("no AS-REQ was sent".into());
+    }
+    if requests.iter().any(|padata| padata.contains(&PA_SPAKE)) {
+        return Err(format!("the kadmin/admin AS exchange answered SPAKE: {requests:?}").into());
+    }
     assert_eq!(session.service(), &service);
     Ok(Credential::from_service_ticket(&session))
 }
@@ -197,7 +206,13 @@ async fn policy_operations(
     )?;
     assert_eq!(client.get_policy(name).await?.pw_min_classes(), 3_i32);
     let pattern = format!("{stem}*");
-    assert!(client.list_policies(Some(&pattern)).await?.iter().any(|listed| listed == name));
+    assert!(
+        client
+            .list_policies(Some(&pattern))
+            .await?
+            .iter()
+            .any(|listed| listed == name)
+    );
     Ok(())
 }
 
@@ -210,9 +225,16 @@ async fn principal_operations(
 ) -> Result<(), Box<dyn Error>> {
     let first = Password::copy_from_str(&format!("{stem}Pw1-aB"));
     client
-        .create_principal(&PrincipalRecord::new(user.clone()).with_policy(policy), Some(&first), &[])
+        .create_principal(
+            &PrincipalRecord::new(user.clone()).with_policy(policy),
+            Some(&first),
+            &[],
+        )
         .await?;
-    mit_says(&format!("getprinc {}", unparsed(user)), &format!("Policy: {policy}"))?;
+    mit_says(
+        &format!("getprinc {}", unparsed(user)),
+        &format!("Policy: {policy}"),
+    )?;
     client
         .modify_principal(&PrincipalRecord::new(user.clone()).with_max_life(7200))
         .await?;
@@ -221,12 +243,17 @@ async fn principal_operations(
         "Maximum ticket life: 0 days 02:00:00",
     )?;
     let record = client.get_principal(user, PrincipalMask::NORMAL).await?;
-    assert_eq!((record.max_life(), record.policy()), (7_200_i32, Some(policy)));
+    assert_eq!(
+        (record.max_life(), record.policy()),
+        (7_200_i32, Some(policy))
+    );
     let pattern = format!("{stem}*");
     let listed = client.list_principals(Some(&pattern)).await?;
     assert!(listed.contains(&unparsed(user)), "{listed:?}");
     let second = Password::copy_from_str(&format!("{stem}Pw2-cD"));
-    client.change_password(user, &second, &KeyOptions::new()).await?;
+    client
+        .change_password(user, &second, &KeyOptions::new())
+        .await?;
     mit_says(&format!("getprinc {}", unparsed(user)), "Key: vno 2,")?;
     Ok(())
 }
@@ -238,28 +265,53 @@ async fn key_operations(
     user: &Principal,
 ) -> Result<(), Box<dyn Error>> {
     let shown_user = unparsed(user);
-    let aes = KeyOptions::new().with_keysalts(vec![KeySaltTuple::new(AES256_SHA1, SaltType::Normal)]);
+    let aes =
+        KeyOptions::new().with_keysalts(vec![KeySaltTuple::new(AES256_SHA1, SaltType::Normal)]);
     let random = client.randomize_keys(user, &aes).await?;
-    assert_eq!(random.iter().map(EncryptionKey::etype).collect::<Vec<_>>(), [AES256_SHA1]);
-    mit_says(&format!("getprinc {shown_user}"), "Key: vno 3, aes256-cts-hmac-sha1-96")?;
+    assert_eq!(
+        random.iter().map(EncryptionKey::etype).collect::<Vec<_>>(),
+        [AES256_SHA1]
+    );
+    mit_says(
+        &format!("getprinc {shown_user}"),
+        "Key: vno 3, aes256-cts-hmac-sha1-96",
+    )?;
     client
         .set_keys(user, &[EncryptionKey::new(AES256_SHA1, vec![0x5c; 32])])
         .await?;
-    mit_says(&format!("getprinc {shown_user}"), "Key: vno 4, aes256-cts-hmac-sha1-96")?;
-    let kept = client.randomize_keys(user, &aes.clone().keep_old(true)).await?;
+    mit_says(
+        &format!("getprinc {shown_user}"),
+        "Key: vno 4, aes256-cts-hmac-sha1-96",
+    )?;
+    let kept = client
+        .randomize_keys(user, &aes.clone().keep_old(true))
+        .await?;
     assert_eq!(kept.len(), 1);
     mit_says(&format!("getprinc {shown_user}"), "Number of keys: 2")?;
     client.purge_keys(user, 5).await?;
     mit_says(&format!("getprinc {shown_user}"), "Number of keys: 1")?;
-    client.set_string(user, "session_enctypes", Some("aes256-cts")).await?;
-    mit_says(&format!("getstrs {shown_user}"), "session_enctypes: aes256-cts")?;
+    client
+        .set_string(user, "session_enctypes", Some("aes256-cts"))
+        .await?;
+    mit_says(
+        &format!("getstrs {shown_user}"),
+        "session_enctypes: aes256-cts",
+    )?;
     let strings = client.get_strings(user).await?;
-    assert!(strings
-        .iter()
-        .any(|string| string.key() == "session_enctypes" && string.value() == "aes256-cts"));
+    assert!(
+        strings
+            .iter()
+            .any(|string| string.key() == "session_enctypes" && string.value() == "aes256-cts")
+    );
     let extracted = client.get_principal_keys(user, 0).await;
     assert!(
-        matches!(extracted, Err(Kadm5::Server { code: AUTH_EXTRACT, procedure: _ })),
+        matches!(
+            extracted,
+            Err(Kadm5::Server {
+                code: AUTH_EXTRACT,
+                procedure: _
+            })
+        ),
         "{:?}",
         extracted.map(|data| data.len())
     );
@@ -276,7 +328,10 @@ async fn rename_and_delete(
     let renamed = principal(&format!("{stem}renamed"))?;
     let alias = principal(&format!("{stem}alias"))?;
     client.rename_principal(user, &renamed).await?;
-    mit_says(&format!("getprinc {}", unparsed(user)), "Principal does not exist")?;
+    mit_says(
+        &format!("getprinc {}", unparsed(user)),
+        "Principal does not exist",
+    )?;
     mit_says(
         &format!("getprinc {}", unparsed(&renamed)),
         &format!("Principal: {}", unparsed(&renamed)),
@@ -288,7 +343,10 @@ async fn rename_and_delete(
     )?;
     client.delete_principal(&alias).await?;
     client.delete_principal(&renamed).await?;
-    mit_says(&format!("getprinc {}", unparsed(&renamed)), "Principal does not exist")?;
+    mit_says(
+        &format!("getprinc {}", unparsed(&renamed)),
+        "Principal does not exist",
+    )?;
     client.delete_policy(policy).await?;
     mit_says(&format!("getpol {policy}"), "Policy does not exist")?;
     Ok(())
@@ -300,7 +358,10 @@ async fn rename_and_delete(
 /// privileges; `kadmin.local` sees each effect.
 #[test]
 fn administrator_operations_take_effect() -> Result<(), Box<dyn Error>> {
-    if !harness::require("administrator_operations_take_effect", &[MIT_KDC, MIT_KADMIN])? {
+    if !harness::require(
+        "administrator_operations_take_effect",
+        &[MIT_KDC, MIT_KADMIN],
+    )? {
         return Ok(());
     }
     runtime()?
@@ -346,7 +407,9 @@ fn unprivileged_principal_is_refused_by_the_acl() -> Result<(), Box<dyn Error>> 
             let password = harness::var("INTEROP_MIT_USER_PASSWORD")?;
             let credential = admin_credential(&user, &password).await?;
             let mut client = connect(&credential, Protection::Privacy).await?;
-            assert_eq!(client.get_privileges().await?.bits(), 0);
+            // kadmind answers every caller with all bits set
+            // (server_misc.c:147-158, `*privs = ~0`): only the ACL decides.
+            assert_eq!(client.get_privileges().await?.bits(), u32::MAX);
             let stem = prefix()?;
             let target = principal(&format!("{stem}denied"))?;
             let refused = client
