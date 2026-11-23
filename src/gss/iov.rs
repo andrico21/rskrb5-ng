@@ -723,39 +723,21 @@ fn open(
         .saturating_add(HEADER_LEN)
         .saturating_add(etype.hmac_len());
     let confounder = etype.confounder_len();
-    let (front, tail) = match &detached {
-        None => {
-            let desired = trailer_len.saturating_sub(if dce { ec } else { 0 });
-            if rrc != desired {
-                return Err(Error::DefectiveToken(
-                    "an RRC that does not rotate the trailer",
-                ));
-            }
-            if header.len()
-                != HEADER_LEN
-                    .saturating_add(trailer_len)
-                    .saturating_add(confounder)
-            {
-                return Err(bad_length);
-            }
-            let rest = header.get(HEADER_LEN..).unwrap_or_default();
-            let (tail, front) = rest.split_at(trailer_len);
-            (front.to_vec(), tail.to_vec())
-        }
-        Some(trailer) => {
-            if rrc != 0 {
-                return Err(Error::DefectiveToken("an RRC beside a TRAILER buffer"));
-            }
-            if trailer.len() != trailer_len || header.len() != HEADER_LEN.saturating_add(confounder)
-            {
-                return Err(bad_length);
-            }
-            (
-                header.get(HEADER_LEN..).unwrap_or_default().to_vec(),
-                trailer.clone(),
-            )
-        }
+    if detached.is_some() && rrc != 0 {
+        return Err(Error::DefectiveToken("an RRC beside a TRAILER buffer"));
+    }
+    if detached.is_none() && rrc != trailer_len.saturating_sub(if dce { ec } else { 0 }) {
+        return Err(Error::DefectiveToken(
+            "an RRC that does not rotate the trailer",
+        ));
+    }
+    let expected = Framing {
+        confounder,
+        trailer: trailer_len,
+        ec,
+        rrc,
     };
+    let (front, tail) = sealed_parts(&header, detached.as_deref(), &expected)?;
     let (sealed_tail, mac) = tail.split_at(ec.saturating_add(HEADER_LEN));
     let cipher = Pieces {
         confounder: Zeroizing::new(front),
@@ -783,6 +765,36 @@ fn open(
     context.window.admit(sequence_of(&header))?;
     scatter(buffers, plain.data.clone());
     Ok(true)
+}
+
+/// The confounder and the trailer of a received sealed token whose RRC was
+/// checked: rotated into its HEADER buffer, or in its TRAILER buffer.
+///
+/// # Errors
+///
+/// Returns [`Error::BadIov`] for a header or trailer of the wrong length.
+fn sealed_parts(
+    header: &[u8],
+    detached: Option<&[u8]>,
+    expected: &Framing,
+) -> Result<(Vec<u8>, Vec<u8>), Error> {
+    let bad_length = Error::BadIov("a header or trailer of the wrong length");
+    let rest = header.get(HEADER_LEN..).unwrap_or_default();
+    match detached {
+        None => {
+            if rest.len() != expected.trailer.saturating_add(expected.confounder) {
+                return Err(bad_length);
+            }
+            let (tail, front) = rest.split_at(expected.trailer);
+            Ok((front.to_vec(), tail.to_vec()))
+        }
+        Some(trailer) => {
+            if trailer.len() != expected.trailer || rest.len() != expected.confounder {
+                return Err(bad_length);
+            }
+            Ok((rest.to_vec(), trailer.to_vec()))
+        }
+    }
 }
 
 /// Unwrap a STREAM buffer into the one DATA buffer (`k5unsealiov.c:356-570`).
