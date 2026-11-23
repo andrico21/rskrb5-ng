@@ -18,16 +18,15 @@ where
     Ok(value)
 }
 
-/// Refuse persistent replay stores while preserving unspecified and none selections.
+/// Accept unset and well-formed replay-cache names.
 /// # Errors
-/// Rejects malformed or unsupported restrictions through serde.
+/// Rejects a malformed replay-cache name through serde.
 pub(super) fn replay<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
 {
     let value = String::deserialize(deserializer)?;
-    super::restrictions::reject("default_rcache_name", !value.is_empty() && value != "none:")
-        .map_err(D::Error::custom)?;
+    super::restrictions::rcache_name(&value).map_err(D::Error::custom)?;
     Ok(value)
 }
 

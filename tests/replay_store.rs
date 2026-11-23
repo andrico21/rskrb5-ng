@@ -5,6 +5,8 @@ extern crate alloc;
 
 #[path = "support/context.rs"]
 mod context;
+#[path = "support/env.rs"]
+mod env;
 
 /// Replay store tests.
 #[cfg(test)]
@@ -16,6 +18,7 @@ mod context;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod replay_store {
     mod concurrency;
+    mod config;
     mod failures;
     mod layout;
     mod name;

@@ -106,7 +106,7 @@ pub struct Credential {
     /// The acceptor's keys.
     keytab: Option<Keytab>,
     /// The acceptor's replay cache.
-    replay: Option<SharedReplayCache>,
+    replay: Option<Arc<dyn Store>>,
 }
 
 impl fmt::Debug for Credential {

@@ -43,6 +43,7 @@
 //! [`Credential`] from their own submodules; the `IAKERB` and `NegoEx`
 //! mechanisms are added beside this one.
 
+use alloc::sync::Arc;
 use core::{fmt, ops::BitOr, time::Duration};
 use std::time::SystemTime;
 
@@ -55,7 +56,8 @@ use crate::{
     crypto::CryptoPolicy,
     keytab::{EncryptionKey, Keytab},
     pac,
-    service::{SharedReplayCache, Validator},
+    replay::Store,
+    service::Validator,
     spnego::oid::ObjectIdentifier,
 };
 

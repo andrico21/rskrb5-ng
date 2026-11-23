@@ -67,10 +67,7 @@ mod tests {
     #[test]
     fn deferred_relations_when_strict() -> Result<(), Box<dyn StdError>> {
         // Given recognized but not implemented behavior.
-        for assignment in [
-            "default_rcache_name = none:",
-            "kcm_mach_service = org.h5l.kcm",
-        ] {
+        for assignment in ["kcm_mach_service = org.h5l.kcm"] {
             // When parsing in strict mode.
             let result = Config::parse_with_mode(
                 &format!("[libdefaults]\n {assignment}\n"),
@@ -83,22 +80,6 @@ mod tests {
                     .ok_or_else(|| format!("{assignment} accepted"))?,
             );
         }
-        Ok(())
-    }
-
-    /// Persistence and address restrictions cannot be satisfied by memory/omission.
-    #[test]
-    fn stricter_relations_when_compatible() -> Result<(), Box<dyn StdError>> {
-        // Given policies stricter than the current replay/address behavior.
-        let assignment = "default_rcache_name = dfl:";
-        // When parsing in the default compatible mode.
-        let result = Config::parse(&format!("[libdefaults]\n {assignment}\n"));
-        // Then it fails closed rather than pretending to enforce the policy.
-        drop(
-            result
-                .err()
-                .ok_or_else(|| format!("{assignment} accepted"))?,
-        );
         Ok(())
     }
 

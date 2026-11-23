@@ -12,7 +12,7 @@ use std::{
 };
 
 use rskrb5_ng::{
-    error::Gss,
+    error::{Gss, Service},
     gss::{
         Acceptor, AcceptorOptions, CredStore, Credential, CredentialUsage, InitStep, Initiator,
         InitiatorOptions, Name, NameType,
@@ -101,8 +101,8 @@ fn credentials_come_from_the_named_stores() -> Result<(), TestError> {
     Ok(())
 }
 
-/// A desired name must match the cache's client, and the replay cache cannot
-/// be switched off.
+/// A desired name must match the cache's client, and an unknown replay cache
+/// type is refused.
 #[test]
 fn desired_names_and_replay_caches_are_checked() -> Result<(), TestError> {
     let directory = scratch("names")?;
@@ -122,16 +122,58 @@ fn desired_names_and_replay_caches_are_checked() -> Result<(), TestError> {
         CredentialUsage::Initiate,
         &store,
     )?);
-    // Given `rcache = none:`, replay detection would be off: refused.
+    // Given an `rcache` of an unknown type, there is no replay cache to use.
     let keytab_path = directory.join("service.keytab");
     keytab(&[HOST]).save(&keytab_path)?;
-    let unprotected = CredStore::new()
+    let unknown = CredStore::new()
         .with("keytab", &format!("FILE:{}", keytab_path.display()))?
-        .with("rcache", "none:")?;
+        .with("rcache", "bogus:")?;
     assert!(matches!(
-        Credential::acquire_cred_from(None, CredentialUsage::Accept, &unprotected),
+        Credential::acquire_cred_from(None, CredentialUsage::Accept, &unknown),
         Err(Gss::UnsupportedReplayCache(_))
     ));
+    fs::remove_dir_all(&directory)?;
+    Ok(())
+}
+
+/// `rcache = file2:<path>` keeps its evidence in a shared file: a second
+/// acceptor credential on the same file refuses what the first accepted, and
+/// `rcache = none:` is a deliberate opt-out that accepts a repeat.
+#[test]
+fn rcache_names_select_shared_or_no_replay_evidence() -> Result<(), TestError> {
+    let directory = scratch("rcache")?;
+    let keytab_path = directory.join("service.keytab");
+    keytab(&[HOST]).save(&keytab_path)?;
+    let cache_path = directory.join("client.ccache");
+    cache(vec![cached(&ticket_for(HOST, &[])?)?]).save(&cache_path)?;
+    let keytab_name = format!("FILE:{}", keytab_path.display());
+    let client = CredStore::new().with("ccache", &format!("FILE:{}", cache_path.display()))?;
+    let initiator = Credential::acquire_cred_from(None, CredentialUsage::Initiate, &client)?;
+    let mut init = Initiator::new(target(HOST)?, InitiatorOptions::new());
+    let InitStep::Continue(token) = init.init_sec_context(&initiator, None)? else {
+        return Err("mutual authentication sends a token and waits".into());
+    };
+
+    // Given two acceptor credentials on one file2 cache, the second refuses the replay.
+    let shared = CredStore::new().with("keytab", &keytab_name)?.with(
+        "rcache",
+        &format!("file2:{}", directory.join("replay.rcache2").display()),
+    )?;
+    let first = Credential::acquire_cred_from(None, CredentialUsage::Accept, &shared)?;
+    let second = Credential::acquire_cred_from(None, CredentialUsage::Accept, &shared)?;
+    drop(Acceptor::new(&first, AcceptorOptions::new())?.accept_sec_context(&token)?);
+    assert!(matches!(
+        Acceptor::new(&second, AcceptorOptions::new())?.accept_sec_context(&token),
+        Err(Gss::Service(Service::Replay))
+    ));
+
+    // Given `none:`, the opt-out accepts the same token twice.
+    let open = CredStore::new()
+        .with("keytab", &keytab_name)?
+        .with("rcache", "none:")?;
+    let unprotected = Credential::acquire_cred_from(None, CredentialUsage::Accept, &open)?;
+    drop(Acceptor::new(&unprotected, AcceptorOptions::new())?.accept_sec_context(&token)?);
+    drop(Acceptor::new(&unprotected, AcceptorOptions::new())?.accept_sec_context(&token)?);
     fs::remove_dir_all(&directory)?;
     Ok(())
 }

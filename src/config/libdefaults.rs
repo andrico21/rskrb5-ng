@@ -35,8 +35,7 @@ pub(super) fn classify(defaults: &mut LibDefaults, selected: &[String]) -> Resul
         if !consumer.starts_with("plan 2 ") {
             continue;
         }
-        let stricter = name == "default_rcache_name" && defaults.default_rcache_name != "none:";
-        if stricter || defaults.parse_mode() == ParseMode::Strict {
+        if defaults.parse_mode() == ParseMode::Strict {
             return Err(Error::NotYetEffective {
                 relation: name,
                 package: consumer,

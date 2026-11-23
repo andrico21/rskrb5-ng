@@ -858,6 +858,9 @@ pub enum Config {
     /// A duration value was invalid.
     #[error("invalid time duration value: {0}")]
     InvalidDuration(String),
+    /// `default_rcache_name` is not a MIT replay-cache name of a known type.
+    #[error("invalid replay cache name: {0}")]
+    InvalidReplayCacheName(String),
     /// A duration value overflowed.
     #[error("time duration overflow: {0}")]
     DurationOverflow(String),

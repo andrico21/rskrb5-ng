@@ -40,7 +40,10 @@ pub(super) fn parse_lines(
                 value.clone_into(&mut this.default_client_keytab_name);
             }
             "default_keytab_name" => value.clone_into(&mut this.default_keytab_name),
-            "default_rcache_name" => value.clone_into(&mut this.default_rcache_name),
+            "default_rcache_name" => {
+                super::restrictions::rcache_name(value)?;
+                value.clone_into(&mut this.default_rcache_name);
+            }
             "err_fmt" => value.clone_into(&mut this.err_fmt),
             "default_realm" => value.clone_into(&mut this.default_realm),
             "default_tgs_enctypes" => {

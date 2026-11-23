@@ -11,7 +11,7 @@ mod tests {
     use core::error::Error;
 
     use rskrb5_ng::{
-        config::{Config, ParseMode, hostname::Canonicalization},
+        config::{Config, hostname::Canonicalization},
         error::Config as Failure,
     };
 
@@ -51,32 +51,6 @@ mod tests {
             assert!(
                 matches!(failure, Failure::InvalidInteger { line: 2, key, value: text } if key == "ccache_type" && text == value)
             );
-        }
-        Ok(())
-    }
-
-    /// Persistent replay and address binding fail closed independently of mode/order.
-    #[test]
-    fn stricter_policies_name_the_missing_consumer() -> Result<(), Box<dyn Error>> {
-        for mode in [ParseMode::Compatible, ParseMode::Strict] {
-            for (body, relation, package) in [
-                (
-                    "default_rcache_name = dfl:",
-                    "default_rcache_name",
-                    "plan 2 WP-20",
-                ),
-                (
-                    "default_rcache_name = file2:/cache",
-                    "default_rcache_name",
-                    "plan 2 WP-20",
-                ),
-            ] {
-                let result = Config::parse_with_mode(&format!("[libdefaults]\n {body}\n"), mode);
-                let failure = result.err().ok_or("stricter policy accepted")?;
-                assert!(
-                    matches!(failure, Failure::NotYetEffective { relation: key, package: owner } if key == relation && owner == package)
-                );
-            }
         }
         Ok(())
     }
