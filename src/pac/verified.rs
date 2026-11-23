@@ -101,6 +101,7 @@ impl Verified {
     /// A verified PAC restored from an authenticated context transfer, with
     /// the results `[server, kdc, ticket, full, client]` its exporter
     /// verified (`gss` context import only).
+    #[cfg(feature = "spnego")]
     pub(crate) fn restored(pac: Pac, results: [bool; 5]) -> Self {
         Self {
             pac,
