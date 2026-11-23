@@ -212,12 +212,12 @@ fn rust_iakerb_initiator_completes_against_mit_with_the_direct_kdc_path_blocked(
     for _round in 0..ROUNDS {
         let step = adapter.accept_step(&accept.stepping(context, &token))?;
         steps += 1;
-        assert_mechanism(IAKERB, step.mech())?;
         context = Some(step.context());
         match initiator.init_sec_context(&credential, Some(step.token()))? {
             InitStep::Continue(next) => token = next,
             InitStep::Complete(None) => {
                 assert!(!step.continue_needed(), "MIT completed on the AP-REQ");
+                assert_mechanism(IAKERB, step.mech())?;
                 break;
             }
             InitStep::Complete(Some(_)) | _ => return Err("the AP-REP ends the exchange".into()),
