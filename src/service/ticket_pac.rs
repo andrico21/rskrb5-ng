@@ -1,10 +1,11 @@
 //! Ticket PAC verification.
 
 use super::{
-    EncryptionKey, Error, VerificationPolicy, Verified, pac, principal_from_parts,
-    system_time_from_kerberos_time, validate_authorization_data,
+    AuthorizationContext, EncryptionKey, Error, VerificationPolicy, Verified,
+    encryption_key_from_rasn, pac, principal_from_parts, system_time_from_kerberos_time,
+    validate_authorization_data,
 };
-use crate::error::Pac as PacError;
+use crate::{authdata::ConditionEvaluator, error::Pac as PacError};
 
 /// What a ticket's PAC is verified against: the validator's policy and keys, and the ticket's server.
 pub(super) struct PacCheck<'check> {
@@ -14,6 +15,8 @@ pub(super) struct PacCheck<'check> {
     kdc_key: Option<&'check EncryptionKey>,
     /// The components of the ticket's server principal.
     server: &'check [String],
+    /// What the application knows about AD-AND-OR conditions.
+    conditions: Option<&'check dyn ConditionEvaluator>,
 }
 
 impl<'check> PacCheck<'check> {
@@ -27,7 +30,17 @@ impl<'check> PacCheck<'check> {
             policy,
             kdc_key,
             server,
+            conditions: None,
         }
+    }
+
+    /// Evaluate AD-AND-OR elements of the ticket with `conditions`.
+    pub(super) fn with_conditions(
+        mut self,
+        conditions: Option<&'check dyn ConditionEvaluator>,
+    ) -> Self {
+        self.conditions = conditions;
+        self
     }
 }
 
@@ -48,7 +61,11 @@ pub(super) fn verified_ticket_pac(
     check: &PacCheck<'_>,
 ) -> Result<Option<Verified>, Error> {
     let data = ticket.authorization_data.as_ref();
-    validate_authorization_data(data, true)?;
+    let session = encryption_key_from_rasn(&ticket.key);
+    let context = AuthorizationContext::new()
+        .with_session_key(&session)
+        .with_conditions(check.conditions);
+    validate_authorization_data(data, true, context)?;
     let found = match data {
         Some(elements) => pac::find_pac_in_authorization_data(elements)?,
         None => None,

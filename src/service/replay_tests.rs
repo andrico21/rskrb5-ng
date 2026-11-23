@@ -54,6 +54,7 @@ fn mandatory_authenticator_pac_is_rejected() {
     let mut remaining = super::AuthorizationBudget {
         remaining: 8,
         pac_seen: false,
+        context: super::AuthorizationContext::new(),
     };
     assert!(matches!(
         super::validate_authorization_elements(

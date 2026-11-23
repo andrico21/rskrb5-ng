@@ -69,6 +69,8 @@ pub mod ap_rep;
 #[cfg(feature = "messages")]
 pub mod ap_req;
 pub mod asn1;
+#[cfg(feature = "messages")]
+pub mod authdata;
 pub mod ccache;
 #[cfg(feature = "messages")]
 pub mod client;

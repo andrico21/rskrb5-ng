@@ -19,6 +19,8 @@ use rasn::types::Integer;
 
 use crate::{
     ap_rep,
+    authdata::ConditionEvaluator,
+    iana::authorization_data_type::{AND_OR, KDC_ISSUED},
     replay::{Admission, Evidence, Presentation, Store, Tag},
     config::{Config, parameters::DefaultName, restrictions, section_values::Capaths},
     crypto::{CryptoPolicy, Use},
@@ -491,6 +493,7 @@ mod credential_debug;
 #[path = "service/credential_replacement_tests.rs"]
 mod credential_replacement_tests;
 mod replay;
+mod authorization;
 mod replay_quota;
 mod store;
 mod ticket_pac;
@@ -721,6 +724,8 @@ pub struct Validator<'keytab> {
     shared_replay_cache: Option<SharedReplayCache>,
     /// A replay store that replaces both caches when attached.
     replay_store: Option<Arc<dyn Store>>,
+    /// What the application knows about AD-AND-OR conditions.
+    authorization_conditions: Option<Arc<dyn ConditionEvaluator>>,
     /// Explicit policy for cross-realm tickets not checked by the KDC.
     transit_policy: Option<Arc<dyn TransitValidator>>,
     /// What a ticket's PAC must pass before it is exposed.
@@ -811,6 +816,7 @@ impl<'keytab> Validator<'keytab> {
             replay_cache: ReplayCache::new(),
             shared_replay_cache: None,
             replay_store: None,
+            authorization_conditions: None,
             transit_policy: None,
             pac_policy: VerificationPolicy::acceptor(),
             pac_kdc_key: None,
@@ -959,6 +965,17 @@ impl<'keytab> Validator<'keytab> {
         store.ensure_skew(self.max_clock_skew)?;
         self.replay_store = Some(store);
         Ok(self)
+    }
+
+    /// Evaluate AD-AND-OR authorization data with `conditions`.
+    ///
+    /// Without an evaluator the acceptor refuses AD-AND-OR, as RFC 4120
+    /// section 5.2.6.2 requires of a server that does not implement it.
+    #[must_use]
+    #[inline]
+    pub fn with_authorization_conditions(mut self, conditions: Arc<dyn ConditionEvaluator>) -> Self {
+        self.authorization_conditions = Some(conditions);
+        self
     }
 
     /// The replay store attached with [`Self::with_replay_store`], if any.
@@ -1265,6 +1282,40 @@ struct AuthorizationScope {
     depth: usize,
 }
 
+/// What the acceptor can bring to the interpretation of authorization data.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct AuthorizationContext<'ctx> {
+    /// The session key a KDC-issued checksum is verified under (tickets only).
+    session_key: Option<&'ctx EncryptionKey>,
+    /// What the application knows about AD-AND-OR conditions.
+    conditions: Option<&'ctx dyn ConditionEvaluator>,
+}
+
+impl<'ctx> AuthorizationContext<'ctx> {
+    /// A context with nothing to offer: KDC-issued and AND-OR elements are refused.
+    pub(crate) const fn new() -> Self {
+        Self {
+            session_key: None,
+            conditions: None,
+        }
+    }
+
+    /// Verify KDC-issued elements under `key`.
+    pub(crate) const fn with_session_key(mut self, key: &'ctx EncryptionKey) -> Self {
+        self.session_key = Some(key);
+        self
+    }
+
+    /// Evaluate AD-AND-OR with `conditions`.
+    pub(crate) fn with_conditions(
+        mut self,
+        conditions: Option<&'ctx dyn ConditionEvaluator>,
+    ) -> Self {
+        self.conditions = conditions;
+        self
+    }
+}
+
 /// Validate every restriction independently of first-PAC extraction (RFC 4120 section 5.2.6).
 ///
 /// # Errors
@@ -1275,6 +1326,7 @@ struct AuthorizationScope {
 fn validate_authorization_data(
     data: Option<&rasn_kerberos::AuthorizationData>,
     ticket: bool,
+    context: AuthorizationContext<'_>,
 ) -> Result<(), Error> {
     if let Some(elements) = data {
         validate_authorization_elements(
@@ -1287,6 +1339,7 @@ fn validate_authorization_data(
             &mut AuthorizationBudget {
                 remaining: 0x0010_0000,
                 pac_seen: false,
+                context,
             },
         )?;
     }
@@ -1294,11 +1347,13 @@ fn validate_authorization_data(
 }
 
 /// Shared bounds across sibling and nested authorization restrictions.
-struct AuthorizationBudget {
+struct AuthorizationBudget<'ctx> {
     /// Bytes left to decode.
     remaining: usize,
     /// Whether this ticket already supplied a PAC.
     pac_seen: bool,
+    /// What KDC-issued and AND-OR elements are interpreted with.
+    context: AuthorizationContext<'ctx>,
 }
 
 /// Interpret wrapper criticality with a shared decoded-byte budget.
@@ -1309,7 +1364,7 @@ struct AuthorizationBudget {
 fn validate_authorization_elements(
     data: &rasn_kerberos::AuthorizationData,
     scope: AuthorizationScope,
-    budget: &mut AuthorizationBudget,
+    budget: &mut AuthorizationBudget<'_>,
 ) -> Result<(), Error> {
     for entry in data {
         budget.remaining = budget
@@ -1342,9 +1397,8 @@ fn validate_authorization_elements(
                     .ok_or(Error::UnsupportedAuthorizationData { kind: entry.r#type })?;
                 budget.pac_seen = true;
             }
-            4_i32 | 5_i32 => {
-                return Err(Error::UnsupportedAuthorizationData { kind: entry.r#type });
-            }
+            KDC_ISSUED => authorization::kdc_issued(entry, scope, budget)?,
+            AND_OR => authorization::and_or(entry, budget)?,
             _ if scope.critical => {
                 return Err(Error::UnsupportedAuthorizationData { kind: entry.r#type });
             }

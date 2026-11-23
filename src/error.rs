@@ -24,6 +24,7 @@ use crate::{
 };
 include!("error/any.rs");
 include!("error/auth_context.rs");
+include!("error/auth_data.rs");
 include!("error/der.rs");
 include!("error/gss.rs");
 include!("error/policy.rs");
@@ -2644,6 +2645,12 @@ pub enum Service {
     /// Shared replay cache lock could not be acquired.
     #[error("shared replay cache lock is poisoned")]
     ReplayCachePoisoned,
+    /// AD-KDC-ISSUED or AD-AND-OR authorization data is not valid.
+    #[error("authorization data error: {0}")]
+    AuthorizationData(#[from] AuthData),
+    /// An AD-AND-OR element's conditions are not met.
+    #[error("authorization conditions are not satisfied")]
+    AuthorizationConditionUnsatisfied,
     /// A replay store failed, so the authenticator is refused (fail closed).
     #[error("replay store error: {0}")]
     ReplayStore(#[from] Replay),
