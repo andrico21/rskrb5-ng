@@ -10,7 +10,7 @@
 //! (and MIT reads ours). Every scenario that proves a mechanism asserts it.
 //! Gated by `INTEROP=1`; `INTEROP_REQUIRED=1` turns an unreachable fixture into
 //! a failure naming it.
-#![cfg(feature = "spnego")]
+#![cfg(all(feature = "tokio", feature = "spnego"))]
 
 extern crate alloc;
 
