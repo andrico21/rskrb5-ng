@@ -3310,10 +3310,7 @@ capability = "GSS pseudo-random function / PRF+"
 implementation_status = "implemented"
 evidence_status = "live-local"
 missing = ""
-rust_symbols = [
-  "gss::EstablishedContext::pseudo_random",
-  "gss::PrfKey",
-]
+rust_symbols = ["gss::EstablishedContext::pseudo_random", "gss::PrfKey"]
 test_names = [
   "tests/gss_ext/prf.rs::both_ends_derive_the_same_stream",
   "tests/gss_ext/prf.rs::the_full_key_is_the_acceptor_subkey",
