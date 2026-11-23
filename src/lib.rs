@@ -89,6 +89,7 @@ mod file_name;
 pub mod gss;
 #[cfg(feature = "http")]
 pub mod http;
+pub mod iana;
 #[cfg(feature = "messages")]
 pub mod kadmin;
 #[cfg(feature = "messages")]
