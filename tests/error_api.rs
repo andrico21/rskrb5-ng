@@ -39,8 +39,10 @@ mod tests {
     };
     #[cfg(feature = "messages")]
     use rskrb5_ng::{ap_rep, ap_req, client::principal::Principal, kadmin, kdc_rep, kdc_req};
+    #[cfg(all(feature = "spnego", feature = "tokio"))]
+    use rskrb5_ng::kadm5;
     #[cfg(feature = "spnego")]
-    use rskrb5_ng::{gss, spnego};
+    use rskrb5_ng::{gss, rpcsec_gss, spnego};
     #[cfg(feature = "messages")]
     use rskrb5_ng::{krb_cred, krb_error, krb_priv, krb_safe, messages::PaForUser, ticket};
 
@@ -170,6 +172,18 @@ mod tests {
         gss_when_exported_name_truncated,
         error::Gss,
         gss::Name::import(&[], gss::NameType::Export)
+    );
+    #[cfg(all(feature = "spnego", feature = "tokio"))]
+    propagates_domain!(
+        kadm5_when_result_truncated,
+        error::Kadm5,
+        kadm5::Response::decode(kadm5::Procedure::Init, kadm5::ApiVersion::V4, &[])
+    );
+    #[cfg(feature = "spnego")]
+    propagates_domain!(
+        rpc_when_reply_truncated,
+        error::Rpc,
+        rpcsec_gss::Reply::decode(&[])
     );
     #[cfg(feature = "http")]
     propagates_domain!(

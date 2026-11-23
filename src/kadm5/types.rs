@@ -190,151 +190,253 @@ impl Procedure {
     }
 }
 
-/// Generates a bit-mask newtype with MIT's named bits.
-macro_rules! mask {
-    ($(#[$meta:meta])* $name:ident { $($(#[$bit_meta:meta])* $bit:ident = $value:expr,)* }) => {
-        $(#[$meta])*
-        #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-        #[non_exhaustive]
-        pub struct $name(u32);
+/// The fields of a principal record a call reads or sets (`admin.h:88-116`).
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+#[non_exhaustive]
+pub struct PrincipalMask(u32);
 
-        impl $name {
-            $($(#[$bit_meta])* pub const $bit: Self = Self($value);)*
+impl PrincipalMask {
+    /// `KADM5_PRINCIPAL`.
+    pub const PRINCIPAL: Self = Self(0x01);
 
-            /// The bits.
-            #[inline]
-            #[must_use]
-            pub const fn bits(self) -> u32 {
-                self.0
-            }
+    /// `KADM5_PRINC_EXPIRE_TIME`.
+    pub const PRINC_EXPIRE_TIME: Self = Self(0x02);
 
-            /// A mask of the given bits.
-            #[inline]
-            #[must_use]
-            pub const fn from_bits(bits: u32) -> Self {
-                Self(bits)
-            }
+    /// `KADM5_PW_EXPIRATION`.
+    pub const PW_EXPIRATION: Self = Self(0x04);
 
-            /// Whether every bit of `other` is set.
-            #[inline]
-            #[must_use]
-            pub const fn contains(self, other: Self) -> bool {
-                self.0 & other.0 == other.0
-            }
+    /// `KADM5_LAST_PWD_CHANGE`.
+    pub const LAST_PWD_CHANGE: Self = Self(0x08);
 
-            /// This mask without the bits of `other`.
-            #[inline]
-            #[must_use]
-            pub const fn without(self, other: Self) -> Self {
-                Self(self.0 & !other.0)
-            }
-        }
+    /// `KADM5_ATTRIBUTES`.
+    pub const ATTRIBUTES: Self = Self(0x10);
 
-        impl BitOr for $name {
-            type Output = Self;
+    /// `KADM5_MAX_LIFE`.
+    pub const MAX_LIFE: Self = Self(0x20);
 
-            #[inline]
-            fn bitor(self, other: Self) -> Self {
-                Self(self.0 | other.0)
-            }
-        }
-    };
-}
+    /// `KADM5_MOD_TIME`.
+    pub const MOD_TIME: Self = Self(0x40);
 
-mask! {
-    /// The fields of a principal record a call reads or sets (`admin.h:88-116`).
-    PrincipalMask {
-        /// `KADM5_PRINCIPAL`.
-        PRINCIPAL = 0x01,
-        /// `KADM5_PRINC_EXPIRE_TIME`.
-        PRINC_EXPIRE_TIME = 0x02,
-        /// `KADM5_PW_EXPIRATION`.
-        PW_EXPIRATION = 0x04,
-        /// `KADM5_LAST_PWD_CHANGE`.
-        LAST_PWD_CHANGE = 0x08,
-        /// `KADM5_ATTRIBUTES`.
-        ATTRIBUTES = 0x10,
-        /// `KADM5_MAX_LIFE`.
-        MAX_LIFE = 0x20,
-        /// `KADM5_MOD_TIME`.
-        MOD_TIME = 0x40,
-        /// `KADM5_MOD_NAME`.
-        MOD_NAME = 0x80,
-        /// `KADM5_KVNO`.
-        KVNO = 0x100,
-        /// `KADM5_MKVNO`.
-        MKVNO = 0x200,
-        /// `KADM5_AUX_ATTRIBUTES`.
-        AUX_ATTRIBUTES = 0x400,
-        /// `KADM5_POLICY`.
-        POLICY = 0x800,
-        /// `KADM5_POLICY_CLR`.
-        POLICY_CLR = 0x1000,
-        /// `KADM5_MAX_RLIFE`.
-        MAX_RLIFE = 0x2000,
-        /// `KADM5_LAST_SUCCESS`.
-        LAST_SUCCESS = 0x4000,
-        /// `KADM5_LAST_FAILED`.
-        LAST_FAILED = 0x8000,
-        /// `KADM5_FAIL_AUTH_COUNT`.
-        FAIL_AUTH_COUNT = 0x1_0000,
-        /// `KADM5_KEY_DATA`.
-        KEY_DATA = 0x2_0000,
-        /// `KADM5_TL_DATA`.
-        TL_DATA = 0x4_0000,
-        /// `KADM5_KEY_HIST`.
-        KEY_HIST = 0x40_0000,
-        /// `KADM5_PRINCIPAL_NORMAL_MASK`: every field `get_principal` returns
-        /// by default.
-        NORMAL = 0x41_ffff,
+    /// `KADM5_MOD_NAME`.
+    pub const MOD_NAME: Self = Self(0x80);
+
+    /// `KADM5_KVNO`.
+    pub const KVNO: Self = Self(0x100);
+
+    /// `KADM5_MKVNO`.
+    pub const MKVNO: Self = Self(0x200);
+
+    /// `KADM5_AUX_ATTRIBUTES`.
+    pub const AUX_ATTRIBUTES: Self = Self(0x400);
+
+    /// `KADM5_POLICY`.
+    pub const POLICY: Self = Self(0x800);
+
+    /// `KADM5_POLICY_CLR`.
+    pub const POLICY_CLR: Self = Self(0x1000);
+
+    /// `KADM5_MAX_RLIFE`.
+    pub const MAX_RLIFE: Self = Self(0x2000);
+
+    /// `KADM5_LAST_SUCCESS`.
+    pub const LAST_SUCCESS: Self = Self(0x4000);
+
+    /// `KADM5_LAST_FAILED`.
+    pub const LAST_FAILED: Self = Self(0x8000);
+
+    /// `KADM5_FAIL_AUTH_COUNT`.
+    pub const FAIL_AUTH_COUNT: Self = Self(0x1_0000);
+
+    /// `KADM5_KEY_DATA`.
+    pub const KEY_DATA: Self = Self(0x2_0000);
+
+    /// `KADM5_TL_DATA`.
+    pub const TL_DATA: Self = Self(0x4_0000);
+
+    /// `KADM5_KEY_HIST`.
+    pub const KEY_HIST: Self = Self(0x40_0000);
+
+    /// `KADM5_PRINCIPAL_NORMAL_MASK`: every field `get_principal` returns
+    /// by default.
+    pub const NORMAL: Self = Self(0x41_ffff);
+
+    /// The bits.
+    #[inline]
+    #[must_use]
+    pub const fn bits(self) -> u32 {
+        self.0
+    }
+
+    /// A mask of the given bits.
+    #[inline]
+    #[must_use]
+    pub const fn from_bits(bits: u32) -> Self {
+        Self(bits)
+    }
+
+    /// Whether every bit of `other` is set.
+    #[inline]
+    #[must_use]
+    pub const fn contains(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
+    }
+
+    /// This mask without the bits of `other`.
+    #[inline]
+    #[must_use]
+    pub const fn without(self, other: Self) -> Self {
+        Self(self.0 & !other.0)
     }
 }
 
-mask! {
-    /// The fields of a policy record a call sets (`admin.h:99,120-133`).
-    PolicyMask {
-        /// `KADM5_POLICY`: the name.
-        POLICY = 0x800,
-        /// `KADM5_PW_MAX_LIFE`.
-        PW_MAX_LIFE = 0x4000,
-        /// `KADM5_PW_MIN_LIFE`.
-        PW_MIN_LIFE = 0x8000,
-        /// `KADM5_PW_MIN_LENGTH`.
-        PW_MIN_LENGTH = 0x1_0000,
-        /// `KADM5_PW_MIN_CLASSES`.
-        PW_MIN_CLASSES = 0x2_0000,
-        /// `KADM5_PW_HISTORY_NUM`.
-        PW_HISTORY_NUM = 0x4_0000,
-        /// `KADM5_PW_MAX_FAILURE`.
-        PW_MAX_FAILURE = 0x10_0000,
-        /// `KADM5_PW_FAILURE_COUNT_INTERVAL`.
-        PW_FAILURE_COUNT_INTERVAL = 0x20_0000,
-        /// `KADM5_PW_LOCKOUT_DURATION`.
-        PW_LOCKOUT_DURATION = 0x40_0000,
-        /// `KADM5_POLICY_ATTRIBUTES`.
-        ATTRIBUTES = 0x80_0000,
-        /// `KADM5_POLICY_MAX_LIFE`.
-        MAX_LIFE = 0x100_0000,
-        /// `KADM5_POLICY_MAX_RLIFE`.
-        MAX_RLIFE = 0x200_0000,
-        /// `KADM5_POLICY_ALLOWED_KEYSALTS`.
-        ALLOWED_KEYSALTS = 0x400_0000,
-        /// `KADM5_POLICY_TL_DATA`.
-        TL_DATA = 0x800_0000,
+impl BitOr for PrincipalMask {
+    type Output = Self;
+
+    #[inline]
+    fn bitor(self, other: Self) -> Self {
+        Self(self.0 | other.0)
     }
 }
 
-mask! {
-    /// The caller's privileges (`KADM5_PRIV_*`, `admin.h:171-174`).
-    Privileges {
-        /// `KADM5_PRIV_GET`.
-        GET = 0x01,
-        /// `KADM5_PRIV_ADD`.
-        ADD = 0x02,
-        /// `KADM5_PRIV_MODIFY`.
-        MODIFY = 0x04,
-        /// `KADM5_PRIV_DELETE`.
-        DELETE = 0x08,
+/// The fields of a policy record a call sets (`admin.h:99,120-133`).
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+#[non_exhaustive]
+pub struct PolicyMask(u32);
+
+impl PolicyMask {
+    /// `KADM5_POLICY`: the name.
+    pub const POLICY: Self = Self(0x800);
+
+    /// `KADM5_PW_MAX_LIFE`.
+    pub const PW_MAX_LIFE: Self = Self(0x4000);
+
+    /// `KADM5_PW_MIN_LIFE`.
+    pub const PW_MIN_LIFE: Self = Self(0x8000);
+
+    /// `KADM5_PW_MIN_LENGTH`.
+    pub const PW_MIN_LENGTH: Self = Self(0x1_0000);
+
+    /// `KADM5_PW_MIN_CLASSES`.
+    pub const PW_MIN_CLASSES: Self = Self(0x2_0000);
+
+    /// `KADM5_PW_HISTORY_NUM`.
+    pub const PW_HISTORY_NUM: Self = Self(0x4_0000);
+
+    /// `KADM5_PW_MAX_FAILURE`.
+    pub const PW_MAX_FAILURE: Self = Self(0x10_0000);
+
+    /// `KADM5_PW_FAILURE_COUNT_INTERVAL`.
+    pub const PW_FAILURE_COUNT_INTERVAL: Self = Self(0x20_0000);
+
+    /// `KADM5_PW_LOCKOUT_DURATION`.
+    pub const PW_LOCKOUT_DURATION: Self = Self(0x40_0000);
+
+    /// `KADM5_POLICY_ATTRIBUTES`.
+    pub const ATTRIBUTES: Self = Self(0x80_0000);
+
+    /// `KADM5_POLICY_MAX_LIFE`.
+    pub const MAX_LIFE: Self = Self(0x100_0000);
+
+    /// `KADM5_POLICY_MAX_RLIFE`.
+    pub const MAX_RLIFE: Self = Self(0x200_0000);
+
+    /// `KADM5_POLICY_ALLOWED_KEYSALTS`.
+    pub const ALLOWED_KEYSALTS: Self = Self(0x400_0000);
+
+    /// `KADM5_POLICY_TL_DATA`.
+    pub const TL_DATA: Self = Self(0x800_0000);
+
+    /// The bits.
+    #[inline]
+    #[must_use]
+    pub const fn bits(self) -> u32 {
+        self.0
+    }
+
+    /// A mask of the given bits.
+    #[inline]
+    #[must_use]
+    pub const fn from_bits(bits: u32) -> Self {
+        Self(bits)
+    }
+
+    /// Whether every bit of `other` is set.
+    #[inline]
+    #[must_use]
+    pub const fn contains(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
+    }
+
+    /// This mask without the bits of `other`.
+    #[inline]
+    #[must_use]
+    pub const fn without(self, other: Self) -> Self {
+        Self(self.0 & !other.0)
+    }
+}
+
+impl BitOr for PolicyMask {
+    type Output = Self;
+
+    #[inline]
+    fn bitor(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+}
+
+/// The caller's privileges (`KADM5_PRIV_*`, `admin.h:171-174`).
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+#[non_exhaustive]
+pub struct Privileges(u32);
+
+impl Privileges {
+    /// `KADM5_PRIV_GET`.
+    pub const GET: Self = Self(0x01);
+
+    /// `KADM5_PRIV_ADD`.
+    pub const ADD: Self = Self(0x02);
+
+    /// `KADM5_PRIV_MODIFY`.
+    pub const MODIFY: Self = Self(0x04);
+
+    /// `KADM5_PRIV_DELETE`.
+    pub const DELETE: Self = Self(0x08);
+
+    /// The bits.
+    #[inline]
+    #[must_use]
+    pub const fn bits(self) -> u32 {
+        self.0
+    }
+
+    /// A mask of the given bits.
+    #[inline]
+    #[must_use]
+    pub const fn from_bits(bits: u32) -> Self {
+        Self(bits)
+    }
+
+    /// Whether every bit of `other` is set.
+    #[inline]
+    #[must_use]
+    pub const fn contains(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
+    }
+
+    /// This mask without the bits of `other`.
+    #[inline]
+    #[must_use]
+    pub const fn without(self, other: Self) -> Self {
+        Self(self.0 & !other.0)
+    }
+}
+
+impl BitOr for Privileges {
+    type Output = Self;
+
+    #[inline]
+    fn bitor(self, other: Self) -> Self {
+        Self(self.0 | other.0)
     }
 }
 

@@ -345,31 +345,6 @@ pub struct PolicyRecord {
     mask: PolicyMask,
 }
 
-/// Generates the setters and getters of the integer policy fields.
-macro_rules! policy_fields {
-    ($($(#[$doc:meta])* $field:ident: $type:ty = $bit:ident, $setter:ident;)*) => {
-        $(
-            $(#[$doc])*
-            #[doc = ""]
-            #[doc = "Setting it marks the field in the mask."]
-            #[inline]
-            #[must_use]
-            pub const fn $setter(mut self, value: $type) -> Self {
-                self.$field = value;
-                self.mask = PolicyMask(self.mask.0 | PolicyMask::$bit.0);
-                self
-            }
-
-            $(#[$doc])*
-            #[inline]
-            #[must_use]
-            pub const fn $field(&self) -> $type {
-                self.$field
-            }
-        )*
-    };
-}
-
 impl PolicyRecord {
     /// A policy named `name` with no field set.
     #[inline]
@@ -395,29 +370,180 @@ impl PolicyRecord {
         }
     }
 
-    policy_fields! {
-        /// The minimum password life in seconds.
-        pw_min_life: i32 = PW_MIN_LIFE, with_pw_min_life;
-        /// The maximum password life in seconds.
-        pw_max_life: i32 = PW_MAX_LIFE, with_pw_max_life;
-        /// The minimum password length.
-        pw_min_length: i32 = PW_MIN_LENGTH, with_pw_min_length;
-        /// The minimum number of character classes.
-        pw_min_classes: i32 = PW_MIN_CLASSES, with_pw_min_classes;
-        /// The number of old passwords kept.
-        pw_history_num: i32 = PW_HISTORY_NUM, with_pw_history_num;
-        /// The failures before lockout (v3).
-        pw_max_fail: u32 = PW_MAX_FAILURE, with_pw_max_fail;
-        /// The failure count interval in seconds (v3).
-        pw_failcnt_interval: i32 = PW_FAILURE_COUNT_INTERVAL, with_pw_failcnt_interval;
-        /// The lockout duration in seconds (v3).
-        pw_lockout_duration: i32 = PW_LOCKOUT_DURATION, with_pw_lockout_duration;
-        /// The policy attributes (v4).
-        attributes: i32 = ATTRIBUTES, with_attributes;
-        /// The maximum ticket life in seconds (v4).
-        max_life: i32 = MAX_LIFE, with_max_life;
-        /// The maximum renewable life in seconds (v4).
-        max_renewable_life: i32 = MAX_RLIFE, with_max_renewable_life;
+    /// Set the minimum password life in seconds.
+    #[inline]
+    #[must_use]
+    pub const fn with_pw_min_life(mut self, value: i32) -> Self {
+        self.pw_min_life = value;
+        self.mask = PolicyMask(self.mask.0 | PolicyMask::PW_MIN_LIFE.0);
+        self
+    }
+
+    /// The minimum password life in seconds.
+    #[inline]
+    #[must_use]
+    pub const fn pw_min_life(&self) -> i32 {
+        self.pw_min_life
+    }
+
+    /// Set the maximum password life in seconds.
+    #[inline]
+    #[must_use]
+    pub const fn with_pw_max_life(mut self, value: i32) -> Self {
+        self.pw_max_life = value;
+        self.mask = PolicyMask(self.mask.0 | PolicyMask::PW_MAX_LIFE.0);
+        self
+    }
+
+    /// The maximum password life in seconds.
+    #[inline]
+    #[must_use]
+    pub const fn pw_max_life(&self) -> i32 {
+        self.pw_max_life
+    }
+
+    /// Set the minimum password length.
+    #[inline]
+    #[must_use]
+    pub const fn with_pw_min_length(mut self, value: i32) -> Self {
+        self.pw_min_length = value;
+        self.mask = PolicyMask(self.mask.0 | PolicyMask::PW_MIN_LENGTH.0);
+        self
+    }
+
+    /// The minimum password length.
+    #[inline]
+    #[must_use]
+    pub const fn pw_min_length(&self) -> i32 {
+        self.pw_min_length
+    }
+
+    /// Set the minimum number of character classes.
+    #[inline]
+    #[must_use]
+    pub const fn with_pw_min_classes(mut self, value: i32) -> Self {
+        self.pw_min_classes = value;
+        self.mask = PolicyMask(self.mask.0 | PolicyMask::PW_MIN_CLASSES.0);
+        self
+    }
+
+    /// The minimum number of character classes.
+    #[inline]
+    #[must_use]
+    pub const fn pw_min_classes(&self) -> i32 {
+        self.pw_min_classes
+    }
+
+    /// Set the number of old passwords kept.
+    #[inline]
+    #[must_use]
+    pub const fn with_pw_history_num(mut self, value: i32) -> Self {
+        self.pw_history_num = value;
+        self.mask = PolicyMask(self.mask.0 | PolicyMask::PW_HISTORY_NUM.0);
+        self
+    }
+
+    /// The number of old passwords kept.
+    #[inline]
+    #[must_use]
+    pub const fn pw_history_num(&self) -> i32 {
+        self.pw_history_num
+    }
+
+    /// Set the failures before lockout (v3).
+    #[inline]
+    #[must_use]
+    pub const fn with_pw_max_fail(mut self, value: u32) -> Self {
+        self.pw_max_fail = value;
+        self.mask = PolicyMask(self.mask.0 | PolicyMask::PW_MAX_FAILURE.0);
+        self
+    }
+
+    /// The failures before lockout (v3).
+    #[inline]
+    #[must_use]
+    pub const fn pw_max_fail(&self) -> u32 {
+        self.pw_max_fail
+    }
+
+    /// Set the failure count interval in seconds (v3).
+    #[inline]
+    #[must_use]
+    pub const fn with_pw_failcnt_interval(mut self, value: i32) -> Self {
+        self.pw_failcnt_interval = value;
+        self.mask = PolicyMask(self.mask.0 | PolicyMask::PW_FAILURE_COUNT_INTERVAL.0);
+        self
+    }
+
+    /// The failure count interval in seconds (v3).
+    #[inline]
+    #[must_use]
+    pub const fn pw_failcnt_interval(&self) -> i32 {
+        self.pw_failcnt_interval
+    }
+
+    /// Set the lockout duration in seconds (v3).
+    #[inline]
+    #[must_use]
+    pub const fn with_pw_lockout_duration(mut self, value: i32) -> Self {
+        self.pw_lockout_duration = value;
+        self.mask = PolicyMask(self.mask.0 | PolicyMask::PW_LOCKOUT_DURATION.0);
+        self
+    }
+
+    /// The lockout duration in seconds (v3).
+    #[inline]
+    #[must_use]
+    pub const fn pw_lockout_duration(&self) -> i32 {
+        self.pw_lockout_duration
+    }
+
+    /// Set the policy attributes (v4).
+    #[inline]
+    #[must_use]
+    pub const fn with_attributes(mut self, value: i32) -> Self {
+        self.attributes = value;
+        self.mask = PolicyMask(self.mask.0 | PolicyMask::ATTRIBUTES.0);
+        self
+    }
+
+    /// The policy attributes (v4).
+    #[inline]
+    #[must_use]
+    pub const fn attributes(&self) -> i32 {
+        self.attributes
+    }
+
+    /// Set the maximum ticket life in seconds (v4).
+    #[inline]
+    #[must_use]
+    pub const fn with_max_life(mut self, value: i32) -> Self {
+        self.max_life = value;
+        self.mask = PolicyMask(self.mask.0 | PolicyMask::MAX_LIFE.0);
+        self
+    }
+
+    /// The maximum ticket life in seconds (v4).
+    #[inline]
+    #[must_use]
+    pub const fn max_life(&self) -> i32 {
+        self.max_life
+    }
+
+    /// Set the maximum renewable life in seconds (v4).
+    #[inline]
+    #[must_use]
+    pub const fn with_max_renewable_life(mut self, value: i32) -> Self {
+        self.max_renewable_life = value;
+        self.mask = PolicyMask(self.mask.0 | PolicyMask::MAX_RLIFE.0);
+        self
+    }
+
+    /// The maximum renewable life in seconds (v4).
+    #[inline]
+    #[must_use]
+    pub const fn max_renewable_life(&self) -> i32 {
+        self.max_renewable_life
     }
 
     /// Set the allowed key/salt tuples, MIT's string form (v4).

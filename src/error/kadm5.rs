@@ -1,10 +1,13 @@
+#[cfg(feature = "spnego")]
+use core::mem::discriminant;
+
 /// ONC RPC over TCP and `RPCSEC_GSS` error ([`crate::rpcsec_gss`]).
 ///
 /// Every failure after a call was written leaves its connection closed; the
 /// administration client above it reports the outcome of a mutation as
 /// unknown then.
 #[cfg(feature = "spnego")]
-#[derive(Debug, thiserror::Error)]
+#[derive(thiserror::Error)]
 #[non_exhaustive]
 pub enum Rpc {
     /// Reading or writing the connection failed.
@@ -102,7 +105,7 @@ pub enum Rpc {
 
 /// Remote kadm5 administration error ([`crate::kadm5`]).
 #[cfg(all(feature = "spnego", feature = "tokio"))]
-#[derive(Debug, thiserror::Error)]
+#[derive(thiserror::Error)]
 #[non_exhaustive]
 pub enum Kadm5 {
     /// The RPC layer failed.
@@ -169,4 +172,28 @@ pub enum Kadm5 {
     /// An argument MIT's client refuses with `EINVAL`, or one XDR cannot carry.
     #[error("invalid kadm5 argument: {0}")]
     InvalidArgument(&'static str),
+}
+
+/// Like the other error `Debug` forms, only the variant: a GSS or client cause
+/// may carry credential-bearing detail.
+#[cfg(feature = "spnego")]
+impl fmt::Debug for Rpc {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Rpc")
+            .field(&discriminant(self))
+            .finish_non_exhaustive()
+    }
+}
+
+/// Like the other error `Debug` forms, only the variant: a GSS or client cause
+/// may carry credential-bearing detail.
+#[cfg(all(feature = "spnego", feature = "tokio"))]
+impl fmt::Debug for Kadm5 {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Kadm5")
+            .field(&discriminant(self))
+            .finish_non_exhaustive()
+    }
 }

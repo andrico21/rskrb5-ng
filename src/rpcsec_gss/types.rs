@@ -255,13 +255,22 @@ impl ProtectedCall {
 }
 
 /// The result of one context-creation step.
-#[derive(Debug)]
 #[non_exhaustive]
 pub enum InitStep {
     /// Send this call and pass its reply to [`RpcClient::continue_init`].
     Call(ProtectedCall),
     /// The context is established and its window verified.
     Established,
+}
+
+impl fmt::Debug for InitStep {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Call(call) => f.debug_tuple("Call").field(call).finish(),
+            Self::Established => f.write_str("Established"),
+        }
+    }
 }
 
 /// Where an [`RpcClient`] is.
