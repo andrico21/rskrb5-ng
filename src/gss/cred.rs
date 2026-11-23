@@ -123,7 +123,10 @@ pub(super) fn duplicate(credential: &Credential) -> Credential {
         replay: credential.replay.clone(),
         verify_keytab: credential.verify_keytab.clone(),
         verify_server: credential.verify_server.clone(),
-        impersonator: credential.impersonator.as_deref().map(|inner| Box::new(duplicate(inner))),
+        impersonator: credential
+            .impersonator
+            .as_deref()
+            .map(|inner| Box::new(duplicate(inner))),
     }
 }
 
@@ -312,7 +315,11 @@ pub(super) fn acquire_from(
         let server = if requested.is_empty() {
             None
         } else {
-            Some(Name::import(requested.as_bytes(), super::NameType::Principal)?.principal().clone())
+            Some(
+                Name::import(requested.as_bytes(), super::NameType::Principal)?
+                    .principal()
+                    .clone(),
+            )
         };
         credential.verify_keytab = Some(Keytab::load_name(keytab_name)?);
         credential.verify_server = server;
@@ -490,6 +497,7 @@ pub(super) async fn acquire_service_ticket(
     config: &super::Config,
 ) -> Result<(), Error> {
     use client::{Tokio, transport::KdcProtocol};
+
     use crate::routing::init_creds::VerifyOptions;
 
     if credential.usage == CredentialUsage::Accept {
@@ -533,7 +541,11 @@ pub(super) async fn acquire_service_ticket(
             if let Some(server) = &credential.verify_server {
                 options = options.with_server(server.clone());
             }
-            drop(password_client.verify_init_creds(host_keys, options).await?);
+            drop(
+                password_client
+                    .verify_init_creds(host_keys, options)
+                    .await?,
+            );
         }
         password_client
     } else {

@@ -132,7 +132,8 @@ fn pair(etype: i32, flags: ContextFlags) -> Option<(EstablishedContext, Establis
     };
     let mut accepted = accept.accept_sec_context(&first).ok()?;
     let reply = accepted.output_token()?.to_vec();
-    if let InitStep::Complete(Some(third)) = init.init_sec_context(&credential, Some(&reply)).ok()?
+    if let InitStep::Complete(Some(third)) =
+        init.init_sec_context(&credential, Some(&reply)).ok()?
     {
         accepted.complete_dce(&third).ok()?;
     }
@@ -159,7 +160,11 @@ fn buffers(mut input: &[u8]) -> Vec<IovBuffer> {
         let take = usize::from(*length).min(rest.len());
         let (value, tail) = rest.split_at(take);
         let chosen = KINDS
-            .get(usize::from(*kind).checked_rem(KINDS.len()).unwrap_or_default())
+            .get(
+                usize::from(*kind)
+                    .checked_rem(KINDS.len())
+                    .unwrap_or_default(),
+            )
             .copied()
             .unwrap_or(IovKind::Data);
         out.push(IovBuffer::new(chosen, value.to_vec()));
@@ -211,7 +216,10 @@ fuzz_target!(|data: &[u8]| {
         IovBuffer::empty(IovKind::Padding),
         IovBuffer::empty(IovKind::Trailer),
     ];
-    if initiator.wrap_iov(&mut detached, selector & 0x10 != 0).is_ok() {
+    if initiator
+        .wrap_iov(&mut detached, selector & 0x10 != 0)
+        .is_ok()
+    {
         let mut opened: Vec<IovBuffer> = detached
             .iter()
             .map(|buffer| IovBuffer::new(buffer.kind(), mutated(buffer.value(), input)))
@@ -222,7 +230,10 @@ fuzz_target!(|data: &[u8]| {
         IovBuffer::empty(IovKind::Header),
         IovBuffer::new(IovKind::Data, b"rotated".to_vec()),
     ];
-    if initiator.wrap_iov(&mut rotated, selector & 0x20 != 0).is_ok() {
+    if initiator
+        .wrap_iov(&mut rotated, selector & 0x20 != 0)
+        .is_ok()
+    {
         let mut opened: Vec<IovBuffer> = rotated
             .iter()
             .map(|buffer| IovBuffer::new(buffer.kind(), mutated(buffer.value(), input)))

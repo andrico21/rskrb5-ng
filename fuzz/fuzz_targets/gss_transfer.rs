@@ -14,9 +14,7 @@
 use libfuzzer_sys::fuzz_target;
 use rskrb5_ng::{
     crypto::AesSha2Etype,
-    gss::{
-        Credential, EstablishedContext, MemoryTransferLedger, TransferBlob, TransferKey,
-    },
+    gss::{Credential, EstablishedContext, MemoryTransferLedger, TransferBlob, TransferKey},
 };
 
 /// The fixed transfer key.

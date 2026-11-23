@@ -39,7 +39,11 @@ impl Window {
     /// The window's state for a context transfer: the replay and sequence
     /// switches, the base, the next relative number and the received bits.
     pub(super) const fn parts(&self) -> (bool, bool, [u64; 3]) {
-        (self.replay, self.sequence, [self.base, self.next, self.received])
+        (
+            self.replay,
+            self.sequence,
+            [self.base, self.next, self.received],
+        )
     }
 
     /// A window restored from [`Self::parts`].

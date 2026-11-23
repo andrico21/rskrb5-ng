@@ -165,7 +165,10 @@ pub(super) mod tests {
         )))));
         redacted(&error, &[&secret]);
         let iov_bytes = pattern(145);
-        redacted(&IovBuffer::new(IovKind::Data, iov_bytes.clone()), &[&iov_bytes]);
+        redacted(
+            &IovBuffer::new(IovKind::Data, iov_bytes.clone()),
+            &[&iov_bytes],
+        );
         let transfer_bytes = [pattern(161), pattern(177)].concat();
         let transfer_key = TransferKey::new(<[u8; 32]>::try_from(transfer_bytes.as_slice())?);
         redacted(&transfer_key, &[&transfer_bytes]);

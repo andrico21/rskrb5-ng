@@ -20,7 +20,6 @@ use rskrb5_ng::{
         Initiator, InitiatorOptions, MemoryTransferLedger, Name, NameType, TransferKey,
     },
 };
-
 #[cfg(feature = "tokio")]
 use tokio::runtime::Builder;
 
@@ -55,7 +54,8 @@ fn a_both_credential_composes_a_proxy_credential() -> Result<(), TestError> {
     let store = CredStore::new()
         .with("client_keytab", &file)?
         .with("keytab", &file)?;
-    let both = Credential::acquire_cred_from(Some(&service_name()?), CredentialUsage::Both, &store)?;
+    let both =
+        Credential::acquire_cred_from(Some(&service_name()?), CredentialUsage::Both, &store)?;
     fs::remove_dir_all(&directory)?;
     let client = credential(AES256_SHA1)?;
     let mut init = Initiator::new(target()?, InitiatorOptions::new());
@@ -76,10 +76,7 @@ fn a_both_credential_composes_a_proxy_credential() -> Result<(), TestError> {
         [USER]
     );
     let impersonator = proxy.impersonator().context("an impersonator")?;
-    assert_eq!(
-        impersonator.principal().components,
-        ["HTTP", HOST]
-    );
+    assert_eq!(impersonator.principal().components, ["HTTP", HOST]);
     // An acceptor-only credential composes nothing.
     let only = Credential::from_keytab(keytab());
     let mut plain = Acceptor::new(&only, AcceptorOptions::new())?;
@@ -102,7 +99,8 @@ fn a_proxy_credential_transfers_with_its_impersonator() -> Result<(), TestError>
     let store = CredStore::new()
         .with("client_keytab", &file)?
         .with("keytab", &file)?;
-    let both = Credential::acquire_cred_from(Some(&service_name()?), CredentialUsage::Both, &store)?;
+    let both =
+        Credential::acquire_cred_from(Some(&service_name()?), CredentialUsage::Both, &store)?;
     fs::remove_dir_all(&directory)?;
     let client = credential(AES256_SHA1)?;
     let mut init = Initiator::new(target()?, InitiatorOptions::new());
@@ -159,9 +157,12 @@ fn the_verify_key_needs_a_password() -> Result<(), TestError> {
         .with("password", "secret")?
         .with("keytab", &file)?
         .with("verify", "")?;
-    let acquired = Credential::acquire_cred_from(Some(&user), CredentialUsage::Initiate, &with_password)?;
+    let acquired =
+        Credential::acquire_cred_from(Some(&user), CredentialUsage::Initiate, &with_password)?;
     assert_eq!(acquired.inquire().usage(), CredentialUsage::Initiate);
-    let without = CredStore::new().with("keytab", &file)?.with("verify", "host/x@EXAMPLE.COM")?;
+    let without = CredStore::new()
+        .with("keytab", &file)?
+        .with("verify", "host/x@EXAMPLE.COM")?;
     assert!(matches!(
         Credential::acquire_cred_from(Some(&user), CredentialUsage::Initiate, &without),
         Err(Gss::NoCredential(_))

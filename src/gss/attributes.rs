@@ -25,13 +25,10 @@ const NAMED: [(u32, &str); 7] = [
 
 /// The attribute name of buffer `kind`.
 fn name_of(kind: u32) -> String {
-    NAMED
-        .iter()
-        .find(|(known, _)| *known == kind)
-        .map_or_else(
-            || format!("{PREFIX}{kind}"),
-            |(_, suffix)| format!("{PREFIX}{suffix}"),
-        )
+    NAMED.iter().find(|(known, _)| *known == kind).map_or_else(
+        || format!("{PREFIX}{kind}"),
+        |(_, suffix)| format!("{PREFIX}{suffix}"),
+    )
 }
 
 /// What an attribute names.

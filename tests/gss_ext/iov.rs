@@ -80,7 +80,10 @@ fn iov_tokens_with_a_trailer_round_trip() -> Result<(), TestError> {
             assert_eq!(value(&buffers, 2), b"the payload of the message");
             // And the acceptor's tokens unwrap at the initiator.
             let mut back = detached(b"reply");
-            assert_eq!(ends.acceptor.wrap_iov(&mut back, confidential)?, confidential);
+            assert_eq!(
+                ends.acceptor.wrap_iov(&mut back, confidential)?,
+                confidential
+            );
             assert_eq!(ends.initiator.unwrap_iov(&mut back)?, confidential);
             assert_eq!(value(&back, 2), b"reply");
         }
@@ -99,7 +102,10 @@ fn rotated_iov_tokens_are_ordinary_wrap_tokens() -> Result<(), TestError> {
                 IovBuffer::empty(IovKind::Header),
                 buffer(IovKind::Data, b"rotated"),
             ];
-            assert_eq!(ends.initiator.wrap_iov(&mut buffers, confidential)?, confidential);
+            assert_eq!(
+                ends.initiator.wrap_iov(&mut buffers, confidential)?,
+                confidential
+            );
             let token = [value(&buffers, 0), value(&buffers, 1)].concat();
             let opened = ends.acceptor.unwrap(&token)?;
             assert_eq!(opened.message(), b"rotated");
@@ -124,9 +130,15 @@ fn iov_lengths_match_the_wrapped_buffers() -> Result<(), TestError> {
     for mut ends in contexts()? {
         for confidential in [true, false] {
             let mut sized = detached(b"sized data");
-            assert_eq!(ends.initiator.wrap_iov_length(&mut sized, confidential)?, confidential);
+            assert_eq!(
+                ends.initiator.wrap_iov_length(&mut sized, confidential)?,
+                confidential
+            );
             let mut wrapped = detached(b"sized data");
-            assert_eq!(ends.initiator.wrap_iov(&mut wrapped, confidential)?, confidential);
+            assert_eq!(
+                ends.initiator.wrap_iov(&mut wrapped, confidential)?,
+                confidential
+            );
             for (length, filled) in sized.iter().zip(&wrapped) {
                 assert_eq!(length.value().len(), filled.value().len());
             }
@@ -200,7 +212,10 @@ fn mutated_and_inconsistent_iov_tokens_are_refused() -> Result<(), TestError> {
     for mut ends in contexts()? {
         for confidential in [true, false] {
             let mut good = detached(b"protected data");
-            assert_eq!(ends.initiator.wrap_iov(&mut good, confidential)?, confidential);
+            assert_eq!(
+                ends.initiator.wrap_iov(&mut good, confidential)?,
+                confidential
+            );
             let mutate = |index: usize, offset: usize| -> Vec<IovBuffer> {
                 good.iter()
                     .enumerate()
@@ -218,7 +233,8 @@ fn mutated_and_inconsistent_iov_tokens_are_refused() -> Result<(), TestError> {
             // Mutated header fields, data, sign-only data and trailer.
             for (index, offset) in [(0, 2), (0, 4), (0, 9), (0, 15), (1, 0), (2, 0), (4, 0)] {
                 let mut bad = mutate(index, offset);
-                refused(ends.acceptor.unwrap_iov(&mut bad)).context(&format!("{index}/{offset}"))?;
+                refused(ends.acceptor.unwrap_iov(&mut bad))
+                    .context(&format!("{index}/{offset}"))?;
             }
             // A short trailer.
             let mut short = mutate(9, 0);
@@ -313,14 +329,21 @@ fn arbitrary_buffer_layouts_never_panic() -> Result<(), TestError> {
         for slot in 0..round.wrapping_rem(5) {
             seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
             let kind = kinds
-                .get(usize::try_from(seed >> 28_u32).unwrap_or(0).wrapping_rem(kinds.len()))
+                .get(
+                    usize::try_from(seed >> 28_u32)
+                        .unwrap_or(0)
+                        .wrapping_rem(kinds.len()),
+                )
                 .copied()
                 .unwrap_or(IovKind::Data);
             let length = usize::try_from(seed.wrapping_rem(96))
                 .unwrap_or(0)
                 .saturating_add(slot);
             let bytes: Vec<u8> = (0..length)
-                .map(|at| u8::try_from((usize::try_from(seed).unwrap_or(0) ^ at) & 0xff_usize).unwrap_or(0))
+                .map(|at| {
+                    u8::try_from((usize::try_from(seed).unwrap_or(0) ^ at) & 0xff_usize)
+                        .unwrap_or(0)
+                })
                 .collect();
             buffers.push(IovBuffer::new(kind, bytes));
         }

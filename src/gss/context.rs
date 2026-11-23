@@ -123,7 +123,10 @@ pub(super) fn usable(context: &EstablishedContext) -> Result<&EncryptionKey, Err
 ///
 /// Returns [`Error::DefectiveToken`] for the acceptor-subkey flag on a context
 /// without an acceptor subkey.
-pub(super) fn received_key(context: &EstablishedContext, flags: u8) -> Result<EncryptionKey, Error> {
+pub(super) fn received_key(
+    context: &EstablishedContext,
+    flags: u8,
+) -> Result<EncryptionKey, Error> {
     if flags & GSS_TOKEN_FLAG_ACCEPTOR_SUBKEY == 0 {
         return Ok(context
             .initiator_subkey

@@ -9,11 +9,11 @@
 //! `accept_sec_context.c:943-952`). The exchanges are todo 17's
 //! (`client::Tokio::s4u2self_identity`, `client::Tokio::s4u2proxy`).
 
-use super::{CCache, Credential, CredentialUsage, Error, Name, Principal, TgsRepSession, cred};
-#[cfg(feature = "tokio")]
-use super::Config;
 use zeroize::Zeroizing;
 
+#[cfg(feature = "tokio")]
+use super::Config;
+use super::{CCache, Credential, CredentialUsage, Error, Name, Principal, TgsRepSession, cred};
 #[cfg(feature = "tokio")]
 use crate::client::{Tokio, transport::KdcProtocol};
 use crate::{ap_req, service::ValidatedApReq, ticket};
@@ -65,10 +65,7 @@ pub(super) fn evidence(
 /// Returns [`Error::WrongCredentialUsage`] for an acceptor-only credential and
 /// [`Error::NoCredential`] without a name or a keytab.
 #[cfg(feature = "tokio")]
-fn impersonator_client(
-    impersonator: &Credential,
-    config: &Config,
-) -> Result<Tokio, Error> {
+fn impersonator_client(impersonator: &Credential, config: &Config) -> Result<Tokio, Error> {
     if impersonator.usage == CredentialUsage::Accept {
         return Err(Error::WrongCredentialUsage("initiate"));
     }

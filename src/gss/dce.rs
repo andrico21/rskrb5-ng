@@ -38,7 +38,10 @@ pub(super) fn is_raw_ap_req(token: &[u8]) -> bool {
 ///
 /// Returns [`Error::ContextExpired`] for a clock outside the Kerberos range,
 /// and the AP-REP and random-source errors.
-pub(super) fn initiator_reply(session_key: &EncryptionKey, acceptor_sequence: u32) -> Result<Vec<u8>, Error> {
+pub(super) fn initiator_reply(
+    session_key: &EncryptionKey,
+    acceptor_sequence: u32,
+) -> Result<Vec<u8>, Error> {
     let since = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_before| Error::ContextExpired)?;
@@ -79,7 +82,9 @@ pub(super) fn complete(accepted: &mut Accepted, token: &[u8]) -> Result<(), Erro
         .check_use(wire.enc_part.etype, Use::SessionKey)?;
     let part = ap_rep::decrypt_ap_rep_enc_part(&wire, &context.session_key)?;
     if part.subkey.is_some() {
-        return Err(Error::DefectiveToken("the initiator's DCE AP-REP carries a subkey"));
+        return Err(Error::DefectiveToken(
+            "the initiator's DCE AP-REP carries a subkey",
+        ));
     }
     if part.seq_number.map(u64::from) != Some(context.send_sequence) {
         return Err(Error::DefectiveToken(

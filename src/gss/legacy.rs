@@ -318,7 +318,9 @@ fn same(left: &[u8], right: &[u8]) -> bool {
         && left
             .iter()
             .zip(right)
-            .fold(0_u8, |difference, (ours, theirs)| difference | (ours ^ theirs))
+            .fold(0_u8, |difference, (ours, theirs)| {
+                difference | (ours ^ theirs)
+            })
             == 0
 }
 

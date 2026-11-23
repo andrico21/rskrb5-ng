@@ -237,7 +237,8 @@ pub(super) fn ticket_with_pac(
         let kdc = kdc_key();
         builder.sign_ticket(
             &mut part,
-            &pac::Signing::new(&service_key(), &kdc).with_client(pac::ClientBinding::new(USER, at.0)),
+            &pac::Signing::new(&service_key(), &kdc)
+                .with_client(pac::ClientBinding::new(USER, at.0)),
         )?;
     }
     let der = ticket::encode_build_ticket_with_confounder(
@@ -392,5 +393,8 @@ pub(super) fn establish(flags: ContextFlags) -> Result<Pair, TestError> {
 ///
 /// Returns a test error when the call succeeded.
 pub(super) fn refused<T>(result: Result<T, Gss>) -> Result<(), TestError> {
-    result.map_or_else(|_refusal| Ok(()), |_accepted| Err("the call was accepted".into()))
+    result.map_or_else(
+        |_refusal| Ok(()),
+        |_accepted| Err("the call was accepted".into()),
+    )
 }

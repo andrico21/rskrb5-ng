@@ -21,7 +21,7 @@ use sha2::{Sha256, Sha384};
 use zeroize::Zeroizing;
 
 use super::{
-    ContextFlags, EncryptionKey, Error, EstablishedContext, IovBuffer, IovKind, Unwrapped
+    ContextFlags, EncryptionKey, Error, EstablishedContext, IovBuffer, IovKind, Unwrapped,
 };
 use crate::{
     crypto::{AesSha2Etype, KerberosEtype},
@@ -179,11 +179,7 @@ type KeyPair = (Zeroizing<Vec<u8>>, Zeroizing<Vec<u8>>);
 ///
 /// Returns [`Error::NotNegotiated`] for an enctype without `SIGN_ONLY` support
 /// in sealed tokens and the derivation errors.
-fn split_keys(
-    etype: KerberosEtype,
-    key: &EncryptionKey,
-    usage: u32,
-) -> Result<KeyPair, Error> {
+fn split_keys(etype: KerberosEtype, key: &EncryptionKey, usage: u32) -> Result<KeyPair, Error> {
     let derive = |suffix: u8| -> Result<Zeroizing<Vec<u8>>, Error> {
         Ok(Zeroizing::new(match etype {
             KerberosEtype::Sha1(family) => family.derive_key(key.value(), &label(usage, suffix))?,
@@ -226,7 +222,13 @@ where
             .map(|()| Vec::new())
             .map_err(|_mismatch| Error::BadSignature),
         Some(_) => Err(Error::BadSignature),
-        None => Ok(mac.finalize().into_bytes().iter().copied().take(length).collect()),
+        None => Ok(mac
+            .finalize()
+            .into_bytes()
+            .iter()
+            .copied()
+            .take(length)
+            .collect()),
     }
 }
 
@@ -279,7 +281,9 @@ fn cts(etype: KerberosEtype, key: &[u8], input: &[u8], seal: bool) -> Result<Vec
         (KerberosEtype::Sha2(family), true) => family.encrypt_data(key, input)?.1,
         (KerberosEtype::Sha2(family), false) => family.decrypt_data(key, input)?,
         (
-            KerberosEtype::Camellia(_) | KerberosEtype::Des3CbcSha1Kd(_) | KerberosEtype::Rc4Hmac(_),
+            KerberosEtype::Camellia(_)
+            | KerberosEtype::Des3CbcSha1Kd(_)
+            | KerberosEtype::Rc4Hmac(_),
             _,
         ) => {
             return Err(Error::NotNegotiated(
@@ -473,9 +477,9 @@ fn count(value: usize) -> Result<u16, Error> {
 ///
 /// Returns [`Error::TokenTooLarge`].
 fn bounded(buffers: &[IovBuffer]) -> Result<(), Error> {
-    let actual = buffers
-        .iter()
-        .fold(0_usize, |total, buffer| total.saturating_add(buffer.value.len()));
+    let actual = buffers.iter().fold(0_usize, |total, buffer| {
+        total.saturating_add(buffer.value.len())
+    });
     if actual > super::context::MAX_TOKEN_LEN {
         return Err(Error::TokenTooLarge {
             maximum: super::context::MAX_TOKEN_LEN,
@@ -497,7 +501,10 @@ fn data_of(buffers: &[IovBuffer]) -> Vec<Zeroizing<Vec<u8>>> {
 /// Replace the DATA buffers, in array order, with `data`.
 fn scatter(buffers: &mut [IovBuffer], data: Vec<Zeroizing<Vec<u8>>>) {
     let mut next = data.into_iter();
-    for buffer in buffers.iter_mut().filter(|buffer| buffer.kind == IovKind::Data) {
+    for buffer in buffers
+        .iter_mut()
+        .filter(|buffer| buffer.kind == IovKind::Data)
+    {
         if let Some(value) = next.next() {
             buffer.value = value;
         }
@@ -582,8 +589,12 @@ pub(super) fn wrap(
         } else {
             let joined = plain.joined();
             let message = joined.get(frame.confounder..).unwrap_or_default();
-            let mut out =
-                etype.encrypt_message_with_confounder(key.value(), message, seal, &plain.confounder)?;
+            let mut out = etype.encrypt_message_with_confounder(
+                key.value(),
+                message,
+                seal,
+                &plain.confounder,
+            )?;
             let mac = out.split_off(out.len().saturating_sub(etype.hmac_len()));
             (out, mac)
         };
@@ -639,7 +650,10 @@ fn received(
         return Err(defective("a token from this end of the context"));
     }
     let filler = if token == TOK_MIC { 3..8 } else { 3..4 };
-    if header.get(filler).is_none_or(|bytes| bytes.iter().any(|byte| *byte != 0xff)) {
+    if header
+        .get(filler)
+        .is_none_or(|bytes| bytes.iter().any(|byte| *byte != 0xff))
+    {
         return Err(defective("a bad filler"));
     }
     let key = super::context::received_key(context, flags)?;
@@ -658,14 +672,22 @@ fn open(
     layout: &Layout,
 ) -> Result<bool, Error> {
     let _usable: &EncryptionKey = super::context::usable(context)?;
-    if layout.padding.is_some_and(|index| !get(buffers, index).is_empty()) {
-        return Err(Error::DefectiveToken("a PADDING buffer in an RFC 4121 token"));
+    if layout
+        .padding
+        .is_some_and(|index| !get(buffers, index).is_empty())
+    {
+        return Err(Error::DefectiveToken(
+            "a PADDING buffer in an RFC 4121 token",
+        ));
     }
     let header = get(buffers, layout.header).to_vec();
     let (key, etype) = received(context, &header, TOK_WRAP)?;
     let (_, seal) = super::context::usages(!context.initiated);
     let flags = header.get(2).copied().unwrap_or_default();
-    let (ec, rrc) = (usize::from(field(&header, 4)), usize::from(field(&header, 6)));
+    let (ec, rrc) = (
+        usize::from(field(&header, 4)),
+        usize::from(field(&header, 6)),
+    );
     let dce = context.flags.contains(ContextFlags::DCE_STYLE);
     let detached = layout.trailer.map(|index| get(buffers, index).to_vec());
     let bad_length = Error::BadIov("a header or trailer of the wrong length");
@@ -673,7 +695,9 @@ fn open(
     if !confidential {
         let length = etype.hmac_len();
         let checksum = match &detached {
-            _ if ec != length => return Err(Error::DefectiveToken("EC is not the checksum length")),
+            _ if ec != length => {
+                return Err(Error::DefectiveToken("EC is not the checksum length"));
+            }
             None if rrc == length && header.len() == HEADER_LEN.saturating_add(length) => {
                 header.get(HEADER_LEN..).unwrap_or_default().to_vec()
             }
@@ -684,7 +708,12 @@ fn open(
         };
         let mut zero = header.get(..HEADER_LEN).unwrap_or_default().to_vec();
         zero.iter_mut().skip(4).take(4).for_each(|byte| *byte = 0);
-        if !etype.verify_checksum(key.value(), &checksum_input(buffers, &zero), &checksum, seal) {
+        if !etype.verify_checksum(
+            key.value(),
+            &checksum_input(buffers, &zero),
+            &checksum,
+            seal,
+        ) {
             return Err(Error::BadSignature);
         }
         context.window.admit(sequence_of(&header))?;
@@ -698,9 +727,15 @@ fn open(
         None => {
             let desired = trailer_len.saturating_sub(if dce { ec } else { 0 });
             if rrc != desired {
-                return Err(Error::DefectiveToken("an RRC that does not rotate the trailer"));
+                return Err(Error::DefectiveToken(
+                    "an RRC that does not rotate the trailer",
+                ));
             }
-            if header.len() != HEADER_LEN.saturating_add(trailer_len).saturating_add(confounder) {
+            if header.len()
+                != HEADER_LEN
+                    .saturating_add(trailer_len)
+                    .saturating_add(confounder)
+            {
                 return Err(bad_length);
             }
             let rest = header.get(HEADER_LEN..).unwrap_or_default();
@@ -711,10 +746,14 @@ fn open(
             if rrc != 0 {
                 return Err(Error::DefectiveToken("an RRC beside a TRAILER buffer"));
             }
-            if trailer.len() != trailer_len || header.len() != HEADER_LEN.saturating_add(confounder) {
+            if trailer.len() != trailer_len || header.len() != HEADER_LEN.saturating_add(confounder)
+            {
                 return Err(bad_length);
             }
-            (header.get(HEADER_LEN..).unwrap_or_default().to_vec(), trailer.clone())
+            (
+                header.get(HEADER_LEN..).unwrap_or_default().to_vec(),
+                trailer.clone(),
+            )
         }
     };
     let (sealed_tail, mac) = tail.split_at(ec.saturating_add(HEADER_LEN));
@@ -759,7 +798,12 @@ fn open_stream(
     if context.flags.contains(ContextFlags::DCE_STYLE) {
         return Err(Error::BadIov("a STREAM buffer in a DCE-style context"));
     }
-    for kind in [IovKind::Header, IovKind::Trailer, IovKind::Padding, IovKind::MicToken] {
+    for kind in [
+        IovKind::Header,
+        IovKind::Trailer,
+        IovKind::Padding,
+        IovKind::MicToken,
+    ] {
         if locate(buffers, kind)?.is_some() {
             return Err(Error::BadIov("a framing buffer beside a STREAM buffer"));
         }
@@ -770,15 +814,23 @@ fn open_stream(
         .filter(|(_, buffer)| buffer.kind == IovKind::Data)
         .map(|(index, _)| index);
     let (Some(slot), None) = (data_slots.next(), data_slots.next()) else {
-        return Err(Error::BadIov("a STREAM unwrap needs exactly one DATA buffer"));
+        return Err(Error::BadIov(
+            "a STREAM unwrap needs exactly one DATA buffer",
+        ));
     };
     let token = Zeroizing::new(get(buffers, stream).to_vec());
     let (header, body) = token
         .split_at_checked(HEADER_LEN)
         .ok_or(Error::DefectiveToken("a stream shorter than its header"))?;
     let (_, etype) = received(context, header, TOK_WRAP)?;
-    let confidential = header.get(2).is_some_and(|flags| flags & GSS_TOKEN_FLAG_SEALED != 0);
-    let ec = if confidential { usize::from(field(header, 4)) } else { 0 };
+    let confidential = header
+        .get(2)
+        .is_some_and(|flags| flags & GSS_TOKEN_FLAG_SEALED != 0);
+    let ec = if confidential {
+        usize::from(field(header, 4))
+    } else {
+        0
+    };
     let rrc = usize::from(field(header, 6));
     let mut rotated = Zeroizing::new(body.to_vec());
     if let Some(shift) = rrc.checked_rem(rotated.len()) {
@@ -807,7 +859,10 @@ fn open_stream(
         match buffer.kind {
             IovKind::Data => inner.push(IovBuffer::new(
                 IovKind::Data,
-                unrotated.get(confounder..data_end).unwrap_or_default().to_vec(),
+                unrotated
+                    .get(confounder..data_end)
+                    .unwrap_or_default()
+                    .to_vec(),
             )),
             IovKind::SignOnly => inner.push(buffer.clone()),
             IovKind::Empty
@@ -830,7 +885,10 @@ fn open_stream(
         padding: None,
     };
     let opened = open(context, &mut inner, &layout)?;
-    if let Some(data) = inner.into_iter().find(|buffer| buffer.kind == IovKind::Data) {
+    if let Some(data) = inner
+        .into_iter()
+        .find(|buffer| buffer.kind == IovKind::Data)
+    {
         set(buffers, slot, data.value.to_vec());
     }
     Ok(opened)
@@ -841,7 +899,10 @@ fn open_stream(
 /// # Errors
 ///
 /// Returns the errors of [`super::EstablishedContext::unwrap_iov`].
-pub(super) fn unwrap(context: &mut EstablishedContext, buffers: &mut [IovBuffer]) -> Result<bool, Error> {
+pub(super) fn unwrap(
+    context: &mut EstablishedContext,
+    buffers: &mut [IovBuffer],
+) -> Result<bool, Error> {
     if buffers.len() > MAX_BUFFERS {
         return Err(Error::BadIov("too many buffers"));
     }
@@ -858,14 +919,22 @@ pub(super) fn unwrap(context: &mut EstablishedContext, buffers: &mut [IovBuffer]
 /// # Errors
 ///
 /// Returns the errors of [`super::EstablishedContext::get_mic_iov`].
-pub(super) fn get_mic(context: &mut EstablishedContext, buffers: &mut [IovBuffer]) -> Result<(), Error> {
+pub(super) fn get_mic(
+    context: &mut EstablishedContext,
+    buffers: &mut [IovBuffer],
+) -> Result<(), Error> {
     let layout = layout(buffers, IovKind::MicToken)?;
     bounded(buffers)?;
     let key = super::context::usable(context)?.clone();
     let etype = etype_of(&key)?;
     let (sign, _) = super::context::usages(context.initiated);
     let sequence = context.send_sequence;
-    let header = header_bytes(TOK_MIC, super::context::sent_flags(context), [0xffff, 0xffff], sequence);
+    let header = header_bytes(
+        TOK_MIC,
+        super::context::sent_flags(context),
+        [0xffff, 0xffff],
+        sequence,
+    );
     let checksum = etype.checksum(key.value(), &checksum_input(buffers, &header), sign)?;
     set(buffers, layout.header, [header, checksum].concat());
     context.send_sequence = sequence.wrapping_add(1);
@@ -877,13 +946,19 @@ pub(super) fn get_mic(context: &mut EstablishedContext, buffers: &mut [IovBuffer
 /// # Errors
 ///
 /// Returns the errors of [`super::EstablishedContext::verify_mic_iov`].
-pub(super) fn verify_mic(context: &mut EstablishedContext, buffers: &[IovBuffer]) -> Result<(), Error> {
+pub(super) fn verify_mic(
+    context: &mut EstablishedContext,
+    buffers: &[IovBuffer],
+) -> Result<(), Error> {
     let layout = layout(buffers, IovKind::MicToken)?;
     bounded(buffers)?;
     let _usable: &EncryptionKey = super::context::usable(context)?;
     let token = get(buffers, layout.header);
     let (key, etype) = received(context, token, TOK_MIC)?;
-    if token.get(2).is_some_and(|flags| flags & GSS_TOKEN_FLAG_SEALED != 0) {
+    if token
+        .get(2)
+        .is_some_and(|flags| flags & GSS_TOKEN_FLAG_SEALED != 0)
+    {
         return Err(Error::DefectiveToken("a MIC token cannot be sealed"));
     }
     let (sign, _) = super::context::usages(!context.initiated);
@@ -891,7 +966,12 @@ pub(super) fn verify_mic(context: &mut EstablishedContext, buffers: &[IovBuffer]
     if checksum.len() != etype.hmac_len() {
         return Err(Error::BadIov("a MIC token of the wrong length"));
     }
-    if !etype.verify_checksum(key.value(), &checksum_input(buffers, header), checksum, sign) {
+    if !etype.verify_checksum(
+        key.value(),
+        &checksum_input(buffers, header),
+        checksum,
+        sign,
+    ) {
         return Err(Error::BadSignature);
     }
     context.window.admit(sequence_of(header))

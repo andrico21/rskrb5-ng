@@ -134,7 +134,9 @@ fn single_des_algorithm_ids_are_rejected_by_name() -> Result<(), TestError> {
     let at = body(&token)?;
     for (offset, value) in [(2, [0x00, 0x00]), (2, [0x02, 0x00]), (4, [0x00, 0x00])] {
         let mut forged = token.clone();
-        if let Some(slot) = forged.get_mut(at.saturating_add(offset)..at.saturating_add(offset).saturating_add(2)) {
+        if let Some(slot) =
+            forged.get_mut(at.saturating_add(offset)..at.saturating_add(offset).saturating_add(2))
+        {
             slot.copy_from_slice(&value);
         }
         let outcome = ends.acceptor.unwrap(&forged);

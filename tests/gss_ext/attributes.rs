@@ -58,14 +58,20 @@ fn the_source_name_carries_the_verified_pac_attributes() -> Result<(), TestError
         "urn:mspac:client-info",
         "urn:mspac:1000",
     ] {
-        assert!(names.iter().any(|name| name == expected), "{expected}: {names:?}");
+        assert!(
+            names.iter().any(|name| name == expected),
+            "{expected}: {names:?}"
+        );
     }
     let buffer = context.source_attribute("urn:mspac:1000")?;
     assert_eq!(buffer.value(), b"opaque buffer");
     assert!(buffer.authenticated());
     assert!(buffer.complete());
     // MIT matches the attribute name case-insensitively.
-    assert_eq!(context.source_attribute("URN:MSPAC:1000")?.value(), b"opaque buffer");
+    assert_eq!(
+        context.source_attribute("URN:MSPAC:1000")?.value(),
+        b"opaque buffer"
+    );
     let whole = context.source_attribute("urn:mspac:")?;
     let pac = context.pac().context("a verified PAC")?;
     assert_eq!(whole.value(), pac.pac().data());
@@ -86,9 +92,18 @@ fn a_pac_without_a_verified_kdc_signature_is_not_authenticated() -> Result<(), T
 #[test]
 fn unknown_attributes_are_unavailable() -> Result<(), TestError> {
     let context = accepted(&[], true)?;
-    for name in ["urn:mspac:logon-info", "urn:mspac:77", "urn:other:x", "urn:mspac:0", "urn:mspac:x1"] {
+    for name in [
+        "urn:mspac:logon-info",
+        "urn:mspac:77",
+        "urn:other:x",
+        "urn:mspac:0",
+        "urn:mspac:x1",
+    ] {
         assert!(
-            matches!(context.source_attribute(name), Err(Gss::NameAttributeUnavailable(_))),
+            matches!(
+                context.source_attribute(name),
+                Err(Gss::NameAttributeUnavailable(_))
+            ),
             "{name}"
         );
     }
