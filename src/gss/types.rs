@@ -578,3 +578,50 @@ impl IovBuffer {
         self.value
     }
 }
+
+/// The value of a name attribute (`gss_get_name_attribute`, RFC 6680).
+#[derive(Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct NameAttribute {
+    /// The value.
+    value: Vec<u8>,
+    /// Whether the value is authenticated: the PAC's KDC signature verified.
+    authenticated: bool,
+    /// Whether the value is complete.
+    complete: bool,
+}
+
+impl fmt::Debug for NameAttribute {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NameAttribute")
+            .field("value_len", &self.value.len())
+            .field("authenticated", &self.authenticated)
+            .field("complete", &self.complete)
+            .finish()
+    }
+}
+
+impl NameAttribute {
+    /// The value: the bytes of the PAC or of one PAC buffer.
+    #[inline]
+    #[must_use]
+    pub fn value(&self) -> &[u8] {
+        &self.value
+    }
+
+    /// Whether the value is authenticated: only when the PAC's KDC signature
+    /// verified, not merely its server signature.
+    #[inline]
+    #[must_use]
+    pub const fn authenticated(&self) -> bool {
+        self.authenticated
+    }
+
+    /// Whether the value is complete (always, for PAC attributes).
+    #[inline]
+    #[must_use]
+    pub const fn complete(&self) -> bool {
+        self.complete
+    }
+}

@@ -210,7 +210,7 @@ pub(super) fn ticket_with_pac(
     let at = validity()?;
     let (bits, bytes) = flags(set);
     let session = session_key(etype);
-    let part = rasn_kerberos::EncTicketPart {
+    let mut part = rasn_kerberos::EncTicketPart {
         flags: bits,
         key: rasn_kerberos::EncryptionKey {
             r#type: session.etype(),
@@ -229,7 +229,6 @@ pub(super) fn ticket_with_pac(
         caddr: None,
         authorization_data: None,
     };
-    let mut part = part;
     if let Some(extra) = buffers {
         let mut builder = pac::Builder::new();
         for (kind, data) in extra {

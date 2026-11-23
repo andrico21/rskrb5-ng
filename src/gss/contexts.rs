@@ -310,6 +310,9 @@ pub struct Acceptor<'keytab> {
     validator: Validator<'keytab>,
     /// The options.
     options: AcceptorOptions,
+    /// The acceptor's credential; one that can also initiate composes proxy
+    /// credentials.
+    credential: Option<&'keytab Credential>,
 }
 
 impl fmt::Debug for Acceptor<'_> {
@@ -338,7 +341,11 @@ impl<'keytab> Acceptor<'keytab> {
     #[inline]
     #[must_use]
     pub const fn from_validator(validator: Validator<'keytab>, options: AcceptorOptions) -> Self {
-        Self { validator, options }
+        Self {
+            validator,
+            options,
+            credential: None,
+        }
     }
 
     /// Accept the initiator's first token.
@@ -353,6 +360,12 @@ impl<'keytab> Acceptor<'keytab> {
     /// initiator without them, [`Error::MissingBindings`] when bindings are
     /// required and absent, and [`Error::DelegatedCredential`] for a delegated
     /// credential that does not decrypt.
+    ///
+    /// Without a delegated credential, an acceptor made by [`Self::new`] from
+    /// a credential that can also initiate ([`CredentialUsage::Both`]) composes
+    /// a proxy credential for the client from the accepted ticket (MIT
+    /// `kg_compose_deleg_cred`); its tickets come by `S4U2Proxy`, which the
+    /// KDC allows or refuses.
     #[inline]
     pub fn accept_sec_context(&mut self, input_token: &[u8]) -> Result<Accepted, Error> {
         acceptor::accept(self, input_token)
@@ -735,6 +748,34 @@ impl EstablishedContext {
     #[inline]
     pub fn take_delegated_credential(&mut self) -> Option<Credential> {
         self.delegated.take().map(|credential| *credential)
+    }
+
+    /// `gss_inquire_name` of the initiator's name on the acceptor: the
+    /// `urn:mspac:` attributes of the ticket's verified PAC (MIT
+    /// `mspac_get_attribute_types`, `pac.c:960-1010`), none without a PAC.
+    #[inline]
+    #[must_use]
+    pub fn source_attributes(&self) -> Vec<String> {
+        attributes::names(self)
+    }
+
+    /// `gss_get_name_attribute` of the initiator's name on the acceptor:
+    /// `urn:mspac:` for the whole PAC, `urn:mspac:<buffer>` or
+    /// `urn:mspac:<type>` for one buffer, the name matched without case (MIT
+    /// `mspac_get_attribute`, `pac.c:1012-1056`).
+    ///
+    /// # Security
+    ///
+    /// The values come from a PAC the acceptor verified; they are reported
+    /// authenticated only when its KDC signature verified.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NameAttributeUnavailable`] for an unknown attribute, a
+    /// buffer the PAC does not carry, or a context without a verified PAC.
+    #[inline]
+    pub fn source_attribute(&self, attribute: &str) -> Result<NameAttribute, Error> {
+        attributes::get(self, attribute)
     }
 
     /// The ticket's verified PAC, on the acceptor.

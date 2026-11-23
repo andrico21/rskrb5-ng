@@ -11,7 +11,7 @@ use zeroize::Zeroizing;
 use super::{
     Accepted, Acceptor, AcceptorOptions, ChannelBindings, ContextFlags, Credential,
     CredentialUsage, EncryptionKey, Error, EstablishedContext, Name, Principal, bindings, checksum,
-    cred, dce, initiator, seq,
+    cred, dce, impersonate, initiator, seq,
 };
 use crate::{
     ap_req,
@@ -62,7 +62,11 @@ pub(super) fn new(
     if let Some(name) = &credential.name {
         validator.set_acceptor_name(cred::acceptor_name(name, options.ignore_acceptor_hostname));
     }
-    Ok(Acceptor { validator, options })
+    Ok(Acceptor {
+        validator,
+        options,
+        credential: Some(credential),
+    })
 }
 
 /// What the checksum told the acceptor.
@@ -270,13 +274,24 @@ pub(super) fn accept(acceptor: &mut Acceptor<'_>, token: &[u8]) -> Result<Accept
         flags = flags | ContextFlags::CHANNEL_BOUND;
     }
     // DCE style never returns a delegated credential (`accept_sec_context.c:349-351`).
-    let delegated_credential = match &checked.delegation {
+    let from_initiator = match &checked.delegation {
         Some(_) if dce_style => None,
         Some(bytes) => {
             flags = flags | ContextFlags::DELEG;
             Some(Box::new(delegated(&validated, bytes)?))
         }
         None => None,
+    };
+    // An acceptor that can also initiate composes a proxy credential
+    // (`kg_compose_deleg_cred`, `accept_sec_context.c:943-952`).
+    let delegated_credential = match (from_initiator, acceptor.credential) {
+        (None, Some(own)) if own.usage == CredentialUsage::Both && !dce_style => {
+            let client = principal(validated.client());
+            let evidence = impersonate::evidence(request, &client, &validated)?;
+            flags = flags | ContextFlags::DELEG;
+            Some(Box::new(impersonate::proxy(&evidence, own)))
+        }
+        (other, _) => other,
     };
     if mutual_option || dce_style {
         // DCE style implies mutual authentication (`accept_sec_context.c:980-981`).

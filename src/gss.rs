@@ -64,6 +64,8 @@ use crate::{
 
 /// The krb5 mechanism's acceptor side.
 mod acceptor;
+/// Name attributes from the verified PAC.
+mod attributes;
 /// The RFC 4121 channel-binding digest.
 mod bindings;
 /// The RFC 4121 section 4.1.1 authenticator checksum.
@@ -76,12 +78,14 @@ mod cred;
 mod dce;
 /// Context and credential transfer.
 mod export;
+/// Impersonation and proxy credentials.
+mod impersonate;
 /// The krb5 mechanism's initiator side.
 mod initiator;
-/// The RFC 1964 and RFC 4757 token formats of DES3 and RC4 contexts.
-mod legacy;
 /// IOV and AEAD per-message tokens.
 mod iov;
+/// The RFC 1964 and RFC 4757 token formats of DES3 and RC4 contexts.
+mod legacy;
 /// Name parsing, display and export.
 mod name;
 /// The GSS pseudo-random function.

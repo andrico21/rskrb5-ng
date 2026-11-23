@@ -9,8 +9,10 @@
 //! password-acquired initial credentials against a keytab and needs a password.
 //! The KDC exchanges are proven live in `tests/interop_gss_ext.rs`.
 
-use std::{env, fs, process};
+use std::{env, fs, path::PathBuf, process};
 
+#[cfg(feature = "tokio")]
+use rskrb5_ng::config::Config;
 use rskrb5_ng::{
     error::Gss,
     gss::{
@@ -19,13 +21,16 @@ use rskrb5_ng::{
     },
 };
 
+#[cfg(feature = "tokio")]
+use tokio::runtime::Builder;
+
 use super::{
     context::{Context as _, TestError},
-    support::{AES256_SHA1, HOST, REALM, USER, credential, keytab, target},
+    support::{AES256_SHA1, HOST, REALM, USER, credential, keytab, refused, target},
 };
 
 /// A scratch directory of this test process.
-fn scratch(label: &str) -> Result<std::path::PathBuf, TestError> {
+fn scratch(label: &str) -> Result<PathBuf, TestError> {
     let directory = env::temp_dir().join(format!("gss-ext-{label}-{}", process::id()));
     fs::create_dir_all(&directory)?;
     Ok(directory)
@@ -82,8 +87,8 @@ fn a_both_credential_composes_a_proxy_credential() -> Result<(), TestError> {
     let InitStep::Continue(second) = again.init_sec_context(&client, None)? else {
         return Err("a mutual initiator waits".into());
     };
-    let accepted = plain.accept_sec_context(&second)?;
-    assert!(accepted.context().delegated_credential().is_none());
+    let unproxied = plain.accept_sec_context(&second)?;
+    assert!(unproxied.context().delegated_credential().is_none());
     Ok(())
 }
 
@@ -125,19 +130,19 @@ fn a_proxy_credential_transfers_with_its_impersonator() -> Result<(), TestError>
 
 #[cfg(feature = "tokio")]
 /// Only a credential that can initiate impersonates (`kg_is_initiator_cred`,
-/// `s4u_gss_glue.c:33-38`), and a certificate name is refused for a credential
-/// without the impersonator's keytab; no KDC is reached.
+/// `s4u_gss_glue.c:33-38`), and not without the impersonator's keytab; no KDC
+/// is reached.
 #[test]
 fn impersonation_needs_an_initiator_credential() -> Result<(), TestError> {
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
-    let config = rskrb5_ng::config::Config::parse("[libdefaults]\n default_realm = EXAMPLE.COM\n")?;
+    let runtime = Builder::new_current_thread().build()?;
+    let config = Config::parse("[libdefaults]\n default_realm = EXAMPLE.COM\n")?;
     let user = Name::import(b"bob@EXAMPLE.COM", NameType::User)?;
     let acceptor = Credential::from_keytab(keytab());
-    let refused = runtime.block_on(acceptor.acquire_impersonate_name(&user, &config));
-    assert!(matches!(refused, Err(Gss::WrongCredentialUsage(_))));
+    let from_acceptor = runtime.block_on(acceptor.acquire_impersonate_name(&user, &config));
+    assert!(matches!(from_acceptor, Err(Gss::WrongCredentialUsage(_))));
     let initiator = credential(AES256_SHA1)?;
     let without_keytab = runtime.block_on(initiator.acquire_impersonate_name(&user, &config));
-    assert!(without_keytab.is_err());
+    refused(without_keytab)?;
     Ok(())
 }
 
@@ -164,7 +169,11 @@ fn the_verify_key_needs_a_password() -> Result<(), TestError> {
     let bad = CredStore::new()
         .with("password", "secret")?
         .with("verify", "not a principal@@")?;
-    assert!(Credential::acquire_cred_from(Some(&user), CredentialUsage::Initiate, &bad).is_err());
+    refused(Credential::acquire_cred_from(
+        Some(&user),
+        CredentialUsage::Initiate,
+        &bad,
+    ))?;
     assert!(matches!(
         CredStore::new().with("verify", "")?.with("verify", ""),
         Err(Gss::DuplicateCredStoreKey(_))

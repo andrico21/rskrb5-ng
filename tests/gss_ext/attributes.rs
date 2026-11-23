@@ -9,19 +9,25 @@
 use rskrb5_ng::{
     crypto::CryptoPolicy,
     error::Gss,
-    gss::{Acceptor, AcceptorOptions, InitStep, Initiator, InitiatorOptions, Credential},
+    gss::{
+        Acceptor, AcceptorOptions, Credential, EstablishedContext, InitStep, Initiator,
+        InitiatorOptions,
+    },
     pac::VerificationPolicy,
     service::Validator,
 };
 
 use super::{
     context::{Context as _, TestError},
-    support::{AES256_SHA1, cache_of, establish, kdc_key, keytab, sequenced, target, ticket_with_pac},
+    support::{
+        AES256_SHA1, cache_of, establish, kdc_key, keytab, refused, sequenced, target,
+        ticket_with_pac,
+    },
 };
 
 /// The acceptor's context of a ticket whose PAC carries `buffers`; with
 /// `kdc` the acceptor holds the KDC key and verifies the KDC signature.
-fn accepted(buffers: &[(u32, &[u8])], kdc: bool) -> Result<rskrb5_ng::gss::EstablishedContext, TestError> {
+fn accepted(buffers: &[(u32, &[u8])], kdc: bool) -> Result<EstablishedContext, TestError> {
     let ticket = ticket_with_pac(AES256_SHA1, &[], Some(buffers))?;
     let credential = Credential::from_ccache(cache_of(&ticket)?)?;
     let mut init = Initiator::new(target()?, InitiatorOptions::new());
@@ -87,8 +93,8 @@ fn unknown_attributes_are_unavailable() -> Result<(), TestError> {
         );
     }
     let plain = establish(sequenced())?;
-    assert!(plain.acceptor.source_attributes().is_empty());
-    assert!(plain.initiator.source_attributes().is_empty());
-    assert!(plain.acceptor.source_attribute("urn:mspac:").is_err());
+    assert_eq!(plain.acceptor.source_attributes(), Vec::<String>::new());
+    assert_eq!(plain.initiator.source_attributes(), Vec::<String>::new());
+    refused(plain.acceptor.source_attribute("urn:mspac:"))?;
     Ok(())
 }

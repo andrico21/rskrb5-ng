@@ -117,6 +117,10 @@ pub enum Gss {
     /// The in-memory transfer ledger is full (`GSS_S_FAILURE`).
     #[error("the transfer ledger is full")]
     TransferLedgerFull,
+    /// The name has no such attribute: an unknown name, a PAC buffer the PAC
+    /// does not carry, or no verified PAC (`GSS_S_UNAVAILABLE`).
+    #[error("name attribute {0:?} is unavailable")]
+    NameAttributeUnavailable(String),
     /// The delegated credential could not be read.
     #[error("the delegated credential could not be read: {0}")]
     DelegatedCredential(#[source] KrbCred),
@@ -195,7 +199,9 @@ impl Gss {
             | Self::Spnego(_) => 9,
             Self::DefectiveChecksum(_) | Self::DelegatedCredential(_) => 10,
             Self::ContextExpired => 12,
-            Self::NotNegotiated(_) | Self::LegacyTokenFormat(_) => 16,
+            Self::NotNegotiated(_)
+            | Self::LegacyTokenFormat(_)
+            | Self::NameAttributeUnavailable(_) => 16,
             Self::DuplicateElement => 17,
             Self::DuplicateToken(_) => return 1 << 1,
             Self::OldToken(_) => return 1 << 2,

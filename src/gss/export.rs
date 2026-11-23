@@ -29,7 +29,7 @@ use zeroize::Zeroizing;
 
 use super::{
     CCache, ContextFlags, Credential, CredentialUsage, EncryptionKey, Error, EstablishedContext,
-    Keytab, Name, NameKind, NameType, Principal, TransferBlob, TransferKey, TransferLedger, pac,
+    Keytab, Name, NameKind, NameType, Principal, TransferBlob, TransferKey, TransferLedger, cred, pac,
     seq,
 };
 use crate::crypto::{AesSha2Etype, CryptoPolicy};
@@ -383,7 +383,22 @@ fn put_credential(writer: &mut Writer, credential: &Credential) -> Result<(), Er
             .map(Zeroizing::new);
         writer.optional(bytes.as_deref().map(Vec::as_slice))?;
     }
-    writer.optional(credential.password.as_deref().map(Vec::as_slice))
+    writer.optional(credential.password.as_deref().map(Vec::as_slice))?;
+    writer.flag(credential.verify.is_some());
+    if let Some(verify) = &credential.verify {
+        writer.bytes(&Zeroizing::new(verify.keytab().to_bytes()?))?;
+        let server = verify.server().map(Name::from_principal);
+        writer.optional_name(server.as_ref())?;
+    }
+    let impersonator = match &credential.impersonator {
+        Some(inner) => {
+            let mut nested = Writer::default();
+            put_credential(&mut nested, inner)?;
+            Some(nested.out)
+        }
+        None => None,
+    };
+    writer.optional(impersonator.as_deref().map(Vec::as_slice))
 }
 
 /// Deserialize a credential.
@@ -405,6 +420,24 @@ fn get_credential(reader: &mut Reader<'_>) -> Result<Credential, Error> {
     let password = reader
         .optional()?
         .map(|bytes| Zeroizing::new(bytes.to_vec()));
+    let verify = if reader.flag()? {
+        let verify_keytab = Keytab::parse(reader.bytes()?)?;
+        let server = reader
+            .optional_name()?
+            .map(|verify_name| verify_name.principal().clone());
+        Some(Box::new(cred::Verify::new(verify_keytab, server)))
+    } else {
+        None
+    };
+    let impersonator = match reader.optional()? {
+        Some(bytes) => {
+            let mut nested = Reader { rest: bytes };
+            let inner = get_credential(&mut nested)?;
+            nested.finish()?;
+            Some(Box::new(inner))
+        }
+        None => None,
+    };
     Ok(Credential {
         name,
         usage,
@@ -413,6 +446,8 @@ fn get_credential(reader: &mut Reader<'_>) -> Result<Credential, Error> {
         password,
         keytab,
         replay: None,
+        verify,
+        impersonator,
     })
 }
 
