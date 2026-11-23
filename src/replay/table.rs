@@ -105,9 +105,10 @@ fn next_table(previous: Option<Table>, maximum_bytes: u64) -> Option<Table> {
     (end <= maximum_bytes).then_some(table)
 }
 
-/// Whether `stamp` is older than `retention` seconds at `now`: MIT's
-/// `ts_after(now, ts_incr(stamp, skew))` with a saturating sum, so a window that
-/// overflows the 32-bit timestamp never makes live evidence look expired.
+/// Whether `stamp` is older than `retention` seconds at `now`.
+///
+/// MIT's `ts_after(now, ts_incr(stamp, skew))` with a saturating sum, so a window
+/// that overflows the 32-bit timestamp never makes live evidence look expired.
 const fn expired(stamp: u32, now: u32, retention: u32) -> bool {
     now > stamp.saturating_add(retention)
 }
