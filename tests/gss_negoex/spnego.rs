@@ -88,7 +88,7 @@ fn one_hop_negotiation_completes() -> Result<(), TestError> {
     let AcceptStep::Complete(accepted) = acceptor.accept_sec_context(&first)? else {
         return Err("one hop completes the acceptor".into());
     };
-    let answer = accepted.output_token().context("an answer")?.to_vec();
+    let answer = accepted.output_token().to_vec();
     let resp = resp_token(&answer)?;
     assert_eq!(resp.neg_state(), Some(NegState::AcceptCompleted));
     assert_eq!(resp.supported_mech(), Some(&ObjectIdentifier::negoex()));
@@ -133,7 +133,7 @@ fn multi_hop_negotiation_continues() -> Result<(), TestError> {
                 token = reply;
             }
             AcceptStep::Complete(done) => {
-                token = done.output_token().context("a final answer")?.to_vec();
+                token = done.output_token().to_vec();
                 accepted = Some(done);
             }
             _ => return Err("an unexpected acceptor step".into()),
@@ -239,7 +239,7 @@ fn a_wrong_verify_checksum_fails_through_spnego() -> Result<(), TestError> {
     let AcceptStep::Complete(accepted) = acceptor.accept_sec_context(&first)? else {
         return Err("one hop completes the acceptor".into());
     };
-    let mut resp = resp_token(accepted.output_token().context("an answer")?)?;
+    let mut resp = resp_token(accepted.output_token())?;
     let mut token = resp.response_token().context("a token")?.to_vec();
     let last = token.len() - 1;
     *token.get_mut(last).context("a byte")? ^= 0x01;

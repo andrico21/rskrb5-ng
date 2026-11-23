@@ -89,6 +89,10 @@ pub enum Negoex {
     /// A message type the constructor does not build.
     #[error("NegoEx message type {0:?} does not fit this message shape")]
     WrongMessageShape(MessageType),
+    /// The selected mechanism offers integrity, which needs a `mechListMIC`
+    /// exchange that `NegoEx` under SPNEGO does not implement.
+    #[error("a mechListMIC exchange for a NegoEx mechanism with integrity is not supported")]
+    MechListMicUnsupported,
     /// A mechanism whose object identifier does not decode.
     #[error("a mechanism object identifier is malformed")]
     InvalidMechanismOid,
@@ -151,7 +155,7 @@ impl Negoex {
             | Self::UnknownChecksumScheme(_)
             | Self::NoVerifyKey => 16,
             Self::InvalidChecksum => 6,
-            Self::UnexpectedStep(_) => 8,
+            Self::UnexpectedStep(_) | Self::MechListMicUnsupported => 8,
             Self::NoAvailableMechs
             | Self::InvalidMechanismOid
             | Self::UnregisteredMechanism(_)

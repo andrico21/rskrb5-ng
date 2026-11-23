@@ -254,6 +254,14 @@ pub trait Session: Send {
     /// The key the peer's `VERIFY` message is checked with, once the mechanism
     /// has one (`GSS_C_INQ_NEGOEX_VERIFY_KEY`).
     fn verify_key(&self) -> Option<EncryptionKey>;
+
+    /// The flags of the established context (`ret_flags`); none by default.
+    ///
+    /// `GSS_C_INTEG_FLAG` makes SPNEGO exchange a `mechListMIC` when it is required.
+    #[inline]
+    fn context_flags(&self) -> ContextFlags {
+        ContextFlags::default()
+    }
 }
 
 /// A mechanism that `NegoEx` can negotiate (the `gssspi_query_mechanism_info` side).

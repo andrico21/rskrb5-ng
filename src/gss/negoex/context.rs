@@ -271,6 +271,16 @@ impl Context {
             .map(Entry::describe)
     }
 
+    /// The context flags of the first mechanism's session: none before it has one.
+    #[inline]
+    #[must_use]
+    pub fn selected_flags(&self) -> ContextFlags {
+        self.entries
+            .first()
+            .and_then(|entry| entry.session.as_ref())
+            .map_or_else(ContextFlags::default, |session| session.context_flags())
+    }
+
     /// The selected mechanism's session, once the negotiation is complete.
     ///
     /// # Errors

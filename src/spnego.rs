@@ -40,6 +40,8 @@ mod erasure_tests;
 mod gss_contexts;
 /// One-shot SPNEGO mechanism-list integrity processing.
 mod negotiation;
+/// `NegoEx` under SPNEGO.
+pub mod negoex;
 /// GSS-API object identifiers.
 pub mod oid;
 /// Plaintext staging owners.
