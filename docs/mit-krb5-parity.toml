@@ -376,13 +376,14 @@ test_names = [
   "tests/auth_context/forwarding.rs::the_null_transport_is_refused",
   "tests/auth_context/forwarding.rs::a_proven_channel_carries_an_unencrypted_credential",
   "tests/auth_context/forwarding.rs::credentials_with_forbidden_session_keys_are_refused",
+  "tests/auth_context/forwarding.rs::credentials_are_bound_to_the_identity_of_the_context",
   "tests/auth_context/private.rs::priv_round_trips_and_reports_the_time",
   "tests/auth_context/private.rs::safe_round_trips_and_detects_tampering",
   "tests/auth_context/sequence.rs::heimdal_unsigned_encodings_are_accepted_like_mit",
   "tests/interop_replay/scenarios.rs::mit_forwarded_credentials_cross_the_credential_transport",
 ]
 feature_flags = ["messages"]
-security_divergence = "The NULL transport of MIT mk_ncred and rd_cred (no key, plaintext KRB-CRED) is refused unless the caller vouches for a protected channel (CredentialTransport::Protected); a credential carrying authorization data or a second ticket is not forwarded (the KRB-CRED info has no field for them); imported session keys and tickets pass the runtime crypto policy; port-qualified (ADDRPORT) addresses are not implemented."
+security_divergence = "The NULL transport of MIT mk_ncred and rd_cred (no key, plaintext KRB-CRED) is refused unless the caller vouches for a protected channel (CredentialTransport::Protected); a credential carrying authorization data or a second ticket is not forwarded (the KRB-CRED info has no field for them); imported session keys and tickets pass the runtime crypto policy; a context can be bound to one identity (with_credential_owner); port-qualified (ADDRPORT) addresses are not implemented."
 disposition = "WP-20"
 closing_plan = 2
 closing_todo = 27

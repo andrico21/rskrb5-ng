@@ -19,6 +19,25 @@ use crate::{
 /// MIT's `ENCTYPE_NULL`: the enc-part holds plain DER (RFC 6448).
 const ENCTYPE_NULL: i32 = 0;
 
+/// Refuse a credential of another identity than the one the context is bound to.
+///
+/// # Errors
+///
+/// Returns [`Error::CredentialOwner`] naming both identities.
+fn check_owner(context: &AuthContext, credentials: &[Credential]) -> Result<(), Error> {
+    let Some(owner) = &context.credential_owner else {
+        return Ok(());
+    };
+    let expected = owner.principal_string();
+    for credential in credentials {
+        let found = credential.client().principal_string();
+        if found != expected {
+            return Err(Error::CredentialOwner { expected, found });
+        }
+    }
+    Ok(())
+}
+
 /// MIT `krb5_mk_ncred`: forward `credentials`.
 ///
 /// The timestamp is always set (`mk_cred.c:176`), the nonce is the sequence
@@ -34,6 +53,7 @@ pub(super) fn make_cred(
     credentials: &[Credential],
     transport: CredentialTransport<'_>,
 ) -> Result<Vec<u8>, Error> {
+    check_owner(context, credentials)?;
     let (tickets, mut part) = krb_cred::ccache_credentials_to_krb_cred_parts(credentials)?;
     let (stamp, micros) = kerberos_time(context.now())?;
     part.timestamp = Some(stamp);
@@ -151,5 +171,6 @@ pub(super) fn read_cred(
         super::private_safe::check_sequence(context, part.nonce)?;
     }
     let credentials = import::decrypted(&context.policy.crypto, &message, &part)?;
+    check_owner(context, &credentials)?;
     Ok(Received::new(credentials, timestamp, part.nonce))
 }

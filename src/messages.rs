@@ -21,7 +21,7 @@ use rasn::{
 };
 use rasn_kerberos::HostAddress;
 
-use crate::{crypto::CryptoPolicy, keytab::EncryptionKey};
+use crate::{ccache, crypto::CryptoPolicy, keytab::EncryptionKey};
 
 /// Kerberos protocol version number carried in every message (RFC 4120).
 const KRB5_PVNO: i32 = 5;
@@ -122,6 +122,8 @@ pub struct AuthContext {
     policy: MessagePolicy,
     /// A fixed clock; `None` reads the system clock.
     now: Option<SystemTime>,
+    /// The identity whose credentials the context forwards and imports.
+    credential_owner: Option<ccache::Principal>,
     /// The messages seen, for replay detection.
     seen: seen::Seen,
 }

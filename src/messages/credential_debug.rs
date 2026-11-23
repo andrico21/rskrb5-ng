@@ -95,6 +95,7 @@ impl fmt::Debug for super::AuthContext {
             heimdal_sequence: _,
             policy,
             now: _,
+            credential_owner,
             seen: _,
         } = self;
         f.debug_struct("AuthContext")
@@ -115,6 +116,7 @@ impl fmt::Debug for super::AuthContext {
             .field("local_sequence", local_sequence)
             .field("remote_sequence", remote_sequence)
             .field("policy", policy)
+            .field("credential_owner", credential_owner)
             .finish_non_exhaustive()
     }
 }

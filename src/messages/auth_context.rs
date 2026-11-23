@@ -10,7 +10,10 @@ use super::{
     AuthContext, CredentialTransport, MessagePolicy, ProtectedChannel, Received, seen::Seen,
 };
 use crate::{
-    ccache::Credential, crypto::CryptoPolicy, error::AuthMessage as Error, keytab::EncryptionKey,
+    ccache::{self, Credential},
+    crypto::CryptoPolicy,
+    error::AuthMessage as Error,
+    keytab::EncryptionKey,
 };
 
 impl MessagePolicy {
@@ -177,6 +180,7 @@ impl AuthContext {
             heimdal_sequence: false,
             policy,
             now: None,
+            credential_owner: None,
             seen: Seen::new(capacity),
         }
     }
@@ -217,6 +221,21 @@ impl AuthContext {
     pub const fn with_sequence(mut self, local: u32, remote: u32) -> Self {
         self.local_sequence = local;
         self.remote_sequence = remote;
+        self
+    }
+
+    /// Bind the context to one identity: it then forwards, and imports, only
+    /// credentials whose client is `owner` (realm and components).
+    ///
+    /// # Security
+    ///
+    /// Without a binding the context imports whatever the peer forwarded, which
+    /// is MIT's behaviour; a service that stores the credentials under the
+    /// authenticated client should bind the context to that client.
+    #[must_use]
+    #[inline]
+    pub fn with_credential_owner(mut self, owner: ccache::Principal) -> Self {
+        self.credential_owner = Some(owner);
         self
     }
 

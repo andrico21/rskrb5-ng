@@ -9,7 +9,7 @@ use rskrb5_ng::{
 use zeroize::Zeroizing;
 
 use super::support::{acceptor, at, initiator};
-use crate::context::TestError;
+use crate::context::{Context as _, TestError};
 
 /// The time of every message.
 const NOW: u64 = 1_893_553_447;
@@ -148,5 +148,48 @@ fn credentials_with_forbidden_session_keys_are_refused() -> Result<(), TestError
     let refused = receiver.rd_cred(&wire, CredentialTransport::Encrypted);
 
     assert!(matches!(refused, Err(Error::Cred(_))), "{refused:?}");
+    Ok(())
+}
+
+/// Pins that a context bound to one identity forwards and imports only that identity's credentials.
+#[test]
+fn credentials_are_bound_to_the_identity_of_the_context() -> Result<(), TestError> {
+    let sent = credentials()?;
+    let owner = sent.first().context("a credential")?.client().clone();
+    let stranger = ccache::Principal::new("ATHENA.MIT.EDU", 1, vec!["mallory".to_owned()]);
+
+    let mut wrong_sender =
+        initiator(MessagePolicy::new(), NOW)?.with_credential_owner(stranger.clone());
+    let refused = wrong_sender.mk_cred(&sent, CredentialTransport::Encrypted);
+    assert!(
+        matches!(
+            refused,
+            Err(Error::CredentialOwner {
+                expected: _,
+                found: _
+            })
+        ),
+        "{refused:?}"
+    );
+
+    let mut sender = initiator(MessagePolicy::new(), NOW)?.with_credential_owner(owner.clone());
+    let wire = sender.mk_cred(&sent, CredentialTransport::Encrypted)?;
+
+    let mut wrong_receiver = acceptor(MessagePolicy::new(), NOW)?.with_credential_owner(stranger);
+    let rejected = wrong_receiver.rd_cred(&wire, CredentialTransport::Encrypted);
+    assert!(
+        matches!(
+            rejected,
+            Err(Error::CredentialOwner {
+                expected: _,
+                found: _
+            })
+        ),
+        "{rejected:?}"
+    );
+
+    let mut receiver = acceptor(MessagePolicy::new(), NOW)?.with_credential_owner(owner);
+    let delivered = receiver.rd_cred(&wire, CredentialTransport::Encrypted)?;
+    assert_eq!(delivered.content().len(), sent.len());
     Ok(())
 }

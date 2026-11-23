@@ -50,6 +50,14 @@ pub enum AuthMessage {
         /// The bound on live entries.
         capacity: usize,
     },
+    /// A credential belongs to another identity than the one the context is bound to.
+    #[error("credential of {found} where the context is bound to {expected}")]
+    CredentialOwner {
+        /// The identity the context is bound to.
+        expected: String,
+        /// The client of the offending credential.
+        found: String,
+    },
     /// A time is outside the range Kerberos can carry.
     #[error("a time is outside the representable range")]
     TimeOutOfRange,
