@@ -18,7 +18,7 @@ use crate::{gss::Acceptor, kdc_req};
 
 mod ap;
 
-use ap::ap;
+use ap::ap_accept;
 
 /// `KRB_AP_ERR_IAKERB_KDC_NOT_FOUND`.
 const KDC_NOT_FOUND: i32 = 85;
@@ -74,7 +74,7 @@ pub(super) fn step(
     if Token::is_iakerb(token) {
         return proxy(state, relay, token);
     }
-    let accepted = ap(state.conversation.transcript(), acceptor, token)?;
+    let accepted = ap_accept(state.conversation.transcript(), acceptor, token)?;
     state.done = true;
     Ok(AcceptStep::Complete(Box::new(accepted)))
 }

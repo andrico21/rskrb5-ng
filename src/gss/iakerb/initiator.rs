@@ -28,7 +28,7 @@ use crate::{
 
 mod ap;
 
-use ap::{Pending, ap, reply};
+use ap::{Pending, ap_request, reply};
 
 /// `KRB_AP_ERR_IAKERB_KDC_NOT_FOUND`.
 const KDC_NOT_FOUND: i32 = 85;
@@ -175,7 +175,7 @@ fn start(state: &mut State, credential: &Credential) -> Result<InitStep, Error> 
 /// Returns [`Error::Gss`] without a ticket source, and the exchange errors.
 fn begin(state: &mut State, credential: &Credential) -> Result<InitStep, Error> {
     if let Some(ticket) = cred::service_ticket(credential, &state.target) {
-        return ap(state, &ticket);
+        return ap_request(state, &ticket);
     }
     let client = state.client.clone().ok_or(Gss::NoCredential("no client"))?;
     let now = SystemTime::now()
@@ -255,7 +255,7 @@ fn advance(
                     state.phase = Phase::Tgs(exchange);
                     return send(state, &outbound);
                 }
-                ExchangeStep::Complete(ticket) => return ap(state, &ticket),
+                ExchangeStep::Complete(ticket) => return ap_request(state, &ticket),
                 ExchangeStep::Prompt(_) => return Err(Error::UnsupportedPrompt),
             },
             Phase::Start

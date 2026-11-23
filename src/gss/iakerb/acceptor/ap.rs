@@ -126,7 +126,7 @@ fn acceptor_subkey(etype: i32) -> Result<Option<EncryptionKey>, Error> {
 /// # Errors
 ///
 /// Returns the AP-REQ validation errors and those of [`check`].
-pub(super) fn ap(
+pub(super) fn ap_accept(
     transcript: &[u8],
     acceptor: &mut Acceptor<'_>,
     token: &[u8],

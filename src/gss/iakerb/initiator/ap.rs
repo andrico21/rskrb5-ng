@@ -73,7 +73,7 @@ fn now() -> Result<(SystemTime, u32), Error> {
 /// # Errors
 ///
 /// Returns the policy, checksum and AP-REQ errors.
-pub(super) fn ap(state: &mut State, ticket: &TgsRepSession) -> Result<InitStep, Error> {
+pub(super) fn ap_request(state: &mut State, ticket: &TgsRepSession) -> Result<InitStep, Error> {
     let options = &state.options;
     if options.flags.contains(ContextFlags::DCE_STYLE) {
         return Err(Gss::NotNegotiated("DCE-style establishment").into());
