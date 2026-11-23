@@ -14,7 +14,7 @@ mod context;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod iana_tables {
     use rskrb5_ng::iana::{
-        Registry, address_type, authorization_data_type, checksum_type, encryption_type,
+        Entry, Registry, address_type, authorization_data_type, checksum_type, encryption_type,
         error_code, fast_armor_type, fast_option, message_type, name_type, padata_type,
         second_factor_type, spake_group, transport_type,
     };
@@ -208,7 +208,7 @@ mod iana_tables {
         ] {
             let entries = registry.entries();
             let first = entries.first().context("the registry lists an entry")?;
-            assert!(first.number() <= entries.last().map_or(i32::MAX, |last| last.number()));
+            assert!(first.number() <= entries.last().map_or(i32::MAX, Entry::number));
             for pair in entries.windows(2) {
                 let [earlier, later] = pair else {
                     continue;
