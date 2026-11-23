@@ -18,3 +18,7 @@ mod iov;
 /// DCE-style three-leg establishment and its token rules.
 #[path = "dce.rs"]
 mod dce;
+
+/// Context and credential transfer under a transfer key and a ledger.
+#[path = "transfer.rs"]
+mod transfer;
