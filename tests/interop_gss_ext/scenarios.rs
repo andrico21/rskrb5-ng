@@ -105,6 +105,14 @@ fn aead_both_ways(pair: &mut Pair) -> Result<(), Box<dyn Error>> {
         let token =
             pair.context
                 .wrap_aead(b"rust associated", b"rust aead payload", confidential)?;
+        // Under other associated data MIT refuses the token and keeps its
+        // sequence state, so the same token then opens.
+        assert!(
+            pair.adapter
+                .unwrap_aead(pair.handle, b"other associated", &token)
+                .is_err(),
+            "MIT refuses a token under other associated data"
+        );
         let opened = pair
             .adapter
             .unwrap_aead(pair.handle, b"rust associated", &token)?;
@@ -113,15 +121,6 @@ fn aead_both_ways(pair: &mut Pair) -> Result<(), Box<dyn Error>> {
             opened.confidential(),
             confidential,
             "MIT sees the protection"
-        );
-        let other = pair
-            .context
-            .wrap_aead(b"rust associated", b"second payload", confidential)?;
-        assert!(
-            pair.adapter
-                .unwrap_aead(pair.handle, b"other associated", &other)
-                .is_err(),
-            "MIT refuses a token under other associated data"
         );
         let sealed = pair.adapter.wrap_aead(
             pair.handle,
