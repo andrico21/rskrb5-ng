@@ -1,7 +1,10 @@
 //! One kadm5 call: the RPC exchange under the timeout, the outcome rule for
 //! mutations, and the result decoding.
 
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::{
+    io::{AsyncRead, AsyncWrite, AsyncWriteExt as _},
+    time,
+};
 use zeroize::Zeroizing;
 
 use super::{Procedure, RemoteAdminClient, Response};
@@ -16,6 +19,10 @@ use crate::{
 /// connection. While the exchange runs the client is marked interrupted, so a
 /// caller that drops this future leaves a client that refuses every later
 /// call before sending it.
+///
+/// # Errors
+///
+/// Returns the RPC errors of the exchange.
 async fn exchange<S>(
     client: &mut RemoteAdminClient<S>,
     procedure: Procedure,
@@ -27,7 +34,7 @@ where
     client.interrupted = Some(procedure);
     let timeout = client.options.timeout;
     let stream = &mut client.stream;
-    let answer = tokio::time::timeout(timeout, async {
+    let answer = time::timeout(timeout, async {
         record::write(stream, call.message()).await?;
         record::read(stream).await
     })
@@ -77,7 +84,7 @@ where
         .map_err(|error| unknown(Error::Rpc(error)))?;
     match Response::decode(procedure, client.version, &results) {
         Ok(response) => Ok(response),
-        Err(error @ Error::Server { .. }) => Err(error),
+        Err(error @ Error::Server { procedure: _, code: _ }) => Err(error),
         Err(error) => Err(unknown(error)),
     }
 }
@@ -92,15 +99,13 @@ pub(super) async fn destroy<S>(client: &mut RemoteAdminClient<S>) -> Result<(), 
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    use tokio::io::AsyncWriteExt as _;
-
     if let Some(previous) = client.interrupted {
         return Err(Error::Interrupted(previous.name()));
     }
     let call = client.rpc.destroy_call()?;
     let timeout = client.options.timeout;
     let stream = &mut client.stream;
-    let answer = tokio::time::timeout(timeout, async {
+    let answer = time::timeout(timeout, async {
         record::write(stream, call.message()).await?;
         record::read(stream).await
     })

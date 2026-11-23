@@ -1,13 +1,16 @@
-//! The RPCSEC_GSS context state machine (RFC 2203 section 5, MIT
-//! `auth_gss.c` `authgss_refresh`, `authgss_marshal`, `authgss_validate`
-//! and `authgss_prot.c` `xdr_rpc_gss_wrap_data`/`unwrap_data`).
+//! The `RPCSEC_GSS` context state machine (RFC 2203 section 5).
+//!
+//! MIT's client: `auth_gss.c` `authgss_refresh`, `authgss_marshal`,
+//! `authgss_validate` and `authgss_prot.c` `xdr_rpc_gss_wrap_data` and
+//! `xdr_rpc_gss_unwrap_data`.
 
+use core::mem;
 use std::io;
 
 use zeroize::Zeroizing;
 
 use super::{
-    CallKind, InitStep, Phase, Program, ProtectedCall, Protection, Reply, RpcClient,
+    CallKind, InitStep, Outcome, Phase, Program, ProtectedCall, Protection, Reply, RpcClient,
     message::{self, Credential as GssCredential, MAX_HANDLE, RPCSEC_GSS},
     xdr::{Decoder, Encoder},
 };
@@ -47,7 +50,7 @@ const GSS_S_COMPLETE: u32 = 0;
 /// GSS major status `GSS_S_CONTINUE_NEEDED`.
 const GSS_S_CONTINUE_NEEDED: u32 = 1;
 
-/// The RPCSEC_GSS service number of `protection`.
+/// The `RPCSEC_GSS` service number of `protection`.
 const fn service(protection: Protection) -> u32 {
     match protection {
         Protection::Integrity => 2,
@@ -56,6 +59,10 @@ const fn service(protection: Protection) -> u32 {
 }
 
 /// See [`RpcClient::new`].
+///
+/// # Errors
+///
+/// Returns the RPC and GSS errors of the step.
 pub(super) fn new(
     program: Program,
     protection: Protection,
@@ -90,14 +97,13 @@ const fn next_xid(client: &mut RpcClient) -> u32 {
 }
 
 /// A context-creation call carrying `token`.
+///
+/// # Errors
+///
+/// Returns the RPC and GSS errors of the step.
 fn init_call(client: &mut RpcClient, procedure: u32, token: &[u8]) -> Result<ProtectedCall, Error> {
     let xid = next_xid(client);
-    let credential = GssCredential {
-        procedure,
-        sequence: 0,
-        service: service(client.protection),
-        handle: &client.handle,
-    };
+    let credential = GssCredential::new(procedure, 0, service(client.protection), &client.handle);
     let header = message::header(xid, client.program, NULLPROC, &credential)?;
     let encoder = message::verifier(Encoder::new().raw(&header), 0, &[])?;
     let message = encoder.opaque("context token", token, MAX_TOKEN)?.finish();
@@ -111,11 +117,15 @@ fn init_call(client: &mut RpcClient, procedure: u32, token: &[u8]) -> Result<Pro
 }
 
 /// See [`RpcClient::start`].
+///
+/// # Errors
+///
+/// Returns the RPC and GSS errors of the step.
 pub(super) fn start(
     client: &mut RpcClient,
     credential: &Credential,
 ) -> Result<ProtectedCall, Error> {
-    let Phase::Start(mut initiator) = core::mem::replace(&mut client.phase, Phase::Closed) else {
+    let Phase::Start(mut initiator) = mem::replace(&mut client.phase, Phase::Closed) else {
         return Err(Error::UnexpectedStep("the context creation has started"));
     };
     let token = match initiator.init_sec_context(credential, None)? {
@@ -133,6 +143,10 @@ pub(super) fn start(
 }
 
 /// The decoded reply to the call with `xid`, its outcome a success.
+///
+/// # Errors
+///
+/// Returns the RPC and GSS errors of the step.
 fn accepted(message: &[u8], xid: u32) -> Result<Reply, Error> {
     let reply = Reply::decode(message)?;
     if reply.xid != xid {
@@ -142,18 +156,22 @@ fn accepted(message: &[u8], xid: u32) -> Result<Reply, Error> {
         });
     }
     match reply.outcome {
-        super::Outcome::Success => Ok(reply),
-        super::Outcome::AuthError(status) => Err(Error::AuthenticationRejected(status)),
-        super::Outcome::RpcMismatch { low, high } => Err(Error::RpcMismatch { low, high }),
-        super::Outcome::ProgramUnavailable => Err(Error::NotAccepted(1)),
-        super::Outcome::ProgramMismatch { .. } => Err(Error::NotAccepted(2)),
-        super::Outcome::ProcedureUnavailable => Err(Error::NotAccepted(3)),
-        super::Outcome::GarbageArguments => Err(Error::NotAccepted(4)),
-        super::Outcome::SystemError => Err(Error::NotAccepted(5)),
+        Outcome::Success => Ok(reply),
+        Outcome::AuthError(status) => Err(Error::AuthenticationRejected(status)),
+        Outcome::RpcMismatch { low, high } => Err(Error::VersionMismatch { low, high }),
+        Outcome::ProgramUnavailable => Err(Error::NotAccepted(1)),
+        Outcome::ProgramMismatch { low: _, high: _ } => Err(Error::NotAccepted(2)),
+        Outcome::ProcedureUnavailable => Err(Error::NotAccepted(3)),
+        Outcome::GarbageArguments => Err(Error::NotAccepted(4)),
+        Outcome::SystemError => Err(Error::NotAccepted(5)),
     }
 }
 
-/// Verify that `reply` carries an RPCSEC_GSS verifier that is a MIC over `number`.
+/// Verify that `reply` carries an `RPCSEC_GSS` verifier that is a MIC over `number`.
+///
+/// # Errors
+///
+/// Returns the RPC and GSS errors of the step.
 fn verify(context: &mut EstablishedContext, reply: &Reply, number: u32) -> Result<(), Error> {
     let verifier = reply
         .verifier
@@ -182,6 +200,10 @@ struct InitResult<'bytes> {
 }
 
 /// Decode `rpc_gss_init_res` (MIT `xdr_rpc_gss_init_res`, `authgss_prot.c`).
+///
+/// # Errors
+///
+/// Returns the RPC and GSS errors of the step.
 fn init_result(results: &[u8]) -> Result<InitResult<'_>, Error> {
     let mut decoder = Decoder::new(results);
     let result = InitResult {
@@ -196,13 +218,17 @@ fn init_result(results: &[u8]) -> Result<InitResult<'_>, Error> {
 }
 
 /// See [`RpcClient::continue_init`].
+///
+/// # Errors
+///
+/// Returns the RPC and GSS errors of the step.
 pub(super) fn continue_init(
     client: &mut RpcClient,
     credential: &Credential,
     message: &[u8],
 ) -> Result<InitStep, Error> {
     let Phase::Creating { mut initiator, xid } =
-        core::mem::replace(&mut client.phase, Phase::Closed)
+        mem::replace(&mut client.phase, Phase::Closed)
     else {
         return Err(Error::UnexpectedStep(
             "no context-creation call is outstanding",
@@ -255,17 +281,25 @@ pub(super) fn continue_init(
 }
 
 /// The established context of `client`.
+///
+/// # Errors
+///
+/// Returns the RPC and GSS errors of the step.
 fn established(client: &mut RpcClient) -> Result<&mut EstablishedContext, Error> {
     match &mut client.phase {
         Phase::Established(context) => Ok(context),
         Phase::Closed => Err(Error::ConnectionClosed),
-        Phase::Start(_) | Phase::Creating { .. } => {
+        Phase::Start(_) | Phase::Creating { initiator: _, xid: _ } => {
             Err(Error::UnexpectedStep("the context is not established"))
         }
     }
 }
 
 /// A data or destroy call under the context.
+///
+/// # Errors
+///
+/// Returns the RPC and GSS errors of the step.
 fn protected_call(
     client: &mut RpcClient,
     kind: CallKind,
@@ -289,12 +323,7 @@ fn protected_call(
     } else {
         DATA
     };
-    let credential = GssCredential {
-        procedure: gss_procedure,
-        sequence,
-        service: service(client.protection),
-        handle: &client.handle,
-    };
+    let credential = GssCredential::new(gss_procedure, sequence, service(client.protection), &client.handle);
     let header = message::header(xid, client.program, procedure, &credential)?;
     let protection = client.protection;
     let context = established(client)?;
@@ -327,6 +356,10 @@ fn protected_call(
 }
 
 /// See [`RpcClient::call`].
+///
+/// # Errors
+///
+/// Returns the RPC and GSS errors of the step.
 pub(super) fn call(
     client: &mut RpcClient,
     procedure: u32,
@@ -336,11 +369,19 @@ pub(super) fn call(
 }
 
 /// See [`RpcClient::destroy_call`].
+///
+/// # Errors
+///
+/// Returns the RPC and GSS errors of the step.
 pub(super) fn destroy_call(client: &mut RpcClient) -> Result<ProtectedCall, Error> {
     protected_call(client, CallKind::Destroy, NULLPROC, &[])
 }
 
 /// The unprotected body of a data reply: its sequence number checked.
+///
+/// # Errors
+///
+/// Returns the RPC and GSS errors of the step.
 fn unprotect(
     context: &mut EstablishedContext,
     protection: Protection,
@@ -376,6 +417,10 @@ fn unprotect(
 }
 
 /// Check the reply to `call`.
+///
+/// # Errors
+///
+/// Returns the RPC and GSS errors of the step.
 fn checked_reply(
     client: &mut RpcClient,
     call: &ProtectedCall,
@@ -404,6 +449,10 @@ fn checked_reply(
 }
 
 /// See [`RpcClient::reply`].
+///
+/// # Errors
+///
+/// Returns the RPC and GSS errors of the step.
 pub(super) fn reply(
     client: &mut RpcClient,
     call: &ProtectedCall,

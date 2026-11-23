@@ -1,4 +1,4 @@
-/// ONC RPC over TCP and RPCSEC_GSS error ([`crate::rpcsec_gss`]).
+/// ONC RPC over TCP and `RPCSEC_GSS` error ([`crate::rpcsec_gss`]).
 ///
 /// Every failure after a call was written leaves its connection closed; the
 /// administration client above it reports the outcome of a mutation as
@@ -47,7 +47,7 @@ pub enum Rpc {
     },
     /// The server speaks other RPC versions (`RPC_MISMATCH`).
     #[error("the server speaks RPC versions {low} to {high}")]
-    RpcMismatch {
+    VersionMismatch {
         /// The lowest version.
         low: u32,
         /// The highest version.
@@ -60,7 +60,7 @@ pub enum Rpc {
     /// The server did not run the call (`accept_stat`, RFC 5531 section 9).
     #[error("the server did not accept the call (accept_stat {0})")]
     NotAccepted(u32),
-    /// A reply carries a verifier that is not RPCSEC_GSS.
+    /// A reply carries a verifier that is not `RPCSEC_GSS`.
     #[error("the reply verifier has flavor {0}, not RPCSEC_GSS")]
     UnexpectedVerifier(u32),
     /// A reply verifier is not this call's sequence number (or window) under
@@ -133,7 +133,7 @@ pub enum Kadm5 {
         procedure: &'static str,
         /// What ended the call.
         #[source]
-        cause: Box<Kadm5>,
+        cause: Box<Self>,
     },
     /// An earlier call on this client ended before its answer; nothing was sent.
     #[error("an earlier {0} call did not finish; this client sends nothing more")]

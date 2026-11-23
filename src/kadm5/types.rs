@@ -409,8 +409,10 @@ impl KeySaltTuple {
     }
 }
 
-/// The key options of a password change, a key randomization or a key set:
-/// keep the old keys, and which key/salt tuples to make (none: kadmind's).
+/// The key options of a password change, a key randomization or a key set.
+///
+/// They say whether to keep the old keys and which key/salt tuples to make
+/// (none: kadmind's).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct KeyOptions {
@@ -467,9 +469,10 @@ impl KeyOptions {
     }
 }
 
-/// A key with its version and salt (`kadm5_key_data`): what
-/// [`RemoteAdminClient::set_key_data`] sends and
-/// [`RemoteAdminClient::get_principal_keys`] returns.
+/// A key with its version and salt (`kadm5_key_data`).
+///
+/// [`RemoteAdminClient::set_key_data`] sends these and
+/// [`RemoteAdminClient::get_principal_keys`] returns them.
 ///
 /// The key and salt are erased when dropped and never shown by `Debug`.
 #[derive(Clone)]
@@ -626,28 +629,28 @@ impl KeyInfo {
     /// The key-data version.
     #[inline]
     #[must_use]
-    pub const fn version(&self) -> i16 {
+    pub const fn version(self) -> i16 {
         self.version
     }
 
     /// The key version.
     #[inline]
     #[must_use]
-    pub const fn kvno(&self) -> u16 {
+    pub const fn kvno(self) -> u16 {
         self.kvno
     }
 
     /// The enctype.
     #[inline]
     #[must_use]
-    pub const fn enctype(&self) -> i16 {
+    pub const fn enctype(self) -> i16 {
         self.enctype
     }
 
     /// The salt type.
     #[inline]
     #[must_use]
-    pub const fn salt_type(&self) -> i16 {
+    pub const fn salt_type(self) -> i16 {
         self.salt_type
     }
 }
@@ -658,7 +661,7 @@ impl KeyInfo {
 pub struct Options {
     /// The realm administered.
     realm: String,
-    /// The RPCSEC_GSS service.
+    /// The `RPCSEC_GSS` service.
     protection: Protection,
     /// The newest API version offered.
     api_version: ApiVersion,
@@ -671,9 +674,11 @@ pub struct Options {
 }
 
 impl Options {
-    /// Administer `realm` under privacy, offering API v4, with MIT's one-hour
-    /// call timeout (`client_init.c` `CLSET_TIMEOUT`) and the secure default
-    /// encryption policy.
+    /// Administer `realm` with the defaults.
+    ///
+    /// They are privacy, API v4 first, MIT's one-hour call timeout
+    /// (`client_init.c` `CLSET_TIMEOUT`) and the secure default encryption
+    /// policy.
     #[inline]
     #[must_use]
     pub fn new(realm: &str) -> Self {
@@ -749,7 +754,7 @@ impl Options {
         &self.realm
     }
 
-    /// The RPCSEC_GSS service.
+    /// The `RPCSEC_GSS` service.
     #[inline]
     #[must_use]
     pub const fn protection(&self) -> Protection {
@@ -790,11 +795,12 @@ impl AdminServer {
     }
 }
 
-/// The administration server of `realm`: the first `[realms] <realm>
-/// admin_server` value, `host`, `host:port` or `[address]:port`, port 749 when
-/// it names none (MIT `kadm5_get_config_params`, `alt_prof.c`
-/// `parse_admin_server_port`). No DNS lookup is made: MIT's kadm5 client makes
-/// none.
+/// The administration server of `realm`.
+///
+/// It is the first `[realms] <realm> admin_server` value, `host`, `host:port`
+/// or `[address]:port`, port 749 when it names none (MIT
+/// `kadm5_get_config_params`, `alt_prof.c` `parse_admin_server_port`). No DNS
+/// lookup is made: MIT's kadm5 client makes none.
 ///
 /// # Errors
 ///

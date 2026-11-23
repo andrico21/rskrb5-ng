@@ -1,11 +1,13 @@
 //! A bounded XDR (RFC 4506) encoder and decoder.
 //!
-//! Only the forms ONC RPC, RPCSEC_GSS and kadm5 use: 32-bit integers,
+//! Only the forms ONC RPC, `RPCSEC_GSS` and kadm5 use: 32-bit integers,
 //! booleans, variable-length opaque data and MIT's NUL-terminated
 //! `xdr_nullstring` (`kadm_rpc_xdr.c:36-87`). The decoder checks every
 //! length against the bytes that remain and against the caller's bound before
 //! it allocates, and every count against the bytes its elements need, so no
 //! input can make it allocate more than the input's own size.
+
+use core::iter;
 
 use zeroize::Zeroizing;
 
@@ -79,7 +81,7 @@ impl Encoder {
         self.bytes.extend_from_slice(&length.to_be_bytes());
         self.bytes.extend_from_slice(value);
         self.bytes
-            .extend(core::iter::repeat_n(0_u8, padding(value.len())));
+            .extend(iter::repeat_n(0_u8, padding(value.len())));
         Ok(self)
     }
 
@@ -149,6 +151,10 @@ impl<'bytes> Decoder<'bytes> {
     }
 
     /// `count` bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Malformed`] when the bytes run out.
     fn take(&mut self, count: usize) -> Result<&'bytes [u8], Error> {
         let (head, tail) = self
             .rest
@@ -221,7 +227,8 @@ impl<'bytes> Decoder<'bytes> {
         Ok(value)
     }
 
-    /// MIT's `xdr_nullstring` of at most `maximum` bytes before its NUL:
+    /// MIT's `xdr_nullstring` of at most `maximum` bytes before its NUL.
+    ///
     /// `None` for length 0, else bytes that end with their only NUL
     /// (`kadm_rpc_xdr.c:64-69`).
     ///
@@ -242,9 +249,10 @@ impl<'bytes> Decoder<'bytes> {
         }
     }
 
-    /// An array count of at most `maximum` elements of at least `minimum`
-    /// bytes each, checked against the bytes that remain before any element
-    /// is read.
+    /// An array count of at most `maximum` elements.
+    ///
+    /// Each element takes at least `minimum` bytes; the count is checked
+    /// against the bytes that remain before any element is read.
     ///
     /// # Errors
     ///

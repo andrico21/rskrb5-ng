@@ -1,18 +1,18 @@
-//! ONC RPC over TCP with RPCSEC_GSS, in pure Rust.
+//! ONC RPC over TCP with `RPCSEC_GSS`, in pure Rust.
 //!
 //! RFC 5531 (ONC RPC version 2 and record marking), RFC 4506 (XDR) and
-//! RFC 2203 (RPCSEC_GSS) over the crate's own GSS-API Kerberos contexts
+//! RFC 2203 (`RPCSEC_GSS`) over the crate's own GSS-API Kerberos contexts
 //! ([`crate::gss`]), as MIT krb5 1.22.2's `gssrpc` client speaks them
 //! (`src/lib/rpc/auth_gss.c`, `authgss_prot.c`, `clnt_tcp.c`):
 //!
-//! - an [`RpcClient`] creates the RPCSEC_GSS context with `NULLPROC` calls
+//! - an [`RpcClient`] creates the `RPCSEC_GSS` context with `NULLPROC` calls
 //!   carrying the initiator's tokens, then verifies the server's MIC over the
 //!   granted sequence window before it calls anything;
 //! - each [`ProtectedCall`] carries a fresh sequence number, a credential and
 //!   a verifier MIC over the RPC header, and its arguments under the
 //!   [`Protection`] the context was created with;
 //! - [`RpcClient::reply`] accepts exactly one reply per call: the reply must
-//!   answer the call's XID, carry an RPCSEC_GSS verifier that is a MIC over the
+//!   answer the call's XID, carry an `RPCSEC_GSS` verifier that is a MIC over the
 //!   call's sequence number, and protect a body that names that number again.
 //!
 //! The client is sans-I/O: it builds and checks RPC messages, and
@@ -21,7 +21,7 @@
 //!
 //! # Security
 //!
-//! - Only RPCSEC_GSS is ever sent: no `AUTH_SYS`, `AUTH_NONE` or old
+//! - Only `RPCSEC_GSS` is ever sent: no `AUTH_SYS`, `AUTH_NONE` or old
 //!   `AUTH_GSSAPI` fallback exists (MIT falls back to `AUTH_GSSAPI` unless told
 //!   not to, `client_init.c` `rpc_auth`), and the unprotected `rpc_gss_svc_none`
 //!   service is not offered.
@@ -45,7 +45,7 @@ use crate::{
     gss::{Credential, EstablishedContext, Initiator, InitiatorOptions, Name},
 };
 
-/// The RPCSEC_GSS context state machine.
+/// The `RPCSEC_GSS` context state machine.
 mod client;
 /// RPC call headers and reply decoding.
 mod message;

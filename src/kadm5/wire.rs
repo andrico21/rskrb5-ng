@@ -1,6 +1,8 @@
 //! The kadm5 XDR layouts of MIT 1.22.2's `kadm_rpc_xdr.c`: the argument
 //! encoders and the bounded result decoder.
 
+use core::iter;
+
 use zeroize::Zeroizing;
 
 use super::{
@@ -32,53 +34,39 @@ const MAX_TL: usize = 4096;
 /// `xdr_nulltype`'s "null" boolean: `TRUE` means no value follows.
 const NULL: bool = true;
 
+/// A bound failure as the kadm5 error; any other RPC error as itself.
+fn too_large(error: Rpc) -> Error {
+    if let Rpc::TooLarge {
+        field,
+        maximum,
+        actual,
+    } = error
+    {
+        Error::TooLarge {
+            field,
+            maximum,
+            actual,
+        }
+    } else {
+        Error::Rpc(error)
+    }
+}
+
 /// An encoding failure: an argument XDR cannot carry.
 fn argument(error: Rpc) -> Error {
-    match error {
-        Rpc::TooLarge {
-            field,
-            maximum,
-            actual,
-        } => Error::TooLarge {
-            field,
-            maximum,
-            actual,
-        },
-        Rpc::Malformed(reason) => Error::InvalidArgument(reason),
-        Rpc::Io(_)
-        | Rpc::TimedOut
-        | Rpc::RecordTooLarge { .. }
-        | Rpc::TooManyFragments(_)
-        | Rpc::XidMismatch { .. }
-        | Rpc::RpcMismatch { .. }
-        | Rpc::AuthenticationRejected(_)
-        | Rpc::NotAccepted(_)
-        | Rpc::UnexpectedVerifier(_)
-        | Rpc::BadVerifier(_)
-        | Rpc::SequenceMismatch { .. }
-        | Rpc::SequenceExhausted
-        | Rpc::ContextCreation { .. }
-        | Rpc::BadWindow(_)
-        | Rpc::UnexpectedStep(_)
-        | Rpc::Gss(_)
-        | Rpc::ConnectionClosed => Error::Rpc(error),
+    if let Rpc::Malformed(reason) = error {
+        Error::InvalidArgument(reason)
+    } else {
+        too_large(error)
     }
 }
 
 /// A decoding failure: a result that does not follow the layout.
 fn result(error: Rpc) -> Error {
-    match error {
-        Rpc::TooLarge {
-            field,
-            maximum,
-            actual,
-        } => Error::TooLarge {
-            field,
-            maximum,
-            actual,
-        },
-        Rpc::Malformed(reason) => Error::Malformed(reason),
-        other => argument(other),
+    if let Rpc::Malformed(reason) = error {
+        Error::Malformed(reason)
+    } else {
+        too_large(error)
     }
 }
 
@@ -88,6 +76,10 @@ pub(super) fn begin(version: ApiVersion) -> Encoder {
 }
 
 /// A string or none (`xdr_nullstring`).
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 pub(super) fn text(
     encoder: Encoder,
     field: &'static str,
@@ -99,12 +91,20 @@ pub(super) fn text(
 }
 
 /// A principal (`xdr_krb5_principal`): its MIT string form.
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 pub(super) fn principal(encoder: Encoder, value: &Principal) -> Result<Encoder, Error> {
     text(encoder, "principal", Some(name::unparse(value).as_bytes()))
 }
 
 /// Tagged data under `xdr_nulltype`: none as "null", else each entry after
 /// a "more" boolean.
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 fn tl_data(mut encoder: Encoder, entries: &[TlData]) -> Result<Encoder, Error> {
     if entries.is_empty() {
         return Ok(encoder.bool(NULL));
@@ -121,6 +121,10 @@ fn tl_data(mut encoder: Encoder, entries: &[TlData]) -> Result<Encoder, Error> {
 }
 
 /// A count of `entries` as the record's `krb5_int16`.
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 fn short_count(field: &'static str, count: usize) -> Result<i32, Error> {
     i16::try_from(count)
         .map(i32::from)
@@ -131,9 +135,14 @@ fn short_count(field: &'static str, count: usize) -> Result<i32, Error> {
         })
 }
 
-/// A principal record as MIT's client sends it (`client_principal.c`): no
-/// modifier, the policy only under `KADM5_POLICY`, the tagged data only under
-/// `KADM5_TL_DATA`, and no key data.
+/// A principal record as MIT's client sends it (`client_principal.c`).
+///
+/// It has no modifier, the policy only under `KADM5_POLICY`, the tagged data
+/// only under `KADM5_TL_DATA`, and no key data.
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 pub(super) fn principal_record(
     encoder: Encoder,
     record: &PrincipalRecord,
@@ -149,7 +158,7 @@ pub(super) fn principal_record(
     } else {
         &[]
     };
-    let encoder = principal(encoder, &record.principal)?
+    let head = principal(encoder, &record.principal)?
         .i32(record.princ_expire_time)
         .i32(record.last_pwd_change)
         .i32(record.pw_expiration)
@@ -159,7 +168,7 @@ pub(super) fn principal_record(
         .i32(record.attributes)
         .u32(record.kvno)
         .u32(record.mkvno);
-    let encoder = text(encoder, "policy", policy)?
+    let tail = text(head, "policy", policy)?
         .i32(record.aux_attributes)
         .i32(record.max_renewable_life)
         .i32(record.last_success)
@@ -167,7 +176,7 @@ pub(super) fn principal_record(
         .u32(record.fail_auth_count)
         .i32(0)
         .i32(short_count("tagged data", entries.len())?);
-    Ok(tl_data(encoder, entries)?.u32(0).i32(mask_bits(mask)))
+    Ok(tl_data(tail, entries)?.u32(0).i32(mask_bits(mask)))
 }
 
 /// A mask as MIT's `long` on the wire.
@@ -176,13 +185,17 @@ const fn mask_bits(mask: PrincipalMask) -> i32 {
 }
 
 /// A policy record under `version` (`_xdr_kadm5_policy_ent_rec`), then `mask`.
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 pub(super) fn policy_record(
     encoder: Encoder,
     record: &PolicyRecord,
     version: ApiVersion,
     mask: u32,
 ) -> Result<Encoder, Error> {
-    let mut encoder = text(encoder, "policy", Some(record.name.as_bytes()))?
+    let mut out = text(encoder, "policy", Some(record.name.as_bytes()))?
         .i32(record.pw_min_life)
         .i32(record.pw_max_life)
         .i32(record.pw_min_length)
@@ -190,28 +203,32 @@ pub(super) fn policy_record(
         .i32(record.pw_history_num)
         .i32(record.policy_refcnt);
     if version >= ApiVersion::V3 {
-        encoder = encoder
+        out = out
             .u32(record.pw_max_fail)
             .i32(record.pw_failcnt_interval)
             .i32(record.pw_lockout_duration);
     }
     if version >= ApiVersion::V4 {
-        encoder = encoder
+        out = out
             .i32(record.attributes)
             .i32(record.max_life)
             .i32(record.max_renewable_life);
-        encoder = text(
-            encoder,
+        out = text(
+            out,
             "allowed key/salt tuples",
             record.allowed_keysalts.as_deref().map(str::as_bytes),
         )?
         .i32(short_count("tagged data", record.tl_data.len())?);
-        encoder = tl_data(encoder, &record.tl_data)?;
+        out = tl_data(out, &record.tl_data)?;
     }
-    Ok(encoder.i32(i32::from_be_bytes(mask.to_be_bytes())))
+    Ok(out.i32(i32::from_be_bytes(mask.to_be_bytes())))
 }
 
 /// An array count.
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 fn count(field: &'static str, length: usize) -> Result<u32, Error> {
     u32::try_from(length)
         .ok()
@@ -224,15 +241,23 @@ fn count(field: &'static str, length: usize) -> Result<u32, Error> {
 }
 
 /// Key/salt tuples (`xdr_array` of `xdr_krb5_key_salt_tuple`).
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 pub(super) fn keysalts(encoder: Encoder, tuples: &[KeySaltTuple]) -> Result<Encoder, Error> {
-    let mut encoder = encoder.u32(count("key/salt tuples", tuples.len())?);
+    let mut out = encoder.u32(count("key/salt tuples", tuples.len())?);
     for tuple in tuples {
-        encoder = encoder.i32(tuple.enctype).i32(tuple.salt.wire());
+        out = out.i32(tuple.enctype).i32(tuple.salt.wire());
     }
-    Ok(encoder)
+    Ok(out)
 }
 
 /// One keyblock (`xdr_krb5_keyblock`).
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 fn keyblock(encoder: Encoder, key: &EncryptionKey) -> Result<Encoder, Error> {
     encoder
         .i32(key.etype())
@@ -241,33 +266,49 @@ fn keyblock(encoder: Encoder, key: &EncryptionKey) -> Result<Encoder, Error> {
 }
 
 /// Keyblocks (`xdr_array` of `xdr_krb5_keyblock`).
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 pub(super) fn keyblocks(encoder: Encoder, keys: &[EncryptionKey]) -> Result<Encoder, Error> {
-    let mut encoder = encoder.u32(count("keys", keys.len())?);
+    let mut out = encoder.u32(count("keys", keys.len())?);
     for key in keys {
-        encoder = keyblock(encoder, key)?;
+        out = keyblock(out, key)?;
     }
-    Ok(encoder)
+    Ok(out)
 }
 
 /// Key data (`xdr_array` of `xdr_kadm5_key_data`).
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 pub(super) fn key_data(encoder: Encoder, keys: &[KeyData]) -> Result<Encoder, Error> {
-    let mut encoder = encoder.u32(count("key data", keys.len())?);
+    let mut out = encoder.u32(count("key data", keys.len())?);
     for entry in keys {
-        encoder = keyblock(encoder.u32(entry.kvno), &entry.key)?
+        out = keyblock(out.u32(entry.kvno), &entry.key)?
             .i32(i32::from(entry.salt_type))
             .opaque("salt", &entry.salt, MAX_KEY_BYTES)
             .map_err(argument)?;
     }
-    Ok(encoder)
+    Ok(out)
 }
 
 /// A `krb5_int16` carried as `xdr_int`.
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 fn short(decoder: &mut Decoder<'_>) -> Result<i16, Error> {
     i16::try_from(decoder.i32().map_err(result)?)
         .map_err(|_overflow| Error::Malformed("a 16-bit field out of range"))
 }
 
 /// A string that must be present and UTF-8.
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 fn string(decoder: &mut Decoder<'_>, field: &'static str) -> Result<String, Error> {
     let bytes = decoder
         .nullstring(field, MAX_STRING)
@@ -277,6 +318,10 @@ fn string(decoder: &mut Decoder<'_>, field: &'static str) -> Result<String, Erro
 }
 
 /// An optional UTF-8 string.
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 fn optional_string(
     decoder: &mut Decoder<'_>,
     field: &'static str,
@@ -292,11 +337,19 @@ fn optional_string(
 }
 
 /// A principal (`xdr_krb5_principal`) that must be present.
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 fn decode_principal(decoder: &mut Decoder<'_>) -> Result<Principal, Error> {
     name::parse(&string(decoder, "principal")?)
 }
 
 /// Tagged data under `xdr_nulltype`, in wire order, `expected` entries.
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 fn decode_tl_data(decoder: &mut Decoder<'_>, expected: i16) -> Result<Vec<TlData>, Error> {
     let mut entries = Vec::new();
     if !decoder.bool().map_err(result)? {
@@ -326,6 +379,10 @@ fn decode_tl_data(decoder: &mut Decoder<'_>, expected: i16) -> Result<Vec<TlData
 }
 
 /// A principal record (`_xdr_kadm5_principal_ent_rec`).
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 fn decode_principal_record(decoder: &mut Decoder<'_>) -> Result<PrincipalRecord, Error> {
     let mut record = PrincipalRecord::new(decode_principal(decoder)?);
     record.princ_expire_time = decoder.i32().map_err(result)?;
@@ -375,6 +432,10 @@ fn decode_principal_record(decoder: &mut Decoder<'_>) -> Result<PrincipalRecord,
 }
 
 /// A policy record under `version`.
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 fn decode_policy_record(
     decoder: &mut Decoder<'_>,
     version: ApiVersion,
@@ -403,6 +464,10 @@ fn decode_policy_record(
 }
 
 /// The `int` count and the array count of a list: equal.
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 fn list_count(
     decoder: &mut Decoder<'_>,
     field: &'static str,
@@ -419,16 +484,27 @@ fn list_count(
 }
 
 /// A list of names (`gprincs_ret`, `gpols_ret`).
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 fn decode_names(decoder: &mut Decoder<'_>) -> Result<Vec<String>, Error> {
     let count = list_count(decoder, "names", MAX_NAMES, 8)?;
-    (0..count).map(|_| string(decoder, "name")).collect()
+    let mut names = Vec::with_capacity(count);
+    for _ in 0..count {
+        names.push(string(decoder, "name")?);
+    }
+    Ok(names)
 }
 
 /// Keyblocks (`chrand_ret`).
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 fn decode_keys(decoder: &mut Decoder<'_>) -> Result<Vec<EncryptionKey>, Error> {
     let count = decoder.count("keys", MAX_KEYS, 8).map_err(result)?;
-    (0..count)
-        .map(|_| {
+    iter::repeat_with(|| {
             let etype = decoder.i32().map_err(result)?;
             let value = Zeroizing::new(
                 decoder
@@ -438,14 +514,18 @@ fn decode_keys(decoder: &mut Decoder<'_>) -> Result<Vec<EncryptionKey>, Error> {
             );
             Ok(EncryptionKey::new(etype, value))
         })
+        .take(count)
         .collect()
 }
 
 /// Key data (`getpkeys_ret`).
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 fn decode_key_data(decoder: &mut Decoder<'_>) -> Result<Vec<KeyData>, Error> {
     let count = decoder.count("key data", MAX_KEYS, 16).map_err(result)?;
-    (0..count)
-        .map(|_| {
+    iter::repeat_with(|| {
             let kvno = decoder.u32().map_err(result)?;
             let etype = decoder.i32().map_err(result)?;
             let key = Zeroizing::new(
@@ -468,23 +548,32 @@ fn decode_key_data(decoder: &mut Decoder<'_>) -> Result<Vec<KeyData>, Error> {
                 salt,
             })
         })
+        .take(count)
         .collect()
 }
 
 /// String attributes (`gstrings_ret`).
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 fn decode_strings(decoder: &mut Decoder<'_>) -> Result<Vec<StringAttribute>, Error> {
     let count = list_count(decoder, "string attributes", MAX_TL, 16)?;
-    (0..count)
-        .map(|_| {
+    iter::repeat_with(|| {
             Ok(StringAttribute {
                 key: string(decoder, "attribute key")?,
                 value: string(decoder, "attribute value")?,
             })
         })
+        .take(count)
         .collect()
 }
 
 /// See [`Response::decode`].
+///
+/// # Errors
+///
+/// Returns the bound, layout or argument error of the first field that fails.
 pub(super) fn decode_response(
     procedure: Procedure,
     version: ApiVersion,

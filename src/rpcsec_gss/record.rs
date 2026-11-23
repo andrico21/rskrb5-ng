@@ -9,7 +9,10 @@
 
 use zeroize::Zeroizing;
 
-use super::{MAX_FRAGMENTS, MAX_RECORD_SIZE};
+#[cfg(feature = "tokio")]
+use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
+
+use super::{DecodedRecord, MAX_FRAGMENTS, MAX_RECORD_SIZE};
 use crate::error::Rpc as Error;
 
 /// The last-fragment bit of a fragment header.
@@ -60,13 +63,15 @@ pub(super) fn encode(message: &[u8]) -> Zeroizing<Vec<u8>> {
     record
 }
 
-/// Reassemble the record at the start of `bytes`: the message and the bytes
-/// consumed, or `None` when `bytes` ends before the last fragment does.
+/// Reassemble the record at the start of `bytes`.
+///
+/// It returns the message and the bytes consumed, or `None` when `bytes`
+/// ends before the last fragment does.
 ///
 /// # Errors
 ///
 /// Returns [`Error::RecordTooLarge`] or [`Error::TooManyFragments`] past the bounds.
-pub(super) fn decode(bytes: &[u8]) -> Result<Option<(Zeroizing<Vec<u8>>, usize)>, Error> {
+pub(super) fn decode(bytes: &[u8]) -> Result<Option<DecodedRecord>, Error> {
     let mut message = Zeroizing::new(Vec::new());
     let mut rest = bytes;
     for _ in 0..MAX_FRAGMENTS {
@@ -95,10 +100,8 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Option<(Zeroizing<Vec<u8>>, usize)>
 #[cfg(feature = "tokio")]
 pub(crate) async fn write<W>(writer: &mut W, message: &[u8]) -> Result<(), Error>
 where
-    W: tokio::io::AsyncWrite + Unpin,
+    W: AsyncWrite + Unpin,
 {
-    use tokio::io::AsyncWriteExt as _;
-
     let record = encode(message);
     writer.write_all(&record).await?;
     writer.flush().await?;
@@ -115,10 +118,8 @@ where
 #[cfg(feature = "tokio")]
 pub(crate) async fn read<R>(reader: &mut R) -> Result<Zeroizing<Vec<u8>>, Error>
 where
-    R: tokio::io::AsyncRead + Unpin,
+    R: AsyncRead + Unpin,
 {
-    use tokio::io::AsyncReadExt as _;
-
     let mut message = Zeroizing::new(Vec::new());
     for _ in 0..MAX_FRAGMENTS {
         let mut header = [0_u8; 4];

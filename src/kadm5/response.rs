@@ -39,9 +39,10 @@ impl fmt::Debug for Response {
 }
 
 impl Response {
-    /// Decode the result of `procedure` under API `version`
-    /// (`kadm_rpc_xdr.c`): the version and code, then on success the
-    /// procedure's payload, with no byte left over.
+    /// Decode the result of `procedure` under API `version` (`kadm_rpc_xdr.c`).
+    ///
+    /// The result is the version and code, then on success the procedure's
+    /// payload, with no byte left over.
     ///
     /// # Errors
     ///

@@ -1,6 +1,7 @@
-//! Principal names in MIT's string form (`krb5_unparse_name` and
-//! `krb5_parse_name`, `unparse.c`, `parse.c`), the form `xdr_krb5_principal`
-//! puts on the wire (`kadm_rpc_xdr.c`).
+//! Principal names in MIT's string form.
+//!
+//! `krb5_unparse_name` and `krb5_parse_name` (`unparse.c`, `parse.c`): the
+//! form `xdr_krb5_principal` puts on the wire (`kadm_rpc_xdr.c`).
 
 use crate::{client::principal::Principal, error::Kadm5 as Error};
 
@@ -78,7 +79,7 @@ pub(super) fn parse(text: &str) -> Result<Principal, Error> {
             other => other,
         };
         let target = match realm.as_mut() {
-            Some(text) => text,
+            Some(realm_text) => realm_text,
             None => components
                 .last_mut()
                 .ok_or(Error::Malformed("a principal has a component"))?,
@@ -86,7 +87,7 @@ pub(super) fn parse(text: &str) -> Result<Principal, Error> {
         target.push(literal);
     }
     let named_realm = realm
-        .filter(|text| !text.is_empty())
+        .filter(|named| !named.is_empty())
         .ok_or(Error::Malformed("a principal from kadmind names its realm"))?;
     if components.first().is_none_or(String::is_empty) {
         return Err(Error::Malformed("a principal has an empty first component"));

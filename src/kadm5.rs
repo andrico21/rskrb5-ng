@@ -1,8 +1,8 @@
-//! Remote kadm5 administration over RPCSEC_GSS, in pure Rust.
+//! Remote kadm5 administration over `RPCSEC_GSS`, in pure Rust.
 //!
 //! The client half of MIT krb5 1.22.2's `kadm5` library
 //! (`src/lib/kadm5/clnt/`): a [`RemoteAdminClient`] reaches kadmind over TCP,
-//! creates an RPCSEC_GSS context ([`crate::rpcsec_gss`]) with a ticket for
+//! creates an `RPCSEC_GSS` context ([`crate::rpcsec_gss`]) with a ticket for
 //! `kadmin/admin`, negotiates the kadm5 API version (v4, then v3, then v2, as
 //! `client_init.c` `init_any` does) and offers every remote operation of MIT's
 //! client library: principals and policies (create, modify, delete, rename,
@@ -31,7 +31,7 @@
 //!
 //! # Security
 //!
-//! - Every call runs under the RPCSEC_GSS privacy service by default (integrity
+//! - Every call runs under the `RPCSEC_GSS` privacy service by default (integrity
 //!   on request); no unauthenticated or `AUTH_SYS` call is ever sent.
 //! - Key/salt tuples and supplied keys pass the runtime encryption policy:
 //!   single DES and RC4-EXP are refused by name, DES3 and RC4 only with

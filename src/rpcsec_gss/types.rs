@@ -1,13 +1,16 @@
+/// A reassembled record's message and the bytes its fragments took.
+pub type DecodedRecord = (Zeroizing<Vec<u8>>, usize);
+
 /// The largest record a reply may reassemble into: 16 MiB.
 pub const MAX_RECORD_SIZE: usize = 0x0100_0000;
 
 /// The most fragments a record may have.
-pub const MAX_FRAGMENTS: usize = 16_384;
+pub const MAX_FRAGMENTS: usize = 0x4000;
 
 /// The largest credential or verifier body (RFC 5531 section 8.2).
 pub const MAX_AUTH_BYTES: usize = 400;
 
-/// The RPCSEC_GSS service of a context (RFC 2203 section 5.3.1).
+/// The `RPCSEC_GSS` service of a context (RFC 2203 section 5.3.1).
 ///
 /// `rpc_gss_svc_none`, which leaves the arguments and results unprotected, is
 /// not offered.
@@ -42,14 +45,14 @@ impl Program {
     /// The program number.
     #[inline]
     #[must_use]
-    pub const fn number(&self) -> u32 {
+    pub const fn number(self) -> u32 {
         self.number
     }
 
     /// The version.
     #[inline]
     #[must_use]
-    pub const fn version(&self) -> u32 {
+    pub const fn version(self) -> u32 {
         self.version
     }
 }
@@ -65,14 +68,14 @@ pub struct Verifier {
 }
 
 impl Verifier {
-    /// The authentication flavor: 6 for RPCSEC_GSS.
+    /// The authentication flavor: 6 for `RPCSEC_GSS`.
     #[inline]
     #[must_use]
     pub const fn flavor(&self) -> u32 {
         self.flavor
     }
 
-    /// The body: for RPCSEC_GSS a MIC token.
+    /// The body: for `RPCSEC_GSS` a MIC token.
     #[inline]
     #[must_use]
     pub fn body(&self) -> &[u8] {
@@ -198,7 +201,7 @@ enum CallKind {
 pub struct ProtectedCall {
     /// The XID.
     xid: u32,
-    /// The RPCSEC_GSS sequence number; 0 for a context creation call.
+    /// The `RPCSEC_GSS` sequence number; 0 for a context creation call.
     sequence: u32,
     /// The procedure.
     procedure: u32,
@@ -229,7 +232,7 @@ impl ProtectedCall {
         self.xid
     }
 
-    /// The RPCSEC_GSS sequence number; 0 for a context creation call.
+    /// The `RPCSEC_GSS` sequence number; 0 for a context creation call.
     #[inline]
     #[must_use]
     pub const fn sequence(&self) -> u32 {
@@ -278,7 +281,7 @@ enum Phase {
     Closed,
 }
 
-/// The client side of one RPCSEC_GSS context on one connection.
+/// The client side of one `RPCSEC_GSS` context on one connection.
 ///
 /// Calls are answered one at a time, in order; the window the server grants
 /// is never exceeded because no second call is built before the first is
@@ -308,7 +311,7 @@ impl fmt::Debug for RpcClient {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let phase = match self.phase {
             Phase::Start(_) => "start",
-            Phase::Creating { .. } => "creating",
+            Phase::Creating { initiator: _, xid: _ } => "creating",
             Phase::Established(_) => "established",
             Phase::Closed => "closed",
         };
@@ -323,7 +326,7 @@ impl fmt::Debug for RpcClient {
 }
 
 impl RpcClient {
-    /// A client of `program` that will create an RPCSEC_GSS context with
+    /// A client of `program` that will create an `RPCSEC_GSS` context with
     /// `protection` for the acceptor `target`.
     ///
     /// # Errors
@@ -338,10 +341,12 @@ impl RpcClient {
         client::new(program, protection, initiator)
     }
 
-    /// The initiator of an RPCSEC_GSS context for `target`: mutual
-    /// authentication, replay detection, confidentiality and integrity, and no
-    /// sequencing, as MIT's `rpc_auth` asks (`client_init.c`): the server signs
-    /// the window twice, so its first MIC the client sees follows a gap.
+    /// The initiator of an `RPCSEC_GSS` context for `target`.
+    ///
+    /// It asks for mutual authentication, replay detection, confidentiality
+    /// and integrity, and no sequencing, as MIT's `rpc_auth` does
+    /// (`client_init.c`): the server signs the window twice, so the first MIC
+    /// the client sees follows a gap.
     #[inline]
     #[must_use]
     pub fn initiator(target: Name, options: InitiatorOptions) -> Initiator {
@@ -461,6 +466,6 @@ pub fn encode_record(message: &[u8]) -> Zeroizing<Vec<u8>> {
 /// [`MAX_RECORD_SIZE`], decided from their headers alone, and
 /// [`Error::TooManyFragments`] past [`MAX_FRAGMENTS`].
 #[inline]
-pub fn decode_record(bytes: &[u8]) -> Result<Option<(Zeroizing<Vec<u8>>, usize)>, Error> {
+pub fn decode_record(bytes: &[u8]) -> Result<Option<DecodedRecord>, Error> {
     record::decode(bytes)
 }

@@ -96,7 +96,7 @@ pub enum Any {
     #[cfg(feature = "spnego")]
     #[error("GSS-API error: {0}")]
     Gss(#[from] Gss),
-    /// ONC RPC or RPCSEC_GSS processing failed.
+    /// ONC RPC or `RPCSEC_GSS` processing failed.
     #[cfg(feature = "spnego")]
     #[error("RPC error: {0}")]
     Rpc(#[from] Rpc),

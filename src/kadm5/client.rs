@@ -1,4 +1,4 @@
-/// A connection to kadmind with an established RPCSEC_GSS context and a
+/// A connection to kadmind with an established `RPCSEC_GSS` context and a
 /// negotiated API version.
 ///
 /// Calls are made one at a time. A failure after a call was sent closes the
@@ -15,7 +15,7 @@
 pub struct RemoteAdminClient<S> {
     /// The connection.
     stream: S,
-    /// The RPCSEC_GSS context.
+    /// The `RPCSEC_GSS` context.
     rpc: RpcClient,
     /// The negotiated API version.
     version: ApiVersion,
@@ -38,6 +38,10 @@ impl<S> fmt::Debug for RemoteAdminClient<S> {
 }
 
 /// Refuse key/salt tuples the policy or D2 refuses.
+///
+/// # Errors
+///
+/// Returns the policy errors of the check, or the call errors.
 fn check_keysalts(policy: &CryptoPolicy, tuples: &[KeySaltTuple]) -> Result<(), Error> {
     for tuple in tuples {
         check_salt(tuple.salt.wire())?;
@@ -47,7 +51,11 @@ fn check_keysalts(policy: &CryptoPolicy, tuples: &[KeySaltTuple]) -> Result<(), 
 }
 
 /// Refuse the Kerberos V4 (1) and AFS3 (5) salts: Kerberos V4 legacy, DES only.
-fn check_salt(salt: i32) -> Result<(), Error> {
+///
+/// # Errors
+///
+/// Returns the policy errors of the check, or the call errors.
+const fn check_salt(salt: i32) -> Result<(), Error> {
     if salt == SaltType::V4.wire() || salt == SaltType::Afs3.wire() {
         return Err(Error::Policy(PolicyError::RejectedFeature {
             feature: RejectedFeature::KerberosV4,
@@ -58,6 +66,10 @@ fn check_salt(salt: i32) -> Result<(), Error> {
 }
 
 /// Refuse keys of enctypes the policy refuses.
+///
+/// # Errors
+///
+/// Returns the policy errors of the check, or the call errors.
 fn check_keys<'key, I>(policy: &CryptoPolicy, keys: I) -> Result<(), Error>
 where
     I: IntoIterator<Item = &'key EncryptionKey>,
@@ -74,10 +86,12 @@ fn password_bytes(password: Option<&Password>) -> Option<&[u8]> {
 }
 
 impl RemoteAdminClient<TcpStream> {
-    /// Connect to the admin server `config` names for the options' realm
-    /// (`[realms] <realm> admin_server`, see [`admin_server`]), create the
-    /// RPCSEC_GSS context for `kadmin/admin@<realm>` with `credential`, and
-    /// negotiate the API version.
+    /// Connect to the admin server of the options' realm.
+    ///
+    /// The server is the one `config` names (`[realms] <realm> admin_server`,
+    /// see [`admin_server`]); then the `RPCSEC_GSS` context for
+    /// `kadmin/admin@<realm>` is created with `credential` and the API version
+    /// negotiated.
     ///
     /// `credential` must hold a live service ticket for `kadmin/admin@<realm>`
     /// (`Credential::from_service_ticket` of an AS or TGS exchange, or a
@@ -109,15 +123,16 @@ impl<S> RemoteAdminClient<S>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    /// Create the RPCSEC_GSS context on `stream` and negotiate the API
-    /// version: v4 (or the options' version), then the next older one while
-    /// the server answers `KADM5_NEW_SERVER_API_VERSION`.
+    /// Create the `RPCSEC_GSS` context on `stream` and negotiate the API version.
+    ///
+    /// The client offers v4 (or the options' version), then the next older
+    /// one while the server answers `KADM5_NEW_SERVER_API_VERSION`.
     ///
     /// # Errors
     ///
     /// Returns the RPC errors of the context creation
     /// ([`crate::error::Rpc::AuthenticationRejected`] for a server that will
-    /// not take RPCSEC_GSS: the client never falls back to another flavor),
+    /// not take `RPCSEC_GSS`: the client never falls back to another flavor),
     /// the GSS errors of the context, and [`Error::Server`] when the server
     /// refuses every version.
     ///
@@ -160,10 +175,11 @@ where
         }
     }
 
-    /// `kadm5_create_principal` (`kadm5_create_principal_3` with tuples):
-    /// create `record`'s principal with the fields it sets, `password` (none:
-    /// random keys when the record's attributes ask for them) and, when
-    /// given, keys of `keysalts`.
+    /// `kadm5_create_principal`, or `kadm5_create_principal_3` with tuples.
+    ///
+    /// It creates `record`'s principal with the fields it sets, `password`
+    /// (none: random keys when the record's attributes ask for them) and,
+    /// when given, keys of `keysalts`.
     ///
     /// # Errors
     ///
@@ -179,14 +195,14 @@ where
     ) -> Result<(), Error> {
         check_keysalts(&self.options.crypto_policy, keysalts)?;
         let mask = record.mask | PrincipalMask::PRINCIPAL;
-        let mut arguments = wire::principal_record(wire::begin(self.version), record, mask)?;
+        let mut head = wire::principal_record(wire::begin(self.version), record, mask)?;
         let procedure = if keysalts.is_empty() {
             Procedure::CreatePrincipal
         } else {
-            arguments = wire::keysalts(arguments, keysalts)?;
+            head = wire::keysalts(head, keysalts)?;
             Procedure::CreatePrincipal3
         };
-        let arguments = wire::text(arguments, "password", password_bytes(password))?.finish();
+        let arguments = wire::text(head, "password", password_bytes(password))?.finish();
         self.done(procedure, &arguments).await
     }
 
@@ -287,14 +303,14 @@ where
         options: &KeyOptions,
     ) -> Result<(), Error> {
         check_keysalts(&self.options.crypto_policy, &options.keysalts)?;
-        let mut arguments = wire::principal(wire::begin(self.version), principal)?;
+        let mut head = wire::principal(wire::begin(self.version), principal)?;
         let procedure = if options.is_extended() {
-            arguments = wire::keysalts(arguments.bool(options.keep_old), &options.keysalts)?;
+            head = wire::keysalts(head.bool(options.keep_old), &options.keysalts)?;
             Procedure::ChangePassword3
         } else {
             Procedure::ChangePassword
         };
-        let arguments = wire::text(arguments, "password", Some(password.as_bytes()))?.finish();
+        let arguments = wire::text(head, "password", Some(password.as_bytes()))?.finish();
         self.done(procedure, &arguments).await
     }
 
@@ -375,10 +391,9 @@ where
         }
         check_keysalts(&self.options.crypto_policy, &options.keysalts)?;
         check_keys(&self.options.crypto_policy, keys)?;
+        let head = wire::principal(wire::begin(self.version), principal)?.bool(options.keep_old);
         let arguments =
-            wire::principal(wire::begin(self.version), principal)?.bool(options.keep_old);
-        let arguments =
-            wire::keyblocks(wire::keysalts(arguments, &options.keysalts)?, keys)?.finish();
+            wire::keyblocks(wire::keysalts(head, &options.keysalts)?, keys)?.finish();
         self.done(Procedure::SetKeys3, &arguments).await
     }
 
@@ -404,8 +419,8 @@ where
             check_salt(i32::from(entry.salt_type))?;
         }
         check_keys(&self.options.crypto_policy, keys.iter().map(KeyData::key))?;
-        let arguments = wire::principal(wire::begin(self.version), principal)?.bool(keep_old);
-        let arguments = wire::key_data(arguments, keys)?.finish();
+        let head = wire::principal(wire::begin(self.version), principal)?.bool(keep_old);
+        let arguments = wire::key_data(head, keys)?.finish();
         self.done(Procedure::SetKeys4, &arguments).await
     }
 
@@ -459,13 +474,12 @@ where
         key: &str,
         value: Option<&str>,
     ) -> Result<(), Error> {
-        let arguments = wire::text(
+        let head = wire::text(
             wire::principal(wire::begin(self.version), principal)?,
             "attribute key",
             Some(key.as_bytes()),
         )?;
-        let arguments =
-            wire::text(arguments, "attribute value", value.map(str::as_bytes))?.finish();
+        let arguments = wire::text(head, "attribute value", value.map(str::as_bytes))?.finish();
         self.done(Procedure::SetString, &arguments).await
     }
 
@@ -585,7 +599,7 @@ where
         self.names(Procedure::GetPolicies, expression).await
     }
 
-    /// Destroy the RPCSEC_GSS context (`RPCSEC_GSS_DESTROY`) and close the connection.
+    /// Destroy the `RPCSEC_GSS` context (`RPCSEC_GSS_DESTROY`) and close the connection.
     ///
     /// # Errors
     ///
@@ -596,6 +610,10 @@ where
     }
 
     /// A call answered by `generic_ret`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the policy errors of the check, or the call errors.
     async fn done(&mut self, procedure: Procedure, arguments: &[u8]) -> Result<(), Error> {
         match call::run(self, procedure, arguments).await? {
             Response::Done => Ok(()),
@@ -610,6 +628,10 @@ where
     }
 
     /// A call answered by a name list.
+    ///
+    /// # Errors
+    ///
+    /// Returns the policy errors of the check, or the call errors.
     async fn names(
         &mut self,
         procedure: Procedure,

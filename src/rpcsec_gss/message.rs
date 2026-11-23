@@ -9,7 +9,7 @@ use super::{
 };
 use crate::error::Rpc as Error;
 
-/// The RPCSEC_GSS authentication flavor (RFC 2203 section 5).
+/// The `RPCSEC_GSS` authentication flavor (RFC 2203 section 5).
 pub(super) const RPCSEC_GSS: u32 = 6;
 
 /// The `rpc_gss_cred_vers_1_t` version (RFC 2203 section 5).
@@ -28,16 +28,28 @@ const REPLY: u32 = 1;
 /// The RPC protocol version.
 const RPC_VERSION: u32 = 2;
 
-/// The RPCSEC_GSS credential of one call (`rpc_gss_cred_vers_1_t`).
+/// The `RPCSEC_GSS` credential of one call (`rpc_gss_cred_vers_1_t`).
 pub(super) struct Credential<'handle> {
     /// `rpc_gss_proc_t`: 0 data, 1 init, 2 continue init, 3 destroy.
-    pub(super) procedure: u32,
+    procedure: u32,
     /// The sequence number.
-    pub(super) sequence: u32,
+    sequence: u32,
     /// `rpc_gss_service_t`: 2 integrity, 3 privacy.
-    pub(super) service: u32,
+    service: u32,
     /// The server's context handle.
-    pub(super) handle: &'handle [u8],
+    handle: &'handle [u8],
+}
+
+impl<'handle> Credential<'handle> {
+    /// The credential of `procedure` with `sequence` under `service` for `handle`.
+    pub(super) const fn new(procedure: u32, sequence: u32, service: u32, handle: &'handle [u8]) -> Self {
+        Self {
+            procedure,
+            sequence,
+            service,
+            handle,
+        }
+    }
 }
 
 /// The call header through the credential: the bytes the verifier signs
@@ -82,6 +94,10 @@ pub(super) fn verifier(encoder: Encoder, flavor: u32, body: &[u8]) -> Result<Enc
 }
 
 /// Two versions, the lowest and the highest.
+///
+/// # Errors
+///
+/// Returns [`Error::Malformed`] for a truncated message.
 fn versions(decoder: &mut Decoder<'_>) -> Result<(u32, u32), Error> {
     Ok((decoder.u32()?, decoder.u32()?))
 }

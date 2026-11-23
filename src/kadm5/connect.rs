@@ -1,10 +1,12 @@
-//! The admin server of a realm, the TCP connection, the RPCSEC_GSS context
-//! and the API version negotiation (MIT `client_init.c` `init_any`,
-//! `connect_to_server`, `setup_gss`; `alt_prof.c`).
+//! The admin server, the connection, the context and the version negotiation.
+//!
+//! MIT's client: `client_init.c` `init_any`, `connect_to_server` and
+//! `setup_gss`; `alt_prof.c` for the admin server.
 
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    net::TcpStream,
+    net::{self, TcpStream},
+    time,
 };
 
 use std::io;
@@ -28,6 +30,10 @@ const NEW_SERVER_API_VERSION: u32 = 43_787_559;
 const MAX_ROUNDS: usize = 8;
 
 /// A port of 1 to 65535.
+///
+/// # Errors
+///
+/// Returns the configuration, connection, RPC and GSS errors of its steps.
 fn port(text: &str, value: &str) -> Result<u16, Error> {
     text.parse::<u16>()
         .ok()
@@ -36,6 +42,10 @@ fn port(text: &str, value: &str) -> Result<u16, Error> {
 }
 
 /// See [`super::admin_server`].
+///
+/// # Errors
+///
+/// Returns the configuration, connection, RPC and GSS errors of its steps.
 pub(super) fn admin_server(config: &Config, realm: &str) -> Result<AdminServer, Error> {
     let value = config
         .realm(realm)
@@ -66,22 +76,26 @@ pub(super) fn admin_server(config: &Config, realm: &str) -> Result<AdminServer, 
 
 /// A TCP connection to the first address of `server` that accepts one
 /// within the timeout (MIT `connect_to_server`).
+///
+/// # Errors
+///
+/// Returns the configuration, connection, RPC and GSS errors of its steps.
 pub(super) async fn tcp(server: &AdminServer, options: &Options) -> Result<TcpStream, Error> {
     let target = format!("{}:{}", server.host, server.port);
     let failure = |source| Error::Connect {
         server: target.clone(),
         source,
     };
-    let addresses = tokio::time::timeout(
+    let addresses = time::timeout(
         options.timeout,
-        tokio::net::lookup_host((server.host.as_str(), server.port)),
+        net::lookup_host((server.host.as_str(), server.port)),
     )
     .await
     .map_err(|elapsed| failure(elapsed.into()))?
     .map_err(failure)?;
     let mut last = io::Error::from(io::ErrorKind::NotFound);
     for address in addresses {
-        match tokio::time::timeout(options.timeout, TcpStream::connect(address)).await {
+        match time::timeout(options.timeout, TcpStream::connect(address)).await {
             Ok(Ok(stream)) => return Ok(stream),
             Ok(Err(error)) => last = error,
             Err(elapsed) => last = elapsed.into(),
@@ -90,7 +104,11 @@ pub(super) async fn tcp(server: &AdminServer, options: &Options) -> Result<TcpSt
     Err(failure(last))
 }
 
-/// Create the RPCSEC_GSS context on `stream`.
+/// Create the `RPCSEC_GSS` context on `stream`.
+///
+/// # Errors
+///
+/// Returns the configuration, connection, RPC and GSS errors of its steps.
 async fn establish<S>(
     stream: &mut S,
     credential: &Credential,
@@ -108,7 +126,7 @@ where
     let mut rpc = RpcClient::new(PROGRAM, options.protection, initiator)?;
     let mut call = rpc.start(credential)?;
     for _ in 0..MAX_ROUNDS {
-        let reply = tokio::time::timeout(options.timeout, async {
+        let reply = time::timeout(options.timeout, async {
             record::write(stream, call.message()).await?;
             record::read(stream).await
         })
@@ -124,9 +142,14 @@ where
     )))
 }
 
-/// See [`RemoteAdminClient::over_stream`]: the context, then `INIT` from
-/// the newest offered version down to v2 while the server answers
-/// `KADM5_NEW_SERVER_API_VERSION`.
+/// See [`RemoteAdminClient::over_stream`].
+///
+/// The context, then `INIT` from the newest offered version down to v2 while
+/// the server answers `KADM5_NEW_SERVER_API_VERSION`.
+///
+/// # Errors
+///
+/// Returns the configuration, connection, RPC and GSS errors of its steps.
 pub(super) async fn over_stream<S>(
     mut stream: S,
     credential: &Credential,
