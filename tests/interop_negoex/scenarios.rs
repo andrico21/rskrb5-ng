@@ -27,6 +27,7 @@ use zeroize::Zeroizing;
 use crate::{
     context::Context as _,
     harness::{self, Fixture},
+    negoextest::{KeyPolicy, Knobs, OID_FIRST, OID_SECOND, Registered, TestMechanism},
     peer::{
         Peer,
         cred::Name,
@@ -34,8 +35,6 @@ use crate::{
         types::{AcceptRequest, InitRequest, PeerError},
     },
 };
-
-use crate::negoextest::{KeyPolicy, Knobs, OID_FIRST, OID_SECOND, Registered, TestMechanism};
 
 /// The adapter container with a route to the KDC.
 const PEER: Fixture = Fixture::new("mit-peer", "INTEROP_MIT_PEER_ADDR");
