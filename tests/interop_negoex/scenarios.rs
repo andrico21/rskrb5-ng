@@ -50,8 +50,16 @@ const MIT_KDC: Fixture = Fixture::new("mit-kdc", "INTEROP_MIT_KDC");
 /// The SPNEGO mechanism.
 const SPNEGO: &str = "1.3.6.1.5.5.2";
 
-/// The first `negoextest` mechanism, which both sides prefer.
-const MECH_FIRST: &str = "2.25.1414534758";
+/// The arcs of the first `negoextest` mechanism, which both sides prefer.
+///
+/// The mechanism is pinned on the crate's side, through the mechanism the
+/// crate's context reports as selected: MIT's `negoextest` plugin never sets
+/// the `actual_mech` output of `gss_init_sec_context` and
+/// `gss_accept_sec_context` (`src/plugins/gssapi/negoextest/main.c`, 1.22.2),
+/// so the adapter reports an empty mechanism for MIT's side, and MIT's side
+/// can only complete the context with a `VERIFY` over the keys of the
+/// mechanism both sides selected.
+const FIRST_ARCS: &[u32] = &[2, 25, 1_414_534_758];
 
 /// `GSS_C_MUTUAL_FLAG | REPLAY | SEQUENCE | CONF | INTEG`.
 const STANDARD_FLAGS: u32 = 2 | 4 | 8 | 16 | 32;
@@ -133,19 +141,6 @@ fn context(initiator: bool, hops: u8, key: KeyPolicy) -> Result<Context, Box<dyn
     Ok(context.with_random_source(Arc::new(Fixed)))
 }
 
-/// Asserts that `actual` is the dotted OID `expected`.
-fn assert_mech(expected: &str, actual: &str) -> Result<(), Box<dyn Error>> {
-    let arcs = |oid: &str| -> Result<Vec<u32>, Box<dyn Error>> {
-        oid.split('.')
-            .map(|arc| arc.parse::<u32>().map_err(Into::into))
-            .collect()
-    };
-    Ok(harness::assert_negotiated_mechanism(
-        &arcs(expected)?,
-        &arcs(actual)?,
-    )?)
-}
-
 /// The `NegTokenInit` of `token`, which must offer exactly the `NegoEx` OID.
 fn offered_negoex(token: &[u8]) -> Result<NegTokenInit, Box<dyn Error>> {
     let Token::Init(init) = Token::decode(token)? else {
@@ -165,12 +160,12 @@ fn rust_initiates(hops: u8, key: KeyPolicy) -> Result<(), Box<dyn Error>> {
     drop(offered_negoex(&token)?);
     let request = AcceptRequest::new(b"");
     let mut handle = None;
-    let mut mit_mech = None;
+    let mut mit_completed = false;
     for _round in 0..ROUNDS {
         let step = acceptor.accept_step(&request.stepping(handle, &token))?;
         handle = Some(step.context());
         if !step.continue_needed() {
-            mit_mech = Some(step.mech().to_owned());
+            mit_completed = true;
         }
         if step.token().is_empty() {
             break;
@@ -181,10 +176,9 @@ fn rust_initiates(hops: u8, key: KeyPolicy) -> Result<(), Box<dyn Error>> {
             _ => return Err("an unexpected initiator step".into()),
         }
     }
-    let mech = mit_mech.context("MIT's acceptor completed")?;
-    assert_mech(MECH_FIRST, &mech)?;
+    assert!(mit_completed, "MIT's acceptor completed");
     let selected = initiator.selected().context("the initiator completed")?;
-    assert_eq!(selected.oid().arcs(), &[2, 25, 1_414_534_758]);
+    assert_eq!(selected.oid().arcs(), FIRST_ARCS);
     drop(initiator.into_session()?);
     Ok(())
 }
@@ -215,8 +209,7 @@ fn mit_initiates(hops: u8, key: KeyPolicy) -> Result<(), Box<dyn Error>> {
     }
     let done = accepted.context("the Rust acceptor completed")?;
     assert!(!step.continue_needed(), "MIT's initiator completed");
-    assert_mech(MECH_FIRST, step.mech())?;
-    assert_eq!(done.mechanism().oid().arcs(), &[2, 25, 1_414_534_758]);
+    assert_eq!(done.mechanism().oid().arcs(), FIRST_ARCS);
     drop(done.into_session());
     Ok(())
 }
