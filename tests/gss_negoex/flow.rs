@@ -39,7 +39,7 @@ fn registry() -> Result<Registry, TestError> {
 struct Fixed;
 
 impl RandomSource for Fixed {
-    fn fill(&self, bytes: &mut [u8]) -> Result<(), getrandom::Error> {
+    fn fill(&self, bytes: &mut [u8]) -> Result<(), Negoex> {
         bytes.fill(0x42);
         Ok(())
     }

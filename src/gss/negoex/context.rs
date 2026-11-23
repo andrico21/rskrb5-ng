@@ -14,8 +14,8 @@ pub trait RandomSource: Send + Sync {
     ///
     /// # Errors
     ///
-    /// Returns the random source's failure.
-    fn fill(&self, bytes: &mut [u8]) -> Result<(), getrandom::Error>;
+    /// Returns [`Negoex::Random`] when the source fails.
+    fn fill(&self, bytes: &mut [u8]) -> Result<(), Negoex>;
 }
 
 /// The system random source.
@@ -23,8 +23,8 @@ struct SystemRandom;
 
 impl RandomSource for SystemRandom {
     #[inline]
-    fn fill(&self, bytes: &mut [u8]) -> Result<(), getrandom::Error> {
-        getrandom::fill(bytes)
+    fn fill(&self, bytes: &mut [u8]) -> Result<(), Negoex> {
+        getrandom::fill(bytes).map_err(Negoex::Random)
     }
 }
 

@@ -62,6 +62,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "negoex_message"
+path = "fuzz_targets/negoex_message.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "gss_name"
 path = "fuzz_targets/gss_name.rs"
 test = false

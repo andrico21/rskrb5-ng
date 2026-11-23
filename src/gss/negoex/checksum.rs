@@ -115,7 +115,7 @@ fn make_output_token(
             Role::Acceptor => (MessageType::AcceptorNego, MessageType::AcceptorMetaData),
         };
         let mut random = [0; 32];
-        context.random.fill(&mut random).map_err(Negoex::Random)?;
+        context.random.fill(&mut random)?;
         let schemes = context.entries.iter().map(|entry| entry.scheme).collect();
         let message = Message::Nego(NegoMessage::new(nego, random, schemes)?);
         context

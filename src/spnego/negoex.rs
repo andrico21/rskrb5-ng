@@ -16,7 +16,7 @@
 //! - A mechanism whose context offers integrity needs a `mechListMIC` exchange
 //!   when the acceptor selects `NegoEx` after another mechanism or the peer sends
 //!   one; this module does not implement that exchange and fails the context
-//!   ([`Negoex::MechListMicUnsupported`]) rather than skip it.
+//!   ([`crate::error::Negoex::MechListMicUnsupported`]) rather than skip it.
 //! - The final `accept-completed` is required before the initiator completes.
 
 use core::fmt;
