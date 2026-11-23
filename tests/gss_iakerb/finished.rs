@@ -7,7 +7,7 @@ use rskrb5_ng::{
     error::Iakerb,
     gss::{
         Acceptor, AcceptorOptions, Credential,
-        iakerb::{AcceptStep, IakerbContext, Token},
+        iakerb::{AcceptStep, IakerbContext, token::Token},
     },
 };
 

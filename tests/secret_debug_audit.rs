@@ -150,6 +150,10 @@ mod tokens;
 #[path = "secret_debug_audit/gss.rs"]
 mod gss;
 
+#[cfg(all(test, feature = "spnego"))]
+#[path = "secret_debug_audit/iakerb.rs"]
+mod iakerb;
+
 #[cfg(test)]
 #[path = "secret_debug_audit/stores.rs"]
 mod stores;
@@ -215,6 +219,8 @@ mod tests {
         super::tokens::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         #[cfg(feature = "spnego")]
         super::gss::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
+        #[cfg(feature = "spnego")]
+        super::iakerb::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let owners = inspect(root, &root.join("src"))?;
         let nested = secret_owners(&owners);
@@ -301,6 +307,7 @@ mod tests {
             || identity.starts_with("src/gss")
             || identity.ends_with("::Spnego")
             || identity.ends_with("::Gss")
+            || identity.ends_with("::Iakerb")
         {
             return cfg!(feature = "spnego");
         }
@@ -342,9 +349,11 @@ mod tests {
             "src/gss/types.rs" | "src/gss/creds.rs" | "src/gss/contexts.rs"
         ) {
             "gss".to_owned()
+        } else if file == "src/gss/iakerb/context.rs" {
+            "gss::iakerb".to_owned()
         } else if file == "src/spnego/gss_types.rs" {
             "spnego".to_owned()
-        } else if file == "src/error/gss.rs" {
+        } else if file == "src/error/gss.rs" || file == "src/error/iakerb.rs" {
             "error".to_owned()
         } else {
             file.strip_prefix("src/")
@@ -1471,6 +1480,8 @@ mod tests {
         "src/spnego.rs::InitiatorContext",
         "src/spnego.rs::InitiatorContextOptions",
         "src/error/gss.rs::Gss",
+        "src/error/iakerb.rs::Iakerb",
+        "src/gss/iakerb/context.rs::AcceptStep",
         "src/gss/creds.rs::CredStore",
         "src/gss/creds.rs::Credential",
         "src/gss/contexts.rs::Initiator",

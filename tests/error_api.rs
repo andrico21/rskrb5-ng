@@ -171,6 +171,12 @@ mod tests {
         error::Gss,
         gss::Name::import(&[], gss::NameType::Export)
     );
+    #[cfg(feature = "spnego")]
+    propagates_domain!(
+        iakerb_when_token_malformed,
+        error::Iakerb,
+        gss::iakerb::token::Token::decode(&[])
+    );
     #[cfg(feature = "http")]
     propagates_domain!(
         http_when_authorization_missing,

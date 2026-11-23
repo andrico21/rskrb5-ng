@@ -1,3 +1,15 @@
+//! The IAKERB proxy token: the RFC 2743 frame, the `IAKERB-HEADER` and the KDC
+//! message (MIT 1.22.2 `iakerb.c:203-330`).
+
+use core::fmt;
+
+use rasn::{
+    AsnType, Decode, Decoder as _, Encode, Encoder as _, der,
+    types::OctetString,
+};
+
+use super::Error;
+
 /// One IAKERB proxy token: the realm a KDC request is for, the proxy's cookie
 /// and the KDC message (MIT `iakerb.c:203-330`).
 ///
@@ -130,16 +142,16 @@ struct Header {
 /// The longest token, in bytes (the bound of [`super::Acceptor`]).
 const MAX_TOKEN_BYTES: usize = 0x4_0000;
 /// The longest target realm, in bytes.
-const MAX_REALM_BYTES: usize = 255;
+pub(super) const MAX_REALM_BYTES: usize = 255;
 /// The IAKERB mechanism `1.3.6.1.5.2.5` as a DER OBJECT IDENTIFIER
 /// (MIT `gssapiP_krb5.h:90-91`).
 const MECHANISM_DER: [u8; 8] = [0x06, 0x06, 0x2b, 0x06, 0x01, 0x05, 0x02, 0x05];
 /// The token id of a proxy token (`IAKERB_TOK_PROXY`, `gssapiP_krb5.h:108`).
 const PROXY_TOKEN_ID: [u8; 2] = [0x05, 0x01];
 /// The token id of an AP-REQ (`KG_TOK_CTX_AP_REQ`).
-const AP_REQ_TOKEN_ID: [u8; 2] = [0x01, 0x00];
+pub(super) const AP_REQ_TOKEN_ID: [u8; 2] = [0x01, 0x00];
 /// The token id of an AP-REP (`KG_TOK_CTX_AP_REP`).
-const AP_REP_TOKEN_ID: [u8; 2] = [0x02, 0x00];
+pub(super) const AP_REP_TOKEN_ID: [u8; 2] = [0x02, 0x00];
 
 /// The RFC 2743 initial context token of the IAKERB mechanism: tag `60`, a DER
 /// length, the mechanism, `id` and `body`.
@@ -147,7 +159,7 @@ const AP_REP_TOKEN_ID: [u8; 2] = [0x02, 0x00];
 /// # Errors
 ///
 /// Returns [`Error::TokenTooLarge`] above the token bound.
-fn frame(id: [u8; 2], body: &[u8]) -> Result<Vec<u8>, Error> {
+pub(super) fn frame(id: [u8; 2], body: &[u8]) -> Result<Vec<u8>, Error> {
     let content = MECHANISM_DER.len() + id.len() + body.len();
     let length = content.to_be_bytes();
     let significant = length
@@ -184,7 +196,7 @@ fn frame(id: [u8; 2], body: &[u8]) -> Result<Vec<u8>, Error> {
 /// Returns [`Error::TokenTooLarge`] above the token bound, [`Error::BadToken`]
 /// for a frame that is not a definite-length application 0 element holding
 /// exactly the token, and [`Error::NotIakerb`] for another mechanism.
-fn unframe(bytes: &[u8]) -> Result<([u8; 2], &[u8]), Error> {
+pub(super) fn unframe(bytes: &[u8]) -> Result<([u8; 2], &[u8]), Error> {
     if bytes.len() > MAX_TOKEN_BYTES {
         return Err(Error::TokenTooLarge {
             maximum: MAX_TOKEN_BYTES,

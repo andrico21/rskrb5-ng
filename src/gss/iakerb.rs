@@ -21,23 +21,23 @@
 
 use core::fmt;
 
-use rasn::{
-    AsnType, Decode, Decoder as _, Encode, Encoder as _, der,
-    types::OctetString,
-};
-
 use super::{Accepted, Acceptor, Config, Credential, EstablishedContext, InitStep};
 use crate::{error::Iakerb as Error, spnego::oid::ObjectIdentifier};
 
 /// The bounded record of the exchange.
 mod conversation;
+/// Conversions into the error type.
+mod convert;
 /// The IAKERB acceptor.
 mod acceptor;
 /// The `IAKERB-FINISHED` checksum.
 mod finished;
 /// The IAKERB initiator.
 mod initiator;
+/// The IAKERB proxy token.
+pub mod token;
 
-include!("iakerb/token.rs");
+use token::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, MAX_REALM_BYTES, Token, frame, unframe};
+
 include!("iakerb/relay.rs");
 include!("iakerb/context.rs");

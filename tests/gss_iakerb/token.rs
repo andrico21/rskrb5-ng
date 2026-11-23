@@ -1,7 +1,7 @@
 //! The IAKERB token: the RFC 2743 framing, the `IAKERB-HEADER` and the KDC
 //! message (MIT `iakerb.c:203-330`, `asn1_k_encode.c:1094-1100`).
 
-use rskrb5_ng::{error::Iakerb, gss::iakerb::Token};
+use rskrb5_ng::{error::Iakerb, gss::iakerb::token::Token};
 
 use super::context::TestError;
 

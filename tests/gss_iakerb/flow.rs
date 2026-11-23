@@ -4,7 +4,7 @@
 
 use rskrb5_ng::gss::{
     ContextFlags,
-    iakerb::{IakerbContext, Token},
+    iakerb::{IakerbContext, token::Token},
 };
 
 use super::{
