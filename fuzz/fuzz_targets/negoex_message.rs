@@ -11,16 +11,21 @@
 
 #![no_main]
 
-use std::sync::Arc;
+extern crate alloc;
+
+use alloc::sync::Arc;
 
 use libfuzzer_sys::fuzz_target;
 use rskrb5_ng::{
     error::Negoex,
     extensions::{Extension, GssMechanism, Registry},
-    gss::negoex::{
-        AuthScheme, Context, Conversation, ConversationId, ExchangeMessage, Mechanism,
-        MechanismStep, Message, MessageType, NegoMessage, ProviderFailure, RandomSource, Request,
-        Role, Session, VerifyKeys, VerifyMessage,
+    gss::{
+        InitStep,
+        negoex::{
+            AuthScheme, Context, Conversation, ConversationId, ExchangeMessage, Mechanism,
+            MechanismStep, Message, MessageType, NegoMessage, ProviderFailure, RandomSource,
+            Request, Role, Session, VerifyKeys, VerifyMessage,
+        },
     },
     keytab::EncryptionKey,
     spnego::negoex::{Acceptor, Initiator},
@@ -33,7 +38,7 @@ const OID: [u8; 6] = [0x69, 0x85, 0xa2, 0xc0, 0xac, 0x66];
 struct Registered;
 
 impl GssMechanism for Registered {
-    fn id(&self) -> &str {
+    fn id(&self) -> &'static str {
         "fuzz"
     }
 
@@ -133,6 +138,10 @@ fn context(initiator: bool) -> Option<Context> {
 }
 
 /// Parse `input`; an accepted token is encoded again and parses to the same messages.
+///
+/// # Panics
+///
+/// Panics when an accepted token does not encode to a token that parses to as many messages.
 fn parse(input: &[u8], initiator: bool) {
     let mut conversation = if initiator {
         Conversation::initiating(ConversationId::from_bytes([0x42; 16]))
@@ -160,13 +169,17 @@ fn parse(input: &[u8], initiator: bool) {
     );
 }
 
+/// Split `bytes` after `at` bytes, or at the end when it is shorter.
+fn split(bytes: &[u8], at: u8) -> Option<(&[u8], &[u8])> {
+    bytes.split_at_checked(usize::from(at).min(bytes.len()))
+}
+
 /// Frame fuzzed bytes in valid messages: an `INITIATOR_NEGO`, meta-data, a
 /// mechanism token and a `VERIFY` message, split from `input`.
 fn structured(input: &[u8]) -> Option<()> {
     let (lengths, rest) = input.split_first_chunk::<2>()?;
-    let split = |bytes: &'_ [u8], at: u8| bytes.split_at_checked(usize::from(at).min(bytes.len()));
-    let (meta, rest) = split(rest, lengths[0])?;
-    let (token, checksum) = split(rest, lengths[1])?;
+    let (meta, after_meta) = split(rest, lengths[0])?;
+    let (token, checksum) = split(after_meta, lengths[1])?;
     let scheme = Fixed.auth_scheme();
     let mut conversation = Conversation::initiating(ConversationId::from_bytes([0x42; 16]));
     let mut bytes = Vec::new();
@@ -210,10 +223,10 @@ fuzz_target!(|data: &[u8]| {
             }
         }
         5 => {
-            let (Some(first), Some(acceptor)) = (
+            let (Some(first), Some(fresh)) = (
                 context(true).and_then(|initiator| {
                     match Initiator::new(initiator).init_sec_context(None) {
-                        Ok(rskrb5_ng::gss::InitStep::Continue(token)) => Some(token),
+                        Ok(InitStep::Continue(token)) => Some(token),
                         Ok(_) | Err(_) => None,
                     }
                 }),
@@ -221,7 +234,7 @@ fuzz_target!(|data: &[u8]| {
             ) else {
                 return;
             };
-            let mut acceptor = Acceptor::new(acceptor);
+            let mut acceptor = Acceptor::new(fresh);
             drop(acceptor.accept_sec_context(&first));
             drop(acceptor.accept_sec_context(input));
         }
