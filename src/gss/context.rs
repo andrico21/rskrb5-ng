@@ -8,7 +8,7 @@ use std::time::SystemTime;
 use zeroize::Zeroizing;
 
 use super::{
-    ContextInquiry, EncryptionKey, Error, EstablishedContext, ObjectIdentifier, Unwrapped,
+    ContextInquiry, EncryptionKey, Error, EstablishedContext, ObjectIdentifier, Unwrapped, legacy,
 };
 use crate::{
     crypto::{KerberosEtype, Use},
@@ -164,6 +164,9 @@ const fn bounded(token: &[u8]) -> Result<(), Error> {
 ///
 /// Returns the errors of [`super::EstablishedContext::get_mic`].
 pub(super) fn get_mic(context: &mut EstablishedContext, message: &[u8]) -> Result<Vec<u8>, Error> {
+    if let Some(profile) = legacy::select(context)? {
+        return legacy::get_mic(context, profile, message);
+    }
     let current = usable(context)?.clone();
     let (sign, _) = usages(context.initiated);
     let flags = sent_flags(context);
@@ -183,6 +186,9 @@ pub(super) fn verify_mic(
     token: &[u8],
 ) -> Result<(), Error> {
     bounded(token)?;
+    if let Some(profile) = legacy::select(context)? {
+        return legacy::verify_mic(context, profile, message, token);
+    }
     let _usable: &EncryptionKey = usable(context)?;
     let (sign, _) = usages(!context.initiated);
     let decoded = MicToken::decode(token, context.initiated)?;
@@ -207,6 +213,9 @@ pub(super) fn wrap(
     message: &[u8],
     confidential: bool,
 ) -> Result<Vec<u8>, Error> {
+    if let Some(profile) = legacy::select(context)? {
+        return legacy::wrap(context, profile, message, confidential);
+    }
     let current = usable(context)?.clone();
     let (_, seal) = usages(context.initiated);
     let flags = sent_flags(context);
@@ -230,6 +239,9 @@ pub(super) fn wrap(
 /// Returns the errors of [`super::EstablishedContext::unwrap`].
 pub(super) fn unwrap(context: &mut EstablishedContext, token: &[u8]) -> Result<Unwrapped, Error> {
     bounded(token)?;
+    if let Some(profile) = legacy::select(context)? {
+        return legacy::unwrap(context, profile, token);
+    }
     let _usable: &EncryptionKey = usable(context)?;
     let (_, seal) = usages(!context.initiated);
     let decoded = WrapToken::decode(token, context.initiated)?;

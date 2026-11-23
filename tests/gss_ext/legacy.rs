@@ -10,7 +10,7 @@
 
 use rskrb5_ng::{
     crypto::CryptoPolicy,
-    error::{Gss, Policy, RejectedFeature},
+    error::{Gss, Policy, RejectedFeature, RejectionReason},
     gss::{IovBuffer, IovKind},
 };
 
@@ -41,9 +41,12 @@ fn pair_at(token: &[u8], at: usize) -> Result<[u8; 2], TestError> {
     Ok(<[u8; 2]>::try_from(bytes)?)
 }
 
+/// A context pair with its `SGN_ALG` and `SEAL_ALG` bytes.
+type Profile = (Pair, [u8; 2], [u8; 2]);
+
 /// A DES3 and an RC4 context, both permitted by policy, with their
 /// `SGN_ALG` and `SEAL_ALG` in token byte order.
-fn legacy_contexts() -> Result<Vec<(Pair, [u8; 2], [u8; 2])>, TestError> {
+fn legacy_contexts() -> Result<Vec<Profile>, TestError> {
     let policy = legacy_policy()?;
     Ok(vec![
         (
@@ -75,11 +78,11 @@ fn legacy_contexts_exchange_rfc_1964_and_4757_tokens() -> Result<(), TestError> 
         ends.initiator.verify_mic(b"to the initiator", &back)?;
         for confidential in [true, false] {
             let token = ends.initiator.wrap(b"legacy payload", confidential)?;
-            let at = body(&token)?;
-            assert_eq!(pair_at(&token, at)?, [0x02, 0x01]);
-            assert_eq!(pair_at(&token, at.saturating_add(2))?, sign);
+            let start = body(&token)?;
+            assert_eq!(pair_at(&token, start)?, [0x02, 0x01]);
+            assert_eq!(pair_at(&token, start.saturating_add(2))?, sign);
             let expected_seal = if confidential { seal } else { [0xff, 0xff] };
-            assert_eq!(pair_at(&token, at.saturating_add(4))?, expected_seal);
+            assert_eq!(pair_at(&token, start.saturating_add(4))?, expected_seal);
             assert_eq!(
                 token
                     .windows(b"legacy payload".len())
@@ -140,7 +143,7 @@ fn single_des_algorithm_ids_are_rejected_by_name() -> Result<(), TestError> {
                 outcome,
                 Err(Gss::Policy(Policy::RejectedFeature {
                     feature: RejectedFeature::SingleDes,
-                    ..
+                    reason: RejectionReason::RemovedAndInsecure,
                 }))
             ),
             "{offset}: {outcome:?}"
@@ -148,7 +151,7 @@ fn single_des_algorithm_ids_are_rejected_by_name() -> Result<(), TestError> {
     }
     let mic = ends.initiator.get_mic(b"m")?;
     let mic_at = body(&mic)?;
-    let mut forged = mic.clone();
+    let mut forged = mic;
     if let Some(slot) = forged.get_mut(mic_at.saturating_add(2)..mic_at.saturating_add(4)) {
         slot.copy_from_slice(&[0x01, 0x00]);
     }
@@ -156,7 +159,7 @@ fn single_des_algorithm_ids_are_rejected_by_name() -> Result<(), TestError> {
         ends.acceptor.verify_mic(b"m", &forged),
         Err(Gss::Policy(Policy::RejectedFeature {
             feature: RejectedFeature::SingleDes,
-            ..
+            reason: RejectionReason::RemovedAndInsecure,
         }))
     ));
     Ok(())
@@ -190,7 +193,7 @@ fn legacy_contexts_have_no_iov_tokens() -> Result<(), TestError> {
     ];
     assert!(matches!(
         ends.initiator.wrap_iov(&mut buffers, true),
-        Err(Gss::LegacyTokenFormat(23))
+        Err(Gss::LegacyTokenFormat(23_i32))
     ));
     assert!(
         establish_with(DES3, sequenced(), &CryptoPolicy::default())
