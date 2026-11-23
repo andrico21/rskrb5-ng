@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 122
-partial = 24
-absent = 7
+implemented = 125
+partial = 23
+absent = 5
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -3082,13 +3082,53 @@ id = "MIT-gss-4"
 area = "gss"
 upstream_ref = "krb5-1.22.2-final"
 capability = "NegoEx mechanism negotiation integration"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "Kerberos OIDs only, no NegoEx state."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "gss::negoex::Context",
+  "gss::negoex::Context::initiator",
+  "gss::negoex::Context::acceptor",
+  "gss::negoex::Context::step",
+  "gss::negoex::Context::selected",
+  "gss::negoex::Context::into_session",
+  "gss::negoex::Conversation",
+  "gss::negoex::Conversation::parse",
+  "gss::negoex::Conversation::encode",
+  "gss::negoex::Message",
+  "gss::negoex::MessageType",
+  "spnego::negoex::Initiator",
+  "spnego::negoex::Initiator::init_sec_context",
+  "spnego::negoex::Acceptor",
+  "spnego::negoex::Acceptor::accept_sec_context",
+  "spnego::negoex::AcceptStep",
+  "spnego::negoex::Accepted",
+  "spnego::oid::ObjectIdentifier::negoex",
+  "error::Negoex",
+]
+test_names = [
+  "tests/gss_negoex/wire.rs::nego_message_layout_is_byte_exact",
+  "tests/gss_negoex/wire.rs::a_multi_message_token_parses_in_order",
+  "tests/gss_negoex/wire.rs::token_message_and_scheme_counts_are_bounded",
+  "tests/gss_negoex/wire.rs::damaged_tokens_never_panic",
+  "tests/gss_negoex/captures.rs::mit_initiator_token_parses",
+  "tests/gss_negoex/captures.rs::mit_acceptor_reply_parses_after_the_first_token",
+  "tests/gss_negoex/captures.rs::mit_acceptor_reply_with_a_challenge_parses",
+  "tests/gss_negoex/flow.rs::one_hop",
+  "tests/gss_negoex/flow.rs::more_hops",
+  "tests/gss_negoex/flow.rs::early_keys",
+  "tests/gss_negoex/security.rs::a_verify_with_a_wrong_checksum_fails_the_context",
+  "tests/gss_negoex/security.rs::replayed_and_reordered_tokens_are_refused",
+  "tests/gss_negoex/spnego.rs::one_hop_negotiation_completes",
+  "tests/gss_negoex/spnego.rs::multi_hop_negotiation_continues",
+  "tests/gss_negoex/spnego.rs::a_wrong_verify_checksum_fails_through_spnego",
+  "tests/interop_negoex/scenarios.rs::rust_initiator_and_mit_acceptor_negotiate_negoex",
+  "tests/interop_negoex/scenarios.rs::mit_initiator_and_rust_acceptor_negotiate_negoex",
+  "tests/interop_negoex/scenarios.rs::early_keys_and_alerts_interoperate",
+  "tests/interop_negoex/scenarios.rs::a_wrong_verify_checksum_fails_both_ways",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "The `NEGOEX` parser is bounded in bytes, messages, schemes, extensions and alerts and refuses what MIT 1.22.2 reads past or dereferences: a header shorter than its message type needs (`negoex_util.c:325-340` wraps the length) and an extension vector that leaves its message (`negoex_util.c:213-221` dereferences NULL). An ALERT count is read as the specified u16 (MIT reads a u32). The mechanisms are named by the application and each must be a registered `GssMechanism`: NTLM and any weak mechanism are refused by name, and a `MIC` over the mechanism list under NegoEx is refused (`Negoex::MechListMicUnsupported`) rather than ignored. A `VERIFY` with a wrong checksum fails the context (`Negoex::InvalidChecksum`)."
 disposition = "WP-13"
 closing_plan = 2
 closing_todo = 21
@@ -3970,14 +4010,24 @@ id = "MIT-plugin-7"
 area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "GSSAPI mechanism interface and SPNEGO mechanism plugins"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "P2-3 delivered `extensions::GssMechanism` registration, with object-identifier validation and the built-in mechanisms' identifiers reserved; P2-18 delivered the GSS context establishment (gss::Initiator, gss::Acceptor) and SPNEGO over it; negotiation through registered mechanisms remains for P2-21 (closer)."
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
 rust_symbols = [
   "extensions::GssMechanism",
   "extensions::Registry::gss_mechanism",
+  "gss::negoex::Context::initiator",
+  "gss::negoex::Context::acceptor",
+  "spnego::negoex::Initiator",
+  "spnego::negoex::Acceptor",
 ]
-test_names = ["tests/extensions.rs::gss_mechanism_registration_rules"]
+test_names = [
+  "tests/extensions.rs::gss_mechanism_registration_rules",
+  "tests/gss_negoex/security.rs::the_mechanism_policy_is_explicit",
+  "tests/gss_negoex/flow.rs::first_mechanism_failures_fall_back",
+  "tests/interop_negoex/scenarios.rs::rust_initiator_and_mit_acceptor_negotiate_negoex",
+  "tests/interop_negoex/scenarios.rs::mit_initiator_and_rust_acceptor_negotiate_negoex",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-16"
@@ -3990,13 +4040,29 @@ id = "MIT-plugin-8"
 area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "NegoEx module interface"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "No NegoEx/provider contract."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "gss::negoex::Mechanism",
+  "gss::negoex::Session",
+  "gss::negoex::MechanismMetadata",
+  "gss::negoex::MechanismStep",
+  "gss::negoex::Request",
+  "gss::negoex::VerifyKeys",
+  "gss::negoex::ProviderFailure",
+  "gss::negoex::RandomSource",
+]
+test_names = [
+  "tests/gss_negoex/flow.rs::first_mechanism_failures_fall_back",
+  "tests/gss_negoex/flow.rs::channel_bindings_reach_the_mechanism",
+  "tests/gss_negoex/security.rs::the_mechanism_policy_is_explicit",
+  "tests/gss_negoex/security.rs::weak_mechanism_keys_are_refused",
+  "tests/interop_negoex/scenarios.rs::rust_initiator_and_mit_acceptor_negotiate_negoex",
+  "tests/interop_negoex/scenarios.rs::mit_initiator_and_rust_acceptor_negotiate_negoex",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "No module is loaded: the NegoEx provider contract is the Rust trait `gss::negoex::Mechanism` and the application registers its values (no `dlopen`, as MIT's `negoextest` plugin needs). A mechanism that reports no session keys cannot complete the context and a key of a weak enctype is refused."
 disposition = "WP-13"
 closing_plan = 2
 closing_todo = 21
