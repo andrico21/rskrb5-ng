@@ -61,10 +61,10 @@ fuzz_target!(|data: &[u8]| {
         2 => drop(context().rd_cred(input, CredentialTransport::Encrypted)),
         3 => {
             let channel = ProtectedChannel::vouch("fuzz");
-            drop(AuthContext::without_key(MessagePolicy::new()).rd_cred(
-                input,
-                CredentialTransport::Protected(&channel),
-            ));
+            drop(
+                AuthContext::without_key(MessagePolicy::new())
+                    .rd_cred(input, CredentialTransport::Protected(&channel)),
+            );
         }
         4 => {
             let limits = Limits::new().with_max_length(0x0010_0000);

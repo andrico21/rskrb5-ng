@@ -48,10 +48,7 @@ fn capacity_default_and_custom_limit_are_enforced() -> Result<(), Error> {
     // When another principal presents a distinct authenticator.
     let outcome = cache.insert(key(2), [2; 32], SystemTime::UNIX_EPOCH, skew);
     // Then no live evidence is evicted to admit it.
-    assert!(matches!(
-        outcome,
-        Err(Error::Capacity { capacity: 1 })
-    ));
+    assert!(matches!(outcome, Err(Error::Capacity { capacity: 1 })));
     assert!(!cache.insert(key(1), [1; 32], SystemTime::UNIX_EPOCH, skew)?);
     Ok(())
 }

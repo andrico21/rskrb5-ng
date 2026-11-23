@@ -345,9 +345,7 @@ impl Outcome {
                 Self::SkewExceeded { maximum, requested }
             }
             Err(ReplayError::ClockRollback) => Self::Rollback,
-            Err(ReplayError::Capacity { capacity }) => {
-                Self::CapacityExceeded { capacity }
-            }
+            Err(ReplayError::Capacity { capacity }) => Self::CapacityExceeded { capacity },
             Err(other) => Self::Unexpected(other.to_string()),
         }
     }

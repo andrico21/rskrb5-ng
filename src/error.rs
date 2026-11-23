@@ -1,7 +1,7 @@
 //! Typed errors grouped by Kerberos domain.
-use core::{str::Utf8Error, time::Duration};
 #[cfg(feature = "messages")]
 use core::error::Error as StdError;
+use core::{str::Utf8Error, time::Duration};
 #[cfg(feature = "messages")]
 use std::time::SystemTime;
 use std::{env, io, path::PathBuf, time::SystemTimeError};

@@ -14,8 +14,7 @@ use super::{
 };
 #[cfg(feature = "tokio")]
 use crate::client;
-use crate::replay::RcacheName;
-use crate::{keytab::EncryptionKey, service::AcceptorName};
+use crate::{keytab::EncryptionKey, replay::RcacheName, service::AcceptorName};
 
 /// The `FORWARDABLE` ticket flag in ccache byte order (RFC 4120 flag 1).
 const FORWARDABLE: u8 = 0x40;

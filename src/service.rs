@@ -20,14 +20,14 @@ use rasn::types::Integer;
 use crate::{
     ap_rep,
     authdata::ConditionEvaluator,
-    iana::authorization_data_type::{AND_OR, KDC_ISSUED},
-    replay::{Admission, Evidence, Presentation, Store, Tag},
     config::{Config, parameters::DefaultName, restrictions, section_values::Capaths},
     crypto::{CryptoPolicy, Use},
     der::decode_complete,
     error,
+    iana::authorization_data_type::{AND_OR, KDC_ISSUED},
     keytab::{self, EncryptionKey, Keytab},
     pac::{self, VerificationPolicy, Verified},
+    replay::{Admission, Evidence, Presentation, Store, Tag},
     routing::{RealmPath, transited},
     trace::Guard,
 };
@@ -482,6 +482,7 @@ struct DigestRecord {
     key: Arc<ReplayKey>,
 }
 
+mod authorization;
 mod credential_debug;
 #[cfg(test)]
 #[expect(
@@ -493,7 +494,6 @@ mod credential_debug;
 #[path = "service/credential_replacement_tests.rs"]
 mod credential_replacement_tests;
 mod replay;
-mod authorization;
 mod replay_quota;
 mod store;
 mod ticket_pac;
@@ -973,7 +973,10 @@ impl<'keytab> Validator<'keytab> {
     /// section 5.2.6.2 requires of a server that does not implement it.
     #[must_use]
     #[inline]
-    pub fn with_authorization_conditions(mut self, conditions: Arc<dyn ConditionEvaluator>) -> Self {
+    pub fn with_authorization_conditions(
+        mut self,
+        conditions: Arc<dyn ConditionEvaluator>,
+    ) -> Self {
         self.authorization_conditions = Some(conditions);
         self
     }
