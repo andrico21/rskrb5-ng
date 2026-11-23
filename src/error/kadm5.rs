@@ -111,9 +111,6 @@ pub enum Kadm5 {
     /// The RPC layer failed.
     #[error("kadm5 RPC failed: {0}")]
     Rpc(#[from] Rpc),
-    /// The GSS context could not be established.
-    #[error("kadm5 GSS context failed: {0}")]
-    Gss(#[from] Gss),
     /// The admin service ticket could not be acquired.
     #[error("kadm5 ticket acquisition failed: {0}")]
     Client(#[from] Client),

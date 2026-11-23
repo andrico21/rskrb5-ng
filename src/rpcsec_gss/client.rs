@@ -333,19 +333,19 @@ fn protected_call(
     let header = message::header(xid, client.program, procedure, &credential)?;
     let protection = client.protection;
     let context = established(client)?;
-    let mic = context.get_mic(&header)?;
+    let mic = context.get_mic(&header).map_err(Error::Gss)?;
     let mut encoder = message::verifier(Encoder::new().raw(&header), RPCSEC_GSS, &mic)?;
     if kind == CallKind::Data {
         let body = Encoder::new().u32(sequence).raw(arguments).finish();
         encoder = match protection {
             Protection::Integrity => {
-                let checksum = context.get_mic(&body)?;
+                let checksum = context.get_mic(&body).map_err(Error::Gss)?;
                 encoder
                     .opaque("integrity body", &body, usize::MAX)?
                     .opaque("integrity checksum", &checksum, usize::MAX)?
             }
             Protection::Privacy => {
-                let token = context.wrap(&body, true)?;
+                let token = context.wrap(&body, true).map_err(Error::Gss)?;
                 encoder.opaque("privacy body", &token, usize::MAX)?
             }
         };
@@ -399,11 +399,13 @@ fn unprotect(
         Protection::Integrity => {
             let body = decoder.opaque("integrity body", usize::MAX)?;
             let checksum = decoder.opaque("integrity checksum", usize::MAX)?;
-            context.verify_mic(body, checksum)?;
+            context.verify_mic(body, checksum).map_err(Error::Gss)?;
             Zeroizing::new(body.to_vec())
         }
         Protection::Privacy => {
-            let unwrapped = context.unwrap(decoder.opaque("privacy body", usize::MAX)?)?;
+            let unwrapped = context
+                .unwrap(decoder.opaque("privacy body", usize::MAX)?)
+                .map_err(Error::Gss)?;
             if !unwrapped.confidential() {
                 return Err(Error::Malformed("a privacy body was not sealed"));
             }
