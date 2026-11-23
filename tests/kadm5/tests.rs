@@ -11,7 +11,7 @@ mod support;
 #[path = "wire.rs"]
 mod wire;
 
-/// The test-only loopback RPCSEC_GSS kadmind of the scenarios.
+/// The test-only loopback `RPCSEC_GSS` kadmind of the scenarios.
 #[path = "server.rs"]
 mod server;
 
@@ -19,7 +19,7 @@ mod server;
 #[path = "codec.rs"]
 mod codec;
 
-/// RPCSEC_GSS establishment, integrity, privacy, sequence and verifier checks.
+/// `RPCSEC_GSS` establishment, integrity, privacy, sequence and verifier checks.
 #[path = "rpc.rs"]
 mod rpc;
 

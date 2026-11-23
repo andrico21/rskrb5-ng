@@ -4,6 +4,8 @@
 //! `kadm_rpc_xdr.c`, independently of the crate's codec, so the scenarios
 //! compare the crate against a second implementation.
 
+use core::iter;
+
 use super::context::{Context as _, TestError};
 
 /// An XDR byte writer.
@@ -37,8 +39,8 @@ impl Writer {
         let length = u32::try_from(value.len()).unwrap_or(u32::MAX);
         self.bytes.extend_from_slice(&length.to_be_bytes());
         self.bytes.extend_from_slice(value);
-        let padding = (4 - value.len() % 4) % 4;
-        self.bytes.extend(core::iter::repeat_n(0, padding));
+        let padding = value.len().wrapping_neg() & 3;
+        self.bytes.extend(iter::repeat_n(0, padding));
         self
     }
 
@@ -96,7 +98,7 @@ impl<'bytes> Reader<'bytes> {
     pub(super) fn opaque(&mut self) -> Result<&'bytes [u8], TestError> {
         let length = usize::try_from(self.u32()?)?;
         let padded = length
-            .checked_add((4 - length % 4) % 4)
+            .checked_add(length.wrapping_neg() & 3)
             .context("padded length")?;
         let (value, rest) = self.rest.split_at_checked(padded).context("opaque body")?;
         self.rest = rest;

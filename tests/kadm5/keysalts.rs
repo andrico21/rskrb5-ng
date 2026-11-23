@@ -1,7 +1,8 @@
-//! Key/salt tuples and supplied keys obey the runtime encryption policy (D2,
-//! MIT-removed-7): single DES and RC4-EXP are refused by name, DES3 and RC4
-//! only with `allow_des3`/`allow_rc4`, the Kerberos V4 and AFS salts never,
-//! and nothing is sent for a refused request.
+//! Key/salt tuples and supplied keys obey the runtime encryption policy.
+//!
+//! D2 and MIT-removed-7: single DES and RC4-EXP are refused by name, DES3 and
+//! RC4 only with `allow_des3`/`allow_rc4`, the Kerberos V4 and AFS salts
+//! never, and nothing is sent for a refused request.
 
 use rskrb5_ng::{
     client::{Password, principal::Principal},
@@ -48,10 +49,11 @@ async fn connect(
 > {
     let (stream, server) = server::spawn(canned(), Script::plain());
     let mut options = support::options();
-    if let Some(policy) = policy {
-        options = options.with_crypto_policy(policy);
+    if let Some(chosen) = policy {
+        options = options.with_crypto_policy(chosen);
     }
-    let client = RemoteAdminClient::over_stream(stream, &support::credential()?, options).await?;
+    let credential = support::credential()?;
+    let client = RemoteAdminClient::over_stream(stream, &credential, options).await?;
     Ok((client, server))
 }
 
@@ -68,7 +70,7 @@ fn legacy_policy() -> Result<CryptoPolicy, TestError> {
 fn rejected(result: &Result<(), Kadm5>, wanted: RejectedFeature) -> bool {
     matches!(
         result,
-        Err(Kadm5::Policy(Policy::RejectedFeature { feature, .. })) if *feature == wanted
+        Err(Kadm5::Policy(Policy::RejectedFeature { feature, reason: _ })) if *feature == wanted
     )
 }
 
@@ -144,19 +146,19 @@ async fn legacy_enctypes_need_the_opt_in() -> Result<(), TestError> {
         assert!(
             matches!(
                 refused,
-                Err(Kadm5::Policy(Policy::EnctypeNotPermitted { etype: refused_etype, .. })) if refused_etype == etype
+                Err(Kadm5::Policy(Policy::EnctypeNotPermitted { etype: refused_etype, usage: _ })) if refused_etype == etype
             ),
             "{refused:?}"
         );
         drop(client);
         assert_eq!(server.await??.calls.len(), 1);
         // Given the explicit opt-in, When asked again, Then the tuple is sent.
-        let (mut client, server) = connect(Some(legacy_policy()?)).await?;
-        client
+        let (mut legacy_client, legacy_server) = connect(Some(legacy_policy()?)).await?;
+        legacy_client
             .create_principal(&record, None, &[KeySaltTuple::new(etype, SaltType::Normal)])
             .await?;
-        drop(client);
-        let seen = server.await??;
+        drop(legacy_client);
+        let seen = legacy_server.await??;
         let (procedure, arguments) = seen.calls.last().ok_or("the create call")?;
         assert_eq!(*procedure, 18);
         let tail = arguments
@@ -164,7 +166,7 @@ async fn legacy_enctypes_need_the_opt_in() -> Result<(), TestError> {
             .checked_sub(16)
             .ok_or("the tuple and password")?;
         let mut reader = Reader::new(arguments.get(tail..).ok_or("tail")?);
-        assert_eq!((reader.u32()?, reader.i32()?, reader.i32()?), (1, etype, 0));
+        assert_eq!((reader.u32()?, reader.i32()?, reader.i32()?), (1, etype, 0_i32));
     }
     Ok(())
 }

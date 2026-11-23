@@ -1,13 +1,15 @@
-//! `[realms] <realm> admin_server` names the administration server of the
-//! remote kadm5 client (MIT-config-44): the first value, with an optional
-//! port, else port 749 (MIT `alt_prof.c` `parse_admin_server_port` and
-//! `DEFAULT_KADM5_PORT`).
+//! `[realms] <realm> admin_server` names the kadm5 client's server.
+//!
+//! MIT-config-44: the first value, with an optional port, else port 749 (MIT
+//! `alt_prof.c` `parse_admin_server_port` and `DEFAULT_KADM5_PORT`).
 
 use rskrb5_ng::{
     config::Config,
     error::Kadm5,
     kadm5::{self, RemoteAdminClient},
 };
+use std::io;
+
 use tokio::net::TcpListener;
 
 use super::{
@@ -19,10 +21,12 @@ use super::{
 
 /// A profile whose realm has the `admin_server` lines `values`.
 fn config(values: &[&str]) -> Result<Config, TestError> {
-    let lines: String = values
-        .iter()
-        .map(|value| format!("  admin_server = {value}\n"))
-        .collect();
+    let mut lines = String::new();
+    for value in values {
+        lines.push_str("  admin_server = ");
+        lines.push_str(value);
+        lines.push('\n');
+    }
     Ok(Config::parse(&format!(
         "[libdefaults]\n default_realm = {REALM}\n[realms]\n {REALM} = {{\n{lines} }}\n"
     ))?)
@@ -76,11 +80,12 @@ async fn connect_uses_admin_server() -> Result<(), TestError> {
     let config = config(&[&format!("127.0.0.1:{}", address.port())])?;
     let accept = tokio::spawn(async move {
         let (socket, _peer) = listener.accept().await?;
-        Ok::<_, std::io::Error>(server::spawn_on(socket, privileges(), Script::plain()))
+        Ok::<_, io::Error>(server::spawn_on(socket, privileges(), Script::plain()))
     });
     // When the client connects through the profile and reads its privileges.
+    let credential = support::credential()?;
     let mut client =
-        RemoteAdminClient::connect(&config, &support::credential()?, support::options()).await?;
+        RemoteAdminClient::connect(&config, &credential, support::options()).await?;
     let privileges = client.get_privileges().await?;
     client.destroy().await?;
     // Then the server at that address answered.

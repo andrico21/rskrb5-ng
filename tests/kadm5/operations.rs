@@ -1,9 +1,11 @@
-//! Every remote operation of MIT 1.22.2's kadm5 client library
-//! (`client_principal.c`, `clnt_policy.c`, `clnt_privs.c`,
-//! `client_init.c`), its argument layout from `kadm_rpc_xdr.c` built by the
-//! test's own writer, its result decoding, and the API version negotiation.
+//! Every remote operation of MIT 1.22.2's kadm5 client library.
+//!
+//! `client_principal.c`, `clnt_policy.c`, `clnt_privs.c` and `client_init.c`:
+//! each argument layout from `kadm_rpc_xdr.c` built by the test's own writer,
+//! each result's decoding, and the API version negotiation.
 
-use std::sync::{Arc, Mutex};
+use alloc::sync::Arc;
+use std::sync::Mutex;
 
 use rskrb5_ng::{
     client::{Password, principal::Principal},
@@ -36,7 +38,7 @@ fn principal(name: &str) -> Principal {
     Principal::new(
         REALM,
         1,
-        name.split('/').map(str::to_owned).collect::<Vec<_>>(),
+        name.split('/').map(str::to_owned),
     )
 }
 
@@ -98,8 +100,10 @@ pub(super) fn canned() -> Handler {
     })
 }
 
-/// The `kadm5_principal_ent_rec` MIT's client sends for `bob` with a max
-/// life of 3600 and the policy `default` (null modifier, no TL or key data).
+/// The `kadm5_principal_ent_rec` MIT's client sends for `bob`.
+///
+/// It has a max life of 3600 and the policy `default` (null modifier, no TL
+/// or key data).
 fn bob_record() -> Vec<u8> {
     Writer::new()
         .nullstring(Some("bob@EXAMPLE.COM"))
@@ -226,16 +230,18 @@ fn expected() -> Vec<(u32, Vec<u8>)> {
     ]
 }
 
-/// Each operation sends MIT's argument layout and decodes MIT's results. A
-/// create names the record's key field in its mask (`KADM5_PRINCIPAL`,
+/// Each operation sends MIT's argument layout and decodes MIT's results.
+///
+/// A create names the record's key field in its mask (`KADM5_PRINCIPAL`,
 /// `KADM5_POLICY`) and a modify does not, as kadmind requires
 /// (`svr_principal.c:313,569`, `svr_policy.c:74,269`).
 #[tokio::test]
 async fn every_operation_sends_mit_arguments() -> Result<(), TestError> {
     // Given a client connected to the canned server.
     let (stream, server) = server::spawn(canned(), Script::plain());
+    let credential = support::credential()?;
     let mut client =
-        RemoteAdminClient::over_stream(stream, &support::credential()?, support::options()).await?;
+        RemoteAdminClient::over_stream(stream, &credential, support::options()).await?;
     let bob = principal("bob");
     let record = PrincipalRecord::new(bob.clone())
         .with_max_life(3600)
@@ -317,7 +323,7 @@ async fn every_operation_sends_mit_arguments() -> Result<(), TestError> {
     assert_eq!(names, ["only"]);
     assert_eq!(
         random.iter().map(EncryptionKey::etype).collect::<Vec<_>>(),
-        [17]
+        [17_i32]
     );
     assert_eq!(strings.len(), 1);
     let string = strings.first().context("a string")?;
@@ -326,15 +332,16 @@ async fn every_operation_sends_mit_arguments() -> Result<(), TestError> {
         ("session_enctypes", "aes256-cts")
     );
     let key = extracted.first().context("a key")?;
-    assert_eq!((key.kvno(), key.key().etype()), (4, 18));
+    assert_eq!((key.kvno(), key.key().etype()), (4, 18_i32));
     assert_eq!(fetched_policy.name(), "strict");
     assert_eq!(policies, ["only"]);
     Ok(())
 }
 
-/// The client offers v4, falls back to v3 when the server answers
-/// `KADM5_NEW_SERVER_API_VERSION`, and then encodes v3 policy records
-/// (`client_init.c` init_any).
+/// The client offers v4 and falls back to v3 (`client_init.c` `init_any`).
+///
+/// The server answers `KADM5_NEW_SERVER_API_VERSION` to v4; the client then
+/// encodes v3 policy records.
 #[tokio::test]
 async fn version_negotiation_falls_back() -> Result<(), TestError> {
     // Given a server that knows v3 and older only.
@@ -343,9 +350,9 @@ async fn version_negotiation_falls_back() -> Result<(), TestError> {
     let handler: Handler = Box::new(move |procedure, arguments| {
         let version = Reader::new(arguments).u32().unwrap_or_default();
         if procedure == 13 {
-            log.lock()
-                .map(|mut seen| seen.push(version))
-                .unwrap_or_default();
+            if let Ok(mut seen) = log.lock() {
+                seen.push(version);
+            }
             let code = if version > 0x1234_5703 {
                 NEW_SERVER_API_VERSION
             } else {
@@ -357,8 +364,9 @@ async fn version_negotiation_falls_back() -> Result<(), TestError> {
     });
     let (stream, server) = server::spawn(handler, Script::plain());
     // When the client connects and creates a policy.
+    let credential = support::credential()?;
     let mut client =
-        RemoteAdminClient::over_stream(stream, &support::credential()?, support::options()).await?;
+        RemoteAdminClient::over_stream(stream, &credential, support::options()).await?;
     let version = client.api_version();
     client.create_policy(&PolicyRecord::new("p")).await?;
     drop(client);
@@ -394,15 +402,13 @@ async fn unsupported_server_version_fails() -> Result<(), TestError> {
             .finish()
     });
     let (stream, server) = server::spawn(handler, Script::plain());
+    let credential = support::credential()?;
     let result =
-        RemoteAdminClient::over_stream(stream, &support::credential()?, support::options()).await;
+        RemoteAdminClient::over_stream(stream, &credential, support::options()).await;
     assert!(
         matches!(
             result,
-            Err(Kadm5::Server {
-                code: NEW_SERVER_API_VERSION,
-                ..
-            })
+            Err(Kadm5::Server { code: NEW_SERVER_API_VERSION, procedure: _ })
         ),
         "{:?}",
         result.err()
@@ -420,13 +426,14 @@ async fn acl_refusal_is_definite() -> Result<(), TestError> {
         Writer::new().u32(version).u32(code).finish()
     });
     let (stream, server) = server::spawn(handler, Script::plain());
+    let credential = support::credential()?;
     let mut client =
-        RemoteAdminClient::over_stream(stream, &support::credential()?, support::options()).await?;
+        RemoteAdminClient::over_stream(stream, &credential, support::options()).await?;
     let result = client
         .create_principal(&PrincipalRecord::new(principal("x")), None, &[])
         .await;
     assert!(
-        matches!(result, Err(Kadm5::Server { code: AUTH_ADD, .. })),
+        matches!(result, Err(Kadm5::Server { code: AUTH_ADD, procedure: _ })),
         "{result:?}"
     );
     // The connection stays usable after an authenticated refusal.
@@ -440,8 +447,9 @@ async fn acl_refusal_is_definite() -> Result<(), TestError> {
 #[tokio::test]
 async fn invalid_arguments_fail_before_sending() -> Result<(), TestError> {
     let (stream, server) = server::spawn(canned(), Script::plain());
+    let credential = support::credential()?;
     let mut client =
-        RemoteAdminClient::over_stream(stream, &support::credential()?, support::options()).await?;
+        RemoteAdminClient::over_stream(stream, &credential, support::options()).await?;
     let bob = principal("bob");
     // No keys to set (`setkey4` requires n_key_data > 0, client_principal.c).
     assert!(matches!(

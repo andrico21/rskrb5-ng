@@ -1,5 +1,6 @@
-//! Record marking (RFC 5531 section 11), the RPC reply (RFC 5531 section 9)
-//! and the kadm5 result layouts of MIT 1.22.2's `kadm_rpc_xdr.c`, against
+//! Record marking, the RPC reply and the kadm5 result layouts.
+//!
+//! RFC 5531 sections 9 and 11 and MIT 1.22.2's `kadm_rpc_xdr.c`, against
 //! bytes built by the test's own XDR writer.
 
 use rskrb5_ng::{
@@ -53,7 +54,7 @@ fn oversized_fragment_is_refused_before_allocation() -> Result<(), TestError> {
     // When it is decoded, Then the bound refuses it.
     let result = rpcsec_gss::decode_record(&header);
     assert!(
-        matches!(result, Err(Rpc::RecordTooLarge { .. })),
+        matches!(result, Err(Rpc::RecordTooLarge { maximum: _, actual: _ })),
         "{result:?}"
     );
     Ok(())
@@ -70,7 +71,7 @@ fn record_total_size_is_bounded() -> Result<(), TestError> {
     // When it is decoded, Then the total bound refuses it.
     let result = rpcsec_gss::decode_record(&bytes);
     assert!(
-        matches!(result, Err(Rpc::RecordTooLarge { .. })),
+        matches!(result, Err(Rpc::RecordTooLarge { maximum: _, actual: _ })),
         "{result:?}"
     );
     Ok(())
@@ -80,13 +81,13 @@ fn record_total_size_is_bounded() -> Result<(), TestError> {
 #[test]
 fn endless_fragments_are_refused() -> Result<(), TestError> {
     // Given one more empty non-last fragment than the bound allows.
-    let bytes = [0_u8; 4].repeat(rpcsec_gss::MAX_FRAGMENTS + 1);
+    let count = rpcsec_gss::MAX_FRAGMENTS.checked_add(1).context("a count")?;
+    let bytes = [0_u8; 4].repeat(count);
     // When they are decoded, Then the fragment bound refuses them.
-    let result = rpcsec_gss::decode_record(&bytes);
-    assert!(
-        matches!(result, Err(Rpc::TooManyFragments(_))),
-        "{result:?}"
-    );
+    let error = rpcsec_gss::decode_record(&bytes)
+        .err()
+        .context("the fragment bound")?;
+    assert!(matches!(error, Rpc::TooManyFragments(_)), "{error:?}");
     Ok(())
 }
 
@@ -134,7 +135,8 @@ fn replies_decode() -> Result<(), TestError> {
 fn malformed_replies_are_refused() -> Result<(), TestError> {
     // Given a call message instead of a reply.
     let call = Writer::new().u32(1).u32(0).u32(2).finish();
-    assert!(matches!(Reply::decode(&call), Err(Rpc::Malformed(_))));
+    let error = Reply::decode(&call).err().context("a call is no reply")?;
+    assert!(matches!(error, Rpc::Malformed(_)), "{error:?}");
     // Given a reply status that is neither accepted nor denied.
     let status = Writer::new().u32(1).u32(1).u32(2).finish();
     assert!(matches!(Reply::decode(&status), Err(Rpc::Malformed(_))));
@@ -147,7 +149,7 @@ fn malformed_replies_are_refused() -> Result<(), TestError> {
         .opaque(&[0; 401])
         .u32(0)
         .finish();
-    assert!(matches!(Reply::decode(&large), Err(Rpc::TooLarge { .. })));
+    assert!(matches!(Reply::decode(&large), Err(Rpc::TooLarge { field: _, maximum: _, actual: _ })));
     // Given a truncated reply.
     assert!(matches!(
         Reply::decode(&[0, 0, 0, 1, 0, 0]),
@@ -213,16 +215,16 @@ fn principal_record_decodes() -> Result<(), TestError> {
     // Then every field is the one sent.
     assert_eq!(record.principal().components, ["alice"]);
     assert_eq!(record.principal().realm, "EXAMPLE.COM");
-    assert_eq!(record.princ_expire_time(), 1_900_000_000);
-    assert_eq!(record.last_pwd_change(), 1_700_000_000);
-    assert_eq!(record.max_life(), 36_000);
+    assert_eq!(record.princ_expire_time(), 1_900_000_000_i32);
+    assert_eq!(record.last_pwd_change(), 1_700_000_000_i32);
+    assert_eq!(record.max_life(), 36_000_i32);
     let modifier = record.mod_name().context("a modifier")?;
     assert_eq!(modifier.components, ["admin", "admin"]);
-    assert_eq!(record.attributes(), 0x80);
+    assert_eq!(record.attributes(), 0x80_i32);
     assert_eq!((record.kvno(), record.mkvno()), (3, 1));
     assert_eq!(record.policy(), Some("default"));
-    assert_eq!(record.aux_attributes(), 0x800);
-    assert_eq!(record.max_renewable_life(), 604_800);
+    assert_eq!(record.aux_attributes(), 0x800_i32);
+    assert_eq!(record.max_renewable_life(), 604_800_i32);
     assert_eq!(record.fail_auth_count(), 2);
     let tl = record.tl_data();
     assert_eq!(tl.len(), 1);
@@ -252,16 +254,12 @@ fn failed_results_carry_their_code() -> Result<(), TestError> {
         .u32(43_787_532)
         .finish();
     // When it is decoded, Then the code is the server's refusal.
-    let result = Response::decode(Procedure::GetPrincipal, ApiVersion::V4, &bytes);
+    let error = Response::decode(Procedure::GetPrincipal, ApiVersion::V4, &bytes)
+        .err()
+        .context("the server's refusal")?;
     assert!(
-        matches!(
-            result,
-            Err(Kadm5::Server {
-                code: 43_787_532,
-                ..
-            })
-        ),
-        "{result:?}"
+        matches!(error, Kadm5::Server { code: 43_787_532, procedure: _ }),
+        "{error:?}"
     );
     Ok(())
 }
@@ -300,13 +298,13 @@ fn policy_record_follows_the_api_version() -> Result<(), TestError> {
     };
     // Then the v2, v3 and v4 fields are the ones sent.
     assert_eq!(policy.name(), "strict");
-    assert_eq!((policy.pw_min_length(), policy.pw_min_classes()), (12, 3));
+    assert_eq!((policy.pw_min_length(), policy.pw_min_classes()), (12_i32, 3_i32));
     assert_eq!(
         (policy.pw_max_fail(), policy.pw_lockout_duration()),
-        (4, 600)
+        (4, 600_i32)
     );
     assert_eq!(policy.allowed_keysalts(), Some("aes256-cts:normal"));
-    assert_eq!(policy.max_renewable_life(), 72_000);
+    assert_eq!(policy.max_renewable_life(), 72_000_i32);
     // And the same bytes under v2 leave the v3 and v4 fields unread: trailing bytes.
     let result = Response::decode(Procedure::GetPolicy, ApiVersion::V2, &bytes);
     assert!(matches!(result, Err(Kadm5::Malformed(_))), "{result:?}");
@@ -350,7 +348,7 @@ fn name_lists_are_bounded() -> Result<(), TestError> {
         .finish();
     assert!(matches!(
         Response::decode(Procedure::GetPolicies, ApiVersion::V4, &huge),
-        Err(Kadm5::TooLarge { .. } | Kadm5::Malformed(_))
+        Err(Kadm5::TooLarge { field: _, maximum: _, actual: _ } | Kadm5::Malformed(_))
     ));
     // Given a name without its NUL, and one with a NUL inside (MIT
     // `xdr_nullstring` refuses both, kadm_rpc_xdr.c:64-69).
@@ -389,7 +387,7 @@ fn random_keys_decode_redacted() -> Result<(), TestError> {
     };
     // Then the key is there, and its Debug form does not show it.
     let first = keys.first().context("a key")?;
-    assert_eq!((first.etype(), first.value().as_ref()), (18, &key[..]));
+    assert_eq!((first.etype(), first.value().as_ref()), (18_i32, &key[..]));
     let shown = format!("{keys:?}");
     assert!(!shown.contains("a5") && !shown.contains("165"), "{shown}");
     Ok(())

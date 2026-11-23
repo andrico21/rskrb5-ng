@@ -1,3 +1,5 @@
+//! Mutations whose outcome is unknown after a possible delivery.
+//!
 //! A mutation whose request may have reached kadmind and that has no
 //! authenticated answer has an unknown outcome: the client says so, never
 //! repeats the request, and refuses the next call on that connection before
@@ -10,7 +12,7 @@ use rskrb5_ng::{
     error::{Kadm5, Rpc},
     kadm5::{KeyOptions, PrincipalMask, PrincipalRecord, RemoteAdminClient},
 };
-use tokio::{io::DuplexStream, task::JoinHandle};
+use tokio::{io::DuplexStream, task::JoinHandle, time};
 
 use super::{
     context::TestError,
@@ -37,13 +39,14 @@ async fn connect(
 > {
     let (stream, server) = server::spawn(canned(), Script::faults(&[fault]));
     let options = support::options().with_timeout(timeout);
-    let client = RemoteAdminClient::over_stream(stream, &support::credential()?, options).await?;
+    let credential = support::credential()?;
+    let client = RemoteAdminClient::over_stream(stream, &credential, options).await?;
     Ok((client, server))
 }
 
 /// Whether `result` is an unknown outcome whose cause is an RPC failure.
 fn unknown<T>(result: &Result<T, Kadm5>) -> bool {
-    matches!(result, Err(Kadm5::OutcomeUnknown { cause, .. }) if matches!(**cause, Kadm5::Rpc(_)))
+    matches!(result, Err(Kadm5::OutcomeUnknown { cause, procedure: _ }) if matches!(**cause, Kadm5::Rpc(_)))
 }
 
 /// A connection closed, a reply that does not verify and an unauthenticated
@@ -97,7 +100,7 @@ async fn timed_out_mutation_is_unknown() -> Result<(), TestError> {
         .change_password(&bob(), &Password::copy_from_str("new"), &KeyOptions::new())
         .await;
     assert!(
-        matches!(&result, Err(Kadm5::OutcomeUnknown { cause, .. }) if matches!(**cause, Kadm5::Rpc(Rpc::TimedOut))),
+        matches!(&result, Err(Kadm5::OutcomeUnknown { cause, procedure: _ }) if matches!(**cause, Kadm5::Rpc(Rpc::TimedOut))),
         "{result:?}"
     );
     drop(client);
@@ -112,7 +115,7 @@ async fn cancelled_mutation_refuses_the_next_call() -> Result<(), TestError> {
     // Given a server that never answers the first call.
     let (mut client, server) = connect(Fault::Stall, Duration::from_secs(3600)).await?;
     // When the caller gives up on the password change after a second.
-    let cancelled = tokio::time::timeout(
+    let cancelled = time::timeout(
         Duration::from_secs(1),
         client.change_password(&bob(), &Password::copy_from_str("new"), &KeyOptions::new()),
     )

@@ -1,8 +1,8 @@
-//! A test-only loopback RPCSEC_GSS server in the shape of MIT's kadmind.
+//! A test-only loopback `RPCSEC_GSS` server in the shape of MIT's kadmind.
 //!
 //! It is never part of the library (plan 2 todo 24: no kadmind). It reads
 //! RFC 5531 records from one end of an in-memory duplex stream, accepts the
-//! RPCSEC_GSS context with the crate's own GSS acceptor and the
+//! `RPCSEC_GSS` context with the crate's own GSS acceptor and the
 //! `kadmin/admin` keytab, signs the window twice as MIT's
 //! `svc_auth_gss.c:262-275,503-506` does (so the client sees a gap in the
 //! acceptor's GSS sequence), checks every call's header MIC and body sequence
@@ -10,7 +10,8 @@
 //! returns, protected as RFC 2203 section 5.3.3 says. A scenario can script
 //! one fault per data call to prove the client rejects it.
 
-use std::collections::VecDeque;
+use alloc::collections::VecDeque;
+use std::io;
 
 use rskrb5_ng::gss::{Acceptor, AcceptorOptions, Credential, EstablishedContext};
 use tokio::{
@@ -24,7 +25,7 @@ use super::{
     wire::{Reader, Writer},
 };
 
-/// The RPCSEC_GSS authentication flavor (RFC 2203 section 5).
+/// The `RPCSEC_GSS` authentication flavor (RFC 2203 section 5).
 pub(super) const RPCSEC_GSS: u32 = 6;
 
 /// The kadm5 program (MIT `kadm_rpc.h`, `KADM`).
@@ -77,7 +78,7 @@ pub(super) enum Init {
     Accept,
     /// Accept, granting this window.
     Window(u32),
-    /// Deny every RPCSEC_GSS call with `AUTH_ERROR` and this status: a server
+    /// Deny every `RPCSEC_GSS` call with `AUTH_ERROR` and this status: a server
     /// that offers only `AUTH_SYS`.
     AuthSysOnly(u32),
     /// Answer with an `AUTH_NONE` verifier instead of the window's MIC.
@@ -116,7 +117,7 @@ impl Script {
 pub(super) struct Seen {
     /// The credential flavor of every call, in order.
     pub flavors: Vec<u32>,
-    /// The RPCSEC_GSS service of the context (2 integrity, 3 privacy).
+    /// The `RPCSEC_GSS` service of the context (2 integrity, 3 privacy).
     pub service: u32,
     /// Every data call's procedure and unprotected arguments.
     pub calls: Vec<(u32, Vec<u8>)>,
@@ -150,14 +151,17 @@ where
 }
 
 /// Read one RFC 5531 record; `None` at a clean end of stream.
-async fn read_record<S: AsyncRead + Unpin>(stream: &mut S) -> Result<Option<Vec<u8>>, TestError> {
+async fn read_record<S>(stream: &mut S) -> Result<Option<Vec<u8>>, TestError>
+where
+    S: AsyncRead + Unpin,
+{
     let mut record = Vec::new();
     loop {
         let mut header = [0_u8; 4];
         match stream.read_exact(&mut header).await {
             Ok(_) => {}
             Err(error)
-                if error.kind() == std::io::ErrorKind::UnexpectedEof && record.is_empty() =>
+                if error.kind() == io::ErrorKind::UnexpectedEof && record.is_empty() =>
             {
                 return Ok(None);
             }
@@ -174,11 +178,10 @@ async fn read_record<S: AsyncRead + Unpin>(stream: &mut S) -> Result<Option<Vec<
 }
 
 /// Write `record` as fragments of at most `size` bytes.
-async fn write_fragments<S: AsyncWrite + Unpin>(
-    stream: &mut S,
-    record: &[u8],
-    size: usize,
-) -> Result<(), TestError> {
+async fn write_fragments<S>(stream: &mut S, record: &[u8], size: usize) -> Result<(), TestError>
+where
+    S: AsyncWrite + Unpin,
+{
     let mut chunks = record.chunks(size.max(1)).peekable();
     while let Some(chunk) = chunks.next() {
         let mut word = u32::try_from(chunk.len())?;
@@ -220,7 +223,7 @@ fn parse_call(record: &[u8]) -> Result<Call, TestError> {
     let procedure = reader.u32()?;
     let flavor = reader.u32()?;
     let credential = reader.opaque()?.to_vec();
-    let consumed = record.len() - reader.rest().len();
+    let consumed = record.len().saturating_sub(reader.rest().len());
     let header = record.get(..consumed).context("header")?.to_vec();
     let _verifier_flavor = reader.u32()?;
     let verifier = reader.opaque()?.to_vec();
@@ -235,15 +238,15 @@ fn parse_call(record: &[u8]) -> Result<Call, TestError> {
     })
 }
 
-/// An accepted reply with verifier `verifier` (flavor RPCSEC_GSS unless
+/// An accepted reply with verifier `verifier` (flavor `RPCSEC_GSS` unless
 /// `None`) and `results`.
 fn accepted(xid: u32, verifier: Option<&[u8]>, results: &[u8]) -> Vec<u8> {
-    let writer = Writer::new().u32(xid).u32(1).u32(0);
-    let writer = match verifier {
-        Some(mic) => writer.u32(RPCSEC_GSS).opaque(mic),
-        None => writer.u32(0).opaque(&[]),
+    let head = Writer::new().u32(xid).u32(1).u32(0);
+    let with_verifier = match verifier {
+        Some(mic) => head.u32(RPCSEC_GSS).opaque(mic),
+        None => head.u32(0).opaque(&[]),
     };
-    writer.u32(0).raw(results).finish()
+    with_verifier.u32(0).raw(results).finish()
 }
 
 /// An `AUTH_ERROR` denial (RFC 5531 section 9, `reject_stat` 1).
@@ -275,13 +278,13 @@ fn protect(
 ) -> Result<Vec<u8>, TestError> {
     let body = Writer::new().u32(sequence).raw(results).finish();
     if service == 2 {
-        let mic = context.get_mic(&body)?;
-        let mic = if corrupt { flip(mic) } else { mic };
-        Ok(Writer::new().opaque(&body).opaque(&mic).finish())
+        let checksum = context.get_mic(&body)?;
+        let sent = if corrupt { flip(checksum) } else { checksum };
+        Ok(Writer::new().opaque(&body).opaque(&sent).finish())
     } else {
         let token = context.wrap(&body, true)?;
-        let token = if corrupt { flip(token) } else { token };
-        Ok(Writer::new().opaque(&token).finish())
+        let sent = if corrupt { flip(token) } else { token };
+        Ok(Writer::new().opaque(&sent).finish())
     }
 }
 
@@ -378,19 +381,30 @@ fn data(
     let arguments = unprotect(context, service, sequence, &call.arguments)?;
     seen.calls.push((call.procedure, arguments.clone()));
     let results = handler(call.procedure, &arguments);
-    let (verified, body_sequence) = match fault {
+    let (signed_number, body_sequence) = match fault {
         Fault::ReusedSequence => {
             let old = state.previous.as_ref().context("a previous reply")?.1;
             (old, old)
         }
         Fault::StaleBodySequence => (sequence, sequence.wrapping_sub(1)),
-        _ => (sequence, sequence),
+        Fault::None
+        | Fault::ReplayPrevious
+        | Fault::WrongVerifier
+        | Fault::CorruptBody
+        | Fault::NoneVerifier
+        | Fault::WrongXid
+        | Fault::Fragments(_)
+        | Fault::OversizedFragment
+        | Fault::EndlessFragments
+        | Fault::Close
+        | Fault::Stall
+        | Fault::Deny(_) => (sequence, sequence),
     };
-    let mic = context.get_mic(&verified.to_be_bytes())?;
+    let signed = context.get_mic(&signed_number.to_be_bytes())?;
     let mic = if fault == Fault::WrongVerifier {
-        flip(mic)
+        flip(signed)
     } else {
-        mic
+        signed
     };
     let body = protect(
         context,
@@ -419,11 +433,14 @@ fn data(
 }
 
 /// Serve one connection until the client closes it.
-async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
+async fn serve<S>(
     mut stream: S,
     mut handler: Handler,
     mut script: Script,
-) -> Result<Seen, TestError> {
+) -> Result<Seen, TestError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let acceptor_credential = Credential::from_keytab(support::keytab());
     let mut state = State {
         context: None,
@@ -478,16 +495,26 @@ async fn serve<S: AsyncRead + AsyncWrite + Unpin>(
                 while stream.write_all(&[0, 0, 0, 1, 0]).await.is_ok() {}
                 return Ok(seen);
             }
-            _ => {}
+            Fault::None
+            | Fault::ReusedSequence
+            | Fault::ReplayPrevious
+            | Fault::StaleBodySequence
+            | Fault::WrongVerifier
+            | Fault::CorruptBody
+            | Fault::NoneVerifier
+            | Fault::WrongXid
+            | Fault::Fragments(_)
+            | Fault::Stall => {}
         }
         let reply = data(&mut state, &mut handler, &call, fault, &mut seen)?;
         if fault == Fault::Stall {
             while read_record(&mut stream).await?.is_some() {}
             return Ok(seen);
         }
-        let size = match fault {
-            Fault::Fragments(size) => size,
-            _ => usize::MAX,
+        let size = if let Fault::Fragments(size) = fault {
+            size
+        } else {
+            usize::MAX
         };
         write_fragments(&mut stream, &reply, size).await?;
     }

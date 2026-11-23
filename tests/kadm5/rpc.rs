@@ -1,7 +1,8 @@
-//! RPCSEC_GSS (RFC 2203) between the client and the loopback server:
-//! establishment, the integrity and privacy services, the sequence and
+//! `RPCSEC_GSS` (RFC 2203) between the client and the loopback server.
+//!
+//! Establishment, the integrity and privacy services, the sequence and
 //! verifier checks of every reply, bounded record reassembly, and the refusal
-//! of any flavor but RPCSEC_GSS.
+//! of any flavor but `RPCSEC_GSS`.
 
 use rskrb5_ng::{
     error::{Kadm5, Rpc},
@@ -51,7 +52,8 @@ type Connected = (
 async fn connect(script: Script, protection: Protection) -> Result<Connected, TestError> {
     let (stream, server) = server::spawn(privileges(), script);
     let options = support::options().with_protection(protection);
-    let client = RemoteAdminClient::over_stream(stream, &support::credential()?, options).await?;
+    let credential = support::credential()?;
+    let client = RemoteAdminClient::over_stream(stream, &credential, options).await?;
     Ok((client, server))
 }
 
@@ -63,7 +65,7 @@ async fn second_call_under(fault: Fault) -> Result<(Result<u32, Kadm5>, Seen), T
     let result = client
         .get_privileges()
         .await
-        .map(|privileges| privileges.bits());
+        .map(Privileges::bits);
     drop(client);
     let seen = server.await??;
     Ok((result, seen))
@@ -108,8 +110,10 @@ async fn integrity_establishes_and_calls() -> Result<(), TestError> {
     Ok(())
 }
 
-/// QA failure scenario: a reply with a reused RPCSEC_GSS sequence number
-/// (a fresh reply whose verifier and body name the previous call's) is rejected.
+/// QA failure scenario: a reply with a reused sequence number is rejected.
+///
+/// The fresh reply's verifier and body name the previous call's
+/// `RPCSEC_GSS` sequence number.
 #[tokio::test]
 async fn reused_sequence_number_is_rejected() -> Result<(), TestError> {
     // Given a server that answers the second call with the first call's sequence number.
@@ -200,7 +204,7 @@ async fn unauthenticated_reply_is_rejected() -> Result<(), TestError> {
 async fn reply_to_another_call_is_rejected() -> Result<(), TestError> {
     let (result, _seen) = second_call_under(Fault::WrongXid).await?;
     assert!(
-        matches!(result, Err(Kadm5::Rpc(Rpc::XidMismatch { .. }))),
+        matches!(result, Err(Kadm5::Rpc(Rpc::XidMismatch { expected: _, actual: _ }))),
         "{result:?}"
     );
     Ok(())
@@ -220,10 +224,10 @@ async fn fragmented_reply_reassembles() -> Result<(), TestError> {
 async fn unbounded_replies_are_refused() -> Result<(), TestError> {
     let (oversized, _seen) = second_call_under(Fault::OversizedFragment).await?;
     assert!(
-        matches!(oversized, Err(Kadm5::Rpc(Rpc::RecordTooLarge { .. }))),
+        matches!(oversized, Err(Kadm5::Rpc(Rpc::RecordTooLarge { maximum: _, actual: _ }))),
         "{oversized:?}"
     );
-    let (endless, _seen) = second_call_under(Fault::EndlessFragments).await?;
+    let (endless, _endless_seen) = second_call_under(Fault::EndlessFragments).await?;
     assert!(
         matches!(endless, Err(Kadm5::Rpc(Rpc::TooManyFragments(_)))),
         "{endless:?}"
@@ -245,8 +249,9 @@ async fn auth_sys_only_server_is_refused() -> Result<(), TestError> {
         },
     );
     // When the client connects.
+    let credential = support::credential()?;
     let result =
-        RemoteAdminClient::over_stream(stream, &support::credential()?, support::options()).await;
+        RemoteAdminClient::over_stream(stream, &credential, support::options()).await;
     // Then it fails with the denial, and every call it sent was RPCSEC_GSS.
     assert!(
         matches!(result, Err(Kadm5::Rpc(Rpc::AuthenticationRejected(2)))),
@@ -254,7 +259,7 @@ async fn auth_sys_only_server_is_refused() -> Result<(), TestError> {
         result.err()
     );
     let seen = server.await??;
-    assert!(!seen.flavors.is_empty());
+    assert_ne!(seen.flavors.len(), 0, "the client sent its context creation");
     assert!(seen.flavors.iter().all(|flavor| *flavor == RPCSEC_GSS));
     Ok(())
 }
@@ -274,8 +279,9 @@ async fn unverified_context_creation_is_refused() -> Result<(), TestError> {
                 faults: Vec::new().into(),
             },
         );
+        let credential = support::credential()?;
         let result =
-            RemoteAdminClient::over_stream(stream, &support::credential()?, support::options())
+            RemoteAdminClient::over_stream(stream, &credential, support::options())
                 .await;
         let refused = match &result {
             Err(Kadm5::Rpc(Rpc::UnexpectedVerifier(0))) => "verifier",
