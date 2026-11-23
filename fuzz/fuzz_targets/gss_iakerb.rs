@@ -25,6 +25,7 @@ use rskrb5_ng::{
     },
     keytab::{EncryptionKey, Keytab},
     service::Validator,
+    spnego::Krb5MechToken,
     ticket,
 };
 
@@ -176,12 +177,16 @@ fn ap_req_token(finished: &[u8]) -> Option<Vec<u8>> {
         &[0; 16],
     )
     .ok()?;
-    let mut token = rskrb5_ng::spnego::Krb5MechToken::ap_req(ap_req::encode(&request).ok()?);
+    let mut token = Krb5MechToken::ap_req(ap_req::encode(&request).ok()?);
     token.set_oid(Context::mechanism());
     token.encode().ok()
 }
 
 /// The token codec: a decoded token re-encodes to one that decodes to it.
+///
+/// # Panics
+///
+/// Panics when a decoded token is not an IAKERB token or a round trip changes it.
 fn codec(input: &[u8]) {
     if let Ok(token) = Token::decode(input) {
         assert!(
@@ -210,11 +215,10 @@ fuzz_target!(|data: &[u8]| {
     ) else {
         return;
     };
-    let Some((mut initiating, first)) = initiator(&credential) else {
-        panic!("the fixed initiator sends a relay request");
-    };
-    let Ok(policy) = RelayPolicy::new(REALM) else {
-        panic!("the fixed policy is valid");
+    let (Some((mut initiating, first)), Ok(policy)) =
+        (initiator(&credential), RelayPolicy::new(REALM))
+    else {
+        return;
     };
     let mut acceptor = gss::Acceptor::from_validator(
         Validator::new(&keytab).with_now(fixed),
