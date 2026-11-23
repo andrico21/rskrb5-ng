@@ -65,10 +65,9 @@ fn a_malformed_name_is_refused_by_the_profile() -> Result<(), TestError> {
                 &format!("[libdefaults]\n default_rcache_name = {value}\n"),
                 mode,
             );
-            assert!(
-                matches!(outcome, Err(ConfigError::InvalidReplayCacheName(_))),
-                "{mode:?} accepted {value}"
-            );
+            if !matches!(outcome, Err(ConfigError::InvalidReplayCacheName(_))) {
+                return Err(format!("{mode:?} accepted {value}").into());
+            }
         }
     }
     Ok(())
