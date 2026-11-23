@@ -105,10 +105,11 @@ fn next_table(previous: Option<Table>, maximum_bytes: u64) -> Option<Table> {
     (end <= maximum_bytes).then_some(table)
 }
 
-/// Whether `stamp` is older than `retention` seconds at `now`, in the wrapping
-/// 32-bit arithmetic of MIT's `ts_after(now, ts_incr(stamp, skew))`.
+/// Whether `stamp` is older than `retention` seconds at `now`: MIT's
+/// `ts_after(now, ts_incr(stamp, skew))` with a saturating sum, so a window that
+/// overflows the 32-bit timestamp never makes live evidence look expired.
 const fn expired(stamp: u32, now: u32, retention: u32) -> bool {
-    now > stamp.wrapping_add(retention)
+    now > stamp.saturating_add(retention)
 }
 
 /// Parse up to two records read at one offset.
@@ -186,6 +187,23 @@ fn seed(file: &mut dyn OpenFile, run: &Run<'_>) -> Result<[u8; SEED_LEN], Error>
     Ok(seed_bytes)
 }
 
+/// Write the tag and its time into `slot` and make the record durable.
+///
+/// # Errors
+///
+/// Returns the write or sync error; the tag is then refused.
+fn place(file: &mut dyn OpenFile, run: &Run<'_>, slot: u64) -> Result<Admission, Error> {
+    let mut record = [0_u8; 16];
+    let (tag_part, stamp_part) = record.split_at_mut(TAG_LEN);
+    tag_part.copy_from_slice(run.tag.as_bytes());
+    stamp_part.copy_from_slice(&run.now.to_be_bytes());
+    file.write_at(slot, &record)
+        .map_err(|source| io_error(run.path, "write", source))?;
+    file.sync()
+        .map_err(|source| io_error(run.path, "sync", source))?;
+    Ok(Admission::Fresh)
+}
+
 /// The table walk behind [`Run::store`].
 ///
 /// # Errors
@@ -196,9 +214,14 @@ fn store(file: &mut dyn OpenFile, run: &Run<'_>) -> Result<Admission, Error> {
     let mut table: Option<Table> = None;
     let mut available: Option<u64> = None;
     loop {
-        let current = next_table(table, run.maximum_bytes).ok_or(Error::FileFull {
-            maximum_bytes: run.maximum_bytes,
-        })?;
+        // At the size bound the file cannot grow: an expired slot found on the way
+        // is recycled (never a live one), otherwise the file is full.
+        let Some(current) = next_table(table, run.maximum_bytes) else {
+            let slot = available.ok_or(Error::FileFull {
+                maximum_bytes: run.maximum_bytes,
+            })?;
+            return place(file, run, slot);
+        };
         table = Some(current);
         let index = siphash24(run.tag.as_bytes(), &seed_bytes)
             .checked_rem(current.records)
@@ -236,16 +259,8 @@ fn store(file: &mut dyn OpenFile, run: &Run<'_>) -> Result<Admission, Error> {
             || first.is_some_and(|slot| slot.stamp == 0)
             || second.is_some_and(|slot| slot.stamp == 0);
         if open_end {
-            let target = available.ok_or_else(|| corrupt(run.path, "no slot is available"))?;
-            let mut record = [0_u8; 16];
-            let (tag_part, stamp_part) = record.split_at_mut(TAG_LEN);
-            tag_part.copy_from_slice(run.tag.as_bytes());
-            stamp_part.copy_from_slice(&run.now.to_be_bytes());
-            file.write_at(target, &record)
-                .map_err(|source| io_error(run.path, "write", source))?;
-            file.sync()
-                .map_err(|source| io_error(run.path, "sync", source))?;
-            return Ok(Admission::Fresh);
+            let slot = available.ok_or_else(|| corrupt(run.path, "no slot is available"))?;
+            return place(file, run, slot);
         }
         let head = seed_bytes
             .first_mut()

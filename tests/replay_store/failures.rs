@@ -10,7 +10,7 @@ use rskrb5_ng::{
     service::Principal,
 };
 
-use super::support::{Fault, MemoryFs, SKEW, evidence, tag_of};
+use super::support::{Fault, MemoryFs, SKEW, evidence, evidence_with_skew, tag_of};
 use crate::context::TestError;
 
 /// A store on a fresh in-memory file.
@@ -237,6 +237,75 @@ fn a_full_file_refuses_new_evidence_and_keeps_the_old() -> Result<(), TestError>
             Admission::Replayed
         );
     }
+    Ok(())
+}
+
+/// Pins that a file that cannot grow recycles an EXPIRED slot (never a live one): once the retention
+/// has passed, a new tag is admitted into the first table instead of being refused as full.
+#[test]
+fn an_expired_slot_is_reused_when_the_file_cannot_grow() -> Result<(), TestError> {
+    let (unbounded, _files) = fresh();
+    let store = unbounded.with_maximum_bytes(16 + 1023 * 16);
+    let mut first_refused = None;
+    for index in 0..4000_u32 {
+        match store.admit(&evidence(index, 1_000_000)?) {
+            Ok(Admission::Fresh) => {}
+            Ok(Admission::Replayed) => return Err("distinct tags never collide".into()),
+            Err(Error::FileFull { maximum_bytes: _ }) => {
+                first_refused = Some(index);
+                break;
+            }
+            Err(other) => return Err(other.into()),
+            Ok(_) => return Err("unknown admission".into()),
+        }
+    }
+    let refused = first_refused.ok_or("the file never filled")?;
+    let live_at = 1_000_000 + 3 * 900;
+    let expired_at = live_at + 1;
+
+    let while_live = store.admit(&evidence(refused, live_at)?);
+    let after = store.admit(&evidence(refused, expired_at)?)?;
+
+    assert!(
+        matches!(while_live, Err(Error::FileFull { maximum_bytes: _ })),
+        "evidence is live for three skews: {while_live:?}"
+    );
+    assert_eq!(after, Admission::Fresh);
+    assert_eq!(
+        store.admit(&evidence(refused, expired_at)?)?,
+        Admission::Replayed
+    );
+    Ok(())
+}
+
+/// Pins that an enormous retention never makes live evidence look expired: with a window that
+/// overflows the 32-bit timestamp, a full file still refuses a new tag instead of recycling a slot.
+#[test]
+fn an_enormous_retention_never_expires_live_evidence() -> Result<(), TestError> {
+    let (unbounded, _files) = fresh();
+    let store = unbounded.with_maximum_bytes(16 + 1023 * 16);
+    let window = Duration::from_secs(u64::from(u32::MAX));
+    let mut full_at = None;
+    for index in 0..4000_u32 {
+        match store.admit(&evidence_with_skew(index, 1_000_000, window)?) {
+            Ok(Admission::Fresh) => {}
+            Ok(Admission::Replayed) => return Err("distinct tags never collide".into()),
+            Err(Error::FileFull { maximum_bytes: _ }) => {
+                full_at = Some(index);
+                break;
+            }
+            Err(other) => return Err(other.into()),
+            Ok(_) => return Err("unknown admission".into()),
+        }
+    }
+    let first_refused = full_at.ok_or("the file never filled")?;
+
+    let later = store.admit(&evidence_with_skew(first_refused, 1_000_010, window)?);
+
+    assert!(
+        matches!(later, Err(Error::FileFull { maximum_bytes: _ })),
+        "live evidence was recycled: {later:?}"
+    );
     Ok(())
 }
 
