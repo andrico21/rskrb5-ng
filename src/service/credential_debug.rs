@@ -87,6 +87,7 @@ impl fmt::Debug for Validator<'_> {
             require_client_address,
             replay_cache,
             shared_replay_cache,
+            replay_store,
             transit_policy,
             pac_policy,
             pac_kdc_key,
@@ -104,6 +105,7 @@ impl fmt::Debug for Validator<'_> {
             .field("require_client_address", require_client_address)
             .field("replay_cache", replay_cache)
             .field("shared_replay_cache", shared_replay_cache)
+            .field("replay_store", replay_store)
             .field("transit_policy", transit_policy)
             .field("pac_policy", pac_policy)
             .field(

@@ -19,6 +19,7 @@ use rasn::types::Integer;
 
 use crate::{
     ap_rep,
+    replay::{Admission, Evidence, Presentation, Store, Tag},
     config::{Config, parameters::DefaultName, restrictions, section_values::Capaths},
     crypto::{CryptoPolicy, Use},
     der::decode_complete,
@@ -491,6 +492,7 @@ mod credential_debug;
 mod credential_replacement_tests;
 mod replay;
 mod replay_quota;
+mod store;
 mod ticket_pac;
 /// Reply rechecks of crate-changed validated fields.
 #[cfg(test)]
@@ -524,8 +526,9 @@ impl SharedReplayCache {
     /// # Errors
     ///
     /// Returns a poisoned-lock or incompatible-skew error.
-    pub(crate) fn ensure_skew(&self, requested: Duration) -> Result<(), Error> {
+    pub(crate) fn check_skew(&self, requested: Duration) -> Result<(), Error> {
         self.with_cache(|cache| cache.ensure_skew(requested))?
+            .map_err(store::legacy)
     }
 
     /// Configure an internally owned shared cache before its first admission.
@@ -536,6 +539,7 @@ impl SharedReplayCache {
     #[cfg(feature = "tower")]
     pub(crate) fn configure_owned_skew(&self, requested: Duration) -> Result<(), Error> {
         self.with_cache_mut(|cache| cache.configure_owned_skew(requested))?
+            .map_err(store::legacy)
     }
     /// Safely prune expired pairs while holding the shared admission lock.
     ///
@@ -646,7 +650,7 @@ impl SharedReplayCache {
         self.with_cache_mut(|cache| cache.force_clear_older_than_at(max_age, now))
     }
 
-    /// [`ReplayCache::insert`] on the shared cache, under its lock.
+    /// Record one presentation in the shared cache, under its lock.
     ///
     /// # Errors
     ///
@@ -661,6 +665,7 @@ impl SharedReplayCache {
         self.with_cache_mut(|cache| {
             cache.insert(key, authenticator_digest, presented_at, validator_skew)
         })?
+        .map_err(store::legacy)
     }
 
     /// Run `read` on the shared cache under its lock.
@@ -714,6 +719,8 @@ pub struct Validator<'keytab> {
     replay_cache: ReplayCache,
     /// A shared replay cache that replaces `replay_cache` when attached.
     shared_replay_cache: Option<SharedReplayCache>,
+    /// A replay store that replaces both caches when attached.
+    replay_store: Option<Arc<dyn Store>>,
     /// Explicit policy for cross-realm tickets not checked by the KDC.
     transit_policy: Option<Arc<dyn TransitValidator>>,
     /// What a ticket's PAC must pass before it is exposed.
@@ -753,9 +760,11 @@ impl<'keytab> Validator<'keytab> {
     /// Returns a retention-policy error for an incompatible window.
     pub(crate) fn set_max_clock_skew(&mut self, requested: Duration) -> Result<(), Error> {
         if let Some(cache) = &self.shared_replay_cache {
-            cache.ensure_skew(requested)?;
+            cache.check_skew(requested)?;
         }
-        self.replay_cache.configure_owned_skew(requested)?;
+        self.replay_cache
+            .configure_owned_skew(requested)
+            .map_err(store::legacy)?;
         self.max_clock_skew = requested;
         Ok(())
     }
@@ -766,7 +775,7 @@ impl<'keytab> Validator<'keytab> {
     /// Returns a skew-policy error or a poisoned-cache error before replacement.
     #[cfg(feature = "tower")]
     pub(crate) fn attach_replay_cache(&mut self, cache: SharedReplayCache) -> Result<(), Error> {
-        cache.ensure_skew(self.max_clock_skew)?;
+        cache.check_skew(self.max_clock_skew)?;
         self.shared_replay_cache = Some(cache);
         Ok(())
     }
@@ -801,6 +810,7 @@ impl<'keytab> Validator<'keytab> {
             require_client_address: false,
             replay_cache: ReplayCache::new(),
             shared_replay_cache: None,
+            replay_store: None,
             transit_policy: None,
             pac_policy: VerificationPolicy::acceptor(),
             pac_kdc_key: None,
@@ -919,7 +929,7 @@ impl<'keytab> Validator<'keytab> {
         mut self,
         replay_cache: SharedReplayCache,
     ) -> Result<Self, Error> {
-        replay_cache.ensure_skew(self.max_clock_skew)?;
+        replay_cache.check_skew(self.max_clock_skew)?;
         self.shared_replay_cache = Some(replay_cache);
         Ok(self)
     }
@@ -930,6 +940,32 @@ impl<'keytab> Validator<'keytab> {
     pub fn without_shared_replay_cache(mut self) -> Self {
         self.shared_replay_cache = None;
         self
+    }
+
+    /// Record every accepted authenticator in `store` instead of the in-memory
+    /// caches, for example a [`crate::replay::File2ReplayStore`] shared by several
+    /// processes.
+    ///
+    /// # Security
+    ///
+    /// A store error refuses the AP-REQ: freshness unproven is never accepted.
+    ///
+    /// # Errors
+    ///
+    /// Returns a replay-store error when the store's retention does not cover
+    /// this validator's clock skew.
+    #[inline]
+    pub fn with_replay_store(mut self, store: Arc<dyn Store>) -> Result<Self, Error> {
+        store.ensure_skew(self.max_clock_skew)?;
+        self.replay_store = Some(store);
+        Ok(self)
+    }
+
+    /// The replay store attached with [`Self::with_replay_store`], if any.
+    #[must_use]
+    #[inline]
+    pub fn replay_store(&self) -> Option<&Arc<dyn Store>> {
+        self.replay_store.as_ref()
     }
 
     /// Shared replay cache used by this validator, if any.
@@ -973,8 +1009,9 @@ impl<'keytab> Validator<'keytab> {
         self.now.unwrap_or_else(SystemTime::now)
     }
 
-    /// Record an accepted AP-REQ in the shared replay cache when one is
-    /// attached, otherwise in this validator's own cache.
+    /// Record an accepted AP-REQ in the attached replay store, else in the
+    /// shared replay cache when one is attached, otherwise in this validator's
+    /// own cache.
     ///
     /// # Errors
     ///
@@ -985,13 +1022,25 @@ impl<'keytab> Validator<'keytab> {
         &mut self,
         replay_key: ReplayKey,
         authenticator_digest: [u8; 32],
+        tag: Tag,
         now: SystemTime,
     ) -> Result<(), Error> {
-        let inserted = if let Some(replay_cache) = &self.shared_replay_cache {
+        let inserted = if let Some(store) = &self.replay_store {
+            let presentation = Presentation::new(
+                replay_key.service,
+                replay_key.client,
+                replay_key.ctime_seconds,
+                replay_key.cusec,
+            );
+            let evidence = Evidence::new(tag, authenticator_digest, presentation)
+                .with_window(now, self.max_clock_skew);
+            store.admit(&evidence).map_err(store::legacy)? == Admission::Fresh
+        } else if let Some(replay_cache) = &self.shared_replay_cache {
             replay_cache.insert(replay_key, authenticator_digest, now, self.max_clock_skew)?
         } else {
             self.replay_cache
-                .insert(replay_key, authenticator_digest, now, self.max_clock_skew)?
+                .insert(replay_key, authenticator_digest, now, self.max_clock_skew)
+                .map_err(store::legacy)?
         };
         if inserted { Ok(()) } else { Err(Error::Replay) }
     }

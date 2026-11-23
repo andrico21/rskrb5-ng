@@ -110,6 +110,7 @@ pub mod messages;
 pub mod pac;
 #[cfg(feature = "messages")]
 pub mod preauth;
+pub mod replay;
 pub mod routing;
 mod secure_env;
 #[cfg(feature = "messages")]

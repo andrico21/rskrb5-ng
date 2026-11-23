@@ -33,6 +33,9 @@ pub enum Any {
     /// Realm-path, transited-encoding or certificate-identity handling failed.
     #[error("routing error: {0}")]
     Routing(#[from] Routing),
+    /// A replay store or replay-cache name failed.
+    #[error("replay store error: {0}")]
+    Replay(#[from] Replay),
     /// Local authorization or name translation failed.
     #[error("local authorization error: {0}")]
     LocalAuth(#[from] LocalAuth),

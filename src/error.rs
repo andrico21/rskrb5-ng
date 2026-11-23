@@ -1,7 +1,7 @@
 //! Typed errors grouped by Kerberos domain.
-use core::str::Utf8Error;
+use core::{str::Utf8Error, time::Duration};
 #[cfg(feature = "messages")]
-use core::{error::Error as StdError, time::Duration};
+use core::error::Error as StdError;
 #[cfg(feature = "messages")]
 use std::time::SystemTime;
 use std::{env, io, path::PathBuf, time::SystemTimeError};
@@ -25,6 +25,7 @@ use crate::{
 include!("error/any.rs");
 include!("error/gss.rs");
 include!("error/policy.rs");
+include!("error/replay.rs");
 mod credential_debug;
 #[cfg(feature = "messages")]
 /// AP-REP helper error.
@@ -2638,6 +2639,9 @@ pub enum Service {
     /// Shared replay cache lock could not be acquired.
     #[error("shared replay cache lock is poisoned")]
     ReplayCachePoisoned,
+    /// A replay store failed, so the authenticator is refused (fail closed).
+    #[error("replay store error: {0}")]
+    ReplayStore(#[from] Replay),
     /// AP-REP did not echo the AP-REQ authenticator timestamp.
     #[error("AP-REP timestamp mismatch: expected {expected:?}, got {actual:?}")]
     ApRepTimestampMismatch {

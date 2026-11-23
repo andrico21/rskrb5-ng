@@ -13,6 +13,7 @@ use super::{
 use crate::{
     ap_req,
     crypto::Use,
+    replay::Tag,
     ticket,
     trace::{Event as TraceEvent, Identity},
 };
@@ -245,7 +246,11 @@ impl Validator<'_> {
             authenticator_time: authenticator_timestamp,
             pac,
         };
-        self.record_replay(replay_key, authenticator_digest, now)?;
+        let tag = Tag::from_authenticator(
+            ap_req.authenticator.etype,
+            ap_req.authenticator.cipher.as_ref(),
+        );
+        self.record_replay(replay_key, authenticator_digest, tag, now)?;
         Ok(validated)
     }
 }

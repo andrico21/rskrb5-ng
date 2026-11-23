@@ -12,9 +12,10 @@ use super::replay_tests;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod policy_tests;
 use super::{
-    Arc, DEFAULT_MAX_CLOCK_SKEW, DigestRecord, Duration, Error, HashMap, ReplayCache, ReplayKey,
+    Arc, DEFAULT_MAX_CLOCK_SKEW, DigestRecord, Duration, HashMap, ReplayCache, ReplayKey,
     SystemTime,
 };
+use crate::error::Replay as Error;
 
 impl Default for ReplayCache {
     #[inline]
@@ -31,7 +32,7 @@ impl ReplayCache {
     /// Returns a skew policy error for an incompatible window.
     pub(super) fn ensure_skew(&self, requested: Duration) -> Result<(), Error> {
         if requested > self.max_clock_skew {
-            return Err(Error::ReplayCacheSkewExceeded {
+            return Err(Error::SkewExceeded {
                 maximum: self.max_clock_skew,
                 requested,
             });
@@ -200,8 +201,8 @@ impl ReplayCache {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::ReplayCacheSkewExceeded`], [`Error::ReplayCacheClockRollback`]
-    /// or [`Error::ReplayCacheCapacityExceeded`] when cache policy rejects admission.
+    /// Returns [`Error::SkewExceeded`], [`Error::ClockRollback`]
+    /// or [`Error::Capacity`] when cache policy rejects admission.
     pub(super) fn insert(
         &mut self,
         key: ReplayKey,
@@ -210,7 +211,7 @@ impl ReplayCache {
         validator_skew: Duration,
     ) -> Result<bool, Error> {
         if validator_skew > self.max_clock_skew {
-            return Err(Error::ReplayCacheSkewExceeded {
+            return Err(Error::SkewExceeded {
                 maximum: self.max_clock_skew,
                 requested: validator_skew,
             });
@@ -220,7 +221,7 @@ impl ReplayCache {
                 .duration_since(presented_at)
                 .is_ok_and(|rollback| rollback > self.max_clock_skew)
         }) {
-            return Err(Error::ReplayCacheClockRollback);
+            return Err(Error::ClockRollback);
         }
         let latest = self
             .watermark
@@ -247,7 +248,7 @@ impl ReplayCache {
             return Ok(false);
         }
         if self.entries.len() >= self.capacity {
-            return Err(Error::ReplayCacheCapacityExceeded {
+            return Err(Error::Capacity {
                 capacity: self.capacity,
             });
         }
