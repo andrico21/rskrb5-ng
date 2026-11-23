@@ -13,7 +13,7 @@ use tokio::{io::DuplexStream, task::JoinHandle};
 
 use super::{
     context::{Context as _, TestError},
-    server::{self, Fault, Handler, Init, RPCSEC_GSS, Script, Seen},
+    server::{self, Destroy, Fault, Handler, Init, RPCSEC_GSS, Script, Seen},
     support,
     wire::{Reader, Writer},
 };
@@ -101,12 +101,32 @@ async fn privacy_establishes_and_calls() -> Result<(), TestError> {
 async fn integrity_establishes_and_calls() -> Result<(), TestError> {
     // Given a client asking for integrity.
     let (mut client, server) = connect(Script::plain(), Protection::Integrity).await?;
-    // When it calls.
+    // When it calls and destroys the context.
     let privileges = client.get_privileges().await?;
-    drop(client);
-    // Then the call is answered and the context is an integrity context.
+    client.destroy().await?;
+    // Then the call is answered, the context is an integrity context, and
+    // the destruction's integrity-protected answer was accepted.
     assert_eq!(privileges.bits(), 0x0f);
-    assert_eq!(server.await??.service, 2);
+    let seen = server.await??;
+    assert_eq!(seen.service, 2);
+    assert!(seen.destroyed);
+    Ok(())
+}
+
+/// A destruction answered without a body (a server that protects only data
+/// replies) is accepted too: the verifier signs the call's sequence number.
+#[tokio::test]
+async fn bare_destroy_reply_is_accepted() -> Result<(), TestError> {
+    // Given a server that answers the destruction with no body.
+    let script = Script {
+        destroy: Destroy::Bare,
+        ..Script::plain()
+    };
+    let (client, server) = connect(script, Protection::Privacy).await?;
+    // When the client destroys the context.
+    client.destroy().await?;
+    // Then the server saw the destruction.
+    assert!(server.await??.destroyed);
     Ok(())
 }
 
@@ -246,6 +266,7 @@ async fn auth_sys_only_server_is_refused() -> Result<(), TestError> {
         Script {
             init: Init::AuthSysOnly(2),
             faults: Vec::new().into(),
+            destroy: Destroy::Protected,
         },
     );
     // When the client connects.
@@ -277,6 +298,7 @@ async fn unverified_context_creation_is_refused() -> Result<(), TestError> {
             Script {
                 init,
                 faults: Vec::new().into(),
+                destroy: Destroy::Protected,
             },
         );
         let credential = support::credential()?;

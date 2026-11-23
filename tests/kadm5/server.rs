@@ -85,6 +85,18 @@ pub(super) enum Init {
     NoneVerifier,
 }
 
+/// How the server answers `RPCSEC_GSS_DESTROY`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Destroy {
+    /// A body protected like a data reply's, naming the call's sequence
+    /// number and carrying no results, as kadmind sends it
+    /// (`svc_auth_gss.c:524-544` replies through `svcauth_gss_wrap`).
+    Protected,
+    /// No body at all, as an `RPCSEC_GSS` server that protects only data
+    /// replies sends it.
+    Bare,
+}
+
 /// The script of one connection.
 #[derive(Debug)]
 pub(super) struct Script {
@@ -92,6 +104,8 @@ pub(super) struct Script {
     pub init: Init,
     /// One fault per data call, in order; `Fault::None` after the last.
     pub faults: VecDeque<Fault>,
+    /// The answer to the context destruction.
+    pub destroy: Destroy,
 }
 
 impl Script {
@@ -100,6 +114,7 @@ impl Script {
         Self {
             init: Init::Accept,
             faults: VecDeque::new(),
+            destroy: Destroy::Protected,
         }
     }
 
@@ -108,6 +123,7 @@ impl Script {
         Self {
             init: Init::Accept,
             faults: faults.iter().copied().collect(),
+            destroy: Destroy::Protected,
         }
     }
 }
@@ -360,10 +376,10 @@ fn init(
     Ok(accepted(call.xid, verifier, &results))
 }
 
-/// Answer one data call under `fault`.
+/// Answer one data call under `fault`, or the destruction as `destroy` says.
 fn data(
     state: &mut State,
-    handler: &mut Handler,
+    (handler, destroy): (&mut Handler, Destroy),
     call: &Call,
     fault: Fault,
     seen: &mut Seen,
@@ -376,7 +392,11 @@ fn data(
     if gss_proc == 3 {
         seen.destroyed = true;
         let mic = context.get_mic(&sequence.to_be_bytes())?;
-        return Ok(accepted(call.xid, Some(&mic), &[]));
+        let body = match destroy {
+            Destroy::Protected => protect(context, service, sequence, &[], false)?,
+            Destroy::Bare => Vec::new(),
+        };
+        return Ok(accepted(call.xid, Some(&mic), &body));
     }
     let arguments = unprotect(context, service, sequence, &call.arguments)?;
     seen.calls.push((call.procedure, arguments.clone()));
@@ -506,7 +526,13 @@ where
             | Fault::Fragments(_)
             | Fault::Stall => {}
         }
-        let reply = data(&mut state, &mut handler, &call, fault, &mut seen)?;
+        let reply = data(
+            &mut state,
+            (&mut handler, script.destroy),
+            &call,
+            fault,
+            &mut seen,
+        )?;
         if fault == Fault::Stall {
             while read_record(&mut stream).await?.is_some() {}
             return Ok(seen);

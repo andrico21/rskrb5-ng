@@ -227,8 +227,7 @@ pub(super) fn continue_init(
     credential: &Credential,
     message: &[u8],
 ) -> Result<InitStep, Error> {
-    let Phase::Creating { mut initiator, xid } =
-        mem::replace(&mut client.phase, Phase::Closed)
+    let Phase::Creating { mut initiator, xid } = mem::replace(&mut client.phase, Phase::Closed)
     else {
         return Err(Error::UnexpectedStep(
             "no context-creation call is outstanding",
@@ -289,9 +288,11 @@ fn established(client: &mut RpcClient) -> Result<&mut EstablishedContext, Error>
     match &mut client.phase {
         Phase::Established(context) => Ok(context),
         Phase::Closed => Err(Error::ConnectionClosed),
-        Phase::Start(_) | Phase::Creating { initiator: _, xid: _ } => {
-            Err(Error::UnexpectedStep("the context is not established"))
-        }
+        Phase::Start(_)
+        | Phase::Creating {
+            initiator: _,
+            xid: _,
+        } => Err(Error::UnexpectedStep("the context is not established")),
     }
 }
 
@@ -323,7 +324,12 @@ fn protected_call(
     } else {
         DATA
     };
-    let credential = GssCredential::new(gss_procedure, sequence, service(client.protection), &client.handle);
+    let credential = GssCredential::new(
+        gss_procedure,
+        sequence,
+        service(client.protection),
+        &client.handle,
+    );
     let header = message::header(xid, client.program, procedure, &credential)?;
     let protection = client.protection;
     let context = established(client)?;
@@ -433,8 +439,13 @@ fn checked_reply(
     let context = established(client)?;
     let reply = accepted(message, call.xid)?;
     verify(context, &reply, call.sequence)?;
+    // A destruction is answered with no body, or, by MIT's kadmind
+    // (svc_auth_gss.c:524-544 through svcauth_gss_wrap), with a void result
+    // protected like a data reply's.
     let results = if call.kind == CallKind::Destroy {
-        if !reply.results.is_empty() {
+        if !reply.results.is_empty()
+            && !unprotect(context, protection, call.sequence, &reply.results)?.is_empty()
+        {
             return Err(Error::Malformed("bytes after the destroy reply"));
         }
         Zeroizing::new(Vec::new())
