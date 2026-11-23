@@ -46,7 +46,7 @@ fn ticket_skew_boundaries_are_inclusive() {
 
 /// A PAC is not a supported mandatory authenticator authorization element.
 #[test]
-fn mandatory_authenticator_pac_is_rejected() {
+fn mandatory_authenticator_pac_is_rejected() -> Result<(), Error> {
     let data = vec![rasn_kerberos::AuthorizationDataValue {
         r#type: AD_WIN2K_PAC,
         data: vec![].into(),
@@ -68,6 +68,7 @@ fn mandatory_authenticator_pac_is_rejected() {
         ),
         Err(Error::UnsupportedAuthorizationData { kind: _ })
     ));
+    Ok(())
 }
 
 /// Whole-second pre-epoch values remain whole seconds when split for replay keys.
