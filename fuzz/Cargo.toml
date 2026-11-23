@@ -221,3 +221,17 @@ path = "fuzz_targets/localauth_k5login.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "replay_file"
+path = "fuzz_targets/replay_file.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "auth_message"
+path = "fuzz_targets/auth_message.rs"
+test = false
+doc = false
+bench = false

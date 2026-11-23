@@ -102,6 +102,10 @@ int cmd_wrap_aead(const struct field *f, size_t nf, struct out *o);
 int cmd_unwrap_aead(const struct field *f, size_t nf, struct out *o);
 int cmd_prf(const struct field *f, size_t nf, struct out *o);
 
+// peer_krb.c: MIT KRB-CRED forwarding and reading (todo 27).
+int cmd_krb_forward(const struct field *f, size_t nf, struct out *o);
+int cmd_krb_read_cred(const struct field *f, size_t nf, struct out *o);
+
 #define NEED(count) \
     do { if (nf != (count)) return proto_fail(o, "wrong number of fields"); } while (0)
 

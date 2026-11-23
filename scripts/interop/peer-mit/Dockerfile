@@ -65,7 +65,7 @@ COPY peer/ /src/peer/
 WORKDIR /src/peer
 RUN gcc -std=gnu11 -O2 -Wall -Wextra -Werror -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
         -I/opt/krb5/include -o /opt/krb5/libexec/interop/peer-adapter \
-        peer.c peer_wire.c peer_util.c peer_cred.c peer_ctx.c peer_msg.c \
+        peer.c peer_wire.c peer_util.c peer_cred.c peer_ctx.c peer_msg.c peer_krb.c \
         -L/opt/krb5/lib -Wl,-rpath,/opt/krb5/lib -lgssapi_krb5 -lkrb5 -lk5crypto -lcom_err
 
 FROM ${BASE_IMAGE} AS mit-peer
