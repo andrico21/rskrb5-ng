@@ -547,7 +547,7 @@ fn mit_forwarded_credentials_cross_the_credential_transport() -> Result<(), Box<
     .mk_cred(credentials, CredentialTransport::Encrypted)?;
     let read = adapter_call(
         &mut adapter,
-        b'D',
+        b'G',
         &[&18_u32.to_be_bytes(), &key_bytes, &wire],
     )?;
     let [count, client, server, _flags] = read.as_slice() else {
