@@ -1,7 +1,9 @@
-//! The security rules of the `NegoEx` context: the `VERIFY` binding, replayed and
-//! reordered messages, the mechanism policy and the key policy.
+//! The security rules of the `NegoEx` context.
+//!
+//! They are the `VERIFY` binding, replayed and reordered messages, the
+//! mechanism policy and the key policy.
 
-use std::sync::Arc;
+use alloc::sync::Arc;
 
 use rskrb5_ng::{
     error::Negoex,
@@ -34,7 +36,7 @@ fn first_tokens(hops: u8) -> Result<(Context, Context, Vec<u8>, Vec<u8>), TestEr
         hops,
         ..Knobs::default()
     };
-    let mechanisms: Vec<Arc<dyn Mechanism>> = vec![TestMechanism::new(&OID_FIRST, knobs)];
+    let mechanisms: Vec<Arc<dyn Mechanism>> = vec![TestMechanism::shared(&OID_FIRST, knobs)];
     let mut initiator = Context::initiator(&registry, &mechanisms, Request::new())?;
     let mut acceptor = Context::acceptor(&registry, &mechanisms, Request::new())?;
     let first = initiator.step(None)?.into_token().context("a first token")?;
@@ -91,7 +93,7 @@ fn the_checksum_binds_the_whole_transcript() -> Result<(), TestError> {
     // The initiator's INITIATOR_NEGO random reaches the acceptor's transcript.
     let registry = registry()?;
     let mechanisms: Vec<Arc<dyn Mechanism>> =
-        vec![TestMechanism::new(&OID_FIRST, Knobs::default())];
+        vec![TestMechanism::shared(&OID_FIRST, Knobs::default())];
     let mut sender = Context::initiator(&registry, &mechanisms, Request::new())?;
     let mut receiver = Context::acceptor(&registry, &mechanisms, Request::new())?;
     let mut first = sender.step(None)?.into_token().context("a first token")?;
@@ -121,7 +123,7 @@ fn without_the_peers_verify_message_the_context_is_incomplete() -> Result<(), Te
 /// A VERIFY message whose checksum type is not the key's keyed checksum is refused.
 #[test]
 fn a_checksum_type_the_key_does_not_define_is_refused() -> Result<(), TestError> {
-    for (kind, original) in [(7_i32, 16_i32), (15, 16), (-138, 16)] {
+    for (kind, original) in [(7_i32, 16_i32), (15_i32, 16_i32), (-138_i32, 16_i32)] {
         let (mut initiator, _acceptor, _first, mut second) = first_tokens(1)?;
         // The checksum type is 64 bytes into the VERIFY message.
         let at = second.len() - VERIFY_LEN + 64;
@@ -151,7 +153,10 @@ fn replayed_and_reordered_tokens_are_refused() -> Result<(), TestError> {
         .step(Some(&first))
         .err()
         .context("a replayed token must fail")?;
-    assert!(matches!(replay, Negoex::MessageOutOfSequence { .. }), "{replay}");
+    assert!(matches!(replay, Negoex::MessageOutOfSequence {
+            expected: _,
+            actual: _
+        }), "{replay}");
     assert!(matches!(
         acceptor.step(Some(&first)),
         Err(Negoex::UnexpectedStep(_))
@@ -162,7 +167,10 @@ fn replayed_and_reordered_tokens_are_refused() -> Result<(), TestError> {
         .step(Some(&second))
         .err()
         .context("the same token twice must fail")?;
-    assert!(matches!(again, Negoex::MessageOutOfSequence { .. }), "{again}");
+    assert!(matches!(again, Negoex::MessageOutOfSequence {
+            expected: _,
+            actual: _
+        }), "{again}");
     Ok(())
 }
 
@@ -171,17 +179,20 @@ fn replayed_and_reordered_tokens_are_refused() -> Result<(), TestError> {
 fn step_preconditions_are_enforced() -> Result<(), TestError> {
     let registry = registry()?;
     let mechanisms: Vec<Arc<dyn Mechanism>> =
-        vec![TestMechanism::new(&OID_FIRST, Knobs::default())];
+        vec![TestMechanism::shared(&OID_FIRST, Knobs::default())];
     let mut initiator = Context::initiator(&registry, &mechanisms, Request::new())?;
     assert!(matches!(
         initiator.step(Some(b"token")),
         Err(Negoex::UnexpectedStep(_))
     ));
     let mut acceptor = Context::acceptor(&registry, &mechanisms, Request::new())?;
-    assert!(acceptor.step(None).is_err());
-    let mut acceptor = Context::acceptor(&registry, &mechanisms, Request::new())?;
     assert!(matches!(
-        acceptor.step(Some(&[0; 40])),
+        acceptor.step(None),
+        Err(Negoex::InvalidMessageSize)
+    ));
+    let mut fresh = Context::acceptor(&registry, &mechanisms, Request::new())?;
+    assert!(matches!(
+        fresh.step(Some(&[0; 40])),
         Err(Negoex::InvalidMessageSize)
     ));
     Ok(())
@@ -193,7 +204,7 @@ fn the_mechanism_policy_is_explicit() -> Result<(), TestError> {
     let knobs = Knobs::default();
     // An unregistered mechanism.
     let empty = Registry::new();
-    let one: Vec<Arc<dyn Mechanism>> = vec![TestMechanism::new(&OID_FIRST, knobs.clone())];
+    let one: Vec<Arc<dyn Mechanism>> = vec![TestMechanism::shared(&OID_FIRST, knobs.clone())];
     assert!(matches!(
         Context::initiator(&empty, &one, Request::new()),
         Err(Negoex::UnregisteredMechanism(_))
@@ -211,15 +222,15 @@ fn the_mechanism_policy_is_explicit() -> Result<(), TestError> {
         oid: ntlm.to_vec(),
     });
     registry.register(Extension::GssMechanism(registered))?;
-    let ntlm_mechanism: Vec<Arc<dyn Mechanism>> = vec![TestMechanism::new(&ntlm, knobs.clone())];
+    let ntlm_mechanism: Vec<Arc<dyn Mechanism>> = vec![TestMechanism::shared(&ntlm, knobs.clone())];
     assert!(matches!(
         Context::acceptor(&registry, &ntlm_mechanism, Request::new()),
         Err(Negoex::RejectedMechanism(_))
     ));
     // The same mechanism twice shares its scheme.
     let twice: Vec<Arc<dyn Mechanism>> = vec![
-        TestMechanism::new(&OID_FIRST, knobs.clone()),
-        TestMechanism::new(&OID_FIRST, knobs),
+        TestMechanism::shared(&OID_FIRST, knobs.clone()),
+        TestMechanism::shared(&OID_FIRST, knobs),
     ];
     assert!(matches!(
         Context::initiator(&registry, &twice, Request::new()),
@@ -232,14 +243,14 @@ fn the_mechanism_policy_is_explicit() -> Result<(), TestError> {
 /// DES) or the runtime policy has not enabled (RC4) fails the context.
 #[test]
 fn weak_mechanism_keys_are_refused() -> Result<(), TestError> {
-    for etype in [1, 23, 16] {
+    for etype in [1_i32, 23_i32, 16_i32] {
         let registry = registry()?;
         let knobs = Knobs {
             etype,
             key: KeyPolicy::Always,
             ..Knobs::default()
         };
-        let mechanisms: Vec<Arc<dyn Mechanism>> = vec![TestMechanism::new(&OID_FIRST, knobs)];
+        let mechanisms: Vec<Arc<dyn Mechanism>> = vec![TestMechanism::shared(&OID_FIRST, knobs)];
         let mut initiator = Context::initiator(&registry, &mechanisms, Request::new())?;
         let failure = initiator
             .step(None)

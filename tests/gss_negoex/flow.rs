@@ -1,7 +1,8 @@
-//! The `NegoEx` exchange between two [`Context`]s over the test-only
-//! `negoextest` mechanisms: MIT's `t_negoex.py` scenarios (krb5 1.22.2).
+//! The `NegoEx` exchange between two [`Context`]s.
+//!
+//! The test-only `negoextest` mechanisms run MIT's `t_negoex.py` scenarios (krb5 1.22.2).
 
-use std::sync::Arc;
+use alloc::sync::Arc;
 
 use rskrb5_ng::{
     error::Negoex,
@@ -48,8 +49,8 @@ impl RandomSource for Fixed {
 fn context(initiator: bool, knobs: &Knobs) -> Result<Context, TestError> {
     let registry = registry()?;
     let mechanisms: Vec<Arc<dyn Mechanism>> = vec![
-        TestMechanism::new(&OID_FIRST, knobs.clone()),
-        TestMechanism::new(&OID_SECOND, knobs.clone()),
+        TestMechanism::shared(&OID_FIRST, knobs.clone()),
+        TestMechanism::shared(&OID_SECOND, knobs.clone()),
     ];
     Ok(if initiator {
         Context::initiator(&registry, &mechanisms, Request::new())?
@@ -73,7 +74,7 @@ impl Run {
         for (_, token) in &self.tokens {
             let first = conversation.next_sequence();
             for (offset, message) in conversation.parse(token)?.iter().enumerate() {
-                let sequence = usize::try_from(first)? + offset;
+                let sequence = usize::try_from(first)?.saturating_add(offset);
                 let info = match message {
                     Message::Nego(nego) => nego
                         .schemes()
@@ -100,7 +101,7 @@ impl Run {
 fn drive(initiator: &mut Context, acceptor: &mut Context) -> Result<Run, Negoex> {
     let mut run = Run { tokens: Vec::new() };
     let mut token = initiator.step(None)?.into_token();
-    for _ in 0..16 {
+    for _ in 0_u8..16 {
         if let Some(bytes) = token.take() {
             run.tokens.push((true, bytes.clone()));
             let step = acceptor.step(Some(&bytes))?;
@@ -199,14 +200,14 @@ fn more_hops() -> Result<(), TestError> {
 /// Keys that exist early make the `VERIFY` messages go out early.
 #[test]
 fn early_keys() -> Result<(), TestError> {
-    let run = scenario(&knobs(3, KeyPolicy::Always), &knobs(3, KeyPolicy::Always))?;
+    let three = scenario(&knobs(3, KeyPolicy::Always), &knobs(3, KeyPolicy::Always))?;
     assert_trace(
-        &run,
+        &three,
         &["sending [4]VERIFY", "sending [9]VERIFY", "sending [10]AP_REQUEST"],
     )?;
-    let run = scenario(&knobs(4, KeyPolicy::Always), &knobs(4, KeyPolicy::Always))?;
+    let four = scenario(&knobs(4, KeyPolicy::Always), &knobs(4, KeyPolicy::Always))?;
     assert_trace(
-        &run,
+        &four,
         &[
             "sending [4]VERIFY",
             "sending [9]VERIFY",
@@ -236,8 +237,8 @@ fn no_keys_fail() -> Result<(), TestError> {
 fn no_optimistic_token() -> Result<(), TestError> {
     let registry = registry()?;
     let mechanisms: Vec<Arc<dyn Mechanism>> = vec![
-        TestMechanism::new(&OID_FIRST, Knobs::default()),
-        TestMechanism::new(&OID_SECOND, Knobs::default()),
+        TestMechanism::shared(&OID_FIRST, Knobs::default()),
+        TestMechanism::shared(&OID_SECOND, Knobs::default()),
     ];
     let mut initiator = Context::initiator(&registry, &mechanisms, Request::new())?
         .with_random_source(Arc::new(Fixed))
@@ -245,7 +246,7 @@ fn no_optimistic_token() -> Result<(), TestError> {
     let mut acceptor = context(false, &Knobs::default())?;
     let run = drive(&mut initiator, &mut acceptor)?;
     assert_trace(
-        &Run { tokens: run.tokens },
+        &run,
         &[
             "sending [3]ACCEPTOR_NEGO",
             "sending [6]AP_REQUEST",
@@ -263,9 +264,9 @@ fn first_mechanism_failures_fall_back() -> Result<(), TestError> {
         init_query_fail: Some(102),
         ..Knobs::default()
     };
-    let run = scenario(&init_query, &Knobs::default())?;
+    let query_run = scenario(&init_query, &Knobs::default())?;
     assert_trace(
-        &run,
+        &query_run,
         &[
             &format!("sending [0]INITIATOR_NEGO: {GUID_SECOND}"),
             "sending [2]AP_REQUEST",
@@ -282,9 +283,9 @@ fn first_mechanism_failures_fall_back() -> Result<(), TestError> {
             ..Knobs::default()
         },
     ] {
-        let run = scenario(&Knobs::default(), &acceptor)?;
+        let acceptor_run = scenario(&Knobs::default(), &acceptor)?;
         assert_trace(
-            &run,
+            &acceptor_run,
             &[
                 &format!("sending [0]INITIATOR_NEGO: {GUID_FIRST} {GUID_SECOND}"),
                 &format!("sending [3]AP_REQUEST: {GUID_FIRST}"),
@@ -298,9 +299,9 @@ fn first_mechanism_failures_fall_back() -> Result<(), TestError> {
         init_fail: Some(102),
         ..Knobs::default()
     };
-    let run = scenario(&init_fail, &Knobs::default())?;
+    let fail_run = scenario(&init_fail, &Knobs::default())?;
     assert_trace(
-        &run,
+        &fail_run,
         &[
             &format!("sending [0]INITIATOR_NEGO: {GUID_SECOND}"),
             "sending [2]AP_REQUEST",
@@ -357,12 +358,12 @@ fn accept_failure_is_reported_by_the_initiator() -> Result<(), TestError> {
 /// A `VERIFY_NO_KEY` alert makes the other side send its `VERIFY` message again.
 #[test]
 fn alerts_ask_for_the_verify_message_again() -> Result<(), TestError> {
-    let run = scenario(
+    let first_run = scenario(
         &knobs(3, KeyPolicy::InitAlways),
         &knobs(3, KeyPolicy::InitAlways),
     )?;
     assert_trace(
-        &run,
+        &first_run,
         &[
             "sending [3]AP_REQUEST",
             "sending [4]VERIFY",
@@ -373,12 +374,12 @@ fn alerts_ask_for_the_verify_message_again() -> Result<(), TestError> {
             "sending [12]VERIFY",
         ],
     )?;
-    let run = scenario(
+    let second_run = scenario(
         &knobs(4, KeyPolicy::AcceptAlways),
         &knobs(4, KeyPolicy::AcceptAlways),
     )?;
     assert!(
-        run.trace()?.iter().any(|line| line.contains("]ALERT")),
+        second_run.trace()?.iter().any(|line| line.contains("]ALERT")),
         "the initiator alerts the acceptor"
     );
     Ok(())
@@ -394,7 +395,7 @@ fn channel_bindings_reach_the_mechanism() -> Result<(), TestError> {
             binding: Some(expected.to_vec()),
             ..Knobs::default()
         };
-        let mechanisms: Vec<Arc<dyn Mechanism>> = vec![TestMechanism::new(&OID_FIRST, knobs)];
+        let mechanisms: Vec<Arc<dyn Mechanism>> = vec![TestMechanism::shared(&OID_FIRST, knobs)];
         let request = match given {
             Some(data) => Request::new().with_bindings(ChannelBindings::new(data.to_vec())?),
             None => Request::new(),

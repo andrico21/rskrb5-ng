@@ -6,6 +6,9 @@
     reason = "test code is not rendered API documentation"
 )]
 pub(super) mod tests {
+    extern crate alloc;
+
+    use alloc::sync::Arc;
     use core::{error::Error, time::Duration};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -13,6 +16,7 @@ pub(super) mod tests {
     use rskrb5_ng::{
         client::{KdcError, TgsRepSession, principal::Principal},
         error::{Client as ClientError, Gss, Spnego as SpnegoError},
+        extensions::{Extension, GssMechanism, Registry},
         gss::{
             self, AcceptorOptions, CredStore, Credential, InitStep, InitiatorOptions, Name,
             NameType, negoex,
@@ -160,12 +164,10 @@ pub(super) mod tests {
     #[test]
     fn negoex_objects_redact_keys() -> Result<(), Box<dyn Error>> {
         let key = [pattern(33), pattern(49)].concat();
-        let mut registry = rskrb5_ng::extensions::Registry::new();
-        registry.register(rskrb5_ng::extensions::Extension::GssMechanism(
-            std::sync::Arc::new(Registered),
-        ))?;
-        let mechanisms: Vec<std::sync::Arc<dyn negoex::Mechanism>> =
-            vec![std::sync::Arc::new(KeyedMechanism(key.clone()))];
+        let mut registry = Registry::new();
+        registry.register(Extension::GssMechanism(Arc::new(Registered)))?;
+        let mechanisms: Vec<Arc<dyn negoex::Mechanism>> =
+            vec![Arc::new(KeyedMechanism(key.clone()))];
         let mut initiator = negoex::Context::initiator(&registry, &mechanisms, negoex::Request::new())?;
         let step = initiator.step(None)?;
         redacted(&step, &[step.token().ok_or("a first token")?]);
@@ -209,9 +211,9 @@ pub(super) mod tests {
             negoex::Request::new(),
         )?);
         redacted(&spnego_acceptor, &[&key]);
-        let step = spnego_acceptor.accept_sec_context(&offer)?;
-        redacted(&step, &[&key]);
-        if let spnego::negoex::AcceptStep::Complete(accepted) = step {
+        let answer = spnego_acceptor.accept_sec_context(&offer)?;
+        redacted(&answer, &[&key]);
+        if let spnego::negoex::AcceptStep::Complete(accepted) = answer {
             redacted(&*accepted, &[&key]);
         }
         Ok(())
@@ -220,8 +222,8 @@ pub(super) mod tests {
     /// The registry entry of the keyed mechanism.
     struct Registered;
 
-    impl rskrb5_ng::extensions::GssMechanism for Registered {
-        fn id(&self) -> &str {
+    impl GssMechanism for Registered {
+        fn id(&self) -> &'static str {
             "keyed"
         }
 

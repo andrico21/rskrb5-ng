@@ -1,6 +1,9 @@
-//! `NegoEx` (MS-NEGOEX) message framework and its SPNEGO integration
-//! (`rskrb5_ng::gss::negoex`, plan 2 todo 21, WP-13b).
+//! `NegoEx` (MS-NEGOEX) message framework and its SPNEGO integration.
+//!
+//! The subject is `rskrb5_ng::gss::negoex` (plan 2 todo 21, WP-13b).
 #![cfg(feature = "spnego")]
+
+extern crate alloc;
 
 /// Turns `Option` and `Result` failures into test errors.
 #[cfg(test)]

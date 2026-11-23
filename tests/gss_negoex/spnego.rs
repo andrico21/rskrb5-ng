@@ -1,8 +1,10 @@
-//! `NegoEx` under SPNEGO (RFC 4178): the `NegoEx` OID in the mechanism list, the
-//! `NegoEx` messages in the mechanism tokens and the acceptor's states, as in
-//! MIT 1.22.2 `spnego_mech.c` (`get_negotiable_mechs`, `acc_ctx_new`, `init_ctx_cont`).
+//! `NegoEx` under SPNEGO (RFC 4178).
+//!
+//! The `NegoEx` OID is in the mechanism list, the `NegoEx` messages are in the
+//! mechanism tokens, and the acceptor has MIT 1.22.2's states
+//! (`spnego_mech.c`: `get_negotiable_mechs`, `acc_ctx_new`, `init_ctx_cont`).
 
-use std::sync::Arc;
+use alloc::sync::Arc;
 
 use rskrb5_ng::{
     error::{Gss, Negoex, Spnego},
@@ -46,8 +48,8 @@ fn contexts(hops: u8) -> Result<(Context, Context), TestError> {
         ..Knobs::default()
     };
     let mechanisms: Vec<Arc<dyn Mechanism>> = vec![
-        TestMechanism::new(&OID_FIRST, knobs.clone()),
-        TestMechanism::new(&OID_SECOND, knobs),
+        TestMechanism::shared(&OID_FIRST, knobs.clone()),
+        TestMechanism::shared(&OID_SECOND, knobs),
     ];
     Ok((
         Context::initiator(&registry, &mechanisms, Request::new())?,
@@ -57,10 +59,10 @@ fn contexts(hops: u8) -> Result<(Context, Context), TestError> {
 
 /// The first `NegTokenInit` of an initiator, decoded.
 fn init_token(bytes: &[u8]) -> Result<NegTokenInit, TestError> {
-    match Token::decode(bytes)? {
-        Token::Init(init) => Ok(init),
-        other => Err(format!("a NegTokenInit was expected, got {other:?}").into()),
-    }
+    let Token::Init(init) = Token::decode(bytes)? else {
+        return Err("a NegTokenInit was expected".into());
+    };
+    Ok(init)
 }
 
 /// A `NegTokenResp`, decoded.
@@ -68,9 +70,11 @@ fn resp_token(bytes: &[u8]) -> Result<NegTokenResp, TestError> {
     Ok(NegTokenResp::decode(bytes)?)
 }
 
-/// One hop: the `NegoEx` OID is the offered mechanism list, the mechanism token
-/// holds `NEGOEX` messages, the acceptor completes at once with `accept-completed`
-/// and the `NegoEx` answer, and the initiator completes on it.
+/// One hop completes both sides.
+///
+/// The `NegoEx` OID is the offered mechanism list, the mechanism token holds
+/// `NEGOEX` messages, the acceptor completes at once with `accept-completed` and
+/// the `NegoEx` answer, and the initiator completes on it.
 #[test]
 fn one_hop_negotiation_completes() -> Result<(), TestError> {
     let (ours, theirs) = contexts(1)?;
@@ -119,7 +123,7 @@ fn multi_hop_negotiation_continues() -> Result<(), TestError> {
     };
     let mut accepted = None;
     let mut replies = 0_usize;
-    for _ in 0..10 {
+    for _ in 0_u8..10 {
         match acceptor.accept_sec_context(&token)? {
             AcceptStep::Continue(reply) => {
                 let resp = resp_token(&reply)?;
@@ -209,13 +213,13 @@ fn the_initiator_refuses_bad_answers() -> Result<(), TestError> {
     };
     let reject = NegTokenResp::reject().encode()?;
     assert!(initiator.init_sec_context(Some(&reject)).is_err(), "reject");
-    let (ours, _theirs) = contexts(1)?;
-    let mut initiator = Initiator::new(ours);
-    drop(initiator.init_sec_context(None)?);
+    let (offered, _unused) = contexts(1)?;
+    let mut second = Initiator::new(offered);
+    drop(second.init_sec_context(None)?);
     let mut other = NegTokenResp::accept_completed();
     other.set_supported_mech(Some(ObjectIdentifier::krb5()));
     other.set_response_token(Some(vec![1].into()));
-    let failure = initiator
+    let failure = second
         .init_sec_context(Some(&other.encode()?))
         .err()
         .context("another mechanism was not offered")?;

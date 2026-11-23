@@ -1,6 +1,8 @@
-//! The MS-NEGOEX message framework: byte-exact layouts (built here from the
-//! MS-NEGOEX section 2.2 field tables, independently of the library), parsing
-//! bounds and the conversation (sequence number and conversation id) rules.
+//! The MS-NEGOEX message framework.
+//!
+//! The tests check byte-exact layouts (built here from the MS-NEGOEX section 2.2
+//! field tables, independently of the library), parsing bounds and the
+//! conversation (sequence number and conversation id) rules.
 
 use rskrb5_ng::{
     error::Negoex,
@@ -39,7 +41,7 @@ fn header(kind: u32, sequence: u32, header_len: u32, message_len: u32) -> Vec<u8
 /// A `NEGO_MESSAGE` with `schemes` (MS-NEGOEX 2.2.6.3): header 96 bytes.
 fn nego(kind: u32, sequence: u32, random: [u8; 32], schemes: &[[u8; 16]]) -> Vec<u8> {
     let count = u16::try_from(schemes.len()).unwrap_or(0);
-    let total = 96 + 16 * u32::from(count);
+    let total = 96_u32.saturating_add(16_u32.saturating_mul(u32::from(count)));
     let mut out = header(kind, sequence, 96, total);
     out.extend_from_slice(&random);
     out.extend_from_slice(&0_u64.to_le_bytes());
@@ -57,7 +59,7 @@ fn nego(kind: u32, sequence: u32, random: [u8; 32], schemes: &[[u8; 16]]) -> Vec
 /// An `EXCHANGE_MESSAGE` (MS-NEGOEX 2.2.6.4): header 64 bytes.
 fn exchange(kind: u32, sequence: u32, scheme: [u8; 16], token: &[u8]) -> Vec<u8> {
     let length = u32::try_from(token.len()).unwrap_or(0);
-    let mut out = header(kind, sequence, 64, 64 + length);
+    let mut out = header(kind, sequence, 64, 64_u32.saturating_add(length));
     out.extend_from_slice(&scheme);
     out.extend_from_slice(&64_u32.to_le_bytes());
     out.extend_from_slice(&length.to_le_bytes());
@@ -68,7 +70,7 @@ fn exchange(kind: u32, sequence: u32, scheme: [u8; 16], token: &[u8]) -> Vec<u8>
 /// A `VERIFY_MESSAGE` (MS-NEGOEX 2.2.6.5): header 80 bytes.
 fn verify(sequence: u32, scheme: [u8; 16], checksum_type: i32, checksum: &[u8]) -> Vec<u8> {
     let length = u32::try_from(checksum.len()).unwrap_or(0);
-    let mut out = header(6, sequence, 80, 80 + length);
+    let mut out = header(6, sequence, 80, 80_u32.saturating_add(length));
     out.extend_from_slice(&scheme);
     out.extend_from_slice(&20_u32.to_le_bytes());
     out.extend_from_slice(&1_u32.to_le_bytes());
@@ -98,7 +100,7 @@ fn alert(sequence: u32, scheme: [u8; 16], reason: u32) -> Vec<u8> {
 
 /// Overwrite `bytes` at `at` with `value` (the vector must be long enough).
 fn put(bytes: &mut [u8], at: usize, value: &[u8]) {
-    if let Some(target) = bytes.get_mut(at..at + value.len()) {
+    if let Some(target) = bytes.get_mut(at..at.saturating_add(value.len())) {
         target.copy_from_slice(value);
     }
 }
@@ -179,7 +181,7 @@ fn a_multi_message_token_parses_in_order() -> Result<(), TestError> {
     let Some(Message::Verify(checked)) = messages.get(3) else {
         return Err("the last message is VERIFY".into());
     };
-    assert_eq!(checked.checksum_type(), 16);
+    assert_eq!(checked.checksum_type(), 16_i32);
     assert_eq!(checked.checksum(), &[9; 12]);
     assert_eq!(
         checked.offset_in_token(),
@@ -201,10 +203,10 @@ fn a_verify_no_key_alert_is_recognised() -> Result<(), TestError> {
     assert!(parsed.is_verify_no_key());
     assert_eq!(parsed.scheme(), AuthScheme::from_bytes(SCHEME_B));
     let other = initiating().parse(&alert(0, SCHEME_B, 2))?;
-    let Some(Message::Alert(parsed)) = other.first() else {
+    let Some(Message::Alert(unrelated)) = other.first() else {
         return Err("an ALERT message".into());
     };
-    assert!(!parsed.is_verify_no_key(), "another pulse reason is not VERIFY_NO_KEY");
+    assert!(!unrelated.is_verify_no_key(), "another pulse reason is not VERIFY_NO_KEY");
     Ok(())
 }
 
@@ -250,9 +252,11 @@ fn unknown_type_version_and_critical_extension_are_refused() -> Result<(), TestE
     Ok(())
 }
 
-/// Sizes that disagree with the token are refused: a message longer than the
-/// token, a header longer than its message, a header shorter than the message
-/// type needs (MIT 1.22.2 reads past the token there) and a truncated header.
+/// Sizes that disagree with the token are refused.
+///
+/// The cases are a message longer than the token, a header longer than its
+/// message, a header shorter than the message type needs (MIT 1.22.2 reads past
+/// the token there) and a truncated header.
 #[test]
 fn inconsistent_sizes_are_refused() -> Result<(), TestError> {
     let valid = exchange(5, 0, SCHEME_A, b"abc");
@@ -369,7 +373,10 @@ fn token_message_and_scheme_counts_are_bounded() -> Result<(), TestError> {
     let huge = vec![0_u8; 0x10_0001];
     assert!(matches!(
         refusal(&mut accepting(), &huge)?,
-        Negoex::TokenTooLarge { .. }
+        Negoex::TokenTooLarge {
+            maximum: _,
+            actual: _
+        }
     ));
     let mut many = Vec::new();
     for sequence in 0..40 {
@@ -377,12 +384,15 @@ fn token_message_and_scheme_counts_are_bounded() -> Result<(), TestError> {
     }
     assert!(matches!(
         refusal(&mut accepting(), &many)?,
-        Negoex::TooManyMessages { .. }
+        Negoex::TooManyMessages { maximum: _ }
     ));
     let schemes = vec![SCHEME_A; 65];
     assert!(matches!(
         refusal(&mut accepting(), &nego(0, 0, [0; 32], &schemes))?,
-        Negoex::TooManySchemes { .. }
+        Negoex::TooManySchemes {
+            maximum: _,
+            actual: _
+        }
     ));
     Ok(())
 }

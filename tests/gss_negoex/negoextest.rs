@@ -1,11 +1,12 @@
-//! A test-only Rust implementation of MIT's `negoextest` mechanism protocol
-//! (`src/plugins/gssapi/negoextest/main.c`, krb5 1.22.2): a mechanism that
-//! passes a hop counter back and forth, offers the one-byte meta-data `X`, and
-//! has all-zero AES256-SHA1 keys perturbed so that each side's verify key is the
-//! other's checksum key. MIT's environment knobs are fields of [`Knobs`].
-//! It lives in the tests only; the library has no mechanism of its own.
+//! A test-only Rust implementation of MIT's `negoextest` mechanism protocol.
+//!
+//! The model is `src/plugins/gssapi/negoextest/main.c` of krb5 1.22.2: a
+//! mechanism that passes a hop counter back and forth, offers the one-byte
+//! meta-data `X`, and has all-zero AES256-SHA1 keys perturbed so that each side's
+//! verify key is the other's checksum key. MIT's environment knobs are fields of
+//! [`Knobs`]. It lives in the tests only; the library has no mechanism of its own.
 
-use std::sync::Arc;
+use alloc::sync::Arc;
 
 use rskrb5_ng::{
     extensions::GssMechanism,
@@ -41,29 +42,29 @@ pub(super) enum KeyPolicy {
 #[derive(Clone, Debug)]
 pub(super) struct Knobs {
     /// `HOPS`: the hops an initiator asks for.
-    pub(super) hops: u8,
+    pub hops: u8,
     /// `KEY`.
-    pub(super) key: KeyPolicy,
+    pub key: KeyPolicy,
     /// `INIT_FAIL`.
-    pub(super) init_fail: Option<u8>,
+    pub init_fail: Option<u8>,
     /// `ACCEPT_FAIL`.
-    pub(super) accept_fail: Option<u8>,
+    pub accept_fail: Option<u8>,
     /// `INIT_QUERY_FAIL`.
-    pub(super) init_query_fail: Option<u8>,
+    pub init_query_fail: Option<u8>,
     /// `ACCEPT_QUERY_FAIL`.
-    pub(super) accept_query_fail: Option<u8>,
+    pub accept_query_fail: Option<u8>,
     /// `INIT_QUERY_NONE`: the mechanism offers no meta-data.
-    pub(super) init_query_none: Option<u8>,
+    pub init_query_none: Option<u8>,
     /// `ACCEPT_QUERY_NONE`.
-    pub(super) accept_query_none: Option<u8>,
+    pub accept_query_none: Option<u8>,
     /// `INIT_EXCHANGE_FAIL`.
-    pub(super) init_exchange_fail: Option<u8>,
+    pub init_exchange_fail: Option<u8>,
     /// `ACCEPT_EXCHANGE_FAIL`.
-    pub(super) accept_exchange_fail: Option<u8>,
+    pub accept_exchange_fail: Option<u8>,
     /// `GSS_INIT_BINDING` or `GSS_ACCEPT_BINDING`: the application data expected.
-    pub(super) binding: Option<Vec<u8>>,
+    pub binding: Option<Vec<u8>>,
     /// The encryption type of the keys (MIT's mechanism always uses AES256).
-    pub(super) etype: i32,
+    pub etype: i32,
 }
 
 impl Default for Knobs {
@@ -95,7 +96,7 @@ pub(super) struct TestMechanism {
 
 impl TestMechanism {
     /// The mechanism of `oid` with `knobs`.
-    pub(super) fn new(oid: &[u8], knobs: Knobs) -> Arc<dyn Mechanism> {
+    pub(super) fn shared(oid: &[u8], knobs: Knobs) -> Arc<dyn Mechanism> {
         Arc::new(Self {
             oid: oid.to_vec(),
             knobs,
@@ -130,9 +131,9 @@ impl Mechanism for TestMechanism {
 /// The registry entry for a mechanism of `oid`.
 pub(super) struct Registered {
     /// Its unique id.
-    pub(super) id: String,
+    pub id: String,
     /// Its object identifier.
-    pub(super) oid: Vec<u8>,
+    pub oid: Vec<u8>,
 }
 
 impl GssMechanism for Registered {
@@ -189,7 +190,7 @@ impl TestSession {
 
     /// `gss_encapsulate_token` of one byte (RFC 2743 3.1).
     fn encapsulate(&self, byte: u8) -> Vec<u8> {
-        let inner_len = 2 + self.oid.len() + 1;
+        let inner_len = self.oid.len().saturating_add(3);
         let mut token = vec![0x60, u8::try_from(inner_len).unwrap_or(0), 0x06];
         token.push(u8::try_from(self.oid.len()).unwrap_or(0));
         token.extend_from_slice(&self.oid);
@@ -297,7 +298,7 @@ impl Session for TestSession {
         }
         let output = match self.context.as_mut() {
             Some(context) if context.hops > 0 => {
-                context.hops -= 1;
+                context.hops = context.hops.saturating_sub(1);
                 Some(context.hops)
             }
             Some(_) | None => None,
@@ -334,7 +335,7 @@ impl Session for TestSession {
         }
         let output = match self.context.as_mut() {
             Some(context) if context.hops > 0 => {
-                context.hops -= 1;
+                context.hops = context.hops.saturating_sub(1);
                 Some(vec![context.hops])
             }
             Some(_) | None => None,
