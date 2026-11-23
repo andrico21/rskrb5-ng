@@ -1,9 +1,9 @@
 /// IAKERB error ([`crate::gss::iakerb`]).
 ///
-/// The variants separate the three things an IAKERB exchange can fail on: the
-/// token (its framing, header and order), the relay policy (a realm, a
-/// request, a round or a byte count the acceptor refuses) and the context (the
-/// transcript checksum and the underlying Kerberos exchanges).
+/// The variants separate what an IAKERB exchange can fail on: the token (its
+/// framing, header and order), the relay policy (a realm, a request, a round
+/// or a byte count the acceptor refuses) and the context (the transcript
+/// checksum and the underlying Kerberos exchanges).
 #[cfg(feature = "spnego")]
 #[derive(thiserror::Error)]
 #[non_exhaustive]
@@ -11,7 +11,7 @@ pub enum Iakerb {
     /// The bytes are not an IAKERB proxy token: not a GSS-framed token of the
     /// IAKERB mechanism, or not token id `05 01` (`G_BAD_TOK_HEADER`).
     #[error("not an IAKERB token: {0}")]
-    NotIakerb(&'static str),
+    WrongMechanism(&'static str),
     /// An IAKERB token or its `IAKERB-HEADER` is malformed (`GSS_S_DEFECTIVE_TOKEN`).
     #[error("malformed IAKERB token: {0}")]
     BadToken(&'static str),

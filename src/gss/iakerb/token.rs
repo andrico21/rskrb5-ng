@@ -3,10 +3,7 @@
 
 use core::fmt;
 
-use rasn::{
-    AsnType, Decode, Decoder as _, Encode, Encoder as _, der,
-    types::OctetString,
-};
+use rasn::{AsnType, Decode, Decoder as _, Encode, Encoder as _, der, types::OctetString};
 
 use super::Error;
 
@@ -84,14 +81,14 @@ impl Token {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::TokenTooLarge`] above 256 KiB, [`Error::NotIakerb`] for
+    /// Returns [`Error::TokenTooLarge`] above 256 KiB, [`Error::WrongMechanism`] for
     /// another mechanism or token id, and [`Error::BadToken`] for a malformed
     /// frame or header.
     #[inline]
     pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
         let (id, body) = unframe(bytes)?;
         if id != PROXY_TOKEN_ID {
-            return Err(Error::NotIakerb("not token id 05 01"));
+            return Err(Error::WrongMechanism("not token id 05 01"));
         }
         let (header, message): (Header, &[u8]) = der::decode_with_remainder(body)
             .map_err(|_malformed| Error::BadToken("the IAKERB-HEADER does not decode"))?;
@@ -143,6 +140,8 @@ struct Header {
 const MAX_TOKEN_BYTES: usize = 0x4_0000;
 /// The longest target realm, in bytes.
 pub(super) const MAX_REALM_BYTES: usize = 255;
+/// What a token that is not an RFC 2743 frame is called in an error.
+const NOT_A_FRAME: &str = "not a GSS-API initial context token";
 /// The IAKERB mechanism `1.3.6.1.5.2.5` as a DER OBJECT IDENTIFIER
 /// (MIT `gssapiP_krb5.h:90-91`).
 const MECHANISM_DER: [u8; 8] = [0x06, 0x06, 0x2b, 0x06, 0x01, 0x05, 0x02, 0x05];
@@ -160,7 +159,10 @@ pub(super) const AP_REP_TOKEN_ID: [u8; 2] = [0x02, 0x00];
 ///
 /// Returns [`Error::TokenTooLarge`] above the token bound.
 pub(super) fn frame(id: [u8; 2], body: &[u8]) -> Result<Vec<u8>, Error> {
-    let content = MECHANISM_DER.len() + id.len() + body.len();
+    let content = MECHANISM_DER
+        .len()
+        .saturating_add(id.len())
+        .saturating_add(body.len());
     let length = content.to_be_bytes();
     let significant = length
         .iter()
@@ -195,7 +197,7 @@ pub(super) fn frame(id: [u8; 2], body: &[u8]) -> Result<Vec<u8>, Error> {
 ///
 /// Returns [`Error::TokenTooLarge`] above the token bound, [`Error::BadToken`]
 /// for a frame that is not a definite-length application 0 element holding
-/// exactly the token, and [`Error::NotIakerb`] for another mechanism.
+/// exactly the token, and [`Error::WrongMechanism`] for another mechanism.
 pub(super) fn unframe(bytes: &[u8]) -> Result<([u8; 2], &[u8]), Error> {
     if bytes.len() > MAX_TOKEN_BYTES {
         return Err(Error::TokenTooLarge {
@@ -203,38 +205,40 @@ pub(super) fn unframe(bytes: &[u8]) -> Result<([u8; 2], &[u8]), Error> {
             actual: bytes.len(),
         });
     }
-    let malformed = Error::BadToken("not a GSS-API initial context token");
-    let (&tag, rest) = bytes.split_first().ok_or(malformed)?;
-    let (&first, rest) = rest
+    let (&tag, after_tag) = bytes.split_first().ok_or(Error::BadToken(NOT_A_FRAME))?;
+    let (&first, after_first) = after_tag
         .split_first()
-        .ok_or(Error::BadToken("not a GSS-API initial context token"))?;
+        .ok_or(Error::BadToken(NOT_A_FRAME))?;
     let (length, content) = if first < 0x80 {
-        (usize::from(first), rest)
+        (usize::from(first), after_first)
     } else {
         let count = usize::from(first & 0x7f);
         if count == 0 || count > 3 {
             return Err(Error::BadToken("an unsupported DER length"));
         }
-        let (digits, content) = rest
+        let (digits, content) = after_first
             .split_at_checked(count)
             .ok_or(Error::BadToken("a truncated DER length"))?;
         (
-            digits
-                .iter()
-                .fold(0_usize, |length, digit| (length << 8_u32) | usize::from(*digit)),
+            digits.iter().fold(0_usize, |length, digit| {
+                length
+                    .saturating_mul(256)
+                    .saturating_add(usize::from(*digit))
+            }),
             content,
         )
     };
     if tag != 0x60 || content.len() != length {
-        return Err(Error::BadToken("not a GSS-API initial context token"));
+        return Err(Error::BadToken(NOT_A_FRAME));
     }
-    let after_oid = content
-        .strip_prefix(&MECHANISM_DER)
-        .ok_or(if content.first() == Some(&0x06) {
-            Error::NotIakerb("another mechanism")
-        } else {
-            Error::BadToken("no mechanism identifier")
-        })?;
+    let after_oid =
+        content
+            .strip_prefix(&MECHANISM_DER)
+            .ok_or(if content.first() == Some(&0x06) {
+                Error::WrongMechanism("another mechanism")
+            } else {
+                Error::BadToken("no mechanism identifier")
+            })?;
     let (id, body) = after_oid
         .split_first_chunk::<2>()
         .ok_or(Error::BadToken("no token id"))?;

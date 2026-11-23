@@ -7,34 +7,34 @@ use crate::error::{ApRep, ApReq, Client, Service};
 impl From<Client> for Error {
     #[inline]
     fn from(failure: Client) -> Self {
-        Error::Client(failure)
+        Self::Client(failure)
     }
 }
 
 impl From<Service> for Error {
     #[inline]
     fn from(failure: Service) -> Self {
-        Error::Service(failure)
+        Self::Service(failure)
     }
 }
 
 impl From<ApReq> for Error {
     #[inline]
     fn from(failure: ApReq) -> Self {
-        Error::ApReq(failure)
+        Self::ApReq(failure)
     }
 }
 
 impl From<ApRep> for Error {
     #[inline]
     fn from(failure: ApRep) -> Self {
-        Error::ApRep(failure)
+        Self::ApRep(failure)
     }
 }
 
 impl From<getrandom::Error> for Error {
     #[inline]
     fn from(failure: getrandom::Error) -> Self {
-        Error::Random(failure)
+        Self::Random(failure)
     }
 }

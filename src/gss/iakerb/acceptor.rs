@@ -10,12 +10,12 @@ use std::time::SystemTime;
 
 use chrono::Timelike as _;
 use rasn::der;
+
 use super::{
     AcceptStep, Error, KdcRelay, RelayFailure, RelayPolicy, Token, conversation::Conversation,
 };
 use crate::{gss::Acceptor, kdc_req};
 
-/// The AP exchange: the authenticator checks and the context.
 mod ap;
 
 use ap::ap;
@@ -37,11 +37,14 @@ pub(super) struct State {
     policy: RelayPolicy,
     /// Whether the context is established.
     done: bool,
+    /// The tokens exchanged and their bounds.
+    conversation: Conversation,
 }
 
 /// A new acceptor state.
 pub(super) const fn new(policy: RelayPolicy) -> State {
     State {
+        conversation: Conversation::for_policy(&policy),
         policy,
         done: false,
     }
@@ -58,21 +61,20 @@ impl State {
 ///
 /// # Errors
 ///
-/// Returns the errors of [`super::IakerbContext::accept_sec_context`].
+/// Returns the errors of [`super::Context::accept_sec_context`].
 pub(super) fn step(
     state: &mut State,
-    conversation: &mut Conversation,
     (acceptor, relay): (&mut Acceptor<'_>, &mut dyn KdcRelay),
     token: &[u8],
 ) -> Result<AcceptStep, Error> {
     if state.done {
         return Err(Error::UnexpectedStep("the context is established"));
     }
-    conversation.check_size(token.len())?;
+    state.conversation.check_size(token.len())?;
     if Token::is_iakerb(token) {
-        return proxy(state, conversation, relay, token);
+        return proxy(state, relay, token);
     }
-    let accepted = ap(conversation, acceptor, token)?;
+    let accepted = ap(state.conversation.transcript(), acceptor, token)?;
     state.done = true;
     Ok(AcceptStep::Complete(Box::new(accepted)))
 }
@@ -82,30 +84,29 @@ pub(super) fn step(
 /// # Errors
 ///
 /// Returns the policy, relay and token errors.
-fn proxy(
-    state: &State,
-    conversation: &mut Conversation,
-    relay: &mut dyn KdcRelay,
-    token: &[u8],
-) -> Result<AcceptStep, Error> {
-    conversation.check_round()?;
+fn proxy(state: &mut State, relay: &mut dyn KdcRelay, token: &[u8]) -> Result<AcceptStep, Error> {
+    state.conversation.check_round()?;
     let request = Token::decode(token)?;
-    conversation.append(token)?;
+    state.conversation.append(token)?;
     let answer = match (request.realm().is_empty(), request.message().is_empty()) {
         (true, true) => Token::new(state.policy.local_realm(), None, Vec::new()),
         (false, false) => relayed(&state.policy, relay, &request)?,
         (true, false) | (false, true) => {
-            return Err(Error::BadToken("the realm and the message are both set or both empty"));
+            return Err(Error::BadToken(
+                "the realm and the message are both set or both empty",
+            ));
         }
     };
-    Ok(AcceptStep::Continue(conversation.produce(answer.encode()?)?))
+    Ok(AcceptStep::Continue(
+        state.conversation.produce(answer.encode()?)?,
+    ))
 }
 
 /// The realm a KDC request is for, when it is a well-formed AS-REQ or TGS-REQ.
 fn request_realm(request: &[u8]) -> Option<String> {
-    let body = match request.first()? {
-        &AS_REQ_TAG => kdc_req::decode_as_req(request).ok()?.0.req_body,
-        &TGS_REQ_TAG => kdc_req::decode_tgs_req(request).ok()?.0.req_body,
+    let body = match *request.first()? {
+        AS_REQ_TAG => kdc_req::decode_as_req(request).ok()?.0.req_body,
+        TGS_REQ_TAG => kdc_req::decode_tgs_req(request).ok()?.0.req_body,
         _ => return None,
     };
     String::from_utf8(body.realm.as_bytes().to_vec()).ok()

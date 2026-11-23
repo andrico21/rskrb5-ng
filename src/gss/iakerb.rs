@@ -20,21 +20,23 @@
 //!   is an error, never a panic.
 
 use core::fmt;
+use std::time::SystemTime;
 
 use super::{Accepted, Acceptor, Config, Credential, EstablishedContext, InitStep};
-use crate::{error::Iakerb as Error, spnego::oid::ObjectIdentifier};
+use crate::{
+    client::{
+        options::TgsReq,
+        stepwise::{InitCredsOptions, TicketOptions},
+    },
+    error::Iakerb as Error,
+    spnego::oid::ObjectIdentifier,
+};
 
-/// The bounded record of the exchange.
-mod conversation;
-/// Conversions into the error type.
-mod convert;
-/// The IAKERB acceptor.
 mod acceptor;
-/// The `IAKERB-FINISHED` checksum.
+mod conversation;
+mod convert;
 mod finished;
-/// The IAKERB initiator.
 mod initiator;
-/// The IAKERB proxy token.
 pub mod token;
 
 use token::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, MAX_REALM_BYTES, Token, frame, unframe};
@@ -168,6 +170,13 @@ impl RelayPolicy {
         self
     }
 
+    /// The realm realm discovery answers.
+    #[inline]
+    #[must_use]
+    pub const fn local_realm(&self) -> &str {
+        self.local_realm.as_str()
+    }
+
     /// Whether a request for `realm` may be relayed.
     #[inline]
     #[must_use]
@@ -176,29 +185,19 @@ impl RelayPolicy {
     }
 }
 
-/// The acceptor's own realm, which discovery answers.
-impl RelayPolicy {
-    /// The realm realm discovery answers.
-    #[inline]
-    #[must_use]
-    pub fn local_realm(&self) -> &str {
-        &self.local_realm
-    }
-}
-
 /// A realm a policy may name.
 ///
 /// # Errors
 ///
 /// Returns [`Error::InvalidPolicy`] for an empty realm or one above 255 bytes.
-fn check_realm(realm: &str) -> Result<(), Error> {
+const fn check_realm(realm: &str) -> Result<(), Error> {
     if realm.is_empty() || realm.len() > MAX_REALM_BYTES {
         return Err(Error::InvalidPolicy("a realm is 1 to 255 bytes"));
     }
     Ok(())
 }
 
-/// What [`IakerbContext::accept_sec_context`] needs the application to do next.
+/// What [`Context::accept_sec_context`] needs the application to do next.
 #[non_exhaustive]
 pub enum AcceptStep {
     /// Send this token to the initiator and pass its answer to the next step
@@ -226,9 +225,7 @@ impl fmt::Debug for AcceptStep {
 /// [`KdcRelay`]. A failed step ends the initiator; the acceptor refuses the
 /// token and stays as it was.
 #[non_exhaustive]
-pub struct IakerbContext {
-    /// The tokens exchanged and their bounds.
-    conversation: conversation::Conversation,
+pub struct Context {
     /// This end.
     role: Role,
 }
@@ -241,21 +238,21 @@ enum Role {
     Acceptor(acceptor::State),
 }
 
-impl fmt::Debug for IakerbContext {
+impl fmt::Debug for Context {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let role = match &self.role {
             Role::Initiator(_) => "initiator",
             Role::Acceptor(_) => "acceptor",
         };
-        f.debug_struct("IakerbContext")
+        f.debug_struct("Context")
             .field("role", &role)
             .field("established", &self.is_established())
             .finish_non_exhaustive()
     }
 }
 
-impl IakerbContext {
+impl Context {
     /// The IAKERB mechanism, `1.3.6.1.5.2.5`.
     #[inline]
     #[must_use]
@@ -276,18 +273,15 @@ impl IakerbContext {
         target: super::Name,
         options: super::InitiatorOptions,
     ) -> Result<Self, Error> {
-        let now = std::time::SystemTime::now();
-        let mut nonce = [0_u8; 4];
-        getrandom::fill(&mut nonce)?;
-        let nonce = u32::from_be_bytes(nonce) & 0x7fff_ffff;
+        let now = SystemTime::now();
+        let mut random = [0_u8; 4];
+        getrandom::fill(&mut random)?;
+        let nonce = u32::from_be_bytes(random) & 0x7fff_ffff;
         let exchanges = (
-            crate::client::stepwise::InitCredsOptions::from_config(config, now, nonce)?,
-            crate::client::stepwise::TicketOptions::new(
-                crate::client::options::TgsReq::from_libdefaults(now, nonce, &config.libdefaults)?,
-            ),
+            InitCredsOptions::from_config(config, now, nonce)?,
+            TicketOptions::new(TgsReq::from_libdefaults(now, nonce, &config.libdefaults)?),
         );
         Ok(Self {
-            conversation: conversation::Conversation::with_defaults(),
             role: Role::Initiator(Box::new(initiator::new(target, options, exchanges))),
         })
     }
@@ -295,15 +289,15 @@ impl IakerbContext {
     /// An acceptor context that relays under `policy`.
     #[inline]
     #[must_use]
-    pub fn acceptor(policy: RelayPolicy) -> Self {
+    pub const fn acceptor(policy: RelayPolicy) -> Self {
         Self {
-            conversation: conversation::Conversation::for_policy(&policy),
             role: Role::Acceptor(acceptor::new(policy)),
         }
     }
 
-    /// One initiator step: the first call (no input) sends the first token,
-    /// each later call takes the acceptor's answer. The AS and TGS requests go
+    /// One initiator step: the first call (no input) sends the first token.
+    ///
+    /// Each later call takes the acceptor's answer. The AS and TGS requests go
     /// out as proxy tokens; when the service ticket is in hand the AP-REQ goes
     /// out, and with mutual authentication the AP-REP completes the context.
     ///
@@ -321,16 +315,16 @@ impl IakerbContext {
         input_token: Option<&[u8]>,
     ) -> Result<InitStep, Error> {
         match &mut self.role {
-            Role::Initiator(state) => {
-                initiator::step(state, &mut self.conversation, credential, input_token)
-            }
+            Role::Initiator(state) => initiator::step(state, credential, input_token),
             Role::Acceptor(_) => Err(Error::UnexpectedStep("this is an acceptor context")),
         }
     }
 
-    /// One acceptor step. A proxy token is answered with a proxy token: the
-    /// acceptor's realm for a discovery request, the KDC's reply for a request
-    /// it relays through `relay`. The AP-REQ completes the context.
+    /// One acceptor step.
+    ///
+    /// A proxy token is answered with a proxy token: the acceptor's realm for a
+    /// discovery request, the KDC's reply for a request it relays through
+    /// `relay`. The AP-REQ completes the context.
     ///
     /// # Errors
     ///
@@ -355,12 +349,7 @@ impl IakerbContext {
         input_token: &[u8],
     ) -> Result<AcceptStep, Error> {
         match &mut self.role {
-            Role::Acceptor(state) => acceptor::step(
-                state,
-                &mut self.conversation,
-                (acceptor, relay),
-                input_token,
-            ),
+            Role::Acceptor(state) => acceptor::step(state, (acceptor, relay), input_token),
             Role::Initiator(_) => Err(Error::UnexpectedStep("this is an initiator context")),
         }
     }
@@ -387,7 +376,9 @@ impl IakerbContext {
     pub fn into_established(self) -> Result<EstablishedContext, Error> {
         match self.role {
             Role::Initiator(state) => state.into_established(),
-            Role::Acceptor(_) => Err(Error::UnexpectedStep("an acceptor context has no initiator part")),
+            Role::Acceptor(_) => Err(Error::UnexpectedStep(
+                "an acceptor context has no initiator part",
+            )),
         }
     }
 }

@@ -136,5 +136,9 @@ pub(super) fn find(checksum: &[u8]) -> Result<Option<Vec<u8>>, Error> {
             return Err(malformed());
         }
     }
-    if rest.is_empty() { Ok(found) } else { Err(malformed()) }
+    if rest.is_empty() {
+        Ok(found)
+    } else {
+        Err(malformed())
+    }
 }

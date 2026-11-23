@@ -69,7 +69,6 @@ mod checksum;
 mod context;
 /// Credential acquisition and storage.
 mod cred;
-/// IAKERB: Kerberos through an application-mediated KDC relay.
 pub mod iakerb;
 /// The krb5 mechanism's initiator side.
 mod initiator;
@@ -84,13 +83,15 @@ include!("gss/contexts.rs");
 
 use crate::error::Gss as Error;
 
-/// `gss_indicate_mechs`: the mechanisms this module implements: krb5 and
-/// IAKERB ([`iakerb`]); MIT also lists the two legacy krb5 OIDs, which this
-/// module accepts but does not offer.
+/// `gss_indicate_mechs`: the mechanisms this module implements, krb5 and
+/// IAKERB ([`iakerb`]).
+///
+/// MIT also lists the two legacy krb5 OIDs, which this module accepts but does
+/// not offer.
 #[inline]
 #[must_use]
 pub fn indicate_mechs() -> Vec<ObjectIdentifier> {
-    vec![ObjectIdentifier::krb5(), iakerb::IakerbContext::mechanism()]
+    vec![ObjectIdentifier::krb5(), iakerb::Context::mechanism()]
 }
 
 /// `gss_inquire_names_for_mech`: the name types `mechanism` imports, every

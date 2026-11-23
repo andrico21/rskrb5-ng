@@ -1,20 +1,18 @@
 //! The AP exchange of the IAKERB initiator: the AP-REQ with the finished
 //! checksum of the transcript, and the acceptor's AP-REP.
 
+use core::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use zeroize::Zeroizing;
 
 use super::{
-    super::{
-        AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, Error, conversation::Conversation, finished, frame,
-        unframe,
-    },
+    super::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, Error, finished, frame, unframe},
     Phase, State,
 };
 use crate::{
     ap_rep,
-    client::{TgsRepSession, options::ApReq},
+    client::{TgsRepSession, build_ap_req_with_confounder, options::ApReq, time::from_kerberos},
     crypto::{KerberosEtype, Use},
     error::Gss,
     gss::{
@@ -65,7 +63,7 @@ fn now() -> Result<(SystemTime, u32), Error> {
         .duration_since(UNIX_EPOCH)
         .map_err(|_before| Gss::ContextExpired)?;
     let whole = UNIX_EPOCH
-        .checked_add(core::time::Duration::from_secs(since.as_secs()))
+        .checked_add(Duration::from_secs(since.as_secs()))
         .ok_or(Gss::ContextExpired)?;
     Ok((whole, since.subsec_micros()))
 }
@@ -75,11 +73,7 @@ fn now() -> Result<(SystemTime, u32), Error> {
 /// # Errors
 ///
 /// Returns the policy, checksum and AP-REQ errors.
-pub(super) fn ap(
-    state: &mut State,
-    conversation: &Conversation,
-    ticket: TgsRepSession,
-) -> Result<InitStep, Error> {
+pub(super) fn ap(state: &mut State, ticket: &TgsRepSession) -> Result<InitStep, Error> {
     let options = &state.options;
     if options.flags.contains(ContextFlags::DCE_STYLE) {
         return Err(Gss::NotNegotiated("DCE-style establishment").into());
@@ -96,8 +90,8 @@ pub(super) fn ap(
     let subkey = random_key(ticket.session_key().etype())?;
     let sequence = random_sequence()?;
     let mut value = checksum::encode(&digest, flags, None)?;
-    if !conversation.transcript().is_empty() {
-        let proof = finished::make(&subkey, conversation.transcript())?;
+    if !state.conversation.transcript().is_empty() {
+        let proof = finished::make(&subkey, state.conversation.transcript())?;
         value.extend_from_slice(&finished::extension(&proof)?);
     }
     let cbt = options.flags.contains(ContextFlags::CHANNEL_BOUND)
@@ -121,10 +115,9 @@ pub(super) fn ap(
     let mut confounder = Zeroizing::new(vec![0; kind.confounder_len()]);
     getrandom::fill(&mut confounder)?;
     let (ctime, cusec) = now()?;
-    let built =
-        crate::client::build_ap_req_with_confounder(&ticket, request, ctime, cusec, &confounder)?;
+    let built = build_ap_req_with_confounder(ticket, request, ctime, cusec, &confounder)?;
     let token = frame(AP_REQ_TOKEN_ID, built.der())?;
-    let context = established(&ticket, subkey, sequence, flags, options);
+    let context = established(ticket, subkey, sequence, flags, options);
     if flags.contains(ContextFlags::MUTUAL) {
         state.phase = Phase::Reply(Box::new(Pending {
             context,
@@ -145,21 +138,21 @@ fn established(
     flags: ContextFlags,
     options: &InitiatorOptions,
 ) -> EstablishedContext {
-    let flags = flags | ContextFlags::PROT_READY;
+    let protected = flags | ContextFlags::PROT_READY;
     let first = u64::from(sequence);
     EstablishedContext {
         initiated: true,
         source: Name::from_principal(ticket.client()),
         target: Name::from_principal(ticket.service()),
-        flags,
+        flags: protected,
         session_key: ticket.session_key().clone(),
         initiator_subkey: Some(subkey),
         acceptor_subkey: None,
         send_sequence: first,
         window: seq::Window::new(
             first,
-            flags.contains(ContextFlags::REPLAY),
-            flags.contains(ContextFlags::SEQUENCE),
+            protected.contains(ContextFlags::REPLAY),
+            protected.contains(ContextFlags::SEQUENCE),
         ),
         expires: ticket.end_time(),
         crypto_policy: options.crypto_policy.clone(),
@@ -181,7 +174,9 @@ pub(super) fn reply(state: &mut State, pending: Pending, token: &[u8]) -> Result
     } = pending;
     let (id, body) = unframe(token)?;
     if id != AP_REP_TOKEN_ID {
-        return Err(Error::UnexpectedStep("the acceptor did not answer with an AP-REP"));
+        return Err(Error::UnexpectedStep(
+            "the acceptor did not answer with an AP-REP",
+        ));
     }
     let policy = context.crypto_policy.clone();
     let wire = ap_rep::decode(body)?;
@@ -189,7 +184,7 @@ pub(super) fn reply(state: &mut State, pending: Pending, token: &[u8]) -> Result
         .check_use(wire.enc_part.etype, Use::SessionKey)
         .map_err(Gss::from)?;
     let part = ap_rep::decrypt_ap_rep_enc_part(&wire, &context.session_key)?;
-    let echoed = crate::client::time::from_kerberos(&part.ctime);
+    let echoed = from_kerberos(&part.ctime);
     let cusec = part.cusec.to_string().parse::<u32>().ok();
     if echoed != Some(ctime) || cusec != Some(sent) {
         return Err(Gss::DefectiveToken("the AP-REP does not echo the authenticator").into());

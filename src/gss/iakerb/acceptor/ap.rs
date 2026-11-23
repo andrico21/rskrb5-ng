@@ -5,9 +5,7 @@ use core::cell::RefCell;
 
 use zeroize::Zeroizing;
 
-use super::super::{
-    AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, Error, conversation::Conversation, finished, frame, unframe,
-};
+use super::super::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, Error, finished, frame, unframe};
 use crate::{
     ap_req,
     client::principal::Principal,
@@ -129,13 +127,15 @@ fn acceptor_subkey(etype: i32) -> Result<Option<EncryptionKey>, Error> {
 ///
 /// Returns the AP-REQ validation errors and those of [`check`].
 pub(super) fn ap(
-    conversation: &Conversation,
+    transcript: &[u8],
     acceptor: &mut Acceptor<'_>,
     token: &[u8],
 ) -> Result<Accepted, Error> {
     let (id, request) = unframe(token)?;
     if id != AP_REQ_TOKEN_ID {
-        return Err(Error::UnexpectedStep("the token is neither a proxy token nor an AP-REQ"));
+        return Err(Error::UnexpectedStep(
+            "the token is neither a proxy token nor an AP-REQ",
+        ));
     }
     let mutual_option = ap_req::decode(request)?
         .ap_options
@@ -148,8 +148,7 @@ pub(super) fn ap(
         acceptor
             .validator
             .validate_ap_req_with_check(request, |authenticator, _session_key| {
-                *outcome.borrow_mut() =
-                    Some(check(authenticator, options, conversation.transcript())?);
+                *outcome.borrow_mut() = Some(check(authenticator, options, transcript)?);
                 Ok::<(), Error>(())
             })?;
     let checked = outcome
@@ -177,9 +176,9 @@ fn context(
     if mutual_option {
         flags = flags | ContextFlags::MUTUAL;
     }
-    let received = validated
-        .sequence_number()
-        .ok_or(Gss::DefectiveToken("the authenticator has no sequence number"))?;
+    let received = validated.sequence_number().ok_or(Gss::DefectiveToken(
+        "the authenticator has no sequence number",
+    ))?;
     let (send, subkey, output_token) = if flags.contains(ContextFlags::MUTUAL) {
         let current = validated
             .subkey()
