@@ -26,3 +26,11 @@ mod transfer;
 /// The RFC 1964 and RFC 4757 token formats of opted-in legacy contexts.
 #[path = "legacy.rs"]
 mod legacy;
+
+/// Name attributes from the verified PAC.
+#[path = "attributes.rs"]
+mod attributes;
+
+/// Impersonation, proxy credentials and the `verify` store key.
+#[path = "impersonate.rs"]
+mod impersonate;

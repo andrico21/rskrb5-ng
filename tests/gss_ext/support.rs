@@ -23,6 +23,7 @@ use rskrb5_ng::{
         Initiator, InitiatorOptions, Name, NameType,
     },
     keytab::{self, EncryptionKey, Keytab},
+    pac,
     service::Validator,
     ticket,
 };
@@ -186,6 +187,26 @@ fn flags(set: &[usize]) -> (rasn_kerberos::TicketFlags, [u8; 4]) {
 ///
 /// Returns the encoding errors.
 pub(super) fn ticket_for(etype: i32, set: &[usize]) -> Result<TgsRepSession, TestError> {
+    ticket_with_pac(etype, set, None)
+}
+
+/// The KDC key that signs the PAC of [`ticket_with_pac`].
+pub(super) fn kdc_key() -> EncryptionKey {
+    EncryptionKey::new(AES256_SHA1, vec![0x6b; 32])
+}
+
+/// A service ticket like [`ticket_for`] whose authorization data carries a
+/// PAC with the client info, `buffers` and the server, KDC, ticket and full
+/// signatures, signed with the service key and [`kdc_key`].
+///
+/// # Errors
+///
+/// Returns the encoding and PAC errors.
+pub(super) fn ticket_with_pac(
+    etype: i32,
+    set: &[usize],
+    buffers: Option<&[(u32, &[u8])]>,
+) -> Result<TgsRepSession, TestError> {
     let at = validity()?;
     let (bits, bytes) = flags(set);
     let session = session_key(etype);
@@ -208,6 +229,18 @@ pub(super) fn ticket_for(etype: i32, set: &[usize]) -> Result<TgsRepSession, Tes
         caddr: None,
         authorization_data: None,
     };
+    let mut part = part;
+    if let Some(extra) = buffers {
+        let mut builder = pac::Builder::new();
+        for (kind, data) in extra {
+            builder.add_buffer(*kind, data)?;
+        }
+        let kdc = kdc_key();
+        builder.sign_ticket(
+            &mut part,
+            &pac::Signing::new(&service_key(), &kdc).with_client(pac::ClientBinding::new(USER, at.0)),
+        )?;
+    }
     let der = ticket::encode_build_ticket_with_confounder(
         text(REALM)?,
         name(3, &["HTTP", HOST])?,
@@ -257,6 +290,17 @@ pub(super) fn cached(ticket: &TgsRepSession) -> Result<ccache::Credential, TestE
         ticket.ticket_flags(),
         Zeroizing::new(ticket.ticket().to_vec()),
     ))
+}
+
+/// A client cache holding `ticket`.
+///
+/// # Errors
+///
+/// Returns the time conversion errors.
+pub(super) fn cache_of(ticket: &TgsRepSession) -> Result<CCache, TestError> {
+    let mut value = CCache::new(cache_principal(&client()));
+    drop(value.upsert_credential(cached(ticket)?));
+    Ok(value)
 }
 
 /// An initiator credential holding a service ticket with a session key of `etype`.
