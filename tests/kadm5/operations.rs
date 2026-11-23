@@ -35,11 +35,7 @@ const V4: u32 = 0x1234_5704;
 
 /// A principal of the test realm.
 fn principal(name: &str) -> Principal {
-    Principal::new(
-        REALM,
-        1,
-        name.split('/').map(str::to_owned),
-    )
+    Principal::new(REALM, 1, name.split('/').map(str::to_owned))
 }
 
 /// The canned results of each procedure, `generic_ret` success otherwise.
@@ -403,12 +399,14 @@ async fn unsupported_server_version_fails() -> Result<(), TestError> {
     });
     let (stream, server) = server::spawn(handler, Script::plain());
     let credential = support::credential()?;
-    let result =
-        RemoteAdminClient::over_stream(stream, &credential, support::options()).await;
+    let result = RemoteAdminClient::over_stream(stream, &credential, support::options()).await;
     assert!(
         matches!(
             result,
-            Err(Kadm5::Server { code: NEW_SERVER_API_VERSION, procedure: _ })
+            Err(Kadm5::Server {
+                code: NEW_SERVER_API_VERSION,
+                procedure: _
+            })
         ),
         "{:?}",
         result.err()
@@ -433,7 +431,13 @@ async fn acl_refusal_is_definite() -> Result<(), TestError> {
         .create_principal(&PrincipalRecord::new(principal("x")), None, &[])
         .await;
     assert!(
-        matches!(result, Err(Kadm5::Server { code: AUTH_ADD, procedure: _ })),
+        matches!(
+            result,
+            Err(Kadm5::Server {
+                code: AUTH_ADD,
+                procedure: _
+            })
+        ),
         "{result:?}"
     );
     // The connection stays usable after an authenticated refusal.

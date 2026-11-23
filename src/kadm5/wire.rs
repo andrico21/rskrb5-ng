@@ -505,17 +505,17 @@ fn decode_names(decoder: &mut Decoder<'_>) -> Result<Vec<String>, Error> {
 fn decode_keys(decoder: &mut Decoder<'_>) -> Result<Vec<EncryptionKey>, Error> {
     let count = decoder.count("keys", MAX_KEYS, 8).map_err(result)?;
     iter::repeat_with(|| {
-            let etype = decoder.i32().map_err(result)?;
-            let value = Zeroizing::new(
-                decoder
-                    .opaque("key", MAX_KEY_BYTES)
-                    .map_err(result)?
-                    .to_vec(),
-            );
-            Ok(EncryptionKey::new(etype, value))
-        })
-        .take(count)
-        .collect()
+        let etype = decoder.i32().map_err(result)?;
+        let value = Zeroizing::new(
+            decoder
+                .opaque("key", MAX_KEY_BYTES)
+                .map_err(result)?
+                .to_vec(),
+        );
+        Ok(EncryptionKey::new(etype, value))
+    })
+    .take(count)
+    .collect()
 }
 
 /// Key data (`getpkeys_ret`).
@@ -526,30 +526,30 @@ fn decode_keys(decoder: &mut Decoder<'_>) -> Result<Vec<EncryptionKey>, Error> {
 fn decode_key_data(decoder: &mut Decoder<'_>) -> Result<Vec<KeyData>, Error> {
     let count = decoder.count("key data", MAX_KEYS, 16).map_err(result)?;
     iter::repeat_with(|| {
-            let kvno = decoder.u32().map_err(result)?;
-            let etype = decoder.i32().map_err(result)?;
-            let key = Zeroizing::new(
-                decoder
-                    .opaque("key", MAX_KEY_BYTES)
-                    .map_err(result)?
-                    .to_vec(),
-            );
-            let salt_type = short(decoder)?;
-            let salt = Zeroizing::new(
-                decoder
-                    .opaque("salt", MAX_KEY_BYTES)
-                    .map_err(result)?
-                    .to_vec(),
-            );
-            Ok(KeyData {
-                kvno,
-                key: EncryptionKey::new(etype, key),
-                salt_type,
-                salt,
-            })
+        let kvno = decoder.u32().map_err(result)?;
+        let etype = decoder.i32().map_err(result)?;
+        let key = Zeroizing::new(
+            decoder
+                .opaque("key", MAX_KEY_BYTES)
+                .map_err(result)?
+                .to_vec(),
+        );
+        let salt_type = short(decoder)?;
+        let salt = Zeroizing::new(
+            decoder
+                .opaque("salt", MAX_KEY_BYTES)
+                .map_err(result)?
+                .to_vec(),
+        );
+        Ok(KeyData {
+            kvno,
+            key: EncryptionKey::new(etype, key),
+            salt_type,
+            salt,
         })
-        .take(count)
-        .collect()
+    })
+    .take(count)
+    .collect()
 }
 
 /// String attributes (`gstrings_ret`).
@@ -560,13 +560,13 @@ fn decode_key_data(decoder: &mut Decoder<'_>) -> Result<Vec<KeyData>, Error> {
 fn decode_strings(decoder: &mut Decoder<'_>) -> Result<Vec<StringAttribute>, Error> {
     let count = list_count(decoder, "string attributes", MAX_TL, 16)?;
     iter::repeat_with(|| {
-            Ok(StringAttribute {
-                key: string(decoder, "attribute key")?,
-                value: string(decoder, "attribute value")?,
-            })
+        Ok(StringAttribute {
+            key: string(decoder, "attribute key")?,
+            value: string(decoder, "attribute value")?,
         })
-        .take(count)
-        .collect()
+    })
+    .take(count)
+    .collect()
 }
 
 /// See [`Response::decode`].

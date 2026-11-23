@@ -84,7 +84,12 @@ where
         .map_err(|error| unknown(Error::Rpc(error)))?;
     match Response::decode(procedure, client.version, &results) {
         Ok(response) => Ok(response),
-        Err(error @ Error::Server { procedure: _, code: _ }) => Err(error),
+        Err(
+            error @ Error::Server {
+                procedure: _,
+                code: _,
+            },
+        ) => Err(error),
         Err(error) => Err(unknown(error)),
     }
 }

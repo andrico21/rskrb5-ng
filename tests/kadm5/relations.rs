@@ -3,13 +3,13 @@
 //! MIT-config-44: the first value, with an optional port, else port 749 (MIT
 //! `alt_prof.c` `parse_admin_server_port` and `DEFAULT_KADM5_PORT`).
 
+use std::io;
+
 use rskrb5_ng::{
     config::Config,
     error::Kadm5,
     kadm5::{self, RemoteAdminClient},
 };
-use std::io;
-
 use tokio::net::TcpListener;
 
 use super::{
@@ -84,8 +84,7 @@ async fn connect_uses_admin_server() -> Result<(), TestError> {
     });
     // When the client connects through the profile and reads its privileges.
     let credential = support::credential()?;
-    let mut client =
-        RemoteAdminClient::connect(&config, &credential, support::options()).await?;
+    let mut client = RemoteAdminClient::connect(&config, &credential, support::options()).await?;
     let privileges = client.get_privileges().await?;
     client.destroy().await?;
     // Then the server at that address answered.

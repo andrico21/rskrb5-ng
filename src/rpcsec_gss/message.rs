@@ -42,7 +42,12 @@ pub(super) struct Credential<'handle> {
 
 impl<'handle> Credential<'handle> {
     /// The credential of `procedure` with `sequence` under `service` for `handle`.
-    pub(super) const fn new(procedure: u32, sequence: u32, service: u32, handle: &'handle [u8]) -> Self {
+    pub(super) const fn new(
+        procedure: u32,
+        sequence: u32,
+        service: u32,
+        handle: &'handle [u8],
+    ) -> Self {
         Self {
             procedure,
             sequence,

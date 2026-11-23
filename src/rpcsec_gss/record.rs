@@ -7,10 +7,9 @@
 //! [`MAX_FRAGMENTS`] fragments is refused, so no peer can make the reader
 //! allocate more than the bound or loop without end.
 
-use zeroize::Zeroizing;
-
 #[cfg(feature = "tokio")]
 use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
+use zeroize::Zeroizing;
 
 use super::{DecodedRecord, MAX_FRAGMENTS, MAX_RECORD_SIZE};
 use crate::error::Rpc as Error;
@@ -56,7 +55,11 @@ pub(super) fn encode(message: &[u8]) -> Zeroizing<Vec<u8>> {
     }
     while let Some(chunk) = chunks.next() {
         let length = u32::try_from(chunk.len()).unwrap_or(u32::MAX) & !LAST;
-        let header = if chunks.peek().is_none() { length | LAST } else { length };
+        let header = if chunks.peek().is_none() {
+            length | LAST
+        } else {
+            length
+        };
         record.extend_from_slice(&header.to_be_bytes());
         record.extend_from_slice(chunk);
     }

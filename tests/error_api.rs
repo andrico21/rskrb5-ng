@@ -33,14 +33,14 @@ mod tests {
     use http_types::Request;
     #[cfg(feature = "http")]
     use rskrb5_ng::http;
+    #[cfg(all(feature = "spnego", feature = "tokio"))]
+    use rskrb5_ng::kadm5;
     use rskrb5_ng::{
         Result, ccache::CCache, config, crypto::AesSha1Etype, error, keytab::Keytab, pac::Pac,
         routing::RealmPath, trace::Options,
     };
     #[cfg(feature = "messages")]
     use rskrb5_ng::{ap_rep, ap_req, client::principal::Principal, kadmin, kdc_rep, kdc_req};
-    #[cfg(all(feature = "spnego", feature = "tokio"))]
-    use rskrb5_ng::kadm5;
     #[cfg(feature = "spnego")]
     use rskrb5_ng::{gss, rpcsec_gss, spnego};
     #[cfg(feature = "messages")]

@@ -3,17 +3,17 @@
 //! MIT's client: `client_init.c` `init_any`, `connect_to_server` and
 //! `setup_gss`; `alt_prof.c` for the admin server.
 
+use std::io;
+
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::{self, TcpStream},
     time,
 };
 
-use std::io;
-
 use super::{
-    AdminServer, DEFAULT_PORT, Options, PROGRAM, Procedure, RemoteAdminClient,
-    Response, call, service_principal, wire,
+    AdminServer, DEFAULT_PORT, Options, PROGRAM, Procedure, RemoteAdminClient, Response, call,
+    service_principal, wire,
 };
 use crate::{
     config::Config,

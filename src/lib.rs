@@ -88,10 +88,10 @@ mod file_name;
 pub mod gss;
 #[cfg(feature = "http")]
 pub mod http;
-#[cfg(feature = "messages")]
-pub mod kadmin;
 #[cfg(all(feature = "spnego", feature = "tokio"))]
 pub mod kadm5;
+#[cfg(feature = "messages")]
+pub mod kadmin;
 #[cfg(feature = "messages")]
 pub mod kdc_rep;
 #[cfg(feature = "messages")]

@@ -62,10 +62,7 @@ async fn second_call_under(fault: Fault) -> Result<(Result<u32, Kadm5>, Seen), T
     let (mut client, server) =
         connect(Script::faults(&[Fault::None, fault]), Protection::Privacy).await?;
     assert_eq!(client.get_privileges().await?.bits(), 0x0f);
-    let result = client
-        .get_privileges()
-        .await
-        .map(Privileges::bits);
+    let result = client.get_privileges().await.map(Privileges::bits);
     drop(client);
     let seen = server.await??;
     Ok((result, seen))
@@ -82,9 +79,10 @@ async fn privacy_establishes_and_calls() -> Result<(), TestError> {
     client.destroy().await?;
     // Then the privileges arrived, every call was RPCSEC_GSS under privacy,
     // and the context was destroyed.
-    assert!(privileges.contains(
-        Privileges::GET | Privileges::ADD | Privileges::MODIFY | Privileges::DELETE
-    ));
+    assert!(
+        privileges
+            .contains(Privileges::GET | Privileges::ADD | Privileges::MODIFY | Privileges::DELETE)
+    );
     let seen = server.await??;
     assert_eq!(seen.service, 3);
     assert!(seen.flavors.iter().all(|flavor| *flavor == RPCSEC_GSS));
@@ -224,7 +222,13 @@ async fn unauthenticated_reply_is_rejected() -> Result<(), TestError> {
 async fn reply_to_another_call_is_rejected() -> Result<(), TestError> {
     let (result, _seen) = second_call_under(Fault::WrongXid).await?;
     assert!(
-        matches!(result, Err(Kadm5::Rpc(Rpc::XidMismatch { expected: _, actual: _ }))),
+        matches!(
+            result,
+            Err(Kadm5::Rpc(Rpc::XidMismatch {
+                expected: _,
+                actual: _
+            }))
+        ),
         "{result:?}"
     );
     Ok(())
@@ -244,7 +248,13 @@ async fn fragmented_reply_reassembles() -> Result<(), TestError> {
 async fn unbounded_replies_are_refused() -> Result<(), TestError> {
     let (oversized, _seen) = second_call_under(Fault::OversizedFragment).await?;
     assert!(
-        matches!(oversized, Err(Kadm5::Rpc(Rpc::RecordTooLarge { maximum: _, actual: _ }))),
+        matches!(
+            oversized,
+            Err(Kadm5::Rpc(Rpc::RecordTooLarge {
+                maximum: _,
+                actual: _
+            }))
+        ),
         "{oversized:?}"
     );
     let (endless, _endless_seen) = second_call_under(Fault::EndlessFragments).await?;
@@ -271,8 +281,7 @@ async fn auth_sys_only_server_is_refused() -> Result<(), TestError> {
     );
     // When the client connects.
     let credential = support::credential()?;
-    let result =
-        RemoteAdminClient::over_stream(stream, &credential, support::options()).await;
+    let result = RemoteAdminClient::over_stream(stream, &credential, support::options()).await;
     // Then it fails with the denial, and every call it sent was RPCSEC_GSS.
     assert!(
         matches!(result, Err(Kadm5::Rpc(Rpc::AuthenticationRejected(2)))),
@@ -280,7 +289,11 @@ async fn auth_sys_only_server_is_refused() -> Result<(), TestError> {
         result.err()
     );
     let seen = server.await??;
-    assert_ne!(seen.flavors.len(), 0, "the client sent its context creation");
+    assert_ne!(
+        seen.flavors.len(),
+        0,
+        "the client sent its context creation"
+    );
     assert!(seen.flavors.iter().all(|flavor| *flavor == RPCSEC_GSS));
     Ok(())
 }
@@ -302,9 +315,7 @@ async fn unverified_context_creation_is_refused() -> Result<(), TestError> {
             },
         );
         let credential = support::credential()?;
-        let result =
-            RemoteAdminClient::over_stream(stream, &credential, support::options())
-                .await;
+        let result = RemoteAdminClient::over_stream(stream, &credential, support::options()).await;
         let refused = match &result {
             Err(Kadm5::Rpc(Rpc::UnexpectedVerifier(0))) => "verifier",
             Err(Kadm5::Rpc(Rpc::BadWindow(0))) => "window",

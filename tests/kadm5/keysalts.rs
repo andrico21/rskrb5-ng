@@ -166,7 +166,10 @@ async fn legacy_enctypes_need_the_opt_in() -> Result<(), TestError> {
             .checked_sub(16)
             .ok_or("the tuple and password")?;
         let mut reader = Reader::new(arguments.get(tail..).ok_or("tail")?);
-        assert_eq!((reader.u32()?, reader.i32()?, reader.i32()?), (1, etype, 0_i32));
+        assert_eq!(
+            (reader.u32()?, reader.i32()?, reader.i32()?),
+            (1, etype, 0_i32)
+        );
     }
     Ok(())
 }

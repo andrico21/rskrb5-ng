@@ -176,9 +176,7 @@ where
         let mut header = [0_u8; 4];
         match stream.read_exact(&mut header).await {
             Ok(_) => {}
-            Err(error)
-                if error.kind() == io::ErrorKind::UnexpectedEof && record.is_empty() =>
-            {
+            Err(error) if error.kind() == io::ErrorKind::UnexpectedEof && record.is_empty() => {
                 return Ok(None);
             }
             Err(error) => return Err(error.into()),
