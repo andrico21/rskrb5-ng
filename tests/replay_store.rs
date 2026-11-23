@@ -19,6 +19,7 @@ mod env;
 mod replay_store {
     mod concurrency;
     mod config;
+    mod dfl;
     mod failures;
     mod layout;
     mod name;
