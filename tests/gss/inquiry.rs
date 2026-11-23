@@ -19,8 +19,14 @@ use super::{
 /// The mechanism and its name types are reported as MIT reports them.
 #[test]
 fn mechanisms_and_name_types_are_reported() -> Result<(), TestError> {
-    // Given the mechanism list, it is krb5.
-    assert_eq!(gss::indicate_mechs(), vec![ObjectIdentifier::krb5()]);
+    // Given the mechanism list, it is krb5 and IAKERB.
+    assert_eq!(
+        gss::indicate_mechs(),
+        vec![
+            ObjectIdentifier::krb5(),
+            gss::iakerb::IakerbContext::mechanism()
+        ]
+    );
     // Given krb5, its name types include every MIT krb5 name type.
     let types = gss::inquire_names_for_mech(&ObjectIdentifier::krb5());
     for kind in [

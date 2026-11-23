@@ -84,11 +84,13 @@ include!("gss/contexts.rs");
 
 use crate::error::Gss as Error;
 
-/// `gss_indicate_mechs`: the mechanisms this module implements, krb5.
+/// `gss_indicate_mechs`: the mechanisms this module implements: krb5 and
+/// IAKERB ([`iakerb`]); MIT also lists the two legacy krb5 OIDs, which this
+/// module accepts but does not offer.
 #[inline]
 #[must_use]
 pub fn indicate_mechs() -> Vec<ObjectIdentifier> {
-    vec![ObjectIdentifier::krb5()]
+    vec![ObjectIdentifier::krb5(), iakerb::IakerbContext::mechanism()]
 }
 
 /// `gss_inquire_names_for_mech`: the name types `mechanism` imports, every
