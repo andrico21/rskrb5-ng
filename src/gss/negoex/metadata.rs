@@ -83,8 +83,7 @@ fn process_alerts(context: &mut Context, messages: &[Message]) {
         .find(|entry| entry.scheme == alert.scheme())
     {
         entry.sent_checksum = false;
-        entry.key = None;
-        entry.verify_key = None;
+        entry.keys = VerifyKeys::none();
     }
 }
 

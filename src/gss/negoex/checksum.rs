@@ -29,7 +29,7 @@ fn verify_checksum(
     else {
         return Ok(false);
     };
-    let Some(key) = first.verify_key.as_ref() else {
+    let Some(key) = first.keys.verify_key() else {
         return Ok(true);
     };
     let token = input.ok_or(Negoex::UnexpectedStep("a VERIFY message needs its token"))?;
@@ -73,7 +73,7 @@ fn checksum_type(key: &EncryptionKey) -> Option<i32> {
 fn make_checksum(context: &mut Context) -> Result<(), Negoex> {
     let usage = key_usage(context.role, true);
     let first = context.entries.first_mut().ok_or(Negoex::NoAvailableMechs)?;
-    let Some(key) = first.key.as_ref() else {
+    let Some(key) = first.keys.checksum_key() else {
         return if first.is_complete() {
             Err(Negoex::NoVerifyKey)
         } else {
@@ -115,7 +115,7 @@ fn make_output_token(
             Role::Acceptor => (MessageType::AcceptorNego, MessageType::AcceptorMetaData),
         };
         let mut random = [0; 32];
-        (context.random)(&mut random)?;
+        context.random.fill(&mut random).map_err(Negoex::Random)?;
         let schemes = context.entries.iter().map(|entry| entry.scheme).collect();
         let message = Message::Nego(NegoMessage::new(nego, random, schemes)?);
         context

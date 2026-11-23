@@ -5,8 +5,28 @@ const KEYUSAGE_ACCEPTOR_CHECKSUM: u32 = 25;
 /// The key usage of an initiator's `VERIFY` message.
 const KEYUSAGE_INITIATOR_CHECKSUM: u32 = 23;
 
-/// The function that fills the conversation id and the nonces.
-type RandomFill = fn(&mut [u8]) -> Result<(), getrandom::Error>;
+/// The source of the conversation id and the nonces.
+///
+/// The default is the system random source; a fixed one makes tokens
+/// reproducible for tests and captures and must not be used otherwise.
+pub trait RandomSource: Send + Sync {
+    /// Fill `bytes` with random bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns the random source's failure.
+    fn fill(&self, bytes: &mut [u8]) -> Result<(), getrandom::Error>;
+}
+
+/// The system random source.
+struct SystemRandom;
+
+impl RandomSource for SystemRandom {
+    #[inline]
+    fn fill(&self, bytes: &mut [u8]) -> Result<(), getrandom::Error> {
+        getrandom::fill(bytes)
+    }
+}
 
 /// The result of one [`Context::step`].
 #[derive(Clone, Eq, PartialEq)]
@@ -94,7 +114,7 @@ pub struct Context {
     /// Every message sent and received, which the `VERIFY` checksums cover.
     transcript: Zeroizing<Vec<u8>>,
     /// The random source.
-    random: RandomFill,
+    random: Arc<dyn RandomSource>,
     /// Whether the initiator sends an optimistic `AP_REQUEST`.
     optimistic: bool,
     /// The permission snapshot the mechanism keys are checked against.
@@ -208,7 +228,7 @@ impl Context {
             step: 0,
             conversation: Conversation::accepting(),
             transcript: Zeroizing::new(Vec::new()),
-            random: getrandom::fill,
+            random: Arc::new(SystemRandom),
             optimistic: true,
             policy: CryptoPolicy::default(),
             failed: false,
@@ -219,8 +239,8 @@ impl Context {
     /// (for reproducible tokens in tests and captures).
     #[inline]
     #[must_use]
-    pub fn with_random_source(mut self, fill: fn(&mut [u8]) -> Result<(), getrandom::Error>) -> Self {
-        self.random = fill;
+    pub fn with_random_source(mut self, source: Arc<dyn RandomSource>) -> Self {
+        self.random = source;
         self
     }
 

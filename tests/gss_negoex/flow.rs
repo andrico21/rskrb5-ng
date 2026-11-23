@@ -8,7 +8,7 @@ use rskrb5_ng::{
     extensions::{Extension, Registry},
     gss::{
         ChannelBindings,
-        negoex::{Context, Conversation, Mechanism, Message, Request},
+        negoex::{Context, Conversation, Mechanism, Message, RandomSource, Request},
     },
 };
 
@@ -35,9 +35,13 @@ fn registry() -> Result<Registry, TestError> {
 }
 
 /// A fixed random source: the nonces and the conversation id are `0x42` bytes.
-fn fixed(bytes: &mut [u8]) -> Result<(), getrandom::Error> {
-    bytes.fill(0x42);
-    Ok(())
+struct Fixed;
+
+impl RandomSource for Fixed {
+    fn fill(&self, bytes: &mut [u8]) -> Result<(), getrandom::Error> {
+        bytes.fill(0x42);
+        Ok(())
+    }
 }
 
 /// A context offering both mechanisms with `knobs`.
@@ -52,7 +56,7 @@ fn context(initiator: bool, knobs: &Knobs) -> Result<Context, TestError> {
     } else {
         Context::acceptor(&registry, &mechanisms, Request::new())?
     }
-    .with_random_source(fixed))
+    .with_random_source(Arc::new(Fixed)))
 }
 
 /// The tokens of one run, in order, with the side that sent each.
@@ -236,7 +240,7 @@ fn no_optimistic_token() -> Result<(), TestError> {
         TestMechanism::new(&OID_SECOND, Knobs::default()),
     ];
     let mut initiator = Context::initiator(&registry, &mechanisms, Request::new())?
-        .with_random_source(fixed)
+        .with_random_source(Arc::new(Fixed))
         .with_optimistic_token(false);
     let mut acceptor = context(false, &Knobs::default())?;
     let run = drive(&mut initiator, &mut acceptor)?;

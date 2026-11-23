@@ -171,6 +171,12 @@ mod tests {
         error::Gss,
         gss::Name::import(&[], gss::NameType::Export)
     );
+    #[cfg(feature = "spnego")]
+    propagates_domain!(
+        negoex_when_token_empty,
+        error::Negoex,
+        gss::negoex::Conversation::accepting().parse(&[])
+    );
     #[cfg(feature = "http")]
     propagates_domain!(
         http_when_authorization_missing,

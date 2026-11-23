@@ -201,6 +201,81 @@ impl MechanismStep {
     }
 }
 
+/// The keys a mechanism makes and checks `VERIFY` messages with.
+///
+/// Either key may be missing until the mechanism's context has advanced far
+/// enough; a key that appears later is picked up by the next step.
+#[derive(Clone, Default)]
+#[non_exhaustive]
+pub struct VerifyKeys {
+    /// The key this side's `VERIFY` message is made with (`GSS_C_INQ_NEGOEX_KEY`).
+    checksum: Option<EncryptionKey>,
+    /// The key the peer's `VERIFY` message is checked with (`GSS_C_INQ_NEGOEX_VERIFY_KEY`).
+    verify: Option<EncryptionKey>,
+}
+
+impl fmt::Debug for VerifyKeys {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VerifyKeys")
+            .field("checksum", &self.checksum.is_some())
+            .field("verify", &self.verify.is_some())
+            .finish()
+    }
+}
+
+impl VerifyKeys {
+    /// No keys yet.
+    #[inline]
+    #[must_use]
+    pub const fn none() -> Self {
+        Self {
+            checksum: None,
+            verify: None,
+        }
+    }
+
+    /// The same keys with the key this side's `VERIFY` message is made with.
+    #[inline]
+    #[must_use]
+    pub fn with_checksum_key(mut self, key: EncryptionKey) -> Self {
+        self.checksum = Some(key);
+        self
+    }
+
+    /// The same keys with the key the peer's `VERIFY` message is checked with.
+    #[inline]
+    #[must_use]
+    pub fn with_verify_key(mut self, key: EncryptionKey) -> Self {
+        self.verify = Some(key);
+        self
+    }
+
+    /// The key this side's `VERIFY` message is made with.
+    #[inline]
+    #[must_use]
+    pub const fn checksum_key(&self) -> Option<&EncryptionKey> {
+        self.checksum.as_ref()
+    }
+
+    /// The key the peer's `VERIFY` message is checked with.
+    #[inline]
+    #[must_use]
+    pub const fn verify_key(&self) -> Option<&EncryptionKey> {
+        self.verify.as_ref()
+    }
+
+    /// Keep what is set here and fill the rest from `later`.
+    fn update(&mut self, later: Self) {
+        if later.checksum.is_some() {
+            self.checksum = later.checksum;
+        }
+        if later.verify.is_some() {
+            self.verify = later.verify;
+        }
+    }
+}
+
 /// One negotiation of a mechanism.
 ///
 /// The methods are the `gssspi_*` meta-data calls, the context steps and the
@@ -247,13 +322,9 @@ pub trait Session: Send {
         input: &[u8],
     ) -> Result<MechanismStep, ProviderFailure>;
 
-    /// The key the `VERIFY` message this side sends is made with, once the
-    /// mechanism has one (`GSS_C_INQ_NEGOEX_KEY`).
-    fn checksum_key(&self) -> Option<EncryptionKey>;
-
-    /// The key the peer's `VERIFY` message is checked with, once the mechanism
-    /// has one (`GSS_C_INQ_NEGOEX_VERIFY_KEY`).
-    fn verify_key(&self) -> Option<EncryptionKey>;
+    /// The keys of the `VERIFY` messages, as far as the mechanism has them yet
+    /// (`GSS_C_INQ_NEGOEX_KEY` and `GSS_C_INQ_NEGOEX_VERIFY_KEY`).
+    fn keys(&self) -> VerifyKeys;
 
     /// The flags of the established context (`ret_flags`); none by default.
     ///

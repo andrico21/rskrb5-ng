@@ -342,6 +342,8 @@ mod tests {
             "src/gss/types.rs" | "src/gss/creds.rs" | "src/gss/contexts.rs"
         ) {
             "gss".to_owned()
+        } else if file.starts_with("src/gss/negoex/") {
+            "gss::negoex".to_owned()
         } else if file == "src/spnego/gss_types.rs" {
             "spnego".to_owned()
         } else if file == "src/error/gss.rs" {
@@ -844,6 +846,82 @@ mod tests {
 
     /// Reviewed operations that do not destroy retained secret bytes.
     const REPLACEMENT_EXCEPTIONS: &[(&str, &str)] = &[
+        (
+            "src/gss/negoex/mechanism.rs::ProviderFailure::with_output_token",
+            "Sets the error token a failing mechanism hands to the peer on a value the caller owns; the token is public wire data and the previous value is None.",
+        ),
+        (
+            "src/gss/negoex/mechanism.rs::VerifyKeys::with_checksum_key",
+            "Builder: sets the key on a value the caller owns; the key is an EncryptionKey, which erases itself on drop.",
+        ),
+        (
+            "src/gss/negoex/mechanism.rs::VerifyKeys::with_verify_key",
+            "Builder: sets the key on a value the caller owns; the key is an EncryptionKey, which erases itself on drop.",
+        ),
+        (
+            "src/gss/negoex/context.rs::Context::into_session",
+            "Moves the selected entry out of the consumed context; the other entries are dropped and their keys, EncryptionKey owners, erase themselves.",
+        ),
+        (
+            "src/gss/negoex/context.rs::Context::step",
+            "Forwards to src/gss/negoex/steps.rs::initiate and accept, which carry their own exceptions; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/gss/negoex/steps.rs::initiate",
+            "Prunes the mechanism list and appends handshake messages to the zeroizing transcript; every dropped entry holds EncryptionKey owners that erase themselves on drop, and the transcript only grows.",
+        ),
+        (
+            "src/gss/negoex/steps.rs::accept",
+            "Prunes the mechanism list and appends handshake messages to the zeroizing transcript; every dropped entry holds EncryptionKey owners that erase themselves on drop, and the transcript only grows.",
+        ),
+        (
+            "src/gss/negoex/steps.rs::mech_init",
+            "Removes a failed mechanism from the list; its EncryptionKey owners erase themselves on drop.",
+        ),
+        (
+            "src/gss/negoex/steps.rs::mech_accept",
+            "Keeps only the selected mechanism; the dropped entries hold EncryptionKey owners that erase themselves on drop.",
+        ),
+        (
+            "src/gss/negoex/metadata.rs::process_alerts",
+            "Replaces an entry's VerifyKeys by none after a VERIFY_NO_KEY alert; the old keys are EncryptionKey owners that erase themselves on drop.",
+        ),
+        (
+            "src/gss/negoex/metadata.rs::query_meta_data",
+            "Removes a mechanism whose meta-data query failed; its EncryptionKey owners erase themselves on drop.",
+        ),
+        (
+            "src/gss/negoex/metadata.rs::check_optimistic_result",
+            "Restarts or keeps the optimistic mechanism; restart replaces the VerifyKeys by none and the old keys erase themselves on drop.",
+        ),
+        (
+            "src/gss/negoex/metadata.rs::exchange_meta_data",
+            "Removes a mechanism whose meta-data exchange failed; its EncryptionKey owners erase themselves on drop.",
+        ),
+        (
+            "src/gss/negoex/metadata.rs::common_auth_schemes",
+            "Reorders and prunes the list to the acceptor's schemes; pruned entries hold EncryptionKey owners that erase themselves on drop.",
+        ),
+        (
+            "src/gss/negoex/metadata.rs::select_first",
+            "Truncates the list to its first entry; the dropped entries hold EncryptionKey owners that erase themselves on drop.",
+        ),
+        (
+            "src/gss/negoex/metadata.rs::restrict_auth_schemes",
+            "Prunes the list to the initiator's schemes; pruned entries hold EncryptionKey owners that erase themselves on drop.",
+        ),
+        (
+            "src/gss/negoex/checksum.rs::verify_checksum",
+            "Reads the first entry's verify key and sets its verified flag; no key is replaced and the covered bytes are copied into a zeroizing buffer.",
+        ),
+        (
+            "src/gss/negoex/checksum.rs::make_checksum",
+            "Appends the VERIFY message to the zeroizing transcript and sets the sent flag; no key is replaced.",
+        ),
+        (
+            "src/gss/negoex/checksum.rs::make_output_token",
+            "Appends handshake messages to the zeroizing transcript and copies the new bytes out; no key is replaced.",
+        ),
         (
             "src/gss/creds.rs::CredStore::with",
             "Fills an empty slot only: a key given twice is refused before assignment, so no stored name or password is replaced (tests/gss/credentials.rs store_keys_are_checked).",
@@ -1481,6 +1559,13 @@ mod tests {
         "src/spnego/gss_types.rs::Initiator",
         "src/spnego/gss_types.rs::Acceptor",
         "src/spnego/gss_types.rs::AcceptStep",
+        "src/gss/negoex/context.rs::Context",
+        "src/gss/negoex/mechanism.rs::VerifyKeys",
+        "src/gss/negoex/message.rs::ExchangeMessage",
+        "src/gss/negoex/message.rs::Message",
+        "src/gss/negoex/message.rs::VerifyMessage",
+        "src/gss/negoex/context.rs::Step",
+        "src/gss/negoex/mechanism.rs::ProviderFailure",
     ];
 
     /// Literal decoys and CRLF cannot hide public credential owners or Debug derives.

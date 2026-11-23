@@ -9,7 +9,9 @@ use std::sync::Arc;
 
 use rskrb5_ng::{
     extensions::GssMechanism,
-    gss::negoex::{AuthScheme, Mechanism, MechanismStep, ProviderFailure, Request, Role, Session},
+    gss::negoex::{
+        AuthScheme, Mechanism, MechanismStep, ProviderFailure, Request, Role, Session, VerifyKeys,
+    },
     keytab::EncryptionKey,
 };
 
@@ -340,11 +342,14 @@ impl Session for TestSession {
         Ok(self.outcome(output))
     }
 
-    fn checksum_key(&self) -> Option<EncryptionKey> {
-        self.key(false)
-    }
-
-    fn verify_key(&self) -> Option<EncryptionKey> {
-        self.key(true)
+    fn keys(&self) -> VerifyKeys {
+        let mut keys = VerifyKeys::none();
+        if let Some(key) = self.key(false) {
+            keys = keys.with_checksum_key(key);
+        }
+        if let Some(key) = self.key(true) {
+            keys = keys.with_verify_key(key);
+        }
+        keys
     }
 }

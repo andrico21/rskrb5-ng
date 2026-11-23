@@ -316,7 +316,7 @@ impl AlertMessage {
 }
 
 /// One `NegoEx` message.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Message {
     /// `INITIATOR_NEGO` or `ACCEPTOR_NEGO`.
@@ -327,6 +327,18 @@ pub enum Message {
     Verify(VerifyMessage),
     /// `ALERT`.
     Alert(AlertMessage),
+}
+
+impl fmt::Debug for Message {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Nego(message) => f.debug_tuple("Nego").field(message).finish(),
+            Self::Exchange(message) => f.debug_tuple("Exchange").field(message).finish(),
+            Self::Verify(message) => f.debug_tuple("Verify").field(message).finish(),
+            Self::Alert(message) => f.debug_tuple("Alert").field(message).finish(),
+        }
+    }
 }
 
 impl Message {

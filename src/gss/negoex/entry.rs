@@ -23,10 +23,8 @@ struct Entry {
     phase: Phase,
     /// The meta-data the mechanism offered.
     metadata: Vec<u8>,
-    /// The key this side's `VERIFY` message is made with.
-    key: Option<EncryptionKey>,
-    /// The key the peer's `VERIFY` message is checked with.
-    verify_key: Option<EncryptionKey>,
+    /// The keys of the `VERIFY` messages.
+    keys: VerifyKeys,
     /// Whether this side sent its `VERIFY` message.
     sent_checksum: bool,
     /// Whether the peer's `VERIFY` message verified.
@@ -44,8 +42,7 @@ impl Entry {
             session: None,
             phase: Phase::Fresh,
             metadata: Vec::new(),
-            key: None,
-            verify_key: None,
+            keys: VerifyKeys::none(),
             sent_checksum: false,
             verified_checksum: false,
         }
@@ -82,12 +79,7 @@ impl Entry {
     /// does not have yet leaves the earlier one in place.
     fn refresh_keys(&mut self) {
         if let Some(session) = self.session.as_ref() {
-            if let Some(key) = session.checksum_key() {
-                self.key = Some(key);
-            }
-            if let Some(key) = session.verify_key() {
-                self.verify_key = Some(key);
-            }
+            self.keys.update(session.keys());
         }
     }
 
@@ -96,8 +88,7 @@ impl Entry {
     fn restart(&mut self) {
         self.session = None;
         self.phase = Phase::Fresh;
-        self.key = None;
-        self.verify_key = None;
+        self.keys = VerifyKeys::none();
         self.sent_checksum = false;
     }
 

@@ -16,7 +16,7 @@ fn initiate(context: &mut Context, input: Option<&[u8]>) -> Result<Step, Negoex>
     match context.step {
         1 => {
             let mut id = [0; 16];
-            (context.random)(&mut id)?;
+            context.random.fill(&mut id).map_err(Negoex::Random)?;
             context.conversation = Conversation::initiating(ConversationId::from_bytes(id));
             query_meta_data(context);
         }
