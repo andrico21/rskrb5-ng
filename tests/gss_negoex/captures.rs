@@ -151,19 +151,31 @@ fn mit_initiator_token_parses() -> Result<(), TestError> {
     let Some(Message::Nego(nego)) = parsed.first() else {
         return Err("the first message is INITIATOR_NEGO".into());
     };
-    let offered: Vec<[u8; 16]> = nego.schemes().iter().map(|scheme| *scheme.as_bytes()).collect();
+    let offered: Vec<[u8; 16]> = nego
+        .schemes()
+        .iter()
+        .map(|scheme| *scheme.as_bytes())
+        .collect();
     assert_eq!(
         offered,
         [
-            [0x69, 0x85, 0xa2, 0xc0, 0xac, 0x66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            [0x69, 0x84, 0xb0, 0xd1, 0xa8, 0x2c, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [
+                0x69, 0x85, 0xa2, 0xc0, 0xac, 0x66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            ],
+            [
+                0x69, 0x84, 0xb0, 0xd1, 0xa8, 0x2c, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            ],
         ],
         "MIT offers its two negoextest schemes, in order"
     );
     let Some(Message::Verify(verify)) = parsed.get(4) else {
         return Err("the last message is VERIFY".into());
     };
-    assert_eq!(verify.checksum_type(), 16_i32, "the AES-256 SHA-1 checksum type");
+    assert_eq!(
+        verify.checksum_type(),
+        16_i32,
+        "the AES-256 SHA-1 checksum type"
+    );
     assert_eq!(verify.checksum().len(), 12);
     assert_eq!(conversation.next_sequence(), 5);
     Ok(())

@@ -203,7 +203,11 @@ fn nested_includes_resolve_relative_to_the_including_file() -> Result<(), TestEr
     ];
     let cleaned = sanitized_sources(&sources)?;
     assert!(declares_clean(&cleaned, &sources, "gss::negoex::Guid"));
-    assert!(!declares_clean(&cleaned, &sources, "gss::negoex::guid::Guid"));
+    assert!(!declares_clean(
+        &cleaned,
+        &sources,
+        "gss::negoex::guid::Guid"
+    ));
     Ok(())
 }
 
