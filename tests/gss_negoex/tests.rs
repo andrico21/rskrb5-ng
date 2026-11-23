@@ -14,3 +14,7 @@ mod negoextest;
 /// The exchange between two contexts (MIT's `t_negoex.py`).
 #[path = "flow.rs"]
 mod flow;
+
+/// The `VERIFY` binding, replay and reorder refusals, and the mechanism and key policy.
+#[path = "security.rs"]
+mod security;

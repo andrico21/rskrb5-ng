@@ -18,13 +18,27 @@
 //!   names the mechanisms, each must be a registered
 //!   [`GssMechanism`](crate::extensions::GssMechanism), and NTLM is refused by name.
 
-use core::{error::Error as StdError, fmt};
+use alloc::sync::Arc;
+use core::{error::Error as StdError, fmt, mem};
+
+use zeroize::Zeroizing;
 
 use super::{ChannelBindings, ContextFlags, Name};
-use crate::{error::Negoex, keytab::EncryptionKey, spnego::oid::ObjectIdentifier};
+use crate::{
+    crypto::{CryptoPolicy, KerberosEtype, checked::Etype},
+    error::{Crypto, Negoex},
+    extensions::Registry,
+    keytab::EncryptionKey,
+    spnego::oid::ObjectIdentifier,
+};
 
 include!("negoex/guid.rs");
 include!("negoex/message.rs");
 include!("negoex/conversation.rs");
 include!("negoex/codec.rs");
 include!("negoex/mechanism.rs");
+include!("negoex/entry.rs");
+include!("negoex/context.rs");
+include!("negoex/metadata.rs");
+include!("negoex/steps.rs");
+include!("negoex/checksum.rs");

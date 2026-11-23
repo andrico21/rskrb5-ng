@@ -89,6 +89,9 @@ pub enum Negoex {
     /// A message type the constructor does not build.
     #[error("NegoEx message type {0:?} does not fit this message shape")]
     WrongMessageShape(MessageType),
+    /// A mechanism whose object identifier does not decode.
+    #[error("a mechanism object identifier is malformed")]
+    InvalidMechanismOid,
     /// A mechanism whose object identifier is not registered as a GSS mechanism.
     #[error("mechanism {0:?} is not a registered GSS mechanism")]
     UnregisteredMechanism(ObjectIdentifier),
@@ -150,6 +153,7 @@ impl Negoex {
             Self::InvalidChecksum => 6,
             Self::UnexpectedStep(_) => 8,
             Self::NoAvailableMechs
+            | Self::InvalidMechanismOid
             | Self::UnregisteredMechanism(_)
             | Self::RejectedMechanism(_)
             | Self::DuplicateScheme(_) => 1,

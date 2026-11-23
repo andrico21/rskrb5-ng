@@ -27,6 +27,7 @@ fn registry() -> Result<Registry, TestError> {
     let mut registry = Registry::new();
     for oid in [OID_FIRST, OID_SECOND] {
         registry.register(Extension::GssMechanism(Arc::new(Registered {
+            id: format!("negoextest-{}", oid.last().copied().unwrap_or(0)),
             oid: oid.to_vec(),
         })))?;
     }
@@ -194,12 +195,12 @@ fn more_hops() -> Result<(), TestError> {
 /// Keys that exist early make the `VERIFY` messages go out early.
 #[test]
 fn early_keys() -> Result<(), TestError> {
-    let run = scenario(&knobs(3, KeyPolicy::Always), &Knobs::default())?;
+    let run = scenario(&knobs(3, KeyPolicy::Always), &knobs(3, KeyPolicy::Always))?;
     assert_trace(
         &run,
         &["sending [4]VERIFY", "sending [9]VERIFY", "sending [10]AP_REQUEST"],
     )?;
-    let run = scenario(&knobs(4, KeyPolicy::Always), &Knobs::default())?;
+    let run = scenario(&knobs(4, KeyPolicy::Always), &knobs(4, KeyPolicy::Always))?;
     assert_trace(
         &run,
         &[
@@ -402,7 +403,7 @@ fn channel_bindings_reach_the_mechanism() -> Result<(), TestError> {
     };
     let mut initiator = build(true, b"a", Some(b"a"))?;
     let mut acceptor = build(false, b"b", Some(b"b"))?;
-    drive(&mut initiator, &mut acceptor)?;
+    drop(drive(&mut initiator, &mut acceptor)?);
     let mut unbound = build(true, b"a", None)?;
     let mut other = build(false, b"b", Some(b"b"))?;
     let failure = drive(&mut unbound, &mut other)

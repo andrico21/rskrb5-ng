@@ -60,6 +60,8 @@ pub(super) struct Knobs {
     pub(super) accept_exchange_fail: Option<u8>,
     /// `GSS_INIT_BINDING` or `GSS_ACCEPT_BINDING`: the application data expected.
     pub(super) binding: Option<Vec<u8>>,
+    /// The encryption type of the keys (MIT's mechanism always uses AES256).
+    pub(super) etype: i32,
 }
 
 impl Default for Knobs {
@@ -76,6 +78,7 @@ impl Default for Knobs {
             init_exchange_fail: None,
             accept_exchange_fail: None,
             binding: None,
+            etype: ETYPE_AES256,
         }
     }
 }
@@ -124,13 +127,15 @@ impl Mechanism for TestMechanism {
 
 /// The registry entry for a mechanism of `oid`.
 pub(super) struct Registered {
+    /// Its unique id.
+    pub(super) id: String,
     /// Its object identifier.
     pub(super) oid: Vec<u8>,
 }
 
 impl GssMechanism for Registered {
     fn id(&self) -> &str {
-        "negoextest"
+        &self.id
     }
 
     fn oid(&self) -> &[u8] {
@@ -218,7 +223,7 @@ impl TestSession {
         }
         let mut bytes = vec![0_u8; 32];
         *bytes.first_mut()? = u8::from(verify) ^ u8::from(context.initiator);
-        Some(EncryptionKey::new(ETYPE_AES256, bytes))
+        Some(EncryptionKey::new(self.knobs.etype, bytes))
     }
 }
 
