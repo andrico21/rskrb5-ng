@@ -8,10 +8,10 @@ use rasn::types::Integer;
 use rasn_kerberos::{HostAddress, KerberosTime};
 use zeroize::Zeroizing;
 
-use super::{AuthContext, Received, sequence};
+use super::{AuthContext, Received};
 use crate::{
     crypto::Use,
-    error::AuthContext as Error,
+    error::{AuthMessage as Error, Policy},
     keytab::EncryptionKey,
     krb_priv::{self, EncKrbPrivPartOptions},
     krb_safe,
@@ -62,6 +62,11 @@ pub(super) fn system_time(
         .ok_or(Error::TimeOutOfRange)
 }
 
+/// A policy refusal of a context key.
+const fn policy_error(source: Policy) -> Error {
+    Error::Policy(source)
+}
+
 /// The key this end sends under: the send sub-key, else the session key.
 ///
 /// # Errors
@@ -76,7 +81,8 @@ pub(super) fn sending_key(context: &AuthContext) -> Result<&EncryptionKey, Error
     context
         .policy
         .crypto
-        .check_use(key.etype(), Use::CheckedLowLevel)?;
+        .check_use(key.etype(), Use::CheckedLowLevel)
+        .map_err(policy_error)?;
     Ok(key)
 }
 
@@ -99,7 +105,8 @@ fn reading_key(context: &AuthContext) -> Result<&EncryptionKey, Error> {
     context
         .policy
         .crypto
-        .check_use(key.etype(), Use::CheckedLowLevel)?;
+        .check_use(key.etype(), Use::CheckedLowLevel)
+        .map_err(policy_error)?;
     Ok(key)
 }
 
@@ -176,7 +183,7 @@ pub(super) fn check_sequence(context: &mut AuthContext, number: Option<u32>) -> 
     }
     let received = number.ok_or(Error::MissingSequence)?;
     let expected = context.remote_sequence;
-    if !sequence::accepts(context, received) {
+    if !super::sequence::accepts(context, received) {
         return Err(Error::BadSequence { expected, received });
     }
     context.remote_sequence = context.remote_sequence.wrapping_add(1);
@@ -267,11 +274,11 @@ pub(super) fn read_priv(
     let tag = Tag::from_authenticator(message.enc_part.etype, message.enc_part.cipher.as_ref());
     check_replay(context, replay, tag.as_bytes())?;
     check_sequence(context, part.seq_number)?;
-    Ok(Received {
-        content: Zeroizing::new(part.user_data.to_vec()),
-        timestamp: replay,
-        sequence: part.seq_number,
-    })
+    Ok(Received::new(
+        Zeroizing::new(part.user_data.to_vec()),
+        replay,
+        part.seq_number,
+    ))
 }
 
 /// MIT `krb5_mk_safe`.
@@ -331,9 +338,9 @@ pub(super) fn read_safe(
     };
     check_replay(context, replay, message.cksum.checksum.as_ref())?;
     check_sequence(context, message.body.seq_number)?;
-    Ok(Received {
-        content: Zeroizing::new(message.body.user_data.to_vec()),
-        timestamp: replay,
-        sequence: message.body.seq_number,
-    })
+    Ok(Received::new(
+        Zeroizing::new(message.body.user_data.to_vec()),
+        replay,
+        message.body.seq_number,
+    ))
 }

@@ -7,11 +7,10 @@ use rasn_kerberos::HostAddress;
 use zeroize::Zeroizing;
 
 use super::{
-    AuthContext, CredentialTransport, MessagePolicy, ProtectedChannel, Received, forwarding,
-    private_safe, seen::Seen,
+    AuthContext, CredentialTransport, MessagePolicy, ProtectedChannel, Received, seen::Seen,
 };
 use crate::{
-    ccache::Credential, crypto::CryptoPolicy, error::AuthContext as Error, keytab::EncryptionKey,
+    ccache::Credential, crypto::CryptoPolicy, error::AuthMessage as Error, keytab::EncryptionKey,
 };
 
 impl MessagePolicy {
@@ -100,6 +99,49 @@ impl ProtectedChannel {
     #[inline]
     pub const fn description(&self) -> &'static str {
         self.description
+    }
+}
+
+impl<T> Received<T> {
+    /// A message content with its replay data.
+    pub(super) const fn new(
+        content: T,
+        timestamp: Option<SystemTime>,
+        sequence: Option<u32>,
+    ) -> Self {
+        Self {
+            content,
+            timestamp,
+            sequence,
+        }
+    }
+
+    /// The user data, or the forwarded credentials.
+    #[must_use]
+    #[inline]
+    pub const fn content(&self) -> &T {
+        &self.content
+    }
+
+    /// Take the user data, or the forwarded credentials.
+    #[must_use]
+    #[inline]
+    pub fn into_content(self) -> T {
+        self.content
+    }
+
+    /// The sender's timestamp, when the message carries one.
+    #[must_use]
+    #[inline]
+    pub const fn timestamp(&self) -> Option<SystemTime> {
+        self.timestamp
+    }
+
+    /// The sender's sequence number, when the message carries one.
+    #[must_use]
+    #[inline]
+    pub const fn sequence(&self) -> Option<u32> {
+        self.sequence
     }
 }
 
@@ -213,7 +255,7 @@ impl AuthContext {
     /// policy error and the codec errors.
     #[inline]
     pub fn mk_priv(&mut self, data: &[u8]) -> Result<Vec<u8>, Error> {
-        private_safe::make_priv(self, data)
+        super::private_safe::make_priv(self, data)
     }
 
     /// Read a KRB-PRIV (MIT `krb5_rd_priv`): decrypt it and check its addresses,
@@ -226,7 +268,7 @@ impl AuthContext {
     /// [`Error::MissingSequence`] and [`Error::BadSequence`].
     #[inline]
     pub fn rd_priv(&mut self, wire: &[u8]) -> Result<Received<Zeroizing<Vec<u8>>>, Error> {
-        private_safe::read_priv(self, wire)
+        super::private_safe::read_priv(self, wire)
     }
 
     /// Make a KRB-SAFE (MIT `krb5_mk_safe`).
@@ -236,7 +278,7 @@ impl AuthContext {
     /// As [`Self::mk_priv`], with the checksum errors of the codec.
     #[inline]
     pub fn mk_safe(&mut self, data: &[u8]) -> Result<Vec<u8>, Error> {
-        private_safe::make_safe(self, data)
+        super::private_safe::make_safe(self, data)
     }
 
     /// Read a KRB-SAFE (MIT `krb5_rd_safe`): verify its keyed checksum and check
@@ -247,7 +289,7 @@ impl AuthContext {
     /// As [`Self::rd_priv`], with the checksum errors of the codec.
     #[inline]
     pub fn rd_safe(&mut self, wire: &[u8]) -> Result<Received<Zeroizing<Vec<u8>>>, Error> {
-        private_safe::read_safe(self, wire)
+        super::private_safe::read_safe(self, wire)
     }
 
     /// Forward credentials in a KRB-CRED (MIT `krb5_mk_ncred`).
@@ -268,7 +310,7 @@ impl AuthContext {
         credentials: &[Credential],
         transport: CredentialTransport<'_>,
     ) -> Result<Vec<u8>, Error> {
-        forwarding::make_cred(self, credentials, transport)
+        super::forwarding::make_cred(self, credentials, transport)
     }
 
     /// Read forwarded credentials (MIT `krb5_rd_cred`), importing only those the
@@ -285,6 +327,6 @@ impl AuthContext {
         wire: &[u8],
         transport: CredentialTransport<'_>,
     ) -> Result<Received<Vec<Credential>>, Error> {
-        forwarding::read_cred(self, wire, transport)
+        super::forwarding::read_cred(self, wire, transport)
     }
 }

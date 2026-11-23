@@ -72,6 +72,31 @@ pub(crate) mod tests {
             "HOME",
         ),
         (
+            "src/replay/dfl.rs",
+            "default_path",
+            "KRB5RCACHEDIR",
+            "KRB5RCACHEDIR",
+        ),
+        ("src/replay/dfl.rs", "default_path", "TMPDIR", "TMPDIR"),
+        (
+            "src/replay/dfl.rs",
+            "default_path",
+            "LOCALAPPDATA",
+            "LOCALAPPDATA",
+        ),
+        (
+            "src/replay/name.rs",
+            "default_for",
+            "KRB5RCACHENAME",
+            "KRB5RCACHENAME",
+        ),
+        (
+            "src/replay/name.rs",
+            "default_for",
+            "KRB5RCACHETYPE",
+            "KRB5RCACHETYPE",
+        ),
+        (
             "src/keytab.rs",
             "Keytab::load_from_env",
             "KRB5_KTNAME",
@@ -760,7 +785,11 @@ pub(crate) mod tests {
             "KRB5_TRACE" => &["with_file", "new"],
             "the variable an ENV: location names" => &["new", "from_pem", "with_provider"],
             "HOME" => &["new", "with_home"],
+            "KRB5RCACHEDIR" | "KRB5RCACHENAME" | "KRB5RCACHETYPE" | "LOCALAPPDATA" => {
+                &["new", "parse"]
+            }
             "TMPDIR" | "TEMP" | "APPDATA" => &[
+                "new",
                 "expand",
                 "load",
                 "save",

@@ -23,7 +23,7 @@ use crate::{
     extensions::{Interface, ProviderError},
 };
 include!("error/any.rs");
-include!("error/auth_context.rs");
+include!("error/auth_message.rs");
 include!("error/auth_data.rs");
 include!("error/der.rs");
 include!("error/gss.rs");

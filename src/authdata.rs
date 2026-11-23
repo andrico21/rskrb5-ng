@@ -19,7 +19,10 @@ use rasn::{Decode, der};
 use rasn_kerberos::{AdAndOr, AdKdcIssued, AuthorizationData, AuthorizationDataValue, Checksum};
 
 use crate::{
-    crypto::selection, der::decode_complete, error::AuthData as Error, keytab::EncryptionKey,
+    crypto::selection,
+    der::decode_complete,
+    error::{AuthData as Error, Crypto},
+    keytab::EncryptionKey,
 };
 
 /// The key usage of the AD-KDC-ISSUED checksum (RFC 4120 section 7.5.1).
@@ -31,6 +34,11 @@ pub trait ConditionEvaluator: Debug + Send + Sync {
     /// `Some(false)` when it does not and `None` when the evaluator does not
     /// understand it. An element that is not understood never counts.
     fn evaluate(&self, element: &AuthorizationDataValue) -> Option<bool>;
+}
+
+/// A cryptographic failure of a checksum computation.
+const fn crypto_error(source: Crypto) -> Error {
+    Error::Crypto(source)
 }
 
 /// Decode a complete DER value.
@@ -71,11 +79,13 @@ pub fn build_kdc_issued(
 ) -> Result<AdKdcIssued, Error> {
     let etype =
         selection::enctype(key.etype())?.ok_or_else(|| Error::UnsupportedEtype(key.etype()))?;
-    let checksum = etype.checksum(
-        key.value(),
-        &elements_der(&elements)?,
-        KDC_ISSUED_CHECKSUM_USAGE,
-    )?;
+    let checksum = etype
+        .checksum(
+            key.value(),
+            &elements_der(&elements)?,
+            KDC_ISSUED_CHECKSUM_USAGE,
+        )
+        .map_err(crypto_error)?;
     Ok(AdKdcIssued {
         ad_checksum: Checksum {
             r#type: etype.checksum_type_id(),

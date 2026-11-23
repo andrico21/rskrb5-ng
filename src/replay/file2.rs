@@ -30,6 +30,12 @@ impl File2ReplayStore {
     /// `/var/tmp`, opened with MIT's checks: not a symlink, owned by the
     /// effective user.
     ///
+    /// # Ambient input
+    ///
+    /// Reads `KRB5RCACHEDIR`, else `TMPDIR` (`LOCALAPPDATA` on Windows),
+    /// ignored in a set-uid process. [`Self::new`] names the file explicitly
+    /// and reads no variable.
+    ///
     /// # Errors
     ///
     /// Returns [`Error::IdentityUnavailable`] when the user id cannot be read.

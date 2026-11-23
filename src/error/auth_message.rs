@@ -1,9 +1,9 @@
 /// Authenticated-message error ([`crate::messages::AuthContext`]): MIT's
 /// `krb5_mk_priv`/`rd_priv`/`mk_safe`/`rd_safe`/`mk_ncred`/`rd_cred` refusals.
 #[cfg(feature = "messages")]
-#[derive(Debug, thiserror::Error)]
+#[derive(thiserror::Error)]
 #[non_exhaustive]
-pub enum AuthContext {
+pub enum AuthMessage {
     /// The context holds neither a session key nor a subkey (MIT `KRB5_..._NOKEY`).
     #[error("the authentication context has no key")]
     NoKey,

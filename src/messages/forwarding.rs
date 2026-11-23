@@ -5,15 +5,13 @@ use zeroize::Zeroizing;
 
 use super::{
     AuthContext, CredentialTransport, Received,
-    private_safe::{
-        check_replay, check_sequence, kerberos_time, receiving_keys, sending_key, system_time,
-    },
+    private_safe::{kerberos_time, system_time},
     secret_der::SecretDer,
 };
 use crate::{
     ccache::Credential,
     crypto::{Use, selection},
-    error::{AuthContext as Error, KrbCred},
+    error::{AuthMessage as Error, KrbCred},
     krb_cred::{self, KRB_CRED_ENCPART_USAGE, import},
     replay::Tag,
 };
@@ -45,7 +43,9 @@ pub(super) fn make_cred(
         .check_sequence
         .then_some(context.local_sequence);
     context.local_address.clone_into(&mut part.sender_address);
-    context.remote_address.clone_into(&mut part.recipient_address);
+    context
+        .remote_address
+        .clone_into(&mut part.recipient_address);
     let plaintext = SecretDer::new(
         der::encode(&part).map_err(|source| KrbCred::Encode {
             target: "EncKrbCredPart",
@@ -60,7 +60,7 @@ pub(super) fn make_cred(
             cipher: plaintext.to_vec().into(),
         },
         CredentialTransport::Encrypted => {
-            let key = sending_key(context)?;
+            let key = super::private_safe::sending_key(context)?;
             let etype = selection::enctype(key.etype())
                 .map_err(KrbCred::from)?
                 .ok_or_else(|| KrbCred::UnsupportedEtype(key.etype()))?;
@@ -81,7 +81,7 @@ pub(super) fn make_cred(
             };
             if context.policy.check_time {
                 let tag = Tag::from_authenticator(enc.etype, enc.cipher.as_ref());
-                check_replay(context, Some(context.now()), tag.as_bytes())?;
+                super::private_safe::check_replay(context, Some(context.now()), tag.as_bytes())?;
             }
             enc
         }
@@ -126,7 +126,7 @@ pub(super) fn read_cred(
     } else {
         let mut failure = Error::NoKey;
         let mut decrypted = None;
-        for key in receiving_keys(context) {
+        for key in super::private_safe::receiving_keys(context) {
             context
                 .policy
                 .crypto
@@ -147,13 +147,9 @@ pub(super) fn read_cred(
     };
     if !unencrypted {
         let tag = Tag::from_authenticator(message.enc_part.etype, message.enc_part.cipher.as_ref());
-        check_replay(context, timestamp, tag.as_bytes())?;
-        check_sequence(context, part.nonce)?;
+        super::private_safe::check_replay(context, timestamp, tag.as_bytes())?;
+        super::private_safe::check_sequence(context, part.nonce)?;
     }
     let credentials = import::decrypted(&context.policy.crypto, &message, &part)?;
-    Ok(Received {
-        content: credentials,
-        timestamp,
-        sequence: part.nonce,
-    })
+    Ok(Received::new(credentials, timestamp, part.nonce))
 }

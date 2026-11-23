@@ -44,6 +44,11 @@ impl RcacheName {
     /// tokens expanded, then `dfl:`. The environment is ignored in a set-uid
     /// process.
     ///
+    /// # Ambient input
+    ///
+    /// Reads `KRB5RCACHENAME` and `KRB5RCACHETYPE`. [`Self::parse`] takes the
+    /// name explicitly and reads no variable.
+    ///
     /// # Errors
     ///
     /// Returns the errors of [`Self::parse`] and
@@ -66,6 +71,12 @@ impl RcacheName {
     }
 
     /// Open the store this name selects.
+    ///
+    /// # Ambient input
+    ///
+    /// `dfl:` reads `KRB5RCACHEDIR`, else `TMPDIR` (`LOCALAPPDATA` on Windows);
+    /// a `file2:` name opens its path and reads no variable, and [`Self::parse`]
+    /// takes any name explicitly.
     ///
     /// # Errors
     ///

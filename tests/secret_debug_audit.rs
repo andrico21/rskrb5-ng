@@ -344,7 +344,7 @@ mod tests {
             "gss".to_owned()
         } else if file == "src/spnego/gss_types.rs" {
             "spnego".to_owned()
-        } else if file == "src/error/gss.rs" {
+        } else if matches!(file, "src/error/gss.rs" | "src/error/auth_message.rs") {
             "error".to_owned()
         } else {
             file.strip_prefix("src/")
@@ -1432,10 +1432,12 @@ mod tests {
         "src/kadmin.rs::PasswordEncryption",
         "src/kadmin.rs::ChangePasswdData",
         "src/kadmin/password.rs::Bytes",
+        "src/messages.rs::AuthContext",
         "src/messages.rs::EncryptedData",
         "src/messages.rs::KrbErrorInfo",
         "src/messages.rs::PaReqEncPaRep",
         "src/messages.rs::PaForUser",
+        "src/messages.rs::Received",
         "src/pac.rs::Pac",
         "src/pac/builder.rs::Builder",
         "src/pac/builder.rs::Signing",
@@ -1470,6 +1472,7 @@ mod tests {
         "src/spnego.rs::WrapToken",
         "src/spnego.rs::InitiatorContext",
         "src/spnego.rs::InitiatorContextOptions",
+        "src/error/auth_message.rs::AuthMessage",
         "src/error/gss.rs::Gss",
         "src/gss/creds.rs::CredStore",
         "src/gss/creds.rs::Credential",

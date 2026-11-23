@@ -34,11 +34,13 @@ mod tests {
     #[cfg(feature = "http")]
     use rskrb5_ng::http;
     use rskrb5_ng::{
-        Result, ccache::CCache, config, crypto::AesSha1Etype, error, keytab::Keytab, pac::Pac,
-        routing::RealmPath, trace::Options,
+        Result, asn1, ccache::CCache, config, crypto::AesSha1Etype, error, keytab::Keytab,
+        pac::Pac, replay, routing::RealmPath, trace::Options,
     };
     #[cfg(feature = "messages")]
-    use rskrb5_ng::{ap_rep, ap_req, client::principal::Principal, kadmin, kdc_rep, kdc_req};
+    use rskrb5_ng::{
+        ap_rep, ap_req, authdata, client::principal::Principal, kadmin, kdc_rep, kdc_req, messages,
+    };
     #[cfg(feature = "spnego")]
     use rskrb5_ng::{gss, spnego};
     #[cfg(feature = "messages")]
@@ -92,6 +94,28 @@ mod tests {
         local_auth_when_no_translation,
         error::LocalAuth,
         None::<()>.ok_or(error::LocalAuth::NoTranslation)
+    );
+    propagates_domain!(
+        replay_when_name_has_no_type,
+        error::Replay,
+        replay::RcacheName::parse("no-type-prefix")
+    );
+    propagates_domain!(
+        der_when_length_truncated,
+        error::Der,
+        asn1::decode_length(&[], &asn1::Limits::new())
+    );
+    #[cfg(feature = "messages")]
+    propagates_domain!(
+        auth_context_when_keyless,
+        error::AuthMessage,
+        messages::AuthContext::without_key(messages::MessagePolicy::new()).mk_priv(b"")
+    );
+    #[cfg(feature = "messages")]
+    propagates_domain!(
+        auth_data_when_truncated,
+        error::AuthData,
+        authdata::decode_kdc_issued(&[])
     );
     #[cfg(feature = "messages")]
     propagates_domain!(

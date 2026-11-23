@@ -122,15 +122,10 @@ impl fmt::Debug for super::AuthContext {
 impl<T> fmt::Debug for super::Received<T> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self {
-            content: _,
-            timestamp,
-            sequence,
-        } = self;
         f.debug_struct("Received")
             .field("content", &"[REDACTED]")
-            .field("timestamp", timestamp)
-            .field("sequence", sequence)
+            .field("timestamp", &self.timestamp())
+            .field("sequence", &self.sequence())
             .finish()
     }
 }

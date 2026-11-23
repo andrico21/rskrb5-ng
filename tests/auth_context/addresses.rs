@@ -1,7 +1,7 @@
 //! Sender and recipient address checks (MIT `k5_privsafe_check_addrs`).
 
 use rskrb5_ng::{
-    error::AuthContext as Error,
+    error::AuthMessage as Error,
     krb_priv::ipv4_host_address,
     messages::{AuthContext, MessagePolicy},
 };
@@ -53,7 +53,7 @@ fn the_recipient_address_is_checked_when_present() -> Result<(), TestError> {
     let unaddressed = anonymous.mk_priv(b"no recipient")?;
     let mut receiver = acceptor(MessagePolicy::new(), NOW)?;
     assert_eq!(
-        receiver.rd_priv(&unaddressed)?.content.as_slice(),
+        receiver.rd_priv(&unaddressed)?.content().as_slice(),
         b"no recipient"
     );
     Ok(())

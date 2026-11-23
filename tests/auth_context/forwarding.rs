@@ -2,7 +2,7 @@
 
 use rskrb5_ng::{
     ccache::{self, Credential},
-    error::AuthContext as Error,
+    error::AuthMessage as Error,
     krb_cred::{self, decode_enc_krb_cred_part},
     messages::{AuthContext, CredentialTransport, MessagePolicy, ProtectedChannel},
 };
@@ -80,13 +80,13 @@ fn credentials_round_trip_encrypted() -> Result<(), TestError> {
     let wire = sender.mk_cred(&sent, CredentialTransport::Encrypted)?;
     let delivered = receiver.rd_cred(&wire, CredentialTransport::Encrypted)?;
 
-    assert_eq!(delivered.content.len(), sent.len());
-    for (got, want) in delivered.content.iter().zip(&sent) {
+    assert_eq!(delivered.content().len(), sent.len());
+    for (got, want) in delivered.content().iter().zip(&sent) {
         assert_eq!(got.client(), want.client());
         assert_eq!(got.server(), want.server());
         assert_eq!(got.ticket(), want.ticket());
     }
-    assert_eq!(delivered.timestamp, Some(at(NOW)?));
+    assert_eq!(delivered.timestamp(), Some(at(NOW)?));
     assert!(matches!(
         receiver.rd_cred(&wire, CredentialTransport::Encrypted),
         Err(Error::Replay)
@@ -128,7 +128,7 @@ fn a_proven_channel_carries_an_unencrypted_credential() -> Result<(), TestError>
     let wire = sender.mk_cred(&sent, CredentialTransport::Protected(&channel))?;
     let delivered = receiver.rd_cred(&wire, CredentialTransport::Protected(&channel))?;
 
-    assert_eq!(delivered.content.len(), sent.len());
+    assert_eq!(delivered.content().len(), sent.len());
     Ok(())
 }
 

@@ -85,7 +85,7 @@ pub enum Any {
     /// An authenticated message operation failed.
     #[cfg(feature = "messages")]
     #[error("authenticated message error: {0}")]
-    AuthContext(#[from] AuthContext),
+    AuthMessage(#[from] AuthMessage),
     /// KRB-PRIV processing failed.
     #[cfg(feature = "messages")]
     #[error("KRB-PRIV error: {0}")]

@@ -3,7 +3,7 @@
 use core::time::Duration;
 use std::{collections::HashMap, time::SystemTime};
 
-use crate::error::AuthContext as Error;
+use crate::error::AuthMessage as Error;
 
 /// Message tags with the time their evidence expires.
 #[derive(Clone, Debug)]

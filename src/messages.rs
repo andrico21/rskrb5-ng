@@ -79,11 +79,11 @@ pub enum CredentialTransport<'channel> {
 #[non_exhaustive]
 pub struct Received<T> {
     /// The user data, or the forwarded credentials.
-    pub content: T,
+    content: T,
     /// The sender's timestamp, when the message carries one.
-    pub timestamp: Option<SystemTime>,
+    timestamp: Option<SystemTime>,
     /// The sender's sequence number, when the message carries one.
-    pub sequence: Option<u32>,
+    sequence: Option<u32>,
 }
 
 /// MIT's `krb5_auth_context` for the KRB-PRIV, KRB-SAFE and KRB-CRED messages.

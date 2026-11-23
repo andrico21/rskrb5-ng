@@ -2,7 +2,7 @@
 
 use core::time::Duration;
 
-use rskrb5_ng::{error::AuthContext as Error, messages::MessagePolicy};
+use rskrb5_ng::{error::AuthMessage as Error, messages::MessagePolicy};
 
 use super::support::{acceptor, initiator};
 use crate::context::TestError;
@@ -18,7 +18,7 @@ fn the_skew_boundary_is_inclusive() -> Result<(), TestError> {
     let wire = sender.mk_priv(b"x")?;
 
     let mut on_time = acceptor(policy.clone(), NOW + 300)?;
-    assert_eq!(on_time.rd_priv(&wire)?.content.as_slice(), b"x");
+    assert_eq!(on_time.rd_priv(&wire)?.content().as_slice(), b"x");
 
     let mut late = acceptor(policy.clone(), NOW + 301)?;
     assert!(
@@ -70,7 +70,7 @@ fn time_checking_can_be_turned_off_deliberately() -> Result<(), TestError> {
 
     let mut lax = acceptor(off, NOW)?;
     let received = lax.rd_priv(&wire)?;
-    assert_eq!(received.timestamp, None);
+    assert_eq!(received.timestamp(), None);
     drop(lax.rd_priv(&wire)?);
 
     let mut strict = acceptor(MessagePolicy::new(), NOW)?;

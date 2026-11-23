@@ -1,6 +1,6 @@
 //! Sequence numbers, including MIT's tolerance for Heimdal's unsigned encodings.
 
-use rskrb5_ng::{error::AuthContext as Error, messages::MessagePolicy};
+use rskrb5_ng::{error::AuthMessage as Error, messages::MessagePolicy};
 
 use super::support::{acceptor, initiator};
 use crate::context::TestError;
@@ -32,7 +32,7 @@ fn messages_in_order_are_accepted() -> Result<(), TestError> {
         } else {
             receiver.rd_safe(&wire)?
         };
-        assert_eq!(delivered.sequence, Some(expected));
+        assert_eq!(delivered.sequence(), Some(expected));
     }
     assert_eq!(sender.local_sequence(), 10);
     assert_eq!(receiver.remote_sequence(), 10);
@@ -96,7 +96,7 @@ fn heimdal_unsigned_encodings_are_accepted_like_mit() -> Result<(), TestError> {
 
     let wire = sender.mk_priv(b"heimdal")?;
 
-    assert_eq!(receiver.rd_priv(&wire)?.sequence, Some(0xFFFF_FF80));
+    assert_eq!(receiver.rd_priv(&wire)?.sequence(), Some(0xFFFF_FF80));
     assert_eq!(receiver.remote_sequence(), 0x81);
     Ok(())
 }

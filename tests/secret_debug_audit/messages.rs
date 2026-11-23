@@ -32,7 +32,7 @@ pub(super) mod tests {
             options::{ApReq, AsReq, TgsReq},
             principal::Principal,
         },
-        error::{Any as AnyError, Client as ClientError},
+        error::{Any as AnyError, AuthMessage, Client as ClientError, KrbPriv as KrbPrivError},
         kadmin::{
             ChangePasswdData, PasswordEncryption, Reply, Request,
             build_change_password_request_with_confounder,
@@ -40,7 +40,7 @@ pub(super) mod tests {
         keytab::EncryptionKey,
         krb_error, krb_priv,
         krb_priv::{EncKrbPrivPartOptions, ipv4_host_address},
-        messages::KrbErrorInfo,
+        messages::{AuthContext, KrbErrorInfo, MessagePolicy},
         pac::NtlmSupplementalCredential,
         transport::kkdcp::ProxyMessage,
     };
@@ -54,6 +54,7 @@ pub(super) mod tests {
         options_redact_each_credential_field()?;
         password_frames_redact_each_credential_field()?;
         password_owners_redact_live_bytes()?;
+        auth_context_redacts_its_keys_and_messages()?;
         pac_encrypted_credentials_are_redacted()?;
         pac_supplemental_credentials_are_redacted()?;
         pac_validation_records_redact_credentials()?;
@@ -260,6 +261,43 @@ pub(super) mod tests {
         let payload = ChangePasswdData::new(password);
         redacted(payload.new_passwd(), &[&secret]);
         redacted(&payload, &[&secret]);
+        Ok(())
+    }
+
+    /// The session key and both sub-keys of an authenticated message context, and the payloads it delivers, never reach diagnostics.
+    #[test]
+    fn auth_context_redacts_its_keys_and_messages() -> Result<(), Box<dyn Error>> {
+        let (session, send, receive) = (pattern(65), pattern(81), pattern(97));
+        let secret = pattern(113);
+        let key = |bytes: &[u8]| EncryptionKey::new(18, [bytes, bytes].concat());
+        let mut context = AuthContext::new(key(&session), MessagePolicy::new())
+            .with_subkeys(Some(key(&send)), Some(key(&receive)))
+            .with_local_address(ipv4_host_address([10, 0, 0, 1]));
+        redacted(
+            &context,
+            &[
+                &session,
+                &send,
+                &receive,
+                &[session.as_slice(), &session].concat(),
+            ],
+        );
+        let wire = context.mk_priv(&secret)?;
+        let mut peer = AuthContext::new(key(&session), MessagePolicy::new())
+            .with_subkeys(Some(key(&receive)), Some(key(&send)));
+        let delivered = peer.rd_priv(&wire)?;
+        redacted(&delivered, &[&secret]);
+        assert_eq!(delivered.content().as_slice(), secret.as_slice());
+        let text = hex::encode(&secret);
+        let failure = AuthMessage::Priv(KrbPrivError::Decode {
+            target: "KRB-PRIV",
+            message: text.clone(),
+        });
+        redacted(&failure, &[&secret]);
+        assert!(
+            !format!("{failure:?}").contains(&text),
+            "the decode text stays out of diagnostics"
+        );
         Ok(())
     }
 
