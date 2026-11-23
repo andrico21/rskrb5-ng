@@ -5,7 +5,8 @@
 //! `xdr_nullstring` (`kadm_rpc_xdr.c:36-87`). The decoder checks every
 //! length against the bytes that remain and against the caller's bound before
 //! it allocates, and every count against the bytes its elements need, so no
-//! input can make it allocate more than the input's own size.
+//! input can make it allocate more than the input's own size. The forms only
+//! kadm5 uses are compiled with `tokio`, which the kadm5 module needs.
 
 use core::iter;
 
@@ -39,6 +40,7 @@ impl Encoder {
         self
     }
 
+    #[cfg(feature = "tokio")]
     /// A signed 32-bit integer (RFC 4506 section 4.1).
     #[must_use]
     pub(crate) fn i32(mut self, value: i32) -> Self {
@@ -46,6 +48,7 @@ impl Encoder {
         self
     }
 
+    #[cfg(feature = "tokio")]
     /// A boolean (RFC 4506 section 4.4).
     #[must_use]
     pub(crate) fn bool(self, value: bool) -> Self {
@@ -85,6 +88,7 @@ impl Encoder {
         Ok(self)
     }
 
+    #[cfg(feature = "tokio")]
     /// MIT's `xdr_nullstring`: 0 for no string, else the bytes and a NUL.
     ///
     /// # Errors
@@ -132,6 +136,7 @@ impl<'bytes> Decoder<'bytes> {
         self.rest
     }
 
+    #[cfg(feature = "tokio")]
     /// How many bytes remain.
     pub(crate) const fn remaining(&self) -> usize {
         self.rest.len()
@@ -178,6 +183,7 @@ impl<'bytes> Decoder<'bytes> {
         Ok(u32::from_be_bytes(*head))
     }
 
+    #[cfg(feature = "tokio")]
     /// A signed 32-bit integer.
     ///
     /// # Errors
@@ -187,6 +193,7 @@ impl<'bytes> Decoder<'bytes> {
         Ok(i32::from_be_bytes(self.u32()?.to_be_bytes()))
     }
 
+    #[cfg(feature = "tokio")]
     /// A boolean: 0 or 1, nothing else (RFC 4506 section 4.4).
     ///
     /// # Errors
@@ -227,6 +234,7 @@ impl<'bytes> Decoder<'bytes> {
         Ok(value)
     }
 
+    #[cfg(feature = "tokio")]
     /// MIT's `xdr_nullstring` of at most `maximum` bytes before its NUL.
     ///
     /// `None` for length 0, else bytes that end with their only NUL
@@ -249,6 +257,7 @@ impl<'bytes> Decoder<'bytes> {
         }
     }
 
+    #[cfg(feature = "tokio")]
     /// An array count of at most `maximum` elements.
     ///
     /// Each element takes at least `minimum` bytes; the count is checked
