@@ -3,16 +3,18 @@
 use core::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rasn::Encoder as _;
+use rasn::{Encoder as _, der};
 use rskrb5_ng::{
     Config,
-    client::{TgsRepSession, principal::Principal},
+    client::{TgsRepSession, build_ap_req_with_confounder, options::ApReq, principal::Principal},
+    crypto::AesSha1Etype,
     gss::{
         Acceptor, AcceptorOptions, CredStore, Credential, CredentialUsage, EstablishedContext,
         InitStep, InitiatorOptions, Name, NameType,
-        iakerb::{AcceptStep, IakerbContext, KdcRelay, RelayPolicy},
+        iakerb::{AcceptStep, Context, KdcRelay, RelayFailure, RelayPolicy},
     },
     keytab::{self, Keytab},
+    spnego::Krb5MechToken,
 };
 use zeroize::Zeroizing;
 
@@ -33,8 +35,11 @@ pub(super) fn config() -> Result<Config, TestError> {
 
 /// The host-based GSS name `HTTP@<host>`.
 pub(super) fn target() -> Result<Name, TestError> {
-    Name::import(format!("HTTP@{HOST}").as_bytes(), NameType::HostbasedService)
-        .context("host-based name imports")
+    Name::import(
+        format!("HTTP@{HOST}").as_bytes(),
+        NameType::HostbasedService,
+    )
+    .context("host-based name imports")
 }
 
 /// A keytab with the `HTTP/<host>` key.
@@ -98,8 +103,8 @@ pub(super) fn establish_with(
     policy: RelayPolicy,
     mut tamper: impl FnMut(usize, Vec<u8>) -> Result<Vec<u8>, TestError>,
 ) -> Result<Pair, TestError> {
-    let mut initiator = IakerbContext::initiator(&config()?, target()?, InitiatorOptions::new())?;
-    let mut acceptor_context = IakerbContext::acceptor(policy);
+    let mut initiator = Context::initiator(&config()?, target()?, InitiatorOptions::new())?;
+    let mut acceptor_context = Context::acceptor(policy);
     let store = Credential::from_keytab(keytab());
     let mut acceptor = Acceptor::new(&store, AcceptorOptions::new())?;
     let mut relay = Relay::new(kdc);
@@ -107,39 +112,41 @@ pub(super) fn establish_with(
     let mut input: Option<Vec<u8>> = None;
     let mut done = false;
     let mut accepted = None;
-    for turn in 0..40 {
+    for turn in 0..40_usize {
         if done && accepted.is_some() {
             break;
         }
-        match initiator.init_sec_context(credential, input.as_deref())? {
-            InitStep::Continue(token) | InitStep::Complete(Some(token)) => {
-                tokens.push(token.clone());
-                match acceptor_context.accept_sec_context(&mut acceptor, &mut relay, &token)? {
-                    AcceptStep::Continue(reply) => {
-                        tokens.push(reply.clone());
-                        input = Some(tamper(turn, reply)?);
-                    }
-                    AcceptStep::Complete(finished) => {
-                        let reply = finished.output_token().map(<[u8]>::to_vec);
-                        accepted = Some(finished);
-                        if let Some(reply) = reply {
-                            tokens.push(reply.clone());
-                            input = Some(reply);
-                        } else {
-                            done = true;
-                        }
-                    }
-                    _ => return Err("an unknown acceptor step".into()),
-                }
-            }
-            InitStep::Complete(None) => done = true,
-            _ => return Err("an unknown initiator step".into()),
+        let step = initiator.init_sec_context(credential, input.as_deref())?;
+        if step == InitStep::Complete(None) {
+            done = true;
+            continue;
+        }
+        let (InitStep::Continue(token) | InitStep::Complete(Some(token))) = step else {
+            return Err("an unknown initiator step".into());
+        };
+        tokens.push(token.clone());
+        let answer = acceptor_context.accept_sec_context(&mut acceptor, &mut relay, &token)?;
+        if let AcceptStep::Continue(reply) = answer {
+            tokens.push(reply.clone());
+            input = Some(tamper(turn, reply)?);
+            continue;
+        }
+        let AcceptStep::Complete(established) = answer else {
+            return Err("an unknown acceptor step".into());
+        };
+        let last = established.output_token().map(<[u8]>::to_vec);
+        accepted = Some(established);
+        if let Some(bytes) = last {
+            tokens.push(bytes.clone());
+            input = Some(bytes);
+        } else {
+            done = true;
         }
     }
-    let accepted = accepted.context("the acceptor accepted a context")?;
+    let finished = accepted.context("the acceptor accepted a context")?;
     Ok(Pair {
         initiator: initiator.into_established()?,
-        acceptor: accepted.into_context(),
+        acceptor: finished.into_context(),
         tokens,
         relayed: relay.asked,
     })
@@ -162,15 +169,9 @@ pub(super) struct NoRelay {
 }
 
 impl KdcRelay for NoRelay {
-    fn relay(
-        &mut self,
-        _realm: &str,
-        _request: &[u8],
-    ) -> Result<Vec<u8>, rskrb5_ng::gss::iakerb::RelayFailure> {
-        self.calls += 1;
-        Err(rskrb5_ng::gss::iakerb::RelayFailure::Other(
-            "no relay".to_owned(),
-        ))
+    fn relay(&mut self, _realm: &str, _request: &[u8]) -> Result<Vec<u8>, RelayFailure> {
+        self.calls = self.calls.saturating_add(1);
+        Err(RelayFailure::Other("no relay".to_owned()))
     }
 }
 
@@ -209,10 +210,11 @@ pub(super) fn subkey() -> keytab::EncryptionKey {
     keytab::EncryptionKey::new(18, vec![0x77; 32])
 }
 
-/// An IAKERB AP-REQ token of the user for `HTTP/<host>`, built here from the
-/// RFC 4121 checksum layout and MIT's extension framing (`init_sec_context.c:341-345`:
-/// a big-endian type and length), not by the crate: the authenticator's
-/// checksum carries `extension` (an `IAKERB-FINISHED`) when given.
+/// An IAKERB AP-REQ token of the user for `HTTP/<host>`, built here, not by the crate.
+///
+/// The layout is RFC 4121's checksum and MIT's extension framing
+/// (`init_sec_context.c:341-345`: a big-endian type and length): the
+/// authenticator's checksum carries `extension` (an `IAKERB-FINISHED`) when given.
 ///
 /// # Errors
 ///
@@ -226,7 +228,7 @@ pub(super) fn ap_req_token(extension: Option<&[u8]>) -> Result<Vec<u8>, TestErro
         checksum.extend_from_slice(&u32::try_from(finished.len())?.to_be_bytes());
         checksum.extend_from_slice(finished);
     }
-    let options = rskrb5_ng::client::options::ApReq::new()
+    let options = ApReq::new()
         .with_ap_option_bits(0x2000_0000)
         .with_checksum(Some(rasn_kerberos::Checksum {
             r#type: 0x8003,
@@ -235,16 +237,16 @@ pub(super) fn ap_req_token(extension: Option<&[u8]>) -> Result<Vec<u8>, TestErro
         .with_subkey(Some(subkey()))
         .with_sequence_number(Some(0x1234));
     let now = whole(SystemTime::now())?;
-    let built =
-        rskrb5_ng::client::build_ap_req_with_confounder(&ticket()?, options, now, 7, &[0x21; 16])?;
-    let mut token = rskrb5_ng::spnego::Krb5MechToken::ap_req(built.der().to_vec());
-    token.set_oid(IakerbContext::mechanism());
+    let built = build_ap_req_with_confounder(&ticket()?, options, now, 7, &[0x21; 16])?;
+    let mut token = Krb5MechToken::ap_req(built.der().to_vec());
+    token.set_oid(Context::mechanism());
     Ok(token.encode()?)
 }
 
-/// The `IAKERB-FINISHED` of `transcript` under `key`, with the checksum type
-/// and key usage MIT uses (`iakerb.c:141`: usage 41), derived from the ASN.1
-/// module (`asn1_k_encode.c:1102-1107`) and RFC 3961, not by the crate.
+/// The `IAKERB-FINISHED` of `transcript` under `key`, derived here, not by the crate.
+///
+/// The checksum type and key usage are MIT's (`iakerb.c:141`: usage 41), the
+/// layout the ASN.1 module's (`asn1_k_encode.c:1102-1107`) and RFC 3961's.
 ///
 /// # Errors
 ///
@@ -260,10 +262,10 @@ pub(super) fn finished(
         #[rasn(tag(explicit(1)))]
         checksum: rasn_kerberos::Checksum,
     }
-    let sum = rskrb5_ng::crypto::AesSha1Etype::from_etype_id(key.etype())
+    let sum = AesSha1Etype::from_etype_id(key.etype())
         .context("AES")?
         .checksum(key.value(), transcript, 41)?;
-    Ok(rasn::der::encode(&Finished {
+    Ok(der::encode(&Finished {
         checksum: rasn_kerberos::Checksum {
             r#type: 16,
             checksum: sum.into(),

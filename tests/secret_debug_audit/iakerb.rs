@@ -15,7 +15,7 @@ pub(super) mod tests {
         error::{Client as ClientError, Gss, Iakerb, Spnego as SpnegoError},
         gss::{
             CredStore, Credential, CredentialUsage, InitStep, InitiatorOptions, Name, NameType,
-            iakerb::{AcceptStep, IakerbContext, RelayPolicy},
+            iakerb::{AcceptStep, Context, RelayPolicy},
         },
     };
 
@@ -38,21 +38,24 @@ pub(super) mod tests {
         )?;
         let config = Config::parse("[libdefaults]\n default_realm = EXAMPLE.COM\n")?;
         let target = Name::import(b"HTTP@www.example.com", NameType::HostbasedService)?;
-        let mut context = IakerbContext::initiator(&config, target, InitiatorOptions::new())?;
+        let mut context = Context::initiator(&config, target, InitiatorOptions::new())?;
         let InitStep::Continue(_first) = context.init_sec_context(&credential, None)? else {
             return Err("the first step sends a relay request".into());
         };
         redacted(&context, &[&password]);
-        redacted(&IakerbContext::acceptor(RelayPolicy::new("EXAMPLE.COM")?), &[&password]);
+        redacted(
+            &Context::acceptor(RelayPolicy::new("EXAMPLE.COM")?),
+            &[&password],
+        );
         let token = pattern(113);
         redacted(&AcceptStep::Continue(token.clone()), &[&token]);
         let secret = pattern(129);
-        let error = Iakerb::Gss(Gss::Spnego(SpnegoError::Client(Box::new(ClientError::Kdc(
-            Box::new(
+        let error = Iakerb::Gss(Gss::Spnego(SpnegoError::Client(Box::new(
+            ClientError::Kdc(Box::new(
                 KdcError::new(UNIX_EPOCH, 0, 25, Principal::tgt_service("EXAMPLE.COM"))
                     .with_e_data(Some(secret.clone().into())),
-            ),
-        )))));
+            )),
+        ))));
         redacted(&error, &[&secret]);
         Ok(())
     }

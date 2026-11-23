@@ -1,5 +1,3 @@
-//! The module tree of the IAKERB scenarios.
-
 /// Turns `Option` and `Result` failures into test errors.
 use super::context;
 

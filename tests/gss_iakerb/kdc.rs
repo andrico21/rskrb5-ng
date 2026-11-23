@@ -120,7 +120,11 @@ fn sealed(
         caddr: None,
         authorization_data: None,
     };
-    let kind = if server.0.first() == Some(&"krbtgt") { 2 } else { 3 };
+    let kind: i32 = if server.0.first() == Some(&"krbtgt") {
+        2
+    } else {
+        3
+    };
     Ok(ticket::encode_build_ticket_with_confounder(
         text(REALM)?,
         name(kind, server.0)?,
@@ -137,7 +141,10 @@ pub(super) fn service_ticket(
     at: (SystemTime, SystemTime),
 ) -> Result<Vec<u8>, TestError> {
     sealed(
-        (&["HTTP", super::support::HOST], &service_key(super::support::HOST)),
+        (
+            &["HTTP", super::support::HOST],
+            &service_key(super::support::HOST),
+        ),
         USER,
         session,
         at,
@@ -169,7 +176,6 @@ impl Kdc {
 
     /// A ticket for `server`, sealed in its key, for `client`, valid for an hour.
     fn issue(
-        &self,
         server: (&[&str], &EncryptionKey),
         client: &str,
         session: &EncryptionKey,
@@ -181,7 +187,6 @@ impl Kdc {
 
     /// A KRB-ERROR of `code`, with `data` as its e-data.
     fn error(
-        &self,
         code: i32,
         sname: (i32, &[&str]),
         data: Option<Vec<u8>>,
@@ -205,7 +210,6 @@ impl Kdc {
 
     /// The reply part: `key`, the request's nonce, valid for an hour.
     fn reply_part(
-        &self,
         body: &rasn_kerberos::KdcReqBody,
         key: &EncryptionKey,
         sname: (i32, &[&str]),
@@ -232,7 +236,7 @@ impl Kdc {
 
     /// The AS exchange: a probe is told to preauthenticate, the encrypted
     /// timestamp under the user's key gets the TGT.
-    fn as_exchange(&self, request: &[u8]) -> Result<Vec<u8>, TestError> {
+    fn as_exchange(request: &[u8]) -> Result<Vec<u8>, TestError> {
         let message: rasn_kerberos::AsReq = der::decode(request)?;
         let body = &message.0.req_body;
         let padata = message.0.padata.as_deref().unwrap_or_default();
@@ -247,22 +251,22 @@ impl Kdc {
                 r#type: 19,
                 value: der::encode(&info)?.into(),
             }]);
-            return self.error(
+            return Self::error(
                 PREAUTH_REQUIRED,
-                (2, &["krbtgt", REALM]),
+                (2_i32, &["krbtgt", REALM]),
                 Some(der::encode(&offers)?),
             );
         };
         let sealed: rasn_kerberos::EncryptedData = der::decode(&timestamp.value)?;
         drop(cipher()?.decrypt_message(key.value(), sealed.cipher.as_ref(), 1)?);
         let session = EncryptionKey::new(ETYPE, vec![0x6d; 32]);
-        let ticket = self.issue((&["krbtgt", REALM], &tgs_key()), USER, &session)?;
-        let part = rasn_kerberos::EncAsRepPart(self.reply_part(
+        let ticket = Self::issue((&["krbtgt", REALM], &tgs_key()), USER, &session)?;
+        let part = rasn_kerberos::EncAsRepPart(Self::reply_part(
             body,
             &session,
-            (2, &["krbtgt", REALM]),
+            (2_i32, &["krbtgt", REALM]),
         )?);
-        let sealed = cipher()?.encrypt_message_with_confounder(
+        let cipher_text = cipher()?.encrypt_message_with_confounder(
             key.value(),
             &der::encode(&part)?,
             3,
@@ -278,13 +282,13 @@ impl Kdc {
             enc_part: rasn_kerberos::EncryptedData {
                 etype: ETYPE,
                 kvno: None,
-                cipher: sealed.into(),
+                cipher: cipher_text.into(),
             },
         }))?)
     }
 
     /// The TGS exchange for an `HTTP/<host>` service of the realm.
-    fn tgs_exchange(&self, request: &[u8]) -> Result<Vec<u8>, TestError> {
+    fn tgs_exchange(request: &[u8]) -> Result<Vec<u8>, TestError> {
         let message: rasn_kerberos::TgsReq = der::decode(request)?;
         let body = &message.0.req_body;
         let padata = message.0.padata.as_deref().unwrap_or_default();
@@ -313,34 +317,45 @@ impl Kdc {
             .collect::<Result<_, _>>()?;
         let parts: Vec<&str> = components.iter().map(String::as_str).collect();
         let [service, host] = parts.as_slice() else {
-            return self.error(S_PRINCIPAL_UNKNOWN, (3, &parts), None);
+            return Self::error(S_PRINCIPAL_UNKNOWN, (3_i32, &parts), None);
         };
         let issued = EncryptionKey::new(ETYPE, vec![0x4b; 32]);
-        let ticket = self.issue((&parts, &service_key(host)), USER, &issued)?;
-        let part = rasn_kerberos::EncTgsRepPart(self.reply_part(body, &issued, (3, &[service, host]))?);
+        let ticket = Self::issue((&parts, &service_key(host)), USER, &issued)?;
+        let part = rasn_kerberos::EncTgsRepPart(Self::reply_part(
+            body,
+            &issued,
+            (3_i32, &[service, host]),
+        )?);
         let (reply_key, usage) = authenticator.subkey.as_ref().map_or_else(
-            || (session.clone(), 8),
-            |subkey| (EncryptionKey::new(subkey.r#type, subkey.value.to_vec()), 9),
+            || (session.clone(), 8_u32),
+            |subkey| {
+                (
+                    EncryptionKey::new(subkey.r#type, subkey.value.to_vec()),
+                    9_u32,
+                )
+            },
         );
-        let sealed = cipher()?.encrypt_message_with_confounder(
+        let cipher_text = cipher()?.encrypt_message_with_confounder(
             reply_key.value(),
             &der::encode(&part)?,
             usage,
             &[0x44; 16],
         )?;
-        Ok(der::encode(&rasn_kerberos::TgsRep(rasn_kerberos::KdcRep {
-            pvno: 5_i32.into(),
-            msg_type: 13_i32.into(),
-            padata: None,
-            crealm: text(REALM)?,
-            cname: name(1, &[USER])?,
-            ticket,
-            enc_part: rasn_kerberos::EncryptedData {
-                etype: ETYPE,
-                kvno: None,
-                cipher: sealed.into(),
+        Ok(der::encode(&rasn_kerberos::TgsRep(
+            rasn_kerberos::KdcRep {
+                pvno: 5_i32.into(),
+                msg_type: 13_i32.into(),
+                padata: None,
+                crealm: text(REALM)?,
+                cname: name(1, &[USER])?,
+                ticket,
+                enc_part: rasn_kerberos::EncryptedData {
+                    etype: ETYPE,
+                    kvno: None,
+                    cipher: cipher_text.into(),
+                },
             },
-        }))?)
+        ))?)
     }
 
     /// Answer `request` for the KDC of `realm`.
@@ -351,11 +366,11 @@ impl Kdc {
         match request.first() {
             Some(0x6a) => {
                 self.state().push((realm.to_owned(), "AS"));
-                self.as_exchange(request)
+                Self::as_exchange(request)
             }
             Some(0x6c) => {
                 self.state().push((realm.to_owned(), "TGS"));
-                self.tgs_exchange(request)
+                Self::tgs_exchange(request)
             }
             _ => Err("neither an AS-REQ nor a TGS-REQ".into()),
         }
@@ -367,11 +382,11 @@ impl Kdc {
 #[derive(Debug)]
 pub(super) struct Relay<'kdc> {
     /// The KDC behind the relay.
-    pub(super) kdc: &'kdc Kdc,
+    pub kdc: &'kdc Kdc,
     /// The `(realm, request)` pairs the acceptor relayed.
-    pub(super) asked: Vec<(String, Vec<u8>)>,
+    pub asked: Vec<(String, Vec<u8>)>,
     /// A failure to report instead of an answer.
-    pub(super) failure: Option<RelayFailure>,
+    pub failure: Option<RelayFailure>,
 }
 
 impl<'kdc> Relay<'kdc> {

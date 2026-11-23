@@ -12,7 +12,7 @@ const OID: [u8; 8] = [0x06, 0x06, 0x2b, 0x06, 0x01, 0x05, 0x02, 0x05];
 const MESSAGE: [u8; 5] = [0x6a, 0x03, 0x01, 0x02, 0x03];
 
 /// The `IAKERB-HEADER` of `EXAMPLE.COM` without a cookie, as the ASN.1 module
-/// lays it out: SEQUENCE { [1] UTF8String }.
+/// lays it out: `SEQUENCE { [1] UTF8String }`.
 fn header() -> Vec<u8> {
     let mut header = vec![0x30, 0x0f, 0xa1, 0x0d, 0x0c, 0x0b];
     header.extend_from_slice(b"EXAMPLE.COM");
@@ -88,14 +88,24 @@ fn other_mechanisms_and_token_ids_are_not_iakerb() {
     let krb5_oid = [
         0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x12, 0x01, 0x02, 0x02,
     ];
-    let krb5 = frame(&krb5_oid, [0x05, 0x01], &[header(), MESSAGE.to_vec()].concat());
+    let krb5 = frame(
+        &krb5_oid,
+        [0x05, 0x01],
+        &[header(), MESSAGE.to_vec()].concat(),
+    );
     // then it is not an IAKERB token and does not decode as one,
     assert!(!Token::is_iakerb(&krb5));
-    assert!(matches!(Token::decode(&krb5), Err(Iakerb::NotIakerb(_))));
+    assert!(matches!(
+        Token::decode(&krb5),
+        Err(Iakerb::WrongMechanism(_))
+    ));
     // and the layout with the AP-REQ token id is not one either.
     let ap_req = frame(&OID, [0x01, 0x00], &[header(), MESSAGE.to_vec()].concat());
     assert!(!Token::is_iakerb(&ap_req));
-    assert!(matches!(Token::decode(&ap_req), Err(Iakerb::NotIakerb(_))));
+    assert!(matches!(
+        Token::decode(&ap_req),
+        Err(Iakerb::WrongMechanism(_))
+    ));
 }
 
 /// Every prefix of a valid token, trailing bytes, a header that is not a

@@ -4,7 +4,7 @@
 
 use rskrb5_ng::gss::{
     ContextFlags,
-    iakerb::{IakerbContext, token::Token},
+    iakerb::{Context, token::Token},
 };
 
 use super::{
@@ -55,7 +55,7 @@ fn a_password_initiator_completes_through_the_relay() -> Result<(), TestError> {
     }
     let sealed = pair.initiator.wrap(b"hello iakerb", true)?;
     assert_eq!(pair.acceptor.unwrap(&sealed)?.message(), b"hello iakerb");
-    assert_eq!(IakerbContext::mechanism().arcs(), [1, 3, 6, 1, 5, 2, 5]);
+    assert_eq!(Context::mechanism().arcs(), [1, 3, 6, 1, 5, 2, 5]);
     Ok(())
 }
 
