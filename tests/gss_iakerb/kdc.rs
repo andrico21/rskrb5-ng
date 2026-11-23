@@ -46,7 +46,7 @@ fn cipher() -> Result<AesSha1Etype, TestError> {
 /// The key of the user, as the KDC derives it.
 fn user_key() -> Result<EncryptionKey, TestError> {
     let salt = format!("{REALM}{USER}");
-    let bytes = cipher()?.string_to_key(PASSWORD, salt.as_bytes(), "")?;
+    let bytes = cipher()?.string_to_key(PASSWORD, salt.as_bytes(), "00001000")?;
     Ok(EncryptionKey::new(ETYPE, bytes))
 }
 
@@ -217,7 +217,7 @@ impl Kdc {
             nonce: body.nonce,
             key_expiration: None,
             flags: rasn_kerberos::TicketFlags(rasn_kerberos::KerberosFlags::from_slice(&[
-                0x40, 0, 0, 0,
+                0, 0, 0, 0,
             ])),
             auth_time: now.clone(),
             start_time: Some(now),

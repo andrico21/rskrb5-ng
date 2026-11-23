@@ -75,8 +75,14 @@ impl RelayPolicy {
     /// Returns [`Error::InvalidPolicy`] for an empty realm or one above 255 bytes.
     #[inline]
     pub fn new(local_realm: &str) -> Result<Self, Error> {
-        let _unread = local_realm;
-        Err(Error::InvalidPolicy("not implemented"))
+        check_realm(local_realm)?;
+        Ok(Self {
+            local_realm: local_realm.to_owned(),
+            realms: vec![local_realm.to_owned()],
+            max_rounds: Self::DEFAULT_MAX_ROUNDS,
+            max_message_bytes: Self::DEFAULT_MAX_MESSAGE_BYTES,
+            max_transcript_bytes: Self::DEFAULT_MAX_TRANSCRIPT_BYTES,
+        })
     }
 
     /// Also relay for `realm`, for example a realm a referral may reach.
@@ -86,9 +92,15 @@ impl RelayPolicy {
     /// Returns [`Error::InvalidPolicy`] for an empty realm, one above 255
     /// bytes, or more than [`Self::MAX_REALMS`] realms.
     #[inline]
-    pub fn with_realm(self, realm: &str) -> Result<Self, Error> {
-        let _unread = realm;
-        Err(Error::InvalidPolicy("not implemented"))
+    pub fn with_realm(mut self, realm: &str) -> Result<Self, Error> {
+        check_realm(realm)?;
+        if !self.permits(realm) {
+            if self.realms.len() >= Self::MAX_REALMS {
+                return Err(Error::InvalidPolicy("more than 16 realms"));
+            }
+            self.realms.push(realm.to_owned());
+        }
+        Ok(self)
     }
 
     /// Allow at most `rounds` tokens from the acceptor.
@@ -121,4 +133,26 @@ impl RelayPolicy {
     pub fn permits(&self, realm: &str) -> bool {
         self.realms.iter().any(|allowed| allowed == realm)
     }
+}
+
+/// The acceptor's own realm, which discovery answers.
+impl RelayPolicy {
+    /// The realm realm discovery answers.
+    #[inline]
+    #[must_use]
+    pub fn local_realm(&self) -> &str {
+        &self.local_realm
+    }
+}
+
+/// A realm a policy may name.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidPolicy`] for an empty realm or one above 255 bytes.
+fn check_realm(realm: &str) -> Result<(), Error> {
+    if realm.is_empty() || realm.len() > MAX_REALM_BYTES {
+        return Err(Error::InvalidPolicy("a realm is 1 to 255 bytes"));
+    }
+    Ok(())
 }

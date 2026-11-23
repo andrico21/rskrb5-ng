@@ -93,6 +93,12 @@ pub enum Iakerb {
     /// The AP-REQ did not validate.
     #[error("acceptor error: {0}")]
     Service(#[from] Service),
+    /// The AP-REQ could not be decoded.
+    #[error("AP-REQ error: {0}")]
+    ApReq(#[from] ApReq),
+    /// The AP-REP could not be decoded or decrypted.
+    #[error("AP-REP error: {0}")]
+    ApRep(#[from] ApRep),
     /// The system random source failed.
     #[error("random source error: {0}")]
     Random(#[from] getrandom::Error),

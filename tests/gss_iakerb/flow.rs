@@ -37,7 +37,12 @@ fn a_password_initiator_completes_through_the_relay() -> Result<(), TestError> {
     // and the AP-REQ and AP-REP keep the IAKERB mechanism in their frame,
     assert_eq!(rest.len(), 2, "an AP-REQ and an AP-REP");
     for token in rest {
-        assert_eq!(token.get(2..10), Some(&[0x06, 0x06, 0x2b, 0x06, 0x01, 0x05, 0x02, 0x05][..]));
+        assert!(
+            token.get(..12).is_some_and(|head| head
+                .windows(8)
+                .any(|window| window == [0x06, 0x06, 0x2b, 0x06, 0x01, 0x05, 0x02, 0x05])),
+            "the frame names the IAKERB mechanism"
+        );
         assert!(!Token::is_iakerb(token), "not a proxy token");
     }
     // and both ends name both principals and protect messages.

@@ -21,8 +21,22 @@
 
 use core::fmt;
 
+use rasn::{
+    AsnType, Decode, Decoder as _, Encode, Encoder as _, der,
+    types::OctetString,
+};
+
 use super::{Accepted, Acceptor, Config, Credential, EstablishedContext, InitStep};
 use crate::{error::Iakerb as Error, spnego::oid::ObjectIdentifier};
+
+/// The bounded record of the exchange.
+mod conversation;
+/// The IAKERB acceptor.
+mod acceptor;
+/// The `IAKERB-FINISHED` checksum.
+mod finished;
+/// The IAKERB initiator.
+mod initiator;
 
 include!("iakerb/token.rs");
 include!("iakerb/relay.rs");
