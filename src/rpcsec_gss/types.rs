@@ -412,7 +412,7 @@ impl RpcClient {
     /// # Errors
     ///
     /// Returns [`Error::XidMismatch`], [`Error::AuthenticationRejected`],
-    /// [`Error::RpcMismatch`], [`Error::NotAccepted`],
+    /// [`Error::VersionMismatch`], [`Error::NotAccepted`],
     /// [`Error::UnexpectedVerifier`], [`Error::BadVerifier`],
     /// [`Error::SequenceMismatch`], the GSS errors of the body and the decoding
     /// errors. Every failure closes the client.
