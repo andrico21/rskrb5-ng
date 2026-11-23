@@ -16,6 +16,16 @@
 //! a future-dated or rolled-back clock sample could still accept the
 //! authenticator), where MIT's `file2` keeps one skew; a record is overwritten
 //! only after that.
+//!
+//! # Scoping and restart
+//!
+//! Evidence is scoped by the store, not by the service: every acceptor that
+//! opens the same file shares one set of records, whichever service principal
+//! it accepts for (the tag is the checksum of the authenticator ciphertext).
+//! A [`File2ReplayStore`] survives a restart of the process and of the machine,
+//! because every record is synced before the authenticator is accepted; a
+//! [`MemoryReplayStore`] does not, so an acceptor that must refuse replays
+//! across restarts needs a file store. [`NoneReplayStore`] keeps nothing.
 
 #[cfg(feature = "messages")]
 use alloc::sync::Arc;
