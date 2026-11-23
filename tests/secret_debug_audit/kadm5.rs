@@ -280,7 +280,7 @@ pub(super) mod tests {
         };
         redacted(&Rpc::BadVerifier(gss()), &[&secret]);
         #[cfg(feature = "tokio")]
-        kadm5_objects(&service_key, &credential, (&session_bytes, &ticket_bytes))?;
+        kadm5_objects(&service_key, &credential, [&session_bytes, &ticket_bytes])?;
         Ok(())
     }
 
@@ -289,7 +289,7 @@ pub(super) mod tests {
     fn kadm5_objects(
         service_key: &EncryptionKey,
         credential: &Credential,
-        (session_bytes, ticket_bytes): (&[u8], &[u8]),
+        live_secrets: [&[u8]; 2],
     ) -> Result<(), Box<dyn Error>> {
         let random = pattern(113);
         let mut keys = [ApiVersion::V4.wire(), 0, 1, 18, 16]
@@ -319,7 +319,7 @@ pub(super) mod tests {
             let server = tokio::spawn(serve(server_end, service_key.clone()));
             let options = Options::new(REALM).with_protection(Protection::Integrity);
             let client = RemoteAdminClient::over_stream(client_end, credential, options).await?;
-            redacted(&client, &[session_bytes, ticket_bytes]);
+            redacted(&client, &live_secrets);
             drop(client);
             server.await??;
             Ok::<_, Box<dyn Error>>(())
