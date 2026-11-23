@@ -21,6 +21,7 @@ the chosen entry point, so one target covers a family of related decoders.
 | `gss_token` | RFC 4121 tokens and AP-REP bytes | `Krb5MechToken::decode`; `MicToken` and `WrapToken` decode, verify and unwrap with AES128, AES256, AES-SHA2, DES3 and RC4 test keys; a sealed Wrap whose fuzzed plaintext is encrypted under the key; `InitiatorContext::verify_ap_rep` and `verify_ap_rep_response_header`, raw and with a fuzzed `EncAPRepPart` encrypted under the session key |
 | `gss_name` | a selector byte for the name type, then a GSS-API name buffer | `gss::Name::import` and `Name::import_uid` for every MIT krb5 name type (host-based, user, user ids, anonymous, exported, composite exported, principal, enterprise, certificate), then `display`, `export` with re-import and comparison, and `canonicalize` |
 | `gss_context` | a selector byte, then a context token, a SPNEGO token, or a DER `Authenticator` | `gss::Acceptor::accept_sec_context` and `spnego::Acceptor::accept_sec_context` on raw tokens; a structured mode that encrypts the fuzzed `Authenticator` (RFC 4121 checksum, delegation option, extensions, `AD-AP-OPTIONS`) under the fixture ticket's session key and accepts the AP-REQ, with and without acceptor channel bindings (optional or required) |
+| `kadm5_reply` | ONC RPC records and replies from kadmind and kadm5 results, one selector byte then bytes (for a result a second byte picks the procedure and the API version) | `rpcsec_gss::decode_record` (the bounded record-mark reassembler: fragment and total-size bounds from the headers, at most 16,384 fragments), `rpcsec_gss::Reply::decode` (RFC 5531 replies, verifiers of at most 400 bytes) and `kadm5::Response::decode` for every kadm5 procedure under API v2, v3 and v4 (principal and policy records, name, key, key-data and string lists with every count checked against its bytes before allocation, MIT's NUL-terminated strings, no trailing bytes) |
 | `http_negotiate` | `Authorization` or `WWW-Authenticate` header values | `http::accept_request` (service side) and `www_authenticate_negotiate_header`, `classify_negotiate_response` and `verify_ap_rep_response` (client side) |
 | `kdc_reply` | KDC replies | `decode_as_rep`, `decode_tgs_rep`, `decode_enc_kdc_rep_part`, the KRB-ERROR and METHOD-DATA decoders, `process_kdc_error` with preauthentication hint selection and `s2kparams` parsing, `process_as_rep`, `process_tgs_rep` and `process_tgs_rep_with_referral` against fixed requests, and structured AS/TGS replies whose fuzzed `EncKDCRepPart` is encrypted under the request's key |
 | `kdc_tcp_frame` | four-byte KDC TCP record mark, tested against zero, small and large caps | `client::transport::kdc_tcp_record_length`; production shares the reserved-bit, zero-length and pre-allocation cap checks |
@@ -318,6 +319,19 @@ compare equal to its exported form imported back (register row FU-GSS-P02,
 fixed); the 120-second runs recorded above found nothing after the fix.
 Coverage proof: `task-18-gss-coverage.tsv` in the execution evidence (3 of 3
 mappings).
+
+### Remote kadm5 (todo 24 of plan 2)
+
+`kadm5_reply` fuzzes what a kadmind (or anything posing as one before the
+RPCSEC_GSS context is checked) sends the remote kadm5 client: the RFC 5531
+record marks, the RPC reply around the verifier, and every kadm5 result layout
+of MIT krb5 1.22.2's `kadm_rpc_xdr.c` under each API version. The RPCSEC_GSS
+verifier and body checks themselves are per-message GSS tokens, which stay
+with `gss_token`. Seeds: a reply split over two fragments, an accepted and a
+denied reply, and one result of each payload shape (principal record with TL
+and key data, v2 and v4 policy records, name list, random keys, key data,
+string attributes, privileges). Coverage proof: `task-24-kadm5-coverage.tsv`
+in the execution evidence.
 
 ### Earlier campaign crashes
 
@@ -837,3 +851,19 @@ does.
 | `rskrb5_ng::ticket::decode_enc_ticket_part` | `src/ticket.rs` | `krb_messages` |  |
 | `rskrb5_ng::ticket::decrypt_ticket_enc_part` | `src/ticket.rs` | `krb_messages` |  |
 | `rskrb5_ng::ticket::validate` | `src/ticket.rs` | `krb_messages` |  |
+| `rskrb5_ng::kadm5::name::parse` | `src/kadm5/name.rs` | `kadm5_reply` |  |
+| `rskrb5_ng::kadm5::response::Response::decode` | `src/kadm5/response.rs` | - | Public wrapper of `kadm5::wire::decode_response`, which `kadm5_reply` covers; it parses nothing itself. |
+| `rskrb5_ng::kadm5::wire::decode_key_data` | `src/kadm5/wire.rs` | `kadm5_reply` |  |
+| `rskrb5_ng::kadm5::wire::decode_keys` | `src/kadm5/wire.rs` | `kadm5_reply` |  |
+| `rskrb5_ng::kadm5::wire::decode_names` | `src/kadm5/wire.rs` | `kadm5_reply` |  |
+| `rskrb5_ng::kadm5::wire::decode_policy_record` | `src/kadm5/wire.rs` | `kadm5_reply` |  |
+| `rskrb5_ng::kadm5::wire::decode_principal` | `src/kadm5/wire.rs` | `kadm5_reply` |  |
+| `rskrb5_ng::kadm5::wire::decode_principal_record` | `src/kadm5/wire.rs` | `kadm5_reply` |  |
+| `rskrb5_ng::kadm5::wire::decode_response` | `src/kadm5/wire.rs` | `kadm5_reply` |  |
+| `rskrb5_ng::kadm5::wire::decode_strings` | `src/kadm5/wire.rs` | `kadm5_reply` |  |
+| `rskrb5_ng::kadm5::wire::decode_tl_data` | `src/kadm5/wire.rs` | `kadm5_reply` |  |
+| `rskrb5_ng::rpcsec_gss::message::decode_reply` | `src/rpcsec_gss/message.rs` | `kadm5_reply` |  |
+| `rskrb5_ng::rpcsec_gss::record::decode` | `src/rpcsec_gss/record.rs` | `kadm5_reply` |  |
+| `rskrb5_ng::rpcsec_gss::record::read` | `src/rpcsec_gss/record.rs` | - | The record reader of a live kadmind connection: each fragment header passes `fragment`, the header and total-size bound `record::decode` shares (covered by `kadm5_reply`), before its body is read, and the reader stops after 16,384 fragments. |
+| `rskrb5_ng::rpcsec_gss::types::Reply::decode` | `src/rpcsec_gss/types.rs` | - | Public wrapper of `rpcsec_gss::message::decode_reply`, which `kadm5_reply` covers; it parses nothing itself. |
+| `rskrb5_ng::rpcsec_gss::types::decode_record` | `src/rpcsec_gss/types.rs` | - | Public wrapper of `rpcsec_gss::record::decode`, which `kadm5_reply` covers; it parses nothing itself. |
