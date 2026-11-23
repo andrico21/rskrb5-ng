@@ -24,6 +24,10 @@ mod closed_port;
 #[path = "support/context.rs"]
 mod context;
 
+/// The test-only Rust implementation of MIT's `negoextest` mechanism.
+#[path = "support/negoextest.rs"]
+mod negoextest;
+
 /// Shared harness of the interop suites.
 #[path = "interop/harness.rs"]
 mod harness;

@@ -10,6 +10,11 @@ extern crate alloc;
 #[path = "support/context.rs"]
 mod context;
 
+/// The test-only Rust implementation of MIT's `negoextest` mechanism.
+#[cfg(test)]
+#[path = "support/negoextest.rs"]
+mod negoextest;
+
 /// The `NegoEx` scenarios.
 #[cfg(test)]
 #[expect(

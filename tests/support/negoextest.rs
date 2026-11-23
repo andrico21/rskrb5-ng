@@ -178,6 +178,10 @@ impl TestSession {
     }
 
     /// Check the channel bindings against the knob.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ProviderFailure`] when the knob is set and the request carries other bindings.
     fn check_binding(&self, request: &Request) -> Result<(), ProviderFailure> {
         let Some(expected) = &self.knobs.binding else {
             return Ok(());

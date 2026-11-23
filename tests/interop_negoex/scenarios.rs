@@ -35,11 +35,7 @@ use crate::{
     },
 };
 
-/// The test-only Rust `negoextest` mechanism.
-#[path = "../gss_negoex/negoextest.rs"]
-mod negoextest;
-
-use negoextest::{KeyPolicy, Knobs, OID_FIRST, OID_SECOND, Registered, TestMechanism};
+use crate::negoextest::{KeyPolicy, Knobs, OID_FIRST, OID_SECOND, Registered, TestMechanism};
 
 /// The adapter container with a route to the KDC.
 const PEER: Fixture = Fixture::new("mit-peer", "INTEROP_MIT_PEER_ADDR");

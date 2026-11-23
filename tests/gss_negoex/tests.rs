@@ -1,15 +1,11 @@
 //! The module tree of the `NegoEx` scenarios.
 
-/// Turns `Option` and `Result` failures into test errors.
-use super::context;
+/// Turns `Option` and `Result` failures into test errors, and the test-only mechanism.
+use super::{context, negoextest};
 
 /// Message encoding, parsing and the conversation rules.
 #[path = "wire.rs"]
 mod wire;
-
-/// The test-only Rust implementation of MIT's `negoextest` mechanism.
-#[path = "negoextest.rs"]
-mod negoextest;
 
 /// Tokens captured from MIT krb5 1.22.2.
 #[path = "captures.rs"]
