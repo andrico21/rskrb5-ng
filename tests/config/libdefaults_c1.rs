@@ -67,19 +67,18 @@ mod tests {
     #[test]
     fn deferred_relations_when_strict() -> Result<(), Box<dyn StdError>> {
         // Given recognized but not implemented behavior.
-        for assignment in ["kcm_mach_service = org.h5l.kcm"] {
-            // When parsing in strict mode.
-            let result = Config::parse_with_mode(
-                &format!("[libdefaults]\n {assignment}\n"),
-                ParseMode::Strict,
-            );
-            // Then the deferred contract is not claimed effective.
-            drop(
-                result
-                    .err()
-                    .ok_or_else(|| format!("{assignment} accepted"))?,
-            );
-        }
+        let assignment = "kcm_mach_service = org.h5l.kcm";
+        // When parsing in strict mode.
+        let result = Config::parse_with_mode(
+            &format!("[libdefaults]\n {assignment}\n"),
+            ParseMode::Strict,
+        );
+        // Then the deferred contract is not claimed effective.
+        drop(
+            result
+                .err()
+                .ok_or_else(|| format!("{assignment} accepted"))?,
+        );
         Ok(())
     }
 

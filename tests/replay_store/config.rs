@@ -4,6 +4,7 @@ use std::{ffi::OsStr, fs, path::PathBuf};
 
 use rskrb5_ng::{
     config::{Config, ParseMode},
+    error::Config as ConfigError,
     replay::RcacheName,
 };
 
@@ -64,7 +65,10 @@ fn a_malformed_name_is_refused_by_the_profile() -> Result<(), TestError> {
                 &format!("[libdefaults]\n default_rcache_name = {value}\n"),
                 mode,
             );
-            assert!(outcome.is_err(), "{mode:?} accepted {value}");
+            assert!(
+                matches!(outcome, Err(ConfigError::InvalidReplayCacheName(_))),
+                "{mode:?} accepted {value}"
+            );
         }
     }
     Ok(())

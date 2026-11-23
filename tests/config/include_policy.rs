@@ -46,7 +46,7 @@ mod tests {
                             for mode in [ParseMode::Compatible, ParseMode::Strict] {
                                 if !matches!(
                                     Config::parse_with_mode(&text, mode),
-                                    Err(Failure::InvalidReplayCacheName(ref value)) if value == "bogus"
+                                    Err(Failure::InvalidReplayCacheName(value)) if value == "bogus"
                                 ) {
                                     missed.push(format!("{mode:?}: {text}"));
                                 }

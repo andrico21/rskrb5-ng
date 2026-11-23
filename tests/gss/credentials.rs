@@ -136,9 +136,11 @@ fn desired_names_and_replay_caches_are_checked() -> Result<(), TestError> {
     Ok(())
 }
 
-/// `rcache = file2:<path>` keeps its evidence in a shared file: a second
-/// acceptor credential on the same file refuses what the first accepted, and
-/// `rcache = none:` is a deliberate opt-out that accepts a repeat.
+/// `rcache` names select shared or no replay evidence.
+///
+/// `file2:<path>` keeps its evidence in a shared file: a second acceptor
+/// credential on the same file refuses what the first accepted. `none:` is a
+/// deliberate opt-out that accepts a repeat.
 #[test]
 fn rcache_names_select_shared_or_no_replay_evidence() -> Result<(), TestError> {
     let directory = scratch("rcache")?;
