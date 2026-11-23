@@ -150,7 +150,7 @@ mod tokens;
 #[path = "secret_debug_audit/gss.rs"]
 mod gss;
 
-#[cfg(all(test, feature = "spnego", feature = "tokio"))]
+#[cfg(all(test, feature = "spnego"))]
 #[path = "secret_debug_audit/kadm5.rs"]
 mod kadm5;
 
@@ -219,7 +219,7 @@ mod tests {
         super::tokens::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         #[cfg(feature = "spnego")]
         super::gss::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
-        #[cfg(all(feature = "spnego", feature = "tokio"))]
+        #[cfg(feature = "spnego")]
         super::kadm5::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let owners = inspect(root, &root.join("src"))?;

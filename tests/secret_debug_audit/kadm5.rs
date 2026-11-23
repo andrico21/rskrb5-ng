@@ -1,4 +1,6 @@
-//! Remote kadm5 and `RPCSEC_GSS` objects with populated secrets.
+//! Remote kadm5 and `RPCSEC_GSS` objects with populated secrets. The
+//! `RPCSEC_GSS` objects exist with `spnego`, the kadm5 objects need `tokio`
+//! too.
 
 #[cfg(test)]
 #[expect(
@@ -12,13 +14,21 @@ pub(super) mod tests {
     use chrono::DateTime;
     use rskrb5_ng::{
         client::{KdcError, TgsRepSession, principal::Principal},
-        error::{Client as ClientError, Gss, Kadm5, Rpc, Spnego as SpnegoError},
-        gss::{Acceptor, AcceptorOptions, Credential, EstablishedContext, InitiatorOptions, Name},
-        kadm5::{self, ApiVersion, KeyData, Options, Procedure, RemoteAdminClient, Response},
-        keytab::{self, EncryptionKey, Keytab},
-        rpcsec_gss::{self, InitStep, Protection, Reply, RpcClient},
+        error::{Client as ClientError, Gss, Rpc, Spnego as SpnegoError},
+        gss::{Credential, InitiatorOptions, Name},
+        keytab::EncryptionKey,
+        rpcsec_gss::{InitStep, Program, Protection, Reply, RpcClient},
         ticket,
     };
+    #[cfg(feature = "tokio")]
+    use rskrb5_ng::{
+        error::Kadm5,
+        gss::{Acceptor, AcceptorOptions, EstablishedContext},
+        kadm5::{ApiVersion, KeyData, Options, Procedure, RemoteAdminClient, Response},
+        keytab::{self, Keytab},
+        rpcsec_gss::encode_record,
+    };
+    #[cfg(feature = "tokio")]
     use tokio::{
         io::{AsyncReadExt as _, AsyncWriteExt as _, DuplexStream, duplex},
         runtime::Builder,
@@ -29,6 +39,17 @@ pub(super) mod tests {
 
     /// The realm of the audit.
     const REALM: &str = "EXAMPLE.COM";
+
+    /// The kadmind service, `kadmin/admin` (MIT `KADM5_ADMIN_SERVICE`).
+    const KADMIN: [&str; 2] = ["kadmin", "admin"];
+
+    /// The kadm5 program, version 2 (MIT `kadm_rpc.h`).
+    const KADM: Program = Program::new(2112, 2);
+
+    /// The `kadmin/admin` principal of the realm.
+    fn kadmin() -> Principal {
+        Principal::new(REALM, 1, KADMIN)
+    }
 
     /// A Kerberos string.
     fn text(value: &str) -> Result<rasn_kerberos::KerberosString, Box<dyn Error>> {
@@ -87,7 +108,7 @@ pub(super) mod tests {
         };
         let der = ticket::encode_build_ticket_with_confounder(
             text(REALM)?,
-            name(&kadm5::ADMIN_SERVICE)?,
+            name(&KADMIN)?,
             &part,
             service_key,
             Some(1),
@@ -95,7 +116,7 @@ pub(super) mod tests {
         )?;
         Ok(TgsRepSession::new(
             Principal::new(REALM, 1, ["admin", "admin"]),
-            kadm5::service_principal(REALM),
+            kadmin(),
             session.clone(),
             Zeroizing::new(der),
             [0; 4],
@@ -105,6 +126,7 @@ pub(super) mod tests {
     }
 
     /// An XDR opaque field.
+    #[cfg(feature = "tokio")]
     fn opaque(out: &mut Vec<u8>, value: &[u8]) -> Result<(), Box<dyn Error>> {
         out.extend_from_slice(&u32::try_from(value.len())?.to_be_bytes());
         out.extend_from_slice(value);
@@ -113,6 +135,7 @@ pub(super) mod tests {
     }
 
     /// The XID, the credential's sequence number and the last opaque field of a call.
+    #[cfg(feature = "tokio")]
     fn parse_call(call: &[u8]) -> Result<(u32, u32, Vec<u8>), Box<dyn Error>> {
         let word = |at: usize| -> Result<u32, Box<dyn Error>> {
             let bytes = call.get(at..at.saturating_add(4)).ok_or("a word")?;
@@ -137,6 +160,7 @@ pub(super) mod tests {
     }
 
     /// A successful reply with a MIC verifier over `signed` and `results`.
+    #[cfg(feature = "tokio")]
     fn reply(
         xid: u32,
         context: &mut EstablishedContext,
@@ -154,6 +178,7 @@ pub(super) mod tests {
     }
 
     /// Read one single-fragment record.
+    #[cfg(feature = "tokio")]
     async fn read(stream: &mut DuplexStream) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
         let mut header = [0_u8; 4];
         let _header_length = stream.read_exact(&mut header).await?;
@@ -163,10 +188,11 @@ pub(super) mod tests {
     }
 
     /// Answer the context creation and the version negotiation, under integrity.
+    #[cfg(feature = "tokio")]
     async fn serve(mut stream: DuplexStream, service_key: EncryptionKey) -> Result<(), String> {
         let mut keys = Keytab::new();
         keys.entries_mut().push(keytab::Entry::new(
-            keytab::Principal::new(REALM, 1, kadm5::ADMIN_SERVICE),
+            keytab::Principal::new(REALM, 1, KADMIN),
             0,
             1,
             service_key,
@@ -192,7 +218,7 @@ pub(super) mod tests {
             (context, first)
         };
         stream
-            .write_all(&rpcsec_gss::encode_record(&first))
+            .write_all(&encode_record(&first))
             .await
             .map_err(|error| error.to_string())?;
         let negotiation = read(&mut stream).await.map_err(|error| error.to_string())?;
@@ -208,7 +234,7 @@ pub(super) mod tests {
         let answer =
             reply(xid, &mut context, sequence, &results).map_err(|error| error.to_string())?;
         stream
-            .write_all(&rpcsec_gss::encode_record(&answer))
+            .write_all(&encode_record(&answer))
             .await
             .map_err(|error| error.to_string())?;
         let mut rest = Vec::new();
@@ -231,9 +257,9 @@ pub(super) mod tests {
         let ticket = ticket_for(&service_key, &session)?;
         let ticket_bytes = ticket.ticket().to_vec();
         let credential = Credential::from_service_ticket(&ticket);
-        let target = Name::from_principal(&kadm5::service_principal(REALM));
+        let target = Name::from_principal(&kadmin());
         let initiator = RpcClient::initiator(target, InitiatorOptions::new());
-        let mut rpc = RpcClient::new(kadm5::PROGRAM, Protection::Privacy, initiator)?;
+        let mut rpc = RpcClient::new(KADM, Protection::Privacy, initiator)?;
         let call = rpc.start(&credential)?;
         redacted(&rpc, &[&session_bytes]);
         redacted(&call, &[&ticket_bytes]);
@@ -245,6 +271,26 @@ pub(super) mod tests {
         ];
         accepted.extend_from_slice(&message);
         redacted(&Reply::decode(&accepted)?, &[&message]);
+        let secret = pattern(145);
+        let gss = || {
+            Gss::Spnego(SpnegoError::Client(Box::new(ClientError::Kdc(Box::new(
+                KdcError::new(UNIX_EPOCH, 0, 25, Principal::tgt_service(REALM))
+                    .with_e_data(Some(secret.clone().into())),
+            )))))
+        };
+        redacted(&Rpc::BadVerifier(gss()), &[&secret]);
+        #[cfg(feature = "tokio")]
+        kadm5_objects(&service_key, &credential, (&session_bytes, &ticket_bytes))?;
+        Ok(())
+    }
+
+    /// The kadm5 key results, a key, an unknown outcome and a live client.
+    #[cfg(feature = "tokio")]
+    fn kadm5_objects(
+        service_key: &EncryptionKey,
+        credential: &Credential,
+        (session_bytes, ticket_bytes): (&[u8], &[u8]),
+    ) -> Result<(), Box<dyn Error>> {
         let random = pattern(113);
         let mut keys = [ApiVersion::V4.wire(), 0, 1, 18, 16]
             .iter()
@@ -257,17 +303,14 @@ pub(super) mod tests {
         let data =
             KeyData::new(2, EncryptionKey::new(18, random.clone())).with_salt(4, salt.clone());
         redacted(&data, &[&random, &salt]);
-        let secret = pattern(145);
-        let gss = || {
-            Gss::Spnego(SpnegoError::Client(Box::new(ClientError::Kdc(Box::new(
-                KdcError::new(UNIX_EPOCH, 0, 25, Principal::tgt_service(REALM))
-                    .with_e_data(Some(secret.clone().into())),
-            )))))
-        };
-        redacted(&Rpc::BadVerifier(gss()), &[&secret]);
+        let secret = pattern(161);
+        let gss = Gss::Spnego(SpnegoError::Client(Box::new(ClientError::Kdc(Box::new(
+            KdcError::new(UNIX_EPOCH, 0, 25, Principal::tgt_service(REALM))
+                .with_e_data(Some(secret.clone().into())),
+        )))));
         let unknown = Kadm5::OutcomeUnknown {
             procedure: "kadm5_chpass_principal",
-            cause: Box::new(Kadm5::Rpc(Rpc::Gss(gss()))),
+            cause: Box::new(Kadm5::Rpc(Rpc::Gss(gss))),
         };
         redacted(&unknown, &[&secret]);
         let runtime = Builder::new_current_thread().enable_all().build()?;
@@ -275,8 +318,8 @@ pub(super) mod tests {
             let (client_end, server_end) = duplex(1 << 16);
             let server = tokio::spawn(serve(server_end, service_key.clone()));
             let options = Options::new(REALM).with_protection(Protection::Integrity);
-            let client = RemoteAdminClient::over_stream(client_end, &credential, options).await?;
-            redacted(&client, &[&session_bytes, &ticket_bytes]);
+            let client = RemoteAdminClient::over_stream(client_end, credential, options).await?;
+            redacted(&client, &[session_bytes, ticket_bytes]);
             drop(client);
             server.await??;
             Ok::<_, Box<dyn Error>>(())
