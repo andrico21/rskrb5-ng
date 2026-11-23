@@ -44,13 +44,13 @@ mod iana_tables {
         let mut rows = Vec::new();
         for line in lines.get(start..end).context("section lines")? {
             let trimmed = line.trim();
-            let Some((number, body)) = trimmed.split_once(char::is_whitespace) else {
+            let Some((first, remainder)) = trimmed.split_once(char::is_whitespace) else {
                 continue;
             };
-            let Ok(number) = number.parse::<i32>() else {
+            let Ok(number) = first.parse::<i32>() else {
                 continue;
             };
-            let body = body.trim();
+            let body = remainder.trim();
             let name = if wide {
                 body.split("  ").next().unwrap_or_default().trim()
             } else {
@@ -132,7 +132,7 @@ mod iana_tables {
             "Kerberos SPAKE Groups",
             true,
         )?;
-        assert_eq!(spake_group::REGISTRY.name(2), Some("P-256"));
+        assert_eq!(spake_group::REGISTRY.name(2_i32), Some("P-256"));
         Ok(())
     }
 
@@ -140,47 +140,50 @@ mod iana_tables {
     #[test]
     fn numbers_and_names_look_up_both_ways() -> Result<(), TestError> {
         assert_eq!(
-            encryption_type::REGISTRY.name(18),
+            encryption_type::REGISTRY.name(18_i32),
             Some("aes256-cts-hmac-sha1-96")
         );
         assert_eq!(
             encryption_type::REGISTRY.number("AES128-CTS-HMAC-SHA1-96"),
-            Some(17)
+            Some(17_i32)
         );
-        assert_eq!(encryption_type::AES256_CTS_HMAC_SHA384_192, 20);
+        assert_eq!(encryption_type::AES256_CTS_HMAC_SHA384_192, 20_i32);
         assert!(
             encryption_type::REGISTRY
-                .get(1)
+                .get(1_i32)
                 .context("des-cbc-crc")?
                 .is_deprecated()
         );
         assert_eq!(
             checksum_type::REGISTRY.number("hmac-sha1-96-aes256"),
-            Some(16)
+            Some(16_i32)
         );
-        assert_eq!(padata_type::PA_ENC_TIMESTAMP, 2);
-        assert_eq!(padata_type::REGISTRY.name(136), Some("PA-FX-FAST"));
-        assert_eq!(padata_type::REGISTRY.number("PA-SPAKE"), Some(151));
-        assert_eq!(message_type::AP_REQ, 14);
-        assert_eq!(message_type::REGISTRY.name(30), Some("ERROR"));
-        assert_eq!(name_type::PRINCIPAL, 1);
-        assert_eq!(name_type::REGISTRY.number("ENTERPRISE_PRINCIPAL"), Some(10));
-        assert_eq!(name_type::REGISTRY.name(-128), Some("MS_PRINCIPAL"));
-        assert_eq!(address_type::REGISTRY.name(24), Some("INET6"));
-        assert_eq!(address_type::REGISTRY.number("DECNET"), Some(12));
-        assert_eq!(authorization_data_type::KDC_ISSUED, 4);
-        assert_eq!(authorization_data_type::AND_OR, 5);
+        assert_eq!(padata_type::PA_ENC_TIMESTAMP, 2_i32);
+        assert_eq!(padata_type::REGISTRY.name(136_i32), Some("PA-FX-FAST"));
+        assert_eq!(padata_type::REGISTRY.number("PA-SPAKE"), Some(151_i32));
+        assert_eq!(message_type::AP_REQ, 14_i32);
+        assert_eq!(message_type::REGISTRY.name(30_i32), Some("ERROR"));
+        assert_eq!(name_type::PRINCIPAL, 1_i32);
         assert_eq!(
-            authorization_data_type::REGISTRY.name(128),
+            name_type::REGISTRY.number("ENTERPRISE_PRINCIPAL"),
+            Some(10_i32)
+        );
+        assert_eq!(name_type::REGISTRY.name(-128_i32), Some("MS_PRINCIPAL"));
+        assert_eq!(address_type::REGISTRY.name(24_i32), Some("INET6"));
+        assert_eq!(address_type::REGISTRY.number("DECNET"), Some(12_i32));
+        assert_eq!(authorization_data_type::KDC_ISSUED, 4_i32);
+        assert_eq!(authorization_data_type::AND_OR, 5_i32);
+        assert_eq!(
+            authorization_data_type::REGISTRY.name(128_i32),
             Some("WIN2K_PAC")
         );
         assert_eq!(
-            error_code::REGISTRY.name(25),
+            error_code::REGISTRY.name(25_i32),
             Some("KDC_ERR_PREAUTH_REQUIRED")
         );
-        assert_eq!(error_code::REGISTRY.number("KRB_AP_ERR_SKEW"), Some(37));
-        assert_eq!(error_code::KRB_AP_ERR_REPEAT, 34);
-        assert_eq!(encryption_type::REGISTRY.name(8), None);
+        assert_eq!(error_code::REGISTRY.number("KRB_AP_ERR_SKEW"), Some(37_i32));
+        assert_eq!(error_code::KRB_AP_ERR_REPEAT, 34_i32);
+        assert_eq!(encryption_type::REGISTRY.name(8_i32), None);
         assert_eq!(error_code::REGISTRY.number("no such error"), None);
         Ok(())
     }
@@ -204,7 +207,7 @@ mod iana_tables {
             error_code::REGISTRY,
         ] {
             let entries = registry.entries();
-            assert!(!entries.is_empty(), "{} is empty", registry.title());
+            entries.first().context("the registry lists an entry")?;
             for pair in entries.windows(2) {
                 let [earlier, later] = pair else {
                     continue;
