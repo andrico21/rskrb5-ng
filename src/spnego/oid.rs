@@ -42,9 +42,11 @@ impl ObjectIdentifier {
     #[inline]
     pub fn to_der_content(&self) -> Result<Vec<u8>, Error> {
         let element = super::der::encode_oid(self)?;
-        Ok(super::der::read_single_tlv(&element, super::TAG_OBJECT_IDENTIFIER)?
-            .value()
-            .to_vec())
+        Ok(
+            super::der::read_single_tlv(&element, super::TAG_OBJECT_IDENTIFIER)?
+                .value()
+                .to_vec(),
+        )
     }
 
     /// An object identifier from DER content octets.

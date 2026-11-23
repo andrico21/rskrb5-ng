@@ -39,7 +39,10 @@ fn first_tokens(hops: u8) -> Result<(Context, Context, Vec<u8>, Vec<u8>), TestEr
     let mechanisms: Vec<Arc<dyn Mechanism>> = vec![TestMechanism::shared(&OID_FIRST, knobs)];
     let mut initiator = Context::initiator(&registry, &mechanisms, Request::new())?;
     let mut acceptor = Context::acceptor(&registry, &mechanisms, Request::new())?;
-    let first = initiator.step(None)?.into_token().context("a first token")?;
+    let first = initiator
+        .step(None)?
+        .into_token()
+        .context("a first token")?;
     let second = acceptor
         .step(Some(&first))?
         .into_token()
@@ -153,10 +156,16 @@ fn replayed_and_reordered_tokens_are_refused() -> Result<(), TestError> {
         .step(Some(&first))
         .err()
         .context("a replayed token must fail")?;
-    assert!(matches!(replay, Negoex::MessageOutOfSequence {
-            expected: _,
-            actual: _
-        }), "{replay}");
+    assert!(
+        matches!(
+            replay,
+            Negoex::MessageOutOfSequence {
+                expected: _,
+                actual: _
+            }
+        ),
+        "{replay}"
+    );
     assert!(matches!(
         acceptor.step(Some(&first)),
         Err(Negoex::UnexpectedStep(_))
@@ -167,10 +176,16 @@ fn replayed_and_reordered_tokens_are_refused() -> Result<(), TestError> {
         .step(Some(&second))
         .err()
         .context("the same token twice must fail")?;
-    assert!(matches!(again, Negoex::MessageOutOfSequence {
-            expected: _,
-            actual: _
-        }), "{again}");
+    assert!(
+        matches!(
+            again,
+            Negoex::MessageOutOfSequence {
+                expected: _,
+                actual: _
+            }
+        ),
+        "{again}"
+    );
     Ok(())
 }
 
@@ -256,7 +271,10 @@ fn weak_mechanism_keys_are_refused() -> Result<(), TestError> {
             .step(None)
             .err()
             .context("a weak key must fail the first step")?;
-        assert!(matches!(failure, Negoex::Policy(_)), "etype {etype}: {failure}");
+        assert!(
+            matches!(failure, Negoex::Policy(_)),
+            "etype {etype}: {failure}"
+        );
     }
     Ok(())
 }

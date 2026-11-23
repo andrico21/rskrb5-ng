@@ -125,7 +125,10 @@ pub(super) mod tests {
     struct KeyedSession(Vec<u8>);
 
     impl negoex::Session for KeyedSession {
-        fn query_meta_data(&mut self, _: &negoex::Request) -> Result<Vec<u8>, negoex::ProviderFailure> {
+        fn query_meta_data(
+            &mut self,
+            _: &negoex::Request,
+        ) -> Result<Vec<u8>, negoex::ProviderFailure> {
             Ok(Vec::new())
         }
 
@@ -168,7 +171,8 @@ pub(super) mod tests {
         registry.register(Extension::GssMechanism(Arc::new(Registered)))?;
         let mechanisms: Vec<Arc<dyn negoex::Mechanism>> =
             vec![Arc::new(KeyedMechanism(key.clone()))];
-        let mut initiator = negoex::Context::initiator(&registry, &mechanisms, negoex::Request::new())?;
+        let mut initiator =
+            negoex::Context::initiator(&registry, &mechanisms, negoex::Request::new())?;
         let step = initiator.step(None)?;
         redacted(&step, &[step.token().ok_or("a first token")?]);
         let first = step.into_token().ok_or("a first token")?;
@@ -193,7 +197,8 @@ pub(super) mod tests {
             &negoex::VerifyMessage::new(scheme, 16, checksum.clone()),
             &[&checksum],
         );
-        let mut acceptor = negoex::Context::acceptor(&registry, &mechanisms, negoex::Request::new())?;
+        let mut acceptor =
+            negoex::Context::acceptor(&registry, &mechanisms, negoex::Request::new())?;
         drop(acceptor.step(Some(&first))?);
         redacted(&acceptor, &[&key]);
         let mut spnego_initiator = spnego::negoex::Initiator::new(negoex::Context::initiator(

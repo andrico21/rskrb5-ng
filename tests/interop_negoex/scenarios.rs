@@ -205,7 +205,8 @@ fn mit_initiates(hops: u8, key: KeyPolicy) -> Result<(), Box<dyn Error>> {
                 step = initiator.init_step(&request.clone().continuing(handle, &reply))?;
             }
             AcceptStep::Complete(done) => {
-                step = initiator.init_step(&request.clone().continuing(handle, done.output_token()))?;
+                step = initiator
+                    .init_step(&request.clone().continuing(handle, done.output_token()))?;
                 accepted = Some(done);
                 break;
             }

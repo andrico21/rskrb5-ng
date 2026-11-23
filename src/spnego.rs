@@ -38,10 +38,10 @@ mod der;
 mod erasure_tests;
 /// SPNEGO over the GSS Kerberos mechanism.
 mod gss_contexts;
-/// One-shot SPNEGO mechanism-list integrity processing.
-mod negotiation;
 /// `NegoEx` under SPNEGO.
 pub mod negoex;
+/// One-shot SPNEGO mechanism-list integrity processing.
+mod negotiation;
 /// GSS-API object identifiers.
 pub mod oid;
 /// Plaintext staging owners.

@@ -180,15 +180,27 @@ fn more_hops() -> Result<(), TestError> {
     for (hops, expected) in [
         (
             2,
-            &["sending [7]CHALLENGE", "sending [8]VERIFY", "sending [9]VERIFY"][..],
+            &[
+                "sending [7]CHALLENGE",
+                "sending [8]VERIFY",
+                "sending [9]VERIFY",
+            ][..],
         ),
         (
             3,
-            &["sending [8]AP_REQUEST", "sending [9]VERIFY", "sending [10]VERIFY"][..],
+            &[
+                "sending [8]AP_REQUEST",
+                "sending [9]VERIFY",
+                "sending [10]VERIFY",
+            ][..],
         ),
         (
             4,
-            &["sending [9]CHALLENGE", "sending [10]VERIFY", "sending [11]VERIFY"][..],
+            &[
+                "sending [9]CHALLENGE",
+                "sending [10]VERIFY",
+                "sending [11]VERIFY",
+            ][..],
         ),
     ] {
         let run = scenario(&knobs(hops, KeyPolicy::Established), &Knobs::default())?;
@@ -203,7 +215,11 @@ fn early_keys() -> Result<(), TestError> {
     let three = scenario(&knobs(3, KeyPolicy::Always), &knobs(3, KeyPolicy::Always))?;
     assert_trace(
         &three,
-        &["sending [4]VERIFY", "sending [9]VERIFY", "sending [10]AP_REQUEST"],
+        &[
+            "sending [4]VERIFY",
+            "sending [9]VERIFY",
+            "sending [10]AP_REQUEST",
+        ],
     )?;
     let four = scenario(&knobs(4, KeyPolicy::Always), &knobs(4, KeyPolicy::Always))?;
     assert_trace(
@@ -351,7 +367,10 @@ fn accept_failure_is_reported_by_the_initiator() -> Result<(), TestError> {
     let failure = scenario(&knobs(2, KeyPolicy::Established), &acceptor)
         .err()
         .context("the negotiation must fail")?;
-    assert!(failure.to_string().contains("failure from acceptor"), "{failure}");
+    assert!(
+        failure.to_string().contains("failure from acceptor"),
+        "{failure}"
+    );
     Ok(())
 }
 
@@ -379,7 +398,10 @@ fn alerts_ask_for_the_verify_message_again() -> Result<(), TestError> {
         &knobs(4, KeyPolicy::AcceptAlways),
     )?;
     assert!(
-        second_run.trace()?.iter().any(|line| line.contains("]ALERT")),
+        second_run
+            .trace()?
+            .iter()
+            .any(|line| line.contains("]ALERT")),
         "the initiator alerts the acceptor"
     );
     Ok(())
@@ -390,22 +412,24 @@ fn alerts_ask_for_the_verify_message_again() -> Result<(), TestError> {
 #[test]
 fn channel_bindings_reach_the_mechanism() -> Result<(), TestError> {
     let registry = registry()?;
-    let build = |initiator: bool, expected: &[u8], given: Option<&[u8]>| -> Result<Context, TestError> {
-        let knobs = Knobs {
-            binding: Some(expected.to_vec()),
-            ..Knobs::default()
+    let build =
+        |initiator: bool, expected: &[u8], given: Option<&[u8]>| -> Result<Context, TestError> {
+            let knobs = Knobs {
+                binding: Some(expected.to_vec()),
+                ..Knobs::default()
+            };
+            let mechanisms: Vec<Arc<dyn Mechanism>> =
+                vec![TestMechanism::shared(&OID_FIRST, knobs)];
+            let request = match given {
+                Some(data) => Request::new().with_bindings(ChannelBindings::new(data.to_vec())?),
+                None => Request::new(),
+            };
+            Ok(if initiator {
+                Context::initiator(&registry, &mechanisms, request)?
+            } else {
+                Context::acceptor(&registry, &mechanisms, request)?
+            })
         };
-        let mechanisms: Vec<Arc<dyn Mechanism>> = vec![TestMechanism::shared(&OID_FIRST, knobs)];
-        let request = match given {
-            Some(data) => Request::new().with_bindings(ChannelBindings::new(data.to_vec())?),
-            None => Request::new(),
-        };
-        Ok(if initiator {
-            Context::initiator(&registry, &mechanisms, request)?
-        } else {
-            Context::acceptor(&registry, &mechanisms, request)?
-        })
-    };
     let mut initiator = build(true, b"a", Some(b"a"))?;
     let mut acceptor = build(false, b"b", Some(b"b"))?;
     drop(drive(&mut initiator, &mut acceptor)?);

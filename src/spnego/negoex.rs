@@ -50,11 +50,7 @@ fn check_mic(context: &Context, required: bool) -> Result<(), Negoex> {
 /// # Errors
 ///
 /// Returns the encoding errors of [`NegTokenResp::encode`].
-fn response(
-    state: NegState,
-    mechanism: bool,
-    token: Option<Vec<u8>>,
-) -> Result<Vec<u8>, Gss> {
+fn response(state: NegState, mechanism: bool, token: Option<Vec<u8>>) -> Result<Vec<u8>, Gss> {
     let mut resp = NegTokenResp::reject();
     resp.set_neg_state(Some(state));
     resp.set_supported_mech(mechanism.then(ObjectIdentifier::negoex));
@@ -389,11 +385,13 @@ impl Acceptor {
                 self.process(&token)
             }
             (State::Start, Token::Resp(_)) => Err(Spnego::NegotiationRequiresState.into()),
-            (State::Selected | State::Running, Token::Init(_)) => Err(Spnego::WrongNegotiationToken {
-                expected: "NegTokenResp",
-                actual: "NegTokenInit",
+            (State::Selected | State::Running, Token::Init(_)) => {
+                Err(Spnego::WrongNegotiationToken {
+                    expected: "NegTokenResp",
+                    actual: "NegTokenInit",
+                }
+                .into())
             }
-            .into()),
         }
     }
 

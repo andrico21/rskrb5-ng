@@ -86,7 +86,8 @@ fn one_hop_negotiation_completes() -> Result<(), TestError> {
     let init = init_token(&first)?;
     assert_eq!(init.mech_types(), &[ObjectIdentifier::negoex()]);
     assert!(
-        init.mech_token().is_some_and(|token| token.starts_with(SIGNATURE)),
+        init.mech_token()
+            .is_some_and(|token| token.starts_with(SIGNATURE)),
         "the mechanism token is the NegoEx INITIATOR_NEGO..VERIFY run"
     );
     let AcceptStep::Complete(accepted) = acceptor.accept_sec_context(&first)? else {
@@ -96,7 +97,10 @@ fn one_hop_negotiation_completes() -> Result<(), TestError> {
     let resp = resp_token(&answer)?;
     assert_eq!(resp.neg_state(), Some(NegState::AcceptCompleted));
     assert_eq!(resp.supported_mech(), Some(&ObjectIdentifier::negoex()));
-    assert!(resp.response_token().is_some_and(|token| token.starts_with(SIGNATURE)));
+    assert!(
+        resp.response_token()
+            .is_some_and(|token| token.starts_with(SIGNATURE))
+    );
     assert_eq!(
         accepted.mechanism().oid().arcs(),
         &[2, 25, 1_414_534_758],
@@ -252,7 +256,13 @@ fn a_wrong_verify_checksum_fails_through_spnego() -> Result<(), TestError> {
         .init_sec_context(Some(&resp.encode()?))
         .err()
         .context("a wrong checksum must fail")?;
-    assert!(matches!(failure, Gss::Negoex(Negoex::InvalidChecksum)), "{failure}");
-    assert!(initiator.into_session().is_err(), "no session after a failure");
+    assert!(
+        matches!(failure, Gss::Negoex(Negoex::InvalidChecksum)),
+        "{failure}"
+    );
+    assert!(
+        initiator.into_session().is_err(),
+        "no session after a failure"
+    );
     Ok(())
 }

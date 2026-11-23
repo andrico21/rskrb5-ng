@@ -200,7 +200,11 @@ impl TestSession {
 
     /// The step result for the hops left.
     fn outcome(&self, output: Option<Vec<u8>>) -> MechanismStep {
-        if self.context.as_ref().is_some_and(|context| context.hops > 0) {
+        if self
+            .context
+            .as_ref()
+            .is_some_and(|context| context.hops > 0)
+        {
             MechanismStep::continue_needed(output)
         } else {
             MechanismStep::complete(output)
@@ -317,7 +321,9 @@ impl Session for TestSession {
             return Err(ProviderFailure::new("token too short"));
         };
         if self.named(self.knobs.accept_fail) && Some(last_octet) == self.last() {
-            return Err(ProviderFailure::new("acceptor failure").with_output_token(b"fail".to_vec()));
+            return Err(
+                ProviderFailure::new("acceptor failure").with_output_token(b"fail".to_vec())
+            );
         }
         match self.context.as_mut() {
             None => {

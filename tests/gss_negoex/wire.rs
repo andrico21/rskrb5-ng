@@ -130,12 +130,19 @@ fn nego_message_layout_is_byte_exact() -> Result<(), TestError> {
     let message = Message::Nego(NegoMessage::new(
         MessageType::InitiatorNego,
         random,
-        vec![AuthScheme::from_bytes(SCHEME_A), AuthScheme::from_bytes(SCHEME_B)],
+        vec![
+            AuthScheme::from_bytes(SCHEME_A),
+            AuthScheme::from_bytes(SCHEME_B),
+        ],
     )?);
     let mut conversation = initiating();
     let bytes = conversation.encode(&message)?;
     assert_eq!(bytes, nego(0, 0, random, &[SCHEME_A, SCHEME_B]));
-    assert_eq!(conversation.next_sequence(), 1, "the sequence number advances");
+    assert_eq!(
+        conversation.next_sequence(),
+        1,
+        "the sequence number advances"
+    );
     Ok(())
 }
 
@@ -189,7 +196,10 @@ fn a_multi_message_token_parses_in_order() -> Result<(), TestError> {
         "the VERIFY message starts where the earlier messages end"
     );
     assert_eq!(conversation.next_sequence(), 4);
-    assert_eq!(conversation.id().map(ConversationId::as_bytes), Some(&CONVERSATION));
+    assert_eq!(
+        conversation.id().map(ConversationId::as_bytes),
+        Some(&CONVERSATION)
+    );
     Ok(())
 }
 
@@ -206,7 +216,10 @@ fn a_verify_no_key_alert_is_recognised() -> Result<(), TestError> {
     let Some(Message::Alert(unrelated)) = other.first() else {
         return Err("an ALERT message".into());
     };
-    assert!(!unrelated.is_verify_no_key(), "another pulse reason is not VERIFY_NO_KEY");
+    assert!(
+        !unrelated.is_verify_no_key(),
+        "another pulse reason is not VERIFY_NO_KEY"
+    );
     Ok(())
 }
 
@@ -328,7 +341,10 @@ fn sequence_and_conversation_are_enforced_atomically() -> Result<(), TestError> 
     drop(conversation.parse(&first)?);
     assert!(matches!(
         refusal(&mut conversation, &first)?,
-        Negoex::MessageOutOfSequence { expected: 1, actual: 0 }
+        Negoex::MessageOutOfSequence {
+            expected: 1,
+            actual: 0
+        }
     ));
     let mut other = exchange(5, 1, SCHEME_A, b"x");
     put(&mut other, 24, &[0xee; 16]);
@@ -342,10 +358,16 @@ fn sequence_and_conversation_are_enforced_atomically() -> Result<(), TestError> 
     mixed.extend(exchange(5, 9, SCHEME_A, b"y"));
     assert!(matches!(
         refusal(&mut conversation, &mixed)?,
-        Negoex::MessageOutOfSequence { expected: 2, actual: 9 }
+        Negoex::MessageOutOfSequence {
+            expected: 2,
+            actual: 9
+        }
     ));
     assert_eq!(conversation.next_sequence(), 1);
-    assert_eq!(conversation.parse(&exchange(5, 1, SCHEME_A, b"x"))?.len(), 1);
+    assert_eq!(
+        conversation.parse(&exchange(5, 1, SCHEME_A, b"x"))?.len(),
+        1
+    );
     Ok(())
 }
 
