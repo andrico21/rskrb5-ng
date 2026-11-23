@@ -1,6 +1,10 @@
 /// Turns `Option` and `Result` failures into test errors.
 use super::context;
 
+/// The keys, names, times and tickets of the in-process KDC.
+#[path = "seal.rs"]
+mod seal;
+
 /// An in-process KDC and the relay in front of it.
 #[path = "kdc.rs"]
 mod kdc;

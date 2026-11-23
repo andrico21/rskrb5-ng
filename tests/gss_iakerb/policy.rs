@@ -12,7 +12,8 @@ use rskrb5_ng::{
 
 use super::{
     context::TestError,
-    kdc::{Kdc, REALM, Relay},
+    kdc::{Kdc, Relay},
+    seal::REALM,
     support::{NoRelay, config, keytab, password_credential, policy, target},
 };
 

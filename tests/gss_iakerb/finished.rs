@@ -14,7 +14,8 @@ use rskrb5_ng::{
 
 use super::{
     context::{Context as _, TestError},
-    kdc::{Kdc, service_key},
+    kdc::Kdc,
+    seal::service_key,
     support::{
         NoRelay, ap_req_token, establish_with, finished, keytab, password_credential, policy,
         subkey,

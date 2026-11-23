@@ -9,7 +9,8 @@ use rskrb5_ng::gss::{
 
 use super::{
     context::{Context as _, TestError},
-    kdc::{Kdc, REALM, USER},
+    kdc::Kdc,
+    seal::{REALM, USER},
     support::{HOST, establish, password_credential},
 };
 

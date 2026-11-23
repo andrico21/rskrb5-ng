@@ -20,7 +20,8 @@ use zeroize::Zeroizing;
 
 use super::{
     context::{Context as _, TestError},
-    kdc::{self, Kdc, PASSWORD, REALM, Relay, USER, service_key},
+    kdc::{self, Kdc, Relay},
+    seal::{self, PASSWORD, REALM, USER, service_key},
 };
 
 /// The host of the service.
@@ -185,7 +186,7 @@ pub(super) fn ticket() -> Result<TgsRepSession, TestError> {
     let start = whole(now.checked_sub(Duration::from_mins(1)).context("start")?)?;
     let end = whole(now.checked_add(Duration::from_hours(1)).context("end")?)?;
     let session = keytab::EncryptionKey::new(18, vec![0x5a; 32]);
-    let der = kdc::service_ticket(&session, (start, end))?;
+    let der = seal::service_ticket(&session, (start, end))?;
     Ok(TgsRepSession::new(
         kdc::client(),
         Principal::new(REALM, 3, ["HTTP", HOST]),
