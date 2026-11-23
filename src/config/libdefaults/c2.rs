@@ -57,11 +57,3 @@ pub(crate) fn option_bits(value: &str, line: &Line) -> Result<u32, Error> {
         Ok(u32::from_be_bytes(signed.to_be_bytes()))
     }
 }
-
-/// Whether ignoring a C2 setting would weaken the currently implemented behavior.
-pub(super) fn stricter(defaults: &LibDefaults, relation: &str) -> bool {
-    match relation {
-        "client_aware_channel_bindings" => defaults.client_aware_channel_bindings.is_enabled(),
-        _ => false,
-    }
-}

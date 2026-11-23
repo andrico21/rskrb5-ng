@@ -19,6 +19,8 @@ the chosen entry point, so one target covers a family of related decoders.
 | `pac_parse` | PAC container, one NDR buffer, PAC attributes, requestor SID, `PA-PAC-REQUEST` or authorization data | `Pac::parse_and_process` with the server checksum check and the explicit-policy `verify_ext` (server, KDC, ticket and full signatures, client binding) followed by the builder's re-signing of the parsed PAC, `Pac::parse` with `buffer_bytes`, every info-buffer parser (validation info, signatures, credentials info and the decrypted credential data, NTLM credentials, client info, UPN/DNS info, S4U delegation, device info, claims info, claims metadata and the decompressed claims set), and `AttributesInfo::parse`, `RequestorSid::parse`, `Request::decode_der` (an accepted element encodes and decodes again to itself), and `find_pac_in_authorization_data` on authorization data carried in an Authenticator |
 | `spnego_token` | Negotiate header text or SPNEGO bytes | `parse_negotiate_header`, `Token`, `NegotiationToken`, `NegTokenInit` and `NegTokenResp` decoding, `accept_sec_context_header` and `Validator::validate_ap_req` with a synthetic keytab, `ValidatedApReq::verify_ap_rep`, and a structured mode that encrypts a fuzzed `EncTicketPart` and Authenticator under the keytab and session keys so the acceptance checks behind decryption run (ticket times, addresses, transited realms, authorization data, PAC) |
 | `gss_token` | RFC 4121 tokens and AP-REP bytes | `Krb5MechToken::decode`; `MicToken` and `WrapToken` decode, verify and unwrap with AES128, AES256, AES-SHA2, DES3 and RC4 test keys; a sealed Wrap whose fuzzed plaintext is encrypted under the key; `InitiatorContext::verify_ap_rep` and `verify_ap_rep_response_header`, raw and with a fuzzed `EncAPRepPart` encrypted under the session key |
+| `gss_name` | a selector byte for the name type, then a GSS-API name buffer | `gss::Name::import` and `Name::import_uid` for every MIT krb5 name type (host-based, user, user ids, anonymous, exported, composite exported, principal, enterprise, certificate), then `display`, `export` with re-import and comparison, and `canonicalize` |
+| `gss_context` | a selector byte, then a context token, a SPNEGO token, or a DER `Authenticator` | `gss::Acceptor::accept_sec_context` and `spnego::Acceptor::accept_sec_context` on raw tokens; a structured mode that encrypts the fuzzed `Authenticator` (RFC 4121 checksum, delegation option, extensions, `AD-AP-OPTIONS`) under the fixture ticket's session key and accepts the AP-REQ, with and without acceptor channel bindings (optional or required) |
 | `http_negotiate` | `Authorization` or `WWW-Authenticate` header values | `http::accept_request` (service side) and `www_authenticate_negotiate_header`, `classify_negotiate_response` and `verify_ap_rep_response` (client side) |
 | `kdc_reply` | KDC replies | `decode_as_rep`, `decode_tgs_rep`, `decode_enc_kdc_rep_part`, the KRB-ERROR and METHOD-DATA decoders, `process_kdc_error` with preauthentication hint selection and `s2kparams` parsing, `process_as_rep`, `process_tgs_rep` and `process_tgs_rep_with_referral` against fixed requests, and structured AS/TGS replies whose fuzzed `EncKDCRepPart` is encrypted under the request's key |
 | `kdc_tcp_frame` | four-byte KDC TCP record mark, tested against zero, small and large caps | `client::transport::kdc_tcp_record_length`; production shares the reserved-bit, zero-length and pre-allocation cap checks |
@@ -119,6 +121,8 @@ timeout artifact:
 | `routing_transit` | 2,195,539 (todo 17 of plan 2, 2026-11-21) | 121 s | 0 |
 | `localauth_rule` | 283,256 (todo 25 of plan 2, 2026-11-22) | 121 s | 0 |
 | `localauth_k5login` | 2,439,093 (todo 25 of plan 2, 2026-11-22) | 121 s | 0 |
+| `gss_name` | 2,118,533 (todo 18 of plan 2, 2026-11-22) | 121 s | 0 |
+| `gss_context` | 1,096,589 (todo 18 of plan 2, 2026-11-22) | 121 s | 0 |
 
 ### Round-2 session admission repair (FU-FUZ-R02)
 
@@ -294,6 +298,26 @@ are MIT 1.22.2's `t_localauth.py` rules, a catastrophic-backtracking pattern
 that stays linear, and `.k5login` files with escaped components and near
 misses. The 120-second runs recorded above found nothing. Coverage proof:
 `task-25-localauth-coverage.tsv` in the execution evidence.
+
+### GSS-API (todo 18 of plan 2)
+
+`gss_name` fuzzes GSS-API name import for every name type MIT krb5 1.22.2
+imports (`import_name.c:126-345`): principal strings with MIT's escapes and
+the enterprise rule (`parse.c:30-210`), host-based names, user ids through a
+fixed resolver, and RFC 2743 exported and RFC 6680 composite exported tokens
+(names of at most 4 KiB, certificates and attribute blocks of at most
+64 KiB). `gss_context` fuzzes the acceptor: raw context tokens, SPNEGO tokens,
+and a structured mode that encrypts a fuzzed `Authenticator` under the
+fixture ticket's session key so the RFC 4121 checksum (bindings, flags,
+delegation option, at most 16 extensions) and the `AD-AP-OPTIONS` search
+(at most eight `AD-IF-RELEVANT` levels) run. Per-message tokens stay with
+`gss_token`. Seeds: exported names in MIT's layout and authenticators of the
+fixture client with GSS checksums, bindings, a CBT assertion and truncated
+options. The first `gss_name` run found that a host-based name did not
+compare equal to its exported form imported back (register row FU-GSS-P02,
+fixed); the 120-second runs recorded above found nothing after the fix.
+Coverage proof: `task-18-gss-coverage.tsv` in the execution evidence (3 of 3
+mappings).
 
 ### Earlier campaign crashes
 
@@ -574,6 +598,8 @@ does.
 | `rskrb5_ng::extensions::Registry::parse_config` | `src/extensions.rs` | `extensions` |  |
 | `rskrb5_ng::extensions::k5identity::parse_line` | `src/extensions/k5identity.rs` | `extensions` |  |
 | `rskrb5_ng::extensions::k5identity::parse_principal` | `src/extensions/k5identity.rs` | `extensions` |  |
+| `rskrb5_ng::gss::checksum::decode` | `src/gss/checksum.rs` | `gss_context` |  |
+| `rskrb5_ng::gss::name::parse` | `src/gss/name.rs` | `gss_name` |  |
 | `rskrb5_ng::file_name::expand_path_tokens` | `src/file_name.rs` | `name_parse` |  |
 | `rskrb5_ng::file_name::file_path_from_name` | `src/file_name.rs` | `name_parse` |  |
 | `rskrb5_ng::file_name::is_windows_drive_path` | `src/file_name.rs` | `name_parse` |  |
@@ -778,6 +804,7 @@ does.
 | `rskrb5_ng::spnego::WrapToken::verify` | `src/spnego.rs` | `gss_token` |  |
 | `rskrb5_ng::spnego::accept_sec_context_header` | `src/spnego.rs` | `spnego_token` |  |
 | `rskrb5_ng::spnego::decode_negotiate_header` | `src/spnego.rs` | `spnego_token` |  |
+| `rskrb5_ng::spnego::gss_contexts::decode` | `src/spnego/gss_contexts.rs` | `gss_context` |  |
 | `rskrb5_ng::spnego::negotiation::optimistic_token` | `src/spnego/negotiation.rs` | `spnego_token` |  |
 | `rskrb5_ng::spnego::negotiation::received_mech_types` | `src/spnego/negotiation.rs` | `spnego_token` |  |
 | `rskrb5_ng::spnego::negotiation::verify_mic` | `src/spnego/negotiation.rs` | `spnego_token` |  |

@@ -19,7 +19,7 @@ use crate::{
     ap_rep::{decode as decode_ap_rep, decrypt_ap_rep_enc_part},
     client::{TgsRepSession, build_ap_req_with_confounder, options::ApReq, principal::Principal},
     crypto::{CryptoPolicy, KerberosEtype, Use, selection},
-    error,
+    error, gss,
     keytab::EncryptionKey,
     service::{ApRepOptions, ValidatedApReq, Validator, VerifiedApRep},
 };
@@ -36,6 +36,8 @@ mod der;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod erasure_tests;
+/// SPNEGO over the GSS Kerberos mechanism.
+mod gss_contexts;
 /// One-shot SPNEGO mechanism-list integrity processing.
 mod negotiation;
 /// GSS-API object identifiers.
@@ -1864,6 +1866,8 @@ pub struct InitiatorContextOptions {
     /// when this is absent. [`init_sec_context_with_confounder`] requires an
     /// explicit value so deterministic construction also conforms to RFC 4121.
     sequence_number: Option<u32>,
+    /// Whether the authenticator asserts MS-KILE `KERB_AP_OPTIONS_CBT`.
+    client_aware_channel_bindings: bool,
 }
 
 impl InitiatorContextOptions {
@@ -1914,7 +1918,25 @@ impl InitiatorContextOptions {
             ap_option_bits: 0,
             subkey: None,
             sequence_number: None,
+            client_aware_channel_bindings: false,
         }
+    }
+
+    /// Assert MS-KILE `KERB_AP_OPTIONS_CBT` in the authenticator, as the
+    /// `client_aware_channel_bindings` relation does, so an acceptor with
+    /// channel bindings refuses this token without matching ones.
+    #[must_use]
+    #[inline]
+    pub const fn with_client_aware_channel_bindings(mut self, aware: bool) -> Self {
+        self.client_aware_channel_bindings = aware;
+        self
+    }
+
+    /// Whether the authenticator asserts `KERB_AP_OPTIONS_CBT`.
+    #[must_use]
+    #[inline]
+    pub const fn client_aware_channel_bindings(&self) -> bool {
+        self.client_aware_channel_bindings
     }
 
     #[must_use]
@@ -2523,7 +2545,17 @@ pub fn init_sec_context_with_confounder(
             checksum: authenticator_checksum(&options.context_flags).into(),
         }))
         .with_subkey(options.subkey.clone())
-        .with_sequence_number(Some(sequence_number));
+        .with_sequence_number(Some(sequence_number))
+        .with_authorization_data(if options.client_aware_channel_bindings {
+            Some(
+                gss::cbt_authorization_data().map_err(|_encode| Error::Encode {
+                    target: "AuthorizationData",
+                    message: "AD-AP-OPTIONS".to_owned(),
+                })?,
+            )
+        } else {
+            None
+        });
     let crypto_policy = options.crypto_policy.unwrap_or_default();
     ap_req_options.set_crypto_policy(Some(crypto_policy.clone()));
     let built_ap_req =
@@ -2783,6 +2815,8 @@ fn rotate_left(bytes: &[u8], count: usize) -> Vec<u8> {
 }
 
 use crate::error::Spnego as Error;
+
+include!("spnego/gss_types.rs");
 
 /// Enforce RFC 4178 section 4.2.1 `ContextFlags` size and named-bit DER on the encode side.
 ///

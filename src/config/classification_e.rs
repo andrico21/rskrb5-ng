@@ -17,10 +17,8 @@ mod tests {
 
     /// Libdefaults: safe assignment and optional genuinely stronger assignment.
     /// None means no valid value tightens current behavior; table rationale explains why.
-    const LIB: [(&str, &str, Option<&str>); 5] = [
+    const LIB: [(&str, &str, Option<&str>); 3] = [
         ("default_rcache_name", "none:", Some("dfl:")),
-        ("enforce_ok_as_delegate", "true", None),
-        ("ignore_acceptor_hostname", "false", None),
         ("kcm_mach_service", "-", None),
         ("plugin_base_dir", "%{LIBDIR}/unloaded", None),
     ];
@@ -69,10 +67,8 @@ mod tests {
     /// section decoding, which would otherwise name a different restriction first.
     #[test]
     fn tightened_libdefaults_relation_refused_before_sections() -> Result<(), Box<dyn Error>> {
-        for (relation, assignment, package) in [
-            ("client_aware_channel_bindings", "true", "plan 2 WP-12"),
-            ("default_rcache_name", "dfl:", "plan 2 WP-20"),
-        ] {
+        let (relation, assignment, package) = ("default_rcache_name", "dfl:", "plan 2 WP-20");
+        {
             // Given the tightened relation and a refused preauthentication plugin restriction.
             let input = format!(
                 "[libdefaults]\n {relation} = {assignment}\n[plugins]\n clpreauth = {{\n disable = encrypted_timestamp\n }}\n"
@@ -98,14 +94,11 @@ mod tests {
     #[test]
     fn every_libdefaults_boundary_is_reviewed() -> Result<(), Box<dyn Error>> {
         for row in RELATIONS.iter().filter(|row| row.3.starts_with("plan 2 ")) {
-            let (name, safe, tight) = if row.0 == "client_aware_channel_bindings" {
-                (row.0, "false", Some("true"))
-            } else {
-                LIB.iter()
-                    .copied()
-                    .find(|case| case.0 == row.0)
-                    .ok_or("unreviewed libdefaults row")?
-            };
+            let (name, safe, tight) = LIB
+                .iter()
+                .copied()
+                .find(|case| case.0 == row.0)
+                .ok_or("unreviewed libdefaults row")?;
             let tighter = tight.map(|value| profile("libdefaults", name, value));
             boundary(
                 name,
@@ -118,7 +111,7 @@ mod tests {
                 .iter()
                 .filter(|row| row.3.starts_with("plan 2 "))
                 .count(),
-            LIB.len().saturating_add(1)
+            LIB.len()
         );
         Ok(())
     }

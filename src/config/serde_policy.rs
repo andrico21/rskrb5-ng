@@ -6,19 +6,6 @@ use serde::{Deserialize as _, Deserializer, de::Error as _};
 
 use super::{EnctypeExpr, ParseMode, Toggle};
 
-/// Refuse unimplemented channel-binding-aware signaling.
-/// # Errors
-/// Rejects malformed or unsupported restrictions through serde.
-pub(super) fn channel_binding<'de, D>(deserializer: D) -> Result<Toggle, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Toggle::deserialize(deserializer)?;
-    super::restrictions::reject("client_aware_channel_bindings", value.is_enabled())
-        .map_err(D::Error::custom)?;
-    Ok(value)
-}
-
 /// Refuse unimplemented total request deadlines.
 /// # Errors
 /// Rejects malformed or unsupported restrictions through serde.

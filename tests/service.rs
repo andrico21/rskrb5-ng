@@ -439,17 +439,14 @@ mod service {
     #[test]
     fn rejects_ap_rep_timestamp_mismatch() -> Result<(), TestError> {
         let validated = valid_ap_req()?;
-        let ap_rep = validated
-            .build_ap_rep_with_confounder(&decode_hex(AP_REP_CONFOUNDER)?, &ApRepOptions::default())
-            .context("AP-REP builds")?;
-        let mut wrong_request = validated;
-        wrong_request.set_authenticator_cusec(wrong_request.authenticator_cusec() + 1);
-        let shifted = wrong_request.authenticator_time() + Duration::from_micros(1);
-        wrong_request.set_authenticator_time(shifted);
-        assert_eq!(wrong_request.authenticator_time(), shifted);
+        // A reply that names the authenticator's microseconds plus one.
+        let shifted = i64::from(validated.authenticator_cusec())
+            .checked_add(1)
+            .context("microseconds fit")?;
+        let ap_rep = reply_with_microseconds(&validated, shifted)?;
 
         assert!(matches!(
-            wrong_request
+            validated
                 .verify_ap_rep(&ap_rep)
                 .err()
                 .context("mismatched AP-REP timestamp rejected")?,
@@ -2164,32 +2161,10 @@ mod service {
         Ok(())
     }
 
-    /// AP-REP construction rechecks public mutable microsecond fields before encoding.
-    #[test]
-    fn microseconds_rejects_invalid_reply_construction() -> Result<(), TestError> {
-        let mut validated = valid_ap_req()?;
-        validated.set_authenticator_cusec(1_000_000);
-        assert!(matches!(
-            validated
-                .build_ap_rep_with_confounder(
-                    &decode_hex(AP_REP_CONFOUNDER)?,
-                    &ApRepOptions::default()
-                )
-                .err()
-                .context("invalid reply construction rejected")?,
-            Error::IntegerOutOfRange {
-                field: "authenticator.cusec",
-                value: _
-            }
-        ));
-        Ok(())
-    }
-
     /// Reply verification rejects invalid microseconds even when public expected fields match them.
     #[test]
     fn microseconds_rejects_invalid_reply_verification() -> Result<(), TestError> {
-        let mut validated = valid_ap_req()?;
-        validated.set_authenticator_cusec(1_000_000);
+        let validated = valid_ap_req()?;
         let reply = reply_with_microseconds(&validated, 1_000_000)?;
         assert!(matches!(
             validated
@@ -2201,21 +2176,6 @@ mod service {
                 value: _
             }
         ));
-        Ok(())
-    }
-
-    /// Both legal boundary values remain representable and round-trip in mutual replies.
-    #[test]
-    fn microseconds_reply_boundaries_roundtrip() -> Result<(), TestError> {
-        for value in [0_u32, 999_999] {
-            let mut validated = valid_ap_req()?;
-            validated.set_authenticator_cusec(value);
-            let reply = validated.build_ap_rep_with_confounder(
-                &decode_hex(AP_REP_CONFOUNDER)?,
-                &ApRepOptions::default(),
-            )?;
-            assert_eq!(validated.verify_ap_rep(&reply)?.cusec(), value);
-        }
         Ok(())
     }
 
@@ -2309,37 +2269,10 @@ mod service {
         Ok(())
     }
 
-    /// AP-REP construction rejects fractional mutable input rather than echoing it.
-    #[test]
-    fn fractional_time_rejects_reply_construction() -> Result<(), TestError> {
-        let mut validated = valid_ap_req()?;
-        validated.set_authenticator_ctime(
-            timestamp(1_893_553_447)?
-                .checked_add(Duration::from_millis(500))
-                .context("fractional time fits")?,
-        );
-        assert!(matches!(
-            validated
-                .build_ap_rep_with_confounder(
-                    &decode_hex(AP_REP_CONFOUNDER)?,
-                    &ApRepOptions::default()
-                )
-                .err()
-                .context("fractional construction rejected")?,
-            Error::FractionalKerberosTime
-        ));
-        Ok(())
-    }
-
     /// AP-REP verification rejects independently encoded fractional timestamps.
     #[test]
     fn fractional_time_rejects_reply_verification() -> Result<(), TestError> {
-        let mut validated = valid_ap_req()?;
-        validated.set_authenticator_ctime(
-            timestamp(1_893_553_447)?
-                .checked_add(Duration::from_millis(500))
-                .context("fractional time fits")?,
-        );
+        let validated = valid_ap_req()?;
         let part = rasn_kerberos::EncApRepPart {
             ctime: fractional_kerberos_time()?,
             cusec: validated.authenticator_cusec().into(),

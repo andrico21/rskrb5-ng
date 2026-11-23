@@ -2245,6 +2245,23 @@ They now take a `client::Password` by value ("Owned passwords").
 
 ## Signature changes
 
+### Validated security contexts have no public mutators (FU-GSS-P01)
+
+`service::ValidatedApReq` is what the validator authenticated: its keys,
+authenticator times and policy can no longer be replaced from outside the
+crate, as MIT's validated context is opaque. The removed methods and what to
+do instead:
+
+| Removed | Instead |
+| --- | --- |
+| `ValidatedApReq::set_session_key`, `ValidatedApReq::set_subkey` | Use the keys the validator returned; a different key is a different AP-REQ. |
+| `ValidatedApReq::set_authenticator_ctime`, `set_authenticator_cusec`, `set_authenticator_time` | Build replies from the authenticator as validated; test a mismatched reply by building that reply, not by changing the request. |
+| `ValidatedApReq::set_crypto_policy` | Validate with the policy: `Validator::with_crypto_policy` before `validate_ap_req`. |
+| `VerifiedApRep::set_subkey` | Use the subkey the reply carried. |
+
+The getters (`session_key`, `subkey`, `authenticator_ctime`, `crypto_policy`
+and the others) are unchanged.
+
 ### Earlier compliance passes
 
 The lifetime parameter on `service::Validator`, `http::NegotiateLayer`,

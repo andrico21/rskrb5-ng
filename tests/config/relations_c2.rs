@@ -35,9 +35,6 @@ mod tests {
                 "plugin_base_dir" => assert_eq!(defaults.plugin_base_dir, *value),
                 "kdc_timesync" => assert_eq!(defaults.kdc_time_sync, value.parse::<i32>()?),
                 "noaddresses" => assert!(defaults.no_addresses.is_enabled()),
-                "client_aware_channel_bindings" => {
-                    assert!(!defaults.client_aware_channel_bindings.is_enabled());
-                }
                 "spake_preauth_groups" => {
                     assert_eq!(defaults.spake_preauth_groups, ["edwards25519", "P-256"]);
                 }
@@ -121,7 +118,38 @@ mod tests {
     deferred_cases! {
         kcm_mach_service, "plan 2 WP-09", ["org.example.kcm", "-"];
         plugin_base_dir, "plan 2 WP-16", ["/never-load", "%{LIBDIR}/krb5/plugins"];
-        client_aware_channel_bindings, "plan 2 WP-12", ["false", "off"];
+    }
+
+    /// `client_aware_channel_bindings` is effective (consumer
+    /// `gss::InitiatorOptions::from_config`): both values parse in both modes
+    /// without a deferred diagnostic.
+    #[test]
+    fn client_aware_channel_bindings() -> Result<(), Box<dyn Error>> {
+        for mode in [ParseMode::Compatible, ParseMode::Strict] {
+            for (value, enabled) in [("true", true), ("false", false), ("off", false)] {
+                // Given an explicit value, when parsed, then it is kept with no diagnostic.
+                let config = Config::parse_with_mode(
+                    &format!("[libdefaults]\n client_aware_channel_bindings = {value}\n"),
+                    mode,
+                )?;
+                assert_eq!(
+                    config
+                        .libdefaults
+                        .client_aware_channel_bindings
+                        .is_enabled(),
+                    enabled,
+                    "{value}"
+                );
+                assert!(!config.diagnostics().iter().any(|item| matches!(
+                    item,
+                    ConfigDiagnostic::NotYetEffective {
+                        relation: "client_aware_channel_bindings",
+                        package: _
+                    }
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// `verify_ap_req_nofail` is effective (consumer `Tokio::verify_init_creds`).

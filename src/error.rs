@@ -23,6 +23,7 @@ use crate::{
     extensions::{Interface, ProviderError},
 };
 include!("error/any.rs");
+include!("error/gss.rs");
 include!("error/policy.rs");
 mod credential_debug;
 #[cfg(feature = "messages")]
@@ -2607,6 +2608,15 @@ pub enum Service {
         service: String,
         /// Service realm.
         realm: String,
+    },
+    /// The ticket is for another service than the named acceptor (MIT
+    /// `KRB5KRB_AP_WRONG_PRINC`).
+    #[error("ticket for {actual} presented to acceptor {expected}")]
+    WrongPrincipal {
+        /// The acceptor name (`name@realm`; an empty host or realm matches any).
+        expected: String,
+        /// The ticket's server principal (`name@realm`).
+        actual: String,
     },
     /// Ticket client and authenticator client do not match.
     #[error("authenticator client {authenticator} does not match ticket client {ticket}")]

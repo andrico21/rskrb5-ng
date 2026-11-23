@@ -75,15 +75,15 @@ everything else is timeless or a dated record.
   `--all-features` entry. `feature_closures.py check-ci` keeps the matrix complete.
 - **CI jobs:** the blocking and the advisory sets are the ones named in project rule 8;
   `overlay_facts.py` compares them with the jobs of `.github/workflows/ci.yml`.
-- **Fuzz targets:** `fuzz/fuzz_targets/` holds 28 `.rs` files and `fuzz/Cargo.toml` declares
-  27 `[[bin]]` targets. `session_ticket.rs` is a shared helper module, not a target.
+- **Fuzz targets:** `fuzz/fuzz_targets/` holds 30 `.rs` files and `fuzz/Cargo.toml` declares
+  29 `[[bin]]` targets. `session_ticket.rs` is a shared helper module, not a target.
 - **Review backlog:** closed. The row and key totals are in `docs/review/README.md`
   "Totals".
 - **Ambient inputs:** 14 audited reader functions (16 reader/variable inventory entries
   over `KRB5_CONFIG`, `KRB5CCNAME`, `KRB5_KTNAME`, `KRB5_CLIENT_KTNAME`, `KRB5_TRACE`, `HOME`,
   `TMPDIR`, `TEMP` and `APPDATA`), listed in `READERS` of
   `tests/ambient_guard.rs` and enforced by `cargo test --all-features --test
-  ambient_guard`. `src` has 42 `# Ambient input` sections (`rg '# Ambient input' src | wc
+  ambient_guard`. `src` has 43 `# Ambient input` sections (`rg '# Ambient input' src | wc
   -l`). `LibDefaults::new()` and `LibDefaults::from_env()` read nothing: `HOME` never
   selects a `.k5login` file (the `localauth` leaf takes the home of an account from
   the caller's `AccountResolver`).

@@ -2938,6 +2938,14 @@ impl Tokio {
         mut options: spnego::InitiatorContextOptions,
     ) -> Result<spnego::InitiatorContext, Error> {
         options = options.with_crypto_policy(crypto_policy::configured(&self.config.libdefaults)?);
+        if self
+            .config
+            .libdefaults
+            .client_aware_channel_bindings
+            .is_enabled()
+        {
+            options = options.with_client_aware_channel_bindings(true);
+        }
         let ticket = self.get_service_ticket(service).await?;
         Ok(spnego::init_sec_context(&ticket, options)?)
     }
@@ -4402,7 +4410,8 @@ pub fn build_ap_req_with_confounder(
     cusec: u32,
     confounder: &[u8],
 ) -> Result<BuiltApReq, Error> {
-    let (crypto_policy, ap_option_bits, checksum, subkey, sequence_number) = options.into_parts();
+    let (crypto_policy, ap_option_bits, checksum, subkey, sequence_number, authorization_data) =
+        options.into_parts();
     if let Some(value) = &checksum {
         selection::reject_checksum(value.r#type)?;
     }
@@ -4422,7 +4431,7 @@ pub fn build_ap_req_with_confounder(
         ctime,
         subkey: subkey.as_ref().map(encryption_key_to_rasn),
         seq_number: sequence_number,
-        authorization_data: None,
+        authorization_data,
     };
     let authenticator_usage = ap_req::authenticator_usage_for_ticket(&ticket);
     let authenticator_kvno = ticket.enc_part.kvno;
@@ -5966,7 +5975,7 @@ fn configured_default_ccache_name(config: &Config) -> Result<String, Error> {
 /// Returns [`Error::CCache`] when `KRB5CCNAME` is not valid Unicode and
 /// [`Error::NoDefaultCCacheName`] when neither source names a cache.
 #[cfg(feature = "tokio")]
-fn default_ccache_name(config: &Config) -> Result<String, Error> {
+pub(crate) fn default_ccache_name(config: &Config) -> Result<String, Error> {
     match secure_env::ambient(|| env::var(KRB5CCNAME_ENV)) {
         Ok(cache_name) => file_name::expand_path_tokens(&cache_name)
             .map_err(|_source| error::Ccache::IdentityUnavailable.into()),
@@ -5990,7 +5999,7 @@ fn default_ccache_name(config: &Config) -> Result<String, Error> {
 /// Returns [`Error::DefaultClientKeytabName`] when `KRB5_CLIENT_KTNAME` is not
 /// valid Unicode.
 #[cfg(feature = "tokio")]
-fn default_client_keytab_name(config: &Config) -> Result<Keytab, Error> {
+pub(crate) fn default_client_keytab_name(config: &Config) -> Result<Keytab, Error> {
     match secure_env::ambient(|| env::var(KRB5_CLIENT_KTNAME_ENV)) {
         Ok(keytab_name) => Ok(Keytab::load_name(keytab_name)?),
         Err(env::VarError::NotPresent) => Ok(configured_keytab(

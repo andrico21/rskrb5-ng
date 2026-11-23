@@ -28,19 +28,10 @@ pub(crate) const fn configuration_policy(error: &Error) -> Policy {
 /// # Errors
 /// Returns the named deferred relation before any authentication effect.
 pub(crate) fn defaults(value: &LibDefaults) -> Result<(), Error> {
-    for (name, restricted) in [
-        (
-            "client_aware_channel_bindings",
-            value.client_aware_channel_bindings.is_enabled(),
-        ),
-        (
-            "default_rcache_name",
-            !value.default_rcache_name.is_empty() && value.default_rcache_name != "none:",
-        ),
-    ] {
-        reject(name, restricted)?;
-    }
-    Ok(())
+    reject(
+        "default_rcache_name",
+        !value.default_rcache_name.is_empty() && value.default_rcache_name != "none:",
+    )
 }
 
 /// Validate whole configuration, including realm and client-plugin restrictions.

@@ -110,20 +110,15 @@ pub struct ValidatedApReq {
 }
 
 impl ValidatedApReq {
-    /// Replace whole-second authenticator time metadata.
-    #[inline]
-    pub const fn set_authenticator_ctime(&mut self, value: SystemTime) {
+    /// Replace whole-second authenticator time metadata (crate tests only).
+    #[cfg(test)]
+    pub(crate) const fn set_authenticator_ctime(&mut self, value: SystemTime) {
         self.authenticator_ctime = value;
     }
-    /// Replace authenticator microsecond metadata.
-    #[inline]
-    pub const fn set_authenticator_cusec(&mut self, value: u32) {
+    /// Replace authenticator microsecond metadata (crate tests only).
+    #[cfg(test)]
+    pub(crate) const fn set_authenticator_cusec(&mut self, value: u32) {
         self.authenticator_cusec = value;
-    }
-    /// Replace combined authenticator time metadata.
-    #[inline]
-    pub const fn set_authenticator_time(&mut self, value: SystemTime) {
-        self.authenticator_time = value;
     }
     /// Borrow the effective cryptographic policy.
     #[inline]
@@ -131,9 +126,9 @@ impl ValidatedApReq {
     pub const fn crypto_policy(&self) -> &CryptoPolicy {
         &self.crypto_policy
     }
-    /// Replace the reply-admission policy.
-    #[inline]
-    pub fn set_crypto_policy(&mut self, value: CryptoPolicy) {
+    /// Replace the reply-admission policy (the SPNEGO crate tests only).
+    #[cfg(all(test, feature = "spnego"))]
+    pub(crate) fn set_crypto_policy(&mut self, value: CryptoPolicy) {
         self.crypto_policy = value;
     }
     /// Borrow the authenticated client identity.
@@ -201,9 +196,9 @@ impl ValidatedApReq {
         &self.session_key
     }
 
-    /// Replace the ticket session key, zeroing the old key.
-    #[inline]
-    pub fn set_session_key(&mut self, value: EncryptionKey) {
+    /// Replace the ticket session key, zeroing the old key (crate tests only).
+    #[cfg(test)]
+    pub(crate) fn set_session_key(&mut self, value: EncryptionKey) {
         self.session_key = value;
     }
 
@@ -214,9 +209,9 @@ impl ValidatedApReq {
         self.subkey.as_ref()
     }
 
-    /// Replace the subkey, zeroing the old key if present.
-    #[inline]
-    pub fn set_subkey(&mut self, value: Option<EncryptionKey>) {
+    /// Replace the subkey, zeroing the old key if present (crate tests only).
+    #[cfg(test)]
+    pub(crate) fn set_subkey(&mut self, value: Option<EncryptionKey>) {
         self.subkey = value;
     }
 
@@ -437,9 +432,9 @@ impl VerifiedApRep {
         self.subkey.as_ref()
     }
 
-    /// Replace the subkey, zeroing the old key if present.
-    #[inline]
-    pub fn set_subkey(&mut self, value: Option<EncryptionKey>) {
+    /// Replace the subkey, zeroing the old key if present (crate tests only).
+    #[cfg(test)]
+    pub(crate) fn set_subkey(&mut self, value: Option<EncryptionKey>) {
         self.subkey = value;
     }
 }
@@ -497,6 +492,15 @@ mod credential_replacement_tests;
 mod replay;
 mod replay_quota;
 mod ticket_pac;
+/// Reply rechecks of crate-changed validated fields.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod validated_tests;
 mod validation;
 
 use ticket_pac::{PacCheck, verified_ticket_pac};
@@ -687,6 +691,8 @@ impl SharedReplayCache {
 }
 
 include!("service/transit.rs");
+#[cfg(feature = "spnego")]
+include!("service/acceptor_name.rs");
 
 /// AP-REQ validator backed by a service keytab.
 pub struct Validator<'keytab> {
@@ -716,6 +722,9 @@ pub struct Validator<'keytab> {
     pac_kdc_key: Option<EncryptionKey>,
     /// Redacted trace events of the validations.
     trace: Guard,
+    /// The GSS acceptor name a ticket's server must match, when one is named.
+    #[cfg(feature = "spnego")]
+    acceptor_name: Option<AcceptorName>,
 }
 
 impl<'keytab> Validator<'keytab> {
@@ -796,7 +805,15 @@ impl<'keytab> Validator<'keytab> {
             pac_policy: VerificationPolicy::acceptor(),
             pac_kdc_key: None,
             trace: Guard::disabled(),
+            #[cfg(feature = "spnego")]
+            acceptor_name: None,
         }
+    }
+
+    /// Accept only tickets whose server matches `rule` (a named GSS acceptor).
+    #[cfg(feature = "spnego")]
+    pub(crate) fn set_acceptor_name(&mut self, rule: AcceptorName) {
+        self.acceptor_name = Some(rule);
     }
 
     /// Override the validation clock. Useful for deterministic tests.

@@ -1,0 +1,194 @@
+//! Credential acquisition and storage.
+//!
+//! Credential acquisition from explicit stores and `store_cred_into` (MIT
+//! `acquire_cred.c:150-215,1150-1370`, `store_cred.c`, `cred_store.c`): the
+//! store keys `ccache`, `client_keytab`, `keytab`, `rcache` and `password`.
+
+use std::{
+    env, fs,
+    path::PathBuf,
+    process,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+use rskrb5_ng::{
+    error::Gss,
+    gss::{
+        Acceptor, AcceptorOptions, CredStore, Credential, CredentialUsage, InitStep, Initiator,
+        InitiatorOptions, Name, NameType,
+    },
+    keytab::{EncryptionKey, Entry, Principal as KeytabPrincipal},
+};
+
+use super::{
+    context::{Context as _, TestError},
+    support::{HOST, cache, cached, keytab, target, ticket_for},
+};
+
+/// A fresh scratch directory.
+fn scratch(label: &str) -> Result<PathBuf, TestError> {
+    let directory = env::temp_dir().join(format!(
+        "gss-{label}-{}-{}",
+        process::id(),
+        SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+    ));
+    fs::create_dir_all(&directory)?;
+    Ok(directory)
+}
+
+/// Unknown and repeated store keys are refused when the store is built.
+#[test]
+fn store_keys_are_checked() -> Result<(), TestError> {
+    // Given a key MIT's krb5 mechanism does not know, it is refused.
+    assert!(matches!(
+        CredStore::new().with("verify", "x"),
+        Err(Gss::UnsupportedCredStoreKey(key)) if key == "verify"
+    ));
+    // Given a key twice, the second is refused.
+    assert!(matches!(
+        CredStore::new().with("keytab", "FILE:/a")?.with("keytab", "FILE:/b"),
+        Err(Gss::DuplicateCredStoreKey(key)) if key == "keytab"
+    ));
+    // The password value never appears in the store's debug output.
+    let store = CredStore::new().with("password", "hunter2-canary")?;
+    assert!(!format!("{store:?}").contains("hunter2-canary"));
+    Ok(())
+}
+
+/// An acceptor credential comes from the `keytab` key, an initiator one from
+/// the `ccache` key; each refuses the other usage.
+#[test]
+fn credentials_come_from_the_named_stores() -> Result<(), TestError> {
+    let directory = scratch("stores")?;
+    let keytab_path = directory.join("service.keytab");
+    keytab(&[HOST]).save(&keytab_path)?;
+    let cache_path = directory.join("client.ccache");
+    cache(vec![cached(&ticket_for(HOST, &[])?)?]).save(&cache_path)?;
+    let store = CredStore::new()
+        .with("keytab", &format!("FILE:{}", keytab_path.display()))?
+        .with("ccache", &format!("FILE:{}", cache_path.display()))?
+        .with("rcache", "memory:gss-test")?;
+    // Given the store, an acceptor credential and an initiator credential are acquired,
+    let acceptor = Credential::acquire_cred_from(None, CredentialUsage::Accept, &store)?;
+    let initiator = Credential::acquire_cred_from(None, CredentialUsage::Initiate, &store)?;
+    assert_eq!(
+        initiator
+            .inquire()
+            .name()
+            .context("the cache's client")?
+            .display()
+            .0,
+        "alice@EXAMPLE.COM"
+    );
+    assert_eq!(initiator.inquire().usage(), CredentialUsage::Initiate);
+    // and they establish a context together.
+    let mut init = Initiator::new(target(HOST)?, InitiatorOptions::new());
+    let InitStep::Continue(first) = init.init_sec_context(&initiator, None)? else {
+        return Err("mutual authentication sends a token and waits".into());
+    };
+    drop(Acceptor::new(&acceptor, AcceptorOptions::new())?.accept_sec_context(&first)?);
+    // Used the wrong way round, each is refused.
+    assert!(matches!(
+        Acceptor::new(&initiator, AcceptorOptions::new()),
+        Err(Gss::WrongCredentialUsage(_))
+    ));
+    let mut wrong = Initiator::new(target(HOST)?, InitiatorOptions::new());
+    assert!(matches!(
+        wrong.init_sec_context(&acceptor, None),
+        Err(Gss::WrongCredentialUsage(_))
+    ));
+    fs::remove_dir_all(&directory)?;
+    Ok(())
+}
+
+/// A desired name must match the cache's client, and the replay cache cannot
+/// be switched off.
+#[test]
+fn desired_names_and_replay_caches_are_checked() -> Result<(), TestError> {
+    let directory = scratch("names")?;
+    let cache_path = directory.join("client.ccache");
+    cache(vec![cached(&ticket_for(HOST, &[])?)?]).save(&cache_path)?;
+    let store = CredStore::new().with("ccache", &format!("FILE:{}", cache_path.display()))?;
+    // Given a desired name that is not the cache's client, there is no credential.
+    let bob = Name::import(b"bob@EXAMPLE.COM", NameType::Principal)?;
+    assert!(matches!(
+        Credential::acquire_cred_from(Some(&bob), CredentialUsage::Initiate, &store),
+        Err(Gss::NoCredential(_))
+    ));
+    // Given the cache's own client, the credential is acquired.
+    let alice = Name::import(b"alice@EXAMPLE.COM", NameType::Principal)?;
+    drop(Credential::acquire_cred_from(
+        Some(&alice),
+        CredentialUsage::Initiate,
+        &store,
+    )?);
+    // Given `rcache = none:`, replay detection would be off: refused.
+    let keytab_path = directory.join("service.keytab");
+    keytab(&[HOST]).save(&keytab_path)?;
+    let unprotected = CredStore::new()
+        .with("keytab", &format!("FILE:{}", keytab_path.display()))?
+        .with("rcache", "none:")?;
+    assert!(matches!(
+        Credential::acquire_cred_from(None, CredentialUsage::Accept, &unprotected),
+        Err(Gss::UnsupportedReplayCache(_))
+    ));
+    fs::remove_dir_all(&directory)?;
+    Ok(())
+}
+
+/// The `client_keytab` and `password` keys need the desired name.
+///
+/// They make an initiator credential for it, which acquires its tickets from
+/// the KDC when it is used; a client keytab must hold its key (MIT
+/// `can_get_initial_creds`, `acquire_cred.c:324-350`).
+#[test]
+fn keytab_and_password_initiators_need_a_name() -> Result<(), TestError> {
+    let directory = scratch("client-keytab")?;
+    let keytab_path = directory.join("client.keytab");
+    let mut client_keys = keytab(&[]);
+    client_keys.entries_mut().push(Entry::new(
+        KeytabPrincipal::new("EXAMPLE.COM", 1, ["alice"]),
+        0,
+        1,
+        EncryptionKey::new(18, vec![0x41; 32]),
+        1,
+    ));
+    client_keys.save(&keytab_path)?;
+    let alice = Name::import(b"alice@EXAMPLE.COM", NameType::Principal)?;
+    for store in [
+        CredStore::new().with("client_keytab", &format!("FILE:{}", keytab_path.display()))?,
+        CredStore::new().with("password", "not-a-real-password")?,
+    ] {
+        // Given no desired name, there is nothing to acquire for.
+        assert!(matches!(
+            Credential::acquire_cred_from(None, CredentialUsage::Initiate, &store),
+            Err(Gss::NoCredential(_))
+        ));
+        // Given the name, the credential names it and holds no ticket yet.
+        let credential =
+            Credential::acquire_cred_from(Some(&alice), CredentialUsage::Initiate, &store)?;
+        assert!(
+            credential
+                .inquire()
+                .name()
+                .context("the name")?
+                .compare(&alice)
+        );
+        let mut init = Initiator::new(target(HOST)?, InitiatorOptions::new());
+        assert!(matches!(
+            init.init_sec_context(&credential, None),
+            Err(Gss::NoCredential(_))
+        ));
+    }
+    // A client keytab without the name's key is no credential.
+    let service_keys = directory.join("service.keytab");
+    keytab(&[HOST]).save(&service_keys)?;
+    let wrong =
+        CredStore::new().with("client_keytab", &format!("FILE:{}", service_keys.display()))?;
+    assert!(matches!(
+        Credential::acquire_cred_from(Some(&alice), CredentialUsage::Initiate, &wrong),
+        Err(Gss::NoCredential(_))
+    ));
+    fs::remove_dir_all(&directory)?;
+    Ok(())
+}

@@ -91,6 +91,8 @@ impl fmt::Debug for Validator<'_> {
             pac_policy,
             pac_kdc_key,
             trace,
+            #[cfg(feature = "spnego")]
+                acceptor_name: _,
         } = self;
         f.debug_struct("Validator")
             .field("crypto_policy", crypto_policy)

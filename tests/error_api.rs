@@ -33,14 +33,14 @@ mod tests {
     use http_types::Request;
     #[cfg(feature = "http")]
     use rskrb5_ng::http;
-    #[cfg(feature = "spnego")]
-    use rskrb5_ng::spnego;
     use rskrb5_ng::{
         Result, ccache::CCache, config, crypto::AesSha1Etype, error, keytab::Keytab, pac::Pac,
         routing::RealmPath, trace::Options,
     };
     #[cfg(feature = "messages")]
     use rskrb5_ng::{ap_rep, ap_req, client::principal::Principal, kadmin, kdc_rep, kdc_req};
+    #[cfg(feature = "spnego")]
+    use rskrb5_ng::{gss, spnego};
     #[cfg(feature = "messages")]
     use rskrb5_ng::{krb_cred, krb_error, krb_priv, krb_safe, messages::PaForUser, ticket};
 
@@ -164,6 +164,12 @@ mod tests {
         spnego_when_header_invalid,
         error::Spnego,
         spnego::parse_negotiate_header("invalid")
+    );
+    #[cfg(feature = "spnego")]
+    propagates_domain!(
+        gss_when_exported_name_truncated,
+        error::Gss,
+        gss::Name::import(&[], gss::NameType::Export)
     );
     #[cfg(feature = "http")]
     propagates_domain!(

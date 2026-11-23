@@ -808,12 +808,9 @@ pub struct LibDefaults {
     /// Recognized SPAKE group names; no SPAKE exchange is enabled.
     #[cfg_attr(feature = "serde", serde(default))]
     pub spake_preauth_groups: Vec<String>,
-    /// Requested channel-binding-aware GSS signaling; not yet implemented.
+    /// MS-KILE `KERB_AP_OPTIONS_CBT` from GSS initiators
+    /// (`gss::InitiatorOptions::from_config`).
     #[cfg_attr(feature = "serde", serde(default))]
-    #[cfg_attr(
-        feature = "serde",
-        serde(deserialize_with = "serde_policy::channel_binding")
-    )]
     pub client_aware_channel_bindings: Toggle,
     /// KDC default options bit string as a 32-bit integer.
     pub kdc_default_options: u32,

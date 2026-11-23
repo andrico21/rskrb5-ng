@@ -62,6 +62,20 @@ doc = false
 bench = false
 
 [[bin]]
+name = "gss_name"
+path = "fuzz_targets/gss_name.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gss_context"
+path = "fuzz_targets/gss_context.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "kdc_reply"
 path = "fuzz_targets/kdc_reply.rs"
 test = false

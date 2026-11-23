@@ -39,6 +39,12 @@ impl ObjectIdentifier {
         Ok(Self(arcs))
     }
 
+    /// An object identifier of arcs the crate knows to be valid.
+    #[must_use]
+    pub(crate) fn from_static(arcs: &[u32]) -> Self {
+        Self(arcs.to_vec())
+    }
+
     #[must_use]
     /// OID arcs.
     #[inline]

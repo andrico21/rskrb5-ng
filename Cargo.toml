@@ -54,6 +54,8 @@ tests = ["tests/ccache_keyring.rs", "tests/ccache_keyring/"]
 minimal = ["tokio"]
 modules = ["src/transport/rustls_proxy.rs", "src/transport/rustls_proxy/"]
 tests = [
+  "tests/interop_gss_samba.rs",
+  "tests/interop_gss_samba/",
   "tests/interop_kkdcp.rs",
   "tests/interop_kkdcp/",
   "tests/kkdcp.rs",

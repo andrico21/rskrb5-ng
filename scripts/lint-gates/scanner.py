@@ -134,6 +134,16 @@ def pairs(ts: list[Token]) -> dict[int, int]:
     return result
 
 
+def is_union_item(ts: list[Token], at: int, hi: int) -> bool:
+    """`union` is a contextual keyword: an item only before a name and `{`, `<` or `where`."""
+    return (
+        at + 2 < hi
+        and IDENT.fullmatch(ts[at + 1].text.encode()) is not None
+        and not ts[at + 1].text[0].isdigit()
+        and ts[at + 2].text in ("{", "<", "where")
+    )
+
+
 def scan_items(source: str | bytes) -> list[Item]:
     data = source.encode() if isinstance(source, str) else source
     ts = tokens(data)
@@ -180,7 +190,11 @@ def scan_items(source: str | bytes) -> list[Item]:
             if keyword >= hi:
                 break
             kind = ts[keyword].text
-            if kind in KINDS and keyword + 1 < hi:
+            if (
+                kind in KINDS
+                and keyword + 1 < hi
+                and (kind != "union" or is_union_item(ts, keyword, hi))
+            ):
                 j = keyword + 1
                 if kind == "extern" and ts[j].text != "crate":
                     i = j
@@ -323,6 +337,21 @@ const N: usize = { 1 };
         ].kind
         == "type"
     )
+    # `union` is a contextual keyword: an item only before a name and `{`, `<` or
+    # `where`; a method call, a function name or a local is an ordinary word.
+    def names(text: str) -> list[str]:
+        return [i.name for i in scan_items(text)]
+
+    assert names("fn f(l: u8, r: u8) -> u8 { l.union(r) }") == ["fn f"]
+    assert names("fn f() { let flags = left.union(right); }") == ["fn f"]
+    assert names("impl F { pub fn union(self, o: Self) -> Self { o } }") == [
+        "impl F",
+        "impl F::fn union",
+    ]
+    assert names("fn f() { let union = 1; let _y = union + 1; }") == ["fn f"]
+    assert names("pub union Bits { a: u32, b: f32 }") == ["union Bits"]
+    assert names("union Pair<T: Copy> { a: T }") == ["union Pair"]
+    assert names("union Pair<T> where T: Copy { a: T }") == ["union Pair"]
     print("scanner self-test: PASS")
 
 

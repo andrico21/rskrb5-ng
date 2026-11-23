@@ -146,6 +146,10 @@ mod routing;
 #[path = "secret_debug_audit/tokens.rs"]
 mod tokens;
 
+#[cfg(all(test, feature = "spnego"))]
+#[path = "secret_debug_audit/gss.rs"]
+mod gss;
+
 #[cfg(test)]
 #[path = "secret_debug_audit/stores.rs"]
 mod stores;
@@ -209,6 +213,8 @@ mod tests {
         super::routing::tests::run_audit();
         #[cfg(feature = "spnego")]
         super::tokens::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
+        #[cfg(feature = "spnego")]
+        super::gss::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let owners = inspect(root, &root.join("src"))?;
         let nested = secret_owners(&owners);
@@ -291,7 +297,11 @@ mod tests {
                     || cfg!(feature = "tower"))
                 && (!identity.contains("NegotiateHttp") || cfg!(feature = "tokio"));
         }
-        if identity.starts_with("src/spnego") || identity.ends_with("::Spnego") {
+        if identity.starts_with("src/spnego")
+            || identity.starts_with("src/gss")
+            || identity.ends_with("::Spnego")
+            || identity.ends_with("::Gss")
+        {
             return cfg!(feature = "spnego");
         }
         if identity.contains("negotiate.rs") {
@@ -327,6 +337,15 @@ mod tests {
                 | "src/pac/verified.rs"
         ) {
             "pac".to_owned()
+        } else if matches!(
+            file,
+            "src/gss/types.rs" | "src/gss/creds.rs" | "src/gss/contexts.rs"
+        ) {
+            "gss".to_owned()
+        } else if file == "src/spnego/gss_types.rs" {
+            "spnego".to_owned()
+        } else if file == "src/error/gss.rs" {
+            "error".to_owned()
         } else {
             file.strip_prefix("src/")
                 .unwrap_or(file)
@@ -825,6 +844,66 @@ mod tests {
 
     /// Reviewed operations that do not destroy retained secret bytes.
     const REPLACEMENT_EXCEPTIONS: &[(&str, &str)] = &[
+        (
+            "src/gss/creds.rs::CredStore::with",
+            "Fills an empty slot only: a key given twice is refused before assignment, so no stored name or password is replaced (tests/gss/credentials.rs store_keys_are_checked).",
+        ),
+        (
+            "src/gss/creds.rs::Credential::acquire_service_ticket",
+            "Forwards to src/gss/cred.rs::acquire_service_ticket, which carries its own exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/gss/cred.rs::acquire_service_ticket",
+            "Creates the credential's cache when it has none and upserts tickets into it; CCache::upsert_credential drops a replaced entry, whose ccache::Credential owner erases its key and ticket (ccache replacement proofs).",
+        ),
+        (
+            "src/gss/contexts.rs::Initiator::init_sec_context",
+            "Forwards to src/gss/initiator.rs::step, which carries its own exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/gss/initiator.rs::step",
+            "Moves the boxed context from one state to the next; a state left behind is dropped, and the EstablishedContext it held erases its EncryptionKey owners.",
+        ),
+        (
+            "src/gss/initiator.rs::first",
+            "Sets the state from Finished (taken by step) to the new context; nothing it replaces holds a key.",
+        ),
+        (
+            "src/gss/contexts.rs::Acceptor::accept_sec_context",
+            "Forwards to src/gss/acceptor.rs::accept, which carries its own exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/gss/acceptor.rs::accept",
+            "Borrows the validator mutably for replay admission; no keytab key or other credential storage of the acceptor is replaced.",
+        ),
+        (
+            "src/gss/contexts.rs::EstablishedContext::take_delegated_credential",
+            "Moves the delegated credential out to the caller (Option::take); the credential is handed over, not dropped, and the caller's owner erases it.",
+        ),
+        (
+            "src/spnego/gss_types.rs::Initiator::init_sec_context",
+            "Forwards to src/spnego/gss_contexts.rs::initiate, which carries its own exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/spnego/gss_types.rs::Initiator::into_established",
+            "Consumes the initiator and returns the inner GSS context; nothing is replaced.",
+        ),
+        (
+            "src/spnego/gss_types.rs::Acceptor::accept_sec_context",
+            "Forwards to src/spnego/gss_contexts.rs::accept, which carries its own exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/spnego/gss_contexts.rs::initiate",
+            "Steps the inner GSS initiator through its own method (src/gss/initiator.rs::step, excepted) and records the offered mechanism list; no key is replaced here.",
+        ),
+        (
+            "src/spnego/gss_contexts.rs::accept",
+            "Records or takes the waiting mechanism list and selection, which hold no key, and forwards to complete.",
+        ),
+        (
+            "src/spnego/gss_contexts.rs::complete",
+            "Accepts through the inner GSS acceptor (src/gss/acceptor.rs::accept, excepted) and replaces only the answer token of the accepted context, a public NegTokenResp.",
+        ),
         (
             "src/extensions.rs::Registry::register",
             "Forwards to src/extensions/order.rs::register, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
@@ -1391,6 +1470,17 @@ mod tests {
         "src/spnego.rs::WrapToken",
         "src/spnego.rs::InitiatorContext",
         "src/spnego.rs::InitiatorContextOptions",
+        "src/error/gss.rs::Gss",
+        "src/gss/creds.rs::CredStore",
+        "src/gss/creds.rs::Credential",
+        "src/gss/contexts.rs::Initiator",
+        "src/gss/contexts.rs::Acceptor",
+        "src/gss/contexts.rs::Accepted",
+        "src/gss/contexts.rs::EstablishedContext",
+        "src/gss/contexts.rs::Unwrapped",
+        "src/spnego/gss_types.rs::Initiator",
+        "src/spnego/gss_types.rs::Acceptor",
+        "src/spnego/gss_types.rs::AcceptStep",
     ];
 
     /// Literal decoys and CRLF cannot hide public credential owners or Debug derives.

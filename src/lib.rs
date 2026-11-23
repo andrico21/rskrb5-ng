@@ -84,6 +84,8 @@ pub mod error;
 pub mod extensions;
 /// Credential-cache and keytab file-name parsing with path-token expansion.
 mod file_name;
+#[cfg(feature = "spnego")]
+pub mod gss;
 #[cfg(feature = "http")]
 pub mod http;
 #[cfg(feature = "messages")]

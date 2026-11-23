@@ -36,6 +36,7 @@ impl fmt::Debug for InitiatorContextOptions {
             ap_option_bits,
             subkey,
             sequence_number,
+            client_aware_channel_bindings,
         } = self;
         f.debug_struct("InitiatorContextOptions")
             .field("crypto_policy", crypto_policy)
@@ -43,6 +44,10 @@ impl fmt::Debug for InitiatorContextOptions {
             .field("ap_option_bits", ap_option_bits)
             .field("subkey", subkey)
             .field("sequence_number", sequence_number)
+            .field(
+                "client_aware_channel_bindings",
+                client_aware_channel_bindings,
+            )
             .finish()
     }
 }

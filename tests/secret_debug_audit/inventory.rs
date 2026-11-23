@@ -17,9 +17,30 @@ pub(super) struct Owner {
 }
 
 /// Match same-scope owners or unique cross-module owner references.
+/// The module a path must name to reach an `include!`d GSS owner.
+///
+/// The GSS `Credential`, `Initiator`, `Acceptor` and `Name` share their short
+/// names with ccache, keytab and SPNEGO owners; every other owner gives `None`.
+fn qualified_module(identity: &str) -> Option<&'static str> {
+    if identity.starts_with("src/gss/") {
+        Some("gss")
+    } else if identity.starts_with("src/spnego/gss_types.rs") {
+        Some("spnego")
+    } else {
+        None
+    }
+}
+
 fn references(owner: &Owner, ty: &[String], target: &Owner, all: &[Owner]) -> bool {
     if !ty.contains(&target.name) {
         return false;
+    }
+    if let Some(module) = qualified_module(&target.identity) {
+        let same_module = owner.identity.starts_with("src/gss") && module == "gss";
+        return same_module
+            || ty.windows(2).any(
+                |path| matches!(path, [prefix, name] if prefix == module && *name == target.name),
+            );
     }
     let owner_scope = owner
         .identity
@@ -32,7 +53,9 @@ fn references(owner: &Owner, ty: &[String], target: &Owner, all: &[Owner]) -> bo
     if owner_scope == target_scope
         || all
             .iter()
-            .filter(|candidate| candidate.name == target.name)
+            .filter(|candidate| {
+                candidate.name == target.name && qualified_module(&candidate.identity).is_none()
+            })
             .count()
             == 1
     {

@@ -9,10 +9,11 @@ use core::{
 
 #[cfg(feature = "tower")]
 use http_types::{Request, Response};
+#[cfg(feature = "tower")]
+use rskrb5_ng::error::Policy;
 use rskrb5_ng::{
     Config, ap_rep, ap_req,
-    crypto::{CryptoPolicy, KerberosEtype, Use},
-    error::Policy,
+    crypto::{CryptoPolicy, KerberosEtype},
     keytab::EncryptionKey,
     service::{ApRepOptions, Validator},
     spnego::{self, Krb5MechToken, NegTokenInit, Token},
@@ -76,8 +77,10 @@ fn service_reply_verifier_admits_all_keys() -> Result<(), Box<dyn Error>> {
         ("", 18_i32, true),
     ] {
         let config = Config::parse(&format!("[libdefaults]\n{profile}"))?;
-        let mut context = accepted.clone();
-        context.set_crypto_policy(CryptoPolicy::from_libdefaults(&config.libdefaults)?);
+        let context = Validator::new(&keys)
+            .with_now(now)
+            .with_crypto_policy(CryptoPolicy::from_libdefaults(&config.libdefaults)?)
+            .validate_ap_req(&bytes)?;
         let part = rasn_kerberos::EncApRepPart {
             ctime: auth.ctime.clone(),
             cusec: auth.cusec.clone(),
@@ -110,20 +113,6 @@ fn service_reply_verifier_admits_all_keys() -> Result<(), Box<dyn Error>> {
             assert!(policy_cause(&error).is_some(), "typed policy refusal");
         }
     }
-    let reply = accepted.build_ap_rep_with_confounder(&[0x22; 16], &ApRepOptions::default())?;
-    let mut changed = accepted;
-    changed.set_session_key(EncryptionKey::new(23, vec![0x43; 16]));
-    let error = changed
-        .verify_ap_rep(&reply)
-        .err()
-        .ok_or("wrapping key admitted")?;
-    assert!(matches!(
-        policy_cause(&error),
-        Some(Policy::EnctypeNotPermitted {
-            etype: 23_i32,
-            usage: Use::SessionKey
-        })
-    ));
     Ok(())
 }
 
@@ -145,7 +134,7 @@ impl Service<Request<()>> for Counted<'_> {
     }
 }
 
-/// Accepted contexts enforce retained policy on outgoing subkeys and mutable session keys.
+/// Accepted contexts enforce retained policy on outgoing subkeys.
 #[test]
 fn accepted_reply_enforces_retained_policy() -> Result<(), Box<dyn Error>> {
     let (keys, bytes, now) = fixture(18, 18, None)?;
@@ -190,15 +179,6 @@ fn accepted_reply_enforces_retained_policy() -> Result<(), Box<dyn Error>> {
             );
         }
     }
-    let mut accepted = Validator::new(&keys)
-        .with_now(now)
-        .validate_ap_req(&spnego::parse_negotiate_header(&header)?.krb5_ap_req()?)?;
-    accepted.set_session_key(EncryptionKey::new(23, vec![0x33; 16]));
-    let error = accepted
-        .build_ap_rep_with_confounder(&[0x22; 8], &ApRepOptions::default())
-        .err()
-        .ok_or("mutated session key escaped retained policy")?;
-    assert!(policy_cause(&error).is_some(), "session key policy cause");
     Ok(())
 }
 
