@@ -207,7 +207,8 @@ mod iana_tables {
             error_code::REGISTRY,
         ] {
             let entries = registry.entries();
-            entries.first().context("the registry lists an entry")?;
+            let first = entries.first().context("the registry lists an entry")?;
+            assert!(first.number() <= entries.last().map_or(i32::MAX, |last| last.number()));
             for pair in entries.windows(2) {
                 let [earlier, later] = pair else {
                     continue;
