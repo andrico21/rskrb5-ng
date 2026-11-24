@@ -3,7 +3,6 @@
 use core::iter::repeat_with;
 use std::{
     env::{current_exe, var_os},
-    fs,
     io::{Write as _, stdout},
     path::Path,
     process::{Command, Stdio},
@@ -49,14 +48,16 @@ fn a_second_store_on_the_same_file_sees_the_evidence() -> Result<(), TestError> 
     let path = directory.path().join("replay.rcache2");
 
     let first = File2ReplayStore::new(path.clone()).admit(&evidence(1, 1_000_000)?)?;
-    let second = File2ReplayStore::new(path.clone()).admit(&evidence(1, 1_000_000)?)?;
+    let second = File2ReplayStore::new(path).admit(&evidence(1, 1_000_000)?)?;
 
     assert_eq!(first, Admission::Fresh);
     assert_eq!(second, Admission::Replayed);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt as _;
-        let mode = fs::metadata(&path)?.permissions().mode();
+        use std::{fs, os::unix::fs::PermissionsExt as _};
+        let mode = fs::metadata(directory.path().join("replay.rcache2"))?
+            .permissions()
+            .mode();
         assert_eq!(mode & 0o077, 0, "the cache file is owner-only: {mode:o}");
     }
     Ok(())

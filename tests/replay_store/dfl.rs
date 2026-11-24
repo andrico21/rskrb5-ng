@@ -2,10 +2,7 @@
 
 use std::{fs, path::Path};
 
-use rskrb5_ng::{
-    error::Replay as Error,
-    replay::{Admission, File2ReplayStore, Store as _},
-};
+use rskrb5_ng::replay::{Admission, File2ReplayStore, Store as _};
 
 use super::support::{TempDir, evidence};
 use crate::{
@@ -36,6 +33,10 @@ fn dfl_name(directory: &Path) -> Result<String, TestError> {
 
 /// The file name `dfl:` uses in this process.
 #[cfg(not(unix))]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "same signature as the unix variant, whose user-id probe is fallible"
+)]
 fn dfl_name(_directory: &Path) -> Result<String, TestError> {
     Ok("krb5.rcache2".to_owned())
 }
@@ -63,6 +64,8 @@ fn dfl_uses_the_user_file_in_the_cache_directory() -> Result<(), TestError> {
 #[test]
 fn dfl_refuses_a_symlinked_cache_file() -> Result<(), TestError> {
     use std::os::unix::fs::symlink;
+
+    use rskrb5_ng::error::Replay as Error;
 
     const NAME: &str = "replay_store::dfl::dfl_refuses_a_symlinked_cache_file";
     if !in_child(NAME) {

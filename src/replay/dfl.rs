@@ -2,6 +2,9 @@
 
 use std::{env, path::PathBuf};
 
+#[cfg(all(unix, not(target_os = "linux")))]
+use rustix::process::geteuid;
+
 use super::Error;
 #[cfg(target_os = "linux")]
 use crate::file_name::process_identity;
@@ -27,22 +30,12 @@ pub(super) fn effective_uid() -> Result<u32, Error> {
 /// Returns [`Error::IdentityUnavailable`] for the invalid id `-1`.
 #[cfg(all(unix, not(target_os = "linux")))]
 pub(super) fn effective_uid() -> Result<u32, Error> {
-    let raw = rustix::process::geteuid().as_raw();
+    let raw = geteuid().as_raw();
     if raw == u32::MAX {
         Err(Error::IdentityUnavailable)
     } else {
         Ok(raw)
     }
-}
-
-/// Windows has no user id: the `dfl` name is per-profile instead.
-///
-/// # Errors
-///
-/// Always returns [`Error::IdentityUnavailable`].
-#[cfg(not(unix))]
-pub(super) const fn effective_uid() -> Result<u32, Error> {
-    Err(Error::IdentityUnavailable)
 }
 
 /// The `dfl` cache file: `<dir>/krb5_<euid>.rcache2` with `dir` from

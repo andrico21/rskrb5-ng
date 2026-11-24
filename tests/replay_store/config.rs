@@ -1,6 +1,6 @@
 //! `default_rcache_name`: the relation is effective and `RcacheName::default_for` consumes it.
 
-use std::{ffi::OsStr, fs, path::PathBuf};
+use std::{ffi::OsStr, path::PathBuf};
 
 use rskrb5_ng::{
     config::{Config, ParseMode},
@@ -77,7 +77,7 @@ fn a_malformed_name_is_refused_by_the_profile() -> Result<(), TestError> {
 #[cfg(target_os = "linux")]
 #[test]
 fn path_tokens_expand_in_the_configured_name() -> Result<(), TestError> {
-    use std::os::unix::fs::MetadataExt as _;
+    use std::{fs, os::unix::fs::MetadataExt as _};
 
     let uid = fs::metadata("/proc/self")?.uid();
     let config = profile("file2:/var/tmp/rc-%{euid}.cache", ParseMode::Compatible)?;
