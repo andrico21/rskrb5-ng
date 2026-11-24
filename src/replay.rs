@@ -31,9 +31,12 @@
 use alloc::sync::Arc;
 #[cfg(feature = "messages")]
 use core::{fmt::Debug, time::Duration};
-use std::path::PathBuf;
 #[cfg(feature = "messages")]
-use std::{io, path::Path, time::SystemTime};
+use std::{
+    io,
+    path::{Path, PathBuf},
+    time::SystemTime,
+};
 
 use crate::error::Replay as Error;
 #[cfg(feature = "messages")]
