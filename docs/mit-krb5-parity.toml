@@ -444,7 +444,7 @@ rust_symbols = [
   "replay::MemoryReplayStore",
   "replay::File2ReplayStore",
   "replay::NoneReplayStore",
-  "replay::RcacheName",
+  "replay::name::RcacheName",
   "replay::Tag",
   "replay::Evidence",
 ]
@@ -1698,7 +1698,7 @@ capability = "`default_rcache_name`"
 implementation_status = "implemented"
 evidence_status = "live-local"
 missing = ""
-rust_symbols = ["replay::RcacheName"]
+rust_symbols = ["replay::name::RcacheName"]
 test_names = [
   "tests/config/relations_c1.rs::default_rcache_name",
   "tests/replay_store/config.rs::every_mit_name_is_accepted_and_selects_its_store",
