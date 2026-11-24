@@ -14,3 +14,7 @@ mod location;
 /// Negotiate rounds, redirects, mutual authentication and limits.
 #[path = "client.rs"]
 mod client;
+
+/// The cookie jar inside the client.
+#[path = "cookies.rs"]
+mod cookies;

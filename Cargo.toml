@@ -155,7 +155,7 @@ pkinit = [
 spake = ["dep:curve25519-dalek", "dep:p256", "dep:p384", "dep:p521"]
 spnego = ["messages", "dep:base64"]
 http = ["spnego", "dep:http_types"]
-http-client = ["dep:cookie_store", "dep:url"]
+http-client = ["dep:cookie_store", "dep:publicsuffix", "dep:url"]
 tower = ["http", "dep:tower_layer", "dep:tower_service"]
 tokio = ["messages", "dep:hickory-resolver", "dep:tokio"]
 serde = ["dep:serde", "dep:serde_json"]
@@ -222,6 +222,10 @@ p521 = { version = "0.14.0", default-features = false, features = [
   "arithmetic",
 ], optional = true }
 pbkdf2 = "0.13"
+# The `List` type of `cookie_store`'s API (the `http-client` leaf), parsed from
+# list text the application supplies. Admission record:
+# docs/dependency-admission.md#publicsuffix.
+publicsuffix = { version = "2.3.0", default-features = false, optional = true }
 rasn = { version = "0.29", optional = true }
 rasn-kerberos = { version = "0.29", features = ["otp"], optional = true }
 rc4 = "0.2.0"

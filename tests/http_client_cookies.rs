@@ -35,11 +35,10 @@ mod tests {
 
     /// The `Cookie` header the jar sends to `target`.
     fn sent(jar: &CookieStore, target: &str) -> Result<Option<String>, TestError> {
-        Ok(jar
-            .cookie_header(&uri(target)?)
+        jar.cookie_header(&uri(target)?)
             .map(|value| value.to_str().map(str::to_owned))
             .transpose()
-            .context("the Cookie header is visible ASCII")?)
+            .context("the Cookie header is visible ASCII")
     }
 
     /// A host-only cookie goes back to its host, on every path, and to no other host.
@@ -150,6 +149,7 @@ mod tests {
     /// A list text that is not a public-suffix list is a typed error.
     #[test]
     fn a_bad_suffix_list_is_refused() -> Result<(), TestError> {
+        let _valid = CookieStore::new().with_public_suffix_list(SUFFIXES)?;
         let refused = CookieStore::new().with_public_suffix_list("*.*.bad\n!x\n*.*");
         assert!(
             matches!(refused, Err(CookieError::SuffixList)),
@@ -175,17 +175,17 @@ mod tests {
             ),
             "{refused:?}"
         );
-        let refused = jar.store_set_cookie(&target, "no-equals-sign");
+        let unparsed = jar.store_set_cookie(&target, "no-equals-sign");
         assert!(
-            matches!(refused, Err(CookieError::Malformed)),
-            "{refused:?}"
+            matches!(unparsed, Err(CookieError::Malformed)),
+            "{unparsed:?}"
         );
         jar.store_set_cookie(&target, "a=1")?;
         jar.store_set_cookie(&target, "b=2")?;
-        let refused = jar.store_set_cookie(&target, "c=3");
+        let surplus = jar.store_set_cookie(&target, "c=3");
         assert!(
-            matches!(refused, Err(CookieError::JarFull { limit: 2 })),
-            "{refused:?}"
+            matches!(surplus, Err(CookieError::JarFull { limit: 2 })),
+            "{surplus:?}"
         );
         jar.store_set_cookie(&target, "a=updated")?;
         assert_eq!(jar.len(), 2);

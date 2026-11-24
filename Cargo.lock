@@ -2055,6 +2055,7 @@ dependencies = [
  "pretty_assertions",
  "proc-macro2",
  "proptest",
+ "publicsuffix",
  "rasn",
  "rasn-kerberos",
  "rc4",
