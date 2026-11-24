@@ -559,8 +559,12 @@ interop_check_alive() {
 # the fixture. Probes: radius (an Access-Request accepted and one rejected, the
 # fixture's own selfcheck), mit-kdc (an AS-REQ answered by a KRB-ERROR), kcm (a
 # KCM GET_DEFAULT_CACHE request over the socket) and kdcproxy (an MS-KKDCP
-# AS-REQ relayed over HTTPS, scripts/interop/probe.py). A fixture without a probe
-# function is checked by interop_check_alive only.
+# AS-REQ relayed over HTTPS, scripts/interop/probe.py). FU-IOP-P22 (plan 2 todo
+# 26) added the probes of every other fixture: dns (an SRV query answered), httpd
+# (the 401 Negotiate challenge), mit-other and the Samba domains (an AS-REQ
+# answered), mit-peer and replay (the adapter's ping frame),
+# ccache-mit and kcm-mit (MIT kinit in the container reaches the KDC). A fixture
+# without a probe function is checked by interop_check_alive only.
 
 # interop_probe_radius: radiusd answers an Access-Request in its container.
 interop_probe_radius() {
@@ -605,4 +609,66 @@ interop_check_protocols() {
     fi
   done
   return "$status"
+}
+
+# --------------------------------------------- FU-IOP-P22 protocol probes --
+# One `interop_probe_<id>` per fixture that serves a protocol and had none
+# (plan 2 todo 26). Each fails with a message naming the fixture and its
+# container when the container runs but the protocol gets no answer.
+
+# interop_probe_dns: CoreDNS answers an SRV query of the TEST.RSKRB5 zone.
+interop_probe_dns() {
+  local out
+  out="$(python3 "$INTEROP_ROOT/scripts/interop/probe.py" dns "${INTEROP_DNS:?}" _kerberos._udp.test.rskrb5 2>&1)" ||
+    interop_die "fixture dns (container $(interop_container_name dns)) is running but answers no DNS query: $out" || return 1
+}
+
+# interop_probe_httpd: Apache answers an unauthenticated request with the 401 Negotiate challenge.
+interop_probe_httpd() {
+  local out
+  out="$(python3 "$INTEROP_ROOT/scripts/interop/probe.py" negotiate "${INTEROP_HTTPD_URL:?}" 2>&1)" ||
+    interop_die "fixture httpd (container $(interop_container_name httpd)) is running but gives no Negotiate challenge: $out" || return 1
+}
+
+# interop_probe_mit_other: the second realm's KDC answers an AS-REQ.
+interop_probe_mit_other() {
+  local out
+  out="$(python3 "$INTEROP_ROOT/scripts/interop/probe.py" kdc "${INTEROP_MIT_OTHER_KDC:?}" "${INTEROP_MIT_OTHER_REALM:?}" 2>&1)" ||
+    interop_die "fixture mit-other (container $(interop_container_name mit-other)) is running but gives no Kerberos answer: $out" || return 1
+}
+
+# interop_probe_samba_user and interop_probe_samba_res: a Samba domain controller's KDC answers an AS-REQ.
+interop_probe_samba_user() {
+  local out
+  out="$(python3 "$INTEROP_ROOT/scripts/interop/probe.py" kdc "${INTEROP_SAMBA_USER_KDC:?}" "${INTEROP_SAMBA_USER_REALM:?}" 2>&1)" ||
+    interop_die "fixture samba-user (container $(interop_container_name samba-user)) is running but gives no Kerberos answer: $out" || return 1
+}
+interop_probe_samba_res() {
+  local out
+  out="$(python3 "$INTEROP_ROOT/scripts/interop/probe.py" kdc "${INTEROP_SAMBA_RES_KDC:?}" "${INTEROP_SAMBA_RES_REALM:?}" 2>&1)" ||
+    interop_die "fixture samba-res (container $(interop_container_name samba-res)) is running but gives no Kerberos answer: $out" || return 1
+}
+
+# interop_probe_mit_peer and interop_probe_replay: the adapter answers its ping frame.
+interop_probe_mit_peer() {
+  local out
+  out="$(python3 "$INTEROP_ROOT/scripts/interop/probe.py" peer "${INTEROP_MIT_PEER_ADDR:?}" 2>&1)" ||
+    interop_die "fixture mit-peer (container $(interop_container_name mit-peer)) is running but the adapter answers no ping: $out" || return 1
+}
+interop_probe_replay() {
+  local out
+  out="$(python3 "$INTEROP_ROOT/scripts/interop/probe.py" peer "${INTEROP_REPLAY_ADDR:?}" 2>&1)" ||
+    interop_die "fixture replay (container $(interop_container_name replay)) is running but the adapter answers no ping: $out" || return 1
+}
+
+# interop_probe_ccache_mit and interop_probe_kcm_mit: MIT kinit in the tool container gets a ticket from the KDC.
+interop_probe_ccache_mit() {
+  local out
+  out="$(ccache_mit_exec 'kinit -k -t /ccache/testuser1.keytab -c FILE:/tmp/liveness-probe testuser1@TEST.RSKRB5 && klist -c FILE:/tmp/liveness-probe && rm -f /tmp/liveness-probe' 2>&1)" ||
+    interop_die "fixture ccache-mit (container $(interop_container_name ccache-mit)) is running but MIT kinit in it gets no ticket: $(tail -n 2 <<<"$out" | tr '\n' ' ')" || return 1
+}
+interop_probe_kcm_mit() {
+  local out
+  out="$(kcm_mit_exec "kinit -k -t /kcm-mit/testuser1.keytab -c KCM:${INTEROP_KCM_UID:?}:liveness testuser1@TEST.RSKRB5 && klist -c KCM:${INTEROP_KCM_UID}:liveness && kdestroy -c KCM:${INTEROP_KCM_UID}:liveness" 2>&1)" ||
+    interop_die "fixture kcm-mit (container $(interop_container_name kcm-mit)) is running but MIT kinit through KCM in it gets no ticket: $(tail -n 2 <<<"$out" | tr '\n' ' ')" || return 1
 }
