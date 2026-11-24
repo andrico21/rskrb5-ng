@@ -499,12 +499,11 @@ impl<X: HttpExchange> NegotiateHttpClient<X> {
                 || Principal::host_based_service("HTTP", origin.host()),
                 |realm| Principal::host_based_service_in_realm("HTTP", origin.host(), realm),
             )
-            .map_err(Http::from)?;
-        Ok(self
-            .negotiate
+            .map_err(|source| Error::Negotiate(Http::from(source)))?;
+        self.negotiate
             .authorization_context_with_options(service, self.options.clone())
             .await
-            .map_err(Http::from)?)
+            .map_err(|source| Error::Negotiate(Http::from(source)))
     }
 
     /// Send the current request of `chain`, with `context`'s token and the
@@ -530,7 +529,7 @@ impl<X: HttpExchange> NegotiateHttpClient<X> {
                 Ok::<_, InvalidHeaderValue>(value)
             })
             .transpose()
-            .map_err(Http::from)?;
+            .map_err(|source| Error::Negotiate(Http::from(source)))?;
         let cookie = self
             .jar
             .as_ref()
@@ -547,7 +546,11 @@ impl<X: HttpExchange> NegotiateHttpClient<X> {
             target: Identity::new(chain.origin().host()),
             size: request.body().len(),
         });
-        let response = self.exchange.exchange(request).await?;
+        let response = self
+            .exchange
+            .exchange(request)
+            .await
+            .map_err(Error::Exchange)?;
         self.trace.emit(&Event::Transport {
             step: TransportStep::Answered,
             wire,

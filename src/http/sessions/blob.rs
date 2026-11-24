@@ -99,13 +99,10 @@ pub(super) fn seal(
         put(&mut plain, component)?;
     }
     let mut confounder = Zeroizing::new([0_u8; 16]);
-    getrandom::fill(confounder.as_mut_slice())?;
-    let ciphertext = PROFILE.encrypt_message_with_confounder(
-        key.bytes(),
-        &plain,
-        USAGE,
-        confounder.as_slice(),
-    )?;
+    getrandom::fill(confounder.as_mut_slice()).map_err(Error::Random)?;
+    let ciphertext = PROFILE
+        .encrypt_message_with_confounder(key.bytes(), &plain, USAGE, confounder.as_slice())
+        .map_err(Error::Crypto)?;
     let mut blob = Vec::with_capacity(ciphertext.len().saturating_add(5));
     blob.extend_from_slice(&MAGIC);
     blob.push(VERSION);

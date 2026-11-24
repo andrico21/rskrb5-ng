@@ -135,8 +135,20 @@ impl SessionIdentity {
     }
 }
 
-/// The clock of a manager.
-type Clock = Arc<dyn Fn() -> SystemTime + Send + Sync>;
+/// A time source of a manager.
+trait Clock: Send + Sync {
+    /// The current time.
+    fn now(&self) -> SystemTime;
+}
+
+impl<F> Clock for F
+where
+    F: Fn() -> SystemTime + Send + Sync,
+{
+    fn now(&self) -> SystemTime {
+        self()
+    }
+}
 
 /// Issues, resumes, rotates and revokes HTTP sessions.
 pub struct SessionManager {
@@ -153,7 +165,7 @@ pub struct SessionManager {
     /// Whether the cookie is `Secure`.
     secure: bool,
     /// The time source.
-    clock: Clock,
+    clock: Arc<dyn Clock>,
     /// The trace guard.
     trace: Guard,
 }
@@ -261,7 +273,8 @@ impl SessionManager {
 
     /// The current time, in seconds since the epoch.
     fn now(&self) -> u64 {
-        (self.clock)()
+        self.clock
+            .now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |elapsed| elapsed.as_secs())
     }
@@ -337,7 +350,7 @@ impl SessionManager {
     pub fn issue(&self, principal: &Principal) -> Result<(SessionIdentity, HeaderValue), Error> {
         let now = self.now();
         let mut id = [0_u8; 16];
-        getrandom::fill(&mut id)?;
+        getrandom::fill(&mut id).map_err(Error::Random)?;
         let fields = Fields {
             id,
             generation: 0,
