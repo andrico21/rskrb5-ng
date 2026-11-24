@@ -323,6 +323,16 @@ duplicate-version skips, each with a reason stated in the record.
 - Maintenance: servo/rust-url, 2.5.9 published 2026-11-20 (the lock's version, newest release, about 283 million recent downloads); no release is yanked. No RustSec advisory against it (`cargo audit` clean at admission).
 - Features: `std` with `default-features = false` (the default of `cookie_store`'s own dependency enables the same set)
 
+### publicsuffix
+- Version: 2.3.0
+- Leaf flags: http-client
+- Licence: MIT/Apache-2.0 (the same dual licence as the rest of the leaf, already on the `deny.toml` allow list).
+- Source review: read on 2026-11-25 (see the `cookie_store` record for the tarball hash, `#![forbid(unsafe_code)]`, no `build.rs`, no `links` key). It is already in the graph as `cookie_store`'s own dependency, so this record adds no package; it is a direct dependency of the `http-client` leaf because `cookie_store::CookieStore::with_suffix_list` takes a `publicsuffix::List` and `cookie_store` does not re-export the crate. What the leaf does with it: `CookieStore::with_public_suffix_list(text)` parses the text of the list the application supplies with `List::from_bytes` (the text is bounded to 1 MiB first; the real list is about 250 KB); nothing else of the crate is called. The list is untrusted only in the sense that the application chose it; a text that does not parse is a typed error, never an empty list. The crate ships no list data, so the leaf has no implicit public-suffix list.
+- Constant-time and zeroization: not a cryptographic crate; it sees a public list of suffixes.
+- Cargo vet: the `[[exemptions.publicsuffix]]` 2.3.0 entry of the `cookie_store` record covers it; no new entry. `cargo vet --locked` passes.
+- Maintenance: see the `cookie_store` record (2.3.0 published 2024-11-14, not yanked, no advisory).
+- Features: none of its own (`default-features = false`; `cookie_store`'s dependency enables `punycode` and `idna`, which unify into the same build)
+
 ## The platform stores: `rskrb5-ng-os` (owner decision D11)
 
 Plan 2 todo 14 looked for a vetted crate with a safe API for the Windows LSA
