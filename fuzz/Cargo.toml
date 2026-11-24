@@ -242,3 +242,10 @@ path = "fuzz_targets/localauth_k5login.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "gss_iakerb"
+path = "fuzz_targets/gss_iakerb.rs"
+test = false
+doc = false
+bench = false

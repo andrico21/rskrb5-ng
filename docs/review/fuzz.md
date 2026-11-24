@@ -24,6 +24,7 @@ the chosen entry point, so one target covers a family of related decoders.
 | `gss_context` | a selector byte, then a context token, a SPNEGO token, or a DER `Authenticator` | `gss::Acceptor::accept_sec_context` and `spnego::Acceptor::accept_sec_context` on raw tokens; a structured mode that encrypts the fuzzed `Authenticator` (RFC 4121 checksum, delegation option, extensions, `AD-AP-OPTIONS`) under the fixture ticket's session key and accepts the AP-REQ, with and without acceptor channel bindings (optional or required) |
 | `gss_iov` | a selector byte (context: AES256-SHA1, AES256-SHA384, DCE-style AES256-SHA1, opted-in DES3 or RC4; raw or mutation mode), then an IOV array or a mutation list | `EstablishedContext::unwrap_iov` and `verify_mic_iov` on fuzzed `kind, length, bytes` IOV records (HEADER, DATA, SIGN_ONLY, PADDING, TRAILER, STREAM, MIC_TOKEN, duplicates and inconsistent lengths); in mutation mode the initiator's `wrap_iov` (with and without a TRAILER), `wrap_aead`, `wrap` and `get_mic` tokens are mutated before `unwrap_iov`, `unwrap_aead`, `unwrap` and `verify_mic` open them, which runs the RFC 1964/4757 parsers on the DES3 and RC4 contexts |
 | `gss_transfer` | a selector byte (context or credential; raw blob or a payload sealed as the documented version-1 format), then the bytes | `EstablishedContext::import` and `Credential::import` with one `MemoryTransferLedger` per run: the header and size checks, the RFC 8009 authentication, and in sealed mode the payload decoder; a second import of an accepted blob must fail |
+| `gss_iakerb` | a selector byte, then an IAKERB token, an acceptor input, an acceptor answer or the bytes of an `IAKERB-FINISHED` | `gss::iakerb::token::Token::decode` on every input (an accepted token is an IAKERB token and re-encodes to one that decodes to the same token); after a valid relayed request (asserted, answered by a fixed relay) the acceptor `iakerb::Context::accept_sec_context` on the raw bytes (proxy tokens, realm discovery, AP-REQs); the initiator `iakerb::Context::init_sec_context` on the bytes as its first answer, raw and as the message of a proxy token for the realm; and the acceptor on an AP-REQ of the fixture ticket whose authenticator checksum carries the bytes as the `IAKERB-FINISHED` extension, after a realm-discovery exchange (a transcript to check) and without one (the finished is refused) |
 | `http_negotiate` | `Authorization` or `WWW-Authenticate` header values | `http::accept_request` (service side) and `www_authenticate_negotiate_header`, `classify_negotiate_response` and `verify_ap_rep_response` (client side) |
 | `kdc_reply` | KDC replies | `decode_as_rep`, `decode_tgs_rep`, `decode_enc_kdc_rep_part`, the KRB-ERROR and METHOD-DATA decoders, `process_kdc_error` with preauthentication hint selection and `s2kparams` parsing, `process_as_rep`, `process_tgs_rep` and `process_tgs_rep_with_referral` against fixed requests, and structured AS/TGS replies whose fuzzed `EncKDCRepPart` is encrypted under the request's key |
 | `kdc_tcp_frame` | four-byte KDC TCP record mark, tested against zero, small and large caps | `client::transport::kdc_tcp_record_length`; production shares the reserved-bit, zero-length and pre-allocation cap checks |
@@ -128,6 +129,7 @@ timeout artifact:
 | `gss_context` | 1,096,589 (todo 18 of plan 2, 2026-11-22) | 121 s | 0 |
 | `gss_iov` | 24,211 (todo 19 of plan 2, 2026-11-23) | 121 s | 0 |
 | `gss_transfer` | 565,305 (todo 19 of plan 2, 2026-11-23) | 121 s | 0 |
+| `gss_iakerb` | 49,306 (todo 20 of plan 2, 2026-11-23) | 121 s | 0 |
 
 ### Round-2 session admission repair (FU-FUZ-R02)
 
@@ -627,6 +629,7 @@ does.
 | `rskrb5_ng::extensions::k5identity::parse_principal` | `src/extensions/k5identity.rs` | `extensions` |  |
 | `rskrb5_ng::gss::checksum::decode` | `src/gss/checksum.rs` | `gss_context` |  |
 | `rskrb5_ng::gss::contexts::TransferBlob::from_bytes` | `src/gss/contexts.rs` | - | stores the received bytes without reading them; `EstablishedContext::import` and `Credential::import` authenticate and decode them (`gss_transfer`) |
+| `rskrb5_ng::gss::iakerb::token::Token::decode` | `src/gss/iakerb/token.rs` | `gss_iakerb` |  |
 | `rskrb5_ng::gss::name::parse` | `src/gss/name.rs` | `gss_name` |  |
 | `rskrb5_ng::gss::negoex::codec::parse_alert` | `src/gss/negoex/codec.rs` | `negoex_message` |  |
 | `rskrb5_ng::gss::negoex::codec::parse_exchange` | `src/gss/negoex/codec.rs` | `negoex_message` |  |

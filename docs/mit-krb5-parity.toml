@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 132
+implemented = 133
 partial = 19
-absent = 2
+absent = 1
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -3076,13 +3076,28 @@ id = "MIT-gss-3"
 area = "gss"
 upstream_ref = "krb5-1.22.2-final"
 capability = "IAKERB mechanism"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "No relay mechanism."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "gss::iakerb::Context",
+  "gss::iakerb::Context::init_sec_context",
+  "gss::iakerb::Context::accept_sec_context",
+  "gss::iakerb::KdcRelay",
+  "gss::iakerb::RelayPolicy",
+  "gss::iakerb::token::Token",
+]
+test_names = [
+  "tests/gss_iakerb/flow.rs::a_password_initiator_completes_through_the_relay",
+  "tests/gss_iakerb/flow.rs::realm_discovery_fills_the_client_realm",
+  "tests/gss_iakerb/policy.rs::a_relay_request_for_a_realm_outside_the_policy_is_refused",
+  "tests/gss_iakerb/finished.rs::a_finished_over_the_transcript_under_the_subkey_is_accepted",
+  "tests/gss_iakerb/token.rs::encoding_matches_the_layout_of_the_asn1_module",
+  "tests/interop_iakerb/scenarios.rs::rust_iakerb_initiator_completes_against_mit_with_the_direct_kdc_path_blocked",
+  "tests/interop_iakerb/scenarios.rs::mit_iakerb_initiator_without_a_kdc_route_completes_against_the_rust_acceptor",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "The acceptor relays through the application's KdcRelay only for the realms of its RelayPolicy, only a well-formed AS-REQ or TGS-REQ for the realm of the token header, within round, message and transcript bounds, and returns only an AS-REP, TGS-REP or KRB-ERROR, where MIT sends any request to any realm its profile resolves (iakerb.c:416-435); the initiator never opens a socket; a delegation request over IAKERB is refused. MIT 1.22.2 implements draft-ietf-krb-wg-iakerb-02 and checksums the transcript with key usage 41 (iakerb.c:141,173), which this crate matches."
 disposition = "WP-13"
 closing_plan = 2
 closing_todo = 20

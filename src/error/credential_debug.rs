@@ -41,6 +41,16 @@ impl fmt::Debug for super::Gss {
     }
 }
 
+#[cfg(feature = "spnego")]
+impl fmt::Debug for super::Iakerb {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Iakerb")
+            .field(&discriminant(self))
+            .finish_non_exhaustive()
+    }
+}
+
 #[cfg(feature = "http")]
 impl fmt::Debug for super::Http {
     #[inline]

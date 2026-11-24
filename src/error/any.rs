@@ -96,6 +96,10 @@ pub enum Any {
     #[cfg(feature = "spnego")]
     #[error("GSS-API error: {0}")]
     Gss(#[from] Gss),
+    /// IAKERB relay or context processing failed.
+    #[cfg(feature = "spnego")]
+    #[error("IAKERB error: {0}")]
+    Iakerb(#[from] Iakerb),
     /// `NegoEx` negotiation failed.
     #[cfg(feature = "spnego")]
     #[error("NegoEx error: {0}")]

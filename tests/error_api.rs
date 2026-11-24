@@ -173,6 +173,12 @@ mod tests {
     );
     #[cfg(feature = "spnego")]
     propagates_domain!(
+        iakerb_when_token_malformed,
+        error::Iakerb,
+        gss::iakerb::token::Token::decode(&[])
+    );
+    #[cfg(feature = "spnego")]
+    propagates_domain!(
         negoex_when_token_empty,
         error::Negoex,
         gss::negoex::Conversation::accepting().parse(&[])
