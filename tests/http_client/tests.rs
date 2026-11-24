@@ -18,3 +18,7 @@ mod client;
 /// The cookie jar inside the client.
 #[path = "cookies.rs"]
 mod cookies;
+
+/// The session manager.
+#[path = "sessions.rs"]
+mod sessions;

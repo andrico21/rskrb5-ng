@@ -8,6 +8,7 @@
 pub mod agent;
 pub mod cookies;
 pub mod origin;
+pub mod sessions;
 pub mod wire;
 
 #[cfg(feature = "tower")]
@@ -1112,6 +1113,8 @@ pub struct NegotiateLayer<'keytab> {
     validator: ValidatorOptions,
     /// How services answer accepted and rejected requests.
     response: NegotiateResponseOptions,
+    /// The session manager that continues an authenticated exchange.
+    session: Option<Arc<sessions::SessionManager>>,
 }
 
 #[cfg(feature = "tower")]
@@ -1122,11 +1125,13 @@ impl fmt::Debug for NegotiateLayer<'_> {
             keytab,
             validator,
             response,
+            session,
         } = self;
         f.debug_struct("NegotiateLayer")
             .field("keytab_entries", &keytab.entries().len())
             .field("validator", validator)
             .field("response", response)
+            .field("session_manager", &session.is_some())
             .finish()
     }
 }
@@ -1156,7 +1161,20 @@ impl<'keytab> NegotiateLayer<'keytab> {
             keytab: Cow::Borrowed(keytab),
             validator: ValidatorOptions::default(),
             response: NegotiateResponseOptions::default(),
+            session: None,
         }
+    }
+
+    /// Continue an authenticated exchange through `manager`'s session cookie:
+    /// a request that carries a valid session skips the Negotiate round, and
+    /// a request that Negotiate authenticates gets a `Set-Cookie` for a new
+    /// session. A request with an invalid session cookie is treated as having
+    /// none.
+    #[must_use]
+    #[inline]
+    pub fn with_session_manager(mut self, manager: Arc<sessions::SessionManager>) -> Self {
+        self.session = Some(manager);
+        self
     }
 
     /// Override the validation clock. Useful for deterministic tests.
@@ -1291,6 +1309,7 @@ impl NegotiateLayer<'static> {
             keytab: Cow::Owned(keytab),
             validator: ValidatorOptions::default(),
             response: NegotiateResponseOptions::default(),
+            session: None,
         }
     }
 
@@ -1471,6 +1490,15 @@ impl<'keytab, S> NegotiateService<'keytab, S> {
     #[inline]
     pub fn new(inner: S, keytab: &'keytab Keytab) -> Self {
         NegotiateLayer::new(keytab).layer(inner)
+    }
+
+    /// Continue an authenticated exchange through `manager`'s session cookie,
+    /// as [`NegotiateLayer::with_session_manager`] does.
+    #[must_use]
+    #[inline]
+    pub fn with_session_manager(mut self, manager: Arc<sessions::SessionManager>) -> Self {
+        self.settings.session = Some(manager);
+        self
     }
 
     /// Return a shared reference to the wrapped service.
