@@ -84,8 +84,8 @@ pub enum Gss {
     /// A credential-store key is given twice.
     #[error("credential-store key {0} is given twice")]
     DuplicateCredStoreKey(String),
-    /// The replay cache cannot be used: replay detection cannot be switched
-    /// off, and only in-memory replay caches (`memory:`) are implemented.
+    /// The replay cache cannot be used: the `rcache` name is not one of `dfl:`,
+    /// `file2:<path>`, `none:` or `memory:`, or the store cannot be opened.
     #[error("replay cache {0} is not available")]
     UnsupportedReplayCache(String),
     /// The target credential cache already holds tickets (`GSS_S_DUPLICATE_ELEMENT`).

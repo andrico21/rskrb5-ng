@@ -200,9 +200,9 @@ impl Credential {
     ///
     /// An initiator credential comes from `ccache`; failing that, `client_keytab`
     /// or `password` with `desired_name` make one that acquires its tickets when
-    /// used. An acceptor credential comes from `keytab`; `rcache` names an
-    /// in-memory replay cache (`memory:<name>`), since the persistent replay
-    /// caches are not implemented and replay detection cannot be switched off.
+    /// used. An acceptor credential comes from `keytab`; `rcache` names its
+    /// replay cache (`dfl:`, `file2:<path>`, `memory:<name>`), or `none:` to
+    /// switch replay detection off by name.
     ///
     /// # Errors
     ///
