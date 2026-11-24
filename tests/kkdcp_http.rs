@@ -33,6 +33,7 @@ mod tests {
     use tokio::{
         io::{AsyncReadExt as _, AsyncWriteExt as _},
         net::TcpListener,
+        runtime::Builder,
         task::JoinHandle,
         time::timeout,
     };
@@ -114,7 +115,7 @@ mod tests {
     /// the server saw the request line and the Authorization header.
     #[test]
     fn the_response_comes_back_whole() -> Result<(), Box<dyn StdError>> {
-        tokio::runtime::Builder::new_current_thread()
+        Builder::new_current_thread()
             .enable_all()
             .build()?
             .block_on(async {
@@ -148,7 +149,7 @@ mod tests {
     /// A redirect is a response, never followed: the server is asked once.
     #[test]
     fn a_redirect_is_returned_not_followed() -> Result<(), Box<dyn StdError>> {
-        tokio::runtime::Builder::new_current_thread()
+        Builder::new_current_thread()
             .enable_all()
             .build()?
             .block_on(async {
@@ -165,7 +166,7 @@ mod tests {
     /// cleartext URI, a server the roots do not vouch for and an oversized body.
     #[test]
     fn refusals_are_typed() -> Result<(), Box<dyn StdError>> {
-        tokio::runtime::Builder::new_current_thread()
+        Builder::new_current_thread()
             .enable_all()
             .build()?
             .block_on(async {
@@ -193,13 +194,13 @@ mod tests {
                 drop(seen(task).await?);
 
                 let big = vec![b'x'; 9 * 1024 * 1024];
-                let (port, task) = server("localhost", http("200 OK", "", &big)).await?;
-                let oversized = trusting()?.exchange(get(port, "")?).await;
+                let (big_port, big_task) = server("localhost", http("200 OK", "", &big)).await?;
+                let oversized = trusting()?.exchange(get(big_port, "")?).await;
                 assert!(
                     matches!(oversized, Err(ExchangeError::TooLarge { limit: _ })),
                     "{oversized:?}"
                 );
-                drop(seen(task).await?);
+                drop(seen(big_task).await?);
                 Ok(())
             })
     }
