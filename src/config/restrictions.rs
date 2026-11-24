@@ -8,6 +8,7 @@ use super::{
 };
 #[cfg(feature = "messages")]
 use crate::error::Policy;
+use crate::replay::RcacheName;
 
 /// Preserve permanent policy causes when admitting configured acceptors.
 #[cfg(feature = "messages")]
@@ -24,14 +25,23 @@ pub(crate) const fn configuration_policy(error: &Error) -> Policy {
     }
 }
 
+/// Refuse a `default_rcache_name` that no replay store can open: it must be
+/// empty (unset) or a MIT `type:residual` name of a known type.
+/// # Errors
+/// Returns [`Error::InvalidReplayCacheName`] naming the value.
+pub(crate) fn rcache_name(value: &str) -> Result<(), Error> {
+    if value.is_empty() || RcacheName::parse(value).is_ok() {
+        Ok(())
+    } else {
+        Err(Error::InvalidReplayCacheName(value.to_owned()))
+    }
+}
+
 /// Reject restrictions whose consumers have not been implemented.
 /// # Errors
-/// Returns the named deferred relation before any authentication effect.
+/// Returns the malformed replay-cache name before any authentication effect.
 pub(crate) fn defaults(value: &LibDefaults) -> Result<(), Error> {
-    reject(
-        "default_rcache_name",
-        !value.default_rcache_name.is_empty() && value.default_rcache_name != "none:",
-    )
+    rcache_name(&value.default_rcache_name)
 }
 
 /// Validate whole configuration, including realm and client-plugin restrictions.
@@ -121,7 +131,6 @@ pub(super) fn reject(relation: &'static str, restricted: bool) -> Result<(), Err
     if restricted {
         let package = match relation {
             "disable" | "enable_only" => "plan 2 WP-16",
-            "default_rcache_name" => "plan 2 WP-20",
             _ => super::libdefaults::relations::RELATIONS
                 .iter()
                 .find(|row| row.0 == relation)

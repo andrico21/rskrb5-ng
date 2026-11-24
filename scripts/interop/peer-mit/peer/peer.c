@@ -73,6 +73,11 @@
 //        (1..=65536)        -> output bytes
 //   x export_sec_context: context  -> token (the context is consumed)
 //   y import_sec_context: token    -> context handle
+//   F krb_forward (todo 27): keytab id, user principal, service principal, host
+//        -> key etype u32, key bytes, KRB-CRED, forwarded server principal
+//        (MIT krb5_fwd_tgt_creds of a forwardable TGT, encrypted under a fresh AES256 key)
+//   G krb_read_cred (todo 27): key etype u32, key bytes, KRB-CRED
+//        -> count u32, then per credential client, server, ticket flags u32 (MIT krb5_rd_cred)
 // Limits: 16 context and 16 credential handles, 64 init/accept steps per
 // context, 4096 requests per connection. No secret is logged: the log line of a
 // request holds its command byte and the reply status only.
@@ -208,6 +213,8 @@ static int dispatch(uint8_t command, struct field *f, size_t nf, struct out *o)
     case 'p': return cmd_prf(f, nf, o);
     case 'x': return cmd_export(f, nf, o);
     case 'y': return cmd_import(f, nf, o);
+    case 'F': return cmd_krb_forward(f, nf, o);
+    case 'G': return cmd_krb_read_cred(f, nf, o);
     default: return proto_fail(o, "unknown command");
     }
 }

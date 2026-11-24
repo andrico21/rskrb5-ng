@@ -4,6 +4,7 @@
 //! for the checksum and channel bindings, `:665-1150` for the context and the
 //! AP-REP).
 
+use alloc::sync::Arc;
 use core::cell::RefCell;
 
 use zeroize::Zeroizing;
@@ -56,8 +57,8 @@ pub(super) fn new(
         .as_ref()
         .ok_or(Error::WrongCredentialUsage("accept"))?;
     let mut validator = Validator::new(keytab);
-    if let Some(cache) = &credential.replay {
-        validator = validator.with_shared_replay_cache(cache.clone())?;
+    if let Some(store) = &credential.replay {
+        validator = validator.with_replay_store(Arc::clone(store))?;
     }
     if let Some(name) = &credential.name {
         validator.set_acceptor_name(cred::acceptor_name(name, options.ignore_acceptor_hostname));

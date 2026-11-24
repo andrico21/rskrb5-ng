@@ -79,3 +79,55 @@ impl fmt::Debug for PaReqEncPaRep {
             .finish()
     }
 }
+
+impl fmt::Debug for super::AuthContext {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            session_key,
+            send_subkey,
+            recv_subkey,
+            local_address,
+            remote_address,
+            local_sequence,
+            remote_sequence,
+            sane_sequence: _,
+            heimdal_sequence: _,
+            policy,
+            now: _,
+            credential_owner,
+            seen: _,
+        } = self;
+        f.debug_struct("AuthContext")
+            .field(
+                "session_key",
+                &session_key.as_ref().map(|_key| "[REDACTED]"),
+            )
+            .field(
+                "send_subkey",
+                &send_subkey.as_ref().map(|_key| "[REDACTED]"),
+            )
+            .field(
+                "recv_subkey",
+                &recv_subkey.as_ref().map(|_key| "[REDACTED]"),
+            )
+            .field("local_address", local_address)
+            .field("remote_address", remote_address)
+            .field("local_sequence", local_sequence)
+            .field("remote_sequence", remote_sequence)
+            .field("policy", policy)
+            .field("credential_owner", credential_owner)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<T> fmt::Debug for super::Received<T> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Received")
+            .field("content", &"[REDACTED]")
+            .field("timestamp", &self.timestamp())
+            .field("sequence", &self.sequence())
+            .finish()
+    }
+}

@@ -1,6 +1,7 @@
 //! Bounded admission shares for authenticated client identities.
 
-use super::{Error, HashMap, Principal};
+use super::{HashMap, Principal};
+use crate::error::Replay as Error;
 
 /// Counts use realm and components only: name types are advisory.
 #[derive(Debug)]
@@ -27,14 +28,14 @@ impl PrincipalQuota {
     /// Returns a capacity error when the client's share is full.
     pub(super) fn admit(&mut self, principal: &Principal) -> Result<(), Error> {
         if self.limit == 0 {
-            return Err(Error::ReplayCacheCapacityExceeded { capacity: 0 });
+            return Err(Error::Capacity { capacity: 0 });
         }
         let count = self
             .counts
             .entry((principal.realm.clone(), principal.components.clone()))
             .or_default();
         if *count >= self.limit {
-            return Err(Error::ReplayCacheCapacityExceeded {
+            return Err(Error::Capacity {
                 capacity: self.limit,
             });
         }

@@ -45,6 +45,8 @@ the chosen entry point, so one target covers a family of related decoders.
 | `routing_transit` | a ticket's DOMAIN-X500-COMPRESS transited encoding (RFC 4120 section 3.3.3.2), a KDC's `PA-S4U-X509-USER` (MS-SFU) and the text of two realm names, one selector byte then bytes or text | `routing::transited::decode` between two fixed realms (an accepted list stays within `MAX_REALMS` and, when `encode` takes it, decodes again to the same list), `routing::s4u::PaS4uX509User::decode_der` (then encode and decode again must give the same element), and `routing::RealmPath::hierarchical` (a path starts at the first realm, ends at the second and stays within `RealmPath::MAX_REALMS`) |
 | `localauth_rule` | the text of an `auth_to_local` value, a newline, then a principal (`a/b/c` in `EXAMPLE.COM`) | `localauth::AuthToLocalRule::parse` (the bounded `RULE:[n:format](regex)s/re/text/g` grammar and the linear-time `regex` compiler), then `apply` on the principal and `principal_to_local_name` through a `LocalNameMapper` (a result stays within the selection bound, a mapped name is never empty, longer than 64 bytes or NUL-holding) |
 | `localauth_k5login` | a principal (`a/b@REALM`, up to the first newline), then the bytes of a `.k5login` file | `localauth::k5login::lists` (the size, line-count and line-length bounds and the exact line match; a file past the size bound is refused) |
+| `replay_file` | a selector byte, then the bytes of an existing MIT `file2` replay-cache file, or a replay-cache name | `replay::File2ReplayStore::admit` over an in-memory file holding the fuzzed bytes (the seed, the hash tables, truncated and hostile files; a tag accepted twice is a failure), and `replay::RcacheName::parse` (`dfl:`, `file2:<path>`, `none:`, `memory:`) |
+| `auth_message` | a selector byte, then a KRB-PRIV, KRB-SAFE, KRB-CRED, a DER element or an authorization-data element | `messages::AuthContext::rd_priv`, `rd_safe` and `rd_cred` (encrypted, and unencrypted over a vouched channel) under a fixed key, clock and sequence checking (an accepted message is refused the second time), the public `asn1` length, element, application-tag and structure readers under a size budget, and the `authdata` AD-KDC-ISSUED and AD-AND-OR decoders |
 | `name_parse` | names and values as text | `Principal::parse_user`, `Principal::parse_service`, `CacheName::parse`, `keytab::Name::parse`, `KdcEndpoint::configured`, `Tokio::with_dns_server`, `config::parse_duration`, `config::parse_boolean`, `crypto::s2kparams_to_iterations` |
 | `discovery_uri` | the data DNS hands to server discovery, one selector byte then bytes or text | `discovery::uri::parse` (a `krb5srv:flags:transport:host` URI record target) and `host_port` on an accepted target, `split_rdata` (URI record data), `realm_from_txt` (the first string of a TXT realm record) and `host_port` on arbitrary text; the target text, the host and the realm stay within their bounds |
 
@@ -131,6 +133,8 @@ timeout artifact:
 | `gss_iov` | 24,211 (todo 19 of plan 2, 2026-11-23) | 121 s | 0 |
 | `gss_transfer` | 565,305 (todo 19 of plan 2, 2026-11-23) | 121 s | 0 |
 | `gss_iakerb` | 49,306 (todo 20 of plan 2, 2026-11-23) | 121 s | 0 |
+| `replay_file` | 6,582,638 (todo 27 of plan 2, 2026-11-23) | 121 s | 0 |
+| `auth_message` | 2,718,082 (todo 27 of plan 2, 2026-11-23) | 121 s | 0 |
 
 ### Round-2 session admission repair (FU-FUZ-R02)
 
@@ -632,6 +636,21 @@ does.
 | `rskrb5_ng::crypto::camellia::kdf::verify` | `src/crypto/camellia/kdf.rs` | `camellia_crypto` |  |
 | `rskrb5_ng::der::decode_complete` | `src/der.rs` | `der_oid` |  |
 | `rskrb5_ng::der::top_level_der_end` | `src/der.rs` | `der_oid` |  |
+| `rskrb5_ng::asn1::decode_length` | `src/asn1.rs` | `auth_message` |  |
+| `rskrb5_ng::asn1::read_complete` | `src/asn1.rs` | `auth_message` |  |
+| `rskrb5_ng::asn1::read_element` | `src/asn1.rs` | `auth_message` |  |
+| `rskrb5_ng::asn1::identifier::read_identifier` | `src/asn1/identifier.rs` | `auth_message` |  |
+| `rskrb5_ng::authdata::decode` | `src/authdata.rs` | `auth_message` |  |
+| `rskrb5_ng::authdata::decode_and_or` | `src/authdata.rs` | `auth_message` |  |
+| `rskrb5_ng::authdata::decode_kdc_issued` | `src/authdata.rs` | `auth_message` |  |
+| `rskrb5_ng::messages::forwarding::read_cred` | `src/messages/forwarding.rs` | `auth_message` |  |
+| `rskrb5_ng::messages::private_safe::read_priv` | `src/messages/private_safe.rs` | `auth_message` |  |
+| `rskrb5_ng::messages::private_safe::read_safe` | `src/messages/private_safe.rs` | `auth_message` |  |
+| `rskrb5_ng::messages::private_safe::reading_key` | `src/messages/private_safe.rs` | `auth_message` |  |
+| `rskrb5_ng::replay::RcacheName::parse` | `src/replay.rs` | `replay_file` |  |
+| `rskrb5_ng::replay::table::parse` | `src/replay/table.rs` | `replay_file` |  |
+| `<rskrb5_ng::replay::files::LockedFile as OpenFile>::read_at` | `src/replay/files.rs` | - | the operating-system implementation of the read of the cache file; the fuzz target reads through its own in-memory `OpenFile`, and the table walk behind it is the row `rskrb5_ng::replay::table::parse`; covered by tests/replay_store/concurrency.rs on real files |
+| `rskrb5_ng::replay::read_at` | `src/replay.rs` | - | declaration of the `OpenFile` method (no body); the implementations are the row above and the fuzz target's own file |
 | `rskrb5_ng::der::trim_zero_padded_der` | `src/der.rs` | `der_oid` |  |
 | `rskrb5_ng::discovery::uri::parse` | `src/discovery/uri.rs` | `discovery_uri` |  |
 | `rskrb5_ng::discovery::uri::host_port` | `src/discovery/uri.rs` | `discovery_uri` |  |

@@ -18,8 +18,8 @@ last_reviewed = "2026-11-01"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 25
-partial = 10
+implemented = 28
+partial = 7
 absent = 0
 rejected = 0
 omitted = 0
@@ -838,13 +838,28 @@ id = "GO-iana-1"
 area = "iana"
 upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
 capability = "Kerberos assigned numbers and lookup tables"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Identifiers and selected mappings are spread across modules; there are no exhaustive public assigned-numbers tables (P2-27)."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "iana::Registry",
+  "iana::Entry",
+  "iana::encryption_type",
+  "iana::checksum_type",
+  "iana::padata_type",
+  "iana::message_type",
+  "iana::name_type",
+  "iana::address_type",
+  "iana::authorization_data_type",
+  "iana::error_code",
+]
+test_names = [
+  "tests/iana_tables.rs::the_registered_tables_equal_the_iana_snapshot",
+  "tests/iana_tables.rs::numbers_and_names_look_up_both_ways",
+  "tests/iana_tables.rs::tables_are_sorted_and_unambiguous",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Listing a deprecated or removed algorithm never enables it: runtime permission stays CryptoPolicy and the permanent rejections of docs/security-policy.md. IANA hosts no registry for message, name, address, authorization-data types or error codes: those tables cite RFC 4120 and MIT 1.22.2."
 disposition = "WP-20"
 closing_plan = 2
 closing_todo = 27
@@ -872,13 +887,27 @@ id = "GO-types-1"
 area = "types"
 upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
 capability = "Principal names, credentials, addresses, flags, cryptosystem, PA data"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "rasn types and principals exist; AD-KDCIssued and AND-OR authorization data are rejected rather than handled, and high-level helpers are incomplete (P2-27)."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "authdata::build_kdc_issued",
+  "authdata::verify_kdc_issued",
+  "authdata::decode_kdc_issued",
+  "authdata::decode_and_or",
+  "authdata::evaluate_and_or",
+  "authdata::ConditionEvaluator",
+  "service::Validator::with_authorization_conditions",
+]
+test_names = [
+  "tests/auth_data/helpers.rs::kdc_issued_verifies_under_the_session_key_only",
+  "tests/auth_data/helpers.rs::and_or_counts_the_satisfied_conditions",
+  "tests/auth_data/acceptor.rs::a_verified_kdc_issued_element_in_a_ticket_is_accepted",
+  "tests/auth_data/acceptor.rs::and_or_needs_an_evaluator_and_its_conditions",
+  "tests/auth_data/acceptor.rs::kdc_issued_elements_that_cannot_be_trusted_are_refused",
+]
+feature_flags = ["messages"]
+security_divergence = "AD-KDC-ISSUED is trusted only in ticket authorization data (the checksum is keyed with the session key the client also holds); AD-AND-OR is refused unless the application attaches a ConditionEvaluator, and an impossible condition count fails closed."
 disposition = "WP-20"
 closing_plan = 2
 closing_todo = 27
@@ -890,13 +919,30 @@ id = "GO-asn1tools-1"
 area = "asn1tools"
 upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
 capability = "ASN.1 length/application tag utilities"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "The internal SPNEGO DER reader validates lengths and rejects non-minimal forms; there are no public checked app-tag and length utilities with size and nesting budgets (P2-27)."
-rust_symbols = []
-test_names = ["src/spnego/der/tests.rs::der_lengths_reject_nonminimal_forms"]
+missing = ""
+rust_symbols = [
+  "asn1::Limits",
+  "asn1::Element",
+  "asn1::decode_length",
+  "asn1::encode_length",
+  "asn1::read_element",
+  "asn1::read_complete",
+  "asn1::application_tag",
+  "asn1::add_application_tag",
+  "asn1::validate",
+]
+test_names = [
+  "tests/der_utilities.rs::lengths_encode_minimally",
+  "tests/der_utilities.rs::non_canonical_lengths_are_refused",
+  "tests/der_utilities.rs::lengths_are_bounded_by_the_budget",
+  "tests/der_utilities.rs::application_tags_round_trip_on_a_real_message",
+  "tests/der_utilities.rs::validate_walks_nested_structures_under_a_depth_budget",
+  "src/spnego/der/tests.rs::der_lengths_reject_nonminimal_forms",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Every length is checked against an explicit budget before use and nesting is bounded; indefinite, reserved and non-minimal lengths and non-minimal tag numbers are refused."
 disposition = "WP-20"
 closing_plan = 2
 closing_todo = 27

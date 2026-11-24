@@ -12,21 +12,6 @@ mod tests {
 
     use rskrb5_ng::config::{Config, ParseMode};
 
-    /// Unsupported restrictions cannot silently disappear in either mode.
-    #[test]
-    fn restrictions_fail_closed() -> Result<(), Box<dyn Error>> {
-        for mode in [ParseMode::Compatible, ParseMode::Strict] {
-            let assignment = "default_rcache_name = dfl:";
-            // Given a stronger requested policy, when parsed, then reject it.
-            drop(
-                Config::parse_with_mode(&format!("[libdefaults]\n {assignment}\n"), mode)
-                    .err()
-                    .ok_or_else(|| format!("accepted {assignment}"))?,
-            );
-        }
-        Ok(())
-    }
-
     /// New scalar relations and MIT intervals reject malformed values.
     #[test]
     fn malformed_values_fail_at_boundary() -> Result<(), Box<dyn Error>> {

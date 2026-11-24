@@ -110,7 +110,7 @@ pub struct Credential {
     /// The acceptor's keys.
     keytab: Option<Keytab>,
     /// The acceptor's replay cache.
-    replay: Option<SharedReplayCache>,
+    replay: Option<Arc<dyn Store>>,
     /// The keytab that verifies password-acquired initial credentials (the
     /// `verify` store key).
     verify_keytab: Option<Keytab>,

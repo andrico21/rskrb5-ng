@@ -34,7 +34,7 @@ mod tests {
             let directory = root.join(name);
             fs::create_dir_all(&directory)?;
             let child = directory.join(format!("{name}.conf"));
-            fs::write(&child, "[libdefaults]\ndefault_rcache_name = dfl:\n")?;
+            fs::write(&child, "[libdefaults]\ndefault_rcache_name = bogus\n")?;
             for (directive, target) in [("include", &child), ("includedir", &directory)] {
                 for separator in [" ", "\t"] {
                     for indent in ["", " \t"] {
@@ -46,10 +46,7 @@ mod tests {
                             for mode in [ParseMode::Compatible, ParseMode::Strict] {
                                 if !matches!(
                                     Config::parse_with_mode(&text, mode),
-                                    Err(Failure::NotYetEffective {
-                                        relation: "default_rcache_name",
-                                        package: "plan 2 WP-20",
-                                    })
+                                    Err(Failure::InvalidReplayCacheName(value)) if value == "bogus"
                                 ) {
                                     missed.push(format!("{mode:?}: {text}"));
                                 }

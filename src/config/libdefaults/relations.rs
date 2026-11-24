@@ -98,8 +98,8 @@ pub(crate) const RELATIONS_HEAD: [(&str, &str, &str, &str, &str, &str); 21] = [
         "default_rcache_name",
         "parameter template",
         "dfl:",
-        "plan 2 WP-20",
-        "Any value except none: requires unavailable persistent/shared replay protection and errors; none: diagnostic because memory replay protection remains",
+        "replay::RcacheName::default_for",
+        "Effective: dfl:, file2:<path>, none: and memory: select the replay store of replay::RcacheName::open; a malformed or unknown-type name is refused when the profile is read",
         "default_rcache_name",
     ),
     (

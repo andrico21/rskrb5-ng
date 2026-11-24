@@ -41,6 +41,16 @@ impl fmt::Debug for super::Gss {
     }
 }
 
+#[cfg(feature = "messages")]
+impl fmt::Debug for super::AuthMessage {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("AuthMessage")
+            .field(&discriminant(self))
+            .finish_non_exhaustive()
+    }
+}
+
 #[cfg(feature = "spnego")]
 impl fmt::Debug for super::Iakerb {
     #[inline]

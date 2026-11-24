@@ -291,7 +291,9 @@ mod tests {
         if identity == "src/error/any.rs::Any" {
             return cfg!(feature = "messages");
         }
-        if identity == "src/extensions.rs::PreauthInput" {
+        if identity == "src/extensions.rs::PreauthInput"
+            || identity == "src/error/auth_message.rs::AuthMessage"
+        {
             return cfg!(feature = "messages");
         }
         if identity.starts_with("src/service") || identity.starts_with("src/preauth") {
@@ -365,10 +367,13 @@ mod tests {
             "gss::negoex".to_owned()
         } else if file == "src/spnego/gss_types.rs" {
             "spnego".to_owned()
-        } else if file == "src/error/gss.rs"
-            || file == "src/error/iakerb.rs"
-            || file == "src/error/kadm5.rs"
-        {
+        } else if matches!(
+            file,
+            "src/error/gss.rs"
+                | "src/error/iakerb.rs"
+                | "src/error/kadm5.rs"
+                | "src/error/auth_message.rs"
+        ) {
             "error".to_owned()
         } else if file == "src/rpcsec_gss/types.rs" {
             "rpcsec_gss".to_owned()
@@ -1714,10 +1719,12 @@ mod tests {
         "src/kadmin.rs::PasswordEncryption",
         "src/kadmin.rs::ChangePasswdData",
         "src/kadmin/password.rs::Bytes",
+        "src/messages.rs::AuthContext",
         "src/messages.rs::EncryptedData",
         "src/messages.rs::KrbErrorInfo",
         "src/messages.rs::PaReqEncPaRep",
         "src/messages.rs::PaForUser",
+        "src/messages.rs::Received",
         "src/pac.rs::Pac",
         "src/pac/builder.rs::Builder",
         "src/pac/builder.rs::Signing",
@@ -1752,6 +1759,7 @@ mod tests {
         "src/spnego.rs::WrapToken",
         "src/spnego.rs::InitiatorContext",
         "src/spnego.rs::InitiatorContextOptions",
+        "src/error/auth_message.rs::AuthMessage",
         "src/error/gss.rs::Gss",
         "src/error/iakerb.rs::Iakerb",
         "src/gss/iakerb.rs::AcceptStep",

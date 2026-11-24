@@ -10,11 +10,11 @@ use zeroize::Zeroizing;
 
 use super::{
     CCache, CredStore, Credential, CredentialInquiry, CredentialUsage, Error, Keytab, Name,
-    ObjectIdentifier, Principal, SharedReplayCache, TgsRepSession, ccache,
+    ObjectIdentifier, Principal, TgsRepSession, ccache,
 };
 #[cfg(feature = "tokio")]
 use crate::client;
-use crate::{keytab::EncryptionKey, service::AcceptorName};
+use crate::{keytab::EncryptionKey, replay::RcacheName, service::AcceptorName};
 
 /// The `FORWARDABLE` ticket flag in ccache byte order (RFC 4120 flag 1).
 const FORWARDABLE: u8 = 0x40;
@@ -259,8 +259,9 @@ fn initiator_from(
 /// # Errors
 ///
 /// Returns [`Error::NoCredential`] without a keytab or a key for the desired
-/// name, [`Error::UnsupportedReplayCache`] for an `rcache` other than
-/// `memory:`, and the errors of loading the keytab.
+/// name, [`Error::UnsupportedReplayCache`] for an `rcache` that is not a replay
+/// cache name (`dfl:`, `file2:<path>`, `none:` or `memory:`) or cannot be
+/// opened, and the errors of loading the keytab.
 fn acceptor_from(
     credential: &mut Credential,
     desired: Option<&Name>,
@@ -272,8 +273,11 @@ fn acceptor_from(
         .ok_or(Error::NoCredential("the store names no keytab"))?;
     credential.replay = match &store.rcache {
         None => None,
-        Some(rcache) if rcache.starts_with("memory:") => Some(SharedReplayCache::new()),
-        Some(rcache) => return Err(Error::UnsupportedReplayCache(rcache.clone())),
+        Some(rcache) => Some(
+            RcacheName::parse(rcache)
+                .and_then(|name| name.open())
+                .map_err(|_unusable| Error::UnsupportedReplayCache(rcache.clone()))?,
+        ),
     };
     let keytab = Keytab::load_name(keytab_name)?;
     if let Some(name) = desired {

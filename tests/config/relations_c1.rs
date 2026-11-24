@@ -12,31 +12,6 @@ mod tests {
 
     use rskrb5_ng::config::{Config, ConfigDiagnostic, ParseMode, hostname::Canonicalization};
 
-    /// Exercise production diagnostics, strict promotion, and first-value selection.
-    fn deferred(name: &str, values: &[&str], package: &str) -> Result<(), Box<dyn Error>> {
-        for value in values {
-            // Given a selected scalar followed by a value that must not override it.
-            let text = format!("[libdefaults]\n {name} = {value}\n {name} = invalid-later\n");
-            // When the compatible parser classifies the selected relation.
-            let config = Config::parse(&text)?;
-            let defaults = &config.libdefaults;
-            match name {
-                "default_rcache_name" => assert_eq!(defaults.default_rcache_name, *value),
-                "extra_addresses" => assert_eq!(defaults.extra_addresses.len(), 2),
-                _ => {}
-            }
-            // Then the precise deferred package is exposed and strict mode refuses it.
-            assert!(config.diagnostics().iter().any(|item| matches!(item,
-                ConfigDiagnostic::NotYetEffective { relation, package: owner } if *relation == name && *owner == package)));
-            assert!(
-                Config::parse_with_mode(&text, ParseMode::Strict)
-                    .err()
-                    .is_some()
-            );
-        }
-        Ok(())
-    }
-
     /// Effective relations: the first value is decoded into the typed field, later duplicates are
     /// ignored, and no deferred-consumer diagnostic is raised, so strict mode accepts them.
     fn effective(name: &str, values: &[&str]) -> Result<(), Box<dyn Error>> {
@@ -48,6 +23,7 @@ mod tests {
             let strict = Config::parse_with_mode(&text, ParseMode::Strict)?;
             let defaults = &config.libdefaults;
             match name {
+                "default_rcache_name" => assert_eq!(defaults.default_rcache_name, *value),
                 "dns_canonicalize_hostname" => assert_eq!(
                     defaults.dns_canonicalize_hostname,
                     Canonicalization::parse(value)?
@@ -111,26 +87,12 @@ mod tests {
     }
 
     effective_cases! {
+        default_rcache_name, ["dfl:", "none:", "memory:", "file2:/var/tmp/service.rcache"];
         dns_canonicalize_hostname, ["true", "false", "FaLlBaCk"];
         dns_lookup_realm, ["true", "false"];
         dns_uri_lookup, ["on", "nil"];
         enforce_ok_as_delegate, ["true", "false"];
         ignore_acceptor_hostname, ["true", "false"];
-    }
-
-    /// Declare independent test cases over the same diagnostic contract.
-    macro_rules! deferred_cases {
-        ($($name:ident, $package:literal, [$($value:literal),+];)+) => {$ (
-            /// Typed scalar and diagnostic contract for the named relation.
-            #[test]
-            fn $name() -> Result<(), Box<dyn Error>> {
-                deferred(stringify!($name), &[$($value),+], $package)
-            }
-        )+};
-    }
-
-    deferred_cases! {
-        default_rcache_name, "plan 2 WP-20", ["none:"];
     }
 
     /// Legacy permission reaches the resolved runtime policy, not just its field.

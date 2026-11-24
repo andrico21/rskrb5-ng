@@ -1,10 +1,16 @@
 //! Kerberos message/type wrappers that need gokrb5-compatible DER behavior.
 
+mod auth_context;
+mod clock;
 mod credential_debug;
 /// Signed key-version conversion for encrypted data.
 mod encrypted_data;
+mod forwarding;
+mod private_safe;
 /// Owning boundary for secret-bearing message DER staging.
 pub(crate) mod secret_der;
+mod seen;
+mod sequence;
 
 use core::{str, time::Duration};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -13,11 +19,114 @@ use rasn::{
     AsnType, Decode, Decoder as _, Encode, Encoder as _, der,
     types::{Integer, OctetString},
 };
+use rasn_kerberos::HostAddress;
+
+use crate::{ccache, crypto::CryptoPolicy, keytab::EncryptionKey};
 
 /// Kerberos protocol version number carried in every message (RFC 4120).
 const KRB5_PVNO: i32 = 5;
 /// `msg-type` of a KRB-ERROR message (RFC 4120 section 5.9.1).
 const KRB_ERROR_MSG_TYPE: i32 = 30;
+
+/// What an [`AuthContext`] checks on the messages it makes and reads.
+///
+/// MIT's `krb5_auth_con_setflags` bits `DO_TIME` and `DO_SEQUENCE`, the clock
+/// skew of the context and the runtime crypto policy of the keys. The default
+/// checks time (skew 300 s, MIT's default) and not sequence numbers.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub struct MessagePolicy {
+    /// Whether messages carry and are checked for a timestamp (`DO_TIME`).
+    check_time: bool,
+    /// The accepted difference between a message time and the clock.
+    clock_skew: Duration,
+    /// Whether messages carry and are checked for a sequence number (`DO_SEQUENCE`).
+    check_sequence: bool,
+    /// Bound on the replay memory; a full memory refuses, it never evicts.
+    replay_capacity: usize,
+    /// Which encryption types the keys and imported credentials may use.
+    crypto: CryptoPolicy,
+}
+
+/// A caller's proof that a channel is authentic and confidential.
+///
+/// A KRB-CRED travels unencrypted only over a channel the caller vouches for
+/// (RFC 6448); MIT's silent NULL transport (no key means plaintext) does not
+/// exist here.
+///
+/// # Security
+///
+/// [`Self::vouch`] is an assertion by the caller. Vouching for a channel that
+/// is not both authenticated and encrypted discloses the credentials in it.
+#[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
+pub struct ProtectedChannel {
+    /// What makes the channel protected, for diagnostics.
+    description: &'static str,
+}
+
+/// How a KRB-CRED travels.
+#[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
+pub enum CredentialTransport<'channel> {
+    /// Encrypted under a key of the context: the only transport that needs no
+    /// other protection. A context without a key refuses it.
+    Encrypted,
+    /// Unencrypted inside a channel the caller has vouched for.
+    Protected(&'channel ProtectedChannel),
+}
+
+/// A message read through an [`AuthContext`]: its content and the replay data.
+#[non_exhaustive]
+pub struct Received<T> {
+    /// The user data, or the forwarded credentials.
+    content: T,
+    /// The sender's timestamp, when the message carries one.
+    timestamp: Option<SystemTime>,
+    /// The sender's sequence number, when the message carries one.
+    sequence: Option<u32>,
+}
+
+/// MIT's `krb5_auth_context` for the KRB-PRIV, KRB-SAFE and KRB-CRED messages.
+///
+/// It holds the session key and the optional per-direction sub-keys, the
+/// addresses of both ends, the sequence counters and a bounded memory of the
+/// messages it has seen, and applies its [`MessagePolicy`] to every message.
+///
+/// # Security
+///
+/// The keys are secrets: the context never prints them and erases them when
+/// dropped. A message is delivered only after its integrity, its addresses, its
+/// time, its replay status and its sequence number have been checked.
+#[non_exhaustive]
+pub struct AuthContext {
+    /// The session key (`authcon->key`).
+    session_key: Option<EncryptionKey>,
+    /// The key this end sends under, when negotiated.
+    send_subkey: Option<EncryptionKey>,
+    /// The key this end reads under, when negotiated.
+    recv_subkey: Option<EncryptionKey>,
+    /// This end's address.
+    local_address: Option<HostAddress>,
+    /// The peer's address.
+    remote_address: Option<HostAddress>,
+    /// The number of the next message this end sends.
+    local_sequence: u32,
+    /// The number of the next message this end expects.
+    remote_sequence: u32,
+    /// The peer is known to send plain unsigned numbers (MIT `SANE_SEQ`).
+    sane_sequence: bool,
+    /// The peer is known to send Heimdal's unsigned encodings (MIT `HEIMDAL_SEQ`).
+    heimdal_sequence: bool,
+    /// What the context checks.
+    policy: MessagePolicy,
+    /// A fixed clock; `None` reads the system clock.
+    now: Option<SystemTime>,
+    /// The identity whose credentials the context forwards and imports.
+    credential_owner: Option<ccache::Principal>,
+    /// The messages seen, for replay detection.
+    seen: seen::Seen,
+}
 
 /// RFC 4120 `EncryptedData` with a signed/raw ASN.1 `kvno`.
 ///

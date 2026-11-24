@@ -1,0 +1,134 @@
+# kind	number	name	source
+address	2	ADDRTYPE_INET	MIT krb5.hin 1.22.2
+address	3	ADDRTYPE_DIRECTIONAL	MIT krb5.hin 1.22.2
+address	5	ADDRTYPE_CHAOS	MIT krb5.hin 1.22.2
+address	6	ADDRTYPE_XNS	MIT krb5.hin 1.22.2
+address	7	ADDRTYPE_ISO	MIT krb5.hin 1.22.2
+address	12	ADDRTYPE_DECNET	RFC 4120 section 7.5.3
+address	16	ADDRTYPE_DDP	MIT krb5.hin 1.22.2
+address	20	ADDRTYPE_NETBIOS	MIT krb5.hin 1.22.2
+address	24	ADDRTYPE_INET6	MIT krb5.hin 1.22.2
+address	256	ADDRTYPE_ADDRPORT	MIT krb5.hin 1.22.2
+address	257	ADDRTYPE_IPPORT	MIT krb5.hin 1.22.2
+address	32769	ADDRTYPE_UNIXSOCK	MIT krb5.hin 1.22.2
+authdata	1	AUTHDATA_IF_RELEVANT	MIT krb5.hin 1.22.2
+authdata	2	AUTHDATA_INTENDED_FOR_SERVER	RFC 4120 section 5.2.6.2
+authdata	3	AUTHDATA_INTENDED_FOR_APPLICATION_CLASS	RFC 4120 section 5.2.6.2
+authdata	4	AUTHDATA_KDC_ISSUED	MIT krb5.hin 1.22.2
+authdata	5	AUTHDATA_AND_OR	MIT krb5.hin 1.22.2
+authdata	6	AUTHDATA_MANDATORY_TICKET_EXTENSIONS	RFC 4120 section 5.2.6.2
+authdata	7	AUTHDATA_IN_TICKET_EXTENSIONS	RFC 4120 section 5.2.6.2
+authdata	8	AUTHDATA_MANDATORY_FOR_KDC	MIT krb5.hin 1.22.2
+authdata	9	AUTHDATA_INITIAL_VERIFIED_CAS	MIT krb5.hin 1.22.2
+authdata	64	AUTHDATA_OSF_DCE	MIT krb5.hin 1.22.2
+authdata	65	AUTHDATA_SESAME	MIT krb5.hin 1.22.2
+authdata	71	AUTHDATA_FX_ARMOR	MIT krb5.hin 1.22.2
+authdata	96	AUTHDATA_CAMMAC	MIT krb5.hin 1.22.2
+authdata	97	AUTHDATA_AUTH_INDICATOR	MIT krb5.hin 1.22.2
+authdata	128	AUTHDATA_WIN2K_PAC	MIT krb5.hin 1.22.2
+authdata	129	AUTHDATA_ETYPE_NEGOTIATION	MIT krb5.hin 1.22.2
+authdata	143	AUTHDATA_AP_OPTIONS	MIT krb5.hin 1.22.2
+authdata	512	AUTHDATA_SIGNTICKET	MIT krb5.hin 1.22.2
+error	0	KDC_ERR_NONE	No error
+error	1	KDC_ERR_NAME_EXP	Client's entry in database has expired
+error	2	KDC_ERR_SERVICE_EXP	Server's entry in database has expired
+error	3	KDC_ERR_BAD_PVNO	Requested protocol version not supported
+error	4	KDC_ERR_C_OLD_MAST_KVNO	Client's key is encrypted in an old master key
+error	5	KDC_ERR_S_OLD_MAST_KVNO	Server's key is encrypted in an old master key
+error	6	KDC_ERR_C_PRINCIPAL_UNKNOWN	Client not found in Kerberos database
+error	7	KDC_ERR_S_PRINCIPAL_UNKNOWN	Server not found in Kerberos database
+error	8	KDC_ERR_PRINCIPAL_NOT_UNIQUE	Principal has multiple entries in Kerberos database
+error	9	KDC_ERR_NULL_KEY	Client or server has a null key
+error	10	KDC_ERR_CANNOT_POSTDATE	Ticket is ineligible for postdating
+error	11	KDC_ERR_NEVER_VALID	Requested effective lifetime is negative or too short
+error	12	KDC_ERR_POLICY	KDC policy rejects request
+error	13	KDC_ERR_BADOPTION	KDC can't fulfill requested option
+error	14	KDC_ERR_ETYPE_NOSUPP	KDC has no support for encryption type
+error	15	KDC_ERR_SUMTYPE_NOSUPP	KDC has no support for checksum type
+error	16	KDC_ERR_PADATA_TYPE_NOSUPP	KDC has no support for padata type
+error	17	KDC_ERR_TRTYPE_NOSUPP	KDC has no support for transited type
+error	18	KDC_ERR_CLIENT_REVOKED	Client's credentials have been revoked
+error	19	KDC_ERR_SERVICE_REVOKED	Credentials for server have been revoked
+error	20	KDC_ERR_TGT_REVOKED	TGT has been revoked
+error	21	KDC_ERR_CLIENT_NOTYET	Client not yet valid - try again later
+error	22	KDC_ERR_SERVICE_NOTYET	Server not yet valid - try again later
+error	23	KDC_ERR_KEY_EXP	Password has expired
+error	24	KDC_ERR_PREAUTH_FAILED	Preauthentication failed
+error	25	KDC_ERR_PREAUTH_REQUIRED	Additional pre-authentication required
+error	26	KDC_ERR_SERVER_NOMATCH	Requested server and ticket don't match
+error	27	KDC_ERR_MUST_USE_USER2USER	Server principal valid for user2user only
+error	28	KDC_ERR_PATH_NOT_ACCEPTED	KDC policy rejects transited path
+error	29	KDC_ERR_SVC_UNAVAILABLE	A service is not available that is required to process the request
+error	31	KRB_AP_ERR_BAD_INTEGRITY	Decrypt integrity check failed
+error	32	KRB_AP_ERR_TKT_EXPIRED	Ticket expired
+error	33	KRB_AP_ERR_TKT_NYV	Ticket not yet valid
+error	34	KRB_AP_ERR_REPEAT	Request is a replay
+error	35	KRB_AP_ERR_NOT_US	The ticket isn't for us
+error	36	KRB_AP_ERR_BADMATCH	Ticket/authenticator don't match
+error	37	KRB_AP_ERR_SKEW	Clock skew too great
+error	38	KRB_AP_ERR_BADADDR	Incorrect net address
+error	39	KRB_AP_ERR_BADVERSION	Protocol version mismatch
+error	40	KRB_AP_ERR_MSG_TYPE	Invalid message type
+error	41	KRB_AP_ERR_MODIFIED	Message stream modified
+error	42	KRB_AP_ERR_BADORDER	Message out of order
+error	43	KRB_AP_ERR_ILL_CR_TKT	Illegal cross-realm ticket
+error	44	KRB_AP_ERR_BADKEYVER	Key version is not available
+error	45	KRB_AP_ERR_NOKEY	Service key not available
+error	46	KRB_AP_ERR_MUT_FAIL	Mutual authentication failed
+error	47	KRB_AP_ERR_BADDIRECTION	Incorrect message direction
+error	48	KRB_AP_ERR_METHOD	Alternative authentication method required
+error	49	KRB_AP_ERR_BADSEQ	Incorrect sequence number in message
+error	50	KRB_AP_ERR_INAPP_CKSUM	Inappropriate type of checksum in message
+error	51	KRB_AP_PATH_NOT_ACCEPTED	Policy rejects transited path
+error	52	KRB_ERR_RESPONSE_TOO_BIG	Response too big for UDP, retry with TCP
+error	60	KRB_ERR_GENERIC	Generic error (see e-text)
+error	61	KRB_ERR_FIELD_TOOLONG	Field is too long for this implementation
+error	62	KDC_ERR_CLIENT_NOT_TRUSTED	Client not trusted
+error	63	KDC_ERR_KDC_NOT_TRUSTED	KDC not trusted
+error	64	KDC_ERR_INVALID_SIG	Invalid signature
+error	65	KDC_ERR_DH_KEY_PARAMETERS_NOT_ACCEPTED	Key parameters not accepted
+error	66	KDC_ERR_CERTIFICATE_MISMATCH	Certificate mismatch
+error	67	KRB_AP_ERR_NO_TGT	No ticket granting ticket
+error	68	KDC_ERR_WRONG_REALM	Realm not local to KDC
+error	69	KRB_AP_ERR_USER_TO_USER_REQUIRED	User to user required
+error	70	KDC_ERR_CANT_VERIFY_CERTIFICATE	Can't verify certificate
+error	71	KDC_ERR_INVALID_CERTIFICATE	Invalid certificate
+error	72	KDC_ERR_REVOKED_CERTIFICATE	Revoked certificate
+error	73	KDC_ERR_REVOCATION_STATUS_UNKNOWN	Revocation status unknown
+error	74	KDC_ERR_REVOCATION_STATUS_UNAVAILABLE	Revocation status unavailable
+error	75	KDC_ERR_CLIENT_NAME_MISMATCH	Client name mismatch
+error	76	KDC_ERR_KDC_NAME_MISMATCH	KDC name mismatch
+error	77	KDC_ERR_INCONSISTENT_KEY_PURPOSE	Inconsistent key purpose
+error	78	KDC_ERR_DIGEST_IN_CERT_NOT_ACCEPTED	Digest in certificate not accepted
+error	79	KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED	Checksum must be included
+error	80	KDC_ERR_DIGEST_IN_SIGNED_DATA_NOT_ACCEPTED	Digest in signed-data not accepted
+error	81	KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED	Public key encryption not supported
+error	85	KRB_AP_ERR_IAKERB_KDC_NOT_FOUND	The IAKERB proxy could not find a KDC
+error	86	KRB_AP_ERR_IAKERB_KDC_NO_RESPONSE	The KDC did not respond to the IAKERB proxy
+error	90	KDC_ERR_PREAUTH_EXPIRED	Preauthentication expired
+error	91	KDC_ERR_MORE_PREAUTH_DATA_REQUIRED	More preauthentication data is required
+error	93	KDC_ERR_UNKNOWN_CRITICAL_FAST_OPTION	An unsupported critical FAST option was requested
+error	100	KDC_ERR_NO_ACCEPTABLE_KDF	No acceptable KDF offered
+message	10	AS_REQ	RFC 4120 section 5.4.1; MIT krb5.hin 1.22.2
+message	11	AS_REP	RFC 4120 section 5.4.1; MIT krb5.hin 1.22.2
+message	12	TGS_REQ	RFC 4120 section 5.4.1; MIT krb5.hin 1.22.2
+message	13	TGS_REP	RFC 4120 section 5.4.1; MIT krb5.hin 1.22.2
+message	14	AP_REQ	RFC 4120 section 5.4.1; MIT krb5.hin 1.22.2
+message	15	AP_REP	RFC 4120 section 5.4.1; MIT krb5.hin 1.22.2
+message	20	SAFE	RFC 4120 section 5.4.1; MIT krb5.hin 1.22.2
+message	21	PRIV	RFC 4120 section 5.4.1; MIT krb5.hin 1.22.2
+message	22	CRED	RFC 4120 section 5.4.1; MIT krb5.hin 1.22.2
+message	30	ERROR	RFC 4120 section 5.4.1; MIT krb5.hin 1.22.2
+name	-130	NT_ENT_PRINCIPAL_AND_ID	MIT krb5.hin 1.22.2
+name	-129	NT_MS_PRINCIPAL_AND_ID	MIT krb5.hin 1.22.2
+name	-128	NT_MS_PRINCIPAL	MIT krb5.hin 1.22.2
+name	0	NT_UNKNOWN	MIT krb5.hin 1.22.2
+name	1	NT_PRINCIPAL	MIT krb5.hin 1.22.2
+name	2	NT_SRV_INST	MIT krb5.hin 1.22.2
+name	3	NT_SRV_HST	MIT krb5.hin 1.22.2
+name	4	NT_SRV_XHST	MIT krb5.hin 1.22.2
+name	5	NT_UID	MIT krb5.hin 1.22.2
+name	6	NT_X500_PRINCIPAL	MIT krb5.hin 1.22.2
+name	7	NT_SMTP_NAME	MIT krb5.hin 1.22.2
+name	10	NT_ENTERPRISE_PRINCIPAL	MIT krb5.hin 1.22.2
+name	11	NT_WELLKNOWN	MIT krb5.hin 1.22.2
