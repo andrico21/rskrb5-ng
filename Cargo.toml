@@ -53,7 +53,11 @@ tests = ["tests/ccache_keyring.rs", "tests/ccache_keyring/"]
 [package.metadata.rskrb5-ng.leaf-features.http-client]
 minimal = ["http"]
 modules = ["src/http/cookies.rs"]
-tests = ["tests/http_client_cookies.rs", "tests/interop_http_client.rs"]
+tests = [
+  "tests/http_client/cookies.rs",
+  "tests/http_client_cookies.rs",
+  "tests/interop_http_client.rs",
+]
 
 [package.metadata.rskrb5-ng.leaf-features.kkdcp-rustls]
 minimal = ["tokio"]
