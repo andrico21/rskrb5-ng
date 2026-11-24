@@ -33,11 +33,11 @@ fn dfl_name(directory: &Path) -> Result<String, TestError> {
 
 /// The file name `dfl:` uses in this process.
 #[cfg(not(unix))]
-#[expect(
-    clippy::unnecessary_wraps,
-    reason = "same signature as the unix variant, whose user-id probe is fallible"
-)]
-fn dfl_name(_directory: &Path) -> Result<String, TestError> {
+fn dfl_name(directory: &Path) -> Result<String, TestError> {
+    assert!(
+        fs::metadata(directory)?.is_dir(),
+        "the cache directory exists"
+    );
     Ok("krb5.rcache2".to_owned())
 }
 

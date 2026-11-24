@@ -604,7 +604,7 @@ does.
 | `rskrb5_ng::messages::private_safe::read_priv` | `src/messages/private_safe.rs` | `auth_message` |  |
 | `rskrb5_ng::messages::private_safe::read_safe` | `src/messages/private_safe.rs` | `auth_message` |  |
 | `rskrb5_ng::messages::private_safe::reading_key` | `src/messages/private_safe.rs` | `auth_message` |  |
-| `rskrb5_ng::replay::name::RcacheName::parse` | `src/replay/name.rs` | `replay_file` |  |
+| `rskrb5_ng::replay::RcacheName::parse` | `src/replay.rs` | `replay_file` |  |
 | `rskrb5_ng::replay::table::parse` | `src/replay/table.rs` | `replay_file` |  |
 | `<rskrb5_ng::replay::files::LockedFile as OpenFile>::read_at` | `src/replay/files.rs` | - | the operating-system implementation of the read of the cache file; the fuzz target reads through its own in-memory `OpenFile`, and the table walk behind it is the row `rskrb5_ng::replay::table::parse`; covered by tests/replay_store/concurrency.rs on real files |
 | `rskrb5_ng::replay::read_at` | `src/replay.rs` | - | declaration of the `OpenFile` method (no body); the implementations are the row above and the fuzz target's own file |
