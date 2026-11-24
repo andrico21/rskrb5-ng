@@ -2,19 +2,19 @@
 //! revocation, principal binding and the continuation of a Negotiate exchange.
 
 use alloc::sync::Arc;
-use core::time::Duration;
-use std::{
+use core::{
     sync::atomic::{AtomicU64, Ordering},
-    time::{SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use http_types::{HeaderValue, Request, header::COOKIE};
 use pretty_assertions::assert_eq;
 use rskrb5_ng::{
-    client::principal::Principal,
     error::HttpSession as SessionError,
     gss::TransferKey,
     http::sessions::{SessionIdentity, SessionManager},
+    service::Principal,
     trace::{Guard, Options, capture::Memory},
 };
 
@@ -24,12 +24,15 @@ use super::context::{Context as _, TestError};
 const START: u64 = 1_800_000_000;
 
 /// A manager with a test clock the caller can advance.
-fn manager() -> Result<(SessionManager, Arc<AtomicU64>), TestError> {
+fn manager() -> (SessionManager, Arc<AtomicU64>) {
     let seconds = Arc::new(AtomicU64::new(START));
     let clock = Arc::clone(&seconds);
-    let manager = SessionManager::new(TransferKey::new([7; 32]))
-        .with_clock(move || UNIX_EPOCH + Duration::from_secs(clock.load(Ordering::SeqCst)));
-    Ok((manager, seconds))
+    let manager = SessionManager::new(TransferKey::new([7; 32])).with_clock(move || {
+        UNIX_EPOCH
+            .checked_add(Duration::from_secs(clock.load(Ordering::SeqCst)))
+            .unwrap_or(UNIX_EPOCH)
+    });
+    (manager, seconds)
 }
 
 /// The cookie value of a `Set-Cookie` header.
@@ -45,14 +48,19 @@ fn value_of(set_cookie: &HeaderValue) -> Result<String, TestError> {
 
 /// The principal of every test session.
 fn alice() -> Principal {
-    Principal::user("EXAMPLE.COM", "alice")
+    named("EXAMPLE.COM", "alice")
+}
+
+/// A user principal.
+fn named(realm: &str, name: &str) -> Principal {
+    Principal::new(realm.to_owned(), 1, vec![name.to_owned()])
 }
 
 /// A session is issued with a hardened cookie, resumes to the same principal and
 /// lifetime, and its `Set-Cookie` carries no readable principal.
 #[test]
 fn a_session_round_trips_through_its_cookie() -> Result<(), TestError> {
-    let (manager, _clock) = manager()?;
+    let (manager, _clock) = manager();
     let (identity, set_cookie) = manager.issue(&alice())?;
     let text = set_cookie.to_str().context("visible ASCII")?;
     for attribute in [
@@ -84,20 +92,20 @@ fn a_session_round_trips_through_its_cookie() -> Result<(), TestError> {
 /// A session issued for one principal never authenticates another.
 #[test]
 fn a_session_is_bound_to_its_principal() -> Result<(), TestError> {
-    let (manager, _clock) = manager()?;
+    let (manager, _clock) = manager();
     let (_identity, set_cookie) = manager.issue(&alice())?;
     let value = value_of(&set_cookie)?;
-    let bob = Principal::user("EXAMPLE.COM", "bob");
+    let bob = named("EXAMPLE.COM", "bob");
     let refused = manager.resume_for(&value, &bob);
     assert!(
         matches!(refused, Err(SessionError::PrincipalMismatch)),
         "{refused:?}"
     );
-    let other_realm = Principal::user("OTHER.COM", "alice");
-    let refused = manager.resume_for(&value, &other_realm);
+    let other_realm = named("OTHER.COM", "alice");
+    let elsewhere = manager.resume_for(&value, &other_realm);
     assert!(
-        matches!(refused, Err(SessionError::PrincipalMismatch)),
-        "{refused:?}"
+        matches!(elsewhere, Err(SessionError::PrincipalMismatch)),
+        "{elsewhere:?}"
     );
     assert_eq!(manager.resume_for(&value, &alice())?.principal(), &alice());
     Ok(())
@@ -106,7 +114,7 @@ fn a_session_is_bound_to_its_principal() -> Result<(), TestError> {
 /// A session ends at its expiry, to the second.
 #[test]
 fn an_expired_session_is_refused() -> Result<(), TestError> {
-    let (manager, clock) = manager()?;
+    let (manager, clock) = manager();
     let (_identity, set_cookie) = manager.issue(&alice())?;
     let value = value_of(&set_cookie)?;
     clock.store(START + 3599, Ordering::SeqCst);
@@ -120,7 +128,7 @@ fn an_expired_session_is_refused() -> Result<(), TestError> {
 /// A rotated session has a new generation and cookie; the old cookie is refused.
 #[test]
 fn a_rotated_session_refuses_its_old_cookie() -> Result<(), TestError> {
-    let (manager, clock) = manager()?;
+    let (manager, clock) = manager();
     let (identity, old) = manager.issue(&alice())?;
     clock.store(START + 60, Ordering::SeqCst);
     let (rotated, new) = manager.rotate(&identity)?;
@@ -138,7 +146,7 @@ fn a_rotated_session_refuses_its_old_cookie() -> Result<(), TestError> {
 /// A revoked session is refused whatever its cookie says; revoking twice is harmless.
 #[test]
 fn a_revoked_session_is_refused() -> Result<(), TestError> {
-    let (manager, _clock) = manager()?;
+    let (manager, _clock) = manager();
     let (identity, set_cookie) = manager.issue(&alice())?;
     manager.revoke(&identity)?;
     manager.revoke(&identity)?;
@@ -153,8 +161,8 @@ fn a_revoked_session_is_refused() -> Result<(), TestError> {
 /// manager's registry never held.
 #[test]
 fn a_foreign_cookie_is_refused() -> Result<(), TestError> {
-    let (first, _clock) = manager()?;
-    let (second, _other) = manager()?;
+    let (first, _clock) = manager();
+    let (second, _other) = manager();
     let (_identity, set_cookie) = first.issue(&alice())?;
     let value = value_of(&set_cookie)?;
     let sealed_elsewhere = SessionManager::new(TransferKey::new([9; 32]));
@@ -171,7 +179,7 @@ fn a_foreign_cookie_is_refused() -> Result<(), TestError> {
 /// A cookie changed in any one character, or cut at any length, is never a session.
 #[test]
 fn a_tampered_or_truncated_cookie_is_refused() -> Result<(), TestError> {
-    let (manager, _clock) = manager()?;
+    let (manager, _clock) = manager();
     let (_identity, set_cookie) = manager.issue(&alice())?;
     let value = value_of(&set_cookie)?;
     for index in 0..value.len() {
@@ -207,7 +215,12 @@ fn a_tampered_or_truncated_cookie_is_refused() -> Result<(), TestError> {
 /// A value past the size limit is refused before it is decoded.
 #[test]
 fn an_oversized_cookie_is_refused() -> Result<(), TestError> {
-    let (manager, _clock) = manager()?;
+    let (manager, _clock) = manager();
+    let (_identity, set_cookie) = manager.issue(&alice())?;
+    assert!(
+        value_of(&set_cookie)?.len() < 4096,
+        "a real session fits the limit"
+    );
     let refused = manager.resume(&"A".repeat(10_000));
     assert!(
         matches!(
@@ -225,27 +238,28 @@ fn an_oversized_cookie_is_refused() -> Result<(), TestError> {
 /// The registry holds a bounded number of sessions; an expired session makes room.
 #[test]
 fn the_session_count_is_bounded() -> Result<(), TestError> {
-    let (manager, clock) = manager()?;
-    let manager = manager
+    let (unbounded, clock) = manager();
+    let manager = unbounded
         .with_max_sessions(2)
         .with_lifetime(Duration::from_secs(100));
     drop(manager.issue(&alice())?);
-    drop(manager.issue(&Principal::user("EXAMPLE.COM", "bob"))?);
-    let full = manager.issue(&Principal::user("EXAMPLE.COM", "carol"));
+    drop(manager.issue(&named("EXAMPLE.COM", "bob"))?);
+    let full = manager.issue(&named("EXAMPLE.COM", "carol"));
     assert!(
         matches!(full, Err(SessionError::CapacityExceeded { limit: 2 })),
         "{full:?}"
     );
     clock.store(START + 100, Ordering::SeqCst);
-    drop(manager.issue(&Principal::user("EXAMPLE.COM", "carol"))?);
+    drop(manager.issue(&named("EXAMPLE.COM", "carol"))?);
     Ok(())
 }
 
 /// A principal that does not fit the format is refused, not truncated.
 #[test]
 fn an_oversized_principal_is_refused() -> Result<(), TestError> {
-    let (manager, _clock) = manager()?;
-    let long = Principal::user("EXAMPLE.COM", "x".repeat(300));
+    let (manager, _clock) = manager();
+    drop(manager.issue(&named("EXAMPLE.COM", &"x".repeat(255)))?);
+    let long = named("EXAMPLE.COM", &"x".repeat(256));
     let refused = manager.issue(&long);
     assert!(
         matches!(
@@ -254,14 +268,14 @@ fn an_oversized_principal_is_refused() -> Result<(), TestError> {
         ),
         "{refused:?}"
     );
-    let many = Principal::new("EXAMPLE.COM", 1, vec!["a"; 20]);
-    let refused = manager.issue(&many);
+    let many = Principal::new("EXAMPLE.COM".to_owned(), 1, vec!["a".to_owned(); 20]);
+    let crowded = manager.issue(&many);
     assert!(
         matches!(
-            refused,
+            crowded,
             Err(SessionError::UnsupportedPrincipal { reason: _ })
         ),
-        "{refused:?}"
+        "{crowded:?}"
     );
     Ok(())
 }
@@ -270,7 +284,7 @@ fn an_oversized_principal_is_refused() -> Result<(), TestError> {
 /// request's extensions, ignores a request without one and refuses a duplicate.
 #[test]
 fn attach_places_the_identity_in_the_request_extensions() -> Result<(), TestError> {
-    let (manager, _clock) = manager()?;
+    let (manager, _clock) = manager();
     let (identity, set_cookie) = manager.issue(&alice())?;
     let value = value_of(&set_cookie)?;
     let mut request = Request::new(());
@@ -346,10 +360,10 @@ fn the_cookie_name_is_configurable_and_validated() -> Result<(), TestError> {
     assert!(text.starts_with("__Host-sid="), "{text}");
     assert!(!text.contains("Secure"), "{text}");
     let expired = manager.expire_cookie();
-    let text = expired.to_str().context("visible ASCII")?;
+    let deleting = expired.to_str().context("visible ASCII")?;
     assert!(
-        text.starts_with("__Host-sid=;") && text.contains("Max-Age=0"),
-        "{text}"
+        deleting.starts_with("__Host-sid=;") && deleting.contains("Max-Age=0"),
+        "{deleting}"
     );
     Ok(())
 }
@@ -360,8 +374,8 @@ fn the_cookie_name_is_configurable_and_validated() -> Result<(), TestError> {
 fn refusals_are_traced_without_secrets() -> Result<(), TestError> {
     let sink = Memory::new();
     let guard = Guard::new(sink.clone(), Options::default().with_identities(true));
-    let (manager, clock) = manager()?;
-    let manager = manager.with_trace(guard);
+    let (plain, clock) = manager();
+    let manager = plain.with_trace(guard);
     let (identity, set_cookie) = manager.issue(&alice())?;
     let value = value_of(&set_cookie)?;
     clock.store(START + 7200, Ordering::SeqCst);
@@ -385,7 +399,7 @@ fn refusals_are_traced_without_secrets() -> Result<(), TestError> {
 /// Sessions issued by one manager are independent: revoking one leaves another.
 #[test]
 fn sessions_are_independent() -> Result<(), TestError> {
-    let (manager, _clock) = manager()?;
+    let (manager, _clock) = manager();
     let (first, first_cookie) = manager.issue(&alice())?;
     let (_second, second_cookie) = manager.issue(&alice())?;
     manager.revoke(&first)?;
@@ -415,7 +429,10 @@ mod continuation {
         Response, StatusCode,
         header::{AUTHORIZATION, SET_COOKIE, WWW_AUTHENTICATE},
     };
-    use rskrb5_ng::{http::NegotiateLayer, spnego::AcceptedContext};
+    use rskrb5_ng::{
+        client::principal::Principal as ClientPrincipal, http::NegotiateLayer,
+        spnego::AcceptedContext,
+    };
     use tokio::runtime::Builder;
     use tower_layer::Layer as _;
     use tower_service::Service;
@@ -445,11 +462,10 @@ mod continuation {
             Poll::Ready(Ok(()))
         }
 
-        fn call(&mut self, request: Request<Vec<u8>>) -> Self::Future {
-            let who = request.extensions().get::<SessionIdentity>().map_or_else(
+        fn call(&mut self, req: Request<Vec<u8>>) -> Self::Future {
+            let who = req.extensions().get::<SessionIdentity>().map_or_else(
                 || {
-                    request
-                        .extensions()
+                    req.extensions()
                         .get::<AcceptedContext>()
                         .map_or_else(String::new, |accepted| {
                             format!("negotiate:{}", accepted.ap_req().client().name())
@@ -492,12 +508,9 @@ mod continuation {
             .enable_all()
             .build()
             .context("runtime")?;
-        let header =
-            runtime
-                .block_on(client.authorization_header(
-                    rskrb5_ng::client::principal::Principal::new(REALM, 3, ["HTTP", HOST]),
-                ))
-                .context("a token")?;
+        let header = runtime
+            .block_on(client.authorization_header(ClientPrincipal::new(REALM, 3, ["HTTP", HOST])))
+            .context("a token")?;
         let mut request = Request::new(Vec::new());
         drop(request.headers_mut().insert(
             AUTHORIZATION,
@@ -506,13 +519,14 @@ mod continuation {
         Ok(request)
     }
 
-    /// A Negotiate-authenticated request gets a session cookie; the cookie alone
-    /// then authenticates the next requests, until it is tampered with, expires
-    /// or is revoked, and a service without a manager never trusts it.
+    /// A Negotiate request gets a session cookie that alone then authenticates.
+    ///
+    /// It stops doing so when tampered with, expired or revoked, and a service
+    /// without a manager never trusts it.
     #[test]
     fn a_session_continues_the_negotiate_exchange() -> Result<(), TestError> {
-        let (manager, clock): (SessionManager, Arc<AtomicU64>) = manager()?;
-        let manager = Arc::new(manager);
+        let (sessions, clock): (SessionManager, Arc<AtomicU64>) = manager();
+        let manager = Arc::new(sessions);
         let mut service = NegotiateLayer::from_keytab(keytab(&[HOST]))
             .with_session_manager(Arc::clone(&manager))
             .layer(Echo);

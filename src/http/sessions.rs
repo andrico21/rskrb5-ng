@@ -34,13 +34,32 @@
 
 use alloc::sync::Arc;
 use core::{fmt, time::Duration};
-use std::{collections::HashMap, sync::Mutex, time::SystemTime};
-
-use http_types::{HeaderValue, Request};
-
-use crate::{
-    client::principal::Principal, error::HttpSession as Error, gss::TransferKey, trace::Guard,
+use std::{
+    collections::HashMap,
+    sync::Mutex,
+    time::{SystemTime, UNIX_EPOCH},
 };
+
+use http_types::{HeaderMap, HeaderValue, Request, header::COOKIE};
+
+use self::blob::Fields;
+use crate::{
+    error::HttpSession as Error,
+    gss::TransferKey,
+    service::Principal,
+    trace::{Event, Guard},
+};
+
+/// The sealed session format.
+mod blob;
+
+/// A live session as the registry knows it.
+struct Entry {
+    /// The newest generation issued.
+    generation: u32,
+    /// When the session ends, in seconds since the epoch.
+    expires: u64,
+}
 
 /// What a valid session cookie proves, placed in the request's extensions next
 /// to [`AcceptedContext`](crate::spnego::AcceptedContext) by
@@ -98,6 +117,22 @@ impl SessionIdentity {
     pub const fn expires_at(&self) -> SystemTime {
         self.expires
     }
+
+    /// The identity of a session's fields and principal.
+    fn from_fields(fields: &Fields, principal: Principal) -> Self {
+        let at = |seconds: u64| {
+            UNIX_EPOCH
+                .checked_add(Duration::from_secs(seconds))
+                .unwrap_or(UNIX_EPOCH)
+        };
+        Self {
+            id: fields.id,
+            principal,
+            generation: fields.generation,
+            issued: at(fields.issued),
+            expires: at(fields.expires),
+        }
+    }
 }
 
 /// The clock of a manager.
@@ -112,7 +147,7 @@ pub struct SessionManager {
     /// The most live sessions.
     max_sessions: usize,
     /// The live sessions.
-    registry: Mutex<HashMap<[u8; 16], SystemTime>>,
+    registry: Mutex<HashMap<[u8; 16], Entry>>,
     /// The name of the session cookie.
     cookie_name: String,
     /// Whether the cookie is `Secure`.
@@ -180,11 +215,8 @@ impl SessionManager {
     /// that is not a token character.
     #[inline]
     pub fn with_cookie_name(mut self, name: &str) -> Result<Self, Error> {
-        if name.is_empty()
-            || !name
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte))
-        {
+        let token = |byte: u8| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte);
+        if name.is_empty() || !name.bytes().all(token) {
             return Err(Error::InvalidCookie {
                 reason: "the cookie name is not an RFC 6265 token",
             });
@@ -224,8 +256,75 @@ impl SessionManager {
     #[inline]
     #[must_use]
     pub fn expire_cookie(&self) -> HeaderValue {
-        let _unused = (&self.cookie_name, self.secure, &self.clock);
-        HeaderValue::from_static("")
+        self.header(&format!("{}=", self.cookie_name), "Max-Age=0")
+    }
+
+    /// The current time, in seconds since the epoch.
+    fn now(&self) -> u64 {
+        (self.clock)()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_secs())
+    }
+
+    /// Run `operation` on the registry under its lock.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Poisoned`] and the errors of `operation`.
+    fn with_registry<T, F>(&self, operation: F) -> Result<T, Error>
+    where
+        F: FnOnce(&mut HashMap<[u8; 16], Entry>) -> Result<T, Error>,
+    {
+        let mut registry = self.registry.lock().map_err(|_poisoned| Error::Poisoned)?;
+        operation(&mut registry)
+    }
+
+    /// A `Set-Cookie` header: `start`, then the fixed attributes and `tail`.
+    fn header(&self, start: &str, tail: &str) -> HeaderValue {
+        let secure = if self.secure { "; Secure" } else { "" };
+        let mut value = HeaderValue::from_str(&format!(
+            "{start}; Path=/; HttpOnly; SameSite=Strict{secure}; {tail}"
+        ))
+        .unwrap_or_else(|_unencodable| HeaderValue::from_static(""));
+        value.set_sensitive(true);
+        value
+    }
+
+    /// Record a refusal in the trace and hand the error back.
+    fn refuse(&self, error: Error) -> Error {
+        let reason = match &error {
+            Error::Malformed { reason: _ } => "http session malformed",
+            Error::TooLarge {
+                limit: _,
+                actual: _,
+            } => "http session too large",
+            Error::Unauthentic => "http session unauthentic",
+            Error::Expired => "http session expired",
+            Error::Revoked => "http session revoked",
+            Error::Rotated => "http session rotated",
+            Error::PrincipalMismatch => "http session principal mismatch",
+            Error::CapacityExceeded { limit: _ }
+            | Error::UnsupportedPrincipal { reason: _ }
+            | Error::InvalidCookie { reason: _ }
+            | Error::Poisoned
+            | Error::Random(_)
+            | Error::Crypto(_) => "http session refused",
+        };
+        self.trace.emit(&Event::ApReqRejected { reason });
+        error
+    }
+
+    /// Seal a session and its `Set-Cookie` value.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`blob::seal`].
+    fn cookie(&self, principal: &Principal, fields: &Fields) -> Result<HeaderValue, Error> {
+        let value = blob::seal(&self.key, principal, fields)?;
+        Ok(self.header(
+            &format!("{}={value}", self.cookie_name),
+            &format!("Max-Age={}", self.lifetime.as_secs()),
+        ))
     }
 
     /// Issue a session for `principal`: its identity and the `Set-Cookie` value.
@@ -235,23 +334,80 @@ impl SessionManager {
     /// Returns [`Error::UnsupportedPrincipal`], [`Error::CapacityExceeded`],
     /// [`Error::Poisoned`] and the random-source and sealing errors.
     #[inline]
-    pub fn issue(&self, _principal: &Principal) -> Result<(SessionIdentity, HeaderValue), Error> {
-        let _unused = (&self.key, &self.registry);
-        Err(Error::Malformed {
-            reason: "not implemented",
-        })
+    pub fn issue(&self, principal: &Principal) -> Result<(SessionIdentity, HeaderValue), Error> {
+        let now = self.now();
+        let mut id = [0_u8; 16];
+        getrandom::fill(&mut id)?;
+        let fields = Fields {
+            id,
+            generation: 0,
+            issued: now,
+            expires: now.saturating_add(self.lifetime.as_secs()),
+        };
+        let set_cookie = self.cookie(principal, &fields)?;
+        self.with_registry(|registry| {
+            if registry.len() >= self.max_sessions {
+                registry.retain(|_id, entry| entry.expires > now);
+            }
+            if registry.len() >= self.max_sessions {
+                return Err(Error::CapacityExceeded {
+                    limit: self.max_sessions,
+                });
+            }
+            let _previous = registry.insert(
+                id,
+                Entry {
+                    generation: 0,
+                    expires: fields.expires,
+                },
+            );
+            Ok(())
+        })?;
+        Ok((
+            SessionIdentity::from_fields(&fields, principal.clone()),
+            set_cookie,
+        ))
     }
 
     /// Resume the session of the cookie value `value`.
     ///
     /// # Errors
     ///
-    /// Returns the refusals of the module documentation.
+    /// Returns [`Error::TooLarge`], [`Error::Malformed`] and
+    /// [`Error::Unauthentic`] for a value that is not a session of this
+    /// manager's key, [`Error::Expired`], [`Error::Revoked`] for a session this
+    /// manager does not hold and [`Error::Rotated`] for a replaced generation.
     #[inline]
-    pub fn resume(&self, _value: &str) -> Result<SessionIdentity, Error> {
-        Err(Error::Malformed {
-            reason: "not implemented",
-        })
+    pub fn resume(&self, value: &str) -> Result<SessionIdentity, Error> {
+        self.resume_inner(value).map_err(|error| self.refuse(error))
+    }
+
+    /// [`Self::resume`] without the trace.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Self::resume`].
+    fn resume_inner(&self, value: &str) -> Result<SessionIdentity, Error> {
+        let (fields, principal) = blob::open(&self.key, value)?;
+        let now = self.now();
+        self.with_registry(|registry| {
+            if now >= fields.expires {
+                let _ended = registry.remove(&fields.id);
+                return Err(Error::Expired);
+            }
+            let entry = registry.get(&fields.id).ok_or(Error::Revoked)?;
+            if now >= entry.expires {
+                return Err(Error::Expired);
+            }
+            if entry.generation > fields.generation {
+                return Err(Error::Rotated);
+            }
+            if entry.generation < fields.generation {
+                return Err(Error::Unauthentic);
+            }
+            Ok(())
+        })?;
+        Ok(SessionIdentity::from_fields(&fields, principal))
     }
 
     /// Resume the session of `value` and require it to belong to `principal`.
@@ -260,28 +416,51 @@ impl SessionManager {
     ///
     /// Returns [`Error::PrincipalMismatch`] and the errors of [`Self::resume`].
     #[inline]
-    pub fn resume_for(
-        &self,
-        _value: &str,
-        _principal: &Principal,
-    ) -> Result<SessionIdentity, Error> {
-        Err(Error::Malformed {
-            reason: "not implemented",
-        })
+    pub fn resume_for(&self, value: &str, principal: &Principal) -> Result<SessionIdentity, Error> {
+        let identity = self.resume(value)?;
+        if identity.principal().realm != principal.realm
+            || identity.principal().components != principal.components
+        {
+            return Err(self.refuse(Error::PrincipalMismatch));
+        }
+        Ok(identity)
     }
 
     /// Rotate `identity`: a new generation and cookie; the old cookie is refused.
     ///
     /// # Errors
     ///
-    /// Returns the errors of [`Self::issue`], [`Error::Rotated`] and [`Error::Revoked`].
+    /// Returns the errors of [`Self::issue`], [`Error::Rotated`] when a newer
+    /// generation exists, [`Error::Revoked`] and [`Error::Expired`].
     #[inline]
     pub fn rotate(
         &self,
-        _identity: &SessionIdentity,
+        identity: &SessionIdentity,
     ) -> Result<(SessionIdentity, HeaderValue), Error> {
-        Err(Error::Malformed {
-            reason: "not implemented",
+        let now = self.now();
+        self.with_registry(|registry| {
+            let entry = registry.get_mut(&identity.id).ok_or(Error::Revoked)?;
+            if now >= entry.expires {
+                return Err(Error::Expired);
+            }
+            if entry.generation != identity.generation {
+                return Err(Error::Rotated);
+            }
+            let fields = Fields {
+                id: identity.id,
+                generation: entry.generation.checked_add(1).ok_or(Error::Malformed {
+                    reason: "the session was rotated too often",
+                })?,
+                issued: now,
+                expires: now.saturating_add(self.lifetime.as_secs()),
+            };
+            let set_cookie = self.cookie(&identity.principal, &fields)?;
+            entry.generation = fields.generation;
+            entry.expires = fields.expires;
+            Ok((
+                SessionIdentity::from_fields(&fields, identity.principal.clone()),
+                set_cookie,
+            ))
         })
     }
 
@@ -291,8 +470,40 @@ impl SessionManager {
     ///
     /// Returns [`Error::Poisoned`].
     #[inline]
-    pub fn revoke(&self, _identity: &SessionIdentity) -> Result<(), Error> {
-        Err(Error::Poisoned)
+    pub fn revoke(&self, identity: &SessionIdentity) -> Result<(), Error> {
+        self.with_registry(|registry| {
+            let _ended = registry.remove(&identity.id);
+            Ok(())
+        })
+    }
+
+    /// The value of the session cookie in `headers`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Malformed`] for a `Cookie` header that is not visible
+    /// ASCII or a session cookie that appears twice.
+    fn cookie_value<'headers>(
+        &self,
+        headers: &'headers HeaderMap,
+    ) -> Result<Option<&'headers str>, Error> {
+        let mut found = None;
+        for header in headers.get_all(COOKIE) {
+            let text = header.to_str().map_err(|_text| Error::Malformed {
+                reason: "a Cookie header that is not visible ASCII",
+            })?;
+            for pair in text.split(';') {
+                if let Some((name, value)) = pair.trim().split_once('=')
+                    && name == self.cookie_name
+                    && found.replace(value.trim()).is_some()
+                {
+                    return Err(self.refuse(Error::Malformed {
+                        reason: "the session cookie appears twice",
+                    }));
+                }
+            }
+        }
+        Ok(found)
     }
 
     /// Find the session cookie in the `Cookie` headers of `request`, resume it
@@ -303,7 +514,12 @@ impl SessionManager {
     /// Returns [`Error::Malformed`] for a duplicated session cookie and the
     /// errors of [`Self::resume`].
     #[inline]
-    pub fn attach<B>(&self, _request: &mut Request<B>) -> Result<Option<SessionIdentity>, Error> {
-        Ok(None)
+    pub fn attach<B>(&self, request: &mut Request<B>) -> Result<Option<SessionIdentity>, Error> {
+        let Some(value) = self.cookie_value(request.headers())? else {
+            return Ok(None);
+        };
+        let identity = self.resume(value)?;
+        drop(request.extensions_mut().insert(identity.clone()));
+        Ok(Some(identity))
     }
 }

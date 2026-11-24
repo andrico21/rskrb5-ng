@@ -25,7 +25,7 @@ use std::{sync::Mutex, time::SystemTime};
 
 use http_types::{
     Request, Response, StatusCode,
-    header::{AUTHORIZATION, HeaderValue, WWW_AUTHENTICATE},
+    header::{AUTHORIZATION, HeaderValue, SET_COOKIE, WWW_AUTHENTICATE},
 };
 #[cfg(feature = "tower")]
 use tower_layer::Layer;
@@ -1740,6 +1740,17 @@ where
 
     #[inline]
     fn call(&mut self, mut req: Request<ReqBody>) -> Self::Future {
+        if let Some(manager) = &self.settings.session
+            && matches!(manager.attach(&mut req), Ok(Some(_identity)))
+        {
+            return NegotiateFuture {
+                inner: Some(Box::pin(self.inner.call(req))),
+                ready: None,
+                header: None,
+                cookie: None,
+                harden: self.response.harden_inner,
+            };
+        }
         let Ok(mut validator) = self.validator.lock() else {
             let mut response = Response::new(ResBody::default());
             *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
@@ -1794,10 +1805,17 @@ where
             None
         };
 
+        let cookie = self.settings.session.as_ref().and_then(|manager| {
+            manager
+                .issue(accepted.ap_req().client())
+                .ok()
+                .map(|(_identity, set_cookie)| set_cookie)
+        });
         NegotiateFuture {
             inner: Some(Box::pin(self.inner.call(req))),
             ready: None,
             header: ap_rep_header.map(zeroize::Zeroizing::new),
+            cookie,
             harden: self.response.harden_inner,
         }
     }
@@ -1812,6 +1830,8 @@ pub struct NegotiateFuture<F, B, E> {
     ready: Option<Box<CoreResult<Response<B>, TowerError<E>>>>,
     /// Credential header to attach after inner completion.
     header: Option<zeroize::Zeroizing<String>>,
+    /// The `Set-Cookie` of a session issued for this request.
+    cookie: Option<HeaderValue>,
     /// Whether the inner response receives secure defaults.
     harden: bool,
 }
@@ -1824,12 +1844,14 @@ impl<F, B, E> fmt::Debug for NegotiateFuture<F, B, E> {
             inner,
             ready,
             header,
+            cookie,
             harden,
         } = self;
         f.debug_struct("NegotiateFuture")
             .field("pending", &inner.is_some())
             .field("ready", &ready.is_some())
             .field("header_len", &header.as_ref().map(|value| value.len()))
+            .field("session_cookie", &cookie.is_some())
             .field("harden", harden)
             .finish()
     }
@@ -1843,6 +1865,7 @@ impl<F, B, E> NegotiateFuture<F, B, E> {
             inner: None,
             ready: Some(Box::new(result)),
             header: None,
+            cookie: None,
             harden: false,
         }
     }
@@ -1874,6 +1897,9 @@ where
                 .map_err(TowerError::Http)?;
             value.set_sensitive(true);
             drop(response.headers_mut().insert(WWW_AUTHENTICATE, value));
+        }
+        if let Some(cookie) = state.cookie.take() {
+            let _added = response.headers_mut().append(SET_COOKIE, cookie);
         }
         if state.harden {
             harden_response(&mut response);
