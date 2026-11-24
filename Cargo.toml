@@ -69,6 +69,7 @@ tests = [
   "tests/interop_kkdcp/",
   "tests/kkdcp.rs",
   "tests/kkdcp/",
+  "tests/kkdcp_http.rs",
 ]
 
 [package.metadata.rskrb5-ng.leaf-features.localauth]

@@ -48,6 +48,9 @@ mod anchors;
 /// The HTTP/1.1 exchange over the TLS stream.
 #[cfg(feature = "kkdcp-rustls")]
 mod exchange;
+/// The `HttpExchange` of the HTTP client, over the same TLS stack.
+#[cfg(all(feature = "kkdcp-rustls", feature = "http"))]
+mod http_exchange;
 
 /// The built-in KDC proxy transport.
 ///
