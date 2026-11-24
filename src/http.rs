@@ -23,9 +23,11 @@ use core::{mem, pin::Pin};
 #[cfg(feature = "tower")]
 use std::{sync::Mutex, time::SystemTime};
 
+#[cfg(feature = "tower")]
+use http_types::header::SET_COOKIE;
 use http_types::{
     Request, Response, StatusCode,
-    header::{AUTHORIZATION, HeaderValue, SET_COOKIE, WWW_AUTHENTICATE},
+    header::{AUTHORIZATION, HeaderValue, WWW_AUTHENTICATE},
 };
 #[cfg(feature = "tower")]
 use tower_layer::Layer;

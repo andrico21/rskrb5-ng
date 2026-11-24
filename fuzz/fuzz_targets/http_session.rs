@@ -13,7 +13,7 @@
 use libfuzzer_sys::fuzz_target;
 use rskrb5_ng::{
     gss::TransferKey,
-    http::sessions::SessionManager,
+    http::{self, sessions::SessionManager},
     service::Principal,
 };
 
@@ -47,6 +47,7 @@ fuzz_target!(|data: &[u8]| {
             "a value this manager never sealed resumed"
         );
         let mut request = fresh();
+        drop(http::set_authorization_header::<()>(&mut request, "x"));
         if let Ok(header) = text.as_ref().try_into() {
             let _previous = request.headers_mut().insert("cookie", header);
             drop(manager.attach::<()>(&mut request));
@@ -68,8 +69,20 @@ fuzz_target!(|data: &[u8]| {
     let Some(value) = value_of(header) else {
         return;
     };
-    let resumed = manager.resume(value).expect("an issued session resumes");
-    assert_eq!(resumed.principal().realm, principal.realm);
-    assert_eq!(resumed.principal().components, principal.components);
-    assert_eq!(resumed, identity);
+    let attempt = manager.resume(value);
+    assert!(attempt.is_ok(), "an issued session resumes");
+    let Ok(resumed) = attempt else {
+        return;
+    };
+    assert_eq!(
+        resumed.principal().realm,
+        principal.realm,
+        "the realm round-trips"
+    );
+    assert_eq!(
+        resumed.principal().components,
+        principal.components,
+        "the components round-trip"
+    );
+    assert_eq!(resumed, identity, "the identity round-trips");
 });

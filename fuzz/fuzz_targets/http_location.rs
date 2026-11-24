@@ -28,7 +28,12 @@ fuzz_target!(|data: &[u8]| {
     assert!(origin.is_ok(), "a resolved target has an origin");
     let rendered = target.to_string();
     assert!(!rendered.contains('#'), "no fragment");
-    assert!(!rendered.contains('@'), "no user information");
+    assert!(
+        target
+            .authority()
+            .is_some_and(|authority| !authority.as_str().contains('@')),
+        "no user information"
+    );
     let path = target.path();
     assert!(
         !path.contains("/./") && !path.contains("/../") && !path.ends_with("/.") && !path.ends_with("/.."),

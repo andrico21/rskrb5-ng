@@ -14,7 +14,8 @@
 //! from a cleartext response, a `Domain` attribute while no public-suffix list
 //! is configured (a host-only cookie needs none), a `Set-Cookie` value of more
 //! than [`CookieStore::MAX_SET_COOKIE_BYTES`] bytes and more than
-//! [`CookieStore::DEFAULT_MAX_COOKIES`] cookies. The public-suffix list is
+//! [`CookieStore::DEFAULT_MAX_COOKIES`] cookies, and a value with a byte outside
+//! visible ASCII. The public-suffix list is
 //! never compiled in: the application supplies the text of the list it trusts.
 //! Values are never shown by `Debug`.
 #[cfg(feature = "http-client")]
@@ -165,6 +166,12 @@ impl CookieStore {
                 limit: Self::MAX_SET_COOKIE_BYTES,
                 actual: value.len(),
             });
+        }
+        if !value
+            .bytes()
+            .all(|byte| byte == b'\t' || (0x20..0x7f).contains(&byte))
+        {
+            return Err(Error::Malformed);
         }
         let raw = RawCookie::parse(value.to_owned()).map_err(|_refused| Error::Malformed)?;
         if raw.secure() == Some(true) && !secure {

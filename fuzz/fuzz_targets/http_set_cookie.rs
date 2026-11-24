@@ -14,7 +14,8 @@ use libfuzzer_sys::fuzz_target;
 use rskrb5_ng::http::{agent::CookieJar as _, cookies::CookieStore};
 
 /// A public-suffix list with a TLD and a two-label suffix.
-const SUFFIXES: &str = "com\nuk\nco.uk\n";
+const SUFFIXES: &str =
+    "// ===BEGIN ICANN DOMAINS===\ncom\nuk\nco.uk\n// ===END ICANN DOMAINS===\n";
 
 /// The most cookies the fuzzed jar holds.
 const MAX: usize = 8;
@@ -25,10 +26,12 @@ fuzz_target!(|data: &[u8]| {
     let Some(Ok(uri)) = lines.next().map(str::parse) else {
         return;
     };
-    let Ok(jar) = CookieStore::new().with_public_suffix_list(SUFFIXES) else {
+    let attempt = CookieStore::new().with_public_suffix_list(SUFFIXES);
+    assert!(attempt.is_ok(), "the fixed list parses");
+    let Ok(listed) = attempt else {
         return;
     };
-    let mut jar = jar.with_max_cookies(MAX);
+    let mut jar = listed.with_max_cookies(MAX);
     for value in lines {
         drop(jar.store_set_cookie(&uri, value));
     }

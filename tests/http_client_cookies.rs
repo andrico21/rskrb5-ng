@@ -194,6 +194,24 @@ mod tests {
         Ok(())
     }
 
+    /// A value with a byte outside visible ASCII is refused, so the jar never
+    /// builds a `Cookie` header a reader cannot take as text (found by the
+    /// `http_set_cookie` fuzz target: a replacement character in a value).
+    #[test]
+    fn a_non_ascii_cookie_is_refused() -> Result<(), TestError> {
+        let mut jar = CookieStore::new();
+        let target = uri("https://www.example.com/")?;
+        for value in ["e=\u{fffd}", "e=caf\u{e9}", "e=a\u{7f}b", "e=a\u{1}b"] {
+            let refused = jar.store_set_cookie(&target, value);
+            assert!(
+                matches!(refused, Err(CookieError::Malformed)),
+                "{value:?}: {refused:?}"
+            );
+        }
+        assert_eq!(sent(&jar, "https://www.example.com/")?, None);
+        Ok(())
+    }
+
     /// The jar takes every `Set-Cookie` header of a response and counts the ones it refuses.
     #[test]
     fn the_jar_trait_stores_what_it_accepts_and_counts_the_rest() -> Result<(), TestError> {
