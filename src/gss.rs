@@ -115,8 +115,10 @@ pub fn indicate_mechs() -> Vec<ObjectIdentifier> {
     vec![ObjectIdentifier::krb5(), iakerb::Context::mechanism()]
 }
 
-/// `gss_inquire_names_for_mech`: the name types `mechanism` imports, every
-/// [`NameType`] for krb5 (either of its OIDs) and none for another mechanism.
+/// `gss_inquire_names_for_mech`: the name types `mechanism` imports.
+///
+/// Every [`NameType`] for krb5 (either of its OIDs) and for IAKERB, and none for another
+/// mechanism (MIT `inq_names.c:38-45`, which accepts `gss_mech_iakerb` as well).
 #[inline]
 #[must_use]
 pub fn inquire_names_for_mech(mechanism: &ObjectIdentifier) -> Vec<NameType> {

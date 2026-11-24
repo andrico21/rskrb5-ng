@@ -158,16 +158,23 @@ impl Name {
             && self.certificate() == other.certificate()
     }
 
-    /// `gss_inquire_mechs_for_name`: the mechanisms that take this name: krb5,
-    /// or none for a certificate name, which only `S4U2Self` takes.
+    /// `gss_inquire_mechs_for_name`: the mechanisms that take this name.
+    ///
+    /// These are the mechanisms of [`indicate_mechs`] that take this name's type, in that order
+    /// (krb5, then IAKERB). MIT's mechglue walks `gss_indicate_mechs` and keeps each mechanism
+    /// whose `gss_inquire_names_for_mech` lists the type (`g_inq_names.c:107-164`); IAKERB lists
+    /// the krb5 types (`inq_names.c:38-45`). A certificate name lists none: only `S4U2Self`
+    /// takes it.
     #[inline]
     #[must_use]
     pub fn inquire_mechs(&self) -> Vec<ObjectIdentifier> {
         if self.certificate().is_some() {
-            Vec::new()
-        } else {
-            vec![ObjectIdentifier::krb5()]
+            return Vec::new();
         }
+        indicate_mechs()
+            .into_iter()
+            .filter(|mechanism| name::types_for(mechanism).contains(&self.imported_as))
+            .collect()
     }
 
     /// The mechanism name of this name; MIT duplicates the name (`canon_name.c`).

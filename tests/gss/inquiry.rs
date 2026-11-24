@@ -45,9 +45,45 @@ fn mechanisms_and_name_types_are_reported() -> Result<(), TestError> {
         gss::inquire_names_for_mech(&ObjectIdentifier::spnego()),
         Vec::new()
     );
-    // A name is a name of the krb5 mechanism.
+    // A principal name is a name of every mechanism `indicate_mechs` offers, in its order.
     let name = Name::import(b"alice@EXAMPLE.COM", NameType::Principal)?;
-    assert_eq!(name.inquire_mechs(), vec![ObjectIdentifier::krb5()]);
+    assert_eq!(name.inquire_mechs(), gss::indicate_mechs());
+    assert_eq!(
+        name.inquire_mechs(),
+        vec![ObjectIdentifier::krb5(), gss::iakerb::Context::mechanism()]
+    );
+    Ok(())
+}
+
+/// IAKERB answers the krb5 name types.
+///
+/// MIT's `krb5_gss_inquire_names_for_mech` does the same (`inq_names.c:38-45`).
+#[test]
+fn iakerb_answers_the_name_types_of_krb5() {
+    // Given krb5 and IAKERB, both give the same set of name types, and it is not empty.
+    assert_eq!(
+        gss::inquire_names_for_mech(&gss::iakerb::Context::mechanism()),
+        gss::inquire_names_for_mech(&ObjectIdentifier::krb5())
+    );
+    assert!(
+        !gss::inquire_names_for_mech(&gss::iakerb::Context::mechanism()).is_empty(),
+        "IAKERB imports name types"
+    );
+    // Given a mechanism `indicate_mechs` does not offer, there are still none.
+    assert_eq!(
+        gss::inquire_names_for_mech(&ObjectIdentifier::spnego()),
+        Vec::new()
+    );
+}
+
+/// A certificate name lists no mechanism.
+///
+/// Only `S4U2Self` takes it; MIT's mechglue (`g_inq_names.c:107-164`) lists none for a name
+/// type the mechanisms do not take.
+#[test]
+fn a_certificate_name_lists_no_mechanism() -> Result<(), TestError> {
+    let certificate = Name::import(&[0x30, 0x03, 0x02, 0x01, 0x05], NameType::X509Cert)?;
+    assert_eq!(certificate.inquire_mechs(), Vec::new());
     Ok(())
 }
 

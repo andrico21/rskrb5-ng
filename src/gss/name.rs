@@ -69,8 +69,11 @@ pub(super) fn oid(name_type: NameType) -> ObjectIdentifier {
 }
 
 /// The name types of `mechanism`.
+///
+/// Every one for krb5 (either OID) and for IAKERB, none for any other mechanism (MIT
+/// `krb5_gss_inquire_names_for_mech`, `inq_names.c:38-45`).
 pub(super) fn types_for(mechanism: &ObjectIdentifier) -> Vec<NameType> {
-    if mechanism.is_kerberos_mechanism() {
+    if mechanism.is_kerberos_mechanism() || *mechanism == super::iakerb::Context::mechanism() {
         NAME_TYPES.iter().map(|(kind, _)| *kind).collect()
     } else {
         Vec::new()
