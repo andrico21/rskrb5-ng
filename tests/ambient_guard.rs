@@ -86,13 +86,13 @@ pub(crate) mod tests {
         ),
         (
             "src/replay/name.rs",
-            "default_for",
+            "RcacheName::default_for",
             "KRB5RCACHENAME",
             "KRB5RCACHENAME",
         ),
         (
             "src/replay/name.rs",
-            "default_for",
+            "RcacheName::default_for",
             "KRB5RCACHETYPE",
             "KRB5RCACHETYPE",
         ),
