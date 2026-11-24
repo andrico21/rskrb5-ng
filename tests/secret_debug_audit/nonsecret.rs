@@ -3,6 +3,16 @@
 /// Each exclusion identifies one owner and field, never an entire module.
 pub(super) const FIELDS: &[(&str, &str, &str)] = &[
     (
+        "src/kadm5/types.rs::StringAttribute",
+        "key",
+        "The name of a principal's string attribute (krb5_string_attr), not key material.",
+    ),
+    (
+        "src/kadm5/records.rs::PolicyRecord",
+        "allowed_keysalts",
+        "The policy's allowed enctype and salt names in MIT's string form, not key material.",
+    ),
+    (
         "src/trace/err_fmt.rs::Report",
         "error",
         "The borrowed original typed error: its own Debug is this crate's redacted error Debug, and the Debug of Report names only the code and the text size.",

@@ -104,6 +104,14 @@ pub enum Any {
     #[cfg(feature = "spnego")]
     #[error("NegoEx error: {0}")]
     Negoex(#[from] Negoex),
+    /// ONC RPC or `RPCSEC_GSS` processing failed.
+    #[cfg(feature = "spnego")]
+    #[error("RPC error: {0}")]
+    Rpc(#[from] Rpc),
+    /// Remote kadm5 administration failed.
+    #[cfg(all(feature = "spnego", feature = "tokio"))]
+    #[error("kadm5 error: {0}")]
+    Kadm5(#[from] Kadm5),
     /// Ticket message processing failed.
     #[cfg(feature = "messages")]
     #[error("Ticket error: {0}")]

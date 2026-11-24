@@ -154,6 +154,10 @@ mod gss;
 #[path = "secret_debug_audit/iakerb.rs"]
 mod iakerb;
 
+#[cfg(all(test, feature = "spnego"))]
+#[path = "secret_debug_audit/kadm5.rs"]
+mod kadm5;
+
 #[cfg(test)]
 #[path = "secret_debug_audit/stores.rs"]
 mod stores;
@@ -221,6 +225,8 @@ mod tests {
         super::gss::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         #[cfg(feature = "spnego")]
         super::iakerb::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
+        #[cfg(feature = "spnego")]
+        super::kadm5::tests::run_audit().map_err(|error| io::Error::other(error.to_string()))?;
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let owners = inspect(root, &root.join("src"))?;
         let nested = secret_owners(&owners);
@@ -303,6 +309,12 @@ mod tests {
                     || cfg!(feature = "tower"))
                 && (!identity.contains("NegotiateHttp") || cfg!(feature = "tokio"));
         }
+        if identity.starts_with("src/kadm5") || identity == "src/error/kadm5.rs::Kadm5" {
+            return cfg!(feature = "spnego") && cfg!(feature = "tokio");
+        }
+        if identity.starts_with("src/rpcsec_gss") || identity == "src/error/kadm5.rs::Rpc" {
+            return cfg!(feature = "spnego");
+        }
         if identity.starts_with("src/spnego")
             || identity.starts_with("src/gss")
             || identity.ends_with("::Spnego")
@@ -353,8 +365,21 @@ mod tests {
             "gss::negoex".to_owned()
         } else if file == "src/spnego/gss_types.rs" {
             "spnego".to_owned()
-        } else if file == "src/error/gss.rs" || file == "src/error/iakerb.rs" {
+        } else if file == "src/error/gss.rs"
+            || file == "src/error/iakerb.rs"
+            || file == "src/error/kadm5.rs"
+        {
             "error".to_owned()
+        } else if file == "src/rpcsec_gss/types.rs" {
+            "rpcsec_gss".to_owned()
+        } else if matches!(
+            file,
+            "src/kadm5/types.rs"
+                | "src/kadm5/records.rs"
+                | "src/kadm5/response.rs"
+                | "src/kadm5/client.rs"
+        ) {
+            "kadm5".to_owned()
         } else {
             file.strip_prefix("src/")
                 .unwrap_or(file)
@@ -928,6 +953,170 @@ mod tests {
         (
             "src/gss/negoex/checksum.rs::make_output_token",
             "Appends handshake messages to the zeroizing transcript and copies the new bytes out; no key is replaced.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::change_password",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::create_alias",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::create_policy",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::create_principal",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::delete_policy",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::delete_principal",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::done",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::get_policy",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::get_principal",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::get_principal_keys",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::get_privileges",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::get_strings",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::list_policies",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::list_principals",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::modify_policy",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::modify_principal",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::names",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::purge_keys",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::randomize_keys",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::rename_principal",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::set_key_data",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::set_keys",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::set_keys_for_keysalts",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/client.rs::RemoteAdminClient::set_string",
+            "Runs one call through src/kadm5/call.rs::run, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/call.rs::run",
+            "Forwards to src/kadm5/call.rs::exchange, which carries its own exception; it replaces no field itself.",
+        ),
+        (
+            "src/kadm5/call.rs::exchange",
+            "Writes the request to the stream and reads the reply in place, and steps the RPC client through its own methods (excepted in src/rpcsec_gss); neither the stream nor the context is replaced, and a closed client drops its context, whose EstablishedContext erases its keys.",
+        ),
+        (
+            "src/kadm5/types.rs::KeyData::with_salt",
+            "Replaces the salt owner of a key the caller builds; the previous Zeroizing salt is dropped and erased by its Drop contract.",
+        ),
+        (
+            "src/rpcsec_gss/types.rs::RpcClient::call",
+            "Forwards to src/rpcsec_gss/client.rs::call, which carries its own exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/rpcsec_gss/types.rs::RpcClient::continue_init",
+            "Forwards to src/rpcsec_gss/client.rs::continue_init, which carries its own exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/rpcsec_gss/types.rs::RpcClient::destroy_call",
+            "Forwards to src/rpcsec_gss/client.rs::destroy_call, which carries its own exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/rpcsec_gss/types.rs::RpcClient::reply",
+            "Forwards to src/rpcsec_gss/client.rs::reply, which carries its own exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/rpcsec_gss/types.rs::RpcClient::start",
+            "Forwards to src/rpcsec_gss/client.rs::start, which carries its own exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/rpcsec_gss/types.rs::RpcClient::close",
+            "Sets the phase to Closed; a dropped initiator or EstablishedContext erases its keys through its own owners.",
+        ),
+        (
+            "src/rpcsec_gss/client.rs::start",
+            "Moves the boxed initiator from Start to Creating; nothing holding a key is dropped.",
+        ),
+        (
+            "src/rpcsec_gss/client.rs::continue_init",
+            "Moves the boxed initiator out of Creating into the next Creating or into the Established context; a state left behind is dropped, and the initiator or EstablishedContext it held erases its keys.",
+        ),
+        (
+            "src/rpcsec_gss/client.rs::call",
+            "Forwards to src/rpcsec_gss/client.rs::protected_call, which carries its own exception; it replaces nothing itself.",
+        ),
+        (
+            "src/rpcsec_gss/client.rs::destroy_call",
+            "Forwards to src/rpcsec_gss/client.rs::protected_call, which carries its own exception; it replaces nothing itself.",
+        ),
+        (
+            "src/rpcsec_gss/client.rs::protected_call",
+            "Builds a call under the established context in place, through the context's own MIC and wrap methods; the phase is never replaced.",
+        ),
+        (
+            "src/rpcsec_gss/client.rs::established",
+            "Borrows the established context mutably for the caller; nothing is replaced.",
+        ),
+        (
+            "src/rpcsec_gss/client.rs::reply",
+            "Forwards to src/rpcsec_gss/client.rs::checked_reply and closes the client on failure; the dropped EstablishedContext erases its keys.",
+        ),
+        (
+            "src/rpcsec_gss/client.rs::checked_reply",
+            "Checks a reply through the context's own methods; after a destroy the phase becomes Closed and the dropped EstablishedContext erases its keys.",
         ),
         (
             "src/gss/creds.rs::CredStore::with",
@@ -1585,6 +1774,15 @@ mod tests {
         "src/gss/negoex/message.rs::VerifyMessage",
         "src/gss/negoex/context.rs::Step",
         "src/gss/negoex/mechanism.rs::ProviderFailure",
+        "src/error/kadm5.rs::Rpc",
+        "src/error/kadm5.rs::Kadm5",
+        "src/rpcsec_gss/types.rs::RpcClient",
+        "src/rpcsec_gss/types.rs::ProtectedCall",
+        "src/rpcsec_gss/types.rs::Reply",
+        "src/rpcsec_gss/types.rs::InitStep",
+        "src/kadm5/client.rs::RemoteAdminClient",
+        "src/kadm5/response.rs::Response",
+        "src/kadm5/types.rs::KeyData",
     ];
 
     /// Literal decoys and CRLF cannot hide public credential owners or Debug derives.

@@ -27,6 +27,7 @@ use crate::{
 include!("error/any.rs");
 include!("error/gss.rs");
 include!("error/iakerb.rs");
+include!("error/kadm5.rs");
 include!("error/negoex.rs");
 include!("error/policy.rs");
 mod credential_debug;

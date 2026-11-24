@@ -33,6 +33,8 @@ mod tests {
     use http_types::Request;
     #[cfg(feature = "http")]
     use rskrb5_ng::http;
+    #[cfg(all(feature = "spnego", feature = "tokio"))]
+    use rskrb5_ng::kadm5;
     use rskrb5_ng::{
         Result, ccache::CCache, config, crypto::AesSha1Etype, error, keytab::Keytab, pac::Pac,
         routing::RealmPath, trace::Options,
@@ -40,7 +42,7 @@ mod tests {
     #[cfg(feature = "messages")]
     use rskrb5_ng::{ap_rep, ap_req, client::principal::Principal, kadmin, kdc_rep, kdc_req};
     #[cfg(feature = "spnego")]
-    use rskrb5_ng::{gss, spnego};
+    use rskrb5_ng::{gss, rpcsec_gss, spnego};
     #[cfg(feature = "messages")]
     use rskrb5_ng::{krb_cred, krb_error, krb_priv, krb_safe, messages::PaForUser, ticket};
 
@@ -182,6 +184,18 @@ mod tests {
         negoex_when_token_empty,
         error::Negoex,
         gss::negoex::Conversation::accepting().parse(&[])
+    );
+    #[cfg(all(feature = "spnego", feature = "tokio"))]
+    propagates_domain!(
+        kadm5_when_result_truncated,
+        error::Kadm5,
+        kadm5::Response::decode(kadm5::Procedure::Init, kadm5::ApiVersion::V4, &[])
+    );
+    #[cfg(feature = "spnego")]
+    propagates_domain!(
+        rpc_when_reply_truncated,
+        error::Rpc,
+        rpcsec_gss::Reply::decode(&[])
     );
     #[cfg(feature = "http")]
     propagates_domain!(
