@@ -313,6 +313,16 @@ duplicate-version skips, each with a reason stated in the record.
 - Maintenance: `cookie_store` 0.22.1 published 2026-02-16 (pfernie, about 32 million recent downloads), `cookie` (rwf2, about 77 million), `time` 0.3.55 published 2026-08-01 (about 264 million), `publicsuffix` 2.3.0 published 2024-11-14 (about 19 million, slow-moving by nature: the list data is not in the crate); no locked version is yanked. No RustSec advisory against the locked versions (`cargo audit` and `cargo deny check` clean at admission).
 - Features: `public_suffix` with `default-features = false` (so no `serde_json` and no `preserve_order`); cargo enables `cookie` `percent-encode`, `time` `alloc`, `formatting`, `macros`, `parsing`, `std` and `publicsuffix` `idna`, `punycode` from it
 
+### url
+- Version: 2.5.9
+- Leaf flags: http-client
+- Licence: MIT OR Apache-2.0 (already on the `deny.toml` allow list).
+- Source review: read on 2026-11-25 from the crates.io tarball (sha256 `f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a`, servo/rust-url, no `build.rs`, no `links` key). It is already in `Cargo.lock` and in the normal graph of the default `tokio` feature (hickory-net and hickory-proto), so this record adds no package; it makes the crate a direct dependency of the `http-client` leaf only because `cookie_store`'s public API takes and returns `url::Url` and does not re-export it. What the leaf does with it: it builds one `Url` per cookie operation from a request URI that `http::Uri` parsed and `http::origin::Origin::of` already restricted to `http` or `https` with a host and no user information, and hands it to `cookie_store`; no `Url` ever comes from a server. The WHATWG parser has one `unsafe` block (`src/parser.rs`, `from_utf8_unchecked` over a buffer it filled with ASCII only); the other modules are safe code. No cryptography.
+- Constant-time and zeroization: not a cryptographic crate; it sees URLs, never a secret.
+- Cargo vet: the existing `[[exemptions.url]]` 2.5.9, `safe-to-deploy`, covers it; no new entry. `cargo vet --locked` passes.
+- Maintenance: servo/rust-url, 2.5.9 published 2026-11-20 (the lock's version, newest release, about 283 million recent downloads); no release is yanked. No RustSec advisory against it (`cargo audit` clean at admission).
+- Features: `std` with `default-features = false` (the default of `cookie_store`'s own dependency enables the same set)
+
 ## The platform stores: `rskrb5-ng-os` (owner decision D11)
 
 Plan 2 todo 14 looked for a vetted crate with a safe API for the Windows LSA
