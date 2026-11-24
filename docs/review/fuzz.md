@@ -21,6 +21,8 @@ the chosen entry point, so one target covers a family of related decoders.
 | `gss_token` | RFC 4121 tokens and AP-REP bytes | `Krb5MechToken::decode`; `MicToken` and `WrapToken` decode, verify and unwrap with AES128, AES256, AES-SHA2, DES3 and RC4 test keys; a sealed Wrap whose fuzzed plaintext is encrypted under the key; `InitiatorContext::verify_ap_rep` and `verify_ap_rep_response_header`, raw and with a fuzzed `EncAPRepPart` encrypted under the session key |
 | `gss_name` | a selector byte for the name type, then a GSS-API name buffer | `gss::Name::import` and `Name::import_uid` for every MIT krb5 name type (host-based, user, user ids, anonymous, exported, composite exported, principal, enterprise, certificate), then `display`, `export` with re-import and comparison, and `canonicalize` |
 | `gss_context` | a selector byte, then a context token, a SPNEGO token, or a DER `Authenticator` | `gss::Acceptor::accept_sec_context` and `spnego::Acceptor::accept_sec_context` on raw tokens; a structured mode that encrypts the fuzzed `Authenticator` (RFC 4121 checksum, delegation option, extensions, `AD-AP-OPTIONS`) under the fixture ticket's session key and accepts the AP-REQ, with and without acceptor channel bindings (optional or required) |
+| `gss_iov` | a selector byte (context: AES256-SHA1, AES256-SHA384, DCE-style AES256-SHA1, opted-in DES3 or RC4; raw or mutation mode), then an IOV array or a mutation list | `EstablishedContext::unwrap_iov` and `verify_mic_iov` on fuzzed `kind, length, bytes` IOV records (HEADER, DATA, SIGN_ONLY, PADDING, TRAILER, STREAM, MIC_TOKEN, duplicates and inconsistent lengths); in mutation mode the initiator's `wrap_iov` (with and without a TRAILER), `wrap_aead`, `wrap` and `get_mic` tokens are mutated before `unwrap_iov`, `unwrap_aead`, `unwrap` and `verify_mic` open them, which runs the RFC 1964/4757 parsers on the DES3 and RC4 contexts |
+| `gss_transfer` | a selector byte (context or credential; raw blob or a payload sealed as the documented version-1 format), then the bytes | `EstablishedContext::import` and `Credential::import` with one `MemoryTransferLedger` per run: the header and size checks, the RFC 8009 authentication, and in sealed mode the payload decoder; a second import of an accepted blob must fail |
 | `http_negotiate` | `Authorization` or `WWW-Authenticate` header values | `http::accept_request` (service side) and `www_authenticate_negotiate_header`, `classify_negotiate_response` and `verify_ap_rep_response` (client side) |
 | `kdc_reply` | KDC replies | `decode_as_rep`, `decode_tgs_rep`, `decode_enc_kdc_rep_part`, the KRB-ERROR and METHOD-DATA decoders, `process_kdc_error` with preauthentication hint selection and `s2kparams` parsing, `process_as_rep`, `process_tgs_rep` and `process_tgs_rep_with_referral` against fixed requests, and structured AS/TGS replies whose fuzzed `EncKDCRepPart` is encrypted under the request's key |
 | `kdc_tcp_frame` | four-byte KDC TCP record mark, tested against zero, small and large caps | `client::transport::kdc_tcp_record_length`; production shares the reserved-bit, zero-length and pre-allocation cap checks |
@@ -123,6 +125,8 @@ timeout artifact:
 | `localauth_k5login` | 2,439,093 (todo 25 of plan 2, 2026-11-22) | 121 s | 0 |
 | `gss_name` | 2,118,533 (todo 18 of plan 2, 2026-11-22) | 121 s | 0 |
 | `gss_context` | 1,096,589 (todo 18 of plan 2, 2026-11-22) | 121 s | 0 |
+| `gss_iov` | 24,211 (todo 19 of plan 2, 2026-11-23) | 121 s | 0 |
+| `gss_transfer` | 565,305 (todo 19 of plan 2, 2026-11-23) | 121 s | 0 |
 
 ### Round-2 session admission repair (FU-FUZ-R02)
 
@@ -318,6 +322,28 @@ compare equal to its exported form imported back (register row FU-GSS-P02,
 fixed); the 120-second runs recorded above found nothing after the fix.
 Coverage proof: `task-18-gss-coverage.tsv` in the execution evidence (3 of 3
 mappings).
+
+### GSS-API II (todo 19 of plan 2)
+
+`gss_iov` fuzzes the per-message parsers todo 19 adds to an established
+context: IOV arrays in MIT's buffer model (`k5sealiov.c`, `k5unsealiov.c`;
+duplicated HEADER, TRAILER, PADDING, STREAM or MIC_TOKEN buffers, short
+trailers and inconsistent lengths are refused), AEAD tokens, the DCE-style
+RRC rule, and the RFC 1964 (DES3) and RFC 4757 (RC4) token formats of
+opted-in legacy contexts, including the single-DES algorithm identifiers
+that are refused by name. Each run builds its context pair in process from
+the fixture ticket re-sealed with the chosen session key, so it runs about
+200 inputs a second. `gss_transfer` fuzzes the import of context and
+credential transfer blobs: raw blobs exercise the size, header and RFC 8009
+authentication checks; the sealed mode encrypts the fuzzed payload under the
+fixed transfer key so the version-1 payload decoder behind the
+authentication runs, and a second import of an accepted blob through the
+same ledger must fail. Seeds: tokens and blobs built by hand per RFC 4121
+section 4.2, RFC 1964 and the documented transfer format. The 120-second
+runs recorded above found nothing. `TransferBlob::from_bytes` stores bytes
+without reading them; the decoders it hands them to (`export::open` and
+the payload reader) are reached by the committed `gss_transfer` seeds
+(record `task-19-gss-coverage.tsv` in the execution evidence).
 
 ### Earlier campaign crashes
 
@@ -599,6 +625,7 @@ does.
 | `rskrb5_ng::extensions::k5identity::parse_line` | `src/extensions/k5identity.rs` | `extensions` |  |
 | `rskrb5_ng::extensions::k5identity::parse_principal` | `src/extensions/k5identity.rs` | `extensions` |  |
 | `rskrb5_ng::gss::checksum::decode` | `src/gss/checksum.rs` | `gss_context` |  |
+| `rskrb5_ng::gss::contexts::TransferBlob::from_bytes` | `src/gss/contexts.rs` | - | stores the received bytes without reading them; `EstablishedContext::import` and `Credential::import` authenticate and decode them (`gss_transfer`) |
 | `rskrb5_ng::gss::name::parse` | `src/gss/name.rs` | `gss_name` |  |
 | `rskrb5_ng::file_name::expand_path_tokens` | `src/file_name.rs` | `name_parse` |  |
 | `rskrb5_ng::file_name::file_path_from_name` | `src/file_name.rs` | `name_parse` |  |

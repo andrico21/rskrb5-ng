@@ -41,8 +41,8 @@ fn scratch(label: &str) -> Result<PathBuf, TestError> {
 fn store_keys_are_checked() -> Result<(), TestError> {
     // Given a key MIT's krb5 mechanism does not know, it is refused.
     assert!(matches!(
-        CredStore::new().with("verify", "x"),
-        Err(Gss::UnsupportedCredStoreKey(key)) if key == "verify"
+        CredStore::new().with("impersonator", "x"),
+        Err(Gss::UnsupportedCredStoreKey(key)) if key == "impersonator"
     ));
     // Given a key twice, the second is refused.
     assert!(matches!(

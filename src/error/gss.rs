@@ -98,6 +98,29 @@ pub enum Gss {
     /// which this module does not implement (`GSS_S_UNAVAILABLE`).
     #[error("per-message tokens of encryption type {0} use the RFC 1964/4757 formats")]
     LegacyTokenFormat(i32),
+    /// An IOV array has no buffer of a required type, a duplicated header,
+    /// trailer, padding, stream or MIC buffer, or a buffer of the wrong length
+    /// (`GSS_S_FAILURE`, MIT `KRB5_BAD_MSIZE` and `EINVAL`).
+    #[error("bad IOV array: {0}")]
+    BadIov(&'static str),
+    /// A per-message token's integrity tag does not verify (`GSS_S_BAD_SIG`).
+    #[error("the token's integrity tag does not verify")]
+    BadSignature,
+    /// A transfer blob is malformed, of another version or kind, or does not
+    /// authenticate under the transfer key (`GSS_S_DEFECTIVE_TOKEN`).
+    #[error("transfer blob rejected: {0}")]
+    TransferRejected(&'static str),
+    /// The ledger has already consumed the blob's transfer id
+    /// (`GSS_S_DEFECTIVE_TOKEN`).
+    #[error("the transfer id was already imported")]
+    TransferReplayed,
+    /// The in-memory transfer ledger is full (`GSS_S_FAILURE`).
+    #[error("the transfer ledger is full")]
+    TransferLedgerFull,
+    /// The name has no such attribute: an unknown name, a PAC buffer the PAC
+    /// does not carry, or no verified PAC (`GSS_S_UNAVAILABLE`).
+    #[error("name attribute {0:?} is unavailable")]
+    NameAttributeUnavailable(String),
     /// The delegated credential could not be read.
     #[error("the delegated credential could not be read: {0}")]
     DelegatedCredential(#[source] KrbCred),
@@ -152,6 +175,7 @@ impl Gss {
             }
             | Self::UnresolvedUid(_) => 2,
             Self::BadNameType(_) => 3,
+            Self::BadSignature => 6,
             Self::BadBindings
             | Self::MissingBindings
             | Self::BindingTooLong {
@@ -170,10 +194,14 @@ impl Gss {
                 maximum: _,
                 actual: _,
             }
+            | Self::TransferRejected(_)
+            | Self::TransferReplayed
             | Self::Spnego(_) => 9,
             Self::DefectiveChecksum(_) | Self::DelegatedCredential(_) => 10,
             Self::ContextExpired => 12,
-            Self::NotNegotiated(_) | Self::LegacyTokenFormat(_) => 16,
+            Self::NotNegotiated(_)
+            | Self::LegacyTokenFormat(_)
+            | Self::NameAttributeUnavailable(_) => 16,
             Self::DuplicateElement => 17,
             Self::DuplicateToken(_) => return 1 << 1,
             Self::OldToken(_) => return 1 << 2,
@@ -188,7 +216,9 @@ impl Gss {
             | Self::Ccache(_)
             | Self::Keytab(_)
             | Self::Crypto(_)
-            | Self::Random(_) => 13,
+            | Self::Random(_)
+            | Self::BadIov(_)
+            | Self::TransferLedgerFull => 13,
         };
         routine << 16
     }

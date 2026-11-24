@@ -102,6 +102,9 @@ int cmd_wrap_aead(const struct field *f, size_t nf, struct out *o);
 int cmd_unwrap_aead(const struct field *f, size_t nf, struct out *o);
 int cmd_prf(const struct field *f, size_t nf, struct out *o);
 
+// peer_deleg.c: the accept step that keeps a delegated credential (todo 19).
+int cmd_accept_deleg(const struct field *f, size_t nf, struct out *o);
+
 #define NEED(count) \
     do { if (nf != (count)) return proto_fail(o, "wrong number of fields"); } while (0)
 

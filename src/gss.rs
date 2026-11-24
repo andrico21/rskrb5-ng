@@ -30,8 +30,11 @@
 //! - Keys, delegated credentials and unwrapped messages live in zeroizing owners
 //!   and never appear in `Debug` output.
 //! - Per-message tokens of DES3 and RC4 contexts use the RFC 1964/4757 formats,
-//!   which are not implemented here; such contexts establish, and their
-//!   per-message calls return [`crate::error::Gss::LegacyTokenFormat`].
+//!   only when the context's enctype policy permits the enctype (`allow_des3`,
+//!   `allow_rc4`); their IOV and AEAD calls return
+//!   [`crate::error::Gss::LegacyTokenFormat`], and a token whose algorithm IDs
+//!   name single DES is refused with `RejectedFeature::SingleDes`. AES and
+//!   Camellia contexts use RFC 4121 tokens only.
 //! - Nothing reads the environment except [`Credential::acquire_cred`], which
 //!   documents its ambient input.
 //!
@@ -44,7 +47,7 @@
 //! mechanisms are added beside this one.
 
 use core::{fmt, ops::BitOr, time::Duration};
-use std::time::SystemTime;
+use std::{collections::HashSet, time::SystemTime};
 
 use zeroize::Zeroizing;
 
@@ -61,6 +64,8 @@ use crate::{
 
 /// The krb5 mechanism's acceptor side.
 mod acceptor;
+/// Name attributes from the verified PAC.
+mod attributes;
 /// The RFC 4121 channel-binding digest.
 mod bindings;
 /// The RFC 4121 section 4.1.1 authenticator checksum.
@@ -69,10 +74,22 @@ mod checksum;
 mod context;
 /// Credential acquisition and storage.
 mod cred;
+/// DCE-style establishment.
+mod dce;
+/// Context and credential transfer.
+mod export;
+/// Impersonation and proxy credentials.
+mod impersonate;
 /// The krb5 mechanism's initiator side.
 mod initiator;
+/// IOV and AEAD per-message tokens.
+mod iov;
+/// The RFC 1964 and RFC 4757 token formats of DES3 and RC4 contexts.
+mod legacy;
 /// Name parsing, display and export.
 mod name;
+/// The GSS pseudo-random function.
+mod prf;
 /// The sequence and replay window.
 mod seq;
 

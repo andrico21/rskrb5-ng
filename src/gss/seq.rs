@@ -36,6 +36,28 @@ impl Window {
         }
     }
 
+    /// The window's state for a context transfer: the replay and sequence
+    /// switches, the base, the next relative number and the received bits.
+    pub(super) const fn parts(&self) -> (bool, bool, [u64; 3]) {
+        (
+            self.replay,
+            self.sequence,
+            [self.base, self.next, self.received],
+        )
+    }
+
+    /// A window restored from [`Self::parts`].
+    pub(super) const fn from_parts(replay: bool, sequence: bool, state: [u64; 3]) -> Self {
+        let [base, next, received] = state;
+        Self {
+            replay,
+            sequence,
+            base,
+            next,
+            received,
+        }
+    }
+
     /// Admit `number`, or refuse it without changing the window.
     ///
     /// # Errors
