@@ -57,6 +57,8 @@ mod siphash;
 #[cfg(feature = "messages")]
 mod table;
 
+pub use name::RcacheName;
+
 /// Length in bytes of a replay tag (MIT `TAG_LEN`, `rc_file2.c:42`).
 #[cfg(feature = "messages")]
 pub const TAG_LEN: usize = 12;
@@ -239,21 +241,3 @@ pub trait OpenFile {
 #[derive(Clone, Copy, Debug, Default)]
 #[non_exhaustive]
 pub struct OsFileSystem;
-
-/// A replay cache name in MIT's `type:residual` form (`rc_base.c:k5_rc_resolve`).
-#[derive(Clone, Debug, Eq, PartialEq)]
-#[non_exhaustive]
-pub enum RcacheName {
-    /// `dfl:` MIT's default: `krb5_<euid>.rcache2` in `KRB5RCACHEDIR`, `TMPDIR`
-    /// or `/var/tmp`; the residual is ignored.
-    Dfl,
-    /// `file2:<path>`: a `file2` cache file at the path.
-    File2 {
-        /// The cache file.
-        path: PathBuf,
-    },
-    /// `none:`: no replay protection (deliberate opt-out only).
-    None,
-    /// `memory:`: a bounded in-process store (this crate's addition).
-    Memory,
-}

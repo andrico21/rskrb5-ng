@@ -596,7 +596,7 @@ does.
 | `rskrb5_ng::asn1::decode_length` | `src/asn1.rs` | `auth_message` |  |
 | `rskrb5_ng::asn1::read_complete` | `src/asn1.rs` | `auth_message` |  |
 | `rskrb5_ng::asn1::read_element` | `src/asn1.rs` | `auth_message` |  |
-| `rskrb5_ng::asn1::read_identifier` | `src/asn1.rs` | `auth_message` |  |
+| `rskrb5_ng::asn1::identifier::read_identifier` | `src/asn1/identifier.rs` | `auth_message` |  |
 | `rskrb5_ng::authdata::decode` | `src/authdata.rs` | `auth_message` |  |
 | `rskrb5_ng::authdata::decode_and_or` | `src/authdata.rs` | `auth_message` |  |
 | `rskrb5_ng::authdata::decode_kdc_issued` | `src/authdata.rs` | `auth_message` |  |

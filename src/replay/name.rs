@@ -4,10 +4,28 @@
 use alloc::sync::Arc;
 use std::{env, path::PathBuf};
 
-use super::{Error, RcacheName};
+use super::Error;
 #[cfg(feature = "messages")]
 use super::{File2ReplayStore, MemoryReplayStore, NoneReplayStore, Store};
 use crate::{config::Config, file_name::expand_path_tokens, secure_env};
+
+/// A replay cache name in MIT's `type:residual` form (`rc_base.c:k5_rc_resolve`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum RcacheName {
+    /// `dfl:` MIT's default: `krb5_<euid>.rcache2` in `KRB5RCACHEDIR`, `TMPDIR`
+    /// or `/var/tmp`; the residual is ignored.
+    Dfl,
+    /// `file2:<path>`: a `file2` cache file at the path.
+    File2 {
+        /// The cache file.
+        path: PathBuf,
+    },
+    /// `none:`: no replay protection (deliberate opt-out only).
+    None,
+    /// `memory:`: a bounded in-process store (this crate's addition).
+    Memory,
+}
 
 impl RcacheName {
     /// Parse `type:residual`: `dfl:` (residual ignored), `file2:<path>`,
