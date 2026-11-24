@@ -1,0 +1,3 @@
+https://www.example.com/a/b
+p=1; Path=/a; Expires=Thu, 01 Jan 2099 00:00:00 GMT
+q=2; SameSite=Strict
