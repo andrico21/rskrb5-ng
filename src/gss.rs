@@ -88,6 +88,8 @@ mod iov;
 mod legacy;
 /// Name parsing, display and export.
 mod name;
+/// `NegoEx` (MS-NEGOEX) mechanism negotiation.
+pub mod negoex;
 /// The GSS pseudo-random function.
 mod prf;
 /// The sequence and replay window.

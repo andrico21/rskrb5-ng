@@ -26,6 +26,40 @@ impl ObjectIdentifier {
         Self(vec![1, 3, 6, 1, 5, 5, 2])
     }
 
+    #[must_use]
+    /// `NegoEx` pseudo-mechanism OID (MS-NEGOEX 1.9, MIT `NEGOEX_OID`): `1.3.6.1.4.1.311.2.2.30`.
+    #[inline]
+    pub fn negoex() -> Self {
+        Self(vec![1, 3, 6, 1, 4, 1, 311, 2, 2, 30])
+    }
+
+    /// The DER content octets (no tag, no length), the form of
+    /// [`GssMechanism::oid`](crate::extensions::GssMechanism::oid).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidOid`] when the arcs are invalid.
+    #[inline]
+    pub fn to_der_content(&self) -> Result<Vec<u8>, Error> {
+        let element = super::der::encode_oid(self)?;
+        Ok(
+            super::der::read_single_tlv(&element, super::TAG_OBJECT_IDENTIFIER)?
+                .value()
+                .to_vec(),
+        )
+    }
+
+    /// An object identifier from DER content octets.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidOidEncoding`] for empty, truncated or nonminimal
+    /// content or an arc wider than 32 bits, and [`Error::InvalidOid`] for invalid arcs.
+    #[inline]
+    pub fn from_der_content(content: &[u8]) -> Result<Self, Error> {
+        super::der::decode_oid_value(content)
+    }
+
     /// Construct an object identifier from arcs.
     ///
     /// # Errors

@@ -203,7 +203,7 @@ pub(super) fn decode_oid_tlv(tlv: Tlv<'_>) -> Result<ObjectIdentifier, Error> {
 /// Returns [`Error::InvalidOidEncoding`] for empty content, a truncated or
 /// nonminimal subidentifier, or an arc wider than 32 bits, and
 /// [`Error::InvalidOid`] when the arcs are invalid.
-fn decode_oid_value(value: &[u8]) -> Result<ObjectIdentifier, Error> {
+pub(super) fn decode_oid_value(value: &[u8]) -> Result<ObjectIdentifier, Error> {
     let mut rest = value;
     let first = decode_base128(&mut rest)?;
     let (root, second) = match first {

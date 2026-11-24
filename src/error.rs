@@ -16,6 +16,8 @@ use crate::client::KdcError;
 #[cfg(feature = "tokio")]
 use crate::client::transport::KdcProtocol;
 #[cfg(feature = "spnego")]
+use crate::gss::negoex::{AuthScheme, MessageType, ProviderFailure};
+#[cfg(feature = "spnego")]
 use crate::spnego::oid::ObjectIdentifier;
 use crate::{
     ccache::keyring::Fault as KeyringFault,
@@ -24,6 +26,7 @@ use crate::{
 };
 include!("error/any.rs");
 include!("error/gss.rs");
+include!("error/negoex.rs");
 include!("error/policy.rs");
 mod credential_debug;
 #[cfg(feature = "messages")]

@@ -6,6 +6,9 @@
     reason = "test code is not rendered API documentation"
 )]
 pub(super) mod tests {
+    extern crate alloc;
+
+    use alloc::sync::Arc;
     use core::{error::Error, time::Duration};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -13,9 +16,10 @@ pub(super) mod tests {
     use rskrb5_ng::{
         client::{KdcError, TgsRepSession, principal::Principal},
         error::{Client as ClientError, Gss, Spnego as SpnegoError},
+        extensions::{Extension, GssMechanism, Registry},
         gss::{
             self, AcceptorOptions, CredStore, Credential, InitStep, InitiatorOptions, IovBuffer,
-            IovKind, Name, NameType, TransferKey,
+            IovKind, Name, NameType, TransferKey, negoex,
         },
         keytab::{self, EncryptionKey, Keytab},
         spnego::{self, AcceptStep},
@@ -96,7 +100,141 @@ pub(super) mod tests {
     }
 
     pub(crate) fn run_audit() -> Result<(), Box<dyn Error>> {
-        gss_objects_redact_credentials()
+        gss_objects_redact_credentials()?;
+        negoex_objects_redact_keys()
+    }
+
+    /// A `NegoEx` mechanism whose keys are known bytes, available at once.
+    struct KeyedMechanism(Vec<u8>);
+
+    impl negoex::Mechanism for KeyedMechanism {
+        fn oid(&self) -> &[u8] {
+            &[0x69, 0x85, 0xa2, 0xc0, 0xac, 0x66]
+        }
+
+        fn auth_scheme(&self) -> negoex::AuthScheme {
+            negoex::AuthScheme::from_bytes([7; 16])
+        }
+
+        fn session(&self, _role: negoex::Role) -> Box<dyn negoex::Session> {
+            Box::new(KeyedSession(self.0.clone()))
+        }
+    }
+
+    /// The session of [`KeyedMechanism`]: one hop, the same key both ways.
+    struct KeyedSession(Vec<u8>);
+
+    impl negoex::Session for KeyedSession {
+        fn query_meta_data(
+            &mut self,
+            _: &negoex::Request,
+        ) -> Result<Vec<u8>, negoex::ProviderFailure> {
+            Ok(Vec::new())
+        }
+
+        fn exchange_meta_data(
+            &mut self,
+            _: &negoex::Request,
+            _: &[u8],
+        ) -> Result<(), negoex::ProviderFailure> {
+            Ok(())
+        }
+
+        fn init_sec_context(
+            &mut self,
+            _: &negoex::Request,
+            _: Option<&[u8]>,
+        ) -> Result<negoex::MechanismStep, negoex::ProviderFailure> {
+            Ok(negoex::MechanismStep::complete(Some(vec![1])))
+        }
+
+        fn accept_sec_context(
+            &mut self,
+            _: &negoex::Request,
+            _: &[u8],
+        ) -> Result<negoex::MechanismStep, negoex::ProviderFailure> {
+            Ok(negoex::MechanismStep::complete(None))
+        }
+
+        fn keys(&self) -> negoex::VerifyKeys {
+            negoex::VerifyKeys::none()
+                .with_checksum_key(EncryptionKey::new(18, self.0.clone()))
+                .with_verify_key(EncryptionKey::new(18, self.0.clone()))
+        }
+    }
+
+    /// `NegoEx` contexts and their SPNEGO drivers never show a mechanism key.
+    #[test]
+    fn negoex_objects_redact_keys() -> Result<(), Box<dyn Error>> {
+        let key = [pattern(33), pattern(49)].concat();
+        let mut registry = Registry::new();
+        registry.register(Extension::GssMechanism(Arc::new(Registered)))?;
+        let mechanisms: Vec<Arc<dyn negoex::Mechanism>> =
+            vec![Arc::new(KeyedMechanism(key.clone()))];
+        let mut initiator =
+            negoex::Context::initiator(&registry, &mechanisms, negoex::Request::new())?;
+        let step = initiator.step(None)?;
+        redacted(&step, &[step.token().ok_or("a first token")?]);
+        let first = step.into_token().ok_or("a first token")?;
+        redacted(&initiator, &[&key]);
+        let failing = pattern(177);
+        redacted(
+            &negoex::ProviderFailure::new("mechanism failed").with_output_token(failing.clone()),
+            &[&failing],
+        );
+        redacted(
+            &negoex::VerifyKeys::none().with_checksum_key(EncryptionKey::new(18, key.clone())),
+            &[&key],
+        );
+        let scheme = negoex::AuthScheme::from_bytes([7; 16]);
+        let token = pattern(145);
+        let exchange =
+            negoex::ExchangeMessage::new(negoex::MessageType::ApRequest, scheme, token.clone())?;
+        redacted(&exchange, &[&token]);
+        redacted(&negoex::Message::Exchange(exchange), &[&token]);
+        let checksum = pattern(161);
+        redacted(
+            &negoex::VerifyMessage::new(scheme, 16, checksum.clone()),
+            &[&checksum],
+        );
+        let mut acceptor =
+            negoex::Context::acceptor(&registry, &mechanisms, negoex::Request::new())?;
+        drop(acceptor.step(Some(&first))?);
+        redacted(&acceptor, &[&key]);
+        let mut spnego_initiator = spnego::negoex::Initiator::new(negoex::Context::initiator(
+            &registry,
+            &mechanisms,
+            negoex::Request::new(),
+        )?);
+        let InitStep::Continue(offer) = spnego_initiator.init_sec_context(None)? else {
+            return Err("the acceptor's answer is awaited".into());
+        };
+        redacted(&spnego_initiator, &[&key]);
+        let mut spnego_acceptor = spnego::negoex::Acceptor::new(negoex::Context::acceptor(
+            &registry,
+            &mechanisms,
+            negoex::Request::new(),
+        )?);
+        redacted(&spnego_acceptor, &[&key]);
+        let answer = spnego_acceptor.accept_sec_context(&offer)?;
+        redacted(&answer, &[&key]);
+        if let spnego::negoex::AcceptStep::Complete(accepted) = answer {
+            redacted(&*accepted, &[&key]);
+        }
+        Ok(())
+    }
+
+    /// The registry entry of the keyed mechanism.
+    struct Registered;
+
+    impl GssMechanism for Registered {
+        fn id(&self) -> &'static str {
+            "keyed"
+        }
+
+        fn oid(&self) -> &[u8] {
+            &[0x69, 0x85, 0xa2, 0xc0, 0xac, 0x66]
+        }
     }
 
     /// Credentials, stores, contexts, unwrapped messages, the SPNEGO objects and

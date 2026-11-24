@@ -187,6 +187,30 @@ fn symbol_evidence_requires_full_owner_path() -> Result<(), TestError> {
     Ok(())
 }
 
+/// A file that a nested module includes belongs to that module, not to a module named after the file.
+#[test]
+fn nested_includes_resolve_relative_to_the_including_file() -> Result<(), TestError> {
+    let sources = vec![
+        ("src/gss.rs".to_owned(), "pub mod negoex;".to_owned()),
+        (
+            "src/gss/negoex.rs".to_owned(),
+            "include!(\"negoex/guid.rs\");".to_owned(),
+        ),
+        (
+            "src/gss/negoex/guid.rs".to_owned(),
+            "pub struct Guid;".to_owned(),
+        ),
+    ];
+    let cleaned = sanitized_sources(&sources)?;
+    assert!(declares_clean(&cleaned, &sources, "gss::negoex::Guid"));
+    assert!(!declares_clean(
+        &cleaned,
+        &sources,
+        "gss::negoex::guid::Guid"
+    ));
+    Ok(())
+}
+
 /// Resolve the module and enclosing impl or enum, not an unrelated same-named item.
 fn resolve_alias(sources: &[(String, String)], symbol: &str) -> String {
     let mut resolved = symbol.to_owned();
@@ -365,11 +389,12 @@ pub(crate) fn scopes(sources: &[(String, String)], originals: &[(String, String)
                 .unwrap_or(file)
                 .trim_end_matches(".rs")
                 .replace('/', "::");
-            let included = originals.iter().find(|(_, parent)| {
-                parent.contains(&format!(
-                    "include!(\"{}\")",
-                    file.trim_start_matches("src/")
-                ))
+            let included = originals.iter().find(|(parent_file, parent)| {
+                // `include!` resolves relative to the including file's directory.
+                parent_file
+                    .rsplit_once('/')
+                    .and_then(|(directory, _)| file.strip_prefix(&format!("{directory}/")))
+                    .is_some_and(|relative| parent.contains(&format!("include!(\"{relative}\")")))
             });
             let effective_module = included.map_or(module, |(parent, _)| {
                 parent
