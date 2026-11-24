@@ -215,6 +215,7 @@ fn context(
         crypto_policy: validated.crypto_policy().clone(),
         delegated: None,
         pac: validated.pac().cloned(),
+        open: true,
     };
     Ok(Accepted {
         context,
