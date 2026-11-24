@@ -57,6 +57,7 @@ tests = [
   "tests/http_client/cookies.rs",
   "tests/http_client_cookies.rs",
   "tests/interop_http_client.rs",
+  "tests/interop_http_client/",
 ]
 
 [package.metadata.rskrb5-ng.leaf-features.kkdcp-rustls]
