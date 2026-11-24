@@ -2076,6 +2076,7 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
+ "url",
  "x509-cert",
  "zeroize",
 ]

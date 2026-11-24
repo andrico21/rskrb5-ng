@@ -175,7 +175,10 @@ fn the_default_policy_does_not_follow_a_cross_origin_redirect() -> Result<(), Te
     let result = run(async { client.get("https://a.example.com/start").await })??;
     assert_eq!(result.response().status(), StatusCode::FOUND);
     assert_eq!(result.redirects(), 0);
-    assert!(network.seen_by("https://b.example.com/")?.is_empty());
+    assert!(
+        network.seen_by("https://b.example.com/")?.is_empty(),
+        "the other origin was contacted"
+    );
     Ok(())
 }
 
@@ -266,7 +269,10 @@ fn a_downgrade_redirect_is_refused() -> Result<(), TestError> {
             matches!(refused, Err(ClientError::RedirectDowngrade)),
             "{policy:?}: {refused:?}"
         );
-        assert!(network.seen_by("http://a.example.com/")?.is_empty());
+        assert!(
+            network.seen_by("http://a.example.com/")?.is_empty(),
+            "the cleartext origin was contacted"
+        );
     }
     Ok(())
 }
@@ -389,7 +395,10 @@ fn an_oversized_body_is_refused() -> Result<(), TestError> {
         ),
         "{refused:?}"
     );
-    assert!(network.seen_by("https://a.example.com/")?.is_empty());
+    assert!(
+        network.seen_by("https://a.example.com/")?.is_empty(),
+        "something was sent"
+    );
     Ok(())
 }
 

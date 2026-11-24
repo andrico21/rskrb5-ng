@@ -151,7 +151,7 @@ pkinit = [
 spake = ["dep:curve25519-dalek", "dep:p256", "dep:p384", "dep:p521"]
 spnego = ["messages", "dep:base64"]
 http = ["spnego", "dep:http_types"]
-http-client = ["dep:cookie_store"]
+http-client = ["dep:cookie_store", "dep:url"]
 tower = ["http", "dep:tower_layer", "dep:tower_service"]
 tokio = ["messages", "dep:hickory-resolver", "dep:tokio"]
 serde = ["dep:serde", "dep:serde_json"]
@@ -266,6 +266,12 @@ tokio-rustls = { version = "0.26.6", default-features = false, features = [
 ], optional = true }
 tower_layer = { package = "tower-layer", version = "0.3", optional = true }
 tower_service = { package = "tower-service", version = "0.3", optional = true }
+# The `Url` type of `cookie_store`'s API (the `http-client` leaf): built only from
+# request URIs the client already validated. Admission record:
+# docs/dependency-admission.md#url.
+url = { version = "2.5.9", default-features = false, features = [
+  "std",
+], optional = true }
 x509-cert = { version = "0.3.1", default-features = false, optional = true }
 # The adapter to the application's `tracing` subscriber (the `tracing` leaf). Only
 # the `std` feature: no span macros, no proc macro. Admission record:

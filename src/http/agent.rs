@@ -336,6 +336,10 @@ impl<X: HttpExchange> NegotiateHttpClient<X> {
     ///
     /// Returns the errors of [`Self::send`], and [`Error::InvalidUri`] when `uri`
     /// does not parse.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe, see the module documentation.
     #[inline]
     pub async fn get(&mut self, uri: &str) -> Result<ClientResponse, Error> {
         let request = Request::builder()
@@ -354,6 +358,10 @@ impl<X: HttpExchange> NegotiateHttpClient<X> {
     ///
     /// Returns the errors of [`Self::send`], and [`Error::InvalidUri`] when `uri`
     /// or `content_type` does not parse.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe, see the module documentation.
     #[inline]
     pub async fn post(
         &mut self,
@@ -418,6 +426,10 @@ impl<X: HttpExchange> NegotiateHttpClient<X> {
     /// Returns the errors of [`Self::round`] and [`Self::context_for`],
     /// [`Error::ChallengeLimit`], [`Error::ChallengeTooLarge`] and, when
     /// `mutual` is set, [`Error::MutualAuthenticationNotProven`].
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe, see the module documentation.
     async fn hop(
         &mut self,
         chain: &mut Chain,
@@ -474,6 +486,11 @@ impl<X: HttpExchange> NegotiateHttpClient<X> {
     ///
     /// Returns [`Error::Negotiate`] when the service name is invalid or no
     /// token can be built.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: the client caches a service ticket only after its exchange
+    /// completes, so dropping the future leaves it consistent.
     async fn context_for(&mut self, origin: &Origin) -> Result<InitiatorContext, Error> {
         let service = self
             .service_realm
@@ -497,6 +514,10 @@ impl<X: HttpExchange> NegotiateHttpClient<X> {
     ///
     /// Returns [`Error::Negotiate`] for a token that is not a header value and
     /// the exchange's errors.
+    ///
+    /// # Cancel safety
+    ///
+    /// NOT cancel-safe, see the module documentation.
     async fn round(
         &mut self,
         chain: &Chain,
