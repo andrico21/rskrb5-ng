@@ -194,9 +194,10 @@ mod tests {
         Ok(())
     }
 
-    /// A value with a byte outside visible ASCII is refused, so the jar never
-    /// builds a `Cookie` header a reader cannot take as text (found by the
-    /// `http_set_cookie` fuzz target: a replacement character in a value).
+    /// A value with a byte outside visible ASCII is refused.
+    ///
+    /// The jar then never builds a `Cookie` header a reader cannot take as text
+    /// (found by the `http_set_cookie` fuzz target: a replacement character).
     #[test]
     fn a_non_ascii_cookie_is_refused() -> Result<(), TestError> {
         let mut jar = CookieStore::new();
