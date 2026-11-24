@@ -310,6 +310,9 @@ pub struct Acceptor<'keytab> {
     validator: Validator<'keytab>,
     /// The options.
     options: AcceptorOptions,
+    /// The acceptor's credential; one that can also initiate composes proxy
+    /// credentials.
+    credential: Option<&'keytab Credential>,
 }
 
 impl fmt::Debug for Acceptor<'_> {
@@ -338,7 +341,11 @@ impl<'keytab> Acceptor<'keytab> {
     #[inline]
     #[must_use]
     pub const fn from_validator(validator: Validator<'keytab>, options: AcceptorOptions) -> Self {
-        Self { validator, options }
+        Self {
+            validator,
+            options,
+            credential: None,
+        }
     }
 
     /// Accept the initiator's first token.
@@ -353,6 +360,12 @@ impl<'keytab> Acceptor<'keytab> {
     /// initiator without them, [`Error::MissingBindings`] when bindings are
     /// required and absent, and [`Error::DelegatedCredential`] for a delegated
     /// credential that does not decrypt.
+    ///
+    /// Without a delegated credential, an acceptor made by [`Self::new`] from
+    /// a credential that can also initiate ([`CredentialUsage::Both`]) composes
+    /// a proxy credential for the client from the accepted ticket (MIT
+    /// `kg_compose_deleg_cred`); its tickets come by `S4U2Proxy`, which the
+    /// KDC allows or refuses.
     #[inline]
     pub fn accept_sec_context(&mut self, input_token: &[u8]) -> Result<Accepted, Error> {
         acceptor::accept(self, input_token)
@@ -405,6 +418,29 @@ impl Accepted {
         &mut self.context
     }
 
+    /// Whether the context is established: false only for a DCE-style
+    /// acceptor waiting for the initiator's AP-REP.
+    #[inline]
+    #[must_use]
+    pub const fn is_established(&self) -> bool {
+        self.context.open
+    }
+
+    /// The third leg of a DCE-style context: verify the initiator's AP-REP
+    /// and open the context (MIT `kg_accept_dce`, `accept_sec_context.c:283-360`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::UnexpectedStep`] for a context that is not waiting for
+    /// it, [`Error::DefectiveToken`] for an AP-REP that carries a subkey or
+    /// does not echo the acceptor's sequence number, and the AP-REP decoding,
+    /// decryption and policy errors. A failed third leg leaves the context
+    /// unestablished.
+    #[inline]
+    pub fn complete_dce(&mut self, token: &[u8]) -> Result<(), Error> {
+        dce::complete(self, token)
+    }
+
     /// The same context answered with `token` instead, for the negotiation
     /// layered on this one.
     pub(crate) fn with_output_token(mut self, token: Option<Vec<u8>>) -> Self {
@@ -449,6 +485,9 @@ pub struct EstablishedContext {
     delegated: Option<Box<Credential>>,
     /// The ticket's verified PAC, on the acceptor.
     pac: Option<pac::Verified>,
+    /// Whether the context is established; a DCE-style acceptor opens on the
+    /// initiator's AP-REP.
+    open: bool,
 }
 
 impl fmt::Debug for EstablishedContext {
@@ -521,6 +560,183 @@ impl EstablishedContext {
         context::unwrap(self, token)
     }
 
+    /// `gss_wrap_iov`: seal or sign `buffers` in place.
+    ///
+    /// The array needs one HEADER buffer; a TRAILER buffer receives the
+    /// trailer, otherwise the trailer is rotated into the header (RFC 4121
+    /// RRC); PADDING is emptied, as RFC 4121 tokens have none; DATA buffers
+    /// are sealed when `confidential` and `SIGN_ONLY` buffers are only covered
+    /// by the integrity tag. Returns whether the token is sealed: an array
+    /// without DATA buffers is only signed (MIT `kg_integ_only_iov`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadIov`] for a missing header, a duplicated framing
+    /// buffer, a STREAM or MIC buffer or more than 64 buffers,
+    /// [`Error::NotNegotiated`] for `SIGN_ONLY` data in a sealed Camellia
+    /// token, and the errors of [`Self::wrap`].
+    #[inline]
+    pub fn wrap_iov(&mut self, buffers: &mut [IovBuffer], confidential: bool) -> Result<bool, Error> {
+        iov::wrap(self, buffers, confidential)
+    }
+
+    /// `gss_wrap_iov_length`: size the HEADER, TRAILER and PADDING buffers as
+    /// [`Self::wrap_iov`] fills them, with zero bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns the layout and context errors of [`Self::wrap_iov`].
+    #[inline]
+    pub fn wrap_iov_length(&self, buffers: &mut [IovBuffer], confidential: bool) -> Result<bool, Error> {
+        iov::wrap_length(self, buffers, confidential)
+    }
+
+    /// `gss_unwrap_iov`: verify and open `buffers` in place and admit the
+    /// token's sequence number; returns whether the token was sealed.
+    ///
+    /// The array holds the HEADER, DATA, `SIGN_ONLY` and TRAILER buffers as
+    /// [`Self::wrap_iov`] produced them, or one STREAM buffer with a whole
+    /// token, the `SIGN_ONLY` buffers and exactly one DATA buffer that receives
+    /// the message. A refused token leaves the buffers and the window as they
+    /// were.
+    ///
+    /// # Security
+    ///
+    /// Every buffer is attacker-controlled: lengths, rotation counts and the
+    /// sealed header copy are checked, and the tag is verified in constant
+    /// time before the sequence window moves.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadIov`] for a bad layout or framing length,
+    /// [`Error::DefectiveToken`] for a malformed header, rotation or header
+    /// copy, [`Error::BadSignature`] when the tag does not verify,
+    /// [`Error::TokenTooLarge`] above 16 MiB, and the window errors of
+    /// [`Self::verify_mic`].
+    #[inline]
+    pub fn unwrap_iov(&mut self, buffers: &mut [IovBuffer]) -> Result<bool, Error> {
+        iov::unwrap(self, buffers)
+    }
+
+    /// `gss_get_mic_iov`: a MIC over the DATA and `SIGN_ONLY` buffers in array
+    /// order, into the `MIC_TOKEN` buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadIov`] without exactly one `MIC_TOKEN` buffer, and the
+    /// errors of [`Self::get_mic`].
+    #[inline]
+    pub fn get_mic_iov(&mut self, buffers: &mut [IovBuffer]) -> Result<(), Error> {
+        iov::get_mic(self, buffers)
+    }
+
+    /// `gss_verify_mic_iov`: verify the `MIC_TOKEN` buffer over the DATA and
+    /// `SIGN_ONLY` buffers and admit its sequence number.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::BadIov`] without exactly one `MIC_TOKEN` buffer or for
+    /// one of the wrong length, [`Error::BadSignature`] when it does not
+    /// verify, and the errors of [`Self::verify_mic`].
+    #[inline]
+    pub fn verify_mic_iov(&mut self, buffers: &[IovBuffer]) -> Result<(), Error> {
+        iov::verify_mic(self, buffers)
+    }
+
+    /// `gss_wrap_aead`: a Wrap token of `message` whose tag also covers
+    /// `associated`, which is not sent.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Self::wrap_iov`].
+    #[inline]
+    pub fn wrap_aead(
+        &mut self,
+        associated: &[u8],
+        message: &[u8],
+        confidential: bool,
+    ) -> Result<Vec<u8>, Error> {
+        iov::wrap_aead(self, associated, message, confidential)
+    }
+
+    /// `gss_unwrap_aead`: open a token of [`Self::wrap_aead`] with the same
+    /// associated data.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Self::unwrap_iov`]; a DCE-style context has no
+    /// STREAM unwrapping (MIT `k5unsealiov.c:381-384`).
+    #[inline]
+    pub fn unwrap_aead(&mut self, token: &[u8], associated: &[u8]) -> Result<Unwrapped, Error> {
+        iov::unwrap_aead(self, token, associated)
+    }
+
+    /// `gss_pseudo_random`: `length` bytes of RFC 4402 `PRF+` over `input`
+    /// and the context key `key` selects.
+    ///
+    /// # Security
+    ///
+    /// The output is as secret as the key and is erased when dropped.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::UnexpectedStep`] before the context is established,
+    /// the policy error of the key, and [`Error::Crypto`] above the 1 MiB
+    /// `PRF+` bound.
+    #[inline]
+    pub fn pseudo_random(
+        &self,
+        key: PrfKey,
+        input: &[u8],
+        length: usize,
+    ) -> Result<Zeroizing<Vec<u8>>, Error> {
+        prf::pseudo_random(self, key, input, length)
+    }
+
+    /// `gss_export_sec_context` under the transfer contract: consume the
+    /// context and seal it under `key`.
+    ///
+    /// The blob holds the names, flags, keys, sequence window, expiry,
+    /// delegated credential and verified PAC; the importer applies the default
+    /// enctype policy, so a DES3 or RC4 context needs its policy again.
+    ///
+    /// # Security
+    ///
+    /// There is no unprotected export: the keys only leave the process sealed
+    /// under `key`, and the sending end cannot use the context afterwards.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NotNegotiated`] for a delegated credential with a
+    /// replay cache, and the serialization, random-source and encryption
+    /// errors.
+    #[inline]
+    pub fn export(self, key: &TransferKey) -> Result<TransferBlob, Error> {
+        export::export_context(self, key)
+    }
+
+    /// `gss_import_sec_context` under the transfer contract.
+    ///
+    /// # Security
+    ///
+    /// The transfer id is consumed in `ledger` only after the blob
+    /// authenticates; duplicate-use protection holds within that ledger's
+    /// scope only (see [`TransferLedger`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::TokenTooLarge`] above 1 MiB, [`Error::TransferRejected`]
+    /// for a tampered blob, another key, version or kind, and
+    /// [`Error::TransferReplayed`] for a transfer id `ledger` has consumed.
+    #[inline]
+    pub fn import(
+        blob: &TransferBlob,
+        key: &TransferKey,
+        ledger: &mut dyn TransferLedger,
+    ) -> Result<Self, Error> {
+        export::import_context(blob, key, ledger)
+    }
+
     /// The credential the initiator delegated, on the acceptor.
     #[inline]
     #[must_use]
@@ -532,6 +748,34 @@ impl EstablishedContext {
     #[inline]
     pub fn take_delegated_credential(&mut self) -> Option<Credential> {
         self.delegated.take().map(|credential| *credential)
+    }
+
+    /// `gss_inquire_name` of the initiator's name on the acceptor: the
+    /// `urn:mspac:` attributes of the ticket's verified PAC (MIT
+    /// `mspac_get_attribute_types`, `pac.c:960-1010`), none without a PAC.
+    #[inline]
+    #[must_use]
+    pub fn source_attributes(&self) -> Vec<String> {
+        attributes::names(self)
+    }
+
+    /// `gss_get_name_attribute` of the initiator's name on the acceptor:
+    /// `urn:mspac:` for the whole PAC, `urn:mspac:<buffer>` or
+    /// `urn:mspac:<type>` for one buffer, the name matched without case (MIT
+    /// `mspac_get_attribute`, `pac.c:1012-1056`).
+    ///
+    /// # Security
+    ///
+    /// The values come from a PAC the acceptor verified; they are reported
+    /// authenticated only when its KDC signature verified.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NameAttributeUnavailable`] for an unknown attribute, a
+    /// buffer the PAC does not carry, or a context without a verified PAC.
+    #[inline]
+    pub fn source_attribute(&self, attribute: &str) -> Result<NameAttribute, Error> {
+        attributes::get(self, attribute)
     }
 
     /// The ticket's verified PAC, on the acceptor.
@@ -684,5 +928,157 @@ impl Unwrapped {
     #[must_use]
     pub const fn confidential(&self) -> bool {
         self.confidential
+    }
+}
+
+/// A caller-supplied 256-bit key that seals and opens [`TransferBlob`]s.
+///
+/// It is the protocol key of the RFC 8009 `aes256-cts-hmac-sha384-192`
+/// profile; the exporting and the importing process must hold the same key.
+/// The key is erased when dropped and never shown by `Debug`.
+#[non_exhaustive]
+pub struct TransferKey {
+    /// The key bytes.
+    bytes: Zeroizing<[u8; 32]>,
+}
+
+impl fmt::Debug for TransferKey {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TransferKey").finish_non_exhaustive()
+    }
+}
+
+impl TransferKey {
+    /// The key `bytes`.
+    #[inline]
+    #[must_use]
+    pub fn new(bytes: [u8; 32]) -> Self {
+        Self {
+            bytes: Zeroizing::new(bytes),
+        }
+    }
+
+    /// A random key from the system random source.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Random`] when the random source fails.
+    #[inline]
+    pub fn generate() -> Result<Self, Error> {
+        let mut bytes = Zeroizing::new([0; 32]);
+        getrandom::fill(bytes.as_mut_slice())?;
+        Ok(Self { bytes })
+    }
+
+    /// The key bytes.
+    pub(crate) fn bytes(&self) -> &[u8] {
+        self.bytes.as_slice()
+    }
+}
+
+/// An exported security context or credential: versioned, encrypted and
+/// authenticated under a [`TransferKey`] (format: `src/gss/export.rs`).
+///
+/// It carries a random transfer id and the export time in its authenticated
+/// header; it holds ciphertext only, so its bytes may be stored or sent, but
+/// whoever holds the key and the blob holds the context.
+#[derive(Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct TransferBlob {
+    /// The header and the ciphertext.
+    bytes: Vec<u8>,
+}
+
+impl fmt::Debug for TransferBlob {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TransferBlob")
+            .field("len", &self.bytes.len())
+            .finish()
+    }
+}
+
+impl TransferBlob {
+    /// A blob received as `bytes`; it is checked when it is imported.
+    #[inline]
+    #[must_use]
+    pub const fn from_bytes(bytes: Vec<u8>) -> Self {
+        Self { bytes }
+    }
+
+    /// The blob's bytes.
+    #[inline]
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// The blob's bytes.
+    #[inline]
+    #[must_use]
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.bytes
+    }
+}
+
+/// The record of the transfer ids an importer has consumed.
+///
+/// An import authenticates the blob first and then asks the ledger to consume
+/// its transfer id; a ledger that answers `false` makes the import fail with
+/// [`Error::TransferReplayed`].
+///
+/// # Security
+///
+/// Duplicate-use protection holds only within one ledger's scope: a copy of a
+/// blob imported through a separate ledger is accepted. Processes that may
+/// import the same blob must share a ledger (a persistent or networked
+/// implementation of this trait); replay across separate ledgers is out of
+/// scope.
+pub trait TransferLedger {
+    /// Record `id`, exported at `exported`, as consumed; `Ok(false)` when it
+    /// already was.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the ledger cannot record the id; the import then
+    /// fails closed.
+    fn consume(&mut self, id: [u8; 16], exported: SystemTime) -> Result<bool, Error>;
+}
+
+/// An in-memory [`TransferLedger`] of at most 65,536 transfer ids.
+#[derive(Clone, Debug, Default)]
+#[non_exhaustive]
+pub struct MemoryTransferLedger {
+    /// The consumed ids.
+    consumed: HashSet<[u8; 16]>,
+}
+
+impl MemoryTransferLedger {
+    /// The most transfer ids one ledger records.
+    pub const CAPACITY: usize = 0x1_0000;
+
+    /// An empty ledger.
+    #[inline]
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl TransferLedger for MemoryTransferLedger {
+    /// # Errors
+    ///
+    /// Returns [`Error::TransferLedgerFull`] once [`Self::CAPACITY`] ids are
+    /// recorded: the ledger never forgets an id.
+    #[inline]
+    fn consume(&mut self, id: [u8; 16], _exported: SystemTime) -> Result<bool, Error> {
+        if self.consumed.contains(&id) {
+            return Ok(false);
+        }
+        if self.consumed.len() >= Self::CAPACITY {
+            return Err(Error::TransferLedgerFull);
+        }
+        Ok(self.consumed.insert(id))
     }
 }

@@ -33,14 +33,18 @@ mod tests {
     use http_types::Request;
     #[cfg(feature = "http")]
     use rskrb5_ng::http;
+    #[cfg(all(feature = "spnego", feature = "tokio"))]
+    use rskrb5_ng::kadm5;
     use rskrb5_ng::{
-        Result, ccache::CCache, config, crypto::AesSha1Etype, error, keytab::Keytab, pac::Pac,
-        routing::RealmPath, trace::Options,
+        Result, asn1, ccache::CCache, config, crypto::AesSha1Etype, error, keytab::Keytab,
+        pac::Pac, replay, routing::RealmPath, trace::Options,
     };
     #[cfg(feature = "messages")]
-    use rskrb5_ng::{ap_rep, ap_req, client::principal::Principal, kadmin, kdc_rep, kdc_req};
+    use rskrb5_ng::{
+        ap_rep, ap_req, authdata, client::principal::Principal, kadmin, kdc_rep, kdc_req, messages,
+    };
     #[cfg(feature = "spnego")]
-    use rskrb5_ng::{gss, spnego};
+    use rskrb5_ng::{gss, rpcsec_gss, spnego};
     #[cfg(feature = "messages")]
     use rskrb5_ng::{krb_cred, krb_error, krb_priv, krb_safe, messages::PaForUser, ticket};
 
@@ -92,6 +96,28 @@ mod tests {
         local_auth_when_no_translation,
         error::LocalAuth,
         None::<()>.ok_or(error::LocalAuth::NoTranslation)
+    );
+    propagates_domain!(
+        replay_when_name_has_no_type,
+        error::Replay,
+        replay::RcacheName::parse("no-type-prefix")
+    );
+    propagates_domain!(
+        der_when_length_truncated,
+        error::Der,
+        asn1::decode_length(&[], &asn1::Limits::new())
+    );
+    #[cfg(feature = "messages")]
+    propagates_domain!(
+        auth_context_when_keyless,
+        error::AuthMessage,
+        messages::AuthContext::without_key(messages::MessagePolicy::new()).mk_priv(b"")
+    );
+    #[cfg(feature = "messages")]
+    propagates_domain!(
+        auth_data_when_truncated,
+        error::AuthData,
+        authdata::decode_kdc_issued(&[])
     );
     #[cfg(feature = "messages")]
     propagates_domain!(
@@ -170,6 +196,30 @@ mod tests {
         gss_when_exported_name_truncated,
         error::Gss,
         gss::Name::import(&[], gss::NameType::Export)
+    );
+    #[cfg(feature = "spnego")]
+    propagates_domain!(
+        iakerb_when_token_malformed,
+        error::Iakerb,
+        gss::iakerb::token::Token::decode(&[])
+    );
+    #[cfg(feature = "spnego")]
+    propagates_domain!(
+        negoex_when_token_empty,
+        error::Negoex,
+        gss::negoex::Conversation::accepting().parse(&[])
+    );
+    #[cfg(all(feature = "spnego", feature = "tokio"))]
+    propagates_domain!(
+        kadm5_when_result_truncated,
+        error::Kadm5,
+        kadm5::Response::decode(kadm5::Procedure::Init, kadm5::ApiVersion::V4, &[])
+    );
+    #[cfg(feature = "spnego")]
+    propagates_domain!(
+        rpc_when_reply_truncated,
+        error::Rpc,
+        rpcsec_gss::Reply::decode(&[])
     );
     #[cfg(feature = "http")]
     propagates_domain!(

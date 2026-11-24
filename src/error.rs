@@ -1,7 +1,7 @@
 //! Typed errors grouped by Kerberos domain.
-use core::str::Utf8Error;
 #[cfg(feature = "messages")]
-use core::{error::Error as StdError, time::Duration};
+use core::error::Error as StdError;
+use core::{str::Utf8Error, time::Duration};
 #[cfg(feature = "messages")]
 use std::time::SystemTime;
 use std::{env, io, path::PathBuf, time::SystemTimeError};
@@ -16,6 +16,8 @@ use crate::client::KdcError;
 #[cfg(feature = "tokio")]
 use crate::client::transport::KdcProtocol;
 #[cfg(feature = "spnego")]
+use crate::gss::negoex::{AuthScheme, MessageType, ProviderFailure};
+#[cfg(feature = "spnego")]
 use crate::spnego::oid::ObjectIdentifier;
 use crate::{
     ccache::keyring::Fault as KeyringFault,
@@ -23,8 +25,15 @@ use crate::{
     extensions::{Interface, ProviderError},
 };
 include!("error/any.rs");
+include!("error/auth_message.rs");
+include!("error/auth_data.rs");
+include!("error/der.rs");
 include!("error/gss.rs");
+include!("error/iakerb.rs");
+include!("error/kadm5.rs");
+include!("error/negoex.rs");
 include!("error/policy.rs");
+include!("error/replay.rs");
 mod credential_debug;
 #[cfg(feature = "messages")]
 /// AP-REP helper error.
@@ -857,6 +866,9 @@ pub enum Config {
     /// A duration value was invalid.
     #[error("invalid time duration value: {0}")]
     InvalidDuration(String),
+    /// `default_rcache_name` is not a MIT replay-cache name of a known type.
+    #[error("invalid replay cache name: {0}")]
+    InvalidReplayCacheName(String),
     /// A duration value overflowed.
     #[error("time duration overflow: {0}")]
     DurationOverflow(String),
@@ -2638,6 +2650,15 @@ pub enum Service {
     /// Shared replay cache lock could not be acquired.
     #[error("shared replay cache lock is poisoned")]
     ReplayCachePoisoned,
+    /// AD-KDC-ISSUED or AD-AND-OR authorization data is not valid.
+    #[error("authorization data error: {0}")]
+    AuthorizationData(#[from] AuthData),
+    /// An AD-AND-OR element's conditions are not met.
+    #[error("authorization conditions are not satisfied")]
+    AuthorizationConditionUnsatisfied,
+    /// A replay store failed, so the authenticator is refused (fail closed).
+    #[error("replay store error: {0}")]
+    ReplayStore(#[from] Replay),
     /// AP-REP did not echo the AP-REQ authenticator timestamp.
     #[error("AP-REP timestamp mismatch: expected {expected:?}, got {actual:?}")]
     ApRepTimestampMismatch {

@@ -274,6 +274,11 @@ pub(super) const CONTRACTS: &[(&str, &str, &str)] = &[
         "Borrows the caller's ticket bytes; the request owns no copy, so nothing is erased here.",
     ),
     (
+        "src/messages.rs::AuthContext::with_subkeys",
+        "priv_uses_the_subkey_of_each_direction",
+        "Attaching sub-keys replaces the retained optional send and receive keys; the old EncryptionKey values are erased by their ZeroizeOnDrop Drop contract, not an observed first-party wipe.",
+    ),
+    (
         "src/service.rs::Validator::with_pac_kdc_key",
         "the_acceptor_verifies_every_signature_with_the_kdc_key",
         "Attaching a KDC key replaces the retained optional key; the old EncryptionKey is erased by its ZeroizeOnDrop Drop contract, not an observed first-party wipe.",

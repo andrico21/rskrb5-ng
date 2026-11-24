@@ -20,7 +20,7 @@ use crate::{
 };
 
 /// The longest per-message token, in bytes.
-const MAX_TOKEN_LEN: usize = 0x100_0000;
+pub(super) const MAX_TOKEN_LEN: usize = 0x100_0000;
 
 /// The context key: the acceptor subkey, else the initiator subkey, else the
 /// session key (RFC 4121 section 2).
@@ -41,7 +41,7 @@ pub(super) fn inquire(context: &EstablishedContext) -> ContextInquiry {
         mechanism: ObjectIdentifier::krb5(),
         flags: context.flags,
         locally_initiated: context.initiated,
-        open: true,
+        open: context.open,
         key_etype: key(context).etype(),
         ssf: match key(context).etype() {
             18 | 20 | 26 => 256,
@@ -54,7 +54,7 @@ pub(super) fn inquire(context: &EstablishedContext) -> ContextInquiry {
 }
 
 /// The token flags this end sends.
-const fn sent_flags(context: &EstablishedContext) -> u8 {
+pub(super) const fn sent_flags(context: &EstablishedContext) -> u8 {
     let mut flags = 0;
     if !context.initiated {
         flags |= GSS_TOKEN_FLAG_SENT_BY_ACCEPTOR;
@@ -66,7 +66,7 @@ const fn sent_flags(context: &EstablishedContext) -> u8 {
 }
 
 /// The key usages of this end's tokens: (sign, seal).
-const fn usages(sending_initiator: bool) -> (u32, u32) {
+pub(super) const fn usages(sending_initiator: bool) -> (u32, u32) {
     if sending_initiator {
         (GSSAPI_INITIATOR_SIGN_USAGE, GSSAPI_INITIATOR_SEAL_USAGE)
     } else {
@@ -74,13 +74,29 @@ const fn usages(sending_initiator: bool) -> (u32, u32) {
     }
 }
 
-/// Refuse an expired context or one whose key needs the legacy formats.
+/// Refuse a context that is not established yet: a DCE-style acceptor before
+/// the initiator's AP-REP.
 ///
 /// # Errors
 ///
-/// Returns [`Error::ContextExpired`], [`Error::LegacyTokenFormat`] or the
-/// policy error of the key.
-fn usable(context: &EstablishedContext) -> Result<&EncryptionKey, Error> {
+/// Returns [`Error::UnexpectedStep`].
+pub(super) const fn established(context: &EstablishedContext) -> Result<(), Error> {
+    if context.open {
+        Ok(())
+    } else {
+        Err(Error::UnexpectedStep("the context is not established"))
+    }
+}
+
+/// Refuse an unestablished or expired context or one whose key needs the
+/// legacy formats.
+///
+/// # Errors
+///
+/// Returns [`Error::UnexpectedStep`], [`Error::ContextExpired`],
+/// [`Error::LegacyTokenFormat`] or the policy error of the key.
+pub(super) fn usable(context: &EstablishedContext) -> Result<&EncryptionKey, Error> {
+    established(context)?;
     if SystemTime::now() > context.expires {
         return Err(Error::ContextExpired);
     }
@@ -107,7 +123,10 @@ fn usable(context: &EstablishedContext) -> Result<&EncryptionKey, Error> {
 ///
 /// Returns [`Error::DefectiveToken`] for the acceptor-subkey flag on a context
 /// without an acceptor subkey.
-fn received_key(context: &EstablishedContext, flags: u8) -> Result<EncryptionKey, Error> {
+pub(super) fn received_key(
+    context: &EstablishedContext,
+    flags: u8,
+) -> Result<EncryptionKey, Error> {
     if flags & GSS_TOKEN_FLAG_ACCEPTOR_SUBKEY == 0 {
         return Ok(context
             .initiator_subkey
@@ -148,6 +167,9 @@ const fn bounded(token: &[u8]) -> Result<(), Error> {
 ///
 /// Returns the errors of [`super::EstablishedContext::get_mic`].
 pub(super) fn get_mic(context: &mut EstablishedContext, message: &[u8]) -> Result<Vec<u8>, Error> {
+    if let Some(profile) = super::legacy::select(context)? {
+        return super::legacy::get_mic(context, profile, message);
+    }
     let current = usable(context)?.clone();
     let (sign, _) = usages(context.initiated);
     let flags = sent_flags(context);
@@ -167,6 +189,9 @@ pub(super) fn verify_mic(
     token: &[u8],
 ) -> Result<(), Error> {
     bounded(token)?;
+    if let Some(profile) = super::legacy::select(context)? {
+        return super::legacy::verify_mic(context, profile, message, token);
+    }
     let _usable: &EncryptionKey = usable(context)?;
     let (sign, _) = usages(!context.initiated);
     let decoded = MicToken::decode(token, context.initiated)?;
@@ -191,6 +216,9 @@ pub(super) fn wrap(
     message: &[u8],
     confidential: bool,
 ) -> Result<Vec<u8>, Error> {
+    if let Some(profile) = super::legacy::select(context)? {
+        return super::legacy::wrap(context, profile, message, confidential);
+    }
     let current = usable(context)?.clone();
     let (_, seal) = usages(context.initiated);
     let flags = sent_flags(context);
@@ -214,6 +242,9 @@ pub(super) fn wrap(
 /// Returns the errors of [`super::EstablishedContext::unwrap`].
 pub(super) fn unwrap(context: &mut EstablishedContext, token: &[u8]) -> Result<Unwrapped, Error> {
     bounded(token)?;
+    if let Some(profile) = super::legacy::select(context)? {
+        return super::legacy::unwrap(context, profile, token);
+    }
     let _usable: &EncryptionKey = usable(context)?;
     let (_, seal) = usages(!context.initiated);
     let decoded = WrapToken::decode(token, context.initiated)?;

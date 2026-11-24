@@ -30,8 +30,11 @@
 //! - Keys, delegated credentials and unwrapped messages live in zeroizing owners
 //!   and never appear in `Debug` output.
 //! - Per-message tokens of DES3 and RC4 contexts use the RFC 1964/4757 formats,
-//!   which are not implemented here; such contexts establish, and their
-//!   per-message calls return [`crate::error::Gss::LegacyTokenFormat`].
+//!   only when the context's enctype policy permits the enctype (`allow_des3`,
+//!   `allow_rc4`); their IOV and AEAD calls return
+//!   [`crate::error::Gss::LegacyTokenFormat`], and a token whose algorithm IDs
+//!   name single DES is refused with `RejectedFeature::SingleDes`. AES and
+//!   Camellia contexts use RFC 4121 tokens only.
 //! - Nothing reads the environment except [`Credential::acquire_cred`], which
 //!   documents its ambient input.
 //!
@@ -43,8 +46,9 @@
 //! [`Credential`] from their own submodules; the `IAKERB` and `NegoEx`
 //! mechanisms are added beside this one.
 
+use alloc::sync::Arc;
 use core::{fmt, ops::BitOr, time::Duration};
-use std::time::SystemTime;
+use std::{collections::HashSet, time::SystemTime};
 
 use zeroize::Zeroizing;
 
@@ -55,12 +59,15 @@ use crate::{
     crypto::CryptoPolicy,
     keytab::{EncryptionKey, Keytab},
     pac,
-    service::{SharedReplayCache, Validator},
+    replay::Store,
+    service::Validator,
     spnego::oid::ObjectIdentifier,
 };
 
 /// The krb5 mechanism's acceptor side.
 mod acceptor;
+/// Name attributes from the verified PAC.
+mod attributes;
 /// The RFC 4121 channel-binding digest.
 mod bindings;
 /// The RFC 4121 section 4.1.1 authenticator checksum.
@@ -69,10 +76,25 @@ mod checksum;
 mod context;
 /// Credential acquisition and storage.
 mod cred;
+/// DCE-style establishment.
+mod dce;
+/// Context and credential transfer.
+mod export;
+pub mod iakerb;
+/// Impersonation and proxy credentials.
+mod impersonate;
 /// The krb5 mechanism's initiator side.
 mod initiator;
+/// IOV and AEAD per-message tokens.
+mod iov;
+/// The RFC 1964 and RFC 4757 token formats of DES3 and RC4 contexts.
+mod legacy;
 /// Name parsing, display and export.
 mod name;
+/// `NegoEx` (MS-NEGOEX) mechanism negotiation.
+pub mod negoex;
+/// The GSS pseudo-random function.
+mod prf;
 /// The sequence and replay window.
 mod seq;
 
@@ -82,15 +104,21 @@ include!("gss/contexts.rs");
 
 use crate::error::Gss as Error;
 
-/// `gss_indicate_mechs`: the mechanisms this module implements, krb5.
+/// `gss_indicate_mechs`: the mechanisms this module implements, krb5 and
+/// IAKERB ([`iakerb`]).
+///
+/// MIT also lists the two legacy krb5 OIDs, which this module accepts but does
+/// not offer.
 #[inline]
 #[must_use]
 pub fn indicate_mechs() -> Vec<ObjectIdentifier> {
-    vec![ObjectIdentifier::krb5()]
+    vec![ObjectIdentifier::krb5(), iakerb::Context::mechanism()]
 }
 
-/// `gss_inquire_names_for_mech`: the name types `mechanism` imports, every
-/// [`NameType`] for krb5 (either of its OIDs) and none for another mechanism.
+/// `gss_inquire_names_for_mech`: the name types `mechanism` imports.
+///
+/// Every [`NameType`] for krb5 (either of its OIDs) and for IAKERB, and none for another
+/// mechanism (MIT `inq_names.c:38-45`, which accepts `gss_mech_iakerb` as well).
 #[inline]
 #[must_use]
 pub fn inquire_names_for_mech(mechanism: &ObjectIdentifier) -> Vec<NameType> {

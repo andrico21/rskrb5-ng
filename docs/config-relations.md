@@ -24,7 +24,7 @@ both modes. Parsed values do not imply an implemented mechanism.
 | libdefaults | default_ccache_name | parameter template | DEFCCNAME | TokioClient::from_default_ccache_name | Effective B2 expansion; missing username, Windows USERID/SID, LIBDIR/BINDIR/SBINDIR facts error at resolution, never credential fallback; crate default unset | default_ccache_name |
 | libdefaults | default_client_keytab_name | parameter template | DEFCKTNAME | TokioClient::with_client_keytab_from_config | Effective B2 expansion; missing username, Windows USERID/SID, LIBDIR/BINDIR/SBINDIR facts error at resolution, never credential fallback | default_client_keytab_name |
 | libdefaults | default_keytab_name | parameter template | DEFKTNAME | Validator::from_default_keytab_name | Effective B2 expansion; missing username, Windows USERID/SID, LIBDIR/BINDIR/SBINDIR facts error at resolution, never credential fallback | default_keytab_name |
-| libdefaults | default_rcache_name | parameter template | dfl: | plan 2 WP-20 | Any value except none: requires unavailable persistent/shared replay protection and errors; none: diagnostic because memory replay protection remains | default_rcache_name |
+| libdefaults | default_rcache_name | parameter template | dfl: | replay::RcacheName::default_for | Effective: dfl:, file2:<path>, none: and memory: select the replay store of replay::RcacheName::open; a malformed or unknown-type name is refused when the profile is read | default_rcache_name |
 | libdefaults | default_realm | string | unset | Config::realm_for_host; client::service_realm | Effective fallback after domain mapping; explicit service realm remains authoritative | default_realm |
 | libdefaults | default_tgs_enctypes | enctype expression | permitted_enctypes | TgsReq::from_libdefaults | Effective WP-02; AES SHA2-first default, forbidden positives error | default_tgs_enctypes |
 | libdefaults | default_tkt_enctypes | enctype expression | permitted_enctypes | AsReq::from_libdefaults | Effective WP-02; AES SHA2-first default, forbidden positives error | default_tkt_enctypes |
@@ -63,7 +63,7 @@ both modes. Parsed values do not imply an implemented mechanism.
 
 | Section | Relation | Typed value | MIT default | Effective consumer / package | Fail-closed classification | Test |
 | --- | --- | --- | --- | --- | --- | --- |
-| realms | admin_server | endpoint list | unset | Realm::parse kpasswd fallback | Effective port-464 fallback; kadm5 administration remains WP-15 | admin_server |
+| realms | admin_server | endpoint list | unset | Realm::parse kpasswd fallback; kadm5::admin_server (RemoteAdminClient::connect) | Effective: the port-464 kpasswd fallback, and the remote kadm5 client's server (the first value, host, host:port or [address]:port, port 749 when none; no DNS, as MIT's kadm5 client) | admin_server |
 | realms | auth_to_local | rule list | DEFAULT | LocalNameMapper::from_config (leaf localauth) | Effective with the localauth leaf: values in order, DEFAULT when none, malformed or over-bound rules rejected; without the leaf FeatureUnavailable and no mapping | auth_to_local |
 | realms | auth_to_local_names | case-sensitive string map | unset | LocalNameMapper::from_config (leaf localauth) | Effective with the localauth leaf: the name without realm of a default-realm principal is the key (MIT also maps foreign realms); without the leaf FeatureUnavailable and no mapping | auth_to_local_names |
 | realms | default_domain | string | unset | plan 2 WP-17 | Legacy V4 mapping not performed; diagnostic | default_domain |

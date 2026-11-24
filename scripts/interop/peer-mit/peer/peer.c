@@ -51,6 +51,10 @@
 //        channel bindings present flag, application data, input token
 //                           -> status 0|1, context handle, output token, ret flags u32,
 //                              mech, source name, delegated cred (always 0)
+//   D accept keeping the delegated credential: cred handle (0 default), input
+//        token (one-leg krb5, no channel bindings)
+//                           -> context handle, output token, ret flags u32, mech,
+//                              source name, delegated cred handle u32 (0: none)
 //   Q inquire_context: context handle
 //                           -> source, target, lifetime u32, mech, flags u32,
 //                              locally initiated flag, open flag
@@ -69,6 +73,11 @@
 //        (1..=65536)        -> output bytes
 //   x export_sec_context: context  -> token (the context is consumed)
 //   y import_sec_context: token    -> context handle
+//   F krb_forward (todo 27): keytab id, user principal, service principal, host
+//        -> key etype u32, key bytes, KRB-CRED, forwarded server principal
+//        (MIT krb5_fwd_tgt_creds of a forwardable TGT, encrypted under a fresh AES256 key)
+//   G krb_read_cred (todo 27): key etype u32, key bytes, KRB-CRED
+//        -> count u32, then per credential client, server, ticket flags u32 (MIT krb5_rd_cred)
 // Limits: 16 context and 16 credential handles, 64 init/accept steps per
 // context, 4096 requests per connection. No secret is logged: the log line of a
 // request holds its command byte and the reply status only.
@@ -191,6 +200,7 @@ static int dispatch(uint8_t command, struct field *f, size_t nf, struct out *o)
     case 'R': return cmd_release(f, nf, o);
     case 'I': return cmd_init(f, nf, o);
     case 'C': return cmd_accept(f, nf, o);
+    case 'D': return cmd_accept_deleg(f, nf, o);
     case 'Q': return cmd_inquire(f, nf, o);
     case 'm': return cmd_get_mic(f, nf, o);
     case 'v': return cmd_verify_mic(f, nf, o);
@@ -203,6 +213,8 @@ static int dispatch(uint8_t command, struct field *f, size_t nf, struct out *o)
     case 'p': return cmd_prf(f, nf, o);
     case 'x': return cmd_export(f, nf, o);
     case 'y': return cmd_import(f, nf, o);
+    case 'F': return cmd_krb_forward(f, nf, o);
+    case 'G': return cmd_krb_read_cred(f, nf, o);
     default: return proto_fail(o, "unknown command");
     }
 }

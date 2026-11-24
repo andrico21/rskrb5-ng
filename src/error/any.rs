@@ -33,6 +33,12 @@ pub enum Any {
     /// Realm-path, transited-encoding or certificate-identity handling failed.
     #[error("routing error: {0}")]
     Routing(#[from] Routing),
+    /// A DER element is not canonical or exceeds its budget.
+    #[error("DER error: {0}")]
+    Der(#[from] Der),
+    /// A replay store or replay-cache name failed.
+    #[error("replay store error: {0}")]
+    Replay(#[from] Replay),
     /// Local authorization or name translation failed.
     #[error("local authorization error: {0}")]
     LocalAuth(#[from] LocalAuth),
@@ -72,6 +78,14 @@ pub enum Any {
     #[cfg(feature = "messages")]
     #[error("KRB-ERROR error: {0}")]
     Krb(#[from] KrbErrorCodec),
+    /// Authorization-data helper processing failed.
+    #[cfg(feature = "messages")]
+    #[error("authorization data helper error: {0}")]
+    AuthData(#[from] AuthData),
+    /// An authenticated message operation failed.
+    #[cfg(feature = "messages")]
+    #[error("authenticated message error: {0}")]
+    AuthMessage(#[from] AuthMessage),
     /// KRB-PRIV processing failed.
     #[cfg(feature = "messages")]
     #[error("KRB-PRIV error: {0}")]
@@ -96,6 +110,22 @@ pub enum Any {
     #[cfg(feature = "spnego")]
     #[error("GSS-API error: {0}")]
     Gss(#[from] Gss),
+    /// IAKERB relay or context processing failed.
+    #[cfg(feature = "spnego")]
+    #[error("IAKERB error: {0}")]
+    Iakerb(#[from] Iakerb),
+    /// `NegoEx` negotiation failed.
+    #[cfg(feature = "spnego")]
+    #[error("NegoEx error: {0}")]
+    Negoex(#[from] Negoex),
+    /// ONC RPC or `RPCSEC_GSS` processing failed.
+    #[cfg(feature = "spnego")]
+    #[error("RPC error: {0}")]
+    Rpc(#[from] Rpc),
+    /// Remote kadm5 administration failed.
+    #[cfg(all(feature = "spnego", feature = "tokio"))]
+    #[error("kadm5 error: {0}")]
+    Kadm5(#[from] Kadm5),
     /// Ticket message processing failed.
     #[cfg(feature = "messages")]
     #[error("Ticket error: {0}")]

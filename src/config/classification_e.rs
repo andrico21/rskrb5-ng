@@ -17,8 +17,7 @@ mod tests {
 
     /// Libdefaults: safe assignment and optional genuinely stronger assignment.
     /// None means no valid value tightens current behavior; table rationale explains why.
-    const LIB: [(&str, &str, Option<&str>); 3] = [
-        ("default_rcache_name", "none:", Some("dfl:")),
+    const LIB: [(&str, &str, Option<&str>); 2] = [
         ("kcm_mach_service", "-", None),
         ("plugin_base_dir", "%{LIBDIR}/unloaded", None),
     ];
@@ -59,33 +58,6 @@ mod tests {
                     matches!(failure, super::super::Error::NotYetEffective { relation, package: _ } if relation == name)
                 );
             }
-        }
-        Ok(())
-    }
-
-    /// Classification refuses a tightened deferred libdefaults relation before any later
-    /// section decoding, which would otherwise name a different restriction first.
-    #[test]
-    fn tightened_libdefaults_relation_refused_before_sections() -> Result<(), Box<dyn Error>> {
-        let (relation, assignment, package) = ("default_rcache_name", "dfl:", "plan 2 WP-20");
-        {
-            // Given the tightened relation and a refused preauthentication plugin restriction.
-            let input = format!(
-                "[libdefaults]\n {relation} = {assignment}\n[plugins]\n clpreauth = {{\n disable = encrypted_timestamp\n }}\n"
-            );
-            // When the profile is parsed in Compatible mode.
-            let failure = Config::parse_with_mode(&input, ParseMode::Compatible)
-                .err()
-                .ok_or("tightening ignored")?;
-            // Then the libdefaults relation is refused with its owning package.
-            assert!(
-                matches!(
-                    failure,
-                    super::super::Error::NotYetEffective { relation: named, package: owner }
-                        if named == relation && owner == package
-                ),
-                "{relation}: {failure:?}"
-            );
         }
         Ok(())
     }

@@ -5,14 +5,15 @@ use core::time::Duration;
 use sha2::{Digest as _, Sha256};
 
 use super::{
-    EncryptionKey, Error, PacCheck, Principal, ReplayKey, ValidatedApReq, Validator, abs_duration,
-    ap_req_error, encryption_key_from_rasn, kerberos_string_to_string, microseconds_to_u32,
-    principal_from_parts, system_time_from_kerberos_time, ticket_error, ticket_start_time,
-    validate_authorization_data, verified_ticket_pac,
+    AuthorizationContext, EncryptionKey, Error, PacCheck, Principal, ReplayKey, ValidatedApReq,
+    Validator, abs_duration, ap_req_error, encryption_key_from_rasn, kerberos_string_to_string,
+    microseconds_to_u32, principal_from_parts, system_time_from_kerberos_time, ticket_error,
+    ticket_start_time, validate_authorization_data, verified_ticket_pac,
 };
 use crate::{
     ap_req,
     crypto::Use,
+    replay::Tag,
     ticket,
     trace::{Event as TraceEvent, Identity},
 };
@@ -63,6 +64,24 @@ impl Validator<'_> {
             &self.pac_policy,
             self.pac_kdc_key.as_ref(),
             &service.components,
+        )
+        .with_conditions(self.authorization_conditions.as_deref())
+    }
+
+    /// Interpret the authenticator's authorization data: client-controlled, so
+    /// no KDC-issued element is trusted in it.
+    ///
+    /// # Errors
+    ///
+    /// Returns the authorization-data errors of [`validate_authorization_data`].
+    fn validate_authenticator_authorization(
+        &self,
+        data: Option<&rasn_kerberos::AuthorizationData>,
+    ) -> Result<(), Error> {
+        validate_authorization_data(
+            data,
+            false,
+            AuthorizationContext::new().with_conditions(self.authorization_conditions.as_deref()),
         )
     }
 
@@ -163,7 +182,7 @@ impl Validator<'_> {
                 .map_err(Error::from)?;
         }
 
-        validate_authorization_data(authenticator.authorization_data.as_ref(), false)?;
+        self.validate_authenticator_authorization(authenticator.authorization_data.as_ref())?;
 
         let ticket_client = principal_from_parts(&enc_ticket.crealm, &enc_ticket.cname)?;
         let authenticator_client =
@@ -245,7 +264,11 @@ impl Validator<'_> {
             authenticator_time: authenticator_timestamp,
             pac,
         };
-        self.record_replay(replay_key, authenticator_digest, now)?;
+        let tag = Tag::from_authenticator(
+            ap_req.authenticator.etype,
+            ap_req.authenticator.cipher.as_ref(),
+        );
+        self.record_replay(replay_key, authenticator_digest, tag, now)?;
         Ok(validated)
     }
 }

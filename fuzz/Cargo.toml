@@ -62,8 +62,29 @@ doc = false
 bench = false
 
 [[bin]]
+name = "negoex_message"
+path = "fuzz_targets/negoex_message.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "gss_name"
 path = "fuzz_targets/gss_name.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gss_iov"
+path = "fuzz_targets/gss_iov.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gss_transfer"
+path = "fuzz_targets/gss_transfer.rs"
 test = false
 doc = false
 bench = false
@@ -218,6 +239,34 @@ bench = false
 [[bin]]
 name = "localauth_k5login"
 path = "fuzz_targets/localauth_k5login.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gss_iakerb"
+path = "fuzz_targets/gss_iakerb.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "kadm5_reply"
+path = "fuzz_targets/kadm5_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "replay_file"
+path = "fuzz_targets/replay_file.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "auth_message"
+path = "fuzz_targets/auth_message.rs"
 test = false
 doc = false
 bench = false

@@ -11,9 +11,9 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 122
-partial = 24
-absent = 7
+implemented = 139
+partial = 14
+absent = 0
 rejected = 8
 omitted = 1
 out_of_scope = 7
@@ -360,13 +360,30 @@ id = "MIT-client-13"
 area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "KRB-CRED marshal/unmarshal, `mk_1cred`/`mk_ncred`, `rd_cred`; forwarding/delegation credential transport"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Encrypted ccache conversion exists; full contextual forwarding/import controls and authdata/second-ticket conversion incomplete."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "messages::AuthContext",
+  "messages::CredentialTransport",
+  "messages::MessagePolicy",
+  "messages::ProtectedChannel",
+  "messages::Received",
+  "error::AuthMessage",
+]
+test_names = [
+  "tests/auth_context/forwarding.rs::credentials_round_trip_encrypted",
+  "tests/auth_context/forwarding.rs::the_null_transport_is_refused",
+  "tests/auth_context/forwarding.rs::a_proven_channel_carries_an_unencrypted_credential",
+  "tests/auth_context/forwarding.rs::credentials_with_forbidden_session_keys_are_refused",
+  "tests/auth_context/forwarding.rs::credentials_are_bound_to_the_identity_of_the_context",
+  "tests/auth_context/private.rs::priv_round_trips_and_reports_the_time",
+  "tests/auth_context/private.rs::safe_round_trips_and_detects_tampering",
+  "tests/auth_context/sequence.rs::heimdal_unsigned_encodings_are_accepted_like_mit",
+  "tests/interop_replay/scenarios.rs::mit_forwarded_credentials_cross_the_credential_transport",
+]
+feature_flags = ["messages"]
+security_divergence = "The NULL transport of MIT mk_ncred and rd_cred (no key, plaintext KRB-CRED) is refused unless the caller vouches for a protected channel (CredentialTransport::Protected); a credential carrying authorization data or a second ticket is not forwarded (the KRB-CRED info has no field for them); imported session keys and tickets pass the runtime crypto policy; a context can be bound to one identity (with_credential_owner); port-qualified (ADDRPORT) addresses are not implemented."
 disposition = "WP-20"
 closing_plan = 2
 closing_todo = 27
@@ -377,11 +394,22 @@ id = "MIT-client-14"
 area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "AP-REQ/AP-REP create/read (`mk_req`, `rd_req`, `mk_rep`, `rd_rep`) including DCE-style variants"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "AP exchange exists; P2-18 delivered AP-REQ and AP-REP creation and reading through the GSS initiator and acceptor (gss::Initiator, gss::Acceptor); the DCE-style variants and three-leg establishment remain for the closer P2-19."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "gss::Initiator::init_sec_context",
+  "gss::Acceptor::accept_sec_context",
+  "gss::Accepted::complete_dce",
+  "gss::Accepted::is_established",
+  "gss::ContextFlags",
+]
+test_names = [
+  "tests/gss_ext/dce.rs::dce_contexts_take_three_raw_legs",
+  "tests/gss_ext/dce.rs::a_wrong_third_leg_is_refused",
+  "tests/gss_ext/dce.rs::raw_and_framed_tokens_must_match_the_dce_flag",
+  "tests/interop_gss_ext/legs.rs::dce_style_contexts_establish_between_rust_and_mit_both_ways",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-12"
@@ -419,13 +447,35 @@ id = "MIT-client-16"
 area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Replay cache interface: `dfl`, `file2`, `none`; replay detection and configurable cache name"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Bounded memory/shared cache only; no persistent file2/dfl/name dispatch."
-rust_symbols = []
-test_names = []
-feature_flags = []
-security_divergence = ""
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "replay::Store",
+  "replay::MemoryReplayStore",
+  "replay::File2ReplayStore",
+  "replay::NoneReplayStore",
+  "replay::RcacheName",
+  "replay::Tag",
+  "replay::Evidence",
+]
+test_names = [
+  "tests/replay_store/layout.rs::six_records_land_where_the_model_puts_them",
+  "tests/replay_store/layout.rs::three_thousand_records_fill_three_tables_like_the_model",
+  "tests/replay_store/layout.rs::a_model_written_file_is_read_as_evidence",
+  "tests/replay_store/failures.rs::a_full_disk_refuses_the_authenticator",
+  "tests/replay_store/failures.rs::a_crash_between_write_and_sync_never_admits_twice",
+  "tests/replay_store/failures.rs::a_full_file_refuses_new_evidence_and_keeps_the_old",
+  "tests/replay_store/concurrency.rs::processes_sharing_one_file_admit_each_tag_once",
+  "tests/replay_store/dfl.rs::dfl_uses_the_user_file_in_the_cache_directory",
+  "tests/replay_store/name.rs::names_parse_like_mit",
+  "tests/replay_store/validator.rs::a_second_validator_on_the_same_file_refuses_the_replay",
+  "tests/interop_replay/scenarios.rs::a_cache_file_written_by_the_rust_store_is_read_by_mit",
+  "tests/interop_replay/scenarios.rs::a_cache_file_written_by_mit_is_read_by_the_rust_store",
+  "tests/interop_replay/scenarios.rs::two_rust_acceptor_processes_share_one_cache_file",
+]
+feature_flags = ["messages"]
+security_divergence = "Retention is three times the validator skew where MIT file2 keeps one skew (a future-dated authenticator cannot be replayed inside P+2s); a corrupt, truncated or unwritable cache file fails closed where MIT overwrites or ignores it; dfl checks the owner and symlink after open, not with O_NOFOLLOW; memory: is an addition; none: is an explicit opt-out only."
 disposition = "WP-20"
 closing_plan = 2
 closing_todo = 27
@@ -1656,13 +1706,20 @@ id = "MIT-config-10"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`default_rcache_name`"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "Any value except none: requires unavailable persistent/shared replay protection and errors; none: diagnostic because memory replay protection remains (consumer: plan 2 WP-20)."
-rust_symbols = []
-test_names = ["tests/config/relations_c1.rs::default_rcache_name"]
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = ["replay::RcacheName"]
+test_names = [
+  "tests/config/relations_c1.rs::default_rcache_name",
+  "tests/replay_store/config.rs::every_mit_name_is_accepted_and_selects_its_store",
+  "tests/replay_store/config.rs::the_name_variable_outranks_everything",
+  "tests/replay_store/config.rs::the_type_variable_outranks_the_profile",
+  "tests/replay_store/config.rs::a_malformed_name_is_refused_by_the_profile",
+  "tests/gss/credentials.rs::rcache_names_select_shared_or_no_replay_evidence",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "A malformed or unknown-type default_rcache_name is refused when the profile is read (MIT fails at the first krb5_rd_req); unset selects dfl: like MIT."
 disposition = "WP-20"
 closing_plan = 2
 closing_todo = 27
@@ -2417,14 +2474,22 @@ id = "MIT-config-44"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`[realms]`: `admin_server`, `kdc`, `kpasswd_server`"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "Remote kadm5 consumer of admin_server (plan-2 todo 24); kdc and kpasswd_server endpoints are effective and admin_server feeds the port-464 kpasswd fallback."
-rust_symbols = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "kadm5::admin_server",
+  "kadm5::AdminServer",
+  "kadm5::RemoteAdminClient::connect",
+]
 test_names = [
   "tests/config/realm_relations_d.rs::kdc",
   "tests/config/realm_relations_d.rs::kpasswd_server",
   "tests/config/realm_relations_d.rs::admin_server",
+  "tests/kadm5/relations.rs::admin_server_selects_host_and_port",
+  "tests/kadm5/relations.rs::missing_or_malformed_admin_server_fails",
+  "tests/kadm5/relations.rs::connect_uses_admin_server",
+  "tests/interop_kadm5/scenarios.rs::administrator_operations_take_effect",
 ]
 feature_flags = []
 security_divergence = ""
@@ -3065,13 +3130,28 @@ id = "MIT-gss-3"
 area = "gss"
 upstream_ref = "krb5-1.22.2-final"
 capability = "IAKERB mechanism"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "No relay mechanism."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "gss::iakerb::Context",
+  "gss::iakerb::Context::init_sec_context",
+  "gss::iakerb::Context::accept_sec_context",
+  "gss::iakerb::KdcRelay",
+  "gss::iakerb::RelayPolicy",
+  "gss::iakerb::token::Token",
+]
+test_names = [
+  "tests/gss_iakerb/flow.rs::a_password_initiator_completes_through_the_relay",
+  "tests/gss_iakerb/flow.rs::realm_discovery_fills_the_client_realm",
+  "tests/gss_iakerb/policy.rs::a_relay_request_for_a_realm_outside_the_policy_is_refused",
+  "tests/gss_iakerb/finished.rs::a_finished_over_the_transcript_under_the_subkey_is_accepted",
+  "tests/gss_iakerb/token.rs::encoding_matches_the_layout_of_the_asn1_module",
+  "tests/interop_iakerb/scenarios.rs::rust_iakerb_initiator_completes_against_mit_with_the_direct_kdc_path_blocked",
+  "tests/interop_iakerb/scenarios.rs::mit_iakerb_initiator_without_a_kdc_route_completes_against_the_rust_acceptor",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "The acceptor relays through the application's KdcRelay only for the realms of its RelayPolicy, only a well-formed AS-REQ or TGS-REQ for the realm of the token header, within round, message and transcript bounds, and returns only an AS-REP, TGS-REP or KRB-ERROR, where MIT sends any request to any realm its profile resolves (iakerb.c:416-435); the initiator never opens a socket; a delegation request over IAKERB is refused. MIT 1.22.2 implements draft-ietf-krb-wg-iakerb-02 and checksums the transcript with key usage 41 (iakerb.c:141,173), which this crate matches."
 disposition = "WP-13"
 closing_plan = 2
 closing_todo = 20
@@ -3082,13 +3162,53 @@ id = "MIT-gss-4"
 area = "gss"
 upstream_ref = "krb5-1.22.2-final"
 capability = "NegoEx mechanism negotiation integration"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "Kerberos OIDs only, no NegoEx state."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "gss::negoex::Context",
+  "gss::negoex::Context::initiator",
+  "gss::negoex::Context::acceptor",
+  "gss::negoex::Context::step",
+  "gss::negoex::Context::selected",
+  "gss::negoex::Context::into_session",
+  "gss::negoex::Conversation",
+  "gss::negoex::Conversation::parse",
+  "gss::negoex::Conversation::encode",
+  "gss::negoex::Message",
+  "gss::negoex::MessageType",
+  "spnego::negoex::Initiator",
+  "spnego::negoex::Initiator::init_sec_context",
+  "spnego::negoex::Acceptor",
+  "spnego::negoex::Acceptor::accept_sec_context",
+  "spnego::negoex::AcceptStep",
+  "spnego::negoex::Accepted",
+  "spnego::oid::ObjectIdentifier::negoex",
+  "error::Negoex",
+]
+test_names = [
+  "tests/gss_negoex/wire.rs::nego_message_layout_is_byte_exact",
+  "tests/gss_negoex/wire.rs::a_multi_message_token_parses_in_order",
+  "tests/gss_negoex/wire.rs::token_message_and_scheme_counts_are_bounded",
+  "tests/gss_negoex/wire.rs::damaged_tokens_never_panic",
+  "tests/gss_negoex/captures.rs::mit_initiator_token_parses",
+  "tests/gss_negoex/captures.rs::mit_acceptor_reply_parses_after_the_first_token",
+  "tests/gss_negoex/captures.rs::mit_acceptor_reply_with_a_challenge_parses",
+  "tests/gss_negoex/flow.rs::one_hop",
+  "tests/gss_negoex/flow.rs::more_hops",
+  "tests/gss_negoex/flow.rs::early_keys",
+  "tests/gss_negoex/security.rs::a_verify_with_a_wrong_checksum_fails_the_context",
+  "tests/gss_negoex/security.rs::replayed_and_reordered_tokens_are_refused",
+  "tests/gss_negoex/spnego.rs::one_hop_negotiation_completes",
+  "tests/gss_negoex/spnego.rs::multi_hop_negotiation_continues",
+  "tests/gss_negoex/spnego.rs::a_wrong_verify_checksum_fails_through_spnego",
+  "tests/interop_negoex/scenarios.rs::rust_initiator_and_mit_acceptor_negotiate_negoex",
+  "tests/interop_negoex/scenarios.rs::mit_initiator_and_rust_acceptor_negotiate_negoex",
+  "tests/interop_negoex/scenarios.rs::early_keys_and_alerts_interoperate",
+  "tests/interop_negoex/scenarios.rs::a_wrong_verify_checksum_fails_both_ways",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "The `NEGOEX` parser is bounded in bytes, messages, schemes, extensions and alerts and refuses what MIT 1.22.2 reads past or dereferences: a header shorter than its message type needs (`negoex_util.c:325-340` wraps the length) and an extension vector that leaves its message (`negoex_util.c:213-221` dereferences NULL). An ALERT count is read as the specified u16 (MIT reads a u32). The mechanisms are named by the application and each must be a registered `GssMechanism`: NTLM and any weak mechanism are refused by name, and a `MIC` over the mechanism list under NegoEx is refused (`Negoex::MechListMicUnsupported`) rather than ignored. A `VERIFY` with a wrong checksum fails the context (`Negoex::InvalidChecksum`)."
 disposition = "WP-13"
 closing_plan = 2
 closing_todo = 21
@@ -3168,10 +3288,17 @@ area = "gss"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Credential selection, store extensions: `gss_acquire_cred_from`, `gss_store_cred_into`, `gss_store_cred`"
 implementation_status = "partial"
-evidence_status = "unproven"
-missing = "P2-18 delivered gss::Credential::acquire_cred_from with the store keys ccache, client_keytab, keytab, rcache (memory: only) and password, gss::Credential::acquire_cred and gss::Credential::store_cred_into; the verify key, collection selection and the impersonation keys remain for the closer P2-19."
-rust_symbols = []
-test_names = []
+evidence_status = "unit"
+missing = "P2-18 delivered acquire_cred_from with ccache, client_keytab, keytab, rcache (memory: only) and password, acquire_cred and store_cred_into; P2-19 delivered the verify key (gss::CredStore 'verify': a password TGT is verified against the keytab, MIT acquire_cred.c:598-606) and impersonation through gss::Credential::acquire_impersonate_name (MIT has no impersonation store key: gss_acquire_cred_impersonate_name, row MIT-gss-14). Open: selecting the cache of the desired name from a ccache collection (MIT krb5_cc_cache_match in acquire_cred.c) is not implemented; no plan-2 closer is assigned, register row FU-GSX-P03."
+rust_symbols = [
+  "gss::Credential::acquire_cred_from",
+  "gss::CredStore::with",
+  "gss::Credential::store_cred_into",
+]
+test_names = [
+  "tests/gss_ext/impersonate.rs::the_verify_key_needs_a_password",
+  "tests/gss/credentials.rs::store_keys_are_checked",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-12"
@@ -3186,17 +3313,23 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "GSS naming extensions and name attributes (enterprise/X.509 names, auth indicators, PAC attributes)"
 implementation_status = "partial"
 evidence_status = "live-local"
-missing = "The PAC half is delivered (pac::Verified with attributes_info, requestor_sid and the raw buffers, pac::IdentityAttributes); P2-18 delivered the enterprise, certificate and anonymous names and keeps a composite exported name's attributes unread (gss::Name::composite_attributes); the RFC 6680 name-attribute API over pac::Verified is todo 19 (P2-19)."
+missing = "The PAC half is delivered (pac::Verified, pac::IdentityAttributes, P2-22); P2-18 delivered the enterprise, certificate and anonymous names; P2-19 delivered the RFC 6680 urn:mspac: attributes of the acceptor's source name over the verified PAC (gss::EstablishedContext::source_attributes, source_attribute, gss::NameAttribute; authenticated only with a verified KDC signature). Open: the auth-indicators attribute: the indicators live in the ticket's AD-CAMMAC, which service::ValidatedApReq does not expose (service.rs is todo 27's file in wave 9); no plan-2 closer is assigned, register row FU-GSX-P02."
 rust_symbols = [
   "pac::Verified",
   "pac::Verified::attributes_info",
   "pac::Verified::requestor_sid",
   "pac::IdentityAttributes",
   "pac::IdentityAttributes::from_verified",
+  "gss::EstablishedContext::source_attributes",
+  "gss::EstablishedContext::source_attribute",
+  "gss::NameAttribute",
 ]
 test_names = [
   "tests/pac_api/identity.rs::a_verified_pac_yields_its_ad_identity_attributes",
   "tests/interop_pac_samba/scenarios.rs::the_claims_and_identity_of_a_domain_user_read_through_the_verified_pac",
+  "tests/gss_ext/attributes.rs::the_source_name_carries_the_verified_pac_attributes",
+  "tests/gss_ext/attributes.rs::a_pac_without_a_verified_kdc_signature_is_not_authenticated",
+  "tests/gss_ext/attributes.rs::unknown_attributes_are_unavailable",
 ]
 feature_flags = []
 security_divergence = ""
@@ -3244,13 +3377,35 @@ id = "MIT-gss-10"
 area = "gss"
 upstream_ref = "krb5-1.22.2-final"
 capability = "MIC, Wrap/Unwrap, IOV wrap, IOV MIC, AEAD associated-data wrapping"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "P2-18 delivered MIC and Wrap on gss::EstablishedContext with the sequence and replay window; IOV and AEAD wrapping remain for the closer P2-19."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "gss::EstablishedContext::get_mic",
+  "gss::EstablishedContext::wrap",
+  "gss::EstablishedContext::wrap_iov",
+  "gss::EstablishedContext::wrap_iov_length",
+  "gss::EstablishedContext::unwrap_iov",
+  "gss::EstablishedContext::get_mic_iov",
+  "gss::EstablishedContext::verify_mic_iov",
+  "gss::EstablishedContext::wrap_aead",
+  "gss::EstablishedContext::unwrap_aead",
+  "gss::IovBuffer",
+  "gss::IovKind",
+]
+test_names = [
+  "tests/gss_ext/iov.rs::iov_tokens_with_a_trailer_round_trip",
+  "tests/gss_ext/iov.rs::iov_mics_cover_the_buffers_in_order",
+  "tests/gss_ext/iov.rs::aead_tokens_authenticate_the_associated_data",
+  "tests/gss_ext/iov.rs::mutated_and_inconsistent_iov_tokens_are_refused",
+  "tests/gss_ext/iov.rs::arbitrary_buffer_layouts_never_panic",
+  "tests/gss_ext/legacy.rs::legacy_contexts_exchange_rfc_1964_and_4757_tokens",
+  "tests/gss_ext/legacy.rs::single_des_algorithm_ids_are_rejected_by_name",
+  "tests/gss_ext/legacy.rs::aes_contexts_never_use_the_legacy_formats",
+  "tests/interop_gss_ext/scenarios.rs::iov_and_aead_tokens_cross_between_rust_and_mit",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "A duplicated HEADER, TRAILER, PADDING, STREAM or MIC_TOKEN buffer is refused (Gss::BadIov) where MIT's kg_locate_iov treats it as absent; RFC 1964/4757 tokens only for opted-in DES3/RC4 contexts, single-DES algorithm identifiers rejected by name (D2)."
 disposition = "WP-12"
 closing_plan = 2
 closing_todo = 19
@@ -3261,11 +3416,17 @@ id = "MIT-gss-11"
 area = "gss"
 upstream_ref = "krb5-1.22.2-final"
 capability = "GSS pseudo-random function / PRF+"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "KDF helpers are not GSS pseudo_random/PRF+; P2-18's gss::EstablishedContext exposes the context key the closer P2-19 builds pseudo_random on."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = ["gss::EstablishedContext::pseudo_random", "gss::PrfKey"]
+test_names = [
+  "tests/gss_ext/prf.rs::both_ends_derive_the_same_stream",
+  "tests/gss_ext/prf.rs::the_full_key_is_the_acceptor_subkey",
+  "tests/gss_ext/prf.rs::the_stream_is_rfc_4402_prf_plus",
+  "tests/gss_ext/prf.rs::an_oversized_output_is_refused",
+  "tests/interop_gss_ext/scenarios.rs::pseudo_random_output_is_byte_identical_with_mit",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-12"
@@ -3278,11 +3439,22 @@ id = "MIT-gss-12"
 area = "gss"
 upstream_ref = "krb5-1.22.2-final"
 capability = "DCE-style context establishment / three-leg setup and DCE-compatible wrap tokens"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "P2-18 refuses GSS_C_DCE_STYLE with Gss::NotNegotiated; DCE-style establishment and wrap tokens remain for the closer P2-19."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "gss::ContextFlags",
+  "gss::Accepted::complete_dce",
+  "gss::EstablishedContext::wrap_iov",
+  "gss::EstablishedContext::unwrap_iov",
+]
+test_names = [
+  "tests/gss_ext/dce.rs::dce_contexts_take_three_raw_legs",
+  "tests/gss_ext/dce.rs::an_unfinished_dce_acceptor_protects_nothing",
+  "tests/gss_ext/dce.rs::a_wrong_third_leg_is_refused",
+  "tests/gss_ext/dce.rs::dce_iov_tokens_follow_the_rrc_rule",
+  "tests/interop_gss_ext/legs.rs::dce_style_contexts_establish_between_rust_and_mit_both_ways",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-12"
@@ -3295,13 +3467,29 @@ id = "MIT-gss-13"
 area = "gss"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Export/import security context and credentials"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "No transfer API: P2-18's gss::EstablishedContext and gss::Credential have no export or import; context and credential transfer remain for the closer P2-19."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "gss::EstablishedContext::export",
+  "gss::EstablishedContext::import",
+  "gss::Credential::export",
+  "gss::Credential::import",
+  "gss::TransferKey",
+  "gss::TransferBlob",
+  "gss::TransferLedger",
+  "gss::MemoryTransferLedger",
+]
+test_names = [
+  "tests/gss_ext/transfer.rs::an_exported_context_continues_after_import",
+  "tests/gss_ext/transfer.rs::a_ledger_refuses_a_second_import",
+  "tests/gss_ext/transfer.rs::tampered_and_foreign_blobs_are_refused",
+  "tests/gss_ext/transfer.rs::credentials_transfer_under_the_same_contract",
+  "tests/gss_ext/transfer.rs::an_oversized_blob_is_refused",
+  "tests/interop_gss_ext/legs.rs::transferred_contexts_continue_the_conversation_with_mit",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "No unprotected export: a transfer blob is encrypted and authenticated under a caller-supplied 256-bit TransferKey (RFC 8009 aes256-cts-hmac-sha384-192) and carries a single-use transfer id checked against a TransferLedger; MIT's export token holds the keys in clear. The formats are not interchangeable with MIT's."
 disposition = "WP-12"
 closing_plan = 2
 closing_todo = 19
@@ -3312,11 +3500,19 @@ id = "MIT-gss-14"
 area = "gss"
 upstream_ref = "krb5-1.22.2-final"
 capability = "GSS S4U impersonation and proxy credentials"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "P2-17 delivered the krb5 delegation workflow (client::Tokio::delegate and s4u2self_identity: forwardable evidence, PA-PAC-OPTIONS RBCD, cross-realm S4U2Self and S4U2Proxy, certificate S4U2Self); P2-18 delivered the GSS credential model (gss::Credential) and certificate names; the GSS acquire-impersonate credential and its RBCD integration remain for P2-19 (closer)."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "unit"
+missing = ""
+rust_symbols = [
+  "gss::Credential::acquire_impersonate_name",
+  "gss::Credential::impersonator",
+  "gss::Credential::acquire_service_ticket",
+]
+test_names = [
+  "tests/gss_ext/impersonate.rs::a_both_credential_composes_a_proxy_credential",
+  "tests/gss_ext/impersonate.rs::a_proxy_credential_transfers_with_its_impersonator",
+  "tests/gss_ext/impersonate.rs::impersonation_needs_an_initiator_credential",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-12"
@@ -3329,11 +3525,20 @@ id = "MIT-gss-15"
 area = "gss"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`gss_pseudo_random`, `gss_store_cred`, `gss_inquire_*`, exported names and standard v2 interface"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "P2-18 delivered the standard v2 surface for krb5: init/accept, acquire/store credentials, the inquiry functions, exported names and status codes (gss::*, error::Gss::major_status); gss_pseudo_random and the remaining extensions remain for the closer P2-19."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "gss::EstablishedContext::pseudo_random",
+  "gss::Credential::store_cred_into",
+  "gss::EstablishedContext::inquire",
+  "gss::Name::export",
+]
+test_names = [
+  "tests/gss_ext/prf.rs::both_ends_derive_the_same_stream",
+  "tests/interop_gss_ext/scenarios.rs::pseudo_random_output_is_byte_identical_with_mit",
+  "tests/gss/inquiry.rs::mechanisms_and_name_types_are_reported",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-12"
@@ -3406,13 +3611,38 @@ id = "MIT-admin-3"
 area = "admin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Remote kadm5 client APIs over authenticated RPCSEC_GSS"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "Kadmin module is kpasswd framing only, no principal/policy RPC client."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "kadm5::RemoteAdminClient",
+  "kadm5::PrincipalRecord",
+  "kadm5::PolicyRecord",
+  "kadm5::KeySaltTuple",
+  "kadm5::KeyData",
+  "kadm5::Response",
+  "rpcsec_gss::RpcClient",
+  "rpcsec_gss::ProtectedCall",
+  "rpcsec_gss::Reply",
+  "rpcsec_gss::encode_record",
+  "rpcsec_gss::decode_record",
+]
+test_names = [
+  "tests/kadm5/operations.rs::every_operation_sends_mit_arguments",
+  "tests/kadm5/operations.rs::version_negotiation_falls_back",
+  "tests/kadm5/rpc.rs::privacy_establishes_and_calls",
+  "tests/kadm5/rpc.rs::integrity_establishes_and_calls",
+  "tests/kadm5/rpc.rs::reused_sequence_number_is_rejected",
+  "tests/kadm5/rpc.rs::wrong_verifier_mic_is_rejected",
+  "tests/kadm5/rpc.rs::unbounded_replies_are_refused",
+  "tests/kadm5/rpc.rs::auth_sys_only_server_is_refused",
+  "tests/kadm5/outcome.rs::unanswered_mutations_have_unknown_outcomes",
+  "tests/kadm5/codec.rs::principal_record_decodes",
+  "tests/interop_kadm5/scenarios.rs::administrator_operations_take_effect",
+  "tests/interop_kadm5/scenarios.rs::unprivileged_principal_is_refused_by_the_acl",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Only RPCSEC_GSS is sent: MIT falls back to the old AUTH_GSSAPI flavor unless KADM5_CONFIG_AUTH_NOFALLBACK is set (client_init.c rpc_auth), this client has no fallback and no AUTH_SYS/AUTH_NONE path, and the unprotected rpc_gss_svc_none service is not offered. Each reply must answer its XID, carry an RPCSEC_GSS verifier over its own sequence number and protect a body naming it (MIT checks the last two too, auth_gss.c, authgss_prot.c); a rejected reply closes the connection. A mutation without an authenticated answer after a possible delivery is OutcomeUnknown and never replayed. Records, lists and strings are bounded before allocation."
 disposition = "WP-15"
 closing_plan = 2
 closing_todo = 24
@@ -3970,14 +4200,24 @@ id = "MIT-plugin-7"
 area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "GSSAPI mechanism interface and SPNEGO mechanism plugins"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "P2-3 delivered `extensions::GssMechanism` registration, with object-identifier validation and the built-in mechanisms' identifiers reserved; P2-18 delivered the GSS context establishment (gss::Initiator, gss::Acceptor) and SPNEGO over it; negotiation through registered mechanisms remains for P2-21 (closer)."
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
 rust_symbols = [
   "extensions::GssMechanism",
   "extensions::Registry::gss_mechanism",
+  "gss::negoex::Context::initiator",
+  "gss::negoex::Context::acceptor",
+  "spnego::negoex::Initiator",
+  "spnego::negoex::Acceptor",
 ]
-test_names = ["tests/extensions.rs::gss_mechanism_registration_rules"]
+test_names = [
+  "tests/extensions.rs::gss_mechanism_registration_rules",
+  "tests/gss_negoex/security.rs::the_mechanism_policy_is_explicit",
+  "tests/gss_negoex/flow.rs::first_mechanism_failures_fall_back",
+  "tests/interop_negoex/scenarios.rs::rust_initiator_and_mit_acceptor_negotiate_negoex",
+  "tests/interop_negoex/scenarios.rs::mit_initiator_and_rust_acceptor_negotiate_negoex",
+]
 feature_flags = []
 security_divergence = ""
 disposition = "WP-16"
@@ -3990,13 +4230,29 @@ id = "MIT-plugin-8"
 area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "NegoEx module interface"
-implementation_status = "absent"
-evidence_status = "unproven"
-missing = "No NegoEx/provider contract."
-rust_symbols = []
-test_names = []
+implementation_status = "implemented"
+evidence_status = "live-local"
+missing = ""
+rust_symbols = [
+  "gss::negoex::Mechanism",
+  "gss::negoex::Session",
+  "gss::negoex::MechanismMetadata",
+  "gss::negoex::MechanismStep",
+  "gss::negoex::Request",
+  "gss::negoex::VerifyKeys",
+  "gss::negoex::ProviderFailure",
+  "gss::negoex::RandomSource",
+]
+test_names = [
+  "tests/gss_negoex/flow.rs::first_mechanism_failures_fall_back",
+  "tests/gss_negoex/flow.rs::channel_bindings_reach_the_mechanism",
+  "tests/gss_negoex/security.rs::the_mechanism_policy_is_explicit",
+  "tests/gss_negoex/security.rs::weak_mechanism_keys_are_refused",
+  "tests/interop_negoex/scenarios.rs::rust_initiator_and_mit_acceptor_negotiate_negoex",
+  "tests/interop_negoex/scenarios.rs::mit_initiator_and_rust_acceptor_negotiate_negoex",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "No module is loaded: the NegoEx provider contract is the Rust trait `gss::negoex::Mechanism` and the application registers its values (no `dlopen`, as MIT's `negoextest` plugin needs). A mechanism that reports no session keys cannot complete the context and a key of a weak enctype is refused."
 disposition = "WP-13"
 closing_plan = 2
 closing_todo = 21
@@ -4279,13 +4535,23 @@ id = "MIT-removed-7"
 area = "removed"
 upstream_ref = "krb5-1.22.2-final"
 capability = "DES3/RC4 as default long-term key generation types"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "P2-24: remote-admin keysalt defaults and policy. Client request defaults never include DES3/RC4 (P1-14)."
-rust_symbols = []
-test_names = ["tests/policy/profile.rs::policy_defaults_and_numeric_rejection"]
+missing = ""
+rust_symbols = [
+  "kadm5::KeySaltTuple",
+  "kadm5::SaltType",
+  "kadm5::KeyOptions",
+  "kadm5::Options::with_crypto_policy",
+]
+test_names = [
+  "tests/policy/profile.rs::policy_defaults_and_numeric_rejection",
+  "tests/kadm5/keysalts.rs::removed_enctypes_and_salts_are_rejected_by_name",
+  "tests/kadm5/keysalts.rs::legacy_enctypes_need_the_opt_in",
+  "tests/kadm5/keysalts.rs::no_tuples_send_none",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Remote-admin key/salt tuples and supplied keys pass the client policy before anything is sent: single DES and RC4-EXP are refused by name (RejectedFeature), DES3 and RC4 need allow_des3/allow_rc4, and the Kerberos V4 and AFS3 salts are refused as Kerberos V4 legacy; MIT 1.22.2 client_principal.c sends any tuple and leaves the decision to kadmind. With no tuples the client sends none (kadmind defaults), as MIT."
 disposition = "WP-15"
 closing_plan = 2
 closing_todo = 24

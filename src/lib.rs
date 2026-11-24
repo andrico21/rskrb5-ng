@@ -68,6 +68,9 @@ pub mod evaluation;
 pub mod ap_rep;
 #[cfg(feature = "messages")]
 pub mod ap_req;
+pub mod asn1;
+#[cfg(feature = "messages")]
+pub mod authdata;
 pub mod ccache;
 #[cfg(feature = "messages")]
 pub mod client;
@@ -88,6 +91,9 @@ mod file_name;
 pub mod gss;
 #[cfg(feature = "http")]
 pub mod http;
+pub mod iana;
+#[cfg(all(feature = "spnego", feature = "tokio"))]
+pub mod kadm5;
 #[cfg(feature = "messages")]
 pub mod kadmin;
 #[cfg(feature = "messages")]
@@ -110,7 +116,10 @@ pub mod messages;
 pub mod pac;
 #[cfg(feature = "messages")]
 pub mod preauth;
+pub mod replay;
 pub mod routing;
+#[cfg(feature = "spnego")]
+pub mod rpcsec_gss;
 mod secure_env;
 #[cfg(feature = "messages")]
 pub mod service;

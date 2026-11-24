@@ -8,8 +8,8 @@ pub(crate) const REALM_RELATIONS: [(&str, &str, &str, &str, &str, &str); 28] = [
         "admin_server",
         "endpoint list",
         "unset",
-        "Realm::parse kpasswd fallback",
-        "Effective port-464 fallback; kadm5 administration remains WP-15",
+        "Realm::parse kpasswd fallback; kadm5::admin_server (RemoteAdminClient::connect)",
+        "Effective: the port-464 kpasswd fallback, and the remote kadm5 client's server (the first value, host, host:port or [address]:port, port 749 when none; no DNS, as MIT's kadm5 client)",
         "admin_server",
     ),
     (

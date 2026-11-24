@@ -21,8 +21,8 @@ superset must not copy are listed under
 
 | Status | Rows |
 | --- | ---: |
-| implemented | 25 |
-| partial | 10 |
+| implemented | 28 |
+| partial | 7 |
 | absent | 0 |
 | rejected | 0 |
 | omitted | 0 |
@@ -158,10 +158,10 @@ superset must not copy are listed under
 
 | ID | Capability | Status | Evidence | Disposition | Closing | Missing | Policy and divergence | Symbols | Features | Tests |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| GO-iana-1 | Kerberos assigned numbers and lookup tables | partial | unproven | WP-20 | P2-27 | Identifiers and selected mappings are spread across modules; there are no exhaustive public assigned-numbers tables (P2-27). | - | - | - | - |
+| GO-iana-1 | Kerberos assigned numbers and lookup tables | implemented | unit | WP-20 | P2-27 | - | Listing a deprecated or removed algorithm never enables it: runtime permission stays CryptoPolicy and the permanent rejections of docs/security-policy.md. IANA hosts no registry for message, name, address, authorization-data types or error codes: those tables cite RFC 4120 and MIT 1.22.2. | `iana::Registry`, `iana::Entry`, `iana::encryption_type`, `iana::checksum_type`, `iana::padata_type`, `iana::message_type`, `iana::name_type`, `iana::address_type`, `iana::authorization_data_type`, `iana::error_code` | - | `tests/iana_tables.rs::the_registered_tables_equal_the_iana_snapshot`, `tests/iana_tables.rs::numbers_and_names_look_up_both_ways`, `tests/iana_tables.rs::tables_are_sorted_and_unambiguous` |
 | GO-krberror-1 | Typed/wrapped library errors | implemented | unit | ALREADY | - | - | Typed domain enums keep their causes through Error::source, which gokrb5's Krberror does not expose. | `error::Any` | - | `tests/error_api/sources.rs::unknown_outcome_io_chain`, `tests/config.rs::load_paths_reports_failing_path_and_io_source`, `tests/policy/rejections.rs::catalogue_converts_without_losing_feature` |
-| GO-types-1 | Principal names, credentials, addresses, flags, cryptosystem, PA data | partial | unproven | WP-20 | P2-27 | rasn types and principals exist; AD-KDCIssued and AND-OR authorization data are rejected rather than handled, and high-level helpers are incomplete (P2-27). | - | - | - | - |
-| GO-asn1tools-1 | ASN.1 length/application tag utilities | partial | unit | WP-20 | P2-27 | The internal SPNEGO DER reader validates lengths and rejects non-minimal forms; there are no public checked app-tag and length utilities with size and nesting budgets (P2-27). | - | - | - | `src/spnego/der/tests.rs::der_lengths_reject_nonminimal_forms` |
+| GO-types-1 | Principal names, credentials, addresses, flags, cryptosystem, PA data | implemented | unit | WP-20 | P2-27 | - | AD-KDC-ISSUED is trusted only in ticket authorization data (the checksum is keyed with the session key the client also holds); AD-AND-OR is refused unless the application attaches a ConditionEvaluator, and an impossible condition count fails closed. | `authdata::build_kdc_issued`, `authdata::verify_kdc_issued`, `authdata::decode_kdc_issued`, `authdata::decode_and_or`, `authdata::evaluate_and_or`, `authdata::ConditionEvaluator`, `service::Validator::with_authorization_conditions` | `messages` | `tests/auth_data/helpers.rs::kdc_issued_verifies_under_the_session_key_only`, `tests/auth_data/helpers.rs::and_or_counts_the_satisfied_conditions`, `tests/auth_data/acceptor.rs::a_verified_kdc_issued_element_in_a_ticket_is_accepted`, `tests/auth_data/acceptor.rs::and_or_needs_an_evaluator_and_its_conditions`, `tests/auth_data/acceptor.rs::kdc_issued_elements_that_cannot_be_trusted_are_refused` |
+| GO-asn1tools-1 | ASN.1 length/application tag utilities | implemented | unit | WP-20 | P2-27 | - | Every length is checked against an explicit budget before use and nesting is bounded; indefinite, reserved and non-minimal lengths and non-minimal tag numbers are refused. | `asn1::Limits`, `asn1::Element`, `asn1::decode_length`, `asn1::encode_length`, `asn1::read_element`, `asn1::read_complete`, `asn1::application_tag`, `asn1::add_application_tag`, `asn1::validate` | - | `tests/der_utilities.rs::lengths_encode_minimally`, `tests/der_utilities.rs::non_canonical_lengths_are_refused`, `tests/der_utilities.rs::lengths_are_bounded_by_the_budget`, `tests/der_utilities.rs::application_tags_round_trip_on_a_real_message`, `tests/der_utilities.rs::validate_walks_nested_structures_under_a_depth_budget`, `src/spnego/der/tests.rs::der_lengths_reject_nonminimal_forms` |
 
 ### active-directory
 

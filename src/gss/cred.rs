@@ -10,11 +10,11 @@ use zeroize::Zeroizing;
 
 use super::{
     CCache, CredStore, Credential, CredentialInquiry, CredentialUsage, Error, Keytab, Name,
-    ObjectIdentifier, Principal, SharedReplayCache, TgsRepSession, ccache,
+    ObjectIdentifier, Principal, TgsRepSession, ccache,
 };
 #[cfg(feature = "tokio")]
 use crate::client;
-use crate::{keytab::EncryptionKey, service::AcceptorName};
+use crate::{keytab::EncryptionKey, replay::RcacheName, service::AcceptorName};
 
 /// The `FORWARDABLE` ticket flag in ccache byte order (RFC 4120 flag 1).
 const FORWARDABLE: u8 = 0x40;
@@ -96,7 +96,7 @@ pub(super) fn session_of(entry: &ccache::Credential) -> TgsRepSession {
 }
 
 /// A credential with nothing in it yet.
-const fn empty(usage: CredentialUsage) -> Credential {
+pub(super) const fn empty(usage: CredentialUsage) -> Credential {
     Credential {
         name: None,
         usage,
@@ -105,6 +105,28 @@ const fn empty(usage: CredentialUsage) -> Credential {
         password: None,
         keytab: None,
         replay: None,
+        verify_keytab: None,
+        verify_server: None,
+        impersonator: None,
+    }
+}
+
+/// A copy of `credential`, for a proxy credential's impersonator.
+pub(super) fn duplicate(credential: &Credential) -> Credential {
+    Credential {
+        name: credential.name.clone(),
+        usage: credential.usage,
+        cache: credential.cache.clone(),
+        client_keytab: credential.client_keytab.clone(),
+        password: credential.password.clone(),
+        keytab: credential.keytab.clone(),
+        replay: credential.replay.clone(),
+        verify_keytab: credential.verify_keytab.clone(),
+        verify_server: credential.verify_server.clone(),
+        impersonator: credential
+            .impersonator
+            .as_deref()
+            .map(|inner| Box::new(duplicate(inner))),
     }
 }
 
@@ -237,8 +259,9 @@ fn initiator_from(
 /// # Errors
 ///
 /// Returns [`Error::NoCredential`] without a keytab or a key for the desired
-/// name, [`Error::UnsupportedReplayCache`] for an `rcache` other than
-/// `memory:`, and the errors of loading the keytab.
+/// name, [`Error::UnsupportedReplayCache`] for an `rcache` that is not a replay
+/// cache name (`dfl:`, `file2:<path>`, `none:` or `memory:`) or cannot be
+/// opened, and the errors of loading the keytab.
 fn acceptor_from(
     credential: &mut Credential,
     desired: Option<&Name>,
@@ -250,8 +273,11 @@ fn acceptor_from(
         .ok_or(Error::NoCredential("the store names no keytab"))?;
     credential.replay = match &store.rcache {
         None => None,
-        Some(rcache) if rcache.starts_with("memory:") => Some(SharedReplayCache::new()),
-        Some(rcache) => return Err(Error::UnsupportedReplayCache(rcache.clone())),
+        Some(rcache) => Some(
+            RcacheName::parse(rcache)
+                .and_then(|name| name.open())
+                .map_err(|_unusable| Error::UnsupportedReplayCache(rcache.clone()))?,
+        ),
     };
     let keytab = Keytab::load_name(keytab_name)?;
     if let Some(name) = desired {
@@ -280,6 +306,27 @@ pub(super) fn acquire_from(
     }
     if usage != CredentialUsage::Initiate {
         acceptor_from(&mut credential, desired, store)?;
+    }
+    if let Some(requested) = &store.verify {
+        // The verify key needs a password (`acquire_cred.c:1298-1320`).
+        if store.password.is_none() || usage == CredentialUsage::Accept {
+            return Err(Error::NoCredential("the verify key needs a password"));
+        }
+        let keytab_name = store
+            .keytab
+            .as_ref()
+            .ok_or(Error::NoCredential("the verify key needs the keytab key"))?;
+        let server = if requested.is_empty() {
+            None
+        } else {
+            Some(
+                Name::import(requested.as_bytes(), super::NameType::Principal)?
+                    .principal()
+                    .clone(),
+            )
+        };
+        credential.verify_keytab = Some(Keytab::load_name(keytab_name)?);
+        credential.verify_server = server;
     }
     Ok(credential)
 }
@@ -455,6 +502,8 @@ pub(super) async fn acquire_service_ticket(
 ) -> Result<(), Error> {
     use client::{Tokio, transport::KdcProtocol};
 
+    use crate::routing::init_creds::VerifyOptions;
+
     if credential.usage == CredentialUsage::Accept {
         return Err(Error::WrongCredentialUsage("initiate"));
     }
@@ -463,6 +512,13 @@ pub(super) async fn acquire_service_ticket(
         target.principal().name_type,
         target_components(target)?.to_vec(),
     );
+    if credential.impersonator.is_some() {
+        let ticket = super::impersonate::proxy_ticket(credential, service, config).await?;
+        if let Some(cache) = &mut credential.cache {
+            drop(cache.upsert_credential(entry_of(&ticket)));
+        }
+        return Ok(());
+    }
     let client = credential
         .name
         .as_ref()
@@ -478,12 +534,24 @@ pub(super) async fn acquire_service_ticket(
             keytab.clone(),
         )
     } else if let Some(password) = &credential.password {
-        Tokio::with_password(
+        let mut password_client = Tokio::with_password(
             config.clone(),
             KdcProtocol::Auto,
             client.clone(),
             password.to_vec(),
-        )
+        );
+        if let Some(host_keys) = &credential.verify_keytab {
+            let mut options = VerifyOptions::new().with_nofail(true);
+            if let Some(server) = &credential.verify_server {
+                options = options.with_server(server.clone());
+            }
+            drop(
+                password_client
+                    .verify_init_creds(host_keys, options)
+                    .await?,
+            );
+        }
+        password_client
     } else {
         return Err(Error::NoCredential("no ticket source"));
     };

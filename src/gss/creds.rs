@@ -14,7 +14,7 @@ pub enum CredentialUsage {
 ///
 /// It is also the target of `gss_store_cred_into` (MIT `doc/appdev/gssapi.rst`,
 /// "Credential store extensions"); the keys are `ccache`, `client_keytab`,
-/// `keytab`, `rcache` and `password`.
+/// `keytab`, `rcache`, `password` and `verify`.
 ///
 /// The password is held in a zeroizing owner and never shown by `Debug`.
 #[derive(Clone, Default, Eq, PartialEq)]
@@ -30,6 +30,9 @@ pub struct CredStore {
     rcache: Option<String>,
     /// `password`: the initiator's password.
     password: Option<Zeroizing<String>>,
+    /// `verify`: verify password-acquired initial credentials against the
+    /// `keytab`, with this host principal or, empty, any of its keys.
+    verify: Option<String>,
 }
 
 impl fmt::Debug for CredStore {
@@ -41,6 +44,7 @@ impl fmt::Debug for CredStore {
             .field("keytab", &self.keytab)
             .field("rcache", &self.rcache)
             .field("password", &self.password.as_ref().map(|_| "<redacted>"))
+            .field("verify", &self.verify)
             .finish()
     }
 }
@@ -58,8 +62,7 @@ impl CredStore {
     /// # Errors
     ///
     /// Returns [`Error::UnsupportedCredStoreKey`] for a key other than `ccache`,
-    /// `client_keytab`, `keytab`, `rcache` and `password` (`verify` and the
-    /// impersonation keys come with their extensions), and
+    /// `client_keytab`, `keytab`, `rcache`, `password` and `verify`, and
     /// [`Error::DuplicateCredStoreKey`] for a key given twice.
     #[inline]
     pub fn with(mut self, key: &str, value: &str) -> Result<Self, Error> {
@@ -68,6 +71,7 @@ impl CredStore {
             "client_keytab" => &mut self.client_keytab,
             "keytab" => &mut self.keytab,
             "rcache" => &mut self.rcache,
+            "verify" => &mut self.verify,
             "password" => {
                 if self.password.is_some() {
                     return Err(Error::DuplicateCredStoreKey(key.to_owned()));
@@ -106,7 +110,15 @@ pub struct Credential {
     /// The acceptor's keys.
     keytab: Option<Keytab>,
     /// The acceptor's replay cache.
-    replay: Option<SharedReplayCache>,
+    replay: Option<Arc<dyn Store>>,
+    /// The keytab that verifies password-acquired initial credentials (the
+    /// `verify` store key).
+    verify_keytab: Option<Keytab>,
+    /// The host principal of the verification; `None` tries every host key.
+    verify_server: Option<Principal>,
+    /// The impersonator of a proxy credential: its tickets are `S4U2Proxy`
+    /// tickets in the name of this credential's client.
+    impersonator: Option<Box<Self>>,
 }
 
 impl fmt::Debug for Credential {
@@ -124,6 +136,11 @@ impl fmt::Debug for Credential {
             .field(
                 "keytab_entries",
                 &self.keytab.as_ref().map(|keys| keys.entries().len()),
+            )
+            .field("verify", &self.verify_keytab.is_some())
+            .field(
+                "impersonator",
+                &self.impersonator.as_ref().and_then(|cred| cred.name.as_ref()),
             )
             .finish_non_exhaustive()
     }
@@ -160,6 +177,9 @@ impl Credential {
             password: None,
             keytab: Some(keytab),
             replay: None,
+            verify_keytab: None,
+            verify_server: None,
+            impersonator: None,
         }
     }
 
@@ -180,9 +200,9 @@ impl Credential {
     ///
     /// An initiator credential comes from `ccache`; failing that, `client_keytab`
     /// or `password` with `desired_name` make one that acquires its tickets when
-    /// used. An acceptor credential comes from `keytab`; `rcache` names an
-    /// in-memory replay cache (`memory:<name>`), since the persistent replay
-    /// caches are not implemented and replay detection cannot be switched off.
+    /// used. An acceptor credential comes from `keytab`; `rcache` names its
+    /// replay cache (`dfl:`, `file2:<path>`, `memory:<name>`), or `none:` to
+    /// switch replay detection off by name.
     ///
     /// # Errors
     ///
@@ -272,6 +292,65 @@ impl Credential {
     #[must_use]
     pub fn inquire(&self) -> CredentialInquiry {
         cred::inquire(self)
+    }
+
+    /// `gss_export_cred` under the transfer contract of
+    /// [`EstablishedContext::export`]: consume the credential and seal its
+    /// tickets, keytabs and password under `key`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NotNegotiated`] for a credential with a replay cache
+    /// (any `rcache` store key), whose replay evidence the blob cannot carry,
+    /// and the serialization, random-source and encryption errors.
+    #[inline]
+    pub fn export(self, key: &TransferKey) -> Result<TransferBlob, Error> {
+        export::export_credential(self, key)
+    }
+
+    /// `gss_import_cred` under the transfer contract of
+    /// [`EstablishedContext::import`].
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`EstablishedContext::import`] and the cache and
+    /// keytab errors.
+    #[inline]
+    pub fn import(
+        blob: &TransferBlob,
+        key: &TransferKey,
+        ledger: &mut dyn TransferLedger,
+    ) -> Result<Self, Error> {
+        export::import_credential(blob, key, ledger)
+    }
+
+    /// `gss_acquire_cred_impersonate_name`: a credential for `user` from this
+    /// impersonator credential, holding the `S4U2Self` evidence ticket (MIT
+    /// `s4u_gss_glue.c:40-210`). Its service tickets come by `S4U2Proxy`
+    /// through [`Self::acquire_service_ticket`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::WrongCredentialUsage`] for a credential that cannot
+    /// initiate, [`Error::NoCredential`] without the impersonator's keytab,
+    /// and the errors of the `S4U2Self` exchange.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: nothing changes until the exchange completes.
+    #[cfg(feature = "tokio")]
+    #[inline]
+    pub async fn acquire_impersonate_name(&self, user: &Name, config: &Config) -> Result<Self, Error> {
+        impersonate::acquire(self, user, config).await
+    }
+
+    /// The impersonator of a proxy credential: the service whose `S4U2Proxy`
+    /// tickets it uses.
+    #[inline]
+    #[must_use]
+    pub fn impersonator(&self) -> Option<&Name> {
+        let inner = self.impersonator.as_ref()?;
+        inner.name.as_ref()
     }
 
     /// The initiator's credential cache.

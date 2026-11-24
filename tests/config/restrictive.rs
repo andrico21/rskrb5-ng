@@ -65,30 +65,21 @@ mod tests {
         assert!(
             matches!(
                 options,
-                Err(Client::Config(ConfigError::NotYetEffective {
-                    relation: _,
-                    package: _
-                }))
+                Err(Client::Config(ConfigError::InvalidReplayCacheName(_)))
             ),
             "request accepted default_rcache_name"
         );
         assert!(
             matches!(
                 config.configured_kdcs("R"),
-                Err(ConfigError::NotYetEffective {
-                    relation: "default_rcache_name",
-                    package: "plan 2 WP-20"
-                })
+                Err(ConfigError::InvalidReplayCacheName(_))
             ),
             "admission ignored default_rcache_name"
         );
         assert!(
             matches!(
                 runtime.block_on(Transport::new().discover_kdcs(&config, "R", KdcProtocol::Tcp)),
-                Err(Client::Config(ConfigError::NotYetEffective {
-                    relation: "default_rcache_name",
-                    package: "plan 2 WP-20"
-                }))
+                Err(Client::Config(ConfigError::InvalidReplayCacheName(_)))
             ),
             "discovery ignored default_rcache_name"
         );
