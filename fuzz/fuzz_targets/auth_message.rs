@@ -10,7 +10,8 @@
 
 #![no_main]
 
-use std::time::{Duration, UNIX_EPOCH};
+use core::time::Duration;
+use std::time::UNIX_EPOCH;
 
 use libfuzzer_sys::fuzz_target;
 use rskrb5_ng::{
@@ -26,7 +27,11 @@ fn context() -> AuthContext {
         EncryptionKey::new(18, vec![0x42; 32]),
         MessagePolicy::new().checking_sequence(true),
     )
-    .with_now(UNIX_EPOCH + Duration::from_secs(1_800_000_000))
+    .with_now(
+        UNIX_EPOCH
+            .checked_add(Duration::from_hours(500_000))
+            .unwrap_or(UNIX_EPOCH),
+    )
 }
 
 /// Read `input` as a KRB-PRIV or KRB-SAFE and require a second read to fail.
@@ -55,7 +60,7 @@ fuzz_target!(|data: &[u8]| {
     let Some((selector, input)) = data.split_first() else {
         return;
     };
-    match selector % 6 {
+    match selector.rem_euclid(6) {
         0 => private_or_safe(input, true),
         1 => private_or_safe(input, false),
         2 => drop(context().rd_cred(input, CredentialTransport::Encrypted)),

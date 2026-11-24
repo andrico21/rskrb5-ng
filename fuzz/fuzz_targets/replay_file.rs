@@ -9,18 +9,22 @@
 
 #![no_main]
 
+extern crate alloc;
+
+use alloc::sync::Arc;
+use core::{str::from_utf8, time::Duration};
 use std::{
     io,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
-    time::{Duration, UNIX_EPOCH},
+    sync::Mutex,
+    time::UNIX_EPOCH,
 };
 
 use libfuzzer_sys::fuzz_target;
 use rskrb5_ng::{
     replay::{
         Admission, Evidence, File2ReplayStore, FileSystem, OpenFile, Presentation, RcacheName,
-        Store, Tag,
+        Store as _, Tag,
     },
     service::Principal,
 };
@@ -48,24 +52,35 @@ impl FileSystem for Fuzzed {
 
 impl OpenFile for Handle {
     fn size(&mut self) -> io::Result<u64> {
-        let bytes = self.bytes.lock().map_err(|_| io::Error::other("lock"))?;
-        Ok(u64::try_from(bytes.len()).unwrap_or(u64::MAX))
+        let length = self
+            .bytes
+            .lock()
+            .map_err(|_poisoned| io::Error::other("lock"))?
+            .len();
+        Ok(u64::try_from(length).unwrap_or(u64::MAX))
     }
 
     fn read_at(&mut self, offset: u64, buffer: &mut [u8]) -> io::Result<usize> {
-        let bytes = self.bytes.lock().map_err(|_| io::Error::other("lock"))?;
+        let bytes = self
+            .bytes
+            .lock()
+            .map_err(|_poisoned| io::Error::other("lock"))?;
         let start = usize::try_from(offset).unwrap_or(usize::MAX);
         let available = bytes.get(start..).unwrap_or_default();
         let count = available.len().min(buffer.len());
         if let (Some(target), Some(source)) = (buffer.get_mut(..count), available.get(..count)) {
             target.copy_from_slice(source);
         }
+        drop(bytes);
         Ok(count)
     }
 
     fn write_at(&mut self, offset: u64, data: &[u8]) -> io::Result<()> {
-        let mut bytes = self.bytes.lock().map_err(|_| io::Error::other("lock"))?;
-        let start = usize::try_from(offset).map_err(|_| io::Error::other("offset"))?;
+        let mut bytes = self
+            .bytes
+            .lock()
+            .map_err(|_poisoned| io::Error::other("lock"))?;
+        let start = usize::try_from(offset).map_err(|_overflow| io::Error::other("offset"))?;
         let end = start
             .checked_add(data.len())
             .filter(|end| *end <= 0x0100_0000)
@@ -76,6 +91,7 @@ impl OpenFile for Handle {
         if let Some(target) = bytes.get_mut(start..end) {
             target.copy_from_slice(data);
         }
+        drop(bytes);
         Ok(())
     }
 
@@ -94,8 +110,10 @@ fn evidence(tag: &[u8]) -> Evidence {
         Presentation::new(service, client, 0, 0),
     )
     .with_window(
-        UNIX_EPOCH + Duration::from_secs(1_800_000_000),
-        Duration::from_secs(300),
+        UNIX_EPOCH
+            .checked_add(Duration::from_hours(500_000))
+            .unwrap_or(UNIX_EPOCH),
+        Duration::from_mins(5),
     )
 }
 
@@ -110,7 +128,7 @@ fn file_mode(file: &[u8]) {
         .with_file_system(Arc::new(Fuzzed { bytes }))
         .with_maximum_bytes(0x0010_0000);
     for tag in [&b"fuzz tag one"[..], &b"fuzz tag two"[..]] {
-        if let Ok(Admission::Fresh) = store.admit(&evidence(tag)) {
+        if matches!(store.admit(&evidence(tag)), Ok(Admission::Fresh)) {
             assert!(
                 !matches!(store.admit(&evidence(tag)), Ok(Admission::Fresh)),
                 "a fresh tag was accepted twice"
@@ -126,7 +144,7 @@ fuzz_target!(|data: &[u8]| {
     match selector & 1 {
         0 => file_mode(input),
         _ => {
-            if let Ok(text) = core::str::from_utf8(input) {
+            if let Ok(text) = from_utf8(input) {
                 drop(RcacheName::parse(text));
             }
         }
