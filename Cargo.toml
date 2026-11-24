@@ -50,6 +50,11 @@ minimal = []
 modules = ["src/ccache/keyring.rs", "src/ccache/keyring/"]
 tests = ["tests/ccache_keyring.rs", "tests/ccache_keyring/"]
 
+[package.metadata.rskrb5-ng.leaf-features.http-client]
+minimal = ["http"]
+modules = ["src/http/cookies.rs"]
+tests = ["tests/http_client_cookies.rs", "tests/interop_http_client.rs"]
+
 [package.metadata.rskrb5-ng.leaf-features.kkdcp-rustls]
 minimal = ["tokio"]
 modules = ["src/transport/rustls_proxy.rs", "src/transport/rustls_proxy/"]
@@ -146,6 +151,7 @@ pkinit = [
 spake = ["dep:curve25519-dalek", "dep:p256", "dep:p384", "dep:p521"]
 spnego = ["messages", "dep:base64"]
 http = ["spnego", "dep:http_types"]
+http-client = ["dep:cookie_store"]
 tower = ["http", "dep:tower_layer", "dep:tower_service"]
 tokio = ["messages", "dep:hickory-resolver", "dep:tokio"]
 serde = ["dep:serde", "dep:serde_json"]
@@ -165,6 +171,12 @@ compcol = { version = "0.7", default-features = false, features = [
   "xpress",
   "xpress_huffman",
 ] }
+# The cookie jar of the HTTP client (the `http-client` leaf): RFC 6265 storage and
+# matching only, in memory, with the public-suffix list supplied by the
+# application. Admission record: docs/dependency-admission.md#cookie_store.
+cookie_store = { version = "0.22.1", default-features = false, features = [
+  "public_suffix",
+], optional = true }
 crypto-bigint = { version = "0.7.11", default-features = false, features = [
   "zeroize",
 ], optional = true }
