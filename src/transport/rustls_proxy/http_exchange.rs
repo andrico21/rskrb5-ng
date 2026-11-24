@@ -106,6 +106,10 @@ fn config(transport: &RustlsTransport) -> Result<ClientConfig, Error> {
 ///
 /// Returns [`Error::TooLarge`] past 8 MiB and [`Error::MaybeDelivered`] when the
 /// body fails.
+///
+/// # Cancel safety
+///
+/// Dropping the future discards the bytes read so far.
 async fn collect(response: Response<Incoming>) -> Result<Response<Vec<u8>>, Error> {
     let (parts, stream) = response.into_parts();
     let mut incoming = Box::pin(stream);
