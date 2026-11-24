@@ -4,7 +4,11 @@
 //! middleware is available with the `tower` feature and validates service-side
 //! `Authorization: Negotiate ...` headers before forwarding requests.
 
+#[cfg(feature = "tokio")]
+pub mod agent;
 pub mod cookies;
+pub mod origin;
+pub mod wire;
 
 #[cfg(feature = "tower")]
 use alloc::{borrow::Cow, sync::Arc};
