@@ -300,9 +300,9 @@ impl Credential {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::NotNegotiated`] for a credential with an in-memory
-    /// replay cache, which cannot leave its process, and the serialization,
-    /// random-source and encryption errors.
+    /// Returns [`Error::NotNegotiated`] for a credential with a replay cache
+    /// (any `rcache` store key), whose replay evidence the blob cannot carry,
+    /// and the serialization, random-source and encryption errors.
     #[inline]
     pub fn export(self, key: &TransferKey) -> Result<TransferBlob, Error> {
         export::export_credential(self, key)

@@ -707,9 +707,9 @@ impl EstablishedContext {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::NotNegotiated`] for a delegated credential with an
-    /// in-memory replay cache, and the serialization, random-source and
-    /// encryption errors.
+    /// Returns [`Error::NotNegotiated`] for a delegated credential with a
+    /// replay cache, and the serialization, random-source and encryption
+    /// errors.
     #[inline]
     pub fn export(self, key: &TransferKey) -> Result<TransferBlob, Error> {
         export::export_context(self, key)

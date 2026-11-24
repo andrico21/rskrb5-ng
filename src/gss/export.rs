@@ -358,12 +358,13 @@ const fn usage_code(usage: CredentialUsage) -> u8 {
 ///
 /// # Errors
 ///
-/// Returns [`Error::NotNegotiated`] for a credential with an in-memory replay
-/// cache, which cannot leave its process, and the cache and keytab errors.
+/// Returns [`Error::NotNegotiated`] for a credential with a replay cache (any
+/// `rcache` store key), whose replay evidence the blob cannot carry, and the
+/// cache and keytab errors.
 fn put_credential(writer: &mut Writer, credential: &Credential) -> Result<(), Error> {
     if credential.replay.is_some() {
         return Err(Error::NotNegotiated(
-            "a credential with an in-memory replay cache cannot be transferred",
+            "a credential with a replay cache cannot be transferred",
         ));
     }
     writer.optional_name(credential.name.as_ref())?;
