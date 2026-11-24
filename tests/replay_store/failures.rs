@@ -200,10 +200,14 @@ fn an_unrepresentable_time_is_refused() -> Result<(), TestError> {
     Ok(())
 }
 
-/// Pins that a file that cannot grow refuses new evidence and never evicts live evidence.
-#[test]
-fn a_full_file_refuses_new_evidence_and_keeps_the_old() -> Result<(), TestError> {
-    let (unbounded, _files) = fresh();
+/// Fill the first table of the file `files` until it refuses and check what holds for EVERY hash seed.
+///
+/// The seed of a new file is random, so the slot placement and the index of the first refused tag
+/// differ from run to run (a 2-slot bucket can fill after only a few tags). The checks therefore
+/// name no count: the refusal is `FileFull` with the exact bound, `admitted` equals the index of
+/// the refused tag, the first tag was admitted, and every admitted tag is still a replay.
+fn assert_a_full_file_refuses_and_keeps_the_old(files: MemoryFs) -> Result<(), TestError> {
+    let (unbounded, _files) = over(files);
     let store = unbounded.with_maximum_bytes(16 + 1023 * 16);
     let first_table_end = 16 + 1023 * 16_u64;
     let mut admitted = 0_u32;
@@ -211,7 +215,7 @@ fn a_full_file_refuses_new_evidence_and_keeps_the_old() -> Result<(), TestError>
 
     for index in 0..4000_u32 {
         match store.admit(&evidence(index, 1_000_000)?) {
-            Ok(Admission::Fresh) => admitted += 1,
+            Ok(Admission::Fresh) => admitted = admitted.saturating_add(1),
             Ok(Admission::Replayed) => return Err("distinct tags never collide".into()),
             Err(error) => {
                 refused = Some((index, error));
@@ -227,15 +231,35 @@ fn a_full_file_refuses_new_evidence_and_keeps_the_old() -> Result<(), TestError>
         "{error:?}"
     );
     assert_eq!(admitted, index);
-    assert!(
-        admitted > 20,
-        "the first table refused after only {admitted}"
-    );
+    assert!(admitted >= 1, "an empty file refused its first tag");
     for kept in 0..admitted {
         assert_eq!(
             store.admit(&evidence(kept, 1_000_000)?)?,
             Admission::Replayed
         );
+    }
+    Ok(())
+}
+
+/// Pins that a file that cannot grow refuses new evidence and never evicts live evidence.
+#[test]
+fn a_full_file_refuses_new_evidence_and_keeps_the_old() -> Result<(), TestError> {
+    assert_a_full_file_refuses_and_keeps_the_old(MemoryFs::default())
+}
+
+/// Pins the same refusal for 64 fixed hash seeds, so the placement is reproducible and the
+/// invariants are checked for many different first-refusal indexes on every run.
+#[test]
+fn a_full_file_refuses_and_keeps_the_old_for_every_seed() -> Result<(), TestError> {
+    for number in 0..64_u32 {
+        let seed: Vec<u8> = tag_of(number)
+            .as_bytes()
+            .iter()
+            .copied()
+            .chain(number.to_be_bytes())
+            .collect();
+        assert_eq!(seed.len(), 16);
+        assert_a_full_file_refuses_and_keeps_the_old(MemoryFs::with_bytes(&seed))?;
     }
     Ok(())
 }
