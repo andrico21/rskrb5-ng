@@ -8,10 +8,11 @@ use std::{
 
 use rskrb5_ng::{
     ccache::{
-        Principal as CachePrincipal,
+        Principal as CachePrincipal, configured, file_store,
         kcm::{async_client::Client, socket::Trust, wire::calls},
-        stores::CredentialStore as _,
+        stores::{CacheVersion, CredentialStore as _},
     },
+    config::Config,
     error::Ccache as CcacheError,
 };
 use tokio::runtime::Builder;
@@ -205,6 +206,53 @@ fn collection_primary_and_switch_agree_with_mit() -> Result<(), Box<dyn Error>> 
     )?;
     fresh.destroy()?;
     kept.destroy()?;
+    Ok(())
+}
+
+/// The `kcm_socket` of a configuration reaches the daemon through the
+/// cache-name routes (MIT-config-26).
+///
+/// The crate saves and loads `KCM:` names with a `Config` that names the
+/// fixture socket, and MIT, which reads the same socket from its own
+/// `kcm_socket`, sees the same cache.
+///
+/// The configuration is the only place the socket is named, so the default
+/// socket (which nothing listens on) cannot stand in.
+#[test]
+fn configured_kcm_socket_name_routes_agree_with_mit() -> Result<(), Box<dyn Error>> {
+    if !harness::require(
+        "configured_kcm_socket_name_routes_agree_with_mit",
+        &[MIT_KDC],
+    )? {
+        return Ok(());
+    }
+    let config = Config::parse(&format!(
+        "[libdefaults]\n kcm_socket = {}\n",
+        socket()?.display()
+    ))?;
+    let name = residual("configured")?;
+    drop(store()?.resolve(&name)?.destroy());
+    let tgt = tgt_cache()?;
+    configured::save_name(&config, &tgt, &format!("KCM:{name}"))?;
+    let listing = mit(&format!("klist -c KCM:{name}"))?;
+    assert!(
+        listing.contains(&format!("krbtgt/{REALM}@{REALM}")),
+        "{listing}"
+    );
+    drop(mit(&format!("kvno -c KCM:{name} {SERVICE}@{REALM}"))?);
+    let loaded = configured::load_name(&config, &format!("KCM:{name}"))?;
+    assert!(
+        loaded.contains_server(&["host", "mit-kdc.test.rskrb5"]),
+        "the service ticket MIT stored is not in the configured route's view"
+    );
+    let handle =
+        file_store::resolve_configured(&format!("KCM:{name}"), CacheVersion::default(), &config)?;
+    mechanism(
+        "configured cache name",
+        &format!("KCM:{name}"),
+        &handle.name(),
+    )?;
+    handle.destroy()?;
     Ok(())
 }
 
