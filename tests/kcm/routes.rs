@@ -62,9 +62,11 @@ fn is_untrusted(error: &CcacheError) -> bool {
     )
 }
 
-/// Run `route` against the configured daemon: it succeeds where this
-/// process's user can be read (Linux); elsewhere the daemon is refused by the
-/// trust check, which still proves the configured socket was the one used.
+/// Run `route` against the configured daemon.
+///
+/// It succeeds where this process's user can be read (Linux); elsewhere the
+/// daemon is refused by the trust check, which still proves the configured
+/// socket was the one used.
 fn through_the_socket<T>(route: Result<T, CcacheError>) -> Result<Option<T>, TestError> {
     match route {
         Ok(value) => Ok(Some(value)),
@@ -194,10 +196,10 @@ mod client {
 
     /// A client route's outcome as [`through_the_socket`] reads it.
     fn route<T>(result: Result<T, Client>) -> Result<Option<T>, TestError> {
-        through_the_socket(result.map_err(|error| match error {
-            Client::CCache(inner) => inner,
-            other => CcacheError::Io(std::io::Error::other(other)),
-        }))
+        if let Err(Client::CCache(inner)) = result {
+            return through_the_socket(Err(inner));
+        }
+        Ok(result.map(Some)?)
     }
 
     /// The client's named and default routes reach the configured socket.

@@ -21,23 +21,23 @@ mod tests {
     extern crate alloc;
 
     use alloc::sync::Arc;
-    use core::error;
+    use core::{
+        error,
+        sync::atomic::{AtomicBool, AtomicU32, Ordering},
+    };
     use std::{
         env, fs, io,
         io::{Read as _, Write as _},
         os::unix::net::{UnixListener, UnixStream},
         path::{Path, PathBuf},
         process,
-        sync::{
-            Mutex, OnceLock, PoisonError,
-            atomic::{AtomicBool, AtomicU32, Ordering},
-        },
+        sync::{Mutex, OnceLock, PoisonError},
         thread::{self, JoinHandle},
     };
 
     use rskrb5_ng::{
         ccache::{
-            CCache, configured,
+            CCache, Principal, configured,
             kcm::{
                 Store,
                 seam::{KcmTransport, TransportFactory, install_transport_factory},
@@ -231,11 +231,11 @@ mod tests {
 
     /// A configuration naming `service` and, when given, a socket.
     fn config(service: &str, socket: Option<&Path>) -> Result<Config, TestError> {
-        let socket = socket.map_or_else(String::new, |path| {
+        let line = socket.map_or_else(String::new, |path| {
             format!(" kcm_socket = {}\n", path.display())
         });
         Ok(Config::parse(&format!(
-            "[libdefaults]\n kcm_mach_service = {service}\n{socket}"
+            "[libdefaults]\n kcm_mach_service = {service}\n{line}"
         ))?)
     }
 
@@ -279,7 +279,7 @@ mod tests {
         let loaded = configured::load_name(&config, "KCM:no-such-cache");
         // The transport answers every request with a bare status, which is
         // not a cache: the point is where the request went.
-        assert!(loaded.is_err());
+        drop(loaded.err().ok_or("a bare status is not a cache")?);
         assert!(
             log.requests
                 .lock()
@@ -399,7 +399,7 @@ mod tests {
     }
 
     /// The principal of the caches saved here.
-    fn principal() -> rskrb5_ng::ccache::Principal {
-        rskrb5_ng::ccache::Principal::new("TEST.RSKRB5", 1, vec!["alice".to_owned()])
+    fn principal() -> Principal {
+        Principal::new("TEST.RSKRB5", 1, vec!["alice".to_owned()])
     }
 }

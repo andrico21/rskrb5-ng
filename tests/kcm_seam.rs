@@ -27,7 +27,7 @@ mod tests {
 
     use rskrb5_ng::{
         ccache::{
-            configured, file_store,
+            CCache, Principal, configured, file_store,
             kcm::{
                 Store,
                 seam::{KcmTransport, install_transport},
@@ -241,11 +241,7 @@ mod tests {
                 .destroy()?;
             let by_name = configured::save_name(
                 config,
-                &rskrb5_ng::ccache::CCache::new(rskrb5_ng::ccache::Principal::new(
-                    "TEST.RSKRB5",
-                    1,
-                    vec!["alice".to_owned()],
-                )),
+                &CCache::new(Principal::new("TEST.RSKRB5", 1, vec!["alice".to_owned()])),
                 &name,
             );
             assert!(by_name.is_ok(), "{by_name:?}");
