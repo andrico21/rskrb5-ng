@@ -63,7 +63,7 @@ pub fn load_name(config: &Config, name: &str) -> Result<CCache, Error> {
 /// [`Error::DefaultCacheName`] when `KRB5CCNAME` is unset or not valid
 /// Unicode, and the errors of [`load_name`].
 #[inline]
-pub fn load_from_env(config: &Config) -> Result<CCache, Error> {
+pub fn load_ccache_env(config: &Config) -> Result<CCache, Error> {
     load_name(config, &env_name()?)
 }
 

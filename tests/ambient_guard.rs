@@ -66,6 +66,12 @@ pub(crate) mod tests {
             "KRB5CCNAME_ENV",
         ),
         (
+            "src/ccache/configured.rs",
+            "env_name",
+            "KRB5CCNAME",
+            "super::KRB5CCNAME_ENV",
+        ),
+        (
             "src/ccache/selection.rs",
             "default_k5identity",
             "HOME",
