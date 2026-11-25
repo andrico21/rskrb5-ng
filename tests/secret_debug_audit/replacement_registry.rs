@@ -26,6 +26,10 @@ pub(super) const DELEGATIONS: &[(&str, &str)] = &[
         "delegates:src/client.rs::Tokio::get_service_ticket_with_clock",
     ),
     (
+        "src/client.rs::Tokio::get_host_service_ticket",
+        "delegates:src/client.rs::Tokio::get_service_ticket",
+    ),
+    (
         "src/client.rs::Tokio::s4u2self",
         "delegates:src/client.rs::Tokio::s4u2self_with_options",
     ),

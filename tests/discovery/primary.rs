@@ -51,7 +51,7 @@ impl Drop for Stub {
 }
 
 /// An encoded KRB-ERROR with `code`.
-fn krb_error(code: i32) -> Result<Vec<u8>, TestError> {
+pub(super) fn krb_error(code: i32) -> Result<Vec<u8>, TestError> {
     let utc = DateTime::<Utc>::from_timestamp(1_893_553_440, 0).ok_or("valid time")?;
     let zone = FixedOffset::east_opt(0).ok_or("UTC offset")?;
     let text = |value: &str| KerberosString::try_from(value).map_err(|cause| format!("{cause}"));

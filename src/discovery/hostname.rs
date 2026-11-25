@@ -14,7 +14,30 @@ use crate::{
     config::{Config, hostname::Canonicalization},
     discovery::records::dns_resolver,
     error::Client as Error,
+    iana::error_code::KDC_ERR_S_PRINCIPAL_UNKNOWN,
 };
+
+/// Which host names a caller trusts to name a host-based service.
+///
+/// Canonicalization (DNS, a reverse lookup, `qualify_shortname`) proposes
+/// names; none of them is authenticated. Host acquisition uses a proposed name
+/// other than the requested host itself only when the policy approves it, so an
+/// attacker who answers DNS cannot choose the service a ticket is requested for.
+pub trait HostNamePolicy: Send + Sync {
+    /// Whether `candidate`, a canonical form of the requested host `requested`
+    /// (both lower case, without a trailing dot), may name the service.
+    fn approves(&self, requested: &str, candidate: &str) -> bool;
+}
+
+impl<F> HostNamePolicy for F
+where
+    F: Fn(&str, &str) -> bool + Send + Sync,
+{
+    #[inline]
+    fn approves(&self, requested: &str, candidate: &str) -> bool {
+        self(requested, candidate)
+    }
+}
 
 /// The longest host name canonicalized: a DNS name.
 const MAX_HOST_BYTES: usize = 253;
@@ -168,6 +191,65 @@ impl CanonicalizationPolicy {
             }
         }
         Ok(names)
+    }
+
+    /// Run `attempt` with the canonical names of `host` in order, made lazily,
+    /// until one succeeds (MIT `k5_canonprinc` with `krb5_tkt_creds_step`,
+    /// `sn2princ.c:270-307`, `get_creds.c:1292-1305`).
+    ///
+    /// A name is made only when the one before it did not do: with `fallback`
+    /// the host itself is tried first and DNS is asked only after the KDC said
+    /// that its principal is unknown. A name other than the host itself (folded)
+    /// is tried only when `policy` approves it; a repeated name is skipped. The
+    /// next name is tried only after `KDC_ERR_S_PRINCIPAL_UNKNOWN`; any other
+    /// result of `attempt` ends the acquisition.
+    ///
+    /// # Security
+    ///
+    /// DNS and `qualify_shortname` only propose names: `policy` decides whether
+    /// one may name the service. With `dns_canonicalize_hostname = true` (the
+    /// default) DNS is asked before anything is sent; `false` makes no lookup.
+    ///
+    /// # Errors
+    ///
+    /// The error of the last `attempt`, the errors of [`Self::expand`], and
+    /// [`Error::HostNameNotApproved`] when the policy refused every name.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe exactly when `attempt` is: DNS lookups change no state.
+    #[inline]
+    pub async fn acquire<T, F>(
+        &self,
+        transport: &Tokio,
+        (host, policy): (&str, &dyn HostNamePolicy),
+        mut attempt: F,
+    ) -> Result<T, Error>
+    where
+        F: AsyncFnMut(&str) -> Result<T, Error>,
+    {
+        let requested = Self {
+            mode: self.mode,
+            reverse: false,
+            qualify: Qualify::Disabled,
+        }
+        .expand_without_dns(host);
+        let mut tried: Vec<String> = Vec::new();
+        let mut unknown = None;
+        for use_dns in self.uses_dns() {
+            let name = self.expand(transport, host, *use_dns).await?;
+            if tried.contains(&name) || (name != requested && !policy.approves(&requested, &name)) {
+                continue;
+            }
+            match attempt(&name).await {
+                Err(Error::Kdc(error)) if error.error_code() == KDC_ERR_S_PRINCIPAL_UNKNOWN => {
+                    unknown = Some(Error::Kdc(error));
+                }
+                other => return other,
+            }
+            tried.push(name);
+        }
+        Err(unknown.unwrap_or(Error::HostNameNotApproved { host: requested }))
     }
 
     /// Qualify, fold and strip `canonical` (MIT `expand_hostname`, `sn2princ.c:130-144`).

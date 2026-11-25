@@ -1307,6 +1307,10 @@ mod tests {
             "Forwards to src/client/negotiate.rs::Client::authorization_context, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
         ),
         (
+            "src/client/negotiate.rs::Client::authorization_context_for_acquired_host",
+            "Forwards to src/client.rs::Tokio::get_host_service_ticket and src/client/negotiate.rs::Client::authorization_context, which carry their own registered proofs, delegations or exceptions; this wrapper replaces nothing itself.",
+        ),
+        (
             "src/client/negotiate.rs::Client::change_password",
             "Forwards to src/client.rs::Tokio::change_password, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
         ),

@@ -88,6 +88,12 @@ const TESTUSER_SALT: &str = "TEST.GOKRB5testuser1";
 
 #[path = "client/as_exchange.rs"]
 mod as_exchange;
+#[cfg(feature = "tokio")]
+#[path = "client/host_acquisition.rs"]
+mod host_acquisition;
+#[cfg(feature = "tokio")]
+#[path = "client/kdc_recorder.rs"]
+mod kdc_recorder;
 #[path = "client/login_preauth.rs"]
 mod login_preauth;
 #[path = "client/owner_accessors.rs"]

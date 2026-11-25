@@ -569,6 +569,14 @@ pub enum Client {
     #[cfg(feature = "tokio")]
     #[error("DNS resolver configuration failed: {0}")]
     DnsResolverConfig(String),
+    /// Host acquisition found no host name the caller's policy approves: every
+    /// canonical form of `host` other than the host itself was refused.
+    #[cfg(feature = "tokio")]
+    #[error("no approved canonical name for host {host}")]
+    HostNameNotApproved {
+        /// The requested host, folded to lower case.
+        host: String,
+    },
     /// A registered server locator or host-realm mapper failed or gave a
     /// refused answer.
     #[cfg(feature = "tokio")]

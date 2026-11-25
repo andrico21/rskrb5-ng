@@ -44,6 +44,7 @@ use crate::{
 #[cfg(feature = "tokio")]
 use crate::{
     config::{credential_names, parameters::DefaultName},
+    discovery::hostname::{CanonicalizationPolicy, HostNamePolicy},
     file_name,
     keytab::configured_keytab,
     routing::{
@@ -2511,6 +2512,46 @@ impl Tokio {
             Err(error) => tracer.failed(error),
         }
         result
+    }
+    /// Acquire a ticket for the host-based service `service` on `host` with the
+    /// profile's host-name canonicalization (`dns_canonicalize_hostname`,
+    /// `rdns`, `qualify_shortname`), trying each canonical name that `policy`
+    /// approves (MIT `k5_canonprinc`). The returned ticket names the service
+    /// principal that was used.
+    ///
+    /// This is the explicit host-acquisition operation: the other acquisition
+    /// methods, [`Principal::host_based_service`] and explicit principals never
+    /// canonicalize, so they make no DNS lookup whatever the profile says.
+    ///
+    /// # Security
+    ///
+    /// See [`CanonicalizationPolicy::acquire`]: a canonical name other than the
+    /// requested host itself is used only when `policy` approves it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidPrincipalName`] for an empty service or host,
+    /// [`Error::HostNameNotApproved`] when `policy` refuses every canonical
+    /// name, and the errors of [`Self::get_service_ticket`].
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe as [`Self::get_service_ticket`].
+    #[inline]
+    pub async fn get_host_service_ticket(
+        &mut self,
+        service: &str,
+        host: &str,
+        policy: &dyn HostNamePolicy,
+    ) -> Result<TgsRepSession, Error> {
+        let canonicalization = CanonicalizationPolicy::from_config(&self.config);
+        let transport = self.transport.clone();
+        canonicalization
+            .acquire(&transport, (host, policy), async |name: &str| {
+                self.get_service_ticket(Principal::host_based_service(service, name)?)
+                    .await
+            })
+            .await
     }
 
     /// Acquire a service ticket with a clock shared by the cache-selection decisions.

@@ -12,54 +12,14 @@ use super::*;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
     use alloc::sync::Arc;
-    use std::sync::{Mutex, PoisonError};
 
-    use rskrb5_ng::{
-        error::KdcProxy,
-        extensions::{Extension, HostRealm, ProviderError, RealmQuery, Registry},
-        transport::{
-            kkdcp::ProxyMessage,
-            proxy::{KdcProxyTransport, PostFuture, Request},
-        },
-    };
+    use rskrb5_ng::extensions::{Extension, HostRealm, ProviderError, RealmQuery, Registry};
 
     use super::*;
+    use crate::kdc_recorder::Recorder;
 
     /// The realm a mapper names for every host.
     const MAPPED: &str = "MAPPED.TEST";
-
-    /// A KDC proxy that records each Kerberos message and refuses delivery.
-    #[derive(Debug)]
-    struct Recorder(Mutex<Vec<Vec<u8>>>);
-
-    impl Recorder {
-        /// A recorder that has seen nothing.
-        const fn new() -> Self {
-            Self(Mutex::new(Vec::new()))
-        }
-
-        /// The messages seen so far.
-        fn seen(&self) -> Vec<Vec<u8>> {
-            self.0
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone()
-        }
-    }
-
-    impl KdcProxyTransport for Recorder {
-        fn post<'request>(&'request self, request: Request<'request>) -> PostFuture<'request> {
-            let message = ProxyMessage::decode(request.body).map_or_else(
-                |_error| Vec::new(),
-                |decoded| decoded.kerb_message().to_vec(),
-            );
-            self.0
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(message);
-            Box::pin(async { Err(KdcProxy::NotDelivered("recorded".into())) })
-        }
-    }
 
     /// A mapper that names [`MAPPED`] for every host, or fails.
     struct Mapper(Result<(), &'static str>);
@@ -104,9 +64,7 @@ mod tests {
 
     /// Whether `message` names the [`MAPPED`] realm anywhere.
     fn names_mapped(message: &[u8]) -> bool {
-        message
-            .windows(MAPPED.len())
-            .any(|window| window == MAPPED.as_bytes())
+        Recorder::names(message, MAPPED)
     }
 
     /// A host service without a realm, as `Principal::host_based_service` makes it.
