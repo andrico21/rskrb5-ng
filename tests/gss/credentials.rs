@@ -12,6 +12,7 @@ use std::{
 };
 
 use rskrb5_ng::{
+    ccache::{self, file_store::collection, stores::CacheVersion},
     error::{Gss, Service},
     gss::{
         Acceptor, AcceptorOptions, CredStore, Credential, CredentialUsage, InitStep, Initiator,
@@ -22,7 +23,7 @@ use rskrb5_ng::{
 
 use super::{
     context::{Context as _, TestError},
-    support::{HOST, cache, cached, keytab, target, ticket_for},
+    support::{HOST, REALM, cache, cached, keytab, target, ticket_for},
 };
 
 /// A fresh scratch directory.
@@ -233,6 +234,134 @@ fn keytab_and_password_initiators_need_a_name() -> Result<(), TestError> {
         Credential::acquire_cred_from(Some(&alice), CredentialUsage::Initiate, &wrong),
         Err(Gss::NoCredential(_))
     ));
+    fs::remove_dir_all(&directory)?;
+    Ok(())
+}
+
+/// A `DIR` collection in `directory`: the primary cache holds alice's ticket,
+/// a second cache is bob's (MIT `krb5_cc_new_unique`). Returns its name.
+fn two_client_collection(directory: &std::path::Path) -> Result<String, TestError> {
+    let name = format!("DIR:{}", directory.join("collection").display());
+    let caches = collection(&name, CacheVersion::V4)?;
+    caches
+        .primary()?
+        .replace(&cache(vec![cached(&ticket_for(HOST, &[])?)?]))?;
+    caches.new_unique()?.initialize(&ccache::Principal::new(
+        REALM.to_owned(),
+        1,
+        vec!["bob".to_owned()],
+    ))?;
+    Ok(name)
+}
+
+/// The display form of a credential's name.
+fn display_name(credential: &Credential) -> Result<String, TestError> {
+    Ok(credential.inquire().name().context("a name")?.display().0)
+}
+
+/// A desired name selects its cache from the named collection (MIT
+/// `krb5_cc_cache_match`, `cccursor.c:184-219`) without switching the primary.
+#[test]
+fn acquire_from_collection_selects_desired_principal() -> Result<(), TestError> {
+    let directory = scratch("collection")?;
+    let name = two_client_collection(&directory)?;
+    let store = CredStore::new().with("ccache", &name)?;
+    // Given bob, the collection's second cache is selected.
+    let bob = Name::import(b"bob@EXAMPLE.COM", NameType::Principal)?;
+    let selected = Credential::acquire_cred_from(Some(&bob), CredentialUsage::Initiate, &store)?;
+    assert_eq!(display_name(&selected)?, "bob@EXAMPLE.COM");
+    // Given alice, the primary cache, with her ticket.
+    let alice = Name::import(b"alice@EXAMPLE.COM", NameType::Principal)?;
+    let primary = Credential::acquire_cred_from(Some(&alice), CredentialUsage::Initiate, &store)?;
+    assert_eq!(display_name(&primary)?, "alice@EXAMPLE.COM");
+    let mut init = Initiator::new(target(HOST)?, InitiatorOptions::new());
+    assert!(matches!(
+        init.init_sec_context(&primary, None)?,
+        InitStep::Continue(_)
+    ));
+    // Without a desired name, the primary cache; the primary never switched.
+    let default = Credential::acquire_cred_from(None, CredentialUsage::Initiate, &store)?;
+    assert_eq!(display_name(&default)?, "alice@EXAMPLE.COM");
+    let caches = collection(&name, CacheVersion::V4)?;
+    assert_eq!(caches.primary()?.load()?.client_name(), "alice");
+    fs::remove_dir_all(&directory)?;
+    Ok(())
+}
+
+/// No cache of the collection holds the desired name: there is no credential,
+/// and the primary cache's identity is never put in its place; realm and
+/// ordered components match exactly; collection failures are returned.
+#[test]
+fn missing_desired_principal_never_uses_primary() -> Result<(), TestError> {
+    let directory = scratch("missing")?;
+    let name = two_client_collection(&directory)?;
+    let store = CredStore::new().with("ccache", &name)?;
+    for missing in [
+        "carol@EXAMPLE.COM",
+        "bob@OTHER.EXAMPLE",
+        "bob/admin@EXAMPLE.COM",
+        "ALICE@EXAMPLE.COM",
+    ] {
+        let desired = Name::import(missing.as_bytes(), NameType::Principal)?;
+        assert!(
+            matches!(
+                Credential::acquire_cred_from(Some(&desired), CredentialUsage::Initiate, &store),
+                Err(Gss::NoCredential(_))
+            ),
+            "{missing}"
+        );
+    }
+    // A collection that cannot be opened is an error, not a missing credential.
+    let bob = Name::import(b"bob@EXAMPLE.COM", NameType::Principal)?;
+    let broken = CredStore::new().with("ccache", "DIR:")?;
+    assert!(matches!(
+        Credential::acquire_cred_from(Some(&bob), CredentialUsage::Initiate, &broken),
+        Err(Gss::Ccache(_))
+    ));
+    fs::remove_dir_all(&directory)?;
+    Ok(())
+}
+
+/// `gss_acquire_cred` with a desired name selects its cache from the default
+/// collection (MIT `get_cache_for_name`, `acquire_cred.c:446-500`).
+#[cfg(feature = "tokio")]
+#[test]
+fn default_acquire_selects_desired_principal() -> Result<(), TestError> {
+    const TEST_PATH: &str = "tests::credentials::default_acquire_selects_desired_principal";
+    if !crate::env::in_child(TEST_PATH) {
+        crate::env::run_in_child(
+            TEST_PATH,
+            &[("KRB5CCNAME", None), ("KRB5_CLIENT_KTNAME", None)],
+        );
+        return Ok(());
+    }
+    let directory = scratch("default")?;
+    let name = two_client_collection(&directory)?;
+    // The default client keytab holds no client key, so it cannot stand in.
+    let service_keys = directory.join("service.keytab");
+    keytab(&[HOST]).save(&service_keys)?;
+    let config = rskrb5_ng::config::Config::parse(&format!(
+        "[libdefaults]\n default_realm = {REALM}\n default_ccache_name = {name}\n \
+         default_client_keytab_name = FILE:{}\n",
+        service_keys.display()
+    ))?;
+    let bob = Name::import(b"bob@EXAMPLE.COM", NameType::Principal)?;
+    let selected = Credential::acquire_cred(Some(&bob), CredentialUsage::Initiate, &config)?;
+    assert_eq!(display_name(&selected)?, "bob@EXAMPLE.COM");
+    let carol = Name::import(b"carol@EXAMPLE.COM", NameType::Principal)?;
+    assert!(matches!(
+        Credential::acquire_cred(Some(&carol), CredentialUsage::Initiate, &config),
+        Err(Gss::NoCredential(_))
+    ));
+    let default = Credential::acquire_cred(None, CredentialUsage::Initiate, &config)?;
+    assert_eq!(display_name(&default)?, "alice@EXAMPLE.COM");
+    assert_eq!(
+        collection(&name, CacheVersion::V4)?
+            .primary()?
+            .load()?
+            .client_name(),
+        "alice"
+    );
     fs::remove_dir_all(&directory)?;
     Ok(())
 }

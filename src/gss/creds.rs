@@ -198,9 +198,13 @@ impl Credential {
     /// `gss_acquire_cred_from`: acquire a credential from the store's explicit
     /// names, with no ambient default.
     ///
-    /// An initiator credential comes from `ccache`; failing that, `client_keytab`
-    /// or `password` with `desired_name` make one that acquires its tickets when
-    /// used. An acceptor credential comes from `keytab`; `rcache` names its
+    /// An initiator credential comes from `ccache`: with `desired_name`, the
+    /// cache of that client in the collection `ccache` names (realm and
+    /// components equal, MIT `krb5_cc_cache_match`; MIT itself checks only the
+    /// named cache there), else its primary cache; the primary cache is never
+    /// switched and never stands in for another client. Failing `ccache`,
+    /// `client_keytab` or `password` with `desired_name` make one that acquires
+    /// its tickets when used. An acceptor credential comes from `keytab`; `rcache` names its
     /// replay cache (`dfl:`, `file2:<path>`, `memory:<name>`), or `none:` to
     /// switch replay detection off by name.
     ///
@@ -219,6 +223,11 @@ impl Credential {
     }
 
     /// `gss_acquire_cred`: acquire a credential from the default stores.
+    ///
+    /// With `desired_name`, an initiator credential is that client's cache in
+    /// the default collection (MIT `get_cache_for_name`), else the default
+    /// client keytab when it holds the client's key; without it, the default
+    /// cache.
     ///
     /// # Ambient input
     /// Reads `KRB5CCNAME` before the configured `default_ccache_name`,

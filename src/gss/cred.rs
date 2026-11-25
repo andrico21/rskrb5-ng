@@ -14,7 +14,12 @@ use super::{
 };
 #[cfg(feature = "tokio")]
 use crate::client;
-use crate::{keytab::EncryptionKey, replay::RcacheName, service::AcceptorName};
+use crate::{
+    ccache::{file_store, stores::CacheVersion},
+    keytab::EncryptionKey,
+    replay::RcacheName,
+    service::AcceptorName,
+};
 
 /// The `FORWARDABLE` ticket flag in ccache byte order (RFC 4120 flag 1).
 const FORWARDABLE: u8 = 0x40;
@@ -209,6 +214,34 @@ pub(super) fn with_name(mut credential: Credential, name: Name) -> Result<Creden
     Ok(credential)
 }
 
+/// Make `cache` the credential's tickets, named by its default principal.
+fn take_cache(credential: &mut Credential, cache: CCache) {
+    credential.name = Some(Name::from_principal(&principal_of(
+        cache.default_principal(),
+    )));
+    credential.cache = Some(cache);
+}
+
+/// The cache of the collection `name` whose default principal is `desired`:
+/// realm and ordered components equal (MIT `krb5_cc_cache_match`,
+/// `cccursor.c:184-219`). The collection's primary cache is not switched.
+///
+/// # Errors
+///
+/// Returns the errors of opening the collection, walking it and loading the
+/// matching cache; caches that cannot be read are skipped, as MIT does.
+fn matching_cache(
+    name: &str,
+    desired: &Name,
+    version: CacheVersion,
+) -> Result<Option<CCache>, Error> {
+    let client = cache_principal(desired.principal());
+    Ok(file_store::collection(name, version)?
+        .cache_match(&client)?
+        .map(|cache| cache.load())
+        .transpose()?)
+}
+
 /// The initiator half of `acquire_cred_from`.
 ///
 /// # Errors
@@ -221,13 +254,13 @@ fn initiator_from(
     store: &CredStore,
 ) -> Result<(), Error> {
     if let Some(cache_name) = &store.ccache {
-        let cache = CCache::load_name(cache_name).map_err(Error::Ccache)?;
-        let client = Name::from_principal(&principal_of(cache.default_principal()));
-        if desired.is_some_and(|name| !name.compare(&client)) {
-            return Err(Error::NoCredential("the cache holds another principal"));
-        }
-        credential.name = Some(client);
-        credential.cache = Some(cache);
+        let cache = match desired {
+            Some(name) => matching_cache(cache_name, name, CacheVersion::default())?.ok_or(
+                Error::NoCredential("no cache of the collection holds the desired name"),
+            )?,
+            None => CCache::load_name(cache_name).map_err(Error::Ccache)?,
+        };
+        take_cache(credential, cache);
         return Ok(());
     }
     let need = Error::NoCredential("a client keytab or password needs the desired name");
@@ -331,6 +364,46 @@ pub(super) fn acquire_from(
     Ok(credential)
 }
 
+/// The initiator half of `gss_acquire_cred`: the default cache, or with a
+/// desired name its cache in the default collection, else the default client
+/// keytab (MIT `acquire_init_cred` and `get_cache_for_name`,
+/// `acquire_cred.c:446-500,681-780`).
+///
+/// # Errors
+///
+/// Returns [`Error::NoCredential`] when neither a cache nor the client keytab
+/// holds the desired name, and the errors of the default names, the collection
+/// and the client keytab.
+#[cfg(feature = "tokio")]
+fn default_initiator(
+    credential: &mut Credential,
+    desired: Option<&Name>,
+    config: &super::Config,
+) -> Result<(), Error> {
+    let cache_name = client::default_ccache_name(config);
+    let Some(name) = desired else {
+        let loaded =
+            CCache::load_resolved_name(&cache_name?).map_err(crate::error::Client::from)?;
+        take_cache(credential, loaded);
+        return Ok(());
+    };
+    if let Ok(cache_name) = cache_name
+        && let Some(loaded) = matching_cache(&cache_name, name, CacheVersion::default())?
+    {
+        take_cache(credential, loaded);
+        return Ok(());
+    }
+    let keytab = client::default_client_keytab_name(config)?;
+    if !client_keytab_matches(&keytab, name) {
+        return Err(Error::NoCredential(
+            "the client keytab holds no key for the name",
+        ));
+    }
+    credential.name = Some(name.clone());
+    credential.client_keytab = Some(keytab);
+    Ok(())
+}
+
 /// `gss_acquire_cred` from the default names.
 ///
 /// # Errors
@@ -346,29 +419,7 @@ pub(super) fn acquire_default(
 
     let mut credential = empty(usage);
     if usage != CredentialUsage::Accept {
-        let cache = client::default_ccache_name(config)
-            .and_then(|cache_name| Ok(CCache::load_resolved_name(&cache_name)?));
-        match (cache, desired) {
-            (Ok(loaded), _) => {
-                let client = Name::from_principal(&principal_of(loaded.default_principal()));
-                if desired.is_some_and(|name| !name.compare(&client)) {
-                    return Err(Error::NoCredential("the cache holds another principal"));
-                }
-                credential.name = Some(client);
-                credential.cache = Some(loaded);
-            }
-            (Err(_missing), Some(name)) => {
-                let keytab = client::default_client_keytab_name(config)?;
-                if !client_keytab_matches(&keytab, name) {
-                    return Err(Error::NoCredential(
-                        "the client keytab holds no key for the name",
-                    ));
-                }
-                credential.name = Some(name.clone());
-                credential.client_keytab = Some(keytab);
-            }
-            (Err(missing), None) => return Err(missing.into()),
-        }
+        default_initiator(&mut credential, desired, config)?;
     }
     if usage != CredentialUsage::Initiate {
         let keytab = keytab::default_keytab_name(&config.libdefaults)?;
