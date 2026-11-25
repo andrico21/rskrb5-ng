@@ -164,7 +164,7 @@ version = "0.10.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.cookie]]
-version = "0.18.2"
+version = "0.18.3"
 criteria = "safe-to-deploy"
 notes = "http-client leaf (plan 2 todo 26): the cookie parser and Cookie/Set-Cookie value types under cookie_store; docs/dependency-admission.md#cookie_store"
 

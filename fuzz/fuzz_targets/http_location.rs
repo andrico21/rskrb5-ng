@@ -36,7 +36,10 @@ fuzz_target!(|data: &[u8]| {
     );
     let path = target.path();
     assert!(
-        !path.contains("/./") && !path.contains("/../") && !path.ends_with("/.") && !path.ends_with("/.."),
+        !path.contains("/./")
+            && !path.contains("/../")
+            && !path.ends_with("/.")
+            && !path.ends_with("/.."),
         "no dot segment"
     );
 });

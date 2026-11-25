@@ -1,6 +1,6 @@
 //! The cookie jar of the HTTP client (the `http-client` leaf).
 //!
-//! [`CookieStore`] keeps the cookies of the servers a [`NegotiateHttpClient`]
+//! `CookieStore` keeps the cookies of the servers a [`NegotiateHttpClient`]
 //! talks to, under the RFC 6265 storage model (`cookie_store`), in memory.
 //!
 //! [`NegotiateHttpClient`]: super::agent::NegotiateHttpClient
@@ -13,8 +13,8 @@
 //! of `cookie_store` it refuses what the crate would accept: a `Secure` cookie
 //! from a cleartext response, a `Domain` attribute while no public-suffix list
 //! is configured (a host-only cookie needs none), a `Set-Cookie` value of more
-//! than [`CookieStore::MAX_SET_COOKIE_BYTES`] bytes and more than
-//! [`CookieStore::DEFAULT_MAX_COOKIES`] cookies, and a value with a byte outside
+//! than `CookieStore::MAX_SET_COOKIE_BYTES` bytes and more than
+//! `CookieStore::DEFAULT_MAX_COOKIES` cookies, and a value with a byte outside
 //! visible ASCII. The public-suffix list is
 //! never compiled in: the application supplies the text of the list it trusts.
 //! Values are never shown by `Debug`.

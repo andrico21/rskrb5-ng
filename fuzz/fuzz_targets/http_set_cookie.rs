@@ -14,8 +14,7 @@ use libfuzzer_sys::fuzz_target;
 use rskrb5_ng::http::{cookies::CookieStore, wire::CookieJar as _};
 
 /// A public-suffix list with a TLD and a two-label suffix.
-const SUFFIXES: &str =
-    "// ===BEGIN ICANN DOMAINS===\ncom\nuk\nco.uk\n// ===END ICANN DOMAINS===\n";
+const SUFFIXES: &str = "// ===BEGIN ICANN DOMAINS===\ncom\nuk\nco.uk\n// ===END ICANN DOMAINS===\n";
 
 /// The most cookies the fuzzed jar holds.
 const MAX: usize = 8;

@@ -67,6 +67,8 @@ pub(super) mod tests {
             http_response_redacts_credential_payloads()?;
             http_client_redacts_credentials()?;
         }
+        #[cfg(feature = "http")]
+        http_error_and_sessions_redact_credentials()?;
         initiator_context_redacts_credentials()
     }
 
@@ -239,19 +241,40 @@ pub(super) mod tests {
         Ok(())
     }
 
-    /// The HTTP client, its result, its error and the session manager redact credentials.
+    /// The HTTP client error and the session manager redact credentials.
+    #[cfg(feature = "http")]
+    #[test]
+    fn http_error_and_sessions_redact_credentials() -> Result<(), Box<dyn Error>> {
+        use rskrb5_ng::{
+            error::HttpClient,
+            gss::TransferKey,
+            http::{ClientNegotiateResponse, sessions::SessionManager},
+        };
+        let secret = pattern(65);
+        let error = HttpClient::MutualAuthenticationNotProven {
+            negotiation: Some(ClientNegotiateResponse::InvalidToken {
+                message: String::from_utf8(secret.clone())?,
+            }),
+            response: Box::new(http_types::Response::new(secret.clone())),
+        };
+        redacted(&error, &[&secret]);
+        let key: Vec<u8> = (0..32_u8)
+            .map(|index| index.wrapping_mul(7).wrapping_add(11))
+            .collect();
+        let manager = SessionManager::new(TransferKey::new(<[u8; 32]>::try_from(key.as_slice())?));
+        redacted(&manager, &[&key]);
+        Ok(())
+    }
+
+    /// The HTTP client and its result redact credentials.
     #[cfg(all(feature = "http", feature = "tokio"))]
     #[test]
     fn http_client_redacts_credentials() -> Result<(), Box<dyn Error>> {
         use rskrb5_ng::{
             Config,
             client::{Tokio, negotiate::Client, principal::Principal, transport::KdcProtocol},
-            error::HttpClient,
-            gss::TransferKey,
             http::{
-                ClientNegotiateResponse,
                 agent::NegotiateHttpClient,
-                sessions::SessionManager,
                 wire::{ExchangeFuture, HttpExchange},
             },
         };
@@ -281,18 +304,6 @@ pub(super) mod tests {
         let runtime = Builder::new_current_thread().enable_all().build()?;
         let response = runtime.block_on(client.get("http://example.com/"))?;
         redacted(&response, &[&secret, &password]);
-        let error = HttpClient::MutualAuthenticationNotProven {
-            negotiation: Some(ClientNegotiateResponse::InvalidToken {
-                message: String::from_utf8(secret.clone())?,
-            }),
-            response: Box::new(http_types::Response::new(secret.clone())),
-        };
-        redacted(&error, &[&secret]);
-        let key: Vec<u8> = (0..32_u8)
-            .map(|index| index.wrapping_mul(7).wrapping_add(11))
-            .collect();
-        let manager = SessionManager::new(TransferKey::new(<[u8; 32]>::try_from(key.as_slice())?));
-        redacted(&manager, &[&key]);
         Ok(())
     }
 

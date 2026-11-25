@@ -47,9 +47,7 @@ pub trait HttpExchange: Send + Sync {
 }
 
 /// A cookie jar the client consults for every request and feeds with every
-/// response (the `http-client` leaf provides [`CookieStore`]).
-///
-/// [`CookieStore`]: super::cookies::CookieStore
+/// response (the `http-client` leaf provides `http::cookies::CookieStore`).
 pub trait CookieJar: Send {
     /// The `Cookie` header value for a request to `uri`, if the jar holds any.
     fn cookie_header(&self, uri: &Uri) -> Option<HeaderValue>;

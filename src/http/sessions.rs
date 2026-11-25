@@ -23,8 +23,8 @@
 //! * No PAC and no ticket is ever put in a session: it holds the client name
 //!   the KDC authenticated and nothing else.
 //! * The key is erased when dropped and never shown by `Debug`.
-//! * The application's logger hook is a [`Guard`](crate::trace::Guard): every
-//!   refusal is a [`ApReqRejected`](crate::trace::Event::ApReqRejected) event
+//! * The application's logger hook is a [`crate::trace::Guard`]: every
+//!   refusal is a [`crate::trace::Event::ApReqRejected`] event
 //!   with a static reason; no cookie value is ever traced and nothing is
 //!   printed.
 //!
