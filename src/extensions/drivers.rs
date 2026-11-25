@@ -99,6 +99,7 @@ pub(super) fn realms(
 /// mapper has that id.
 /// # Errors
 /// Returns the mapper's failure or the refusal of its answer.
+#[cfg(feature = "tokio")]
 pub(super) fn realms_from(
     registry: &Registry,
     id: &str,

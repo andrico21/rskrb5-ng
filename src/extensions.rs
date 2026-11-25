@@ -1023,6 +1023,7 @@ impl Registry {
     /// # Errors
     ///
     /// As [`Self::realms`].
+    #[cfg(feature = "tokio")]
     pub(crate) fn realms_from(
         &self,
         id: &str,
