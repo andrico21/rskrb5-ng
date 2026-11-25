@@ -58,6 +58,23 @@ impl Validator<'_> {
         }
     }
 
+    /// Refuse a ticket whose key is not the expected service's.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::WrongPrincipal`].
+    fn check_expected_service(&self, realm: &str, components: &[String]) -> Result<(), Error> {
+        match &self.expected_service {
+            Some(expected) if expected.realm != realm || expected.components != components => {
+                Err(Error::WrongPrincipal {
+                    expected: format!("{}@{}", expected.name(), expected.realm),
+                    actual: format!("{}@{realm}", components.join("/")),
+                })
+            }
+            Some(_) | None => Ok(()),
+        }
+    }
+
     /// The PAC settings this validator verifies a ticket for `service` against.
     fn pac_check<'check>(&'check self, service: &'check Principal) -> PacCheck<'check> {
         PacCheck::new(
@@ -160,6 +177,7 @@ impl Validator<'_> {
         #[cfg(feature = "spnego")]
         self.check_acceptor_name(&ticket_service)?;
         let (keytab_components, service_key) = self.ticket_key(&ticket_service, &ap_req.ticket)?;
+        self.check_expected_service(&ticket_service.realm, &keytab_components)?;
 
         let enc_ticket =
             ticket::decrypt_ticket_enc_part(&ap_req.ticket, service_key).map_err(ticket_error)?;
@@ -262,7 +280,7 @@ impl Validator<'_> {
             authenticator_ctime,
             authenticator_cusec: cusec,
             authenticator_time: authenticator_timestamp,
-            pac,
+            pac: pac.filter(|_verified| self.pac_extraction),
         };
         let tag = Tag::from_authenticator(
             ap_req.authenticator.etype,

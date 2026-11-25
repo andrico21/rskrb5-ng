@@ -92,6 +92,8 @@ impl fmt::Debug for Validator<'_> {
             transit_policy,
             pac_policy,
             pac_kdc_key,
+            pac_extraction,
+            expected_service,
             trace,
             #[cfg(feature = "spnego")]
                 acceptor_name: _,
@@ -114,6 +116,8 @@ impl fmt::Debug for Validator<'_> {
                 "pac_kdc_key",
                 &pac_kdc_key.as_ref().map(|_key| "[REDACTED]"),
             )
+            .field("pac_extraction", pac_extraction)
+            .field("expected_service", expected_service)
             .field("trace", trace)
             .finish()
     }

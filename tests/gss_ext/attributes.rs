@@ -113,3 +113,23 @@ fn unknown_attributes_are_unavailable() -> Result<(), TestError> {
     refused(plain.acceptor.source_attribute("urn:mspac:"))?;
     Ok(())
 }
+
+/// With PAC extraction off, the acceptor's context exposes no PAC and no PAC
+/// attribute, although the PAC was verified (gokrb5 `DecodePAC(false)`).
+#[test]
+fn pac_decode_disabled_exposes_no_attributes() -> Result<(), TestError> {
+    let ticket = ticket_with_pac(AES256_SHA1, &[], Some(&[(1000, b"opaque buffer")]))?;
+    let credential = Credential::from_ccache(cache_of(&ticket)?)?;
+    let mut init = Initiator::new(target()?, InitiatorOptions::new());
+    let InitStep::Continue(token) = init.init_sec_context(&credential, None)? else {
+        return Err("a mutual initiator waits".into());
+    };
+    let keys = keytab();
+    let validator = Validator::new(&keys).with_pac_extraction(false);
+    let mut accept = Acceptor::from_validator(validator, AcceptorOptions::new());
+    let context = accept.accept_sec_context(&token)?.into_context();
+    assert!(context.pac().is_none());
+    assert!(context.source_attributes().is_empty());
+    refused(context.source_attribute("urn:mspac:"))?;
+    Ok(())
+}

@@ -182,7 +182,8 @@ impl ValidatedApReq {
     pub const fn authenticator_time(&self) -> SystemTime {
         self.authenticator_time
     }
-    /// Borrow the PAC of the ticket, which passed the validator's PAC policy.
+    /// Borrow the PAC of the ticket, which passed the validator's PAC policy; `None` without a
+    /// PAC or when the validator's PAC extraction is off ([`Validator::with_pac_extraction`]).
     ///
     /// The validator's [`VerificationPolicy`] decided what that means: by default the server
     /// signature verified and the client info named the ticket's client;
@@ -732,6 +733,10 @@ pub struct Validator<'keytab> {
     pac_policy: VerificationPolicy,
     /// The KDC (`krbtgt`) key that verifies the KDC, ticket and full signatures, when the service has it.
     pac_kdc_key: Option<EncryptionKey>,
+    /// Whether the verified PAC is handed out with the validated request.
+    pac_extraction: bool,
+    /// The service whose key must decrypt the ticket, when one is expected.
+    expected_service: Option<Principal>,
     /// Redacted trace events of the validations.
     trace: Guard,
     /// The GSS acceptor name a ticket's server must match, when one is named.
@@ -820,6 +825,8 @@ impl<'keytab> Validator<'keytab> {
             transit_policy: None,
             pac_policy: VerificationPolicy::acceptor(),
             pac_kdc_key: None,
+            pac_extraction: true,
+            expected_service: None,
             trace: Guard::disabled(),
             #[cfg(feature = "spnego")]
             acceptor_name: None,
@@ -922,6 +929,42 @@ impl<'keytab> Validator<'keytab> {
     #[inline]
     pub fn with_pac_kdc_key(mut self, key: EncryptionKey) -> Self {
         self.pac_kdc_key = Some(key);
+        self
+    }
+
+    /// Whether [`ValidatedApReq::pac`] hands out the ticket's verified PAC (default `true`;
+    /// gokrb5 `DecodePAC`).
+    ///
+    /// # Security
+    ///
+    /// `false` only withholds the PAC. It is still verified against the PAC policy of
+    /// [`Self::with_pac_policy`] (a PAC that fails it, or a missing PAC the policy requires,
+    /// still refuses the ticket), and unknown critical authorization data is still refused, so
+    /// turning extraction off never accepts a ticket the default would refuse. gokrb5 skips the
+    /// PAC entirely instead.
+    #[must_use]
+    #[inline]
+    pub const fn with_pac_extraction(mut self, extract: bool) -> Self {
+        self.pac_extraction = extract;
+        self
+    }
+
+    /// Accept only tickets that the key of `service` decrypts (gokrb5 `SName`).
+    ///
+    /// The ticket's realm and the components of the key that decrypts it (those of
+    /// [`Self::with_keytab_principal`] when set, else the ticket's server name) must equal the
+    /// realm and components of `service`; the name type is advisory. The check is independent of
+    /// the keytab-principal override: the override selects the key, the expected service names
+    /// whose key it must be, so an override to another principal refuses every ticket.
+    ///
+    /// # Security
+    ///
+    /// The ticket's server name is cleartext a peer can rewrite, so the identity checked is the
+    /// key's: a keytab with keys for several services accepts only this one's tickets.
+    #[must_use]
+    #[inline]
+    pub fn with_expected_service(mut self, service: Principal) -> Self {
+        self.expected_service = Some(service);
         self
     }
 
