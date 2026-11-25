@@ -236,9 +236,14 @@ mod tests {
             let name = format!("KCM:{cache}");
             let handle = file_store::resolve_configured(&name, version(), config)?;
             handle.destroy()?;
-            Store::from_libdefaults(&config.libdefaults)?
-                .resolve(cache)?
-                .destroy()?;
+            let store = Store::from_libdefaults(&config.libdefaults)?;
+            // A disabled socket has no path at all: the default socket never
+            // stands in for it.
+            assert_eq!(
+                store.socket().is_some(),
+                config.libdefaults.kcm_socket != "-"
+            );
+            store.resolve(cache)?.destroy()?;
             let by_name = configured::save_name(
                 config,
                 &CCache::new(Principal::new("TEST.RSKRB5", 1, vec!["alice".to_owned()])),
