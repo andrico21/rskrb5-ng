@@ -2854,6 +2854,35 @@ pub enum Pkinit {
         /// The location type, such as `PKCS11`.
         location: String,
     },
+    /// A `pkinit_cert_match` rule is malformed, uses a construct the bounded
+    /// matching engine does not honour, or exceeds a bound.
+    ///
+    /// MIT 1.22.2 skips some malformed rules (`pkinit_matching.c:650-656`);
+    /// this client never does.
+    #[error("pkinit_cert_match rule {rule:?} is refused: {reason}")]
+    CertificateRule {
+        /// The rule text as configured.
+        rule: String,
+        /// Why, without certificate contents.
+        reason: &'static str,
+    },
+    /// No candidate identity satisfies a `pkinit_cert_match` rule.
+    ///
+    /// MIT `pkinit_matching.c:701-703` (`TRACE_PKINIT_NO_MATCHING_CERT`, `ENOENT`).
+    #[error("no PKINIT identity of the {candidates} candidates matches pkinit_cert_match")]
+    NoMatchingCertificate {
+        /// The candidate identities that were checked.
+        candidates: usize,
+    },
+    /// More than one candidate identity remains and no rule selects exactly one.
+    ///
+    /// MIT `pkinit_identity.c:600` and `crypto_cert_select_default`
+    /// (`pkinit_crypto_openssl.c:4986`, `cert_count != 1`, `EINVAL`).
+    #[error("{candidates} PKINIT identities are candidates and no rule selects exactly one")]
+    AmbiguousCertificates {
+        /// The candidate identities that were checked.
+        candidates: usize,
+    },
     /// `pkinit_dh_min_bits` asks for a group below the 2048-bit floor.
     #[error("Diffie-Hellman groups of {bits} bits are refused; the floor is 2048")]
     DhGroupTooSmall {
