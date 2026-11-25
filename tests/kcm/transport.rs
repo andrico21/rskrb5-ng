@@ -1,7 +1,7 @@
 //! A scripted daemon: partial frames, daemon error ids, disconnects, an
 //! oversized reply, slow peers and the one reconnect of an idle connection.
 
-use core::time::Duration;
+use core::{mem, time::Duration};
 use std::{
     fs,
     io::{self, Write as _},
@@ -145,6 +145,11 @@ fn an_idle_connection_closed_by_the_daemon_is_reconnected_once() -> Result<(), T
         skip_request(stream)?;
         ok(stream, b"0:1\0")?;
         stream.shutdown(Shutdown::Both)?;
+        // Close the connection itself before announcing it: on macOS a write
+        // to a socket the peer only shut down can still succeed, and the
+        // client would then read an end of file instead of a broken pipe.
+        let (spare, _peer) = UnixStream::pair()?;
+        drop(mem::replace(stream, spare));
         closed.send(()).map_err(io::Error::other)
     });
     let daemon = Scripted::start("idle", vec![first, answers(vec![b"0:2\0".to_vec()])])?;

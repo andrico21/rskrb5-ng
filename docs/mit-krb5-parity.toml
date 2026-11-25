@@ -2093,7 +2093,7 @@ area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`kcm_socket`"
 implementation_status = "implemented"
-evidence_status = "unit"
+evidence_status = "live-ci"
 missing = ""
 rust_symbols = [
   "ccache::kcm::Store::from_libdefaults",
@@ -2110,9 +2110,10 @@ test_names = [
   "tests/kcm/routes.rs::ccache_env_honors_configured_kcm_socket",
   "tests/kcm/routes.rs::disabled_socket_never_uses_default_socket",
   "tests/kcm_seam.rs::installed_transport_precedes_configured_socket",
+  "tests/interop_kcm/scenarios.rs::configured_kcm_socket_name_routes_agree_with_mit",
 ]
 feature_flags = []
-security_divergence = "`kcm_socket` names the daemon socket (MIT `cc_kcm.c:306-316`; the default is MIT's `DEFAULT_KCM_SOCKET_PATH`), and `-` or an empty value disables the Unix socket transport (`Kcm::NoServer`), which is never replaced by the default socket. It is honoured by the KCM stores built from a configuration and by every cache-name route that takes a configuration: `ccache::configured::{load_name, save_name}`, `ccache::file_store::{resolve_configured, collection_configured}` and the client's `from_ccache_name`, `from_default_ccache_name`, `from_default_ccache`, `from_ccache_env` (which reads `KRB5CCNAME`), `save_ccache_name`, `save_default_ccache_name` and `save_default_ccache`. The configuration-free routes (`CCache::load_name`, `save_name`, `load_from_env`, `save_to_env`, `file_store::resolve`) are explicit default-configuration operations: the default socket, or the installed transport. An installed `KcmTransport` precedes the configured socket. The client's `update_ccache_name` and `update_default_ccache*` write files only. The trust check on the daemon socket and the outcome-unknown rule are unchanged, and a request that may have been delivered is never repeated through another route. The daemon trust check (owner, peer user id) needs this process's user id, which the main crate reads on Linux only: the hermetic daemon tests assert the refusal elsewhere."
+security_divergence = "`kcm_socket` names the daemon socket (MIT `cc_kcm.c:306-316`; the default is MIT's `DEFAULT_KCM_SOCKET_PATH`), and `-` or an empty value disables the Unix socket transport (`Kcm::NoServer`), which is never replaced by the default socket. It is honoured by the KCM stores built from a configuration and by every cache-name route that takes a configuration: `ccache::configured::{load_name, save_name}`, `ccache::file_store::{resolve_configured, collection_configured}` and the client's `from_ccache_name`, `from_default_ccache_name`, `from_default_ccache`, `from_ccache_env` (which reads `KRB5CCNAME`), `save_ccache_name`, `save_default_ccache_name` and `save_default_ccache`. The configuration-free routes (`CCache::load_name`, `save_name`, `load_from_env`, `save_to_env`, `file_store::resolve`) are explicit default-configuration operations: the default socket, or the installed transport. An installed `KcmTransport` precedes the configured socket. The client's `update_ccache_name` and `update_default_ccache*` write files only. The trust check on the daemon socket and the outcome-unknown rule are unchanged, and a request that may have been delivered is never repeated through another route. The daemon trust check (owner, peer user id) needs this process's user id, which the main crate reads on Linux only: the hermetic daemon tests assert the refusal elsewhere. Live evidence: the interop kcm suite saves and loads `KCM:` names through a `Config` that names the fixture socket while MIT reads the same cache from SSSD (scenario `configured_kcm_socket_name_routes_agree_with_mit`, hosted interop-mit job)."
 disposition = "WP-09"
 closing_plan = 2
 closing_todo = 28
