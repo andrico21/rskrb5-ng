@@ -1,7 +1,10 @@
 //! PKINIT against MIT krb5 1.22.2: certificate logins (DH and ECDH),
 //! anonymous PKINIT, and anonymous FAST armor through the FAST hook.
 
-use core::{error::Error, time::Duration};
+extern crate alloc;
+
+use alloc::sync::Arc;
+use core::{error::Error, fmt::Write as _, time::Duration};
 use std::{
     fs,
     io::{self, Read as _, Write as _},
@@ -23,12 +26,12 @@ use rskrb5_ng::{
         transport::{KdcProtocol, Tokio as TokioTransport},
     },
     config::Config,
-    error::Client as ClientError,
+    error::{Client as ClientError, Pkinit},
     preauth::{
         fast::{ArmorSource, Exchange as Fast, Outcome, PA_FX_FAST, Policy},
         pkinit::{
-            AnonymousArmorSource, AnonymousOptions, CertificatePolicy, DhGroup, Exchange, Identity,
-            KdcTrust, PA_PK_AS_REQ,
+            AnonymousArmorSource, AnonymousOptions, CertificatePolicy, ConfiguredIdentities,
+            DhGroup, Exchange, Identity, KdcTrust, PA_PK_AS_REQ,
         },
     },
 };
@@ -322,6 +325,112 @@ fn anonymous_armor_carries_the_encrypted_challenge() -> Result<(), Box<dyn Error
             ticket.service().components.first().map(String::as_str),
             Some("fastrequired"),
             "the fast-ec service ticket"
+        );
+        Ok(())
+    })
+}
+
+/// pkinituser's login by a client that holds three identities.
+///
+/// A certificate the KDC does not trust (the `tests/pkinit` fixture, listed
+/// first), the RSA certificate of `pkinitrsa` and the EC certificate of
+/// `pkinituser`; the `pkinit_cert_match` `rules` choose among them.
+async fn matched_login(rules: &[&str], sequence: u32) -> Result<AsRepSession, Box<dyn Error>> {
+    let realm = harness::var("INTEROP_MIT_REALM")?;
+    let decoy = format!("{}/tests/pkinit/fixtures", env!("CARGO_MANIFEST_DIR"));
+    let mut lines = format!("  pkinit_identities = FILE:{decoy}/client.pem,{decoy}/client.key\n");
+    for (cert, key) in [
+        ("INTEROP_MIT_PKINIT_RSA_CERT", "INTEROP_MIT_PKINIT_RSA_KEY"),
+        ("INTEROP_MIT_PKINIT_CERT", "INTEROP_MIT_PKINIT_KEY"),
+    ] {
+        writeln!(
+            lines,
+            "  pkinit_identities = FILE:{},{}",
+            harness::var(cert)?,
+            harness::var(key)?
+        )?;
+    }
+    for rule in rules {
+        writeln!(lines, "  pkinit_cert_match = {rule}")?;
+    }
+    let config = Config::parse(&format!(
+        "[libdefaults]\n default_realm = {realm}\n dns_lookup_kdc = false\n spake_preauth_groups =\n\
+         [realms]\n {realm} = {{\n  kdc = {}\n{lines} }}\n",
+        harness::var("INTEROP_MIT_KDC")?,
+    ))?;
+    let identities = ConfiguredIdentities::from_config(&config, &realm)?;
+    let exchange = Exchange::with_provider(
+        Arc::new(identities),
+        trust()?,
+        CertificatePolicy::from_config(&config, &realm)?,
+    );
+    let client = Principal::user(realm, harness::var("INTEROP_MIT_PKINIT_USER")?);
+    let options = InitCredsOptions::from_config(&config, SystemTime::now(), nonce(sequence)?)?;
+    let (session, _requests) = run(
+        &config,
+        &mut InitCreds::with_pkinit(client, exchange, options),
+    )
+    .await?;
+    Ok(session)
+}
+
+/// The `Pkinit` error behind a failed login, however the engine wrapped it.
+fn pkinit_error<'error>(error: &'error (dyn Error + 'static)) -> Option<&'error Pkinit> {
+    let ClientError::Pkinit(pkinit) = error.downcast_ref::<ClientError>()? else {
+        return None;
+    };
+    if let Pkinit::Provider(inner) = pkinit {
+        inner.downcast_ref::<Pkinit>()
+    } else {
+        Some(pkinit)
+    }
+}
+
+/// `pkinit_cert_match` chooses which of three identities signs the request.
+///
+/// The rule that names pkinituser's certificate logs in; the rule that names
+/// the certificate the KDC does not trust reaches the KDC and is refused there
+/// (the first loadable identity would have been that one); the rule that names
+/// the RSA certificate stops before any request (a software identity signs
+/// with EC keys only); and no rule with several identities is ambiguous.
+#[test]
+fn certificate_rules_pick_the_identity_the_kdc_accepts() -> Result<(), Box<dyn Error>> {
+    if !harness::require(
+        "certificate_rules_pick_the_identity_the_kdc_accepts",
+        &[MIT_KDC],
+    )? {
+        return Ok(());
+    }
+    runtime()?.block_on(async {
+        let accepted = matched_login(&["<SUBJECT>^CN=pkinituser$"], 8).await?;
+        assert_eq!(
+            accepted.client().components,
+            vec![harness::var("INTEROP_MIT_PKINIT_USER")?],
+            "the rule's identity authenticated"
+        );
+        let refused = matched_login(&["<SUBJECT>^O=RSKRB5 Test,CN=client$"], 9).await;
+        let refusal = refused.err().ok_or("the untrusted identity logged in")?;
+        assert!(
+            pkinit_error(refusal.as_ref()).is_none(),
+            "the KDC refused it, not the selection: {refusal}"
+        );
+        let rsa = matched_login(&["<SUBJECT>^CN=pkinitrsa$"], 10).await;
+        let unsupported = rsa.err().ok_or("the RSA identity signed")?;
+        assert!(
+            matches!(
+                pkinit_error(unsupported.as_ref()),
+                Some(Pkinit::Provider(_) | Pkinit::Identity { reason: _ })
+            ),
+            "{unsupported}"
+        );
+        let ambiguous = matched_login(&[], 11).await;
+        let failure = ambiguous.err().ok_or("several identities and no rule logged in")?;
+        assert!(
+            matches!(
+                pkinit_error(failure.as_ref()),
+                Some(Pkinit::AmbiguousCertificates { candidates: 3 })
+            ),
+            "{failure}"
         );
         Ok(())
     })
