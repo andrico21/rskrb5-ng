@@ -1,8 +1,10 @@
 //! MIT-shaped password transport for [`KdcProtocol::Auto`]: one discovery, a TCP pass, then a UDP pass.
 
 use super::{Config, Error, KdcProtocol, Tokio, events, password_discovery};
+use crate::discovery::locate::{EndpointRole, ServerLocator};
 
-/// Discover once, try every TCP endpoint, then every UDP endpoint.
+/// Discover once (the transport's registered locators first), try every TCP
+/// endpoint, then every UDP endpoint.
 ///
 /// UDP is tried only after the TCP pass failed definitely. A TCP failure that
 /// may have followed delivery ends the exchange. When the discovered list has
@@ -20,11 +22,22 @@ pub(super) async fn send(
     realm: &str,
     request: &[u8],
 ) -> Result<Vec<u8>, Error> {
-    let endpoints = transport
-        .within_budget(Box::pin(password_discovery::discover_auto(
-            transport, config, realm,
-        )))
-        .await?;
+    let located = ServerLocator::provided(
+        transport.registry(),
+        realm,
+        EndpointRole::Kpasswd,
+        KdcProtocol::Auto,
+    )?;
+    let endpoints = match located {
+        Some(endpoints) => endpoints,
+        None => {
+            transport
+                .within_budget(Box::pin(password_discovery::discover_auto(
+                    transport, config, realm,
+                )))
+                .await?
+        }
+    };
     events::located(realm, KdcProtocol::Auto, endpoints.len());
     let (tcp, udp): (Vec<_>, Vec<_>) = endpoints
         .into_iter()

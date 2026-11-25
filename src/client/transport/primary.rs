@@ -142,7 +142,12 @@ where
     let heard = watch.heard();
     let Ok(primaries) = transport
         .locator(config)
-        .locate(None, realm, EndpointRole::PrimaryKdc, protocol)
+        .locate(
+            transport.registry(),
+            realm,
+            EndpointRole::PrimaryKdc,
+            protocol,
+        )
         .await
     else {
         return Err(error);

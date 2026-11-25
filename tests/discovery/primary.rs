@@ -35,13 +35,13 @@ use crate::{TestError, closed_port::reserve_closed_tcp_port};
 const REALM: &str = "TEST.GOKRB5";
 
 /// A TCP KDC that answers every request with one KRB-ERROR and counts its connections.
-struct Stub {
+pub(super) struct Stub {
     /// Where it listens.
-    address: String,
+    pub address: String,
     /// Connections accepted so far.
-    contacts: Arc<AtomicUsize>,
+    pub contacts: Arc<AtomicUsize>,
     /// The serving task.
-    task: JoinHandle<()>,
+    pub task: JoinHandle<()>,
 }
 
 impl Drop for Stub {
@@ -77,7 +77,7 @@ fn krb_error(code: i32) -> Result<Vec<u8>, TestError> {
 }
 
 /// Start a KDC that answers with `code`.
-async fn kdc(code: i32) -> Result<Stub, TestError> {
+pub(super) async fn kdc(code: i32) -> Result<Stub, TestError> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = listener.local_addr()?.to_string();
     let reply = krb_error(code)?;

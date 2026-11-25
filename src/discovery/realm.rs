@@ -21,7 +21,7 @@ const MAX_HOST_BYTES: usize = 253;
 /// Maps host names to Kerberos realms.
 ///
 /// Built with [`Tokio::host_realms`].
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct HostRealmResolver<'config> {
     /// The transport whose DNS server is used.
     transport: Tokio,
@@ -100,7 +100,7 @@ impl<'config> HostRealmResolver<'config> {
         if is_numeric_address(&cleaned) {
             return Ok(None);
         }
-        if let Some(realm) = self.try_domains(&cleaned).await {
+        if let Some(realm) = self.try_domains(registry, &cleaned).await {
             return Ok(Some(realm));
         }
         Ok(cleaned
@@ -136,7 +136,7 @@ impl<'config> HostRealmResolver<'config> {
                 return Ok(Some(realm));
             }
             if !is_numeric_address(&cleaned)
-                && let Some(realm) = self.try_domains(&cleaned).await
+                && let Some(realm) = self.try_domains(registry, &cleaned).await
             {
                 return Ok(Some(realm));
             }
@@ -232,7 +232,7 @@ impl<'config> HostRealmResolver<'config> {
     /// # Cancel safety
     ///
     /// cancel-safe: DNS lookups change no state.
-    async fn try_domains(&self, host: &str) -> Option<String> {
+    async fn try_domains(&self, registry: Option<&Registry>, host: &str) -> Option<String> {
         let limit = self.config.libdefaults.realm_try_domains;
         if limit < 0_i32 {
             return None;
@@ -243,7 +243,7 @@ impl<'config> HostRealmResolver<'config> {
         while remaining >= 0_i32 && candidate.contains('.') {
             let realm = candidate.to_ascii_uppercase();
             if locator
-                .locate(None, &realm, EndpointRole::Kdc, KdcProtocol::Auto)
+                .locate(registry, &realm, EndpointRole::Kdc, KdcProtocol::Auto)
                 .await
                 .is_ok_and(|found| !found.is_empty())
             {

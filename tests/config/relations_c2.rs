@@ -121,9 +121,11 @@ mod tests {
         kcm_mach_service, "plan 2 WP-09", ["org.example.kcm", "-"];
     }
 
-    /// `plugin_base_dir` names the directory MIT loads plugin code from, which
-    /// this library never does (D1/D3): the value is kept inert, Compatible
-    /// mode reports the permanent decision and Strict mode refuses it.
+    /// `plugin_base_dir` is permanently out of scope (D1/D3).
+    ///
+    /// It names the directory MIT loads plugin code from, which this library
+    /// never does: the value is kept inert, Compatible mode reports the
+    /// permanent decision and Strict mode refuses it.
     #[test]
     fn plugin_base_dir() -> Result<(), Box<dyn Error>> {
         for value in ["/never-load", "%{LIBDIR}/krb5/plugins"] {

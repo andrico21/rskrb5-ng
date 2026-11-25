@@ -1910,7 +1910,7 @@ impl Tokio {
     #[must_use]
     /// Override the transport used for KDC exchanges.
     #[inline]
-    pub const fn with_transport(mut self, transport: TokioKdcTransport) -> Self {
+    pub fn with_transport(mut self, transport: TokioKdcTransport) -> Self {
         self.transport = transport;
         self
     }
@@ -2166,7 +2166,7 @@ impl Tokio {
     #[inline]
     pub fn cached_service_ticket(&self, service: Principal) -> Option<TgsRepSession> {
         crypto_policy::ready(self).ok()?;
-        let resolved = self.resolve_service_principal(service);
+        let resolved = self.resolve_service_principal(service).ok()?;
         let key = service_cache_key(&resolved);
         let mut ticket = self.service_tickets.get(&key)?.clone();
         crypto_policy::session(
@@ -2184,7 +2184,7 @@ impl Tokio {
     /// Remove a cached service ticket without dropping the TGT.
     #[inline]
     pub fn remove_cached_service_ticket(&mut self, service: Principal) -> Option<TgsRepSession> {
-        let resolved = self.resolve_service_principal(service);
+        let resolved = self.resolve_service_principal(service).ok()?;
         let key = service_cache_key(&resolved);
         self.service_tickets.remove(&key)
     }
@@ -2529,7 +2529,7 @@ impl Tokio {
         F: FnMut() -> SystemTime,
     {
         crypto_policy::ready(self)?;
-        let service = self.resolve_service_principal(requested);
+        let service = self.resolve_service_principal(requested)?;
         let key = service_cache_key(&service);
         if let Some(mut ticket) = self.service_tickets.get(&key).cloned() {
             crypto_policy::session(
@@ -3009,14 +3009,20 @@ impl Tokio {
         crypto_policy::ready(self)?;
         TgsReq::from_libdefaults(SystemTime::now(), random_nonce()?, &self.config.libdefaults)
     }
-    /// Fill in an empty service realm from the domain-realm mapping, falling back
-    /// to the client realm.
-    fn resolve_service_principal(&self, mut service: Principal) -> Principal {
+    /// Fill in an empty service realm: the transport's registered host-realm
+    /// mappers, then the domain-realm mapping and `default_realm`, falling back
+    /// to the client realm. An explicit realm is kept.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Locate`] for a registered mapper that fails or answers
+    /// malformed data.
+    fn resolve_service_principal(&self, mut service: Principal) -> Result<Principal, Error> {
         if service.realm.is_empty() {
-            service.realm =
-                service_realm(&self.config, &service).unwrap_or_else(|| self.client.realm.clone());
+            service.realm = service_realm(&self.transport, &self.config, &service)?
+                .unwrap_or_else(|| self.client.realm.clone());
         }
-        service
+        Ok(service)
     }
 
     /// All cached TGT and service-ticket sessions as ccache credentials.
@@ -5859,14 +5865,27 @@ fn tgt_realm(session: &AsRepSession) -> Option<String> {
     }
 }
 
-/// The realm mapped to the service host (its last component), if any.
+/// The realm mapped to the service host (its last component), if any: the
+/// registered host-realm mappers of `transport`, then `[domain_realm]` and
+/// `default_realm`.
+///
+/// # Errors
+///
+/// Returns [`Error::Locate`] for a registered mapper that fails or answers
+/// malformed data.
 #[cfg(feature = "tokio")]
-fn service_realm(config: &Config, service: &Principal) -> Option<String> {
-    service
-        .components
-        .last()
-        .and_then(|host| config.realm_for_host(host))
-        .map(str::to_owned)
+fn service_realm(
+    transport: &TokioKdcTransport,
+    config: &Config,
+    service: &Principal,
+) -> Result<Option<String>, Error> {
+    let Some(host) = service.components.last() else {
+        return Ok(None);
+    };
+    let mapped = transport
+        .host_realms(config)
+        .host_realm(transport.registry(), host)?;
+    Ok(mapped.or_else(|| config.realm_for_host(host).map(str::to_owned)))
 }
 
 /// Convert a string to an ASN.1 Kerberos string.

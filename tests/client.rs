@@ -96,6 +96,9 @@ mod owner_accessors;
 mod password_change;
 #[path = "client/preauth_errors.rs"]
 mod preauth_errors;
+#[cfg(feature = "tokio")]
+#[path = "client/registry_routes.rs"]
+mod registry_routes;
 #[path = "client/reply_fixture.rs"]
 mod reply_fixture;
 #[path = "client/review.rs"]
