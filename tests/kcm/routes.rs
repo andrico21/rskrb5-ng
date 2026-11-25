@@ -242,15 +242,7 @@ mod client {
         assert!(by_config.is_some() && by_default.is_some());
         let expected = mit_cache()?;
         let store = transport::store(daemon.path())?;
-        let saves: [(&str, &dyn Fn() -> Result<(), Client>); 3] = [
-            ("routes-saved", &|| {
-                client.save_ccache_name("KCM:routes-saved")
-            }),
-            ("routes-fresh", &|| client.save_default_ccache_name()),
-            ("routes-fresh", &|| client.save_default_ccache()),
-        ];
-        for (saved, save) in saves {
-            save()?;
+        let check = |saved: &str| -> Result<(), TestError> {
             let cache = store.resolve(saved)?;
             assert_eq!(
                 cache.load()?.default_principal(),
@@ -258,7 +250,14 @@ mod client {
                 "{saved}"
             );
             cache.destroy()?;
-        }
+            Ok(())
+        };
+        client.save_ccache_name("KCM:routes-saved")?;
+        check("routes-saved")?;
+        client.save_default_ccache_name()?;
+        check("routes-fresh")?;
+        client.save_default_ccache()?;
+        check("routes-fresh")?;
         Ok(())
     }
 
