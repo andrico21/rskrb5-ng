@@ -2,13 +2,30 @@
 //!
 //! It answers the operations the store uses with the status codes of
 //! Heimdal and MIT. The macOS tests serve it over Mach RPC under a test
-//! service name; the portable tests call it directly.
+//! service name, so that the main crate's `KCM:` routes reach it through the
+//! Mach transport; a portable test checks it against the main crate's KCM
+//! codec.
 
 use std::sync::{Mutex, PoisonError};
 
-use rskrb5_ng::{ccache::Credential, error::Ccache as CacheError};
+use rskrb5_ng::{
+    ccache::{
+        Credential,
+        kcm::{seam::KcmTransport, wire::UUID_LENGTH},
+    },
+    error::Kcm,
+};
 
-use crate::{Secret, kcm_store::KcmTransport, kcm_wire::UUID_LEN, marshal};
+use crate::{Secret, marshal};
+
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+mod tests;
 
 /// `KRB5_FCC_NOFILE`.
 const NO_CACHE: i32 = -1_765_328_189;
@@ -25,11 +42,11 @@ struct Entry {
     /// Its name.
     name: String,
     /// Its UUID.
-    uuid: [u8; UUID_LEN],
+    uuid: [u8; UUID_LENGTH],
     /// The encoded default principal, once initialized.
     principal: Vec<u8>,
     /// UUID, encoding and decoded value of each credential.
-    credentials: Vec<([u8; UUID_LEN], Secret, Credential)>,
+    credentials: Vec<([u8; UUID_LENGTH], Secret, Credential)>,
 }
 
 /// The server state.
@@ -45,9 +62,9 @@ struct State {
 
 impl State {
     /// A fresh UUID.
-    fn uuid(&mut self) -> [u8; UUID_LEN] {
+    const fn uuid(&mut self) -> [u8; UUID_LENGTH] {
         self.next = self.next.wrapping_add(1);
-        [self.next; UUID_LEN]
+        [self.next; UUID_LENGTH]
     }
 
     /// The cache `name`.
@@ -247,7 +264,7 @@ impl Fixture {
 }
 
 impl KcmTransport for Fixture {
-    fn call(&self, request: &[u8]) -> Result<Vec<u8>, CacheError> {
+    fn call(&self, request: &[u8]) -> Result<Vec<u8>, Kcm> {
         Ok(self.reply(request).to_vec())
     }
 }

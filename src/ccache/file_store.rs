@@ -107,6 +107,11 @@ pub fn resolve_configured(
 }
 
 /// [`resolve`] with the settings a built-in `KCM:` name reaches its daemon by.
+///
+/// # Errors
+///
+/// The errors of [`resolve`], and those of [`kcm::Store::from_libdefaults`] for
+/// a `KCM:` name given `settings`.
 fn resolve_with(
     name: &str,
     version: CacheVersion,
@@ -181,6 +186,11 @@ pub fn collection_configured(
 }
 
 /// [`collection`] with the settings a built-in `KCM:` name reaches its daemon by.
+///
+/// # Errors
+///
+/// The errors of [`collection`], and those of [`kcm::Store::from_libdefaults`]
+/// for a `KCM:` name given `settings`.
 fn collection_with(
     name: &str,
     version: CacheVersion,

@@ -45,8 +45,6 @@ pub enum Platform {
         /// The length.
         length: usize,
     },
-    /// Mach RPC to KCM is disabled (`kcm_mach_service = -`).
-    MachDisabled,
     /// No KCM service is registered under the configured Mach name.
     NoServer {
         /// The `bootstrap_look_up` result.
@@ -102,7 +100,6 @@ impl fmt::Display for Platform {
                     "{cache_type}: message of {length} bytes exceeds the bound"
                 )
             }
-            Self::MachDisabled => f.write_str("KCM: Mach RPC is disabled by kcm_mach_service"),
             Self::NoServer { code } => write!(
                 f,
                 "KCM: no Mach service is registered under the configured name ({code})"
