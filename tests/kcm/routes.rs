@@ -214,12 +214,17 @@ mod client {
             return Ok(());
         }
         // Given a daemon on the configured socket holding the default cache
-        // and a named one.
+        // and a named one, and a configuration for the same socket whose
+        // default cache does not exist yet.
         let (daemon, config) = seeded(&["routes-default", "routes-named"])?;
+        let fresh = Config::parse(&format!(
+            "[libdefaults]\n kcm_socket = {}\n default_ccache_name = KCM:routes-fresh\n",
+            daemon.path().display()
+        ))?;
         // When the client is built from the named, the configured default and
         // the default cache.
         let named = route(Tokio::from_ccache_name(
-            config.clone(),
+            fresh,
             KdcProtocol::Tcp,
             "KCM:routes-named",
         ))?;
@@ -235,17 +240,24 @@ mod client {
             return Ok(());
         };
         assert!(by_config.is_some() && by_default.is_some());
-        client.save_ccache_name("KCM:routes-saved")?;
-        client.save_default_ccache_name()?;
-        client.save_default_ccache()?;
         let expected = mit_cache()?;
         let store = transport::store(daemon.path())?;
-        for saved in ["routes-saved", "routes-default"] {
+        let saves: [(&str, &dyn Fn() -> Result<(), Client>); 3] = [
+            ("routes-saved", &|| {
+                client.save_ccache_name("KCM:routes-saved")
+            }),
+            ("routes-fresh", &|| client.save_default_ccache_name()),
+            ("routes-fresh", &|| client.save_default_ccache()),
+        ];
+        for (saved, save) in saves {
+            save()?;
+            let cache = store.resolve(saved)?;
             assert_eq!(
-                store.resolve(saved)?.load()?.default_principal(),
+                cache.load()?.default_principal(),
                 expected.default_principal(),
                 "{saved}"
             );
+            cache.destroy()?;
         }
         Ok(())
     }
