@@ -17,9 +17,7 @@ mod tests {
 
     /// Libdefaults: safe assignment and optional genuinely stronger assignment.
     /// None means no valid value tightens current behavior; table rationale explains why.
-    const LIB: [(&str, &str, Option<&str>); 1] = [
-        ("plugin_base_dir", "%{LIBDIR}/unloaded", None),
-    ];
+    const LIB: [(&str, &str, Option<&str>); 1] = [("plugin_base_dir", "%{LIBDIR}/unloaded", None)];
 
     /// Realm values are restrictions on absent mechanisms, except encrypted timestamp.
     const REALM: [(&str, &str, Option<&str>); 5] = [
