@@ -50,6 +50,22 @@ pub enum Any {
     #[cfg(feature = "http")]
     #[error("HTTP Negotiate error: {0}")]
     Http(#[from] Http),
+    /// An HTTP exchange failed.
+    #[cfg(feature = "http")]
+    #[error("HTTP exchange error: {0}")]
+    HttpExchange(#[from] HttpExchange),
+    /// The HTTP Negotiate client failed.
+    #[cfg(feature = "http")]
+    #[error("HTTP client error: {0}")]
+    HttpClient(#[from] HttpClient),
+    /// The HTTP session manager refused a session.
+    #[cfg(feature = "http")]
+    #[error("HTTP session error: {0}")]
+    HttpSession(#[from] HttpSession),
+    /// The cookie jar refused a cookie.
+    #[cfg(feature = "http")]
+    #[error("HTTP cookie error: {0}")]
+    HttpCookie(#[from] HttpCookie),
     /// AS exchange client processing failed.
     #[cfg(feature = "messages")]
     #[error("client error: {0}")]

@@ -27,6 +27,8 @@ mod sources;
     reason = "test code is not rendered API documentation"
 )]
 mod tests {
+    #[cfg(feature = "http")]
+    use core::convert::identity;
     use core::error::Error as _;
 
     #[cfg(feature = "http")]
@@ -226,5 +228,29 @@ mod tests {
         http_when_authorization_missing,
         error::Http,
         http::authorization_header(&Request::new(()))
+    );
+    #[cfg(feature = "http")]
+    propagates_domain!(
+        http_client_when_location_is_empty,
+        error::HttpClient,
+        http::origin::resolve_location(&http_types::Uri::from_static("https://example.com/"), "")
+    );
+    #[cfg(feature = "http")]
+    propagates_domain!(
+        http_session_when_value_is_empty,
+        error::HttpSession,
+        http::sessions::SessionManager::new(gss::TransferKey::new([0; 32])).resume("")
+    );
+    #[cfg(feature = "http")]
+    propagates_domain!(
+        http_exchange_when_no_anchor_is_configured,
+        error::HttpExchange,
+        identity(Err::<(), _>(error::HttpExchange::NoAnchors))
+    );
+    #[cfg(feature = "http")]
+    propagates_domain!(
+        http_cookie_when_url_is_not_http,
+        error::HttpCookie,
+        identity(Err::<(), _>(error::HttpCookie::InvalidUrl))
     );
 }

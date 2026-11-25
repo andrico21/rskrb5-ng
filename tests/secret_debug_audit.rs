@@ -311,6 +311,12 @@ mod tests {
                     || cfg!(feature = "tower"))
                 && (!identity.contains("NegotiateHttp") || cfg!(feature = "tokio"));
         }
+        if identity.starts_with("src/http/agent") {
+            return cfg!(feature = "http") && cfg!(feature = "tokio");
+        }
+        if identity.starts_with("src/http/") || identity.starts_with("src/error/http_client.rs") {
+            return cfg!(feature = "http");
+        }
         if identity.starts_with("src/kadm5") || identity == "src/error/kadm5.rs::Kadm5" {
             return cfg!(feature = "spnego") && cfg!(feature = "tokio");
         }
@@ -370,6 +376,7 @@ mod tests {
         } else if matches!(
             file,
             "src/error/gss.rs"
+                | "src/error/http_client.rs"
                 | "src/error/iakerb.rs"
                 | "src/error/kadm5.rs"
                 | "src/error/auth_message.rs"
@@ -1232,6 +1239,42 @@ mod tests {
             "BTreeMap::remove transfers the owned session to the caller without destroying its credential storage; the returned session retains its erasure contract.",
         ),
         (
+            "src/http.rs::NegotiateLayer::with_session_manager",
+            "Replaces the held optional Arc of the session manager as a whole; the replaced Arc drops and the manager's TransferKey is erased by its Zeroizing owner when the last Arc goes, the contract `http_client_redacts_credentials` observes through the manager's Debug and `replacement_erases_old_key_allocation` for key bytes.",
+        ),
+        (
+            "src/http.rs::NegotiateService::with_session_manager",
+            "Replaces the manager held in the private layer settings as a whole; the replaced Arc drops and the TransferKey it owns is erased by its Zeroizing owner (`http_client_redacts_credentials`, `replacement_erases_old_key_allocation`).",
+        ),
+        (
+            "src/http/agent.rs::NegotiateHttpClient::with_options",
+            "Replaces the initiator options as a whole; the replaced options drop and their subkey is erased by its EncryptionKey owner's drop, the erasure `service_key_replacements_erase_old_allocations` observes for option subkey replacement.",
+        ),
+        (
+            "src/http/agent.rs::NegotiateHttpClient::get",
+            "Delegates to send; no credential storage is replaced here. The Kerberos client and the exchange are only called, and every token built in the hop is dropped with its InitiatorContext, whose keys erase on drop (`client_cache_clear_erases_live_key_owners`).",
+        ),
+        (
+            "src/http/agent.rs::NegotiateHttpClient::post",
+            "Delegates to send; no credential storage is replaced here (`client_cache_clear_erases_live_key_owners`).",
+        ),
+        (
+            "src/http/agent.rs::NegotiateHttpClient::send",
+            "Drives the hop and the redirect chain; the Kerberos client and the exchange are only called through the mutable receiver, never replaced, and every InitiatorContext built for a hop is dropped with its keys erased (`client_cache_clear_erases_live_key_owners`).",
+        ),
+        (
+            "src/http/agent.rs::NegotiateHttpClient::hop",
+            "Calls the Kerberos client for a token and the exchange for a response; neither field is replaced, and the context of a superseded round is dropped with its keys erased (`client_cache_clear_erases_live_key_owners`).",
+        ),
+        (
+            "src/http/agent.rs::NegotiateHttpClient::context_for",
+            "Calls the Kerberos client to build one InitiatorContext and clones the initiator options for it; no stored credential is replaced, and the clone's subkey is erased by its EncryptionKey owner's drop (`service_key_replacements_erase_old_allocations`).",
+        ),
+        (
+            "src/http/agent.rs::NegotiateHttpClient::round",
+            "Calls the exchange with one request; the exchange is not replaced, and the request's Authorization value is a sensitive header owned by the request (`http_client_redacts_credentials`).",
+        ),
+        (
             "src/http.rs::NegotiateService::inner_mut",
             "Caller-owned generic service; mutation and erasure remain the inner service's contract, not first-party credential storage.",
         ),
@@ -1655,6 +1698,10 @@ mod tests {
 
     /// Owners exercised with populated credential fields by this integration target.
     const COVERED: &[&str] = &[
+        "src/http/agent.rs::ClientResponse",
+        "src/http/agent.rs::NegotiateHttpClient",
+        "src/http/sessions.rs::SessionManager",
+        "src/error/http_client.rs::HttpClient",
         "src/http.rs::NegotiateService",
         "src/http.rs::NegotiateLayer",
         "src/keytab.rs::EncryptionKey",

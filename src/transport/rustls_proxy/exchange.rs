@@ -35,7 +35,14 @@ const READ_CHUNK: usize = 8192;
 
 /// The TLS stream seen through hyper's I/O traits, without `unsafe`: a read goes
 /// through an initialised stack buffer and is copied into hyper's cursor.
-struct Io(TlsStream<TcpStream>);
+pub(super) struct Io(TlsStream<TcpStream>);
+
+impl Io {
+    /// The TLS stream `tls` as hyper I/O.
+    pub(super) const fn new(tls: TlsStream<TcpStream>) -> Self {
+        Self(tls)
+    }
+}
 
 impl Read for Io {
     fn poll_read(
@@ -76,7 +83,14 @@ impl Write for Io {
 }
 
 /// The request body: the KDC-PROXY-MESSAGE as one frame.
-struct Payload(Option<Bytes>);
+pub(super) struct Payload(Option<Bytes>);
+
+impl Payload {
+    /// A body of the one frame `bytes`.
+    pub(super) const fn new(bytes: Bytes) -> Self {
+        Self(Some(bytes))
+    }
+}
 
 impl Body for Payload {
     type Data = Bytes;
@@ -169,11 +183,11 @@ pub(super) async fn post(
         .header(header::CACHE_CONTROL, "no-cache")
         .header(header::PRAGMA, "no-cache")
         .header(header::CONNECTION, "close")
-        .body(Payload(Some(Bytes::copy_from_slice(request.body))))
+        .body(Payload::new(Bytes::copy_from_slice(request.body)))
         .map_err(|_request| Error::InvalidUrl {
             reason: "the path is not a valid request target",
         })?;
-    let (mut sender, connection) = http1::handshake(Io(tls))
+    let (mut sender, connection) = http1::handshake(Io::new(tls))
         .await
         .map_err(|error| Error::NotDelivered(Box::new(error)))?;
     let limit = request.max_response;

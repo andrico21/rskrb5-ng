@@ -5,11 +5,20 @@
 #
 # Pins:
 # - base: the same digest-pinned Debian 13 "trixie" slim index as
-#   scripts/interop/mit/Dockerfile; packages from its archive, verified by
-#   the archive keys in the base image.
-# - sssd-kcm: exactly SSSD_KCM_VERSION below (Debian trixie, SSSD 2.10.1). A
-#   Debian update that removes this version fails the build; bump it then.
-#   krb5-user (Debian MIT 1.21) gives the server-side klist of the self-check.
+#   scripts/interop/mit/Dockerfile.
+# - Every package: an immutable snapshot of the Debian archive
+#   (snapshot.debian.org, KCM_SNAPSHOT, the date of the base image), read over
+#   http like the base image's own sources, exactly as scripts/interop/samba/
+#   Dockerfile does it; apt still verifies the signed Release file with the
+#   archive keys of the pinned base (`Check-Valid-Until` is off because a
+#   snapshot's Release file expires). sssd-kcm is named at the exact version
+#   SSSD_KCM_VERSION that snapshot carries (SSSD 2.10.1), and the build fails
+#   unless `dpkg-query` reports exactly that version. A Debian update that
+#   replaces the package in the live archive (it did once: 2.10.1-2+b1 became
+#   2.10.1-2+deb13u1 and every fresh build broke) cannot break the build any
+#   more. To move the pin, change both ARGs together (the snapshot of a newer
+#   base image date, the version it carries). krb5-user (Debian MIT 1.21) gives
+#   the server-side klist of the self-check.
 #
 # Secrets: none in any layer. The credential caches live in the tmpfs
 # /var/lib/sss/secrets (fixture.sh). sssd.conf is root-owned mode 0600, as
@@ -18,11 +27,23 @@
 
 ARG BASE_IMAGE=docker.io/library/debian:trixie-20261104-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
 
+ARG KCM_SNAPSHOT=20261104T000000Z
+ARG SSSD_KCM_VERSION=2.10.1-2+b1
+
 FROM ${BASE_IMAGE}
-ARG SSSD_KCM_VERSION=2.10.1-2+deb13u1
-RUN apt-get update \
+ARG KCM_SNAPSHOT
+ARG SSSD_KCM_VERSION
+ENV DEBIAN_FRONTEND=noninteractive
+RUN rm -f /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list \
+    && printf '%s\n' 'Types: deb' \
+        "URIs: http://snapshot.debian.org/archive/debian/${KCM_SNAPSHOT}/" \
+        'Suites: trixie' 'Components: main' \
+        'Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg' \
+        >/etc/apt/sources.list.d/snapshot.sources \
+    && apt-get -o Acquire::Check-Valid-Until=false update \
     && apt-get install -y --no-install-recommends "sssd-kcm=${SSSD_KCM_VERSION}" krb5-user tini \
     && rm -rf /var/lib/apt/lists/* \
+    && [ "$(dpkg-query -W -f '${Version}' sssd-kcm)" = "${SSSD_KCM_VERSION}" ] \
     && test -x /usr/libexec/sssd/sssd_kcm \
     && rm -f /etc/krb5.conf.d/kcm_default_ccache
 COPY sssd.conf /etc/sssd/sssd.conf

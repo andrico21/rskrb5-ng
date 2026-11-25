@@ -163,6 +163,16 @@ criteria = "safe-to-deploy"
 version = "0.10.2"
 criteria = "safe-to-deploy"
 
+[[exemptions.cookie]]
+version = "0.18.3"
+criteria = "safe-to-deploy"
+notes = "http-client leaf (plan 2 todo 26): the cookie parser and Cookie/Set-Cookie value types under cookie_store; docs/dependency-admission.md#cookie_store"
+
+[[exemptions.cookie_store]]
+version = "0.22.1"
+criteria = "safe-to-deploy"
+notes = "http-client leaf (plan 2 todo 26): the cookie jar of the http-client leaf; docs/dependency-admission.md#cookie_store"
+
 [[exemptions.core-foundation]]
 version = "0.9.4"
 criteria = "safe-to-deploy"
@@ -247,6 +257,11 @@ version = "0.8.0"
 criteria = "safe-to-deploy"
 notes = "pkinit leaf (plan 2 todo 8): docs/dependency-admission.md#der"
 
+[[exemptions.deranged]]
+version = "0.5.9"
+criteria = "safe-to-deploy"
+notes = "http-client leaf (plan 2 todo 26): range-checked integers of time; docs/dependency-admission.md#cookie_store"
+
 [[exemptions.des]]
 version = "0.9.0"
 criteria = "safe-to-deploy"
@@ -262,6 +277,11 @@ criteria = "safe-to-deploy"
 [[exemptions.displaydoc]]
 version = "0.2.7"
 criteria = "safe-to-deploy"
+
+[[exemptions.document-features]]
+version = "0.2.12"
+criteria = "safe-to-deploy"
+notes = "http-client leaf (plan 2 todo 26): doc-comment proc macro of cookie_store, compile time only; docs/dependency-admission.md#cookie_store"
 
 [[exemptions.ecdsa]]
 version = "0.17.0"
@@ -536,6 +556,11 @@ notes = "owner exception 2026-11-18 (plan 2 D10, todo 11): rustix is the one non
 version = "0.8.3"
 criteria = "safe-to-deploy"
 
+[[exemptions.litrs]]
+version = "1.0.0"
+criteria = "safe-to-deploy"
+notes = "http-client leaf (plan 2 todo 26): literal parser of document-features, compile time only; docs/dependency-admission.md#cookie_store"
+
 [[exemptions.lock_api]]
 version = "0.4.14"
 criteria = "safe-to-deploy"
@@ -587,6 +612,11 @@ criteria = "safe-to-deploy"
 [[exemptions.num-bigint]]
 version = "0.4.8"
 criteria = "safe-to-deploy"
+
+[[exemptions.num-conv]]
+version = "0.2.2"
+criteria = "safe-to-deploy"
+notes = "http-client leaf (plan 2 todo 26): numeric conversions of time; docs/dependency-admission.md#cookie_store"
 
 [[exemptions.num-integer]]
 version = "0.1.47"
@@ -690,6 +720,11 @@ criteria = "safe-to-deploy"
 version = "0.1.6"
 criteria = "safe-to-deploy"
 
+[[exemptions.powerfmt]]
+version = "0.2.1"
+criteria = "safe-to-deploy"
+notes = "http-client leaf (plan 2 todo 26): formatting helper of deranged and time; docs/dependency-admission.md#cookie_store"
+
 [[exemptions.prefix-trie]]
 version = "0.8.4"
 criteria = "safe-to-deploy"
@@ -717,6 +752,16 @@ criteria = "safe-to-deploy"
 [[exemptions.proptest]]
 version = "1.12.0"
 criteria = "safe-to-run"
+
+[[exemptions.psl-types]]
+version = "2.0.11"
+criteria = "safe-to-deploy"
+notes = "http-client leaf (plan 2 todo 26): public-suffix types of publicsuffix; docs/dependency-admission.md#cookie_store"
+
+[[exemptions.publicsuffix]]
+version = "2.3.0"
+criteria = "safe-to-deploy"
+notes = "http-client leaf (plan 2 todo 26): public-suffix list parser of cookie_store; docs/dependency-admission.md#cookie_store"
 
 [[exemptions.quick-error]]
 version = "1.2.3"
@@ -990,6 +1035,21 @@ criteria = "safe-to-deploy"
 version = "2.0.21"
 criteria = "safe-to-deploy"
 
+[[exemptions.time]]
+version = "0.3.55"
+criteria = "safe-to-deploy"
+notes = "http-client leaf (plan 2 todo 26): date and time of cookie and cookie_store; docs/dependency-admission.md#cookie_store"
+
+[[exemptions.time-core]]
+version = "0.1.9"
+criteria = "safe-to-deploy"
+notes = "http-client leaf (plan 2 todo 26): constants of time; docs/dependency-admission.md#cookie_store"
+
+[[exemptions.time-macros]]
+version = "0.2.32"
+criteria = "safe-to-deploy"
+notes = "http-client leaf (plan 2 todo 26): compile-time macros of time; docs/dependency-admission.md#cookie_store"
+
 [[exemptions.tinystr]]
 version = "0.8.5"
 criteria = "safe-to-deploy"
@@ -1093,6 +1153,11 @@ criteria = "safe-to-deploy"
 [[exemptions.uuid]]
 version = "1.29.0"
 criteria = "safe-to-deploy"
+
+[[exemptions.version_check]]
+version = "0.9.5"
+criteria = "safe-to-deploy"
+notes = "http-client leaf (plan 2 todo 26): build script helper of cookie; docs/dependency-admission.md#cookie_store"
 
 [[exemptions.wait-timeout]]
 version = "0.2.1"

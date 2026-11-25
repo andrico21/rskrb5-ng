@@ -7,7 +7,10 @@ use std::time::SystemTime;
 use std::{env, io, path::PathBuf, time::SystemTimeError};
 
 #[cfg(feature = "http")]
-use http_types::header::{InvalidHeaderValue, ToStrError};
+use http_types::{
+    Response as HttpResponse,
+    header::{InvalidHeaderValue, ToStrError},
+};
 #[cfg(feature = "messages")]
 use rasn::types::Integer;
 
@@ -17,6 +20,8 @@ use crate::client::KdcError;
 use crate::client::transport::KdcProtocol;
 #[cfg(feature = "spnego")]
 use crate::gss::negoex::{AuthScheme, MessageType, ProviderFailure};
+#[cfg(feature = "http")]
+use crate::http::ClientNegotiateResponse;
 #[cfg(feature = "spnego")]
 use crate::spnego::oid::ObjectIdentifier;
 use crate::{
@@ -29,6 +34,7 @@ include!("error/auth_message.rs");
 include!("error/auth_data.rs");
 include!("error/der.rs");
 include!("error/gss.rs");
+include!("error/http_client.rs");
 include!("error/iakerb.rs");
 include!("error/kadm5.rs");
 include!("error/negoex.rs");

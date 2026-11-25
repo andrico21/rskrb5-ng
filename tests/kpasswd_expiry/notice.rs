@@ -111,7 +111,7 @@ fn an_account_expiry_alone_is_not_heard_as_a_password_expiry() -> Result<(), Tes
         last_req_account: Some(at(2_100_000_000)?),
         ..ExpiryFields::default()
     })?;
-    assert_eq!(heard, []);
+    assert_eq!(heard, Vec::<SystemTime>::new());
     Ok(())
 }
 

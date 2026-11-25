@@ -4,6 +4,13 @@
 //! middleware is available with the `tower` feature and validates service-side
 //! `Authorization: Negotiate ...` headers before forwarding requests.
 
+#[cfg(feature = "tokio")]
+pub mod agent;
+pub mod cookies;
+pub mod origin;
+pub mod sessions;
+pub mod wire;
+
 #[cfg(feature = "tower")]
 use alloc::{borrow::Cow, sync::Arc};
 #[cfg(feature = "tower")]
@@ -16,6 +23,8 @@ use core::{mem, pin::Pin};
 #[cfg(feature = "tower")]
 use std::{sync::Mutex, time::SystemTime};
 
+#[cfg(feature = "tower")]
+use http_types::header::SET_COOKIE;
 use http_types::{
     Request, Response, StatusCode,
     header::{AUTHORIZATION, HeaderValue, WWW_AUTHENTICATE},
@@ -1106,6 +1115,8 @@ pub struct NegotiateLayer<'keytab> {
     validator: ValidatorOptions,
     /// How services answer accepted and rejected requests.
     response: NegotiateResponseOptions,
+    /// The session manager that continues an authenticated exchange.
+    session: Option<Arc<sessions::SessionManager>>,
 }
 
 #[cfg(feature = "tower")]
@@ -1116,11 +1127,13 @@ impl fmt::Debug for NegotiateLayer<'_> {
             keytab,
             validator,
             response,
+            session,
         } = self;
         f.debug_struct("NegotiateLayer")
             .field("keytab_entries", &keytab.entries().len())
             .field("validator", validator)
             .field("response", response)
+            .field("session_manager", &session.is_some())
             .finish()
     }
 }
@@ -1150,7 +1163,20 @@ impl<'keytab> NegotiateLayer<'keytab> {
             keytab: Cow::Borrowed(keytab),
             validator: ValidatorOptions::default(),
             response: NegotiateResponseOptions::default(),
+            session: None,
         }
+    }
+
+    /// Continue an authenticated exchange through `manager`'s session cookie:
+    /// a request that carries a valid session skips the Negotiate round, and
+    /// a request that Negotiate authenticates gets a `Set-Cookie` for a new
+    /// session. A request with an invalid session cookie is treated as having
+    /// none.
+    #[must_use]
+    #[inline]
+    pub fn with_session_manager(mut self, manager: Arc<sessions::SessionManager>) -> Self {
+        self.session = Some(manager);
+        self
     }
 
     /// Override the validation clock. Useful for deterministic tests.
@@ -1285,6 +1311,7 @@ impl NegotiateLayer<'static> {
             keytab: Cow::Owned(keytab),
             validator: ValidatorOptions::default(),
             response: NegotiateResponseOptions::default(),
+            session: None,
         }
     }
 
@@ -1465,6 +1492,15 @@ impl<'keytab, S> NegotiateService<'keytab, S> {
     #[inline]
     pub fn new(inner: S, keytab: &'keytab Keytab) -> Self {
         NegotiateLayer::new(keytab).layer(inner)
+    }
+
+    /// Continue an authenticated exchange through `manager`'s session cookie,
+    /// as [`NegotiateLayer::with_session_manager`] does.
+    #[must_use]
+    #[inline]
+    pub fn with_session_manager(mut self, manager: Arc<sessions::SessionManager>) -> Self {
+        self.settings.session = Some(manager);
+        self
     }
 
     /// Return a shared reference to the wrapped service.
@@ -1706,6 +1742,17 @@ where
 
     #[inline]
     fn call(&mut self, mut req: Request<ReqBody>) -> Self::Future {
+        if let Some(manager) = &self.settings.session
+            && matches!(manager.attach(&mut req), Ok(Some(_identity)))
+        {
+            return NegotiateFuture {
+                inner: Some(Box::pin(self.inner.call(req))),
+                ready: None,
+                header: None,
+                cookie: None,
+                harden: self.response.harden_inner,
+            };
+        }
         let Ok(mut validator) = self.validator.lock() else {
             let mut response = Response::new(ResBody::default());
             *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
@@ -1760,10 +1807,17 @@ where
             None
         };
 
+        let cookie = self.settings.session.as_ref().and_then(|manager| {
+            manager
+                .issue(accepted.ap_req().client())
+                .ok()
+                .map(|(_identity, set_cookie)| set_cookie)
+        });
         NegotiateFuture {
             inner: Some(Box::pin(self.inner.call(req))),
             ready: None,
             header: ap_rep_header.map(zeroize::Zeroizing::new),
+            cookie,
             harden: self.response.harden_inner,
         }
     }
@@ -1778,6 +1832,8 @@ pub struct NegotiateFuture<F, B, E> {
     ready: Option<Box<CoreResult<Response<B>, TowerError<E>>>>,
     /// Credential header to attach after inner completion.
     header: Option<zeroize::Zeroizing<String>>,
+    /// The `Set-Cookie` of a session issued for this request.
+    cookie: Option<HeaderValue>,
     /// Whether the inner response receives secure defaults.
     harden: bool,
 }
@@ -1790,12 +1846,14 @@ impl<F, B, E> fmt::Debug for NegotiateFuture<F, B, E> {
             inner,
             ready,
             header,
+            cookie,
             harden,
         } = self;
         f.debug_struct("NegotiateFuture")
             .field("pending", &inner.is_some())
             .field("ready", &ready.is_some())
             .field("header_len", &header.as_ref().map(|value| value.len()))
+            .field("session_cookie", &cookie.is_some())
             .field("harden", harden)
             .finish()
     }
@@ -1809,6 +1867,7 @@ impl<F, B, E> NegotiateFuture<F, B, E> {
             inner: None,
             ready: Some(Box::new(result)),
             header: None,
+            cookie: None,
             harden: false,
         }
     }
@@ -1840,6 +1899,9 @@ where
                 .map_err(TowerError::Http)?;
             value.set_sensitive(true);
             drop(response.headers_mut().insert(WWW_AUTHENTICATE, value));
+        }
+        if let Some(cookie) = state.cookie.take() {
+            let _added = response.headers_mut().append(SET_COOKIE, cookie);
         }
         if state.harden {
             harden_response(&mut response);

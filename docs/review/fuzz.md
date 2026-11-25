@@ -49,11 +49,15 @@ the chosen entry point, so one target covers a family of related decoders.
 | `auth_message` | a selector byte, then a KRB-PRIV, KRB-SAFE, KRB-CRED, a DER element or an authorization-data element | `messages::AuthContext::rd_priv`, `rd_safe` and `rd_cred` (encrypted, and unencrypted over a vouched channel) under a fixed key, clock and sequence checking (an accepted message is refused the second time), the public `asn1` length, element, application-tag and structure readers under a size budget, and the `authdata` AD-KDC-ISSUED and AD-AND-OR decoders |
 | `name_parse` | names and values as text | `Principal::parse_user`, `Principal::parse_service`, `CacheName::parse`, `keytab::Name::parse`, `KdcEndpoint::configured`, `Tokio::with_dns_server`, `config::parse_duration`, `config::parse_boolean`, `crypto::s2kparams_to_iterations` |
 | `discovery_uri` | the data DNS hands to server discovery, one selector byte then bytes or text | `discovery::uri::parse` (a `krb5srv:flags:transport:host` URI record target) and `host_port` on an accepted target, `split_rdata` (URI record data), `realm_from_txt` (the first string of a TXT realm record) and `host_port` on arbitrary text; the target text, the host and the realm stay within their bounds |
+| `http_location` | a base URI, a newline and a `Location` value | `http::origin::resolve_location` (absolute, scheme-relative, path-absolute, query-only and path-relative references, dot-segment removal, fragment removal; the refusals of user information, foreign schemes and forbidden bytes) and `Origin::of` on every accepted target |
+| `http_session` | a selector byte, then a session cookie value or `Cookie` header, or a principal | `SessionManager::resume` (base64url, the sealed-blob framing and the RFC 8009 authentication; no value the manager never sealed may resume) and `attach` on a `Cookie` header; an odd selector issues a session for the fuzzed principal and requires it to resume to the same principal |
+| `http_set_cookie` | a request URI, a newline and `Set-Cookie` values, one per line | `http::cookies::CookieStore::store_set_cookie` (parsing, the size, `Secure` and `Domain` refusals and the RFC 6265 storage model over a small public-suffix list) and `cookie_header` on the accepted jar (the `http-client` leaf) |
 
 The keys, keytabs, tickets and templates the targets use are the synthetic
 gokrb5 test vectors the tests already carry (`fuzz/fixtures/`). The fuzz
 crate depends on `libfuzzer-sys` and on `rskrb5-ng` with its `http` and `camellia`
-features; the `http_negotiate` target needs `http` and the `camellia_crypto` target
+features; the `http_negotiate` target needs `http`, the `http_set_cookie` target
+the `http-client` leaf and the `camellia_crypto` target
 needs the `camellia` leaf. Compiling the leaf in does not grant runtime permission
 (`docs/security-policy.md#camellia`).
 
@@ -128,6 +132,9 @@ timeout artifact:
 | `routing_transit` | 2,195,539 (todo 17 of plan 2, 2026-11-21) | 121 s | 0 |
 | `localauth_rule` | 283,256 (todo 25 of plan 2, 2026-11-22) | 121 s | 0 |
 | `localauth_k5login` | 2,439,093 (todo 25 of plan 2, 2026-11-22) | 121 s | 0 |
+| `http_location` | 1,197,682 (todo 26 of plan 2, 2026-11-25) | 61 s | 0 |
+| `http_session` | 469,278 (todo 26 of plan 2, 2026-11-25) | 61 s | 0 |
+| `http_set_cookie` | 242,019 (todo 26 of plan 2, 2026-11-25) | 61 s | 0 |
 | `gss_name` | 2,118,533 (todo 18 of plan 2, 2026-11-22) | 121 s | 0 |
 | `gss_context` | 1,096,589 (todo 18 of plan 2, 2026-11-22) | 121 s | 0 |
 | `gss_iov` | 24,211 (todo 19 of plan 2, 2026-11-23) | 121 s | 0 |
@@ -311,6 +318,30 @@ that stays linear, and `.k5login` files with escaped components and near
 misses. The 120-second runs recorded above found nothing. Coverage proof:
 `task-25-localauth-coverage.tsv` in the execution evidence.
 
+### HTTP client and sessions (todo 26 of plan 2)
+
+Three targets read what an HTTP peer sends. `http_location` fuzzes the redirect
+resolver: a `Location` value of at most 8,192 bytes is resolved against the
+request URI (RFC 3986 section 5.2), and an accepted target must be a plain
+`http` or `https` URI with a host, without user information in its authority,
+without a fragment or a dot segment. `http_session` fuzzes the session cookie a
+server reads back: a value of at most 4,096 bytes is decoded and authenticated
+under a fixed key, and no value the manager never sealed may resume (the
+framing after the authentication is reached by the structured mode, which
+issues a session for a fuzzed principal and requires it to resume to the same
+principal). `http_set_cookie` fuzzes the `Set-Cookie` handling of the `http-client`
+leaf's jar. The seeds are the redirect forms of the tests, issued and garbage
+session values, and the cookie attributes the jar refuses. The first
+`http_location` run stopped on an assertion of the target itself (an `@` in a
+path was taken for user information; the library's output was right and the
+assertion now inspects the authority). The second `http_set_cookie` run found a
+real defect: a `Set-Cookie` value holding a byte outside visible ASCII was stored and
+came back in a `Cookie` header that `HeaderValue::to_str` refuses; the jar now refuses
+such a value (regression test `a_non_ascii_cookie_is_refused`, seed
+`non-ascii-value`). The three 61-second runs recorded above are the clean ones after
+these two fixes. Coverage proof: `task-26-http-coverage.tsv` in the
+execution evidence.
+
 ### GSS-API (todo 18 of plan 2)
 
 `gss_name` fuzzes GSS-API name import for every name type MIT krb5 1.22.2
@@ -445,6 +476,12 @@ every decoder is reached by every seed; the seeds are one valid reply per shape
 empty), a daemon status, a transport status, an announced length of 4 GiB and a
 credential count larger than the payload. `Deadline::read` reads the daemon
 socket and parses nothing, so its row names no target.
+
+Plan 2 todo 26 added the `http_location`, `http_session` and `http_set_cookie`
+targets and proved their four rows the same way (4 of 4 mappings: `resolve_location`,
+`SessionManager::resume`, the blob reader `open` and `CookieStore::store_set_cookie`;
+record `task-26-http-coverage.tsv` in the execution evidence). The other targets were
+not rebuilt in that lane.
 
 ## Round-trip properties
 
@@ -777,6 +814,10 @@ does.
 | `rskrb5_ng::pac::NtlmSupplementalCredential::parse` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::localauth::k5login::lists` | `src/localauth/k5login.rs` | `localauth_k5login` |  |
 | `rskrb5_ng::localauth::AuthToLocalRule::parse` | `src/localauth.rs` | `localauth_rule` |  |
+| `rskrb5_ng::http::origin::resolve_location` | `src/http/origin.rs` | `http_location` |  |
+| `rskrb5_ng::http::sessions::SessionManager::resume` | `src/http/sessions.rs` | `http_session` |  |
+| `rskrb5_ng::http::sessions::blob::open` | `src/http/sessions/blob.rs` | `http_session` |  |
+| `rskrb5_ng::http::cookies::CookieStore::store_set_cookie` | `src/http/cookies.rs` | `http_set_cookie` |  |
 | `rskrb5_ng::pac::Pac::buffer_bytes` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::Pac::parse` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::Pac::parse_and_process` | `src/pac.rs` | `pac_parse` |  |

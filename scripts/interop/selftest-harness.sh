@@ -261,10 +261,54 @@ interop_self_test_samba_pin() {
   [[ "$out" == *"2:4.22.0+dfsg-test"* && "$out" == *"|2:4.22.0+dfsg-test" ]] || bad "the version was not logged and recorded: $out"
 }
 
+# FU-IOP-P23: the kcm image installs sssd-kcm from an immutable snapshot at a
+# recorded exact version, as the Samba image does (a bare version pin broke once
+# when Debian replaced the package in the live archive).
+interop_self_test_kcm_pin() {
+  local dockerfile="$INTEROP_ROOT/scripts/interop/net-kcm/Dockerfile" snapshot version base
+  bad() { printf 'kcm pin: %s\n' "$*"; }
+  snapshot="$(sed -n 's/^ARG KCM_SNAPSHOT=\(.*\)$/\1/p' "$dockerfile")"
+  version="$(sed -n 's/^ARG SSSD_KCM_VERSION=\(.*\)$/\1/p' "$dockerfile")"
+  base="$(sed -n 's/^ARG BASE_IMAGE=docker.io\/library\/debian:trixie-\([0-9]\{8\}\)-slim@.*$/\1/p' "$dockerfile")"
+  [[ "$snapshot" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || bad "the Dockerfile has no ARG KCM_SNAPSHOT=<YYYYMMDDTHHMMSSZ> ('$snapshot')"
+  [[ "$version" =~ ^2\.[0-9]+\.[0-9]+-[0-9]+.*$ ]] || bad "the Dockerfile has no exact ARG SSSD_KCM_VERSION ('$version')"
+  [[ -n "$base" && "${snapshot:0:8}" == "$base" ]] ||
+    bad "the snapshot date '${snapshot:0:8}' is not the date of the pinned base image '$base'"
+  grep -q 'snapshot.debian.org/archive/debian/${KCM_SNAPSHOT}/' "$dockerfile" || bad "apt does not read the snapshot"
+  grep -q 'sssd-kcm=${SSSD_KCM_VERSION}' "$dockerfile" || bad "sssd-kcm is not installed at the exact version"
+  grep -q "dpkg-query -W -f '\${Version}' sssd-kcm" "$dockerfile" || bad "the build does not check the installed sssd-kcm version"
+}
+
+# FU-IOP-P22: every registered fixture has a protocol probe, and a probe that
+# fails fails the end-of-run check and names its fixture.
+interop_self_test_probes() {
+  local fixture out
+  bad() { printf 'probes: %s\n' "$*"; }
+  out="$(
+    INTEROP_FIXTURES=()
+    INTEROP_SUITE_NAMES=()
+    INTEROP_SUITE_TARGETS=()
+    INTEROP_SUITE_FIXTURES=()
+    load_fixtures
+    printf '%s\n' "${INTEROP_FIXTURES[@]}"
+  )" || { bad "the fixture files do not load"; return 0; }
+  for fixture in $out; do
+    declare -F "interop_probe_${fixture//-/_}" >/dev/null || bad "fixture $fixture has no interop_probe_${fixture//-/_}"
+  done
+  out="$(
+    INTEROP_FIXTURES=(alpha beta)
+    interop_probe_alpha() { return 0; }
+    interop_probe_beta() { interop_log "fixture beta (container rskrb5-interop-beta) is running but answers nothing"; return 1; }
+    interop_check_protocols 2>&1
+  )" && bad "the protocol check passed with a failing probe: $out"
+  [[ "$out" == *"fixture beta"* && "$out" == *"fixture alpha answered"* ]] ||
+    bad "the protocol check did not name the failing fixture and the answering one: $out"
+}
+
 # Runs the groups above; $1 is the failure reporter of interop_self_test, $2 its scratch directory.
 interop_self_test_harness_groups() {
   local report="$1" group out
-  for group in redaction liveness namespace build_hook samba_pin; do
+  for group in redaction liveness namespace build_hook samba_pin kcm_pin probes; do
     out="$("interop_self_test_$group" "$2" 2>&1)" || true
     [[ -z "$out" ]] || "$report" "harness $group:"$'\n'"$out"
   done
