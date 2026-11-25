@@ -67,7 +67,7 @@ mod tests {
     #[test]
     fn deferred_relations_when_strict() -> Result<(), Box<dyn StdError>> {
         // Given recognized but not implemented behavior.
-        let assignment = "kcm_mach_service = org.h5l.kcm";
+        let assignment = "plugin_base_dir = /never-load";
         // When parsing in strict mode.
         let result = Config::parse_with_mode(
             &format!("[libdefaults]\n {assignment}\n"),

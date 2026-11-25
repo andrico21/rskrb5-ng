@@ -31,7 +31,6 @@ mod tests {
                     *value == "true"
                 ),
                 "k5login_directory" => assert_eq!(defaults.k5login_directory, *value),
-                "kcm_mach_service" => assert_eq!(defaults.kcm_mach_service, *value),
                 "plugin_base_dir" => assert_eq!(defaults.plugin_base_dir, *value),
                 "kdc_timesync" => assert_eq!(defaults.kdc_time_sync, value.parse::<i32>()?),
                 "noaddresses" => assert!(defaults.no_addresses.is_enabled()),
@@ -73,6 +72,7 @@ mod tests {
                 "realm_try_domains" => {
                     assert_eq!(defaults.realm_try_domains, value.parse::<i32>()?);
                 }
+                "kcm_mach_service" => assert_eq!(defaults.kcm_mach_service, *value),
                 "rdns" => assert_eq!(defaults.rdns.is_enabled(), *value == "true"),
                 "request_timeout" => assert_eq!(
                     defaults.request_timeout.as_secs(),
@@ -99,6 +99,7 @@ mod tests {
         )+};
     }
     effective_cases! {
+        kcm_mach_service, ["org.example.kcm", "-"];
         qualify_shortname, ["", "example.test"];
         rdns, ["true", "false"];
         realm_try_domains, ["-1", "0", "2"];
@@ -116,7 +117,6 @@ mod tests {
         )+};
     }
     deferred_cases! {
-        kcm_mach_service, "plan 2 WP-09", ["org.example.kcm", "-"];
         plugin_base_dir, "plan 2 WP-16", ["/never-load", "%{LIBDIR}/krb5/plugins"];
     }
 
@@ -290,13 +290,17 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn kcm_socket() -> Result<(), Box<dyn Error>> {
+        use std::path::Path;
+
         use rskrb5_ng::{ccache::kcm::Store, error::Kcm};
         for (value, expected) in [("/run/kcm.sock", Some("/run/kcm.sock")), ("-", None)] {
             let text = format!("[libdefaults]\n kcm_socket = {value}\n");
             let config = Config::parse_with_mode(&text, ParseMode::Strict)?;
             assert!(config.diagnostics().is_empty(), "{value} was diagnosed");
             match (Store::from_libdefaults(&config.libdefaults), expected) {
-                (Ok(store), Some(path)) => assert_eq!(store.socket().to_str(), Some(path)),
+                (Ok(store), Some(path)) => {
+                    assert_eq!(store.socket().and_then(Path::to_str), Some(path));
+                }
                 (Err(Kcm::NoServer), None) => {}
                 (other, _) => return Err(format!("{value}: {other:?}").into()),
             }
