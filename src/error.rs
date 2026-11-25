@@ -790,6 +790,15 @@ pub enum Config {
         /// The leaf feature.
         feature: &'static str,
     },
+    /// A relation names behaviour this library excludes permanently by an
+    /// owner decision (strict mode).
+    #[error("relation {relation} is out of scope ({decision})")]
+    OutOfScope {
+        /// Selected relation.
+        relation: &'static str,
+        /// The owner decision that excludes it: `D1`, `D2` or `D1/D3`.
+        decision: &'static str,
+    },
     /// A local-address list contains a malformed IP address.
     #[error("invalid extra address: {0}")]
     InvalidAddress(String),

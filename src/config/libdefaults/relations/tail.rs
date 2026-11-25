@@ -81,8 +81,8 @@ pub(crate) const RELATIONS_TAIL: [(&str, &str, &str, &str, &str, &str); 22] = [
         "plugin_base_dir",
         "parameter template",
         "%{LIBDIR}/krb5/plugins",
-        "plan 2 WP-16",
-        "Inert template, no expansion/discovery or executable code loading; diagnostic",
+        "out of scope: D1/D3",
+        "Inert template: no expansion, discovery or code loading, ever (no dynamic modules, D1/D3); OutOfScope diagnostic, Strict rejects",
         "plugin_base_dir",
     ),
     (

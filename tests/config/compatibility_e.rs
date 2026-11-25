@@ -35,13 +35,14 @@ mod tests {
         };
         assert_eq!(config.libdefaults.permitted_enctype_ids(), permitted);
         assert_eq!(config.configured_kdcs("ATHENA.MIT.EDU")?.len(), 3);
-        assert!(config.diagnostics().iter().any(|item| matches!(
-            item,
-            ConfigDiagnostic::NotYetEffective {
-                relation: "default_domain",
-                package: _
-            }
-        )));
+        assert!(
+            config
+                .diagnostics()
+                .contains(&ConfigDiagnostic::OutOfScope {
+                    relation: "default_domain",
+                    decision: "D2"
+                })
+        );
         // `rdns` is effective since the discovery work package, so it has no diagnostic.
         assert!(!config.diagnostics().iter().any(|item| matches!(
             item,

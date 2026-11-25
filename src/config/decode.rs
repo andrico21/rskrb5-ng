@@ -173,7 +173,7 @@ pub(super) fn realm(name: &str, lines: &[Line]) -> Result<Realm, Error> {
 /// port to 464 (`changepw.c:76-84`), which names an HTTPS origin nobody
 /// configured; this keeps the configured origin instead.
 fn kpasswd_fallback(admin: &str) -> String {
-    if admin.trim().starts_with("https://") {
+    if admin.starts_with("https://") {
         return admin.to_owned();
     }
     if let Ok(address) = admin.parse::<SocketAddr>() {

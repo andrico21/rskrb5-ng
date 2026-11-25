@@ -23,12 +23,16 @@ mod tests {
                 path: vec!["libdefaults".to_owned(), "typo".to_owned()],
             },
             ConfigDiagnostic::NotYetEffective {
-                relation: "rdns",
-                package: "plan 2 WP-10",
+                relation: "kcm_mach_service",
+                package: "a later change",
             },
             ConfigDiagnostic::UnsupportedSecureEnctype {
                 token: "camellia".to_owned(),
-                until: "plan 2 WP-03",
+                until: "the `camellia` Cargo feature is enabled",
+            },
+            ConfigDiagnostic::OutOfScope {
+                relation: "plugin_base_dir",
+                decision: "D1/D3",
             },
             ConfigDiagnostic::ServerOnly { section: "logging" },
             ConfigDiagnostic::IgnoredPreauthType { id: 14_i32 },
@@ -66,6 +70,13 @@ mod tests {
                     },
                     Failure::UnsupportedSecureEnctype { token, until: _ },
                 ) => assert_eq!(token, wanted),
+                (
+                    ConfigDiagnostic::OutOfScope {
+                        relation: wanted,
+                        decision: reason,
+                    },
+                    Failure::OutOfScope { relation, decision },
+                ) => assert_eq!((relation, decision), (wanted, reason)),
                 (
                     ConfigDiagnostic::ServerOnly { section: wanted },
                     Failure::ServerOnly { section },

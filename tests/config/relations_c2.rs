@@ -10,7 +10,10 @@
 mod tests {
     use core::error::Error;
 
-    use rskrb5_ng::config::{Config, ConfigDiagnostic, ParseMode};
+    use rskrb5_ng::{
+        config::{Config, ConfigDiagnostic, ParseMode},
+        error::Config as ConfigError,
+    };
 
     /// Selected deferred values retain their type and name the missing package.
     fn deferred(name: &str, values: &[&str], package: &str) -> Result<(), Box<dyn Error>> {
@@ -32,7 +35,6 @@ mod tests {
                 ),
                 "k5login_directory" => assert_eq!(defaults.k5login_directory, *value),
                 "kcm_mach_service" => assert_eq!(defaults.kcm_mach_service, *value),
-                "plugin_base_dir" => assert_eq!(defaults.plugin_base_dir, *value),
                 "kdc_timesync" => assert_eq!(defaults.kdc_time_sync, value.parse::<i32>()?),
                 "noaddresses" => assert!(defaults.no_addresses.is_enabled()),
                 "spake_preauth_groups" => {
@@ -117,7 +119,38 @@ mod tests {
     }
     deferred_cases! {
         kcm_mach_service, "plan 2 WP-09", ["org.example.kcm", "-"];
-        plugin_base_dir, "plan 2 WP-16", ["/never-load", "%{LIBDIR}/krb5/plugins"];
+    }
+
+    /// `plugin_base_dir` names the directory MIT loads plugin code from, which
+    /// this library never does (D1/D3): the value is kept inert, Compatible
+    /// mode reports the permanent decision and Strict mode refuses it.
+    #[test]
+    fn plugin_base_dir() -> Result<(), Box<dyn Error>> {
+        for value in ["/never-load", "%{LIBDIR}/krb5/plugins"] {
+            let text = format!("[libdefaults]\n plugin_base_dir = {value}\n");
+            let config = Config::parse(&text)?;
+            assert_eq!(config.libdefaults.plugin_base_dir, value);
+            assert!(
+                config
+                    .diagnostics()
+                    .contains(&ConfigDiagnostic::OutOfScope {
+                        relation: "plugin_base_dir",
+                        decision: "D1/D3",
+                    })
+            );
+            let strict = Config::parse_with_mode(&text, ParseMode::Strict);
+            assert!(
+                matches!(
+                    strict,
+                    Err(ConfigError::OutOfScope {
+                        relation: "plugin_base_dir",
+                        decision: "D1/D3"
+                    })
+                ),
+                "{strict:?}"
+            );
+        }
+        Ok(())
     }
 
     /// `client_aware_channel_bindings` is effective (consumer

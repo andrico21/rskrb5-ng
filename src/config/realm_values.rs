@@ -69,14 +69,7 @@ pub(super) fn decode(
             feature,
         }));
     }
-    if consumer.starts_with("plan 2 ") {
-        Ok(Some(ConfigDiagnostic::NotYetEffective {
-            relation: name,
-            package: consumer,
-        }))
-    } else {
-        Ok(None)
-    }
+    Ok(super::diagnostic::out_of_scope(name, consumer))
 }
 
 /// The leaf feature a relation's consumer needs, when this build lacks it

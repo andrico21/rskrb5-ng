@@ -14,8 +14,8 @@ use super::{ConfigDiagnostic, Error, LibDefaults, ParseMode};
 
 /// Apply the fail-closed rule after all selected fields have been decoded.
 /// # Errors
-/// Strict mode rejects every deferred relation; stricter unsupported policies
-/// are rejected in both modes, with the owning plan-2 work package.
+/// Strict mode rejects every deferred or out-of-scope relation; stricter
+/// unsupported policies are rejected in both modes.
 pub(super) fn classify(defaults: &mut LibDefaults, selected: &[String]) -> Result<(), Error> {
     for &(name, _kind, _mit_default, consumer, _rationale, _test) in &relations::RELATIONS {
         if !selected.iter().any(|key| key == name) {
@@ -26,6 +26,13 @@ pub(super) fn classify(defaults: &mut LibDefaults, selected: &[String]) -> Resul
                 relation: name,
                 feature,
             };
+            if defaults.parse_mode() == ParseMode::Strict {
+                return Err(diagnostic.into_error());
+            }
+            defaults.enctype_diagnostics.push(diagnostic);
+            continue;
+        }
+        if let Some(diagnostic) = super::diagnostic::out_of_scope(name, consumer) {
             if defaults.parse_mode() == ParseMode::Strict {
                 return Err(diagnostic.into_error());
             }
