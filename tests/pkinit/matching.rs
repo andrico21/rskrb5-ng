@@ -12,7 +12,7 @@ use rskrb5_ng::{
     Config,
     client::principal::Principal,
     error::Pkinit,
-    preauth::pkinit::{ConfiguredIdentities, Identity, IdentityProvider as _},
+    preauth::pkinit::{ConfiguredIdentities, Identity, IdentityProvider as _, KdcTrust, matching::CertificateRules},
 };
 
 /// A boxed test failure.
@@ -79,9 +79,19 @@ pub(crate) fn select(identities: &[&str], rules: &[&str]) -> Result<String, Pkin
 }
 
 /// Every fixture identity.
-const ALL: [&str; 9] = [
-    "user", "generic", "alice", "bob", "carol", "doe", "erin", "frank", "gina",
+const ALL: [&str; 10] = [
+    "user", "generic", "alice", "bob", "carol", "doe", "erin", "frank", "gina", "henry",
 ];
+
+/// The DER certificate of the fixture `name`, whatever its key.
+fn der_of(name: &str) -> Result<Vec<u8>, TestError> {
+    let pem = fs::read(dir().join(format!("{name}.pem")))?;
+    KdcTrust::from_pem(&pem)?
+        .anchors()
+        .first()
+        .cloned()
+        .ok_or_else(|| "no certificate".into())
+}
 
 /// A single rule selects the identity it matches, over every component kind.
 #[test]
@@ -198,10 +208,12 @@ fn identities_without_rules_must_be_exactly_one() -> Result<(), TestError> {
     Ok(())
 }
 
-/// The DN renderings are OpenSSL's `XN_FLAG_SEP_COMMA_PLUS` (MIT `rfc2253_name`):
-/// a rule that is the escaped expected text, anchored, selects its identity.
-/// `erin` has a multi-valued RDN, a comma, a plus and UTF-8 above U+0100;
-/// `gina` has a BMPString holding U+00FC (one character) and U+4E2D.
+/// The DN renderings are OpenSSL's `XN_FLAG_SEP_COMMA_PLUS`.
+///
+/// MIT `rfc2253_name`: a rule that is the escaped expected text, anchored,
+/// selects its identity. `erin` has a multi-valued RDN, a comma, a plus and
+/// UTF-8 above U+0100; `gina` has a `BMPString` holding U+00FC (one
+/// character) and U+4E2D.
 #[test]
 fn certificate_names_render_like_mit_openssl() -> Result<(), TestError> {
     // The table holds OpenSSL's raw bytes (a Latin-1 character is one byte).
@@ -226,22 +238,26 @@ fn certificate_names_render_like_mit_openssl() -> Result<(), TestError> {
             columns.next().ok_or("subject")?,
             columns.next().ok_or("issuer")?,
         );
-        if name == "generic" {
-            continue;
-        }
-        let pool: Vec<&str> = ALL.iter().copied().filter(|n| *n != "generic").collect();
+        let ders = ALL.iter().map(|other| der_of(other)).collect::<Result<Vec<_>, _>>()?;
+        let views: Vec<&[u8]> = ders.iter().map(Vec::as_slice).collect();
+        let index = ALL.iter().position(|other| *other == name).ok_or("fixture")?;
         let by_subject = format!("<SUBJECT>^{}$", escape(subject));
         let by_issuer_and_subject = format!(
             "<ISSUER>^{}$<SUBJECT>^{}$",
             escape(issuer),
             escape(subject)
         );
-        assert_eq!(select(&pool, &[&by_subject])?, name, "subject of {name}");
-        assert_eq!(
-            select(&pool, &[&by_issuer_and_subject])?,
-            name,
-            "issuer and subject of {name}"
-        );
+        // The generic and the user fixtures share a subject: the rule cannot
+        // tell them apart, which is the ambiguity rule.
+        let expected = if name == "user" || name == "generic" { None } else { Some(index) };
+        for rule in [&by_subject, &by_issuer_and_subject] {
+            let rules = CertificateRules::parse(&[rule.as_str()])?;
+            match (rules.select(&views), expected) {
+                (Ok(chosen), Some(wanted)) => assert_eq!(chosen, wanted, "{rule}"),
+                (Err(Pkinit::AmbiguousCertificates { candidates: 10 }), None) => {}
+                (other, _) => return Err(format!("{name}: {rule}: {other:?}").into()),
+            }
+        }
     }
     Ok(())
 }

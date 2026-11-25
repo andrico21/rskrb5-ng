@@ -307,9 +307,13 @@ pub trait IdentityProvider: Send + Sync {
 ///
 /// `FILE:` and `DIR:` locations and `ENV:` references to them name the
 /// candidates; `pkinit_cert_match` chooses exactly one (MIT
-/// `pkinit_identity.c:560-640`, `pkinit_matching.c`). Without rules exactly one identity must be configured. With rules the first
-/// rule that selects exactly one candidate wins; no match, an ambiguous match
-/// and an unreadable candidate are typed errors, never the first identity.
+/// `pkinit_identity.c:560-640`, `pkinit_matching.c`).
+///
+/// Without rules exactly one identity must be configured. With rules the
+/// first rule that selects exactly one candidate wins; no match, an ambiguous
+/// match and an unreadable candidate certificate are typed errors, never the
+/// first identity. Only the certificates of the candidates are read to match;
+/// the key of the selected identity alone is loaded.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfiguredIdentities {
     /// `(certificate, key)` file pairs, in order.
@@ -354,32 +358,60 @@ impl ConfiguredIdentities {
     pub fn files(&self) -> &[(PathBuf, Option<PathBuf>)] {
         &self.files
     }
+
+    /// The first DER certificate of each candidate file, for the rules.
+    ///
+    /// # Errors
+    ///
+    /// Returns the file and PEM errors, and [`Error::Identity`] for a file
+    /// without a certificate.
+    fn candidate_certificates(&self) -> Result<Vec<Vec<u8>>, Error> {
+        let mut certificates = Vec::new();
+        for (certificate, _key) in &self.files {
+            let pem = config::read(certificate, MAX_CRL_BYTES)?;
+            certificates.push(
+                ops::pem_certificates(&pem)?
+                    .into_iter()
+                    .next()
+                    .ok_or(Error::Identity {
+                        reason: "a candidate file holds no certificate",
+                    })?,
+            );
+        }
+        Ok(certificates)
+    }
+
+    /// The index of the candidate to authenticate with: the one the rules
+    /// select, or the only one when no rule is configured.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`ConfiguredIdentities::candidate_certificates`]
+    /// and [`matching::CertificateRules::select`]
+    /// ([`Error::AmbiguousCertificates`] without rules and several candidates).
+    fn selected(&self) -> Result<usize, Error> {
+        match &self.rules {
+            Some(rules) => {
+                let certificates = self.candidate_certificates()?;
+                let views: Vec<&[u8]> = certificates.iter().map(Vec::as_slice).collect();
+                rules.select(&views)
+            }
+            None if self.files.len() > 1 => Err(Error::AmbiguousCertificates {
+                candidates: self.files.len(),
+            }),
+            None => Ok(0),
+        }
+    }
 }
 
 impl IdentityProvider for ConfiguredIdentities {
     #[inline]
     fn identity(&self, _client: &Principal) -> Result<Identity, ProviderError> {
-        let mut candidates = Vec::new();
-        for (certificate, key) in &self.files {
-            candidates.push(Identity::from_files(certificate, key.as_deref())?);
-        }
-        let index = match &self.rules {
-            Some(rules) => {
-                let certificates: Vec<&[u8]> =
-                    candidates.iter().map(Identity::certificate).collect();
-                rules.select(&certificates)?
-            }
-            None if candidates.len() > 1 => {
-                return Err(Box::new(Error::AmbiguousCertificates {
-                    candidates: candidates.len(),
-                }));
-            }
-            None => 0,
-        };
-        let chosen = candidates.into_iter().nth(index);
-        Ok(chosen.ok_or(Error::Identity {
+        let index = self.selected()?;
+        let (certificate, key) = self.files.get(index).ok_or(Error::Identity {
             reason: "pkinit_identities names no identity",
-        })?)
+        })?;
+        Ok(Identity::from_files(certificate, key.as_deref())?)
     }
 }
 

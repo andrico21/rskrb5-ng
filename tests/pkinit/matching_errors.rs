@@ -132,3 +132,18 @@ fn an_unreadable_candidate_fails_the_selection() -> Result<(), TestError> {
     );
     Ok(())
 }
+
+/// Only the selected identity's key is loaded.
+///
+/// An RSA key (which the software signer does not take) on a candidate that is
+/// not selected is not an error; on the selected one it is a typed error.
+#[test]
+fn only_the_selected_identitys_key_is_loaded() -> Result<(), TestError> {
+    assert_eq!(select(&["bob", "henry"], &["<SUBJECT>CN=bob$"])?, "bob");
+    let selected = select(&["bob", "henry"], &["<SUBJECT>CN=henry$"]);
+    assert!(
+        matches!(selected, Err(Pkinit::Identity { reason: _ })),
+        "{selected:?}"
+    );
+    Ok(())
+}
