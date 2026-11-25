@@ -26,7 +26,7 @@ use crate::{
 };
 
 /// The compiled `pkinit_cert_match` rules.
-pub(super) use super::matching::CertificateRules as Rules;
+pub(super) type Rules = super::matching::CertificateRules;
 
 /// The index of the one candidate (DER) that `rules` select.
 ///

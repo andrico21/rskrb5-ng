@@ -135,12 +135,16 @@ fn certificate_rules_are_unavailable_without_the_leaf() -> Result<(), TestError>
 
 /// A rule whose keyword is unknown is refused when the profile is read.
 #[test]
-fn certificate_rules_with_an_unknown_keyword_are_refused_by_the_profile() {
-    // MIT 1.22.2 knows the `&&` and `||` prefixes only: `+` and `-` start no rule.
+fn certificate_rules_with_an_unknown_keyword_are_refused_by_the_profile() -> Result<(), TestError> {
+    // Given a profile whose rule starts with a keyword, then it parses.
+    let valid = config(" pkinit_cert_match = <EKU>pkinit")?;
+    assert_eq!(valid.realms.len(), 1, "the realm with its rule");
+    // And MIT 1.22.2 knows the `&&` and `||` prefixes only: `+` and `-` start no rule.
     for rule in ["<ISSUERS>x", "+<EKU>pkinit", "-<EKU>pkinit", "<DNS>x"] {
         let profile = config(&format!(" pkinit_cert_match = {rule}"));
         assert!(profile.is_err(), "{rule}: {profile:?}");
     }
+    Ok(())
 }
 
 /// FILE identities pair a certificate with its key.

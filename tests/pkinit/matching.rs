@@ -54,6 +54,19 @@ fn certificate(name: &str) -> Result<Vec<u8>, TestError> {
     Ok(identity.certificate().to_vec())
 }
 
+/// The candidate the rules select among the fixtures `pool` (DER), without loading an identity.
+pub(crate) fn select_certificate(
+    pool: &[&str],
+    rules: &[&str],
+) -> Result<Result<usize, Pkinit>, TestError> {
+    let ders = pool
+        .iter()
+        .map(|name| der_of(name))
+        .collect::<Result<Vec<_>, _>>()?;
+    let views: Vec<&[u8]> = ders.iter().map(Vec::as_slice).collect();
+    Ok(CertificateRules::parse(rules)?.select(&views))
+}
+
 /// What `identities` and `rules` select: the fixture name, or the typed error.
 pub(crate) fn select(identities: &[&str], rules: &[&str]) -> Result<String, Pkinit> {
     let profile = config(identities, rules).map_err(|_unparsed| Pkinit::Identity {
@@ -162,32 +175,39 @@ fn certificate_rule_order_follows_mit() -> Result<(), TestError> {
 
 /// More than one match never picks the first; no match is its own typed error.
 #[test]
-fn certificate_rule_ambiguity_fails_closed() {
+fn certificate_rule_ambiguity_fails_closed() -> Result<(), TestError> {
     let pool = ["alice", "bob", "carol"];
     // Given a rule that two identities satisfy, then the selection is refused.
-    let ambiguous = select(&pool, &["<SUBJECT>O=KRBTEST.COM"]);
+    let ambiguous = select_certificate(&pool, &["<SUBJECT>O=KRBTEST.COM"])?;
     assert!(
         matches!(ambiguous, Err(Pkinit::AmbiguousCertificates { candidates: 3 })),
         "{ambiguous:?}"
     );
+    // And the identity provider that reads the same configuration refuses it alike.
+    let provided = select(&pool, &["<SUBJECT>O=KRBTEST.COM"]);
+    assert!(
+        matches!(provided, Err(Pkinit::AmbiguousCertificates { candidates: 3 })),
+        "{provided:?}"
+    );
     // And an `||` rule that matches every identity through different components.
-    let either = select(&pool, &["||<SUBJECT>CN=carol$<EKU>clientAuth"]);
+    let either = select_certificate(&pool, &["||<SUBJECT>CN=carol$<EKU>clientAuth"])?;
     assert!(
         matches!(either, Err(Pkinit::AmbiguousCertificates { candidates: 3 })),
         "{either:?}"
     );
     // And several rules that never select exactly one: ambiguity wins over "no match".
-    let none = select(&pool, &["<SUBJECT>O=KRBTEST.COM", "<SUBJECT>CN=nobody"]);
+    let none = select_certificate(&pool, &["<SUBJECT>O=KRBTEST.COM", "<SUBJECT>CN=nobody"])?;
     assert!(
         matches!(none, Err(Pkinit::AmbiguousCertificates { candidates: 3 })),
         "{none:?}"
     );
     // And a rule that matches nothing is NoMatchingCertificate, not the first identity.
-    let nothing = select(&pool, &["<SUBJECT>CN=nobody"]);
+    let nothing = select_certificate(&pool, &["<SUBJECT>CN=nobody"])?;
     assert!(
         matches!(nothing, Err(Pkinit::NoMatchingCertificate { candidates: 3 })),
         "{nothing:?}"
     );
+    Ok(())
 }
 
 /// Without rules exactly one identity must be configured (MIT
@@ -313,10 +333,11 @@ fn certificate_rules_match_mit_fixtures() -> Result<(), TestError> {
 
 /// A dNSName SAN is not matched (MIT matches only the PKINIT SANs and the UPNs).
 #[test]
-fn certificate_rules_ignore_dns_names() {
-    let none = select(&["alice", "bob"], &["<SAN>alice\\.example\\.test"]);
+fn certificate_rules_ignore_dns_names() -> Result<(), TestError> {
+    let none = select_certificate(&["alice", "bob"], &["<SAN>alice\\.example\\.test"])?;
     assert!(
         matches!(none, Err(Pkinit::NoMatchingCertificate { candidates: 2 })),
         "{none:?}"
     );
+    Ok(())
 }
