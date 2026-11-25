@@ -5,14 +5,14 @@
 //! OpenSSL CLI (`generate.sh` there); the expected renderings are what
 //! `openssl x509 -nameopt sep_comma_plus` prints, MIT's flags.
 
-use core::error::Error;
+use core::{error::Error, fmt::Write as _};
 use std::{fs, path::PathBuf};
 
 use rskrb5_ng::{
     Config,
     client::principal::Principal,
     error::Pkinit,
-    preauth::pkinit::{ConfiguredIdentities, Identity},
+    preauth::pkinit::{ConfiguredIdentities, Identity, IdentityProvider as _},
 };
 
 /// A boxed test failure.
@@ -34,10 +34,10 @@ pub(crate) fn config(identities: &[&str], rules: &[&str]) -> Result<Config, Test
     let mut lines = String::new();
     for name in identities {
         let base = dir().join(name).display().to_string();
-        lines.push_str(&format!(" pkinit_identities = FILE:{base}.pem,{base}.key\n"));
+        writeln!(lines, " pkinit_identities = FILE:{base}.pem,{base}.key")?;
     }
     for rule in rules {
-        lines.push_str(&format!(" pkinit_cert_match = {rule}\n"));
+        writeln!(lines, " pkinit_cert_match = {rule}")?;
     }
     Ok(Config::parse(&format!(
         "[libdefaults]\n default_realm = {REALM}\n[realms]\n {REALM} = {{\n kdc = 127.0.0.1:1\n{lines} }}\n"
@@ -56,20 +56,18 @@ fn certificate(name: &str) -> Result<Vec<u8>, TestError> {
 
 /// What `identities` and `rules` select: the fixture name, or the typed error.
 pub(crate) fn select(identities: &[&str], rules: &[&str]) -> Result<String, Pkinit> {
-    let profile = config(identities, rules).map_err(|_| Pkinit::Identity {
+    let profile = config(identities, rules).map_err(|_unparsed| Pkinit::Identity {
         reason: "the test profile did not parse",
     })?;
     let provider = ConfiguredIdentities::from_config(&profile, REALM)?;
-    let chosen = rskrb5_ng::preauth::pkinit::IdentityProvider::identity(
-        &provider,
-        &Principal::user(REALM, "user"),
-    )
-    .map_err(|error| match error.downcast::<Pkinit>() {
-        Ok(typed) => *typed,
-        Err(_other) => Pkinit::Identity {
-            reason: "a provider error that is not a Pkinit error",
-        },
-    })?;
+    let chosen = provider
+        .identity(&Principal::user(REALM, "user"))
+        .map_err(|error| match error.downcast::<Pkinit>() {
+            Ok(typed) => *typed,
+            Err(_other) => Pkinit::Identity {
+                reason: "a provider error that is not a Pkinit error",
+            },
+        })?;
     for name in identities {
         if certificate(name).is_ok_and(|der| der == chosen.certificate()) {
             return Ok((*name).to_owned());
@@ -99,13 +97,14 @@ fn certificate_rules_select_the_matching_identity() -> Result<(), TestError> {
         ("<SAN>^alice@TEST.RSKRB5$", "alice"),
         ("<SAN>^alice@upn.test$", "alice"),
         ("<SAN>^user@KRBTEST.COM$", "user"),
-        ("<EKU>msScLogin", "carol"),
+        ("<SAN>^user\\@KRBTEST\\.COM$", "user"),
+        ("<SAN>^[[:alpha:]]+@KRBTEST[.]COM$", "user"),
+        ("<EKU>msScLogin<KU>digitalSignature", "doe"),
         ("<KU>keyEncipherment,<SAN>^alice@TEST", "alice"),
         ("<EKU>emailProtection", "bob"),
         ("<EKU>pkinit,msScLogin", "never-matches"),
         ("<KU>keyEncipherment<EKU>pkinit<SAN>alice", "alice"),
         ("<KU>keyEncipherment<SUBJECT>CN=\\\\U4E2D", "erin"),
-        ("<EKU>msScLogin<KU>digitalSignature", "doe"),
         ("&&<SUBJECT>O=OTHER.COM<EKU>msScLogin", "carol"),
         ("||<SUBJECT>CN=carol$<SAN>^nobody@", "carol"),
         ("<SAN>^frank/admin@TEST.RSKRB5$", "frank"),
@@ -118,7 +117,11 @@ fn certificate_rules_select_the_matching_identity() -> Result<(), TestError> {
                 "{rule}: {result:?}"
             );
         } else {
-            assert_eq!(result?, expected, "{rule}");
+            assert_eq!(
+                result.map_err(|error| format!("{rule}: {error:?}"))?,
+                expected,
+                "{rule}"
+            );
         }
     }
     Ok(())
@@ -149,7 +152,7 @@ fn certificate_rule_order_follows_mit() -> Result<(), TestError> {
 
 /// More than one match never picks the first; no match is its own typed error.
 #[test]
-fn certificate_rule_ambiguity_fails_closed() -> Result<(), TestError> {
+fn certificate_rule_ambiguity_fails_closed() {
     let pool = ["alice", "bob", "carol"];
     // Given a rule that two identities satisfy, then the selection is refused.
     let ambiguous = select(&pool, &["<SUBJECT>O=KRBTEST.COM"]);
@@ -175,7 +178,6 @@ fn certificate_rule_ambiguity_fails_closed() -> Result<(), TestError> {
         matches!(nothing, Err(Pkinit::NoMatchingCertificate { candidates: 3 })),
         "{nothing:?}"
     );
-    Ok(())
 }
 
 /// Without rules exactly one identity must be configured (MIT
@@ -203,11 +205,11 @@ fn certificate_names_render_like_mit_openssl() -> Result<(), TestError> {
     let table = fs::read_to_string(dir().join("subjects.tsv"))?;
     let escape = |text: &str| {
         let mut out = String::new();
-        for c in text.chars() {
-            if ".[]()*+?{}|^$\\-/@".contains(c) {
+        for character in text.chars() {
+            if ".[]()*+?{}|^$\\-/@".contains(character) {
                 out.push('\\');
             }
-            out.push(c);
+            out.push(character);
         }
         out
     };
@@ -269,7 +271,11 @@ fn certificate_rules_match_mit_fixtures() -> Result<(), TestError> {
         select(&["generic"], &["&&<SUBJECT>CN=user$<ISSUER>O=MIT,"])?,
         "generic"
     );
-    assert!(select(&["generic"], &["<SAN>^user@KRBTEST.COM$"]).is_err());
+    let generic_san = select(&["generic"], &["<SAN>^user@KRBTEST.COM$"]);
+    assert!(
+        matches!(generic_san, Err(Pkinit::NoMatchingCertificate { candidates: 1 })),
+        "{generic_san:?}"
+    );
     // krb5.conf(5) examples, on John DoE (issuer O=DoE CA, SAN john@EXAMPLE.COM,
     // EKU msScLogin + clientAuth, KU digitalSignature) beside identities they must reject.
     let pool = ["doe", "carol", "alice"];
@@ -285,11 +291,10 @@ fn certificate_rules_match_mit_fixtures() -> Result<(), TestError> {
 
 /// A dNSName SAN is not matched (MIT matches only the PKINIT SANs and the UPNs).
 #[test]
-fn certificate_rules_ignore_dns_names() -> Result<(), TestError> {
+fn certificate_rules_ignore_dns_names() {
     let none = select(&["alice", "bob"], &["<SAN>alice\\.example\\.test"]);
     assert!(
         matches!(none, Err(Pkinit::NoMatchingCertificate { candidates: 2 })),
         "{none:?}"
     );
-    Ok(())
 }

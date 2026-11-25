@@ -1,7 +1,12 @@
 //! `pkinit_cert_match` rejections: a malformed or unbounded rule is a typed
 //! error naming the rule, never skipped (MIT skips some, `pkinit_matching.c:650-656`).
 
-use rskrb5_ng::{Config, error::Pkinit, preauth::pkinit::ConfiguredIdentities};
+use rskrb5_ng::{
+    Config,
+    client::principal::Principal,
+    error::Pkinit,
+    preauth::pkinit::{ConfiguredIdentities, IdentityProvider as _},
+};
 
 use crate::matching::{REALM, TestError, config, dir, select};
 
@@ -119,13 +124,10 @@ fn an_unreadable_candidate_fails_the_selection() -> Result<(), TestError> {
         dir().display()
     ))?;
     let provider = ConfiguredIdentities::from_config(&profile, REALM)?;
-    let result = rskrb5_ng::preauth::pkinit::IdentityProvider::identity(
-        &provider,
-        &rskrb5_ng::client::principal::Principal::user(REALM, "bob"),
-    );
+    let result = provider.identity(&Principal::user(REALM, "bob"));
     let error = result.err().ok_or("an unreadable candidate was skipped")?;
     assert!(
-        matches!(error.downcast_ref::<Pkinit>(), Some(Pkinit::Io { .. })),
+        matches!(error.downcast_ref::<Pkinit>(), Some(Pkinit::Io { path: _, source: _ })),
         "{error:?}"
     );
     Ok(())

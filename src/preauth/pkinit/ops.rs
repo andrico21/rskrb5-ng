@@ -25,6 +25,9 @@ use crate::{
     keytab::EncryptionKey,
 };
 
+/// The compiled `pkinit_cert_match` rules.
+pub(super) use super::matching::CertificateRules as Rules;
+
 /// The DER certificates of a PEM document.
 ///
 /// # Errors
