@@ -210,9 +210,24 @@ impl CCache {
     /// valid Unicode, and any error of [`CCache::load_name`].
     #[inline]
     pub fn load_from_env() -> Result<Self, Error> {
+        Self::load_from_env_with(None)
+    }
+
+    /// [`Self::load_from_env`] where a `KCM` name reaches its daemon as
+    /// `settings` say (`None`: the defaults); the client's environment route
+    /// reads the settings of its configuration here.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`Self::load_from_env`], and those of
+    /// [`kcm::Store::from_libdefaults`] for a `KCM` name.
+    pub(crate) fn load_from_env_with(settings: Option<&LibDefaults>) -> Result<Self, Error> {
         let name =
             secure_env::ambient(|| env::var(KRB5CCNAME_ENV)).map_err(Error::DefaultCacheName)?;
-        Self::load_name(name)
+        Self::load_resolved_name_with(
+            &file_name::expand_path_tokens(&name).map_err(file_name_error)?,
+            settings,
+        )
     }
 
     /// Load and parse a credential cache by MIT-style cache name.

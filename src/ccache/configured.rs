@@ -19,19 +19,8 @@
 //! socket, and a request that may have been delivered is never sent a second
 //! time through another route ([`Kcm::OutcomeUnknown`](crate::error::Kcm::OutcomeUnknown)).
 
-use std::env;
-
-use super::{CCache, Error, KRB5CCNAME_ENV};
-use crate::{config::Config, file_name, secure_env};
-
-/// The value of `KRB5CCNAME`.
-///
-/// # Errors
-///
-/// [`Error::DefaultCacheName`] when it is unset or not valid Unicode.
-fn env_name() -> Result<String, Error> {
-    secure_env::ambient(|| env::var(KRB5CCNAME_ENV)).map_err(Error::DefaultCacheName)
-}
+use super::{CCache, Error};
+use crate::{config::Config, file_name};
 
 /// Load a cache by MIT-style name, as [`CCache::load_name`] does, with the
 /// daemon settings of `config` for a `KCM:` name.
@@ -47,24 +36,6 @@ pub fn load_name(config: &Config, name: &str) -> Result<CCache, Error> {
         &file_name::expand_path_tokens(name).map_err(super::file_name_error)?,
         Some(&config.libdefaults),
     )
-}
-
-/// Load the cache `KRB5CCNAME` names, as [`CCache::load_from_env`] does, with
-/// the daemon settings of `config` for a `KCM:` name.
-///
-/// # Ambient input
-///
-/// Reads `KRB5CCNAME`; use [`load_name`] for an explicit name. In a set-uid or
-/// set-gid process the variable is ignored, as MIT 1.22.2 ignores it
-/// (`secure_getenv`).
-///
-/// # Errors
-///
-/// [`Error::DefaultCacheName`] when `KRB5CCNAME` is unset or not valid
-/// Unicode, and the errors of [`load_name`].
-#[inline]
-pub fn load_ccache_env(config: &Config) -> Result<CCache, Error> {
-    load_name(config, &env_name()?)
 }
 
 /// Save `cache` by MIT-style name, as [`CCache::save_name`] does, with the

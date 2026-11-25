@@ -1676,7 +1676,7 @@ impl Tokio {
     /// cannot be loaded.
     #[inline]
     pub fn from_ccache_env(config: Config, protocol: KdcProtocol) -> Result<Self, Error> {
-        let cache = ccache::configured::load_ccache_env(&config)?;
+        let cache = ccache::CCache::load_from_env_with(Some(&config.libdefaults))?;
         Self::try_from_ccache(config, protocol, &cache)
     }
     #[must_use]

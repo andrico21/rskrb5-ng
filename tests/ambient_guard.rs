@@ -55,7 +55,7 @@ pub(crate) mod tests {
         ),
         (
             "src/ccache.rs",
-            "CCache::load_from_env",
+            "CCache::load_from_env_with",
             "KRB5CCNAME",
             "KRB5CCNAME_ENV",
         ),
@@ -64,12 +64,6 @@ pub(crate) mod tests {
             "CCache::save_to_env",
             "KRB5CCNAME",
             "KRB5CCNAME_ENV",
-        ),
-        (
-            "src/ccache/configured.rs",
-            "env_name",
-            "KRB5CCNAME",
-            "super::KRB5CCNAME_ENV",
         ),
         (
             "src/ccache/selection.rs",
