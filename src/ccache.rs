@@ -53,6 +53,7 @@ pub enum CacheName {
 /// Redaction of credential-bearing diagnostics.
 mod credential_debug;
 
+pub mod configured;
 pub mod dir_store;
 
 pub mod file_store;

@@ -1597,6 +1597,15 @@ pub enum Kcm {
     /// A KCM transport is installed already: the first installation wins.
     #[error("a KCM transport is installed already")]
     TransportInstalled,
+    /// The configuration names a Mach service (`kcm_mach_service`) and the
+    /// process has no Mach transport: no installed transport and no
+    /// transport factory, for example because the platform companion crate was
+    /// never asked to install its transport.
+    #[error("no Mach transport is installed to reach the KCM service {service}")]
+    NoMachTransport {
+        /// The configured service name.
+        service: String,
+    },
 }
 
 #[cfg(feature = "messages")]
