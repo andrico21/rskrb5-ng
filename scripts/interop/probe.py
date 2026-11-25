@@ -208,4 +208,8 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except (OSError, ssl.SSLError, http.client.HTTPException) as error:
+        # A frozen or dead peer: one line naming the failure, no traceback.
+        sys.exit(f"no answer: {type(error).__name__}: {error}")
