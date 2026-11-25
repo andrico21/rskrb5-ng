@@ -11,8 +11,8 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 139
-partial = 14
+implemented = 141
+partial = 12
 absent = 0
 rejected = 8
 omitted = 1
@@ -2056,9 +2056,9 @@ id = "MIT-config-25"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`kcm_mach_service`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "live-ci"
-missing = "The hosted macOS run of the new `KCM:` name-route tests of `rskrb5-ng-os` is the only evidence that a Mach service answers through the main crate's routes; it is recorded in the lane report and lands with the platform-macos job of the merged tip. Until the merged-tip run is green the row stays partial."
+missing = ""
 rust_symbols = [
   "config::LibDefaults",
   "ccache::kcm::Store::from_libdefaults",
@@ -2092,9 +2092,9 @@ id = "MIT-config-26"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`kcm_socket`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Pending the lane's merged-tip gates."
+missing = ""
 rust_symbols = [
   "ccache::kcm::Store::from_libdefaults",
   "ccache::file_store::resolve_configured",
