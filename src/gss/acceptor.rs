@@ -219,6 +219,19 @@ fn reply(
     Ok((send, subkey, answer))
 }
 
+/// Whether the AP-REQ `request` asks for mutual authentication.
+///
+/// # Errors
+///
+/// Returns the AP-REQ decoding errors.
+fn mutual_required(request: &[u8]) -> Result<bool, Error> {
+    Ok(ap_req::decode(request)?
+        .ap_options
+        .0
+        .get(MUTUAL_REQUIRED_BIT)
+        .is_some_and(|bit| *bit))
+}
+
 /// Accept the initiator's first token.
 ///
 /// # Errors
@@ -244,11 +257,7 @@ pub(super) fn accept(acceptor: &mut Acceptor<'_>, token: &[u8]) -> Result<Accept
             .ok_or(Error::DefectiveToken("the first token is not an AP-REQ"))?,
         None => token,
     };
-    let mutual_option = ap_req::decode(request)?
-        .ap_options
-        .0
-        .get(MUTUAL_REQUIRED_BIT)
-        .is_some_and(|bit| *bit);
+    let mutual_option = mutual_required(request)?;
     let outcome = RefCell::new(None);
     let options = &acceptor.options;
     let validated =

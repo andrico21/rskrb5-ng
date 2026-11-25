@@ -192,8 +192,10 @@ pub fn decode_cammac(bytes: &[u8]) -> Result<Cammac, Error> {
 }
 
 /// Verify the service verifier of an AD-CAMMAC under `key`, the key that
-/// decrypted the ticket: an RFC 3961 checksum with key usage 64 over the DER
-/// of the elements, of a checksum type of the key's encryption type (RFC 7751
+/// decrypted the ticket.
+///
+/// The verifier is an RFC 3961 checksum with key usage 64 over the DER of the
+/// elements, of a checksum type of the key's encryption type (RFC 7751
 /// section 4; MIT `check_svcver`, `src/lib/krb5/krb/cammac_util.c:36-59`).
 ///
 /// # Errors

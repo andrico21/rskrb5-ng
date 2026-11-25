@@ -30,6 +30,7 @@ use rskrb5_ng::{
 use zeroize::Zeroizing;
 
 use super::context::{Context as _, TestError};
+use crate::cammac_fixture;
 
 /// The realm of every ticket.
 pub(super) const REALM: &str = "EXAMPLE.COM";
@@ -198,9 +199,8 @@ pub(super) fn ticket_for(etype: i32, set: &[usize]) -> Result<TgsRepSession, Tes
 ///
 /// Returns the encoding errors.
 pub(super) fn ticket_with_indicators(indicators: &[&str]) -> Result<TgsRepSession, TestError> {
-    let elements = vec![crate::cammac_fixture::indicators(indicators)?];
-    let data =
-        crate::cammac_fixture::wrapped(&crate::cammac_fixture::cammac(elements, &service_key())?)?;
+    let elements = vec![cammac_fixture::indicators(indicators)?];
+    let data = cammac_fixture::wrapped(&cammac_fixture::cammac(elements, &service_key())?)?;
     ticket_with(AES256_SHA1, &[], None, Some(data))
 }
 
@@ -233,7 +233,7 @@ fn ticket_with(
     etype: i32,
     set: &[usize],
     buffers: Option<&[(u32, &[u8])]>,
-    data: Option<rasn_kerberos::AuthorizationData>,
+    authorization: Option<rasn_kerberos::AuthorizationData>,
 ) -> Result<TgsRepSession, TestError> {
     let at = validity()?;
     let (bits, bytes) = flags(set);
@@ -255,7 +255,7 @@ fn ticket_with(
         end_time: time(at.1)?,
         renew_till: None,
         caddr: None,
-        authorization_data: data,
+        authorization_data: authorization,
     };
     if let Some(extra) = buffers {
         let mut builder = pac::Builder::new();

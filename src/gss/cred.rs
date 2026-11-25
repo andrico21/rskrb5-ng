@@ -12,14 +12,14 @@ use super::{
     CCache, CredStore, Credential, CredentialInquiry, CredentialUsage, Error, Keytab, Name,
     ObjectIdentifier, Principal, TgsRepSession, ccache,
 };
-#[cfg(feature = "tokio")]
-use crate::client;
 use crate::{
     ccache::{file_store, stores::CacheVersion},
     keytab::EncryptionKey,
     replay::RcacheName,
     service::AcceptorName,
 };
+#[cfg(feature = "tokio")]
+use crate::{client, error::Client as ClientError};
 
 /// The `FORWARDABLE` ticket flag in ccache byte order (RFC 4120 flag 1).
 const FORWARDABLE: u8 = 0x40;
@@ -364,10 +364,11 @@ pub(super) fn acquire_from(
     Ok(credential)
 }
 
-/// The initiator half of `gss_acquire_cred`: the default cache, or with a
-/// desired name its cache in the default collection, else the default client
-/// keytab (MIT `acquire_init_cred` and `get_cache_for_name`,
-/// `acquire_cred.c:446-500,681-780`).
+/// The initiator half of `gss_acquire_cred`.
+///
+/// That is the default cache, or with a desired name its cache in the default
+/// collection, else the default client keytab (MIT `acquire_init_cred` and
+/// `get_cache_for_name`, `acquire_cred.c:446-500,681-780`).
 ///
 /// # Errors
 ///
@@ -380,14 +381,13 @@ fn default_initiator(
     desired: Option<&Name>,
     config: &super::Config,
 ) -> Result<(), Error> {
-    let cache_name = client::default_ccache_name(config);
+    let default_name = client::default_ccache_name(config);
     let Some(name) = desired else {
-        let loaded =
-            CCache::load_resolved_name(&cache_name?).map_err(crate::error::Client::from)?;
+        let loaded = CCache::load_resolved_name(&default_name?).map_err(ClientError::from)?;
         take_cache(credential, loaded);
         return Ok(());
     };
-    if let Ok(cache_name) = cache_name
+    if let Ok(cache_name) = default_name
         && let Some(loaded) = matching_cache(&cache_name, name, CacheVersion::default())?
     {
         take_cache(credential, loaded);

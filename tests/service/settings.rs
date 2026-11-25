@@ -21,8 +21,14 @@ fn http(host: &str) -> Principal {
 }
 
 /// Whether `result` is the wrong-principal refusal.
-fn wrong_principal<T>(result: Result<T, Error>) -> bool {
-    matches!(result, Err(Error::WrongPrincipal { .. }))
+fn wrong_principal<T>(result: &Result<T, Error>) -> bool {
+    matches!(
+        result,
+        Err(Error::WrongPrincipal {
+            expected: _,
+            actual: _
+        })
+    )
 }
 
 /// The fixture PAC with its server signature flipped.
@@ -50,13 +56,13 @@ fn expected_service_rejects_another_keytab_principal() -> Result<(), TestError> 
     };
     // a validator that expects the alias refuses the host's ticket,
     assert!(wrong_principal(
-        validator()?
+        &validator()?
             .with_expected_service(http("alias.test.gokrb5"))
             .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
     ));
     // one that expects the host refuses the alias's ticket,
     assert!(wrong_principal(
-        validator()?
+        &validator()?
             .with_expected_service(http("host.test.gokrb5"))
             .validate_ap_req(&alias_ap_req()?)
     ));
@@ -69,7 +75,7 @@ fn expected_service_rejects_another_keytab_principal() -> Result<(), TestError> 
     let mut other_realm = http("host.test.gokrb5");
     other_realm.realm = "OTHER.GOKRB5".to_owned();
     assert!(wrong_principal(
-        validator()?
+        &validator()?
             .with_expected_service(other_realm)
             .validate_ap_req(&decode_hex(VALID_AP_REQ)?)
     ));
@@ -83,7 +89,7 @@ fn keytab_override_does_not_override_expected_service() -> Result<(), TestError>
     // Given an override to the alias, a ticket the alias's key decrypts is not the host's.
     let keytab = http_keytab_with_alias()?;
     assert!(wrong_principal(
-        Validator::new(&keytab)
+        &Validator::new(&keytab)
             .with_now(timestamp(NOW)?)
             .with_keytab_principal(["HTTP", "alias.test.gokrb5"])
             .with_expected_service(http("host.test.gokrb5"))

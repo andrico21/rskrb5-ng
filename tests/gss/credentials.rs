@@ -6,7 +6,7 @@
 
 use std::{
     env, fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -240,7 +240,7 @@ fn keytab_and_password_initiators_need_a_name() -> Result<(), TestError> {
 
 /// A `DIR` collection in `directory`: the primary cache holds alice's ticket,
 /// a second cache is bob's (MIT `krb5_cc_new_unique`). Returns its name.
-fn two_client_collection(directory: &std::path::Path) -> Result<String, TestError> {
+fn two_client_collection(directory: &Path) -> Result<String, TestError> {
     let name = format!("DIR:{}", directory.join("collection").display());
     let caches = collection(&name, CacheVersion::V4)?;
     caches
@@ -288,9 +288,10 @@ fn acquire_from_collection_selects_desired_principal() -> Result<(), TestError> 
     Ok(())
 }
 
-/// No cache of the collection holds the desired name: there is no credential,
-/// and the primary cache's identity is never put in its place; realm and
-/// ordered components match exactly; collection failures are returned.
+/// A desired name no cache of the collection holds has no credential.
+///
+/// The primary cache's identity is never put in its place; realm and ordered
+/// components match exactly; collection failures are returned.
 #[test]
 fn missing_desired_principal_never_uses_primary() -> Result<(), TestError> {
     let directory = scratch("missing")?;
@@ -327,9 +328,13 @@ fn missing_desired_principal_never_uses_primary() -> Result<(), TestError> {
 #[cfg(feature = "tokio")]
 #[test]
 fn default_acquire_selects_desired_principal() -> Result<(), TestError> {
+    use rskrb5_ng::config::Config;
+
+    use crate::env::{in_child, run_in_child};
+
     const TEST_PATH: &str = "tests::credentials::default_acquire_selects_desired_principal";
-    if !crate::env::in_child(TEST_PATH) {
-        crate::env::run_in_child(
+    if !in_child(TEST_PATH) {
+        run_in_child(
             TEST_PATH,
             &[("KRB5CCNAME", None), ("KRB5_CLIENT_KTNAME", None)],
         );
@@ -340,7 +345,7 @@ fn default_acquire_selects_desired_principal() -> Result<(), TestError> {
     // The default client keytab holds no client key, so it cannot stand in.
     let service_keys = directory.join("service.keytab");
     keytab(&[HOST]).save(&service_keys)?;
-    let config = rskrb5_ng::config::Config::parse(&format!(
+    let config = Config::parse(&format!(
         "[libdefaults]\n default_realm = {REALM}\n default_ccache_name = {name}\n \
          default_client_keytab_name = FILE:{}\n",
         service_keys.display()

@@ -18,6 +18,36 @@ use crate::{
     trace::{Event as TraceEvent, Identity},
 };
 
+/// The ticket's and the authenticator's client, which must be the same.
+///
+/// RFC 4120 section 3.2.3: compare the client name and realm of the ticket
+/// with the same fields in the authenticator and reject `KRB_AP_ERR_BADMATCH`
+/// on any mismatch.
+///
+/// # Errors
+///
+/// Returns [`Error::ClientPrincipalMismatch`] and the name errors.
+fn matched_clients(
+    ticket: &rasn_kerberos::EncTicketPart,
+    authenticator: &rasn_kerberos::Authenticator,
+) -> Result<(Principal, Principal), Error> {
+    let ticket_client = principal_from_parts(&ticket.crealm, &ticket.cname)?;
+    let authenticator_client = principal_from_parts(&authenticator.crealm, &authenticator.cname)?;
+    if authenticator_client.realm != ticket_client.realm
+        || authenticator_client.components != ticket_client.components
+    {
+        return Err(Error::ClientPrincipalMismatch {
+            ticket: format!("{}@{}", ticket_client.name(), ticket_client.realm),
+            authenticator: format!(
+                "{}@{}",
+                authenticator_client.name(),
+                authenticator_client.realm
+            ),
+        });
+    }
+    Ok((ticket_client, authenticator_client))
+}
+
 impl Validator<'_> {
     /// Resolve the ticket's key identity without altering policy or replay state.
     /// # Errors
@@ -204,25 +234,7 @@ impl Validator<'_> {
 
         self.validate_authenticator_authorization(authenticator.authorization_data.as_ref())?;
 
-        let ticket_client = principal_from_parts(&enc_ticket.crealm, &enc_ticket.cname)?;
-        let authenticator_client =
-            principal_from_parts(&authenticator.crealm, &authenticator.cname)?;
-        // RFC 4120 section 3.2.3: compare the client name and realm of the
-        // ticket with the same fields in the authenticator and reject
-        // KRB_AP_ERR_BADMATCH on any mismatch.
-        if authenticator_client.realm != ticket_client.realm
-            || authenticator_client.components != ticket_client.components
-        {
-            return Err(Error::ClientPrincipalMismatch {
-                ticket: format!("{}@{}", ticket_client.name(), ticket_client.realm),
-                authenticator: format!(
-                    "{}@{}",
-                    authenticator_client.name(),
-                    authenticator_client.realm
-                ),
-            }
-            .into());
-        }
+        let (ticket_client, authenticator_client) = matched_clients(&enc_ticket, &authenticator)?;
 
         let cusec = microseconds_to_u32("authenticator.cusec", &authenticator.cusec)?;
         let authenticator_ctime = system_time_from_kerberos_time(&authenticator.ctime)?;

@@ -11,7 +11,7 @@ use rskrb5_ng::{
     error::Gss,
     gss::{
         Acceptor, AcceptorOptions, Credential, EstablishedContext, InitStep, Initiator,
-        InitiatorOptions,
+        InitiatorOptions, MemoryTransferLedger, TransferKey,
     },
     pac::VerificationPolicy,
     service::Validator,
@@ -129,7 +129,7 @@ fn pac_decode_disabled_exposes_no_attributes() -> Result<(), TestError> {
     let mut accept = Acceptor::from_validator(validator, AcceptorOptions::new());
     let context = accept.accept_sec_context(&token)?.into_context();
     assert!(context.pac().is_none());
-    assert!(context.source_attributes().is_empty());
+    assert_eq!(context.source_attributes(), Vec::<String>::new());
     refused(context.source_attribute("urn:mspac:"))?;
     Ok(())
 }
@@ -166,7 +166,7 @@ fn verified_cammac_exposes_all_auth_indicators() -> Result<(), TestError> {
     refused(context.source_attribute("AUTH-INDICATORS"))?;
     // A ticket without indicators has no such attribute.
     let plain = accepted_with_indicators(&[])?;
-    assert!(plain.source_attributes().is_empty());
+    assert_eq!(plain.source_attributes(), Vec::<String>::new());
     refused(plain.source_attribute("auth-indicators"))?;
     Ok(())
 }
@@ -176,9 +176,9 @@ fn verified_cammac_exposes_all_auth_indicators() -> Result<(), TestError> {
 #[test]
 fn indicator_attributes_survive_context_transfer() -> Result<(), TestError> {
     let context = accepted_with_indicators(&["otp", "pkinit"])?;
-    let key = rskrb5_ng::gss::TransferKey::new([0x24; 32]);
+    let key = TransferKey::new([0x24; 32]);
     let blob = context.export(&key)?;
-    let mut ledger = rskrb5_ng::gss::MemoryTransferLedger::new();
+    let mut ledger = MemoryTransferLedger::new();
     let imported = EstablishedContext::import(&blob, &key, &mut ledger)?;
     let attribute = imported.source_attribute("auth-indicators")?;
     assert_eq!(attribute.values(), [b"otp".to_vec(), b"pkinit".to_vec()]);

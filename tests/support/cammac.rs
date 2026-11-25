@@ -57,6 +57,10 @@ pub(crate) struct Cammac {
 }
 
 /// An AD-AUTH-INDICATOR element holding `values`.
+///
+/// # Errors
+///
+/// Returns the encoding error.
 pub(crate) fn indicators(values: &[&str]) -> Result<AuthorizationDataValue, Failure> {
     let list: Vec<Utf8String> = values.iter().map(|value| (*value).to_owned()).collect();
     Ok(element(AD_AUTH_INDICATOR, der::encode(&list)?))
@@ -72,6 +76,10 @@ pub(crate) fn element(kind: i32, data: Vec<u8>) -> AuthorizationDataValue {
 
 /// The CAMMAC of `elements` whose service verifier is made under `key` (an
 /// AES-SHA1 key) with the key's checksum type.
+///
+/// # Errors
+///
+/// Returns the key-type, encoding and checksum errors.
 pub(crate) fn cammac(elements: AuthorizationData, key: &EncryptionKey) -> Result<Cammac, Failure> {
     let etype = AesSha1Etype::from_etype_id(key.etype()).ok_or("an AES-SHA1 key")?;
     let mac = etype.checksum(key.value(), &der::encode(&elements)?, CAMMAC_USAGE)?;
@@ -92,6 +100,10 @@ pub(crate) fn cammac(elements: AuthorizationData, key: &EncryptionKey) -> Result
 
 /// `cammac` as the KDC puts it into a ticket: one AD-CAMMAC element inside
 /// AD-IF-RELEVANT.
+///
+/// # Errors
+///
+/// Returns the encoding error.
 pub(crate) fn wrapped(cammac: &Cammac) -> Result<AuthorizationData, Failure> {
     let inner = vec![element(AD_CAMMAC, der::encode(cammac)?)];
     Ok(vec![element(AD_IF_RELEVANT, der::encode(&inner)?)])

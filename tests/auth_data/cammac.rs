@@ -8,17 +8,20 @@
 //! MIT, a CAMMAC whose verifier does not verify refuses the ticket instead of
 //! being skipped (`authdata.c:555-558`).
 
+use core::time::Duration;
+use std::time::UNIX_EPOCH;
+
 use rasn::der;
 use rasn_kerberos::AuthorizationData;
 use rskrb5_ng::{
     error::Service as Error,
     keytab::{EncryptionKey, Keytab},
-    service::Validator,
+    service::{ValidatedApReq, Validator},
 };
 
 use super::support::{ap_req, keytab, session_key};
 use crate::{
-    cammac_fixture::{AD_CAMMAC, cammac, element, indicators, wrapped},
+    cammac_fixture::{AD_AUTH_INDICATOR, AD_CAMMAC, cammac, element, indicators, wrapped},
     context::TestError,
 };
 
@@ -35,10 +38,10 @@ fn service_key(keytab: &Keytab) -> Result<EncryptionKey, TestError> {
 fn validate(
     ticket: Option<AuthorizationData>,
     authenticator: Option<AuthorizationData>,
-) -> Result<Result<rskrb5_ng::service::ValidatedApReq, Error>, TestError> {
+) -> Result<Result<ValidatedApReq, Error>, TestError> {
     let keytab = keytab()?;
-    let now = std::time::UNIX_EPOCH
-        .checked_add(core::time::Duration::from_secs(NOW))
+    let now = UNIX_EPOCH
+        .checked_add(Duration::from_secs(NOW))
         .ok_or("time is representable")?;
     let bytes = ap_req(ticket, authenticator)?;
     Ok(Validator::new(&keytab)
@@ -46,10 +49,11 @@ fn validate(
         .validate_ap_req(&bytes))
 }
 
-/// A CAMMAC the service cannot verify refuses the ticket: elements changed
-/// after the MAC, a flipped MAC, a MAC under another key, no service verifier,
-/// an undecodable CAMMAC, and an undecodable indicator list inside a verified
-/// CAMMAC.
+/// A CAMMAC the service cannot verify refuses the ticket.
+///
+/// The cases are elements changed after the MAC, a flipped MAC, a MAC under
+/// another key, no service verifier, an undecodable CAMMAC, and an
+/// undecodable indicator list inside a verified CAMMAC.
 #[test]
 fn tampered_cammac_is_refused() -> Result<(), TestError> {
     let key = service_key(&keytab()?)?;
@@ -70,7 +74,7 @@ fn tampered_cammac_is_refused() -> Result<(), TestError> {
         verifier.mac.checksum = mac.into();
     }
     let session_keyed = cammac(vec![indicators(&["otp"])?], &session_key())?;
-    let mut unverified = good.clone();
+    let mut unverified = good;
     unverified.svc_verifier = None;
     let malformed_list = cammac(vec![element(97, vec![0x04, 0x00])], &key)?;
 
@@ -97,9 +101,11 @@ fn tampered_cammac_is_refused() -> Result<(), TestError> {
     Ok(())
 }
 
-/// An authenticator is client-controlled: a CAMMAC in it is refused even
-/// when its verifier is right (it may be copied from another ticket), and an
-/// indicator element outside a CAMMAC is no CAMMAC-protected indicator.
+/// No indicator comes from the client-controlled authenticator.
+///
+/// A CAMMAC in it is refused even when its verifier is right (it may be copied
+/// from another ticket), and an indicator element outside a CAMMAC is no
+/// CAMMAC-protected indicator.
 #[test]
 fn authenticator_indicators_are_not_authenticated() -> Result<(), TestError> {
     let key = service_key(&keytab()?)?;
@@ -115,24 +121,30 @@ fn authenticator_indicators_are_not_authenticated() -> Result<(), TestError> {
     // A bare indicator element is refused where it is critical,
     let bare = validate(Some(vec![indicators(&["otp"])?]), None)?;
     assert!(
-        matches!(bare, Err(Error::UnsupportedAuthorizationData { kind: 97 })),
+        matches!(
+            bare,
+            Err(Error::UnsupportedAuthorizationData {
+                kind: AD_AUTH_INDICATOR
+            })
+        ),
         "{bare:?}"
     );
     // and never taken for an indicator where it is optional, in the ticket or
     // in the authenticator.
-    let optional = vec![element(1, der::encode(&vec![indicators(&["otp"])?])?)];
+    let optional = vec![element(1_i32, der::encode(&vec![indicators(&["otp"])?])?)];
     for (ticket, authenticator) in [(Some(optional.clone()), None), (None, Some(optional))] {
-        assert!(
-            validate(ticket, authenticator)??
-                .auth_indicators()
-                .is_empty()
+        assert_eq!(
+            validate(ticket, authenticator)??.auth_indicators(),
+            Vec::<String>::new()
         );
     }
     Ok(())
 }
 
-/// Every indicator of every verified CAMMAC of the ticket is collected once,
-/// in order, inside AD-IF-RELEVANT as MIT issues it or as a mandatory element.
+/// Every indicator of every verified CAMMAC of the ticket is collected once.
+///
+/// They come in order, from a CAMMAC inside AD-IF-RELEVANT as MIT issues it
+/// and from one that is a mandatory element.
 #[test]
 fn verified_cammacs_yield_their_indicators() -> Result<(), TestError> {
     let key = service_key(&keytab()?)?;
@@ -142,6 +154,9 @@ fn verified_cammacs_yield_their_indicators() -> Result<(), TestError> {
     let accepted = validate(Some(data), None)??;
     assert_eq!(accepted.auth_indicators(), ["otp", "pkinit", "hardened"]);
     // A ticket without a CAMMAC has none.
-    assert!(validate(None, None)??.auth_indicators().is_empty());
+    assert_eq!(
+        validate(None, None)??.auth_indicators(),
+        Vec::<String>::new()
+    );
     Ok(())
 }

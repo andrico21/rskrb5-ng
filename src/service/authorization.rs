@@ -71,10 +71,12 @@ pub(super) fn and_or(
     }
 }
 
-/// Interpret an AD-CAMMAC element (RFC 7751): verify its service verifier
-/// under the key that decrypted the ticket, then interpret its elements at the
-/// criticality of the enclosing scope, where its authentication indicators
-/// count (MIT `get_cammac_authdata`, `authdata.c:586-606`).
+/// Interpret an AD-CAMMAC element (RFC 7751).
+///
+/// Its service verifier is verified under the key that decrypted the ticket,
+/// then its elements are interpreted at the criticality of the enclosing
+/// scope, where its authentication indicators count (MIT
+/// `get_cammac_authdata`, `authdata.c:586-606`).
 ///
 /// Only ticket authorization data may carry it: the service verifier
 /// authenticates the elements, not the ticket they arrive in, so a CAMMAC
