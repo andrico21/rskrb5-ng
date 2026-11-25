@@ -135,6 +135,14 @@ impl AuthToLocalRule {
         rule::compile(text).map(|kind| Self { kind })
     }
 
+    /// The built-in module that evaluates this rule's type: `default` or `rule`.
+    pub(crate) const fn module(&self) -> &'static str {
+        match self.kind {
+            rule::Kind::Default => "default",
+            rule::Kind::Rule(_) => "rule",
+        }
+    }
+
     /// The `DEFAULT` rule.
     #[must_use]
     #[inline]
@@ -168,7 +176,21 @@ pub struct LocalNameMapper {
     names: BTreeMap<String, String>,
     /// `auth_to_local` values in order; empty means `DEFAULT`.
     rules: Vec<AuthToLocalRule>,
+    /// The built-in modules `[plugins] localauth` leaves, in consultation
+    /// order; `None` is every module in MIT's order.
+    modules: Option<Vec<&'static str>>,
 }
+
+/// The built-in `localauth` modules in MIT's registration order
+/// (`src/lib/krb5/os/localauth.c:114-132`).
+pub(crate) const BUILTINS: [&str; 6] = [
+    "default",
+    "rule",
+    "names",
+    "auth_to_local",
+    "k5login",
+    "an2ln",
+];
 
 /// The authorization half: the mapper, the account database and the
 /// `.k5login` policy.
@@ -221,7 +243,9 @@ pub enum Authorization {
 /// MIT `krb5_kuserok` (`localauth.c:386-406`): the `.k5login` module runs
 /// first; its refusal is final while `k5login_authoritative` is true, its
 /// permission or its silence (no file) leaves the `an2ln` rule, which allows
-/// the account `principal_to_local_name` yields.
+/// the account `principal_to_local_name` yields. A module that the profile's
+/// `[plugins] localauth` `disable` or `enable_only` removes is not consulted
+/// (MIT `plugin.c:302-347`).
 #[must_use]
 #[inline]
 pub fn authorize_local(
@@ -237,7 +261,10 @@ pub fn authorize_local(
 /// MIT `krb5_aname_to_localname` (`localauth.c:408-436`): the explicit
 /// `auth_to_local_names` mapping first, then the `auth_to_local` rules in
 /// order (the first that translates wins; a rule that does not apply is
-/// skipped), then `DEFAULT` when no rule is configured.
+/// skipped), then `DEFAULT` when no rule is configured. The `[plugins]
+/// localauth` controls of the mapper's profile choose and order the `names` and
+/// `auth_to_local` modules, and a configured rule whose type module (`default`
+/// or `rule`) they remove is an error, as in MIT (`localauth.c:328-340`).
 ///
 /// # Errors
 ///

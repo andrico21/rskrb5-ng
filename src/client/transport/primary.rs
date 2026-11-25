@@ -16,7 +16,7 @@ use crate::{client::stepwise::InitCreds, discovery::locate::EndpointRole};
 
 /// The `(host, port)` of every KDC that answered a request, for each login in progress.
 ///
-/// `Tokio` is `Copy` and the exchange driver is not this module's, so the transport carries
+/// The exchange driver is not this module's and takes the transport by reference, so the transport carries
 /// the key of its login and reports answers here.
 static ANSWERED: Mutex<BTreeMap<u64, Vec<(String, u16)>>> = Mutex::new(BTreeMap::new());
 /// The next key.

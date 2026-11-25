@@ -37,16 +37,16 @@ pub(crate) const SECTION_RELATIONS: [(&str, &str, &str, &str, &str, &str); 6] = 
         "disable",
         "repeated module names",
         "empty",
-        "plan 2 WP-16",
-        "extensions::Registry::enabled filters registered providers; diagnosed until built-in consumers use it; excluding timestamp preauth fails",
+        "plan 2 todo 28 for the clpreauth built-ins; extensions::order::arrange for ccselect (Registry::select_cache), hostrealm (HostRealmResolver) and localauth (LocalNameMapper, LocalAuthorizer, Registry::authorize_local)",
+        "Effective: removes registered and built-in ccselect, hostrealm and localauth modules; clpreauth removes registered mechanisms only and stays diagnosed (the built-in mechanisms are chosen by the exchange engine); excluding timestamp preauth fails in both modes; another interface name is an unknown path",
         "disable",
     ),
     (
         "enable_only",
         "repeated module names",
         "all built-ins",
-        "plan 2 WP-16",
-        "extensions::Registry::enabled keeps and orders registered providers; diagnosed until built-in consumers use it; excluding timestamp preauth fails",
+        "plan 2 todo 28 for the clpreauth built-ins; extensions::order::arrange for ccselect (Registry::select_cache), hostrealm (HostRealmResolver) and localauth (LocalNameMapper, LocalAuthorizer, Registry::authorize_local)",
+        "Effective: keeps and orders registered and built-in ccselect, hostrealm and localauth modules; clpreauth keeps and orders registered mechanisms only and stays diagnosed (the built-in mechanisms are chosen by the exchange engine); excluding timestamp preauth fails in both modes; another interface name is an unknown path",
         "enable_only",
     ),
     (
@@ -125,28 +125,17 @@ pub(super) fn finish(
                 if let Some(line) = unusable_name_line(lines, &names) {
                     return Err(invalid(line));
                 }
-                if interface == "clpreauth"
-                    && ((key == "disable"
-                        && names.iter().any(|name| name == "encrypted_timestamp"))
-                        || (key == "enable_only"
-                            && !names.iter().any(|name| name == "encrypted_timestamp")))
-                {
-                    return Err(Error::NotYetEffective {
-                        relation: if key == "disable" {
-                            "disable"
-                        } else {
-                            "enable_only"
-                        },
-                        package: "plan 2 WP-16",
-                    });
-                }
                 let entry = config.plugins.entry(interface.clone()).or_default();
                 if key == "disable" {
                     entry.disable = names;
                 } else {
                     entry.enable_only = names;
                 }
-                diagnostic(config, key)?;
+                if interface == "clpreauth" {
+                    // Refused at its own entry, before any later plugin entry.
+                    super::restrictions::plugins(entry)?;
+                }
+                control(config, interface, key)?;
             }
             [section, interface, key] if section == "plugins" && key == "module" => {
                 // Only `<registered id>:<path>` values reach here (profile_syntax).
@@ -162,23 +151,35 @@ pub(super) fn finish(
     Ok(())
 }
 
-/// Report a catalogue-backed section relation after its typed admission.
+/// Classify a `disable` or `enable_only` control after its typed admission.
+///
+/// The `ccselect`, `hostrealm` and `localauth` controls are effective over the
+/// registered and the built-in modules. The `clpreauth` controls reach only the
+/// registered mechanisms: the built-in ones are chosen by the exchange engine,
+/// so the control stays diagnosed. Any other interface name (names match
+/// exactly, as MIT's `strcmp`) has no consumer and is an unknown path.
 /// # Errors
-/// Strict mode rejects deferred section consumers.
-fn diagnostic(config: &mut Config, key: &str) -> Result<(), Error> {
-    if let Some(&(name, _kind, _default, package, _rationale, _test)) =
-        SECTION_RELATIONS.iter().find(|row| row.0 == key)
-    {
-        realm_values::report(
-            ConfigDiagnostic::NotYetEffective {
-                relation: name,
-                package,
+/// Strict mode rejects the diagnosed controls.
+fn control(config: &mut Config, interface: &str, key: &str) -> Result<(), Error> {
+    let diagnostic = match interface {
+        "ccselect" | "hostrealm" | "localauth" => return Ok(()),
+        "clpreauth" => SECTION_RELATIONS.iter().find(|row| row.0 == key).map(
+            |&(relation, _kind, _default, package, _rationale, _test)| {
+                ConfigDiagnostic::NotYetEffective { relation, package }
             },
+        ),
+        _ => Some(ConfigDiagnostic::UnknownRelation {
+            path: vec!["plugins".to_owned(), interface.to_owned(), key.to_owned()],
+        }),
+    };
+    match diagnostic {
+        Some(found) => realm_values::report(
+            found,
             config.libdefaults.parse_mode(),
             &mut config.libdefaults.enctype_diagnostics,
-        )?;
+        ),
+        None => Ok(()),
     }
-    Ok(())
 }
 
 /// Preserve the values of repeated relations in source order.

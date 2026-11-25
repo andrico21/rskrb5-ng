@@ -107,6 +107,20 @@ mod tests {
         request_timeout, ["0", "0s", "1s"];
     }
 
+    /// A nonzero `request_timeout` is effective, so a serialized configuration
+    /// carrying one deserializes unchanged (the serde guard that refused it
+    /// predated the total request budget).
+    #[cfg(feature = "serde")]
+    #[test]
+    fn request_timeout_survives_serde() -> Result<(), Box<dyn Error>> {
+        use rskrb5_ng::config::LibDefaults;
+        let config = Config::parse("[libdefaults]\n request_timeout = 7s\n")?;
+        let json = serde_json::to_string(&config.libdefaults)?;
+        let decoded: LibDefaults = serde_json::from_str(&json)?;
+        assert_eq!(decoded.request_timeout.as_secs(), 7);
+        Ok(())
+    }
+
     /// Independent named tests over the common scalar/diagnostic contract.
     macro_rules! deferred_cases {
         ($($name:ident, $package:literal, [$($value:literal),+];)+) => {$ (

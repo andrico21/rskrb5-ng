@@ -60,9 +60,14 @@ mod tests {
                 false,
             ),
             (
+                "[plugins]\n ccselect = {\n disable = module\n }",
+                vec!["plugins", "ccselect", "disable"],
+                false,
+            ),
+            (
                 "[plugins]\n interface = {\n disable = module\n }",
                 vec!["plugins", "interface", "disable"],
-                false,
+                true,
             ),
             (
                 "[realms]\n R = {\n module_typo = value\n }",

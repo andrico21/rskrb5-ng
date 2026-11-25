@@ -83,7 +83,12 @@ mod tests {
     }
 
     /// Plugin values accumulate as individual names, never whitespace token lists.
+    ///
+    /// The control of a client interface (`ccselect`) is effective, so Strict
+    /// mode accepts it; a KDC-side interface (`certauth`) has no consumer here
+    /// and Strict mode refuses it as an unknown path.
     fn plugin(key: &str) -> Result<(), Box<dyn Error>> {
+        use rskrb5_ng::error::Config as Failure;
         for interface in ["ccselect", "certauth"] {
             let text = format!(
                 "[plugins]\n {interface} = {{\n {key} = first\n {key}* = second\n {key} = ignored\n }}\n"
@@ -96,11 +101,24 @@ mod tests {
                 &selected.enable_only
             };
             assert_eq!(names, &["first", "second"]);
-            drop(
-                Config::parse_with_mode(&text, ParseMode::Strict)
-                    .err()
-                    .ok_or("strict plugin ignored")?,
-            );
+            let strict = Config::parse_with_mode(&text, ParseMode::Strict);
+            if interface == "ccselect" {
+                assert!(
+                    config.diagnostics().is_empty(),
+                    "{:?}",
+                    config.diagnostics()
+                );
+                assert!(strict.is_ok(), "{strict:?}");
+            } else {
+                assert!(
+                    matches!(
+                        &strict,
+                        Err(Failure::UnknownRelation { path })
+                            if path == &["plugins", interface, key]
+                    ),
+                    "{strict:?}"
+                );
+            }
         }
         Ok(())
     }
@@ -179,7 +197,7 @@ mod tests {
                 failure,
                 Failure::NotYetEffective {
                     relation: _,
-                    package: "plan 2 WP-16"
+                    package: _
                 }
             ));
         }
@@ -208,7 +226,7 @@ mod tests {
                     failure,
                     Failure::NotYetEffective {
                         relation: named,
-                        package: "plan 2 WP-16"
+                        package: _
                     } if named == relation
                 ),
                 "{failure:?}"

@@ -1,8 +1,8 @@
 //! Host-realm, local-authorization and server-location drivers.
 
 use super::{
-    Decision, Error, Event, Interface, LocateRequest, MAX_NAMES, RealmQuery, Refusal, Registry,
-    ServerAddress, checks, order,
+    Decision, Error, Event, HostRealm, Interface, LocateRequest, MAX_NAMES, RealmQuery, Refusal,
+    Registry, ServerAddress, checks, order,
 };
 use crate::{ccache::Principal, config::Config};
 
@@ -82,23 +82,59 @@ pub(super) fn realms(
     config: &Config,
     query: &RealmQuery<'_>,
 ) -> Result<Option<Vec<String>>, Error> {
-    let interface = Interface::HostRealm;
-    for mapper in order::enabled(&registry.realms, interface, Some(config), |item| item.id()) {
-        let id = mapper.id();
-        order::notify(&registry.observers, &Event::Consulted { interface, id });
-        let answer = mapper
-            .realms(query)
-            .map_err(|source| failed(registry, interface, id, source))?;
-        let Some(realms) = answer else {
-            order::notify(&registry.observers, &Event::Declined { interface, id });
-            continue;
-        };
-        bounded(interface, id, &realms, |realm| checks::name(realm))
-            .inspect_err(|error| refuse(registry, interface, id, refusal_of(error)))?;
-        order::notify(&registry.observers, &Event::Chosen { interface, id });
-        return Ok(Some(realms));
+    for mapper in order::enabled(
+        &registry.realms,
+        Interface::HostRealm,
+        Some(config),
+        |item| item.id(),
+    ) {
+        if let Some(realms) = realms_of(registry, mapper.as_ref(), query)? {
+            return Ok(Some(realms));
+        }
     }
     Ok(None)
+}
+
+/// The answer of the registered mapper `id`, `None` when it declines or no
+/// mapper has that id.
+/// # Errors
+/// Returns the mapper's failure or the refusal of its answer.
+pub(super) fn realms_from(
+    registry: &Registry,
+    id: &str,
+    query: &RealmQuery<'_>,
+) -> Result<Option<Vec<String>>, Error> {
+    registry
+        .realms
+        .iter()
+        .find(|mapper| mapper.id() == id)
+        .map_or(Ok(None), |mapper| {
+            realms_of(registry, mapper.as_ref(), query)
+        })
+}
+
+/// Ask one mapper, validate its answer and report to the observers.
+/// # Errors
+/// Returns the mapper's failure or the refusal of its answer.
+fn realms_of(
+    registry: &Registry,
+    mapper: &dyn HostRealm,
+    query: &RealmQuery<'_>,
+) -> Result<Option<Vec<String>>, Error> {
+    let interface = Interface::HostRealm;
+    let id = mapper.id();
+    order::notify(&registry.observers, &Event::Consulted { interface, id });
+    let answer = mapper
+        .realms(query)
+        .map_err(|source| failed(registry, interface, id, source))?;
+    let Some(realms) = answer else {
+        order::notify(&registry.observers, &Event::Declined { interface, id });
+        return Ok(None);
+    };
+    bounded(interface, id, &realms, |realm| checks::name(realm))
+        .inspect_err(|error| refuse(registry, interface, id, refusal_of(error)))?;
+    order::notify(&registry.observers, &Event::Chosen { interface, id });
+    Ok(Some(realms))
 }
 
 /// MIT `krb5_kuserok` (`localauth.c:386-406`): a denial or a failure denies,

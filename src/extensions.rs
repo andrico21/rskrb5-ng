@@ -57,7 +57,7 @@ mod drivers;
 /// The `.k5identity` file grammar and its pattern matcher.
 mod k5identity;
 /// Registration and `[plugins]` filtering.
-mod order;
+pub(crate) mod order;
 /// Client preauthentication sessions.
 #[cfg(feature = "messages")]
 mod preauth;
@@ -1014,6 +1014,21 @@ impl Registry {
         principal: &Principal,
     ) -> Result<Option<String>, Error> {
         drivers::local_name(self, config, principal)
+    }
+
+    /// Ask the registered host-realm mapper `id` alone (one module of the
+    /// `hostrealm` chain, MIT `hostrealm.c`); `None` when it declines or is not
+    /// registered.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::realms`].
+    pub(crate) fn realms_from(
+        &self,
+        id: &str,
+        query: &RealmQuery<'_>,
+    ) -> Result<Option<Vec<String>>, Error> {
+        drivers::realms_from(self, id, query)
     }
 
     /// Ask the server locators in order; the first answer wins.
