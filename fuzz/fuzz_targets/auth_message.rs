@@ -4,9 +4,11 @@
 //! a fresh `AuthContext` (fixed key, fixed clock, sequence checking on) as a
 //! KRB-PRIV, a KRB-SAFE, an encrypted KRB-CRED and a KRB-CRED over a vouched
 //! channel; mode 4 reads it through the public DER length, element and
-//! application-tag utilities, and mode 5 through the AD-KDC-ISSUED and
-//! AD-AND-OR decoders. A message the context accepts must be one it could
-//! also have made (a second read of it is refused). None may panic.
+//! application-tag utilities, and mode 5 through the AD-KDC-ISSUED,
+//! AD-AND-OR, AD-CAMMAC and AD-AUTHENTICATION-INDICATOR decoders, with the
+//! service-verifier check of a decoded AD-CAMMAC under a fixed key. A message
+//! the context accepts must be one it could also have made (a second read of
+//! it is refused). None may panic.
 
 #![no_main]
 
@@ -16,7 +18,9 @@ use std::time::UNIX_EPOCH;
 use libfuzzer_sys::fuzz_target;
 use rskrb5_ng::{
     asn1::{Limits, application_tag, decode_length, read_element, validate},
-    authdata::{decode_and_or, decode_kdc_issued},
+    authdata::{
+        decode_and_or, decode_auth_indicators, decode_cammac, decode_kdc_issued, verify_cammac,
+    },
     keytab::EncryptionKey,
     messages::{AuthContext, CredentialTransport, MessagePolicy, ProtectedChannel},
 };
@@ -81,6 +85,13 @@ fuzz_target!(|data: &[u8]| {
         _ => {
             drop(decode_kdc_issued(input));
             drop(decode_and_or(input));
+            drop(decode_auth_indicators(input));
+            if let Ok(cammac) = decode_cammac(input) {
+                drop(verify_cammac(
+                    &cammac,
+                    &EncryptionKey::new(18, vec![0x42; 32]),
+                ));
+            }
         }
     }
 });
