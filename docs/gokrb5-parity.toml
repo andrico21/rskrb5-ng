@@ -287,9 +287,17 @@ upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
 capability = "`[libdefaults]` values"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "Every [libdefaults] relation is parsed with a typed value and a consumer, a diagnostic or an error (P1-15, docs/config-relations.md); P2-4 made forwardable, proxiable, renew_lifetime, ticket_lifetime, noaddresses, extra_addresses, kdc_default_options, kdc_timesync and preferred_preauth_types effective in the exchange options; P2-25 made k5login_authoritative and k5login_directory effective (the `localauth` leaf: LocalAuthorizer::from_config); P2-18 made enforce_ok_as_delegate, ignore_acceptor_hostname and client_aware_channel_bindings effective (gss::InitiatorOptions::from_config, gss::AcceptorOptions::from_config); the consumers still missing close in P2-15, and P2-28 closes the row."
+missing = "Every [libdefaults] relation is parsed with a typed value and a consumer, a diagnostic or an error (P1-15, docs/config-relations.md); P2-4 made forwardable, proxiable, renew_lifetime, ticket_lifetime, noaddresses, extra_addresses, kdc_default_options, kdc_timesync and preferred_preauth_types effective in the exchange options; P2-25 made k5login_authoritative and k5login_directory effective (the `localauth` leaf: LocalAuthorizer::from_config); P2-18 made enforce_ok_as_delegate, ignore_acceptor_hostname and client_aware_channel_bindings effective (gss::InitiatorOptions::from_config, gss::AcceptorOptions::from_config); P2-15 made the discovery relations effective; P2-28 (wave-11 lane A) classified plugin_base_dir as permanently out of scope (OutOfScope, D1/D3, Strict refuses), made dns_canonicalize_hostname, rdns and qualify_shortname effective on the explicit host-acquisition route and removed the stale serde refusal of a nonzero request_timeout. Still deferred: kcm_mach_service (closer: todo 28, wave-11 lane B); the row closes when no [libdefaults] relation is deferred"
 rust_symbols = ["config::LibDefaults", "config::Config::diagnostics"]
-test_names = ["tests/config/relations_c1.rs::canonicalize", "tests/config/diagnostics_e.rs::unknown_paths_preserve_scope_and_finality", "src/config/diagnostic_tests.rs::every_diagnostic_promotes_to_error", "tests/config/name_case.rs::upper_libdefaults_relation_is_not_honoured"]
+test_names = [
+  "tests/config/relations_c1.rs::canonicalize",
+  "tests/config/diagnostics_e.rs::unknown_paths_preserve_scope_and_finality",
+  "src/config/diagnostic_tests.rs::every_diagnostic_promotes_to_error",
+  "tests/config/name_case.rs::upper_libdefaults_relation_is_not_honoured",
+  "src/config/classification_e.rs::every_permanent_scope_row_is_reviewed",
+  "tests/config/relations_c2.rs::plugin_base_dir",
+  "tests/config/relations_c2.rs::request_timeout_survives_serde",
+]
 feature_flags = []
 security_divergence = "Relation names are case-sensitive, as in MIT; gokrb5 folds them (krb5conf.go:140). gokrb5 silently ignores unknown keys; here they are diagnostics and ParseMode::Strict turns every diagnostic into an error. A value asking for behaviour stricter than the library provides is an error in both modes."
 disposition = "WP-01"
