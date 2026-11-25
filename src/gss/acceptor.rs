@@ -325,6 +325,7 @@ pub(super) fn accept(acceptor: &mut Acceptor<'_>, token: &[u8]) -> Result<Accept
         crypto_policy: validated.crypto_policy().clone(),
         delegated: delegated_credential,
         pac: validated.pac().cloned(),
+        auth_indicators: validated.auth_indicators().to_vec(),
         open: !dce_style,
     };
     Ok(Accepted {

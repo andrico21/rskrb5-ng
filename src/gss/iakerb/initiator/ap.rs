@@ -158,6 +158,7 @@ fn established(
         crypto_policy: options.crypto_policy.clone(),
         delegated: None,
         pac: None,
+        auth_indicators: Vec::new(),
         open: true,
     }
 }

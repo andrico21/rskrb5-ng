@@ -21,7 +21,7 @@ use super::{
     context::{Context as _, TestError},
     support::{
         AES256_SHA1, cache_of, establish, kdc_key, keytab, refused, sequenced, target,
-        ticket_with_pac,
+        ticket_with_indicators, ticket_with_pac,
     },
 };
 
@@ -131,5 +131,57 @@ fn pac_decode_disabled_exposes_no_attributes() -> Result<(), TestError> {
     assert!(context.pac().is_none());
     assert!(context.source_attributes().is_empty());
     refused(context.source_attribute("urn:mspac:"))?;
+    Ok(())
+}
+
+/// The acceptor's context of a ticket whose verified CAMMAC carries `indicators`.
+fn accepted_with_indicators(indicators: &[&str]) -> Result<EstablishedContext, TestError> {
+    let ticket = ticket_with_indicators(indicators)?;
+    let credential = Credential::from_ccache(cache_of(&ticket)?)?;
+    let mut init = Initiator::new(target()?, InitiatorOptions::new());
+    let InitStep::Continue(token) = init.init_sec_context(&credential, None)? else {
+        return Err("a mutual initiator waits".into());
+    };
+    let keys = keytab();
+    let mut accept = Acceptor::from_validator(Validator::new(&keys), AcceptorOptions::new());
+    Ok(accept.accept_sec_context(&token)?.into_context())
+}
+
+/// The verified indicators are the authenticated, complete values of the
+/// `auth-indicators` attribute, every one of them in order (MIT
+/// `ai_authdata.c:113-117,153-186`).
+#[test]
+fn verified_cammac_exposes_all_auth_indicators() -> Result<(), TestError> {
+    let context = accepted_with_indicators(&["otp", "pkinit", "hardened"])?;
+    assert_eq!(context.source_attributes(), ["auth-indicators"]);
+    let attribute = context.source_attribute("auth-indicators")?;
+    assert_eq!(attribute.value(), b"otp");
+    assert_eq!(
+        attribute.values(),
+        [b"otp".to_vec(), b"pkinit".to_vec(), b"hardened".to_vec()]
+    );
+    assert!(attribute.authenticated());
+    assert!(attribute.complete());
+    // MIT matches this attribute name exactly.
+    refused(context.source_attribute("AUTH-INDICATORS"))?;
+    // A ticket without indicators has no such attribute.
+    let plain = accepted_with_indicators(&[])?;
+    assert!(plain.source_attributes().is_empty());
+    refused(plain.source_attribute("auth-indicators"))?;
+    Ok(())
+}
+
+/// An acceptor context keeps its verified indicators through an authenticated
+/// export and import.
+#[test]
+fn indicator_attributes_survive_context_transfer() -> Result<(), TestError> {
+    let context = accepted_with_indicators(&["otp", "pkinit"])?;
+    let key = rskrb5_ng::gss::TransferKey::new([0x24; 32]);
+    let blob = context.export(&key)?;
+    let mut ledger = rskrb5_ng::gss::MemoryTransferLedger::new();
+    let imported = EstablishedContext::import(&blob, &key, &mut ledger)?;
+    let attribute = imported.source_attribute("auth-indicators")?;
+    assert_eq!(attribute.values(), [b"otp".to_vec(), b"pkinit".to_vec()]);
+    assert!(attribute.authenticated());
     Ok(())
 }
