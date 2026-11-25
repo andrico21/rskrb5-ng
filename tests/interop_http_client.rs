@@ -11,6 +11,7 @@
 //! turns an unreachable fixture into a failure naming it.
 #![cfg(all(feature = "http-client", feature = "tokio"))]
 
+#[cfg(feature = "tower")]
 extern crate alloc;
 
 /// Child-process runner for the tests that change the environment.
