@@ -394,7 +394,7 @@ impl ConfiguredIdentities {
             Some(rules) => {
                 let certificates = self.candidate_certificates()?;
                 let views: Vec<&[u8]> = certificates.iter().map(Vec::as_slice).collect();
-                rules.select(&views)
+                ops::select_rules(rules, &views)
             }
             None if self.files.len() > 1 => Err(Error::AmbiguousCertificates {
                 candidates: self.files.len(),

@@ -23,17 +23,17 @@ impl Rules {
     ///
     /// # Errors
     /// Always [`Error::Unavailable`].
-    pub(super) fn parse(_rules: &[String]) -> Result<Self, Error> {
+    pub(super) const fn parse(_rules: &[String]) -> Result<Self, Error> {
         Err(Error::Unavailable)
     }
+}
 
-    /// Unavailable.
-    ///
-    /// # Errors
-    /// Always [`Error::Unavailable`].
-    pub(super) const fn select(&self, _certificates: &[&[u8]]) -> Result<usize, Error> {
-        Err(Error::Unavailable)
-    }
+/// Unavailable.
+///
+/// # Errors
+/// Always [`Error::Unavailable`].
+pub(super) const fn select_rules(_rules: &Rules, _certificates: &[&[u8]]) -> Result<usize, Error> {
+    Err(Error::Unavailable)
 }
 
 /// Unavailable.
