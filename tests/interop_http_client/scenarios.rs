@@ -4,7 +4,11 @@
 use core::{error::Error, fmt::Write as _, str, time::Duration};
 use std::io;
 
-use http_types::{Request, Response, StatusCode, header::WWW_AUTHENTICATE, uri::PathAndQuery};
+use http_types::{
+    Request, Response, StatusCode,
+    header::{LOCATION, WWW_AUTHENTICATE},
+    uri::PathAndQuery,
+};
 use rskrb5_ng::{
     NegotiateClient,
     client::{
@@ -50,11 +54,25 @@ fn runtime() -> io::Result<Runtime> {
 /// A plain-HTTP exchange that sends every request to one endpoint, whatever
 /// the host of its URI (the URI names the virtual host and the Kerberos service,
 /// the endpoint is the published fixture port).
-struct Endpoint(String);
+///
+/// The fixture's docroot denies everything outside `/whoami/` (so Apache's own
+/// `mod_dir` redirect of `/whoami` is a `403`): a request for the path in field 1 is
+/// answered here with a same-origin `302` to `/whoami/`, as an application in
+/// front of Apache would, and every other request goes to Apache.
+struct Endpoint(String, Option<&'static str>);
 
 impl HttpExchange for Endpoint {
     fn exchange(&self, request: Request<Vec<u8>>) -> ExchangeFuture<'_> {
         Box::pin(async move {
+            if self.1 == Some(request.uri().path()) {
+                return Response::builder()
+                    .status(StatusCode::FOUND)
+                    .header(LOCATION, "/whoami/")
+                    .body(Vec::new())
+                    .map_err(|_refused| ExchangeError::InvalidRequest {
+                        reason: "the redirect does not build",
+                    });
+            }
             let not_delivered = |error: io::Error| ExchangeError::NotDelivered(Box::new(error));
             let maybe = |error: io::Error| ExchangeError::MaybeDelivered(Box::new(error));
             let authority = request
@@ -145,6 +163,7 @@ fn config(realm: &str) -> Result<Config, Box<dyn Error>> {
 /// cookie jar and the options of `options`.
 fn client(
     options: spnego::InitiatorContextOptions,
+    redirect_from: Option<&'static str>,
 ) -> Result<NegotiateHttpClient<Endpoint>, Box<dyn Error>> {
     let realm = harness::var("INTEROP_MIT_REALM")?;
     let user = Principal::user(realm.clone(), harness::var("INTEROP_MIT_USER")?);
@@ -153,12 +172,13 @@ fn client(
         Tokio::with_password(config(&realm)?, KdcProtocol::Auto, user, password)
             .with_transport(KdcTransport::new().with_timeout(Duration::from_secs(10))),
     );
-    Ok(
-        NegotiateHttpClient::new(negotiate, Endpoint(harness::var("INTEROP_HTTPD")?))
-            .with_options(options)
-            .with_service_realm(realm)
-            .with_cookie_jar(CookieStore::new()),
+    Ok(NegotiateHttpClient::new(
+        negotiate,
+        Endpoint(harness::var("INTEROP_HTTPD")?, redirect_from),
     )
+    .with_options(options)
+    .with_service_realm(realm)
+    .with_cookie_jar(CookieStore::new()))
 }
 
 /// Initiator options that require mutual authentication.
@@ -196,7 +216,7 @@ fn http_client_negotiates_with_apache_and_proves_the_server() -> Result<(), Box<
         let realm = harness::var("INTEROP_MIT_REALM")?;
         let user = harness::var("INTEROP_MIT_USER")?;
         let host = harness::var("INTEROP_HTTPD_HOST")?;
-        let mut client = client(mutual())?;
+        let mut client = client(mutual(), None)?;
         let result = client.get(&format!("http://{host}/whoami/")).await?;
         let response = result.response();
         assert_eq!(response.status(), StatusCode::OK);
@@ -225,9 +245,8 @@ fn http_client_negotiates_with_apache_and_proves_the_server() -> Result<(), Box<
     })
 }
 
-/// Apache redirects `/whoami` to `/whoami/` (its own `mod_dir`): the client
-/// follows the same-origin redirect, answers the challenge there and proves the
-/// server on the final response.
+/// A same-origin redirect to `/whoami/`: the client follows it, answers
+/// Apache's challenge there and proves the server on the final response.
 #[test]
 fn http_client_follows_a_same_origin_redirect_and_negotiates() -> Result<(), Box<dyn Error>> {
     if !harness::require(
@@ -240,10 +259,10 @@ fn http_client_follows_a_same_origin_redirect_and_negotiates() -> Result<(), Box
         let realm = harness::var("INTEROP_MIT_REALM")?;
         let user = harness::var("INTEROP_MIT_USER")?;
         let host = harness::var("INTEROP_HTTPD_HOST")?;
-        let mut client = client(mutual())?;
-        let result = client.get(&format!("http://{host}/whoami")).await?;
+        let mut client = client(mutual(), Some("/start"))?;
+        let result = client.get(&format!("http://{host}/start")).await?;
         assert_eq!(result.response().status(), StatusCode::OK);
-        assert_eq!(result.redirects(), 1, "Apache redirected once");
+        assert_eq!(result.redirects(), 1, "one redirect was followed");
         assert_eq!(result.uri().path(), "/whoami/");
         assert!(
             matches!(
@@ -268,7 +287,7 @@ fn http_client_refuses_a_service_the_realm_does_not_know() -> Result<(), Box<dyn
         return Ok(());
     }
     runtime()?.block_on(async {
-        let mut client = client(mutual())?;
+        let mut client = client(mutual(), None)?;
         let refused = client.get("http://nosuchhost.test.rskrb5/whoami/").await;
         assert!(
             matches!(refused, Err(ClientError::Negotiate(HttpError::Client(_)))),

@@ -8,8 +8,10 @@
 # Apache holds, so a ticket the MIT KDC issued is accepted by this crate's
 # service and continued through a sealed session cookie. It adds no drop-in,
 # port or secret of its own (the host ports of httpd and mit-kdc are the
-# fixtures'). The redirect scenario uses the `/whoami` to `/whoami/` redirect
-# of Apache's own mod_dir, so the fixture needs no change. The directory name
+# fixtures'). The redirect scenario answers a same-origin 302 in the test's own
+# exchange and sends the rest to Apache: the fixture's docroot denies everything
+# outside /whoami/, so Apache's mod_dir redirect of /whoami is a 403 and the
+# fixture is left unchanged. The directory name
 # `suite-http-client` sorts after every fixture directory, so mit-kdc and
 # httpd are registered already.
 interop_suite http-client interop_http_client mit-kdc httpd
