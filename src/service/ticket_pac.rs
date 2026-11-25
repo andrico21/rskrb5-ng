@@ -44,7 +44,8 @@ impl<'check> PacCheck<'check> {
     }
 }
 
-/// Validate every ticket restriction before extracting and verifying its first PAC.
+/// Validate every ticket restriction before extracting and verifying its first PAC; return the
+/// PAC and the authentication indicators of the ticket's verified AD-CAMMACs.
 ///
 /// The PAC must pass the validator's policy: the server signature under `key`, the KDC, ticket and
 /// full signatures when the validator holds the KDC key, and the client info against the ticket's
@@ -59,14 +60,28 @@ pub(super) fn verified_ticket_pac(
     ticket: &rasn_kerberos::EncTicketPart,
     key: &EncryptionKey,
     check: &PacCheck<'_>,
-) -> Result<Option<Verified>, Error> {
+) -> Result<(Option<Verified>, Vec<String>), Error> {
     let data = ticket.authorization_data.as_ref();
     let session = encryption_key_from_rasn(&ticket.key);
     let context = AuthorizationContext::new()
         .with_session_key(&session)
+        .with_service_key(key)
         .with_conditions(check.conditions);
-    validate_authorization_data(data, true, context)?;
-    let found = match data {
+    let indicators = validate_authorization_data(data, true, context)?;
+    Ok((verified_pac(ticket, key, check)?, indicators))
+}
+
+/// Extract and verify the first PAC of the ticket's authorization data.
+///
+/// # Errors
+///
+/// Returns the PAC errors of [`verified_ticket_pac`].
+fn verified_pac(
+    ticket: &rasn_kerberos::EncTicketPart,
+    key: &EncryptionKey,
+    check: &PacCheck<'_>,
+) -> Result<Option<Verified>, Error> {
+    let found = match ticket.authorization_data.as_ref() {
         Some(elements) => pac::find_pac_in_authorization_data(elements)?,
         None => None,
     };

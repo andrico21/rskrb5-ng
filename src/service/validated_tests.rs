@@ -42,6 +42,7 @@ fn validated(cusec: u32) -> Result<ValidatedApReq, Error> {
             .checked_add(Duration::from_micros(cusec.into()))
             .ok_or(Error::TimeOverflow)?,
         pac: None,
+        auth_indicators: Vec::new(),
     })
 }
 

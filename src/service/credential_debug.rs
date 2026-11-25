@@ -20,6 +20,7 @@ impl fmt::Debug for ValidatedApReq {
             authenticator_cusec,
             authenticator_time,
             pac,
+            auth_indicators,
         } = self;
         f.debug_struct("ValidatedApReq")
             .field("crypto_policy", crypto_policy)
@@ -34,6 +35,7 @@ impl fmt::Debug for ValidatedApReq {
             .field("authenticator_cusec", authenticator_cusec)
             .field("authenticator_time", authenticator_time)
             .field("pac", pac)
+            .field("auth_indicators", auth_indicators)
             .finish()
     }
 }

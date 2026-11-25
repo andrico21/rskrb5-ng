@@ -100,6 +100,7 @@ impl Validator<'_> {
             false,
             AuthorizationContext::new().with_conditions(self.authorization_conditions.as_deref()),
         )
+        .map(drop)
     }
 
     /// Enforce RFC 4120 section 2.7 before replay admission.
@@ -187,7 +188,8 @@ impl Validator<'_> {
         self.validate_ticket_times(&ticket_service, &enc_ticket)?;
         self.validate_client_address(&ticket_service, &enc_ticket)?;
         self.validate_transit(&ticket_service, &enc_ticket)?;
-        let pac = verified_ticket_pac(&enc_ticket, service_key, &self.pac_check(&ticket_service))?;
+        let (pac, auth_indicators) =
+            verified_ticket_pac(&enc_ticket, service_key, &self.pac_check(&ticket_service))?;
 
         let session_key = encryption_key_from_rasn(&enc_ticket.key);
         let authenticator_usage = ap_req::authenticator_usage_for_ticket(&ap_req.ticket);
@@ -281,6 +283,7 @@ impl Validator<'_> {
             authenticator_cusec: cusec,
             authenticator_time: authenticator_timestamp,
             pac: pac.filter(|_verified| self.pac_extraction),
+            auth_indicators,
         };
         let tag = Tag::from_authenticator(
             ap_req.authenticator.etype,

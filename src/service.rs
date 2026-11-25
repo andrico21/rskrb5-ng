@@ -24,7 +24,7 @@ use crate::{
     crypto::{CryptoPolicy, Use},
     der::decode_complete,
     error,
-    iana::authorization_data_type::{AND_OR, KDC_ISSUED},
+    iana::authorization_data_type::{AND_OR, AUTH_INDICATOR, CAMMAC, KDC_ISSUED},
     keytab::{self, EncryptionKey, Keytab},
     pac::{self, VerificationPolicy, Verified},
     replay::{Admission, Evidence, Presentation, Store, Tag},
@@ -110,6 +110,8 @@ pub struct ValidatedApReq {
     authenticator_time: SystemTime,
     /// Verified PAC from the ticket authorization data, when present.
     pac: Option<Verified>,
+    /// Authentication indicators of the ticket's verified AD-CAMMACs.
+    auth_indicators: Vec<String>,
 }
 
 impl ValidatedApReq {
@@ -192,6 +194,21 @@ impl ValidatedApReq {
     #[must_use]
     pub const fn pac(&self) -> Option<&Verified> {
         self.pac.as_ref()
+    }
+    /// The authentication indicators of the ticket (RFC 8129), in ticket order: the values of
+    /// every AD-AUTHENTICATION-INDICATOR element inside an AD-CAMMAC of the ticket whose service
+    /// verifier verified under the key that decrypted the ticket (MIT 1.22.2
+    /// `authdata.c:586-665`, `cammac_util.c:36-86`).
+    ///
+    /// # Security
+    ///
+    /// Only CAMMACs of the decrypted ticket count. An indicator element outside a CAMMAC, or any
+    /// element of the client-controlled authenticator, never appears here; a CAMMAC in an
+    /// authenticator, a malformed one or one whose verifier does not verify refuses the request.
+    #[inline]
+    #[must_use]
+    pub fn auth_indicators(&self) -> &[String] {
+        &self.auth_indicators
     }
     /// Borrow the ticket session key.
     #[must_use]
@@ -1326,6 +1343,8 @@ struct AuthorizationScope {
     ticket: bool,
     /// Maximum nesting is eight wrappers, independently of DER validity.
     depth: usize,
+    /// Inside the elements of a verified AD-CAMMAC of the ticket.
+    cammac: bool,
 }
 
 /// What the acceptor can bring to the interpretation of authorization data.
@@ -1333,6 +1352,8 @@ struct AuthorizationScope {
 pub(crate) struct AuthorizationContext<'ctx> {
     /// The session key a KDC-issued checksum is verified under (tickets only).
     session_key: Option<&'ctx EncryptionKey>,
+    /// The key that decrypted the ticket, which verifies an AD-CAMMAC (tickets only).
+    service_key: Option<&'ctx EncryptionKey>,
     /// What the application knows about AD-AND-OR conditions.
     conditions: Option<&'ctx dyn ConditionEvaluator>,
 }
@@ -1342,8 +1363,15 @@ impl<'ctx> AuthorizationContext<'ctx> {
     pub(crate) const fn new() -> Self {
         Self {
             session_key: None,
+            service_key: None,
             conditions: None,
         }
+    }
+
+    /// Verify AD-CAMMAC elements under the ticket's `key`.
+    pub(crate) const fn with_service_key(mut self, key: &'ctx EncryptionKey) -> Self {
+        self.service_key = Some(key);
+        self
     }
 
     /// Verify KDC-issued elements under `key`.
@@ -1362,18 +1390,26 @@ impl<'ctx> AuthorizationContext<'ctx> {
     }
 }
 
-/// Validate every restriction independently of first-PAC extraction (RFC 4120 section 5.2.6).
+/// Validate every restriction independently of first-PAC extraction (RFC 4120 section 5.2.6),
+/// and return the authentication indicators of the verified AD-CAMMACs.
 ///
 /// # Errors
 ///
 /// Returns [`Error::UnsupportedAuthorizationData`] for uninterpreted mandatory
 /// semantics, [`Error::AuthorizationDataLimit`] for excess depth/decoded bytes,
-/// and [`Error::Decode`] for malformed known wrappers.
+/// [`Error::Decode`] for malformed known wrappers and [`Error::AuthorizationData`] for an
+/// AD-CAMMAC that does not verify or a malformed indicator list.
 fn validate_authorization_data(
     data: Option<&rasn_kerberos::AuthorizationData>,
     ticket: bool,
     context: AuthorizationContext<'_>,
-) -> Result<(), Error> {
+) -> Result<Vec<String>, Error> {
+    let mut budget = AuthorizationBudget {
+        remaining: 0x0010_0000,
+        pac_seen: false,
+        context,
+        indicators: Vec::new(),
+    };
     if let Some(elements) = data {
         validate_authorization_elements(
             elements,
@@ -1381,15 +1417,12 @@ fn validate_authorization_data(
                 critical: true,
                 ticket,
                 depth: 0,
+                cammac: false,
             },
-            &mut AuthorizationBudget {
-                remaining: 0x0010_0000,
-                pac_seen: false,
-                context,
-            },
+            &mut budget,
         )?;
     }
-    Ok(())
+    Ok(budget.indicators)
 }
 
 /// Shared bounds across sibling and nested authorization restrictions.
@@ -1400,6 +1433,8 @@ struct AuthorizationBudget<'ctx> {
     pac_seen: bool,
     /// What KDC-issued and AND-OR elements are interpreted with.
     context: AuthorizationContext<'ctx>,
+    /// The authentication indicators of the verified AD-CAMMACs, in order.
+    indicators: Vec<String>,
 }
 
 /// Interpret wrapper criticality with a shared decoded-byte budget.
@@ -1432,8 +1467,8 @@ fn validate_authorization_elements(
                     &nested,
                     AuthorizationScope {
                         critical: entry.r#type == 8_i32,
-                        ticket: scope.ticket,
                         depth: scope.depth.saturating_add(1),
+                        ..scope
                     },
                     budget,
                 )?;
@@ -1445,6 +1480,8 @@ fn validate_authorization_elements(
             }
             KDC_ISSUED => authorization::kdc_issued(entry, scope, budget)?,
             AND_OR => authorization::and_or(entry, budget)?,
+            CAMMAC => authorization::cammac(entry, scope, budget)?,
+            AUTH_INDICATOR if scope.cammac => authorization::indicators(entry, budget)?,
             _ if scope.critical => {
                 return Err(Error::UnsupportedAuthorizationData { kind: entry.r#type });
             }
