@@ -111,7 +111,10 @@ impl Eq for CertificateRules {}
 
 /// The keyword that starts `text`, if any.
 fn keyword_at(text: &str) -> Option<&'static str> {
-    KEYWORDS.iter().find(|keyword| text.starts_with(**keyword)).copied()
+    KEYWORDS
+        .iter()
+        .find(|keyword| text.starts_with(**keyword))
+        .copied()
 }
 
 /// The bits of a comma-separated keyword list (MIT `parse_list_value`, with

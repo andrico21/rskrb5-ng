@@ -90,13 +90,6 @@ mod kdf;
 #[cfg(feature = "pkinit")]
 #[path = "pkinit/keys.rs"]
 mod keys;
-/// The cryptographic and parsing operations of the leaf.
-#[cfg(feature = "pkinit")]
-#[path = "pkinit/ops.rs"]
-mod ops;
-#[cfg(not(feature = "pkinit"))]
-#[path = "pkinit/unavailable.rs"]
-mod ops;
 /// `pkinit_cert_match`: the rules that choose the client certificate.
 #[cfg(feature = "pkinit")]
 #[path = "pkinit/matching.rs"]
@@ -113,6 +106,13 @@ mod matching_name;
 #[cfg(feature = "pkinit")]
 #[path = "pkinit/matching_pattern.rs"]
 mod matching_pattern;
+/// The cryptographic and parsing operations of the leaf.
+#[cfg(feature = "pkinit")]
+#[path = "pkinit/ops.rs"]
+mod ops;
+#[cfg(not(feature = "pkinit"))]
+#[path = "pkinit/unavailable.rs"]
+mod ops;
 /// The RFC 3526 primes.
 #[cfg(feature = "pkinit")]
 #[path = "pkinit/primes.rs"]
@@ -369,14 +369,11 @@ impl ConfiguredIdentities {
         let mut certificates = Vec::new();
         for (certificate, _key) in &self.files {
             let pem = config::read(certificate, MAX_CRL_BYTES)?;
-            certificates.push(
-                ops::pem_certificates(&pem)?
-                    .into_iter()
-                    .next()
-                    .ok_or(Error::Identity {
-                        reason: "a candidate file holds no certificate",
-                    })?,
-            );
+            certificates.push(ops::pem_certificates(&pem)?.into_iter().next().ok_or(
+                Error::Identity {
+                    reason: "a candidate file holds no certificate",
+                },
+            )?);
         }
         Ok(certificates)
     }

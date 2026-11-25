@@ -424,7 +424,9 @@ fn certificate_rules_pick_the_identity_the_kdc_accepts() -> Result<(), Box<dyn E
             "{unsupported}"
         );
         let ambiguous = matched_login(&[], 11).await;
-        let failure = ambiguous.err().ok_or("several identities and no rule logged in")?;
+        let failure = ambiguous
+            .err()
+            .ok_or("several identities and no rule logged in")?;
         assert!(
             matches!(
                 pkinit_error(failure.as_ref()),

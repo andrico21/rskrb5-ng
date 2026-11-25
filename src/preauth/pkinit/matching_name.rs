@@ -69,7 +69,9 @@ fn push_code_point(out: &mut String, code: u32) -> Result<(), Error> {
     match (u8::try_from(code), u16::try_from(code)) {
         (Ok(byte), _) => out.push(char::from(byte)),
         (Err(_byte), Ok(unit)) => write!(out, "\\U{unit:04X}").map_err(|_detail| unprintable())?,
-        (Err(_byte), Err(_unit)) => write!(out, "\\W{code:08X}").map_err(|_detail| unprintable())?,
+        (Err(_byte), Err(_unit)) => {
+            write!(out, "\\W{code:08X}").map_err(|_detail| unprintable())?
+        }
     }
     Ok(())
 }

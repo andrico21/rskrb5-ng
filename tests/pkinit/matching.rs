@@ -12,7 +12,9 @@ use rskrb5_ng::{
     Config,
     client::principal::Principal,
     error::Pkinit,
-    preauth::pkinit::{ConfiguredIdentities, Identity, IdentityProvider as _, KdcTrust, matching::CertificateRules},
+    preauth::pkinit::{
+        ConfiguredIdentities, Identity, IdentityProvider as _, KdcTrust, matching::CertificateRules,
+    },
 };
 
 /// A boxed test failure.
@@ -180,13 +182,19 @@ fn certificate_rule_ambiguity_fails_closed() -> Result<(), TestError> {
     // Given a rule that two identities satisfy, then the selection is refused.
     let ambiguous = select_certificate(&pool, &["<SUBJECT>O=KRBTEST.COM"])?;
     assert!(
-        matches!(ambiguous, Err(Pkinit::AmbiguousCertificates { candidates: 3 })),
+        matches!(
+            ambiguous,
+            Err(Pkinit::AmbiguousCertificates { candidates: 3 })
+        ),
         "{ambiguous:?}"
     );
     // And the identity provider that reads the same configuration refuses it alike.
     let provided = select(&pool, &["<SUBJECT>O=KRBTEST.COM"]);
     assert!(
-        matches!(provided, Err(Pkinit::AmbiguousCertificates { candidates: 3 })),
+        matches!(
+            provided,
+            Err(Pkinit::AmbiguousCertificates { candidates: 3 })
+        ),
         "{provided:?}"
     );
     // And an `||` rule that matches every identity through different components.
@@ -204,7 +212,10 @@ fn certificate_rule_ambiguity_fails_closed() -> Result<(), TestError> {
     // And a rule that matches nothing is NoMatchingCertificate, not the first identity.
     let nothing = select_certificate(&pool, &["<SUBJECT>CN=nobody"])?;
     assert!(
-        matches!(nothing, Err(Pkinit::NoMatchingCertificate { candidates: 3 })),
+        matches!(
+            nothing,
+            Err(Pkinit::NoMatchingCertificate { candidates: 3 })
+        ),
         "{nothing:?}"
     );
     Ok(())
@@ -258,18 +269,25 @@ fn certificate_names_render_like_mit_openssl() -> Result<(), TestError> {
             columns.next().ok_or("subject")?,
             columns.next().ok_or("issuer")?,
         );
-        let ders = ALL.iter().map(|other| der_of(other)).collect::<Result<Vec<_>, _>>()?;
+        let ders = ALL
+            .iter()
+            .map(|other| der_of(other))
+            .collect::<Result<Vec<_>, _>>()?;
         let views: Vec<&[u8]> = ders.iter().map(Vec::as_slice).collect();
-        let index = ALL.iter().position(|other| *other == name).ok_or("fixture")?;
+        let index = ALL
+            .iter()
+            .position(|other| *other == name)
+            .ok_or("fixture")?;
         let by_subject = format!("<SUBJECT>^{}$", escape(subject));
-        let by_issuer_and_subject = format!(
-            "<ISSUER>^{}$<SUBJECT>^{}$",
-            escape(issuer),
-            escape(subject)
-        );
+        let by_issuer_and_subject =
+            format!("<ISSUER>^{}$<SUBJECT>^{}$", escape(issuer), escape(subject));
         // The generic and the user fixtures share a subject: the rule cannot
         // tell them apart, which is the ambiguity rule.
-        let expected = if name == "user" || name == "generic" { None } else { Some(index) };
+        let expected = if name == "user" || name == "generic" {
+            None
+        } else {
+            Some(index)
+        };
         for rule in [&by_subject, &by_issuer_and_subject] {
             let rules = CertificateRules::parse(&[rule.as_str()])?;
             match (rules.select(&views), expected) {
@@ -292,7 +310,10 @@ fn certificate_rules_match_mit_fixtures() -> Result<(), TestError> {
     for (rule, passes) in [
         ("<SAN>^user@KRBTEST.COM$", true),
         ("<SAN>^user@krbtest.com$", false),
-        ("<SUBJECT>CN=user$<KU>digitalSignature,keyEncipherment", true),
+        (
+            "<SUBJECT>CN=user$<KU>digitalSignature,keyEncipherment",
+            true,
+        ),
         ("&&<SUBJECT>O=OTHER.COM<SAN>^user@KRBTEST.COM$", false),
         ("||<SUBJECT>O=KRBTEST.COM<SAN>^otheruser@KRBTEST.COM$", true),
         ("||<SUBJECT>O=OTHER.COM<SAN>^otheruser@KRBTEST.COM$", false),
@@ -315,7 +336,10 @@ fn certificate_rules_match_mit_fixtures() -> Result<(), TestError> {
     );
     let generic_san = select(&["generic"], &["<SAN>^user@KRBTEST.COM$"]);
     assert!(
-        matches!(generic_san, Err(Pkinit::NoMatchingCertificate { candidates: 1 })),
+        matches!(
+            generic_san,
+            Err(Pkinit::NoMatchingCertificate { candidates: 1 })
+        ),
         "{generic_san:?}"
     );
     // krb5.conf(5) examples, on John DoE (issuer O=DoE CA, SAN john@EXAMPLE.COM,

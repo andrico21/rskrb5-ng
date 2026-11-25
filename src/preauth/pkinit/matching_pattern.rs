@@ -65,7 +65,9 @@ fn validate(pattern: &str) -> Result<(), Refusal> {
                     Some(next) if next.is_ascii_punctuation() && !GNU_OPERATORS.contains(&next) => {
                         escaped.as_str()
                     }
-                    Some(_) => return Err("only escaped punctuation is a literal (no \\d, \\1, \\<)"),
+                    Some(_) => {
+                        return Err("only escaped punctuation is a literal (no \\d, \\1, \\<)");
+                    }
                     None => return Err("a trailing backslash"),
                 }
             }

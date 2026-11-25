@@ -127,7 +127,10 @@ fn an_unreadable_candidate_fails_the_selection() -> Result<(), TestError> {
     let result = provider.identity(&Principal::user(REALM, "bob"));
     let error = result.err().ok_or("an unreadable candidate was skipped")?;
     assert!(
-        matches!(error.downcast_ref::<Pkinit>(), Some(Pkinit::Io { path: _, source: _ })),
+        matches!(
+            error.downcast_ref::<Pkinit>(),
+            Some(Pkinit::Io { path: _, source: _ })
+        ),
         "{error:?}"
     );
     Ok(())
