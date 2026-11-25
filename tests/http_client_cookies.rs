@@ -19,7 +19,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rskrb5_ng::{
         error::HttpCookie as CookieError,
-        http::{agent::CookieJar as _, cookies::CookieStore},
+        http::{cookies::CookieStore, wire::CookieJar as _},
     };
 
     use super::context::{Context as _, TestError};

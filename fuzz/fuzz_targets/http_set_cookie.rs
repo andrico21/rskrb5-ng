@@ -11,7 +11,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use rskrb5_ng::http::{agent::CookieJar as _, cookies::CookieStore};
+use rskrb5_ng::http::{cookies::CookieStore, wire::CookieJar as _};
 
 /// A public-suffix list with a TLD and a two-label suffix.
 const SUFFIXES: &str =

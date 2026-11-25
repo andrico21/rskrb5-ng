@@ -27,7 +27,9 @@ mod sources;
     reason = "test code is not rendered API documentation"
 )]
 mod tests {
-    use core::{convert::identity, error::Error as _};
+    #[cfg(feature = "http")]
+    use core::convert::identity;
+    use core::error::Error as _;
 
     #[cfg(feature = "http")]
     use http_types::Request;

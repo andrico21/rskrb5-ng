@@ -40,14 +40,16 @@
 use core::fmt;
 
 use http_types::{
-    HeaderMap, Method, Request, Response, StatusCode, Uri,
+    Method, Request, Response, StatusCode, Uri,
     header::{CONTENT_TYPE, HeaderValue, InvalidHeaderValue, WWW_AUTHENTICATE},
 };
 
 use self::chain::Chain;
 use super::{
     ClientNegotiateResponse, classify_negotiate_response, mutual_requested_by,
-    negotiate_challenge_is_bare, origin::Origin, wire::HttpExchange,
+    negotiate_challenge_is_bare,
+    origin::Origin,
+    wire::{CookieJar, HttpExchange},
     www_authenticate_negotiate_header,
 };
 use crate::{
@@ -59,19 +61,6 @@ use crate::{
 
 /// The request chain and its redirect rules.
 mod chain;
-
-/// A cookie jar the client consults for every request and feeds with every
-/// response (the `http-client` leaf provides [`CookieStore`]).
-///
-/// [`CookieStore`]: super::cookies::CookieStore
-pub trait CookieJar: Send {
-    /// The `Cookie` header value for a request to `uri`, if the jar holds any.
-    fn cookie_header(&self, uri: &Uri) -> Option<HeaderValue>;
-
-    /// Store the `Set-Cookie` headers of a response to a request for `uri`;
-    /// a cookie the jar refuses is dropped.
-    fn store(&mut self, uri: &Uri, headers: &HeaderMap);
-}
 
 /// Which redirects the client follows.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

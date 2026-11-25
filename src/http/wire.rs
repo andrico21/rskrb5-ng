@@ -21,7 +21,7 @@
 
 use core::pin::Pin;
 
-use http_types::{Request, Response};
+use http_types::{HeaderMap, HeaderValue, Request, Response, Uri};
 
 use crate::error::HttpExchange as Error;
 
@@ -44,4 +44,17 @@ pub trait HttpExchange: Send + Sync {
     ///
     /// The caller may drop the future; the request may then have been delivered.
     fn exchange(&self, request: Request<Vec<u8>>) -> ExchangeFuture<'_>;
+}
+
+/// A cookie jar the client consults for every request and feeds with every
+/// response (the `http-client` leaf provides [`CookieStore`]).
+///
+/// [`CookieStore`]: super::cookies::CookieStore
+pub trait CookieJar: Send {
+    /// The `Cookie` header value for a request to `uri`, if the jar holds any.
+    fn cookie_header(&self, uri: &Uri) -> Option<HeaderValue>;
+
+    /// Store the `Set-Cookie` headers of a response to a request for `uri`;
+    /// a cookie the jar refuses is dropped.
+    fn store(&mut self, uri: &Uri, headers: &HeaderMap);
 }

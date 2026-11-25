@@ -31,7 +31,7 @@ use publicsuffix::List;
 use url::Url;
 
 #[cfg(feature = "http-client")]
-use super::{agent::CookieJar, origin::Origin};
+use super::{origin::Origin, wire::CookieJar};
 #[cfg(feature = "http-client")]
 use crate::error::HttpCookie as Error;
 

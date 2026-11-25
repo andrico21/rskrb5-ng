@@ -183,11 +183,11 @@ pub(super) async fn post(
         .header(header::CACHE_CONTROL, "no-cache")
         .header(header::PRAGMA, "no-cache")
         .header(header::CONNECTION, "close")
-        .body(Payload(Some(Bytes::copy_from_slice(request.body))))
+        .body(Payload::new(Bytes::copy_from_slice(request.body)))
         .map_err(|_request| Error::InvalidUrl {
             reason: "the path is not a valid request target",
         })?;
-    let (mut sender, connection) = http1::handshake(Io(tls))
+    let (mut sender, connection) = http1::handshake(Io::new(tls))
         .await
         .map_err(|error| Error::NotDelivered(Box::new(error)))?;
     let limit = request.max_response;
