@@ -155,28 +155,41 @@ pub(super) fn realm(name: &str, lines: &[Line]) -> Result<Realm, Error> {
         realm.kpasswd_server = realm
             .admin_server
             .iter()
-            .map(|admin| {
-                if let Ok(address) = admin.parse::<SocketAddr>() {
-                    return SocketAddr::new(address.ip(), 464).to_string();
-                }
-                if let Ok(address) = admin.parse::<IpAddr>() {
-                    return SocketAddr::new(address, 464).to_string();
-                }
-                let host = admin.strip_circumfix('[', ']').unwrap_or_else(|| {
-                    admin
-                        .split_once(':')
-                        .map_or(admin.as_str(), |(host, _)| host)
-                });
-                if host.contains(':') {
-                    format!("[{host}]:464")
-                } else {
-                    format!("{host}:464")
-                }
-            })
+            .map(|admin| kpasswd_fallback(admin))
             .collect();
     }
 
     Ok(realm)
+}
+
+/// The kpasswd server an `admin_server` entry stands for when the realm names
+/// no `kpasswd_server` (MIT `locate_kpasswd`, `src/lib/krb5/os/changepw.c:66-85`):
+/// the same host on port 464.
+///
+/// An `https://` entry (MIT `parse_uri_if_https`, `locate_kdc.c:217-230`) stays
+/// the complete KDC proxy URL, port and path included: the proxy forwards the
+/// password change, and the proxy URL parser (`transport::proxy::Url::parse`)
+/// validates it where the endpoint is used. MIT also rewrites a proxy entry's
+/// port to 464 (`changepw.c:76-84`), which names an HTTPS origin nobody
+/// configured; this keeps the configured origin instead.
+fn kpasswd_fallback(admin: &str) -> String {
+    if admin.trim().starts_with("https://") {
+        return admin.to_owned();
+    }
+    if let Ok(address) = admin.parse::<SocketAddr>() {
+        return SocketAddr::new(address.ip(), 464).to_string();
+    }
+    if let Ok(address) = admin.parse::<IpAddr>() {
+        return SocketAddr::new(address, 464).to_string();
+    }
+    let host = admin
+        .strip_circumfix('[', ']')
+        .unwrap_or_else(|| admin.split_once(':').map_or(admin, |(host, _)| host));
+    if host.contains(':') {
+        format!("[{host}]:464")
+    } else {
+        format!("{host}:464")
+    }
 }
 
 /// Parse a decimal `i32` value of `key`.

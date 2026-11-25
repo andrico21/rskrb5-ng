@@ -65,6 +65,16 @@ mod password_result;
 mod primary;
 /// MS-KKDCP endpoints: the request through the KDC proxy transport.
 mod proxied;
+/// An `https://` admin server as the kpasswd fallback.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "transport/tests/proxy_admin.rs"]
+mod proxy_admin_tests;
 /// `https://` endpoints through a caller's KDC proxy transport.
 #[cfg(test)]
 #[expect(
