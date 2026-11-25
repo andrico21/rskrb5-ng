@@ -17,6 +17,7 @@
 #   doe     O=Example,CN=John DoE, SAN john@EXAMPLE.COM, EKU msScLogin + clientAuth, KU ds, issuer O=DoE CA
 #   erin    C=CH,O=Zurich, AG\+x,CN=<CJK>+UID=u1,emailAddress=...: multi-valued RDN, a comma and plus, non-ASCII
 #   frank   SANs frank/admin@TEST.RSKRB5 and fr@nk@TEST.RSKRB5 (krb5_unparse_name quoting)
+#   gina    O is a BMPString (`string_mask = default`): u-umlaut (U+00FC, one raw byte in OpenSSL's rendering) and a CJK character (\U4E2D)
 set -euo pipefail
 export LC_ALL=C
 DAYS=36500
@@ -140,11 +141,25 @@ leaf carol ca-other '/O=OTHER.COM/CN=carol' carol
 leaf doe ca-doe '/O=Example/CN=John DoE' doe
 leaf erin ca-mit '/C=CH/O=Zurich, AG\+x/CN=中文+UID=u1/emailAddress=erin@example.test' erin
 leaf frank ca-mit '/O=KRBTEST.COM/CN=frank' frank
+cat >gina.cnf <<'GINA'
+[req]
+distinguished_name = dn
+string_mask = default
+prompt = no
+[dn]
+O = Zürich 中
+CN = gina
+GINA
+ec gina.key
+openssl req -new -key gina.key -config gina.cnf -utf8 -out gina.csr
+openssl x509 -req -in gina.csr -CA ca-mit.pem -CAkey ca-mit.key -CAcreateserial -sha256 \
+  -days "$DAYS" -extfile ext.cnf -extensions generic -out gina.pem
+rm -f gina.csr gina.cnf
 rm -f ext.cnf ca-*.key ca-*.srl ca-*.pem
 
 # The expected DN renderings: what OpenSSL prints for MIT's flags.
 : >subjects.tsv
-for name in user generic alice bob carol doe erin frank; do
+for name in user generic alice bob carol doe erin frank gina; do
   subject=$(openssl x509 -in "$name.pem" -noout -subject -nameopt sep_comma_plus)
   issuer=$(openssl x509 -in "$name.pem" -noout -issuer -nameopt sep_comma_plus)
   printf '%s\t%s\t%s\n' "$name" "${subject#subject=}" "${issuer#issuer=}" >>subjects.tsv

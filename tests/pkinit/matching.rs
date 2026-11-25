@@ -79,8 +79,8 @@ pub(crate) fn select(identities: &[&str], rules: &[&str]) -> Result<String, Pkin
 }
 
 /// Every fixture identity.
-const ALL: [&str; 8] = [
-    "user", "generic", "alice", "bob", "carol", "doe", "erin", "frank",
+const ALL: [&str; 9] = [
+    "user", "generic", "alice", "bob", "carol", "doe", "erin", "frank", "gina",
 ];
 
 /// A single rule selects the identity it matches, over every component kind.
@@ -200,9 +200,15 @@ fn identities_without_rules_must_be_exactly_one() -> Result<(), TestError> {
 
 /// The DN renderings are OpenSSL's `XN_FLAG_SEP_COMMA_PLUS` (MIT `rfc2253_name`):
 /// a rule that is the escaped expected text, anchored, selects its identity.
+/// `erin` has a multi-valued RDN, a comma, a plus and UTF-8 above U+0100;
+/// `gina` has a BMPString holding U+00FC (one character) and U+4E2D.
 #[test]
 fn certificate_names_render_like_mit_openssl() -> Result<(), TestError> {
-    let table = fs::read_to_string(dir().join("subjects.tsv"))?;
+    // The table holds OpenSSL's raw bytes (a Latin-1 character is one byte).
+    let table: String = fs::read(dir().join("subjects.tsv"))?
+        .into_iter()
+        .map(char::from)
+        .collect();
     let escape = |text: &str| {
         let mut out = String::new();
         for character in text.chars() {

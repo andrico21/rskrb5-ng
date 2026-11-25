@@ -6,3 +6,4 @@ carol	O=OTHER.COM,CN=carol	O=OTHER CA,CN=ca
 doe	O=Example,CN=John DoE	O=DoE CA,CN=ca
 erin	C=CH,O=Zurich, AG+x,CN=\U4E2D\U6587+UID=u1,emailAddress=erin@example.test	O=MIT,CN=match CA
 frank	O=KRBTEST.COM,CN=frank	O=MIT,CN=match CA
+gina	O=Zürich \U4E2D,CN=gina	O=MIT,CN=match CA
