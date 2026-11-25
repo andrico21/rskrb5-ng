@@ -21,8 +21,8 @@ superset must not copy are listed under
 
 | Status | Rows |
 | --- | ---: |
-| implemented | 30 |
-| partial | 5 |
+| implemented | 31 |
+| partial | 4 |
 | absent | 0 |
 | rejected | 0 |
 | omitted | 0 |
@@ -104,7 +104,7 @@ superset must not copy are listed under
 
 | ID | Capability | Status | Evidence | Disposition | Closing | Missing | Policy and divergence | Symbols | Features | Tests |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| GO-service-1 | AP-REQ verification / credentials | partial | unit | WP-18 | P2-6 | A strict AP-REQ validator with address, PAC, keytab-override and clockskew settings exists, and P2-6 added the logger contract (`service::Validator::with_trace`, redacted accepted and rejected events). Settings equivalence is still missing: gokrb5 `SName` (an expected service name) and a PAC-decode toggle are not separate `Validator` settings (the keytab principal override, client address, `require_client_address` and `max_clock_skew` are); P2-28 closes the row (register FU-TRC-P03). | The authenticator realm is compared with the ticket realm (see GO-T2-4); Config-driven acceptors apply [libdefaults] clockskew, which gokrb5 reads on the client side only. | `service::Validator`, `service::ValidatedApReq`, `service::Validator::with_trace` | `messages` | `tests/service.rs::rejects_authenticator_client_realm_mismatch`, `tests/http.rs::tower_layer_config_clockskew_rejects_stale_authenticator`, `tests/service/trace_events.rs::accept_and_reject_are_traced_without_secrets` |
+| GO-service-1 | AP-REQ verification / credentials | implemented | unit | WP-18 | P2-6 | - | The authenticator realm is compared with the ticket realm (see GO-T2-4); Config-driven acceptors apply [libdefaults] clockskew, which gokrb5 reads on the client side only. The expected service is checked against the identity of the key that decrypts the ticket (gokrb5 SName is a client setting). Turning PAC extraction off only withholds the PAC: it is still verified by the PAC policy, where gokrb5 DecodePAC(false) skips it. | `service::Validator`, `service::ValidatedApReq`, `service::Validator::with_trace`, `service::Validator::with_expected_service`, `service::Validator::with_pac_extraction` | `messages` | `tests/service.rs::rejects_authenticator_client_realm_mismatch`, `tests/http.rs::tower_layer_config_clockskew_rejects_stale_authenticator`, `tests/service/trace_events.rs::accept_and_reject_are_traced_without_secrets`, `tests/service/settings.rs::expected_service_rejects_another_keytab_principal`, `tests/service/settings.rs::keytab_override_does_not_override_expected_service`, `tests/service/settings.rs::pac_decode_default_verifies`, `tests/gss_ext/attributes.rs::pac_decode_disabled_exposes_no_attributes`, `tests/service/settings.rs::pac_disable_cannot_bypass_required_policy` |
 | GO-service-2 | Global replay cache | implemented | unit | ALREADY | - | - | Per-instance or shared caches with a capacity (65,536 records by default) that fail closed when full replace gokrb5's unbounded process-wide singleton (see GO-T2-7). | `service::ReplayCache`, `service::SharedReplayCache` | `messages` | `tests/service.rs::replay_lifecycle_capacity_preserves_live_records`, `tests/service.rs::replay_lifecycle_accepts_concurrent_shared_validations`, `src/service/replay/policy_tests.rs::capacity_default_and_custom_limit_are_enforced` |
 
 ### gssapi-spnego
