@@ -13,6 +13,7 @@ use super::{
     },
 };
 use crate::{
+    config::{Config, LibDefaults},
     extensions,
     file_name::{
         self, SecretBytes,
@@ -74,7 +75,10 @@ impl CredentialStore for FileStore {
 /// The name is a built-in file name (a bare path, `FILE:`, `WRFILE:`,
 /// `DIR:directory` for its primary cache, or `DIR::path`), a built-in
 /// `KEYRING:residual` name (the `ccache-keyring` leaf on Linux) or a name of a
-/// store installed with [`crate::extensions::Registry::install_stores`].
+/// store installed with [`crate::extensions::Registry::install_stores`]. A
+/// built-in `KCM:` name reaches the daemon with the default settings: the
+/// default socket, or the installed transport. [`resolve_configured`] reads
+/// the settings from a configuration.
 ///
 /// # Errors
 ///
@@ -82,13 +86,39 @@ impl CredentialStore for FileStore {
 /// [`super::CacheName::parse`], and the errors of [`CredentialStore::resolve`].
 #[inline]
 pub fn resolve(name: &str, version: CacheVersion) -> Result<Box<dyn CacheHandle>, Error> {
+    resolve_with(name, version, None)
+}
+
+/// [`resolve`] for a configuration: a built-in `KCM:` name reaches the daemon
+/// the `kcm_socket` and `kcm_mach_service` of `config` name
+/// ([`kcm::Store::from_libdefaults`]).
+///
+/// # Errors
+///
+/// The errors of [`resolve`], and those of [`kcm::Store::from_libdefaults`]
+/// for a `KCM:` name.
+#[inline]
+pub fn resolve_configured(
+    name: &str,
+    version: CacheVersion,
+    config: &Config,
+) -> Result<Box<dyn CacheHandle>, Error> {
+    resolve_with(name, version, Some(&config.libdefaults))
+}
+
+/// [`resolve`] with the settings a built-in `KCM:` name reaches its daemon by.
+fn resolve_with(
+    name: &str,
+    version: CacheVersion,
+    settings: Option<&LibDefaults>,
+) -> Result<Box<dyn CacheHandle>, Error> {
     let expanded = file_name::expand_path_tokens(name).map_err(file_name_error)?;
     if let Some((provider, residual)) = extensions::stores::installed(&expanded)
         && let Some(store) = provider.credential_store()
     {
         return store.resolve(residual);
     }
-    if let Some(handle) = non_file(&expanded) {
+    if let Some(handle) = non_file(&expanded, settings) {
         return handle;
     }
     match expanded.split_once(':') {
@@ -103,12 +133,20 @@ pub fn resolve(name: &str, version: CacheVersion) -> Result<Box<dyn CacheHandle>
 /// The handle of a built-in non-file cache name, `None` for any other name.
 ///
 /// The types are `KCM` and `KEYRING` (the `ccache-keyring` leaf on Linux), as
-/// [`resolve`] dispatches them; the name is already expanded. The cache-name
-/// route of [`CCache::load_name`] and [`CCache::save_name`] reaches them here.
-pub(super) fn non_file(name: &str) -> Option<Result<Box<dyn CacheHandle>, Error>> {
+/// [`resolve`] dispatches them; the name is already expanded and `settings`
+/// are the daemon settings of a `KCM` name (`None`: the defaults). The
+/// cache-name route of [`CCache::load_name`] and [`CCache::save_name`] reaches
+/// them here.
+pub(super) fn non_file(
+    name: &str,
+    settings: Option<&LibDefaults>,
+) -> Option<Result<Box<dyn CacheHandle>, Error>> {
     match name.split_once(':') {
         Some((prefix, residual)) if prefix.eq_ignore_ascii_case("KCM") => {
-            Some(kcm::resolve(residual))
+            Some(settings.map_or_else(
+                || kcm::resolve(residual),
+                |defaults| kcm::resolve_configured(defaults, residual),
+            ))
         }
         Some((prefix, residual)) if prefix.eq_ignore_ascii_case("KEYRING") => {
             Some(Keyring::new().resolve(residual))
@@ -124,6 +162,30 @@ pub(super) fn non_file(name: &str) -> Option<Result<Box<dyn CacheHandle>, Error>
 /// The errors of [`resolve`].
 #[inline]
 pub fn collection(name: &str, version: CacheVersion) -> Result<Box<dyn CacheCollection>, Error> {
+    collection_with(name, version, None)
+}
+
+/// [`collection`] for a configuration, as [`resolve_configured`] reads a name.
+///
+/// # Errors
+///
+/// The errors of [`collection`], and those of [`kcm::Store::from_libdefaults`]
+/// for a `KCM:` name.
+#[inline]
+pub fn collection_configured(
+    name: &str,
+    version: CacheVersion,
+    config: &Config,
+) -> Result<Box<dyn CacheCollection>, Error> {
+    collection_with(name, version, Some(&config.libdefaults))
+}
+
+/// [`collection`] with the settings a built-in `KCM:` name reaches its daemon by.
+fn collection_with(
+    name: &str,
+    version: CacheVersion,
+    settings: Option<&LibDefaults>,
+) -> Result<Box<dyn CacheCollection>, Error> {
     let expanded = file_name::expand_path_tokens(name).map_err(file_name_error)?;
     if let Some((provider, residual)) = extensions::stores::installed(&expanded)
         && let Some(store) = provider.credential_store()
@@ -134,7 +196,10 @@ pub fn collection(name: &str, version: CacheVersion) -> Result<Box<dyn CacheColl
         Some((prefix, residual)) if prefix.eq_ignore_ascii_case("DIR") => {
             DirStore::new(version).collection(residual)
         }
-        Some((prefix, residual)) if prefix.eq_ignore_ascii_case("KCM") => kcm::collection(residual),
+        Some((prefix, residual)) if prefix.eq_ignore_ascii_case("KCM") => settings.map_or_else(
+            || kcm::collection(residual),
+            |defaults| kcm::collection_configured(defaults, residual),
+        ),
         Some((prefix, residual)) if prefix.eq_ignore_ascii_case("KEYRING") => {
             Keyring::new().collection(residual)
         }

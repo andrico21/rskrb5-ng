@@ -18,7 +18,7 @@ use std::{
 use serde::de::Error as _;
 use zeroize::Zeroizing;
 
-use crate::{file_name, keytab::key_bytes::Bytes as KeyBytes, secure_env};
+use crate::{config::LibDefaults, file_name, keytab::key_bytes::Bytes as KeyBytes, secure_env};
 
 /// First byte of every MIT credential cache file.
 const CCACHE_FIRST_BYTE: u8 = 5;
@@ -244,7 +244,20 @@ impl CCache {
     /// Returns the errors of the store, or of [`Self::resolved_file_path`]
     /// and [`Self::load`].
     pub(crate) fn load_resolved_name(name: &str) -> Result<Self, Error> {
-        match stores::store_cache(name)? {
+        Self::load_resolved_name_with(name, None)
+    }
+
+    /// [`Self::load_resolved_name`] where a `KCM` name reaches its daemon as
+    /// `settings` say (`None`: the defaults).
+    ///
+    /// # Errors
+    /// The errors of [`Self::load_resolved_name`], and those of
+    /// [`kcm::Store::from_libdefaults`] for a `KCM` name.
+    pub(crate) fn load_resolved_name_with(
+        name: &str,
+        settings: Option<&LibDefaults>,
+    ) -> Result<Self, Error> {
+        match stores::store_cache(name, settings)? {
             Some(cache) => cache.load(),
             None => Self::load(Self::resolved_file_path(name)?),
         }
@@ -315,7 +328,21 @@ impl CCache {
     /// # Errors
     /// Returns serialization, path and filesystem failures.
     pub(crate) fn save_resolved_name(&self, cache_name: &str) -> Result<(), Error> {
-        if let Some(cache) = stores::store_cache(cache_name)? {
+        self.save_resolved_name_with(cache_name, None)
+    }
+
+    /// [`Self::save_resolved_name`] where a `KCM` name reaches its daemon as
+    /// `settings` say (`None`: the defaults).
+    ///
+    /// # Errors
+    /// The errors of [`Self::save_resolved_name`], and those of
+    /// [`kcm::Store::from_libdefaults`] for a `KCM` name.
+    pub(crate) fn save_resolved_name_with(
+        &self,
+        cache_name: &str,
+        settings: Option<&LibDefaults>,
+    ) -> Result<(), Error> {
+        if let Some(cache) = stores::store_cache(cache_name, settings)? {
             return cache.replace(self);
         }
         self.save(Self::resolved_file_path(cache_name)?)?;

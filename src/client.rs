@@ -1596,8 +1596,10 @@ impl Tokio {
     /// Create a cache-only client by loading a ccache name.
     ///
     /// Bare paths, `FILE:path`, `WRFILE:path`, and MIT `DIR:` collection names
-    /// are supported by the ccache module. Other credential cache stores are
-    /// rejected explicitly.
+    /// are supported by the ccache module, and so are `KCM:` names, which reach
+    /// the daemon `config` names (`kcm_socket`, `kcm_mach_service`; see
+    /// [`ccache::configured`]). Other credential cache stores are rejected
+    /// explicitly.
     /// # Errors
     ///
     /// Returns [`Error::CCache`] when the cache name uses an unsupported store or
@@ -1611,7 +1613,7 @@ impl Tokio {
     where
         P: AsRef<str>,
     {
-        let cache = ccache::CCache::load_name(cache_name)?;
+        let cache = ccache::configured::load_name(&config, cache_name.as_ref())?;
         Self::try_from_ccache(config, protocol, &cache)
     }
     /// Create a cache-only client from `config.libdefaults.default_ccache_name`.
@@ -1630,7 +1632,8 @@ impl Tokio {
     #[inline]
     pub fn from_default_ccache_name(config: Config, protocol: KdcProtocol) -> Result<Self, Error> {
         let cache_name = configured_default_ccache_name(&config)?;
-        let cache = ccache::CCache::load_resolved_name(&cache_name)?;
+        let cache =
+            ccache::CCache::load_resolved_name_with(&cache_name, Some(&config.libdefaults))?;
         Self::try_from_ccache(config, protocol, &cache)
     }
     /// Create a cache-only client from the default credential cache.
@@ -1654,7 +1657,8 @@ impl Tokio {
     #[inline]
     pub fn from_default_ccache(config: Config, protocol: KdcProtocol) -> Result<Self, Error> {
         let cache_name = default_ccache_name(&config)?;
-        let cache = ccache::CCache::load_resolved_name(&cache_name)?;
+        let cache =
+            ccache::CCache::load_resolved_name_with(&cache_name, Some(&config.libdefaults))?;
         Self::try_from_ccache(config, protocol, &cache)
     }
     /// Create a cache-only client by loading the file ccache named by `KRB5CCNAME`.
@@ -1672,7 +1676,7 @@ impl Tokio {
     /// cannot be loaded.
     #[inline]
     pub fn from_ccache_env(config: Config, protocol: KdcProtocol) -> Result<Self, Error> {
-        let cache = ccache::CCache::load_from_env()?;
+        let cache = ccache::configured::load_from_env(&config)?;
         Self::try_from_ccache(config, protocol, &cache)
     }
     #[must_use]
@@ -1742,7 +1746,7 @@ impl Tokio {
     where
         P: AsRef<str>,
     {
-        self.to_ccache()?.save_name(cache_name)?;
+        ccache::configured::save_name(&self.config, &self.to_ccache()?, cache_name.as_ref())?;
         Ok(())
     }
     /// Save current TGT and service-ticket state to `config.libdefaults.default_ccache_name`.
@@ -1760,8 +1764,10 @@ impl Tokio {
     /// and the errors of [`Self::save_ccache_name`].
     #[inline]
     pub fn save_default_ccache_name(&self) -> Result<(), Error> {
-        self.to_ccache()?
-            .save_resolved_name(&configured_default_ccache_name(&self.config)?)?;
+        self.to_ccache()?.save_resolved_name_with(
+            &configured_default_ccache_name(&self.config)?,
+            Some(&self.config.libdefaults),
+        )?;
         Ok(())
     }
     /// Save current TGT and service-ticket state to the default credential cache.
@@ -1787,8 +1793,10 @@ impl Tokio {
     /// [`Self::save_ccache_name`].
     #[inline]
     pub fn save_default_ccache(&self) -> Result<(), Error> {
-        self.to_ccache()?
-            .save_resolved_name(&default_ccache_name(&self.config)?)?;
+        self.to_ccache()?.save_resolved_name_with(
+            &default_ccache_name(&self.config)?,
+            Some(&self.config.libdefaults),
+        )?;
         Ok(())
     }
     /// Load an existing ccache when present, update this client's entries, and save it.
