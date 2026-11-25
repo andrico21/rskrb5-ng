@@ -81,11 +81,12 @@ fn ccache_routes_reach_the_configured_socket() -> Result<(), TestError> {
     // Given a daemon on a configured socket holding one cache.
     let (daemon, config) = seeded(&["routes-ccache"])?;
     // When the cache is loaded and another one saved, by configured name.
-    let loaded = through_the_socket(configured::load_name(
+    let loaded = through_the_socket(configured::load_name(&config, "KCM:routes-ccache"))?;
+    let saved = through_the_socket(configured::save_name(
         &config,
-        "KCM:routes-ccache",
+        &mit_cache()?,
+        "KCM:routes-saved",
     ))?;
-    let saved = through_the_socket(configured::save_name(&config, &mit_cache()?, "KCM:routes-saved"))?;
     // Then the daemon on the configured socket served both, and holds the copy.
     if cfg!(target_os = "linux") {
         let expected = mit_cache()?;

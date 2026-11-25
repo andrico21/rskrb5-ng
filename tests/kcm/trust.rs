@@ -3,6 +3,7 @@
 use std::{
     fs,
     os::unix::{fs::symlink, net::UnixListener},
+    path::Path,
 };
 
 use rskrb5_ng::{
@@ -78,7 +79,7 @@ fn the_kcm_socket_setting_selects_the_socket() -> Result<(), TestError> {
     assert_eq!(
         Store::from_libdefaults(&named.libdefaults)?
             .socket()
-            .to_str(),
+            .and_then(Path::to_str),
         Some("/run/kcm.sock")
     );
     let disabled = Config::parse("[libdefaults]\n kcm_socket = -\n")?;
@@ -90,7 +91,7 @@ fn the_kcm_socket_setting_selects_the_socket() -> Result<(), TestError> {
     assert_eq!(
         Store::from_libdefaults(&default.libdefaults)?
             .socket()
-            .to_str(),
+            .and_then(Path::to_str),
         Some("/var/run/.heim_org.h5l.kcm-socket")
     );
     Ok(())
