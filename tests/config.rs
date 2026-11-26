@@ -108,6 +108,8 @@ mod tests {
     use proptest::{prelude::Strategy, prop_assert};
     #[cfg(feature = "messages")]
     use rasn::der;
+    #[cfg(feature = "serde")]
+    use rskrb5_ng::config::ConfigDiagnostic;
     #[cfg(any(feature = "serde", feature = "messages"))]
     use rskrb5_ng::config::LibDefaults;
     #[cfg(feature = "messages")]
@@ -1524,7 +1526,7 @@ mod tests {
         // fixture's only diagnostics are its out-of-scope `default_domain` values.
         assert!(
             config.diagnostics().iter().all(|item| *item
-                == rskrb5_ng::config::ConfigDiagnostic::OutOfScope {
+                == ConfigDiagnostic::OutOfScope {
                     relation: "default_domain",
                     decision: "D2",
                 }),

@@ -76,12 +76,15 @@ fn realm_relations_shape_the_certificate_policy() -> Result<(), TestError> {
     // And no diagnostic remains but the leaf's own `FeatureUnavailable`
     // (none with the leaf).
     assert!(
-        profile.diagnostics().iter().all(|item| !cfg!(feature = "pkinit")
-            && matches!(
-                item,
-                ConfigDiagnostic::FeatureUnavailable { relation, feature: "pkinit" }
-                    if relation.starts_with("pkinit_")
-            )),
+        profile
+            .diagnostics()
+            .iter()
+            .all(|item| !cfg!(feature = "pkinit")
+                && matches!(
+                    item,
+                    ConfigDiagnostic::FeatureUnavailable { relation, feature: "pkinit" }
+                        if relation.starts_with("pkinit_")
+                )),
         "{:?}",
         profile.diagnostics()
     );

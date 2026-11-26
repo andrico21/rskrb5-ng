@@ -24,7 +24,11 @@ fn spake_preauth_groups() -> Result<(), Box<dyn Error>> {
         );
         drop(strict?);
     } else {
-        assert_eq!(config.diagnostics(), [unavailable], "missing FeatureUnavailable");
+        assert_eq!(
+            config.diagnostics(),
+            [unavailable],
+            "missing FeatureUnavailable"
+        );
         assert!(
             strict.is_err(),
             "strict mode admitted an unavailable relation"
