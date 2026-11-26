@@ -21,6 +21,9 @@ use crate::{
 
 /// The AP-REQ with `ticket`, carrying the finished checksum of the transcript.
 ///
+/// A requested delegation carries the forwardable TGT of `credential` or the
+/// one the AS exchange acquired, through the krb5 mechanism's delegation.
+///
 /// # Errors
 ///
 /// Returns [`Gss::NotNegotiated`] for a DCE-style request, and the policy,
@@ -33,9 +36,10 @@ pub(super) fn ap_request(
     if state.options.flags().contains(ContextFlags::DCE_STYLE) {
         return Err(Gss::NotNegotiated("DCE-style establishment").into());
     }
+    let holding = state.holding(credential)?;
     let (token, pending) = initiator::request(
         &state.options,
-        (credential, ticket),
+        (holding.as_ref().unwrap_or(credential), ticket),
         Extensions::iakerb(state.conversation.transcript()),
     )?;
     if pending.awaits_reply() {

@@ -11,8 +11,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::{Error, Token, conversation::Conversation};
 use crate::{
+    ccache::CCache,
     client::{
-        AsRepSession, Password,
+        AsRepSession, Password, TgsRepSession,
         principal::Principal,
         stepwise::{
             ExchangeStep, InitCreds, InitCredsOptions, Outbound, StepInput, TicketCreds,
@@ -70,6 +71,8 @@ pub(super) struct State {
     phase: Phase,
     /// The tokens exchanged and their bounds.
     conversation: Conversation,
+    /// The tickets the AS and TGS exchanges acquired.
+    acquired: Option<CCache>,
 }
 
 /// A new initiator state.
@@ -86,10 +89,41 @@ pub(super) const fn new(
         cookie: None,
         phase: Phase::Start,
         conversation: Conversation::with_defaults(),
+        acquired: None,
     }
 }
 
 impl State {
+    /// Keep `ticket`, which an exchange acquired.
+    fn keep(&mut self, ticket: &TgsRepSession) {
+        let entry = cred::entry_of(ticket);
+        let cache = self
+            .acquired
+            .get_or_insert_with(|| CCache::new(entry.client().clone()));
+        drop(cache.upsert_credential(entry));
+    }
+
+    /// The credential the AP-REQ is built from: `credential`'s tickets and the
+    /// acquired ones, so a delegation finds the TGT wherever it came from;
+    /// `None` when nothing was acquired.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Gss::NoCredential`] for a cache without a client.
+    fn holding(&self, credential: &Credential) -> Result<Option<Credential>, Error> {
+        let Some(acquired) = &self.acquired else {
+            return Ok(None);
+        };
+        let mut cache = credential
+            .cache
+            .clone()
+            .unwrap_or_else(|| CCache::new(acquired.default_principal().clone()));
+        for entry in acquired.credentials() {
+            drop(cache.upsert_credential(entry.clone()));
+        }
+        Ok(Some(cred::from_ccache(cache)?))
+    }
+
     /// Whether the context is established.
     pub(super) const fn is_established(&self) -> bool {
         matches!(self.phase, Phase::Established(_))
@@ -252,6 +286,7 @@ fn advance(
                     return send(state, &outbound);
                 }
                 ExchangeStep::Complete(tgt) => {
+                    state.keep(&tgt);
                     phase = Phase::Tgs(Box::new(ticket_creds(state, *tgt)?));
                     input = StepInput::Start;
                 }
@@ -262,7 +297,10 @@ fn advance(
                     state.phase = Phase::Tgs(exchange);
                     return send(state, &outbound);
                 }
-                ExchangeStep::Complete(ticket) => return ap_request(state, credential, *ticket),
+                ExchangeStep::Complete(ticket) => {
+                    state.keep(&ticket);
+                    return ap_request(state, credential, *ticket);
+                }
                 ExchangeStep::Prompt(_) => return Err(Error::UnsupportedPrompt),
             },
             Phase::Start

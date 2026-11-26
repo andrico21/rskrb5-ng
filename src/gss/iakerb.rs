@@ -18,6 +18,12 @@
 //!   the initiator's subkey, which the acceptor verifies (MIT `iakerb.c:125-181`).
 //! - Tokens are bounded before they are parsed; a malformed or reordered token
 //!   is an error, never a panic.
+//! - The AP exchange is the krb5 mechanism's ([`super::Initiator`],
+//!   [`super::Acceptor`]) with the transcript in its extension record: the
+//!   finished checksum and the channel bindings are checked before the replay
+//!   cache commits the authenticator. A credential is delegated only when the
+//!   initiator's options request [`super::ContextFlags::DELEG`], under the same
+//!   `enforce_ok_as_delegate` policy as krb5.
 
 use core::fmt;
 use std::time::SystemTime;
