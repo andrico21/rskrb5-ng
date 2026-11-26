@@ -1,5 +1,5 @@
 /// The key usage of the checksum this side makes or verifies (MIT
-/// `verify_keyusage`, `negoex_ctx.c:333-339`).
+/// `verify_keyusage`, `negoex_ctx.c:421-426`).
 const fn key_usage(role: Role, making: bool) -> u32 {
     let initiator = matches!(role, Role::Initiator);
     if initiator == making {

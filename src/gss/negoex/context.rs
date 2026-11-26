@@ -1,6 +1,6 @@
 /// The key usage of the `VERIFY` message of an acceptor, which MIT's initiator
 /// signs with: the specification has the two usages the other way round
-/// (`negoex_ctx.c:333-337`, `gssapiP_negoex.h:57-58`).
+/// (`negoex_ctx.c:421-425`, `gssapiP_negoex.h:49-50`).
 const KEYUSAGE_ACCEPTOR_CHECKSUM: u32 = 25;
 /// The key usage of an initiator's `VERIFY` message.
 const KEYUSAGE_INITIATOR_CHECKSUM: u32 = 23;
