@@ -281,6 +281,49 @@ impl Credential {
         cred::acquire_service_ticket(self, target, config).await
     }
 
+    /// Acquire a service ticket for the host-based service `service` on `host`
+    /// under the profile's host-name canonicalization, keep it, and return the
+    /// name of the principal it is for: the target of an [`Initiator`].
+    ///
+    /// [`Name::import`] never canonicalizes, so a host-based name stays the
+    /// host the caller wrote. This is the explicit alternative: the profile's
+    /// `dns_canonicalize_hostname`, `rdns` and `qualify_shortname` propose
+    /// names, each one other than `host` itself (folded) is used only when
+    /// `policy` approves it, and DNS is asked only as far as those relations
+    /// say ([`CanonicalizationPolicy::acquire`]). The ticket source is the
+    /// credential's cache, client keytab or password, as for
+    /// [`Self::acquire_service_ticket`].
+    ///
+    /// # Security
+    ///
+    /// DNS answers are not authenticated: `policy` decides which canonical name
+    /// may receive the credential's ticket request and, through the returned
+    /// name, the context token.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::WrongCredentialUsage`] for an acceptor credential,
+    /// [`Error::NoCredential`] without a ticket source or for an impersonator
+    /// credential, and the errors of
+    /// [`crate::client::Tokio::get_host_service_ticket`] ([`Error::Client`], among
+    /// them [`crate::error::Client::HostNameNotApproved`]).
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: the ticket is kept only after its exchange completes.
+    ///
+    /// [`CanonicalizationPolicy::acquire`]: crate::discovery::hostname::CanonicalizationPolicy::acquire
+    #[cfg(feature = "tokio")]
+    #[inline]
+    pub async fn acquire_host_service_ticket(
+        &mut self,
+        (service, host): (&str, &str),
+        policy: &dyn HostNamePolicy,
+        config: &Config,
+    ) -> Result<Name, Error> {
+        cred::acquire_host_service_ticket(self, (service, host), (policy, config)).await
+    }
+
     /// `gss_store_cred_into`: store the initiator tickets into the store's `ccache`.
     ///
     /// Without `overwrite`, a cache that already holds tickets is not replaced
