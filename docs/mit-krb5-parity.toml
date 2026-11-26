@@ -2666,7 +2666,7 @@ area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`[realms]`: PKINIT identity/trust/cert-auth options"
 implementation_status = "implemented"
-evidence_status = "unit"
+evidence_status = "live-local"
 missing = ""
 rust_symbols = [
   "preauth::pkinit::KdcTrust::from_config",
