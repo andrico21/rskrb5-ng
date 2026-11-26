@@ -23,13 +23,14 @@ mod tests {
         header::{AUTHORIZATION, WWW_AUTHENTICATE},
     };
     use rskrb5_ng::{
-        error::HttpExchange as ExchangeError, http::wire::HttpExchange as _,
+        error::HttpExchange as ExchangeError, gss::ChannelBindings, http::wire::HttpExchange as _,
         transport::rustls_proxy::RustlsTransport,
     };
     use rustls::{
         ServerConfig,
         pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject as _},
     };
+    use sha2::{Digest as _, Sha256};
     use tokio::{
         io::{AsyncReadExt as _, AsyncWriteExt as _},
         net::TcpListener,
@@ -201,6 +202,72 @@ mod tests {
                     "{oversized:?}"
                 );
                 drop(seen(big_task).await?);
+                Ok(())
+            })
+    }
+
+    /// The DER end-entity certificate of the identity `identity`.
+    fn end_entity(identity: &str) -> Result<Vec<u8>, Box<dyn StdError>> {
+        let first = CertificateDer::pem_file_iter(fixture(&format!("{identity}.pem")))?
+            .next()
+            .ok_or("the PEM file holds a certificate")??;
+        Ok(first.to_vec())
+    }
+
+    /// `connect` reports the TLS peer of the connection that then sends.
+    ///
+    /// The certificate the server presented comes with its SHA-256
+    /// `tls-server-end-point` bindings (ECDSA with SHA-256, RFC 5929 section
+    /// 4.1); the request travels over that connection, the only one the
+    /// server accepts.
+    #[test]
+    fn connect_reports_the_peer_of_the_connection_that_sends() -> Result<(), Box<dyn StdError>> {
+        Builder::new_current_thread()
+            .enable_all()
+            .build()?
+            .block_on(async {
+                let (port, task) = server("localhost", http("200 OK", "", b"bound")).await?;
+                let transport = trusting()?;
+                let request = get(port, "cbt")?;
+                let connection = transport.connect(request.uri()).await?;
+                let channel = connection
+                    .tls_channel()
+                    .ok_or("the built-in exchange reports its TLS peer")?;
+                let der = end_entity("localhost")?;
+                assert_eq!(channel.certificate(), der.as_slice());
+                assert_eq!(
+                    channel.server_end_point(),
+                    Some(&ChannelBindings::tls_server_end_point(&Sha256::digest(
+                        &der
+                    ))?)
+                );
+                let response = connection.send(request).await?;
+                assert_eq!(response.body().as_slice(), b"bound");
+                let head = seen(task).await?.ok_or("the server saw no request")?;
+                assert!(head.starts_with("GET /cbt HTTP/1.1\r\n"), "{head}");
+                Ok(())
+            })
+    }
+
+    /// A prepared connection carries a request for its own origin only.
+    #[test]
+    fn a_prepared_connection_refuses_another_origin() -> Result<(), Box<dyn StdError>> {
+        Builder::new_current_thread()
+            .enable_all()
+            .build()?
+            .block_on(async {
+                let (port, task) = server("localhost", http("200 OK", "", b"")).await?;
+                let transport = trusting()?;
+                let connection = transport.connect(get(port, "")?.uri()).await?;
+                let elsewhere = Request::builder()
+                    .uri(format!("https://other.example:{port}/"))
+                    .body(Vec::new())?;
+                let refused = connection.send(elsewhere).await;
+                assert!(
+                    matches!(refused, Err(ExchangeError::InvalidRequest { reason: _ })),
+                    "{refused:?}"
+                );
+                drop(timeout(Duration::from_secs(10), task).await);
                 Ok(())
             })
     }

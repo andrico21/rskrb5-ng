@@ -20,6 +20,10 @@
 //!   application relaxes `Secure` for a development server.
 //! * The registry is in memory: a restart revokes every session, and a manager
 //!   holds at most [`SessionManager::DEFAULT_MAX_SESSIONS`] live sessions.
+//!   Two processes, or two managers of one process, share no session: a
+//!   manager refuses a cookie another manager sealed, even under the same key
+//!   (register row FU-HTC-P06: a deployment with several server processes
+//!   negotiates again on each process it reaches).
 //! * No PAC and no ticket is ever put in a session: it holds the client name
 //!   the KDC authenticated and nothing else.
 //! * The key is erased when dropped and never shown by `Debug`.

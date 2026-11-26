@@ -22,3 +22,7 @@ mod cookies;
 /// The session manager.
 #[path = "sessions.rs"]
 mod sessions;
+
+/// RFC 5929 channel bindings and the connection-bound send.
+#[path = "channel.rs"]
+mod channel;

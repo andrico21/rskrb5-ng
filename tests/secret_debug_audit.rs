@@ -1267,12 +1267,8 @@ mod tests {
             "Calls the Kerberos client for a token and the exchange for a response; neither field is replaced, and the context of a superseded round is dropped with its keys erased (`client_cache_clear_erases_live_key_owners`).",
         ),
         (
-            "src/http/agent.rs::NegotiateHttpClient::context_for",
-            "Calls the Kerberos client to build one InitiatorContext and clones the initiator options for it; no stored credential is replaced, and the clone's subkey is erased by its EncryptionKey owner's drop (`service_key_replacements_erase_old_allocations`).",
-        ),
-        (
             "src/http/agent.rs::NegotiateHttpClient::round",
-            "Calls the exchange with one request; the exchange is not replaced, and the request's Authorization value is a sensitive header owned by the request (`http_client_redacts_credentials`).",
+            "Opens one connection through the exchange, calls the Kerberos client to build one InitiatorContext with a clone of the initiator options (the clone's subkey is erased by its EncryptionKey owner's drop, `service_key_replacements_erase_old_allocations`) and sends one request over that connection; neither the client nor the exchange is replaced, and the request's Authorization value is a sensitive header owned by the request (`http_client_redacts_credentials`).",
         ),
         (
             "src/http.rs::NegotiateService::inner_mut",

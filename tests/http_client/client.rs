@@ -17,11 +17,10 @@ use rskrb5_ng::{
     },
     spnego::{CONTEXT_FLAG_CONF, CONTEXT_FLAG_INTEG, CONTEXT_FLAG_MUTUAL, InitiatorContextOptions},
 };
-use tokio::runtime::Builder;
 
 use super::{
     context::{Context as _, TestError},
-    support::{Kerberos, Network, REALM, Seen, negotiate_client, redirect, status},
+    support::{Kerberos, Network, REALM, Seen, negotiate_client, redirect, run, status},
 };
 
 /// The host of the origin the caller asks for.
@@ -41,18 +40,6 @@ fn mutual() -> InitiatorContextOptions {
         CONTEXT_FLAG_CONF,
         CONTEXT_FLAG_MUTUAL,
     ])
-}
-
-/// Run `future` to completion on a current-thread runtime.
-fn run<F>(future: F) -> Result<F::Output, TestError>
-where
-    F: Future,
-{
-    Ok(Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .context("runtime")?
-        .block_on(future))
 }
 
 /// A client for `network` holding tickets for `hosts`.

@@ -37,6 +37,7 @@ impl fmt::Debug for InitiatorContextOptions {
             subkey,
             sequence_number,
             client_aware_channel_bindings,
+            channel_bindings,
         } = self;
         f.debug_struct("InitiatorContextOptions")
             .field("crypto_policy", crypto_policy)
@@ -48,6 +49,7 @@ impl fmt::Debug for InitiatorContextOptions {
                 "client_aware_channel_bindings",
                 client_aware_channel_bindings,
             )
+            .field("channel_bindings", channel_bindings)
             .finish()
     }
 }
