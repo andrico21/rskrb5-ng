@@ -93,6 +93,7 @@ fn permitted_builtins(config: &Config) -> Vec<&'static str> {
 
 /// Whether the client may send an encrypted timestamp as `realm`: neither the
 /// realm's `disable_encrypted_timestamp` nor `[plugins] clpreauth` excludes it.
+#[cfg(feature = "tokio")]
 pub(in crate::client) fn timestamp_permitted(config: &Config, realm: &str) -> bool {
     permitted_builtins(config).contains(&ENCRYPTED_TIMESTAMP)
         && !timestamp_disabled(config).iter().any(|name| name == realm)

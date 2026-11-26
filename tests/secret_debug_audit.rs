@@ -1143,6 +1143,18 @@ mod tests {
             "Creates the credential's cache when it has none and upserts tickets into it; CCache::upsert_credential drops a replaced entry, whose ccache::Credential owner erases its key and ticket (ccache replacement proofs).",
         ),
         (
+            "src/gss/creds.rs::Credential::acquire_host_service_ticket",
+            "Forwards to src/gss/cred.rs::acquire_host_service_ticket, which carries its own exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/gss/cred.rs::acquire_host_service_ticket",
+            "Forwards the ticket it acquired to src/gss/cred.rs::keep_ticket, which carries its own exception; it replaces nothing itself.",
+        ),
+        (
+            "src/gss/cred.rs::keep_ticket",
+            "Creates the credential's cache when it has none and upserts the TGT and the service ticket into it; CCache::upsert_credential drops a replaced entry, whose ccache::Credential owner erases its key and ticket (ccache replacement proofs).",
+        ),
+        (
             "src/gss/contexts.rs::Initiator::init_sec_context",
             "Forwards to src/gss/initiator.rs::step, which carries its own exception; this wrapper replaces nothing itself.",
         ),
@@ -1304,7 +1316,11 @@ mod tests {
         ),
         (
             "src/client/negotiate.rs::Client::authorization_context_for_acquired_host",
-            "Forwards to src/client.rs::Tokio::get_host_service_ticket and src/client/negotiate.rs::Client::authorization_context, which carry their own registered proofs, delegations or exceptions; this wrapper replaces nothing itself.",
+            "Forwards to src/client/negotiate.rs::Client::authorization_context_for_acquired_host_with_options, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/client/negotiate.rs::Client::authorization_context_for_acquired_host_with_options",
+            "Forwards to src/client.rs::Tokio::get_host_service_ticket and src/client/negotiate.rs::Client::authorization_context_with_options, which carry their own registered proofs, delegations or exceptions; this wrapper replaces nothing itself.",
         ),
         (
             "src/client/negotiate.rs::Client::change_password",

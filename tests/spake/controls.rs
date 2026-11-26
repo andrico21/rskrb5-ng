@@ -22,10 +22,7 @@ fn profile(lines: &str) -> Result<Config, TestError> {
 
 /// A KDC that offers PA-ENC-TIMESTAMP alone.
 fn timestamp_only() -> Script {
-    Script {
-        offer: Offer::TimestampOnly,
-        ..Script::default()
-    }
+    Script::offering(Offer::TimestampOnly)
 }
 
 /// The request number of the first PA-DATA of `kind`, if any request has one.
