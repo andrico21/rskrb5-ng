@@ -208,9 +208,10 @@ mod tests {
         endpoint("admin_server")
     }
 
-    /// Whether the only diagnostic of `config`, if any, is the `FeatureUnavailable`
-    /// of `auth_to_local_names` that a build without the `localauth` leaf reports
-    /// (`tests/localauth/profile.rs` checks which one each build gives).
+    /// Whether `config` reports nothing but the leaf's `FeatureUnavailable`.
+    ///
+    /// A build without the `localauth` leaf reports it for `auth_to_local_names`;
+    /// `tests/localauth/profile.rs` checks which one each build gives.
     fn only_the_leaf_diagnostic(config: &Config) -> bool {
         let unavailable = ConfigDiagnostic::FeatureUnavailable {
             relation: "auth_to_local_names",
