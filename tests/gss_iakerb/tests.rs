@@ -48,3 +48,7 @@ mod delegation;
 /// The acquired tickets in a cache the caller names.
 #[path = "output.rs"]
 mod output;
+
+/// Prompts answered through the responder.
+#[path = "responder.rs"]
+mod responder;

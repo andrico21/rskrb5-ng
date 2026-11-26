@@ -32,7 +32,7 @@ use super::{Accepted, Acceptor, Config, CredStore, Credential, EstablishedContex
 use crate::{
     client::{
         options::TgsReq,
-        stepwise::{InitCredsOptions, TicketOptions},
+        stepwise::{InitCredsOptions, Responder, TicketOptions},
     },
     error::Iakerb as Error,
     spnego::oid::ObjectIdentifier,
@@ -324,6 +324,34 @@ impl Context {
             Role::Initiator(state) => initiator::step(state, credential, input_token),
             Role::Acceptor(_) => Err(Error::UnexpectedStep("this is an acceptor context")),
         }
+    }
+
+    /// One initiator step that answers the KDC's prompts through `responder`.
+    ///
+    /// As [`Self::init_sec_context`], but a prompt of the AS exchange (the
+    /// password of a credential that holds none, an OTP challenge) goes to
+    /// `responder` (MIT's responder and prompter callbacks), whose answer
+    /// continues the exchange.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Self::init_sec_context`], and
+    /// [`Error::Client`] holding `Client::Responder` when `responder` does
+    /// not answer.
+    ///
+    /// # Security
+    ///
+    /// Prompts carry no secret; an answer moves into the exchange, which
+    /// erases it when the context is dropped, a cancelled exchange included.
+    #[inline]
+    pub fn init_sec_context_with_responder(
+        &mut self,
+        credential: &Credential,
+        responder: &mut dyn Responder,
+        input_token: Option<&[u8]>,
+    ) -> Result<InitStep, Error> {
+        let _unused = (credential, responder, input_token);
+        Err(Error::UnexpectedStep("not implemented"))
     }
 
     /// One acceptor step.

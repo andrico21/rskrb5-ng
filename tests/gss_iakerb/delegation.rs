@@ -32,6 +32,7 @@ fn establish(options: InitiatorOptions) -> Result<Pair, TestError> {
         config: forwardable()?,
         options,
         policy: policy()?,
+        responder: None,
     };
     establish_under(&password_credential(true)?, &Kdc::new(), setup)
 }

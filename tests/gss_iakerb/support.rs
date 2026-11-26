@@ -6,7 +6,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rasn::{Encoder as _, der};
 use rskrb5_ng::{
     Config,
-    client::{TgsRepSession, build_ap_req_with_confounder, options::ApReq, principal::Principal},
+    client::{
+        TgsRepSession, build_ap_req_with_confounder, options::ApReq, principal::Principal,
+        stepwise::Responder,
+    },
     crypto::AesSha1Etype,
     gss::{
         Acceptor, AcceptorOptions, CredStore, Credential, CredentialUsage, EstablishedContext,
@@ -108,19 +111,22 @@ pub(super) fn establish_with(
         config: config()?,
         options: InitiatorOptions::new(),
         policy,
+        responder: None,
     };
     run(credential, kdc, setup, tamper)
 }
 
-/// What a context is established under: the initiator's profile and options
-/// and the acceptor's relay policy.
-pub(super) struct Setup {
+/// What a context is established under: the initiator's profile, options and
+/// responder, and the acceptor's relay policy.
+pub(super) struct Setup<'responder> {
     /// The initiator's profile.
     pub config: Config,
     /// The initiator's options.
     pub options: InitiatorOptions,
     /// The acceptor's relay policy.
     pub policy: RelayPolicy,
+    /// The initiator's responder, if any.
+    pub responder: Option<&'responder mut dyn Responder>,
 }
 
 /// Establish a context from `credential` under `setup`, the tokens untouched.
@@ -131,7 +137,7 @@ pub(super) struct Setup {
 pub(super) fn establish_under(
     credential: &Credential,
     kdc: &Kdc,
-    setup: Setup,
+    setup: Setup<'_>,
 ) -> Result<Pair, TestError> {
     run(credential, kdc, setup, |_turn, token| Ok(token))
 }
@@ -157,6 +163,7 @@ pub(super) fn establish_ends(credential: &Credential, kdc: &Kdc) -> Result<Ends,
         config: config()?,
         options: InitiatorOptions::new(),
         policy: policy()?,
+        responder: None,
     };
     let (ends, _wire) = exchange(credential, kdc, setup, |_turn, token| Ok(token))?;
     Ok(ends)
@@ -170,7 +177,7 @@ pub(super) fn establish_ends(credential: &Credential, kdc: &Kdc) -> Result<Ends,
 fn run(
     credential: &Credential,
     kdc: &Kdc,
-    setup: Setup,
+    setup: Setup<'_>,
     tamper: impl FnMut(usize, Vec<u8>) -> Result<Vec<u8>, TestError>,
 ) -> Result<Pair, TestError> {
     let (ends, (tokens, relayed)) = exchange(credential, kdc, setup, tamper)?;
@@ -195,7 +202,7 @@ type Wire = (Vec<Vec<u8>>, Vec<(String, Vec<u8>)>);
 fn exchange(
     credential: &Credential,
     kdc: &Kdc,
-    setup: Setup,
+    mut setup: Setup<'_>,
     mut tamper: impl FnMut(usize, Vec<u8>) -> Result<Vec<u8>, TestError>,
 ) -> Result<(Ends, Wire), TestError> {
     let mut initiator = Context::initiator(&setup.config, target()?, setup.options)?;
@@ -211,7 +218,12 @@ fn exchange(
         if done && accepted.is_some() {
             break;
         }
-        let step = initiator.init_sec_context(credential, input.as_deref())?;
+        let step = match setup.responder.as_deref_mut() {
+            Some(responder) => {
+                initiator.init_sec_context_with_responder(credential, responder, input.as_deref())?
+            }
+            None => initiator.init_sec_context(credential, input.as_deref())?,
+        };
         if step == InitStep::Complete(None) {
             done = true;
             continue;
