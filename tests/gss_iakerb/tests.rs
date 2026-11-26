@@ -32,3 +32,7 @@ mod finished;
 /// Malformed, reordered and replayed tokens.
 #[path = "malformed.rs"]
 mod malformed;
+
+/// The AP exchange shared with the krb5 mechanism.
+#[path = "shared.rs"]
+mod shared;

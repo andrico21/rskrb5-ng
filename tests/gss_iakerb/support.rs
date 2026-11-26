@@ -14,7 +14,7 @@ use rskrb5_ng::{
         iakerb::{AcceptStep, Context, KdcRelay, RelayFailure, RelayPolicy},
     },
     keytab::{self, Keytab},
-    spnego::Krb5MechToken,
+    spnego::{Krb5MechToken, oid::ObjectIdentifier},
 };
 use zeroize::Zeroizing;
 
@@ -221,6 +221,26 @@ pub(super) fn subkey() -> keytab::EncryptionKey {
 ///
 /// Returns the fixture errors.
 pub(super) fn ap_req_token(extension: Option<&[u8]>) -> Result<Vec<u8>, TestError> {
+    framed(&Context::mechanism(), ap_req_der(extension)?)
+}
+
+/// `der` in the RFC 2743 frame of `mechanism` with the AP-REQ token id.
+///
+/// # Errors
+///
+/// Returns the encoding errors.
+pub(super) fn framed(mechanism: &ObjectIdentifier, der: Vec<u8>) -> Result<Vec<u8>, TestError> {
+    let mut token = Krb5MechToken::ap_req(der);
+    token.set_oid(mechanism.clone());
+    Ok(token.encode()?)
+}
+
+/// The DER AP-REQ of [`ap_req_token`], without a frame.
+///
+/// # Errors
+///
+/// Returns the fixture errors.
+pub(super) fn ap_req_der(extension: Option<&[u8]>) -> Result<Vec<u8>, TestError> {
     let mut checksum = 16_u32.to_le_bytes().to_vec();
     checksum.extend_from_slice(&[0; 16]);
     checksum.extend_from_slice(&0x32_u32.to_le_bytes());
@@ -239,9 +259,7 @@ pub(super) fn ap_req_token(extension: Option<&[u8]>) -> Result<Vec<u8>, TestErro
         .with_sequence_number(Some(0x1234));
     let now = whole(SystemTime::now())?;
     let built = build_ap_req_with_confounder(&ticket()?, options, now, 7, &[0x21; 16])?;
-    let mut token = Krb5MechToken::ap_req(built.der().to_vec());
-    token.set_oid(Context::mechanism());
-    Ok(token.encode()?)
+    Ok(built.der().to_vec())
 }
 
 /// The `IAKERB-FINISHED` of `transcript` under `key`, derived here, not by the crate.
