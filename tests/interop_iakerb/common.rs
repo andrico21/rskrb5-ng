@@ -61,6 +61,11 @@ pub(super) fn realm() -> Result<String, Box<dyn Error>> {
 /// realm-wide, and the exchanges here relay the ordinary AS exchange, so SPAKE
 /// is pinned off: the encrypted timestamp answers.
 pub(super) fn blocked_config() -> Result<Config, Box<dyn Error>> {
+    blocked_config_with("")
+}
+
+/// [`blocked_config`] with `extra` `[libdefaults]` relations.
+pub(super) fn blocked_config_with(extra: &str) -> Result<Config, Box<dyn Error>> {
     let realm = realm()?;
     let refused = closed_port::reserve_closed_tcp_port()?;
     Ok(Config::parse(&format!(
@@ -72,6 +77,7 @@ pub(super) fn blocked_config() -> Result<Config, Box<dyn Error>> {
  rdns = false
  dns_canonicalize_hostname = false
  spake_preauth_groups =
+ {extra}
 
 [realms]
  {realm} = {{

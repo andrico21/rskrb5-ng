@@ -95,18 +95,32 @@ fn rust_acceptor() -> Result<Credential, Box<dyn Error>> {
     )?)
 }
 
+/// Where the isolated MIT initiator's credential gets its tickets.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Secret {
+    /// The user's password.
+    Password,
+    /// The user's client keytab.
+    Keytab,
+}
+
 /// The isolated MIT initiator's first request for the Rust acceptor: its
-/// credential is the user's password, its mechanism IAKERB.
+/// credential is the user's password or client keytab, its mechanism IAKERB.
 fn iso_request(
     adapter: &mut Peer<TcpStream>,
     name: PeerName,
+    secret: Secret,
 ) -> Result<InitRequest, Box<dyn Error>> {
-    let credential = adapter.acquire(
-        &CredRequest::new(Usage::Initiate)
-            .named(name)
-            .with_mechs(&[IAKERB])
-            .with_password(harness::var("INTEROP_MIT_PEER_USER_PASSWORD")?.as_bytes()),
-    )?;
+    let base = CredRequest::new(Usage::Initiate)
+        .named(name)
+        .with_mechs(&[IAKERB]);
+    let request = match secret {
+        Secret::Password => {
+            base.with_password(harness::var("INTEROP_MIT_PEER_USER_PASSWORD")?.as_bytes())
+        }
+        Secret::Keytab => base.with_keytab(&harness::var("INTEROP_MIT_PEER_USER_KEYTAB_ID")?),
+    };
+    let credential = adapter.acquire(&request)?;
     let target = format!(
         "{}@{}",
         harness::var("INTEROP_MIT_PEER_RUST_SERVICE")?,
@@ -124,8 +138,17 @@ pub(super) fn mit_to_rust(
     name: PeerName,
     policy: RelayPolicy,
 ) -> Result<(Result<EstablishedContext, Iakerb>, TcpRelay), Box<dyn Error>> {
+    mit_to_rust_with(name, policy, Secret::Password)
+}
+
+/// [`mit_to_rust`] with the MIT credential's `secret`.
+pub(super) fn mit_to_rust_with(
+    name: PeerName,
+    policy: RelayPolicy,
+    secret: Secret,
+) -> Result<(Result<EstablishedContext, Iakerb>, TcpRelay), Box<dyn Error>> {
     let mut adapter = connect_iso()?;
-    let init = iso_request(&mut adapter, name)?;
+    let init = iso_request(&mut adapter, name, secret)?;
     let store = rust_acceptor()?;
     let mut acceptor = gss::Acceptor::new(&store, AcceptorOptions::new())?;
     let mut context = Context::acceptor(policy);
