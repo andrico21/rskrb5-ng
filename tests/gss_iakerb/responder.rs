@@ -32,11 +32,10 @@ struct Answering {
 impl Responder for Answering {
     fn respond(&mut self, prompt: &Prompt) -> Result<Answer, ProviderError> {
         self.prompts.push(prompt.clone());
-        match prompt {
-            Prompt::Password { .. } if self.answers => {
-                Ok(Answer::Password(Password::from_vec(PASSWORD.to_vec())))
-            }
-            _ => Err("declined".into()),
+        if self.answers && matches!(prompt, Prompt::Password { client: _ }) {
+            Ok(Answer::Password(Password::from_vec(PASSWORD.to_vec())))
+        } else {
+            Err("declined".into())
         }
     }
 }
@@ -91,13 +90,13 @@ fn iakerb_responder_handles_prompt() -> Result<(), TestError> {
     );
     // and a responder that declines ends the context with its refusal.
     let mut declining = Answering::default();
-    let setup = Setup {
+    let refusing = Setup {
         config: config()?,
         options: InitiatorOptions::new(),
         policy: policy()?,
         responder: Some(&mut declining),
     };
-    let refusal = establish_under(&name_only()?, &kdc, setup)
+    let refusal = establish_under(&name_only()?, &kdc, refusing)
         .err()
         .context("no context when the responder declines")?;
     assert!(

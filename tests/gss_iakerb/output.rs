@@ -45,10 +45,7 @@ fn iakerb_updates_explicit_output_cache() -> Result<(), TestError> {
     // and a second store without overwrite is refused, with overwrite allowed,
     let again = ends.initiator.store_acquired_into(&store, false);
     assert!(
-        matches!(
-            again,
-            Err(Iakerb::Gss(Gss::DuplicateElement))
-        ),
+        matches!(again, Err(Iakerb::Gss(Gss::DuplicateElement))),
         "{again:?}"
     );
     ends.initiator.store_acquired_into(&store, true)?;

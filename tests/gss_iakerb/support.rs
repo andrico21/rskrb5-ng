@@ -219,9 +219,11 @@ fn exchange(
             break;
         }
         let step = match setup.responder.as_deref_mut() {
-            Some(responder) => {
-                initiator.init_sec_context_with_responder(credential, responder, input.as_deref())?
-            }
+            Some(responder) => initiator.init_sec_context_with_responder(
+                credential,
+                responder,
+                input.as_deref(),
+            )?,
             None => initiator.init_sec_context(credential, input.as_deref())?,
         };
         if step == InitStep::Complete(None) {

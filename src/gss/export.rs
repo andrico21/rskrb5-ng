@@ -29,10 +29,9 @@ use zeroize::Zeroizing;
 
 use super::{
     CCache, ContextFlags, Credential, CredentialUsage, EncryptionKey, Error, EstablishedContext,
-    Keytab, Name, NameKind, NameType, Principal, TransferBlob, TransferKey, TransferLedger, pac,
-    seq,
+    Keytab, Name, NameKind, NameType, Principal, TransferBlob, TransferKey, TransferLedger,
+    context::Mechanism, pac, seq,
 };
-use super::context::Mechanism;
 use crate::crypto::{AesSha2Etype, CryptoPolicy};
 
 /// The magic of a transfer blob.

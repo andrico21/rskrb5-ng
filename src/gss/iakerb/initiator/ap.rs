@@ -6,7 +6,7 @@
 
 use super::{
     super::{AP_REP_TOKEN_ID, Error, unframe},
-    Phase, State,
+    Phase, State, acquired,
 };
 use crate::{
     ap_rep,
@@ -36,7 +36,7 @@ pub(super) fn ap_request(
     if state.options.flags().contains(ContextFlags::DCE_STYLE) {
         return Err(Gss::NotNegotiated("DCE-style establishment").into());
     }
-    let holding = state.holding(credential)?;
+    let holding = acquired::holding(state, credential)?;
     let (token, pending) = initiator::request(
         &state.options,
         (holding.as_ref().unwrap_or(credential), ticket),

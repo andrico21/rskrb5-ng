@@ -321,7 +321,11 @@ impl Context {
         input_token: Option<&[u8]>,
     ) -> Result<InitStep, Error> {
         match &mut self.role {
-            Role::Initiator(state) => initiator::step(state, credential, input_token),
+            Role::Initiator(state) => initiator::step(
+                state,
+                &mut initiator::Sources::new(credential, None),
+                input_token,
+            ),
             Role::Acceptor(_) => Err(Error::UnexpectedStep("this is an acceptor context")),
         }
     }
@@ -350,8 +354,14 @@ impl Context {
         responder: &mut dyn Responder,
         input_token: Option<&[u8]>,
     ) -> Result<InitStep, Error> {
-        let _unused = (credential, responder, input_token);
-        Err(Error::UnexpectedStep("not implemented"))
+        match &mut self.role {
+            Role::Initiator(state) => initiator::step(
+                state,
+                &mut initiator::Sources::new(credential, Some(responder)),
+                input_token,
+            ),
+            Role::Acceptor(_) => Err(Error::UnexpectedStep("this is an acceptor context")),
+        }
     }
 
     /// One acceptor step.
@@ -420,7 +430,9 @@ impl Context {
     #[inline]
     pub fn store_acquired_into(&self, store: &CredStore, overwrite: bool) -> Result<(), Error> {
         match &self.role {
-            Role::Initiator(state) => state.store_acquired_into(store, overwrite),
+            Role::Initiator(state) => {
+                initiator::acquired::store_acquired_into(state, store, overwrite)
+            }
             Role::Acceptor(_) => Err(Error::UnexpectedStep(
                 "an acceptor context acquires no tickets",
             )),
