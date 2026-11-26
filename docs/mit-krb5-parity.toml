@@ -11,8 +11,8 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 151
-partial = 2
+implemented = 153
+partial = 0
 absent = 0
 rejected = 8
 omitted = 1
@@ -523,6 +523,8 @@ rust_symbols = [
   "client::stepwise::InitCreds::with_armor",
   "client::stepwise::TicketCreds::with_fast",
   "client::stepwise::TicketCreds::fast_outcome",
+  "client::Tokio::with_tgs_fast",
+  "client::transport::Tokio::with_tgs_fast",
 ]
 test_names = [
   "tests/fast/exchange.rs::required_fast_logs_in_with_the_encrypted_challenge",
@@ -552,9 +554,12 @@ test_names = [
   "tests/interop_fast/scenarios.rs::armored_tgs_request_is_accepted_by_mit",
   "tests/interop_fast/scenarios.rs::armored_tgs_request_keeps_the_fast_ec_indicator",
   "tests/interop_fast/scenarios.rs::armored_tgs_referral_is_armored_at_every_hop",
+  "tests/fast/client_switch.rs::default_client_sends_plain_tgs_requests",
+  "tests/fast/client_switch.rs::enabled_client_armors_tgs_requests",
+  "tests/fast/client_switch.rs::enabled_client_refuses_an_unarmored_reply_under_required",
 ]
 feature_flags = []
-security_divergence = "The PA-REQ-ENC-PA-REP checksum of a reply must have the type that the reply key's encryption type requires (RFC 6806 section 11), also under FAST, where it covers the armored request as sent; MIT 1.22.2 `krb5int_fast_verify_nego` (fast.c:635-668) passes any checksum type to `krb5_c_verify_checksum`, whose `verify_key` (crypto_int.h:598-607) only compares encryption providers: the AES128 and AES256 providers are shared by the SHA1 and SHA2 enctypes (etypes.c:88,132) and checksum types (cksumtypes.c:70,100), and HMAC-MD5 (-138) has no provider (cksumtypes.c:61-66), so it passes under a key of any enctype with a valid length. The `KrbFastFinished` ticket checksum must equally be the armor key's mandatory type (MIT fast.c:543-547 verifies any type). An armored exchange never accepts an unarmored reply or error (MIT treats an undecryptable FAST error as the KDC's fatal error, fast.c:445-460, and so does this crate, reporting it as `error::Fast::UnarmoredError`). TGS requests are armored implicitly when the caller asks for it (`TicketCreds::with_fast`; MIT 1.22.2 armors every TGS request, send_tgs.c:178, fast.c:110-142, so the default here is the divergence, executor decision FU-FST-P01): the armor key, the request checksum over the AP-REQ and the outer padata copy follow fast.c:110-142,227-251,310-330. The reply must carry the strengthen key (RFC 6113 section 5.4.3; MIT uses the plain subkey when it is missing, fast.c:570-592) and a finished message with the armor key's own checksum type, and a PA-FX-FAST that fails any check ends the exchange: it is never read as a plain reply. A reply or error without any PA-FX-FAST is taken for a KDC without FAST only under `Policy::Opportunistic` (MIT takes it as success, decode_kdc.c:66-67, and surfaces an unarmored error, fast.c:445-460) and is reported as `Outcome::Unarmored`; `Policy::Required` refuses it with `error::Fast::Unarmored` or `UnarmoredError`."
+security_divergence = "The PA-REQ-ENC-PA-REP checksum of a reply must have the type that the reply key's encryption type requires (RFC 6806 section 11), also under FAST, where it covers the armored request as sent; MIT 1.22.2 `krb5int_fast_verify_nego` (fast.c:635-668) passes any checksum type to `krb5_c_verify_checksum`, whose `verify_key` (crypto_int.h:598-607) only compares encryption providers: the AES128 and AES256 providers are shared by the SHA1 and SHA2 enctypes (etypes.c:88,132) and checksum types (cksumtypes.c:70,100), and HMAC-MD5 (-138) has no provider (cksumtypes.c:61-66), so it passes under a key of any enctype with a valid length. The `KrbFastFinished` ticket checksum must equally be the armor key's mandatory type (MIT fast.c:543-547 verifies any type). An armored exchange never accepts an unarmored reply or error (MIT treats an undecryptable FAST error as the KDC's fatal error, fast.c:445-460, and so does this crate, reporting it as `error::Fast::UnarmoredError`). TGS requests are armored implicitly when the caller asks for it (`TicketCreds::with_fast`; MIT 1.22.2 armors every TGS request, send_tgs.c:178, fast.c:110-142, so the default here is the divergence, executor decision FU-FST-P01): the armor key, the request checksum over the AP-REQ and the outer padata copy follow fast.c:110-142,227-251,310-330. The reply must carry the strengthen key (RFC 6113 section 5.4.3; MIT uses the plain subkey when it is missing, fast.c:570-592) and a finished message with the armor key's own checksum type, and a PA-FX-FAST that fails any check ends the exchange: it is never read as a plain reply. A reply or error without any PA-FX-FAST is taken for a KDC without FAST only under `Policy::Opportunistic` (MIT takes it as success, decode_kdc.c:66-67, and surfaces an unarmored error, fast.c:445-460) and is reported as `Outcome::Unarmored`; `Policy::Required` refuses it with `error::Fast::Unarmored` or `UnarmoredError`. The high-level client has the explicit switch `client::Tokio::with_tgs_fast(Policy)` (default `Off`, EXECUTOR decision W11N-2: MIT armors every TGS request, but the armored request differs from the plain one that KDCs without FAST accept); it covers the service-ticket route and the host acquisitions, not renewals or S4U requests, and the IAKERB initiator keeps the plain request."
 disposition = "WP-05"
 closing_plan = 2
 closing_todo = 7
@@ -1820,6 +1825,9 @@ rust_symbols = [
   "discovery::hostname::HostNamePolicy",
   "client::Tokio::get_host_service_ticket",
   "client::negotiate::Client::authorization_context_for_acquired_host",
+  "gss::Credential::acquire_host_service_ticket",
+  "http::agent::NegotiateHttpClient::with_host_name_policy",
+  "client::negotiate::Client::authorization_context_for_acquired_host_with_options",
 ]
 test_names = [
   "tests/config/relations_c1.rs::dns_canonicalize_hostname",
@@ -1831,6 +1839,12 @@ test_names = [
   "tests/discovery/acquisition.rs::fallback_resolves_after_principal_unknown",
   "tests/discovery/acquisition.rs::default_host_acquisition_issues_no_dns",
   "tests/client/host_acquisition.rs::host_acquisition_route_asks_for_the_approved_name",
+  "tests/gss/host_target.rs::gss_host_target_uses_explicit_canonicalization",
+  "tests/gss/host_target.rs::gss_host_target_refuses_an_unapproved_name_and_import_stays_pure",
+  "tests/http_client/canonicalization.rs::http_host_target_uses_explicit_canonicalization",
+  "tests/http_client/canonicalization.rs::default_http_client_does_not_canonicalize",
+  "tests/http_client/canonicalization.rs::an_unapproved_name_sends_no_token",
+  "tests/http_client/canonicalization.rs::canonicalization_cannot_change_http_origin",
 ]
 feature_flags = []
 security_divergence = ""
@@ -2314,6 +2328,9 @@ rust_symbols = [
   "discovery::hostname::HostNamePolicy",
   "client::Tokio::get_host_service_ticket",
   "client::negotiate::Client::authorization_context_for_acquired_host",
+  "gss::Credential::acquire_host_service_ticket",
+  "http::agent::NegotiateHttpClient::with_host_name_policy",
+  "client::negotiate::Client::authorization_context_for_acquired_host_with_options",
 ]
 test_names = [
   "tests/config/relations_c2.rs::qualify_shortname",
@@ -2322,6 +2339,12 @@ test_names = [
   "tests/discovery/acquisition.rs::host_acquisition_uses_explicit_shortname_suffix",
   "tests/client/host_acquisition.rs::explicit_principal_is_not_qualified",
   "tests/client/host_acquisition.rs::host_acquisition_route_asks_for_the_approved_name",
+  "tests/gss/host_target.rs::gss_host_target_uses_explicit_canonicalization",
+  "tests/gss/host_target.rs::gss_host_target_refuses_an_unapproved_name_and_import_stays_pure",
+  "tests/http_client/canonicalization.rs::http_host_target_uses_explicit_canonicalization",
+  "tests/http_client/canonicalization.rs::default_http_client_does_not_canonicalize",
+  "tests/http_client/canonicalization.rs::an_unapproved_name_sends_no_token",
+  "tests/http_client/canonicalization.rs::canonicalization_cannot_change_http_origin",
 ]
 feature_flags = []
 security_divergence = "unset adds no suffix (MIT uses the first search domain of the system resolver configuration, sn2princ.c:62-74; the library does not read that configuration to name a service)"
@@ -2344,6 +2367,9 @@ rust_symbols = [
   "discovery::hostname::HostNamePolicy",
   "client::Tokio::get_host_service_ticket",
   "client::negotiate::Client::authorization_context_for_acquired_host",
+  "gss::Credential::acquire_host_service_ticket",
+  "http::agent::NegotiateHttpClient::with_host_name_policy",
+  "client::negotiate::Client::authorization_context_for_acquired_host_with_options",
 ]
 test_names = [
   "tests/config/relations_c2.rs::rdns",
@@ -2351,6 +2377,12 @@ test_names = [
   "tests/discovery/hostnames.rs::an_address_literal_is_named_only_by_the_reverse_lookup",
   "tests/discovery/acquisition.rs::rdns_false_never_queries_ptr",
   "tests/discovery/acquisition.rs::unapproved_ptr_identity_is_refused",
+  "tests/gss/host_target.rs::gss_host_target_uses_explicit_canonicalization",
+  "tests/gss/host_target.rs::gss_host_target_refuses_an_unapproved_name_and_import_stays_pure",
+  "tests/http_client/canonicalization.rs::http_host_target_uses_explicit_canonicalization",
+  "tests/http_client/canonicalization.rs::default_http_client_does_not_canonicalize",
+  "tests/http_client/canonicalization.rs::an_unapproved_name_sends_no_token",
+  "tests/http_client/canonicalization.rs::canonicalization_cannot_change_http_origin",
 ]
 feature_flags = []
 security_divergence = ""
@@ -2833,22 +2865,25 @@ id = "MIT-config-54"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`[plugins]` `disable`, `enable_only`, `module` common relations"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Plan-2 todo 28 (wave-11 lane A, register FU-EXT-P01, EXECUTOR decision W11A-6) made `disable` and `enable_only` effective over the registered and the built-in ccselect, hostrealm and localauth modules through one arrangement (extensions::order::arrange, MIT plugin.c:302-347) and lifted their Strict refusal; another interface name is an unknown path. Still missing: the built-in clpreauth mechanisms are chosen inside src/client/stepwise (init.rs, options.rs, spake.rs), which wave 11 assigns to lane E, so clpreauth controls reach only registered mechanisms and stay diagnosed (excluding encrypted_timestamp fails in both modes); closer: a todo-28 follow-up that filters the built-in clpreauth mechanisms in the stepwise engine"
+missing = ""
 rust_symbols = [
   "extensions::Registry",
   "extensions::Registry::enabled",
   "extensions::Registry::parse_config",
   "extensions::Interface",
+  "client::stepwise::InitCredsOptions::from_config",
+  "error::Client::PreauthMechanismDisabled",
 ]
 test_names = [
   "tests/config/section_composition_d.rs::disable",
   "tests/config/section_composition_d.rs::enable_only",
-  "tests/config/section_composition_d.rs::restrictive_preauth_plugins",
+  "tests/config/section_composition_d.rs::clpreauth_controls_are_admitted",
+  "tests/config/section_composition_d.rs::clpreauth_control_does_not_mask_later_entries",
   "tests/config/plugin_case.rs::upper_interface_is_not_clpreauth",
   "tests/config/plugin_case.rs::upper_interface_strict_matches_other_interfaces",
-  "tests/config/plugin_case.rs::lower_interface_still_fails_closed",
+  "tests/config/plugin_case.rs::lower_interface_control_is_effective",
   "tests/config/plugin_case.rs::upper_control_is_unknown_relation",
   "tests/config/name_case.rs::plugins_header_is_case_sensitive",
   "tests/extensions.rs::registration_order_is_deterministic",
@@ -2862,9 +2897,20 @@ test_names = [
   "tests/discovery/realms.rs::disabled_builtin_hostrealm_is_not_consulted",
   "tests/localauth/controls.rs::localauth_controls_apply_to_public_helpers",
   "tests/localauth/controls.rs::localauth_controls_apply_to_authorization",
+  "tests/spake/controls.rs::disabled_timestamp_is_never_sent",
+  "tests/spake/controls.rs::enable_only_applies_to_builtin_preauth",
+  "tests/spake/controls.rs::clpreauth_names_match_exactly",
+  "tests/spake/controls.rs::enable_only_sam2_leaves_no_mechanism",
+  "tests/spake/controls.rs::disabled_spake_is_never_answered",
+  "tests/spake/controls.rs::configure_adopts_the_plugin_controls",
+  "tests/fast/exchange.rs::disabled_encrypted_challenge_is_never_answered",
+  "tests/otp/exchange.rs::disabled_otp_refuses_the_exchange_before_sending",
+  "tests/pkinit/scenarios.rs::disabled_pkinit_refuses_the_exchange_before_sending",
+  "tests/config/restrictive.rs::excluded_timestamp_request_fails_before_login",
+  "tests/policy/acceptor_http.rs::http_constructors_admit_clpreauth_controls",
 ]
 feature_flags = []
-security_divergence = "A registered provider is active without a `module` relation, and `module = <id>:<path>` only checks that `<id>` is a registered provider of that interface (the path is ignored and nothing is reordered), where MIT puts `module` entries before the built-ins (`plugin.c:205-252`); any other `module` stays `Config::UnsupportedDynamicModule`. Strict mode still refuses `disable` and `enable_only` with `NotYetEffective` until the built-in consumers route through the registry (P2-4, P2-11, P2-15, P2-25; tests/config/plugin_case.rs::upper_interface_strict_matches_other_interfaces), and a `clpreauth` restriction that excludes `encrypted_timestamp` fails in both modes."
+security_divergence = "A registered provider is active without a `module` relation, and `module = <id>:<path>` only checks that `<id>` is a registered provider of that interface (the path is ignored and nothing is reordered), where MIT puts `module` entries before the built-ins (`plugin.c:205-252`); any other `module` stays `Config::UnsupportedDynamicModule`. `disable` and `enable_only` are effective over the registered and the built-in modules of `clpreauth` (pkinit, spake, encrypted_challenge, encrypted_timestamp, sam2, otp), `ccselect`, `hostrealm` and `localauth` through one name-level arrangement, and Strict mode accepts them (EXECUTOR decisions W11A-6 and W11N-1, the A7 transition); another interface name is an unknown path. An exchange built for a PKINIT or OTP mechanism that `clpreauth` excludes fails closed with `error::Client::PreauthMechanismDisabled` and never falls back; with the encrypted timestamp excluded a KDC that offers nothing else is refused (`EncryptedTimestampDisabled`), where MIT would continue without the mechanism. The old rule that a `clpreauth` restriction excluding `encrypted_timestamp` fails in both parse modes is removed: the engine honours the exclusion. `sam2` is a built-in name without a mechanism in this crate."
 disposition = "WP-16"
 closing_plan = 2
 closing_todo = 28
@@ -3013,15 +3059,18 @@ id = "MIT-dns-4"
 area = "dns"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Hostname canonicalization with DNS, `fallback`, short-name qualification and reverse DNS"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "The client route is delivered (plan-2 todo 28, wave-11 lane A): CanonicalizationPolicy::acquire makes the canonical names lazily (fallback asks DNS only after KDC_ERR_S_PRINCIPAL_UNKNOWN) and uses a name other than the requested host only with the caller's HostNamePolicy approval, through client::Tokio::get_host_service_ticket and negotiate::Client::authorization_context_for_acquired_host. The GSS-API name route (gss::Name import, lanes D/N) and the HTTP client route (src/http/agent.rs, lanes F/N, register FU-HTC-P08) do not delegate to it yet (closer: todo 28, lane N naming-wiring)"
+missing = ""
 rust_symbols = [
   "discovery::hostname::CanonicalizationPolicy",
   "discovery::hostname::CanonicalizationPolicy::acquire",
   "discovery::hostname::HostNamePolicy",
   "client::Tokio::get_host_service_ticket",
   "client::negotiate::Client::authorization_context_for_acquired_host",
+  "gss::Credential::acquire_host_service_ticket",
+  "http::agent::NegotiateHttpClient::with_host_name_policy",
+  "client::negotiate::Client::authorization_context_for_acquired_host_with_options",
 ]
 test_names = [
   "tests/discovery/hostnames.rs::the_three_modes_order_their_forms",
@@ -3031,9 +3080,15 @@ test_names = [
   "tests/discovery/acquisition.rs::fallback_does_not_resolve_after_plain_success",
   "tests/discovery/acquisition.rs::fallback_resolves_after_principal_unknown",
   "tests/discovery/acquisition.rs::unapproved_ptr_identity_is_refused",
+  "tests/gss/host_target.rs::gss_host_target_uses_explicit_canonicalization",
+  "tests/gss/host_target.rs::gss_host_target_refuses_an_unapproved_name_and_import_stays_pure",
+  "tests/http_client/canonicalization.rs::http_host_target_uses_explicit_canonicalization",
+  "tests/http_client/canonicalization.rs::default_http_client_does_not_canonicalize",
+  "tests/http_client/canonicalization.rs::an_unapproved_name_sends_no_token",
+  "tests/http_client/canonicalization.rs::canonicalization_cannot_change_http_origin",
 ]
 feature_flags = []
-security_divergence = ""
+security_divergence = "MIT uses a canonical name unconditionally (`sn2princ.c:130-144,270-307`); all three routes (the high-level client, the GSS-API credential and the HTTP client) use one operation, `CanonicalizationPolicy::acquire`, and a canonical name other than the requested host itself (a DNS answer, a PTR answer or a `qualify_shortname` suffix) names the service only when the caller's `HostNamePolicy` approves it, because DNS answers are not authenticated (EXECUTOR decision W11A-7). `Name::import`, `Principal::host_based_service` and the HTTP client without a policy never canonicalize. The HTTP route changes only the principal the token is for: the TLS server name, the Host header, the redirect and cookie origin and the channel binding stay the URI host's (EXECUTOR decision W11N-3). An explicit service realm of the HTTP client and an impersonator GSS credential do not canonicalize."
 disposition = "WP-10"
 closing_plan = 2
 closing_todo = 15
