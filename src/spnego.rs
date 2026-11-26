@@ -1870,6 +1870,8 @@ pub struct InitiatorContextOptions {
     sequence_number: Option<u32>,
     /// Whether the authenticator asserts MS-KILE `KERB_AP_OPTIONS_CBT`.
     client_aware_channel_bindings: bool,
+    /// The channel bindings whose digest the authenticator checksum carries.
+    channel_bindings: Option<gss::ChannelBindings>,
 }
 
 impl InitiatorContextOptions {
@@ -1921,7 +1923,26 @@ impl InitiatorContextOptions {
             subkey: None,
             sequence_number: None,
             client_aware_channel_bindings: false,
+            channel_bindings: None,
         }
+    }
+
+    /// Bind the token to an outer channel: the authenticator checksum carries
+    /// the RFC 4121 section 4.1.1.2 digest of `bindings` (for HTTPS the RFC 5929
+    /// `tls-server-end-point` bindings of the connection that carries the
+    /// token), so an acceptor holding other bindings refuses it.
+    #[must_use]
+    #[inline]
+    pub fn with_channel_bindings(mut self, bindings: gss::ChannelBindings) -> Self {
+        self.channel_bindings = Some(bindings);
+        self
+    }
+
+    /// The channel bindings the token is bound to, if any.
+    #[must_use]
+    #[inline]
+    pub const fn channel_bindings(&self) -> Option<&gss::ChannelBindings> {
+        self.channel_bindings.as_ref()
     }
 
     /// Assert MS-KILE `KERB_AP_OPTIONS_CBT` in the authenticator, as the
@@ -2540,11 +2561,15 @@ pub fn init_sec_context_with_confounder(
     let sequence_number = options
         .sequence_number
         .ok_or(Error::MissingAuthenticatorSequence)?;
+    let digest = options
+        .channel_bindings
+        .as_ref()
+        .map_or([0; 16], gss::ChannelBindings::digest);
     let mut ap_req_options = ApReq::new()
         .with_ap_option_bits(options.ap_option_bits)
         .with_checksum(Some(rasn_kerberos::Checksum {
             r#type: GSSAPI_CHECKSUM_TYPE,
-            checksum: authenticator_checksum(&options.context_flags).into(),
+            checksum: bound_checksum(&options.context_flags, &digest).into(),
         }))
         .with_subkey(options.subkey.clone())
         .with_sequence_number(Some(sequence_number))
@@ -2744,10 +2769,16 @@ fn response_token_header(token: &NegTokenResp) -> Result<String, Error> {
 /// Checked context builders reject delegation because they have no credential input.
 #[inline]
 pub fn authenticator_checksum(flags: &[u32]) -> Vec<u8> {
+    bound_checksum(flags, &[0; 16])
+}
+
+/// The 24-byte prefix of the 0x8003 checksum with the channel-binding
+/// `digest` (all zero for none).
+fn bound_checksum(flags: &[u32], digest: &[u8; 16]) -> Vec<u8> {
     let context_flags = flags.iter().fold(0_u32, |merged, flag| merged | *flag);
     let mut checksum = Vec::with_capacity(24);
     checksum.extend_from_slice(&16_u32.to_le_bytes());
-    checksum.extend_from_slice(&[0; 16]);
+    checksum.extend_from_slice(digest);
     checksum.extend_from_slice(&context_flags.to_le_bytes());
     checksum
 }
