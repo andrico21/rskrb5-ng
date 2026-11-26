@@ -14,12 +14,10 @@ use rskrb5_ng::{
 
 use super::{
     context::{Context as _, TestError},
+    forged::{ap_req_token, finished, subkey},
     kdc::Kdc,
     seal::service_key,
-    support::{
-        NoRelay, ap_req_token, establish_with, finished, keytab, password_credential, policy,
-        subkey,
-    },
+    support::{NoRelay, establish_with, keytab, password_credential, policy},
 };
 
 /// Run a discovery exchange (two tokens), then hand the acceptor the AP-REQ

@@ -23,8 +23,8 @@ use rskrb5_ng::{
 use super::{
     context::{Context as _, TestError},
     seal::{
-        ETYPE, PREAUTH_REQUIRED, REALM, S_PRINCIPAL_UNKNOWN, USER, cipher, name, rasn_key, sealed,
-        service_key, text, tgs_key, time, user_key,
+        ETYPE, PREAUTH_REQUIRED, REALM, S_PRINCIPAL_UNKNOWN, USER, cipher, name, rasn_key,
+        reply_flags, sealed, service_key, text, tgs_key, time, user_key,
     },
 };
 
@@ -93,18 +93,12 @@ impl Kdc {
         sname: (i32, &[&str]),
     ) -> Result<rasn_kerberos::EncKdcRepPart, TestError> {
         let now = time(SystemTime::now())?;
-        let forwardable = body.kdc_options.0.get(1).is_some_and(|bit| *bit);
         Ok(rasn_kerberos::EncKdcRepPart {
             key: rasn_key(key),
             last_req: Vec::new(),
             nonce: body.nonce,
             key_expiration: None,
-            flags: rasn_kerberos::TicketFlags(rasn_kerberos::KerberosFlags::from_slice(&[
-                if forwardable { 0x40 } else { 0 },
-                0,
-                0,
-                0,
-            ])),
+            flags: reply_flags(body),
             auth_time: now.clone(),
             start_time: Some(now),
             end_time: body.till.clone(),

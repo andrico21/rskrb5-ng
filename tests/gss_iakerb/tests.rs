@@ -9,9 +9,13 @@ mod seal;
 #[path = "kdc.rs"]
 mod kdc;
 
-/// Keytabs, credentials, tickets and the token loop.
+/// Keytabs, credentials and the token loop.
 #[path = "support.rs"]
 mod support;
+
+/// Tickets and AP-REQs built by the tests.
+#[path = "forged.rs"]
+mod forged;
 
 /// The token framing and the `IAKERB-HEADER`.
 #[path = "token.rs"]

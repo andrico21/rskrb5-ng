@@ -22,12 +22,19 @@ use super::{
 use crate::{
     ap_req,
     ccache::CCache,
-    crypto::KerberosEtype,
     error::Service,
     krb_cred,
-    service::{self, ApRepOptions, ValidatedApReq, Validator},
+    service::{self, ValidatedApReq, Validator},
     spnego::Krb5MechToken,
 };
+
+/// The AP-REP.
+mod answer;
+/// The authenticator checks.
+mod authenticator;
+
+use answer::reply;
+use authenticator::check;
 
 /// The longest context token, in bytes.
 const MAX_TOKEN_LEN: usize = 0x4_0000;
@@ -86,62 +93,6 @@ struct Checked {
     delegation: Option<Zeroizing<Vec<u8>>>,
 }
 
-/// Interpret the authenticator checksum and the CBT assertion against the
-/// acceptor's bindings policy, and its extensions against the extension
-/// record.
-///
-/// # Errors
-///
-/// Returns [`Error::DefectiveChecksum`] for a missing or malformed checksum,
-/// [`Error::BadBindings`] and [`Error::MissingBindings`] by the policy,
-/// [`Error::DefectiveToken`] without a sequence number, and the [`Fault`] of
-/// an `IAKERB-FINISHED` the record does not expect or that does not verify.
-fn check<E>(
-    authenticator: &rasn_kerberos::Authenticator,
-    options: &AcceptorOptions,
-    extensions: Extensions<'_>,
-) -> Result<Checked, E>
-where
-    E: From<Error> + From<Fault>,
-{
-    let value = authenticator
-        .cksum
-        .as_ref()
-        .ok_or(Error::DefectiveChecksum(
-            "the authenticator has no checksum",
-        ))?;
-    if value.r#type != checksum::CHECKSUM_TYPE {
-        return Err(Error::DefectiveChecksum("not a GSS checksum").into());
-    }
-    let mut decoded = checksum::decode(&value.checksum)?;
-    let ours = options.bindings.as_ref().map(ChannelBindings::digest);
-    let present = *decoded.bindings() != [0; 16];
-    let bound = present && ours.is_some_and(|digest| bindings::same(decoded.bindings(), &digest));
-    if present && ours.is_some() && !bound {
-        return Err(Error::BadBindings.into());
-    }
-    if checksum::asserts_cbt(authenticator.authorization_data.as_ref())? && ours.is_some() && !bound
-    {
-        return Err(Error::BadBindings.into());
-    }
-    if options.require_bindings && !bound {
-        return Err(Error::MissingBindings.into());
-    }
-    if authenticator.seq_number.is_none() {
-        return Err(Error::DefectiveToken("the authenticator has no sequence number").into());
-    }
-    finished::check(
-        extensions.conversation(),
-        decoded.finished(),
-        authenticator.subkey.as_ref(),
-    )?;
-    Ok(Checked {
-        flags: decoded.flags(),
-        bound,
-        delegation: decoded.take_delegation(),
-    })
-}
-
 /// A client principal from the validator's form.
 fn principal(value: &service::Principal) -> Principal {
     Principal::new(
@@ -177,62 +128,6 @@ fn delegated(validated: &ValidatedApReq, bytes: &[u8]) -> Result<Credential, Err
         drop(cache.upsert_credential(entry));
     }
     cred::from_ccache(cache)
-}
-
-/// A random acceptor subkey of `etype`, none for the legacy enctypes.
-///
-/// # Errors
-///
-/// Returns the random source and key errors.
-fn acceptor_subkey(etype: i32) -> Result<Option<EncryptionKey>, Error> {
-    match KerberosEtype::from_etype_id(etype) {
-        Some(KerberosEtype::Sha1(_) | KerberosEtype::Sha2(_) | KerberosEtype::Camellia(_)) => {
-            Ok(Some(initiator::random_key(etype)?))
-        }
-        Some(KerberosEtype::Des3CbcSha1Kd(_) | KerberosEtype::Rc4Hmac(_)) | None => Ok(None),
-    }
-}
-
-/// The AP-REP of a mutually authenticated context: the acceptor's sequence
-/// number and subkey, and the token, framed with the mechanism `frame` names
-/// or raw without one.
-///
-/// # Errors
-///
-/// Returns the key, random-source and AP-REP errors.
-fn reply(
-    validated: &ValidatedApReq,
-    frame: Option<&ObjectIdentifier>,
-    dce_style: bool,
-) -> Result<(u32, Option<EncryptionKey>, Vec<u8>), Error> {
-    let current = validated
-        .subkey()
-        .unwrap_or_else(|| validated.session_key());
-    // DCE style implies an acceptor subkey (`accept_sec_context.c:933-934,1020`).
-    let subkey = if dce_style {
-        Some(initiator::random_key(current.etype())?)
-    } else {
-        acceptor_subkey(current.etype())?
-    };
-    let send = initiator::random_sequence()?;
-    let reply_options = ApRepOptions::default()
-        .with_subkey(subkey.clone())
-        .with_sequence_number(Some(send));
-    let etype = KerberosEtype::from_etype_id(validated.session_key().etype())
-        .ok_or(Error::LegacyTokenFormat(validated.session_key().etype()))?;
-    let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
-    getrandom::fill(&mut confounder).map_err(Error::Random)?;
-    let reply = validated.build_ap_rep_with_confounder(&confounder, &reply_options)?;
-    let answer = match frame {
-        Some(mechanism) => {
-            let mut answer = Krb5MechToken::ap_rep(reply);
-            answer.set_oid(mechanism.clone());
-            answer.encode()?
-        }
-        // A raw AP-REP (`accept_sec_context.c:1067-1076`).
-        None => reply,
-    };
-    Ok((send, subkey, answer))
 }
 
 /// Whether the AP-REQ `request` asks for mutual authentication.

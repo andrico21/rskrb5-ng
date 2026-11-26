@@ -18,7 +18,8 @@ use rskrb5_ng::{
 
 use super::{
     context::TestError,
-    support::{NoRelay, ap_req_der, finished, framed, keytab, policy, subkey},
+    forged::{ap_req_der, finished, framed, subkey},
+    support::{NoRelay, keytab, policy},
 };
 
 /// Hand `context` a discovery token carrying `cookie` and return the

@@ -64,7 +64,7 @@ pub(super) fn reply(state: &mut State, pending: Pending, token: &[u8]) -> Result
         ));
     }
     let wire = ap_rep::decode(body)?;
-    let (context, step) = initiator::complete(pending, &wire)?;
+    let (context, step) = initiator::mutual::complete(pending, &wire)?;
     state.phase = Phase::Established(Box::new(context));
     Ok(step)
 }
