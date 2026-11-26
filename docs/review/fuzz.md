@@ -136,6 +136,7 @@ timeout artifact:
 | `http_location` | 1,197,682 (todo 26 of plan 2, 2026-11-25) | 61 s | 0 |
 | `http_session` | 469,278 (todo 26 of plan 2, 2026-11-25) | 61 s | 0 |
 | `http_set_cookie` | 242,019 (todo 26 of plan 2, 2026-11-25) | 61 s | 0 |
+| `http_tls_channel` | 1,523,382 (todo 28 of plan 2, 2026-11-26) | 62 s | 0 |
 | `gss_name` | 2,118,533 (todo 18 of plan 2, 2026-11-22) | 121 s | 0 |
 | `gss_context` | 1,096,589 (todo 18 of plan 2, 2026-11-22) | 121 s | 0 |
 | `gss_iov` | 24,211 (todo 19 of plan 2, 2026-11-23) | 121 s | 0 |
