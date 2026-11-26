@@ -36,3 +36,11 @@ mod malformed;
 /// The AP exchange shared with the krb5 mechanism.
 #[path = "shared.rs"]
 mod shared;
+
+/// The mechanism an IAKERB context reports.
+#[path = "inquiry.rs"]
+mod inquiry;
+
+/// Delegation over IAKERB.
+#[path = "delegation.rs"]
+mod delegation;

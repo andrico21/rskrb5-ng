@@ -85,20 +85,25 @@ impl Kdc {
         })?)
     }
 
-    /// The reply part: `key`, the request's nonce, valid for an hour.
+    /// The reply part: `key`, the request's nonce, valid for an hour, and
+    /// `FORWARDABLE` when the request asks for it (RFC 4120 `KDCOptions` bit 1).
     fn reply_part(
         body: &rasn_kerberos::KdcReqBody,
         key: &EncryptionKey,
         sname: (i32, &[&str]),
     ) -> Result<rasn_kerberos::EncKdcRepPart, TestError> {
         let now = time(SystemTime::now())?;
+        let forwardable = body.kdc_options.0.get(1).is_some_and(|bit| *bit);
         Ok(rasn_kerberos::EncKdcRepPart {
             key: rasn_key(key),
             last_req: Vec::new(),
             nonce: body.nonce,
             key_expiration: None,
             flags: rasn_kerberos::TicketFlags(rasn_kerberos::KerberosFlags::from_slice(&[
-                0, 0, 0, 0,
+                if forwardable { 0x40 } else { 0 },
+                0,
+                0,
+                0,
             ])),
             auth_time: now.clone(),
             start_time: Some(now),

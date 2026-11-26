@@ -102,10 +102,53 @@ pub(super) fn establish_with(
     credential: &Credential,
     kdc: &Kdc,
     policy: RelayPolicy,
+    tamper: impl FnMut(usize, Vec<u8>) -> Result<Vec<u8>, TestError>,
+) -> Result<Pair, TestError> {
+    let setup = Setup {
+        config: config()?,
+        options: InitiatorOptions::new(),
+        policy,
+    };
+    run(credential, kdc, setup, tamper)
+}
+
+/// What a context is established under: the initiator's profile and options
+/// and the acceptor's relay policy.
+pub(super) struct Setup {
+    /// The initiator's profile.
+    pub config: Config,
+    /// The initiator's options.
+    pub options: InitiatorOptions,
+    /// The acceptor's relay policy.
+    pub policy: RelayPolicy,
+}
+
+/// Establish a context from `credential` under `setup`, the tokens untouched.
+///
+/// # Errors
+///
+/// Returns the first error of either end.
+pub(super) fn establish_under(
+    credential: &Credential,
+    kdc: &Kdc,
+    setup: Setup,
+) -> Result<Pair, TestError> {
+    run(credential, kdc, setup, |_turn, token| Ok(token))
+}
+
+/// The token loop of [`establish_with`] and [`establish_under`].
+///
+/// # Errors
+///
+/// Returns the first error of either end.
+fn run(
+    credential: &Credential,
+    kdc: &Kdc,
+    setup: Setup,
     mut tamper: impl FnMut(usize, Vec<u8>) -> Result<Vec<u8>, TestError>,
 ) -> Result<Pair, TestError> {
-    let mut initiator = Context::initiator(&config()?, target()?, InitiatorOptions::new())?;
-    let mut acceptor_context = Context::acceptor(policy);
+    let mut initiator = Context::initiator(&setup.config, target()?, setup.options)?;
+    let mut acceptor_context = Context::acceptor(setup.policy);
     let store = Credential::from_keytab(keytab());
     let mut acceptor = Acceptor::new(&store, AcceptorOptions::new())?;
     let mut relay = Relay::new(kdc);
