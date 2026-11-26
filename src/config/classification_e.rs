@@ -79,7 +79,7 @@ mod tests {
     /// Every consumer is effective (with its leaf, when it names one) or an
     /// owner decision excludes the relation (`every_permanent_scope_row_is_reviewed`).
     #[test]
-    fn no_catalogue_row_is_deferred() {
+    fn no_catalogue_row_is_deferred() -> Result<(), Box<dyn Error>> {
         let deferred: Vec<&str> = RELATIONS
             .iter()
             .chain(REALM_RELATIONS.iter())
@@ -88,5 +88,6 @@ mod tests {
             .map(|row| row.0)
             .collect();
         assert_eq!(deferred, Vec::<&str>::new());
+        Ok(())
     }
 }
