@@ -104,7 +104,7 @@ superset must not copy are listed under
 
 | ID | Capability | Status | Evidence | Disposition | Closing | Missing | Policy and divergence | Symbols | Features | Tests |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| GO-client-8 | `Client.Key`: the long-term key of an encryption type from the client's keytab or password (split from GO-client-1) | omitted | unit | D14 | P2-28 | Omitted by the owner decision of 2026-11-25 (disposition D14): no long-term key leaves a client, so the client facade has no key accessor. gokrb5 `Client.Key` (client/client.go:119-136) returns the keytab entry (`Keytab.GetEncryptionKey`) or derives the key from the stored password (`crypto.GetKeyFromPassword`); a caller that holds the secret gets the same key itself: `Keytab::find_key` selects it by principal, realm, kvno and etype with the GetEncryptionKey rule (kvno 0 is the newest entry), and `crypto::checked::Etype::string_to_key` derives it from a password under the runtime enctype policy and its iteration floor. The client keeps its password and keytab in zeroizing owners with redacted Debug. | [docs/review/parity-register.md#client-key-export](review/parity-register.md#client-key-export) | `keytab::Keytab::find_key`, `crypto::checked::Etype::string_to_key` | - | `tests/keytab.rs::finds_matching_key_by_principal_kvno_and_etype`, `tests/keytab.rs::kvno_zero_selects_newest_matching_key`, `tests/crypto_aes.rs::aes256_string_to_key_matches_gokrb5_vectors`, `tests/crypto_mutations.rs::checked_s2k_matches_rfc3962`, `tests/secret_debug_audit.rs::public_secret_owners_are_audited` |
+| GO-client-8 | `Client.Key`: the long-term key of an encryption type from the client's keytab or password (split from GO-client-1) | omitted | unit | D14 | P2-28 | Omitted by the owner decision of 2026-11-25 (disposition D14): no long-term key leaves a client, so the client facade has no key accessor. gokrb5 `Client.Key` (client/client.go:119-136) returns the keytab entry (`Keytab.GetEncryptionKey`) or derives the key from the stored password (`crypto.GetKeyFromPassword`); a caller that holds the secret gets the same key itself: `Keytab::find_key` selects it by principal, realm, kvno and etype with the GetEncryptionKey rule (kvno 0 is the newest entry), and `crypto::checked::Etype::string_to_key` derives it from a password under the runtime enctype policy and its iteration floor. The client keeps its password and keytab in zeroizing owners with redacted Debug. | [docs/gokrb5-parity.md#client-key-export](gokrb5-parity.md#client-key-export) | `keytab::Keytab::find_key`, `crypto::checked::Etype::string_to_key` | - | `tests/keytab.rs::finds_matching_key_by_principal_kvno_and_etype`, `tests/keytab.rs::kvno_zero_selects_newest_matching_key`, `tests/crypto_aes.rs::aes256_string_to_key_matches_gokrb5_vectors`, `tests/crypto_mutations.rs::checked_s2k_matches_rfc3962`, `tests/secret_debug_audit.rs::public_secret_owners_are_audited` |
 
 ### service
 
@@ -257,6 +257,15 @@ and gates use these values:
 - `unproven`: the proof target is known but has not been captured.
 - `missing-api`: supporting pieces exist, but the user-facing API is missing.
 - `intentionally-out-of-scope`: not required by gokrb5 alone; see the scope above.
+
+## Owner-decided omissions
+
+<a id="client-key-export"></a>
+gokrb5 `Client.Key` (GO-client-8) returns the long-term key of an encryption
+type from the client's keytab or password. It is left out by the owner decision
+of 2026-11-25 (disposition D14): no long-term key leaves a client. A caller that
+holds the secret derives the same key itself, with `keytab::Keytab::find_key`
+or `crypto::checked::Etype::string_to_key`.
 
 ## Active Directory evidence
 

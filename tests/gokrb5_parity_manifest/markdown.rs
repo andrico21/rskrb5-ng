@@ -52,6 +52,15 @@ and gates use these values:
 - `missing-api`: supporting pieces exist, but the user-facing API is missing.
 - `intentionally-out-of-scope`: not required by gokrb5 alone; see the scope above.
 
+## Owner-decided omissions
+
+<a id=\"client-key-export\"></a>
+gokrb5 `Client.Key` (GO-client-8) returns the long-term key of an encryption
+type from the client's keytab or password. It is left out by the owner decision
+of 2026-11-25 (disposition D14): no long-term key leaves a client. A caller that
+holds the secret derives the same key itself, with `keytab::Keytab::find_key`
+or `crypto::checked::Etype::string_to_key`.
+
 ## Active Directory evidence
 
 - Active Directory behaviour is verified against Samba AD (owner decision D12:

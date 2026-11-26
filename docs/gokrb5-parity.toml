@@ -612,7 +612,7 @@ disposition = "D14"
 closing_plan = 2
 closing_todo = 28
 contributors = []
-doc_anchor = "docs/review/parity-register.md#client-key-export"
+doc_anchor = "docs/gokrb5-parity.md#client-key-export"
 parity_area = "client"
 
 [[feature]]
