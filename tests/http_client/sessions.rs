@@ -419,14 +419,14 @@ fn sessions_are_independent() -> Result<(), TestError> {
 /// cookies of its predecessor, even under the same sealing key (FU-HTC-P06).
 #[test]
 fn restarted_manager_rejects_previous_sessions() -> Result<(), TestError> {
-    let (before, _clock) = manager();
+    let (before, _before_clock) = manager();
     let (_session, cookie) = before.issue(&alice())?;
     drop(before);
-    let (after, _clock) = manager();
+    let (after, _after_clock) = manager();
     assert!(
         matches!(
             after.resume(&value_of(&cookie)?),
-            Err(rskrb5_ng::error::HttpSession::Revoked)
+            Err(SessionError::Revoked)
         ),
         "a session of the previous manager resumed"
     );
