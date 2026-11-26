@@ -44,3 +44,7 @@ mod inquiry;
 /// Delegation over IAKERB.
 #[path = "delegation.rs"]
 mod delegation;
+
+/// The acquired tickets in a cache the caller names.
+#[path = "output.rs"]
+mod output;

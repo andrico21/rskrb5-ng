@@ -28,7 +28,7 @@
 use core::fmt;
 use std::time::SystemTime;
 
-use super::{Accepted, Acceptor, Config, Credential, EstablishedContext, InitStep};
+use super::{Accepted, Acceptor, Config, CredStore, Credential, EstablishedContext, InitStep};
 use crate::{
     client::{
         options::TgsReq,
@@ -368,6 +368,31 @@ impl Context {
             Role::Initiator(state) => state.is_established(),
             Role::Acceptor(state) => state.is_established(),
         }
+    }
+
+    /// Store the tickets the initiator's AS and TGS exchanges acquired into
+    /// the `ccache` of `store` (MIT's `out_ccache`, `iakerb.c:484-487`).
+    ///
+    /// The tickets go only to the cache the caller names here, never to a
+    /// default cache. Without `overwrite`, a cache that already holds tickets
+    /// is not replaced (MIT `GSS_S_DUPLICATE_ELEMENT`), as
+    /// [`Credential::store_cred_into`] does.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::UnexpectedStep`] on an acceptor context, the
+    /// [`Error::Gss`] of [`Credential::store_cred_into`] when no ticket was
+    /// acquired, the store names no `ccache` or the cache holds tickets, and
+    /// the errors of writing the cache. A failed write leaves the context as
+    /// it was: an established context stays established.
+    ///
+    /// # Security
+    ///
+    /// The cache receives the session keys of the acquired tickets.
+    #[inline]
+    pub fn store_acquired_into(&self, store: &CredStore, overwrite: bool) -> Result<(), Error> {
+        let _unused = (store, overwrite);
+        Err(Error::UnexpectedStep("not implemented"))
     }
 
     /// The established context of an initiator; the acceptor's comes with

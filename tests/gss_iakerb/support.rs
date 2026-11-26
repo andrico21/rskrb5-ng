@@ -136,7 +136,33 @@ pub(super) fn establish_under(
     run(credential, kdc, setup, |_turn, token| Ok(token))
 }
 
-/// The token loop of [`establish_with`] and [`establish_under`].
+/// The ends of one context: the initiator's IAKERB context, established, and
+/// the acceptor's established context.
+#[derive(Debug)]
+pub(super) struct Ends {
+    /// The initiator's IAKERB context.
+    pub initiator: Context,
+    /// The acceptor's context.
+    pub acceptor: EstablishedContext,
+}
+
+/// Establish a context from `credential` for `HTTP@<host>` and keep the
+/// initiator's IAKERB context.
+///
+/// # Errors
+///
+/// Returns the first error of either end.
+pub(super) fn establish_ends(credential: &Credential, kdc: &Kdc) -> Result<Ends, TestError> {
+    let setup = Setup {
+        config: config()?,
+        options: InitiatorOptions::new(),
+        policy: policy()?,
+    };
+    let (ends, _wire) = exchange(credential, kdc, setup, |_turn, token| Ok(token))?;
+    Ok(ends)
+}
+
+/// [`exchange`] with the initiator's context taken.
 ///
 /// # Errors
 ///
@@ -145,8 +171,33 @@ fn run(
     credential: &Credential,
     kdc: &Kdc,
     setup: Setup,
-    mut tamper: impl FnMut(usize, Vec<u8>) -> Result<Vec<u8>, TestError>,
+    tamper: impl FnMut(usize, Vec<u8>) -> Result<Vec<u8>, TestError>,
 ) -> Result<Pair, TestError> {
+    let (ends, (tokens, relayed)) = exchange(credential, kdc, setup, tamper)?;
+    Ok(Pair {
+        initiator: ends.initiator.into_established()?,
+        acceptor: ends.acceptor,
+        tokens,
+        relayed,
+    })
+}
+
+/// What went on the wire: the tokens in order of travel, and the requests the
+/// relay carried.
+type Wire = (Vec<Vec<u8>>, Vec<(String, Vec<u8>)>);
+
+/// The token loop of [`establish_with`], [`establish_under`] and
+/// [`establish_ends`].
+///
+/// # Errors
+///
+/// Returns the first error of either end.
+fn exchange(
+    credential: &Credential,
+    kdc: &Kdc,
+    setup: Setup,
+    mut tamper: impl FnMut(usize, Vec<u8>) -> Result<Vec<u8>, TestError>,
+) -> Result<(Ends, Wire), TestError> {
     let mut initiator = Context::initiator(&setup.config, target()?, setup.options)?;
     let mut acceptor_context = Context::acceptor(setup.policy);
     let store = Credential::from_keytab(keytab());
@@ -188,12 +239,11 @@ fn run(
         }
     }
     let finished = accepted.context("the acceptor accepted a context")?;
-    Ok(Pair {
-        initiator: initiator.into_established()?,
+    let ends = Ends {
+        initiator,
         acceptor: finished.into_context(),
-        tokens,
-        relayed: relay.asked,
-    })
+    };
+    Ok((ends, (tokens, relay.asked)))
 }
 
 /// `establish_with`, the tokens untouched.
