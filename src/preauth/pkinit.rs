@@ -90,7 +90,6 @@ mod kdf;
 #[cfg(feature = "pkinit")]
 #[path = "pkinit/keys.rs"]
 mod keys;
-/// `pkinit_cert_match`: the rules that choose the client certificate.
 #[cfg(feature = "pkinit")]
 #[path = "pkinit/matching.rs"]
 pub mod matching;
@@ -331,7 +330,7 @@ impl ConfiguredIdentities {
     /// for `PKCS11:` (D8) and `PKCS12:` locations and for an `ENV:` variable
     /// that names one, [`Error::Io`](crate::error::Pkinit::Io) for an unreadable
     /// `DIR:` location, [`Error::TooLarge`](crate::error::Pkinit::TooLarge)
-    /// for more than [`MAX_IDENTITIES`] identities or [`matching::MAX_RULES`]
+    /// for more than [`MAX_IDENTITIES`] identities or `matching::MAX_RULES`
     /// rules, [`Error::CertificateRule`](crate::error::Pkinit::CertificateRule)
     /// for a rule that is malformed or not honoured, and
     /// [`Error::Unavailable`](crate::error::Pkinit::Unavailable) for rules
