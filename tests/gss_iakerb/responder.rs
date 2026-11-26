@@ -66,6 +66,7 @@ fn iakerb_responder_handles_prompt() -> Result<(), TestError> {
         options: InitiatorOptions::new(),
         policy: policy()?,
         responder: Some(&mut responder),
+        relay: None,
     };
     // when the context is established,
     let mut pair = establish_under(&name_only()?, &kdc, setup)?;
@@ -95,6 +96,7 @@ fn iakerb_responder_handles_prompt() -> Result<(), TestError> {
         options: InitiatorOptions::new(),
         policy: policy()?,
         responder: Some(&mut declining),
+        relay: None,
     };
     let refusal = establish_under(&name_only()?, &kdc, refusing)
         .err()

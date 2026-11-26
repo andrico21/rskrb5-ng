@@ -33,6 +33,7 @@ fn establish(options: InitiatorOptions) -> Result<Pair, TestError> {
         options,
         policy: policy()?,
         responder: None,
+        relay: None,
     };
     establish_under(&password_credential(true)?, &Kdc::new(), setup)
 }

@@ -52,3 +52,7 @@ mod output;
 /// Prompts answered through the responder.
 #[path = "responder.rs"]
 mod responder;
+
+/// The relay's duty to retry a too-big answer over a stream.
+#[path = "retry.rs"]
+mod retry;

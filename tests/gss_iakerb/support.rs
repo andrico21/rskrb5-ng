@@ -112,13 +112,14 @@ pub(super) fn establish_with(
         options: InitiatorOptions::new(),
         policy,
         responder: None,
+        relay: None,
     };
     run(credential, kdc, setup, tamper)
 }
 
 /// What a context is established under: the initiator's profile, options and
-/// responder, and the acceptor's relay policy.
-pub(super) struct Setup<'responder> {
+/// responder, and the acceptor's relay policy and relay.
+pub(super) struct Setup<'caller> {
     /// The initiator's profile.
     pub config: Config,
     /// The initiator's options.
@@ -126,7 +127,9 @@ pub(super) struct Setup<'responder> {
     /// The acceptor's relay policy.
     pub policy: RelayPolicy,
     /// The initiator's responder, if any.
-    pub responder: Option<&'responder mut dyn Responder>,
+    pub responder: Option<&'caller mut dyn Responder>,
+    /// The acceptor's relay; `None` relays to the KDC directly.
+    pub relay: Option<&'caller mut dyn KdcRelay>,
 }
 
 /// Establish a context from `credential` under `setup`, the tokens untouched.
@@ -164,6 +167,7 @@ pub(super) fn establish_ends(credential: &Credential, kdc: &Kdc) -> Result<Ends,
         options: InitiatorOptions::new(),
         policy: policy()?,
         responder: None,
+        relay: None,
     };
     let (ends, _wire) = exchange(credential, kdc, setup, |_turn, token| Ok(token))?;
     Ok(ends)
@@ -209,7 +213,11 @@ fn exchange(
     let mut acceptor_context = Context::acceptor(setup.policy);
     let store = Credential::from_keytab(keytab());
     let mut acceptor = Acceptor::new(&store, AcceptorOptions::new())?;
-    let mut relay = Relay::new(kdc);
+    let mut direct = Relay::new(kdc);
+    let relay: &mut dyn KdcRelay = match setup.relay.take() {
+        Some(chosen) => chosen,
+        None => &mut direct,
+    };
     let mut tokens = Vec::new();
     let mut input: Option<Vec<u8>> = None;
     let mut done = false;
@@ -234,7 +242,7 @@ fn exchange(
             return Err("an unknown initiator step".into());
         };
         tokens.push(token.clone());
-        let answer = acceptor_context.accept_sec_context(&mut acceptor, &mut relay, &token)?;
+        let answer = acceptor_context.accept_sec_context(&mut acceptor, relay, &token)?;
         if let AcceptStep::Continue(reply) = answer {
             tokens.push(reply.clone());
             input = Some(tamper(turn, reply)?);
@@ -257,7 +265,7 @@ fn exchange(
         initiator,
         acceptor: finished.into_context(),
     };
-    Ok((ends, (tokens, relay.asked)))
+    Ok((ends, (tokens, direct.asked)))
 }
 
 /// `establish_with`, the tokens untouched.

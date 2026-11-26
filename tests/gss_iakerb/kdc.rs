@@ -63,7 +63,7 @@ impl Kdc {
     }
 
     /// A KRB-ERROR of `code`, with `data` as its e-data.
-    fn error(
+    pub(super) fn error(
         code: i32,
         sname: (i32, &[&str]),
         data: Option<Vec<u8>>,

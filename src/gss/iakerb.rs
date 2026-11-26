@@ -68,9 +68,17 @@ pub enum RelayFailure {
 /// the realm it is for, and returns what it answers.
 ///
 /// The library never opens a socket to a KDC here. The implementation decides
-/// which servers a realm maps to, the transport and the retries (MIT retries a
-/// `KRB_ERR_RESPONSE_TOO_BIG` over TCP, `iakerb.c:416-435`); it is called only
-/// for requests the [`RelayPolicy`] already admitted.
+/// which servers a realm maps to, the transport and the retries; it is called
+/// only for requests the [`RelayPolicy`] already admitted, once per request.
+///
+/// # Transport
+///
+/// A KDC that answers a datagram with `KRB_ERR_RESPONSE_TOO_BIG` (52) must be
+/// asked again over a stream transport before `relay` returns (RFC 4120
+/// section 7.2.1; MIT's acceptor retries over TCP, `iakerb.c:416-435`). The
+/// library does not retry: a `KRB-ERROR` the relay returns is the KDC's
+/// answer, and the initiator's exchange fails on `KRB_ERR_RESPONSE_TOO_BIG`.
+/// The crate's Tokio KDC transport already retries over TCP this way.
 ///
 /// # Security
 ///
