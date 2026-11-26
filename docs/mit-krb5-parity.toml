@@ -11,8 +11,8 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 146
-partial = 7
+implemented = 148
+partial = 5
 absent = 0
 rejected = 8
 omitted = 1
@@ -2070,19 +2070,32 @@ id = "MIT-config-25"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`kcm_mach_service`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "live-ci"
-missing = "P2-28 closes the row (register rows FU-OSS-P02 and FU-OSS-P06): the main crate never consumes `kcm_mach_service`. The catalogue still defers it to plan 2 WP-09, so Strict mode refuses it with `NotYetEffective` and Compatible mode diagnoses it; `KCM:` names, `KRB5CCNAME` and the client's default cache reach the built-in KCM store (the Unix socket or an installed `KcmTransport`), never Mach RPC. The companion crate reads the relation only when the application builds `rskrb5_ng_os::macos::KcmMachStore::from_libdefaults` from a configuration itself; `rskrb5_ng_os::register` installs no Mach transport. P2-14 delivered that store and its hosted macOS tests (platform-macos job, live-ci), named below."
-rust_symbols = ["config::LibDefaults"]
+missing = ""
+rust_symbols = [
+  "config::LibDefaults",
+  "ccache::kcm::Store::from_libdefaults",
+  "ccache::kcm::seam::TransportFactory",
+  "ccache::kcm::seam::install_transport_factory",
+  "ccache::file_store::resolve_configured",
+  "ccache::configured::load_name",
+]
 test_names = [
   "tests/config/relations_c2.rs::kcm_mach_service",
-  "rskrb5-ng-os/src/macos/tests.rs::kcm_over_mach_round_trip",
+  "tests/kcm_factory.rs::configured_kcm_names_use_mach_service",
+  "tests/kcm_factory.rs::the_name_routes_use_the_configured_service",
+  "tests/kcm_factory.rs::disabled_mach_uses_configured_socket",
+  "tests/kcm_factory.rs::an_absent_service_falls_back_to_the_socket",
+  "tests/kcm_factory.rs::a_lost_request_is_not_sent_to_the_socket",
+  "tests/kcm/routes.rs::missing_mach_provider_is_reported",
+  "rskrb5-ng-os/src/macos/tests.rs::configured_kcm_names_use_mach_service",
   "rskrb5-ng-os/src/macos/tests.rs::kcm_mach_disabled_and_absent",
   "rskrb5-ng-os/src/macos/tests.rs::mit_kinit_writes_to_the_test_service",
   "rskrb5-ng-os/src/macos/tests.rs::kcm_reads_the_system_service_cache",
 ]
 feature_flags = []
-security_divergence = "Delivered by the companion crate rskrb5-ng-os (owner decision D11): rskrb5_ng_os::macos::KcmMachStore::from_libdefaults reads kcm_mach_service; - disables Mach RPC as in MIT. KCM over Mach only: the MIT fallback to the Unix socket is the built-in KCM store of todo 12. Each call has its own reply port and a 30-second bound (MIT waits forever), and replies pass the MIG checks before parsing. The KCM: name route of rskrb5-ng reaches this Mach transport only once the built-in KCM store of todo 12 offers install_transport (rskrb5-ng-os then installs it from register; until then KcmMachStore is used directly), and the rskrb5-ng crate alone makes no KCM connection, so its relation table keeps the plan-2 classification (register FU-OSS-P02). Live evidence: the macOS CI job (platform-macos) runs MIT 1.22.2 kinit against a KCM service checked in under a test Mach name and reads the system org.h5l.kcm."
+security_divergence = "The Mach service is a setting of the configuration a `KCM:` store is built from (`ccache::kcm::Store::from_libdefaults`), and the transport for it comes from a `TransportFactory` the application installs process-wide (`rskrb5_ng_os::install_kcm_transport` on macOS, owner decision D11: the main crate keeps no unsafe code and never depends on the companion). A factory makes a transport per service name, so two configurations naming two services reach two services; nothing is captured from the first configuration. Order of reach, as MIT tries Mach before the socket (`cc_kcm.c:436-438`): a process-wide installed `KcmTransport`, the transport of `kcm_mach_service`, the socket `kcm_socket` names. `-` or an empty value disables Mach RPC; a Mach service that is not registered hands the request to the socket (`Kcm::NoServer` means nothing was sent), while any other failure of a mutating request is `Kcm::OutcomeUnknown` and is never repeated on the socket. EXECUTOR decision (todo 28 lane B, the owner may veto): a configuration that names a service other than MIT's default `org.h5l.kcm` while the process has neither an installed transport nor a factory is refused with the typed `Kcm::NoMachTransport` instead of silently using the socket; the default service falls back to the socket where Mach does not exist, as MIT does off macOS. There is no `ccache-platform` Cargo feature: runtime provider availability is the diagnosis. Each Mach call has its own reply port and a 30-second bound (MIT waits forever), and replies pass the MIG checks before parsing. Only macOS can run the Mach round trip, the disabled and absent cases and MIT kinit writing into a test service; the hosted platform-macos job is that evidence."
 disposition = "WP-09"
 closing_plan = 2
 closing_todo = 28
@@ -2093,16 +2106,28 @@ id = "MIT-config-26"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`kcm_socket`"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "P2-28 closes the row (register rows FU-KCM-P02 and FU-KCM-P04): `kcm_socket` is effective only for KCM stores built from the configuration (`ccache::kcm::Store::from_libdefaults`, which also bypasses an installed `KcmTransport`). The `KCM:` name routes (`CCache::load_name`, `save_name`, `KRB5CCNAME`) and the client's cache-name sites (`Tokio::from_ccache_name`, `from_default_ccache_name`, `from_default_ccache`, `save_ccache_name`, `save_default_ccache_name`, `save_default_ccache`) keep the default socket or an installed transport; honouring the relation there needs a configured built-in store (installed transport first, then the configured socket, as MIT tries Mach before the socket) at those six client sites."
-rust_symbols = ["ccache::kcm::Store::from_libdefaults"]
+implementation_status = "implemented"
+evidence_status = "live-ci"
+missing = ""
+rust_symbols = [
+  "ccache::kcm::Store::from_libdefaults",
+  "ccache::file_store::resolve_configured",
+  "ccache::file_store::collection_configured",
+  "ccache::configured::load_name",
+  "ccache::configured::save_name",
+]
 test_names = [
   "tests/config/relations_c2.rs::kcm_socket",
   "tests/kcm/trust.rs::the_kcm_socket_setting_selects_the_socket",
+  "tests/kcm/routes.rs::ccache_routes_reach_the_configured_socket",
+  "tests/kcm/routes.rs::client_cache_routes_honor_kcm_socket",
+  "tests/kcm/routes.rs::ccache_env_honors_configured_kcm_socket",
+  "tests/kcm/routes.rs::disabled_socket_never_uses_default_socket",
+  "tests/kcm_seam.rs::installed_transport_precedes_configured_socket",
+  "tests/interop_kcm/scenarios.rs::configured_kcm_socket_name_routes_agree_with_mit",
 ]
 feature_flags = []
-security_divergence = "`kcm_socket` names the daemon socket of the KCM stores built from the configuration (`ccache::kcm::Store::from_libdefaults`, MIT `cc_kcm.c:306-316`); `-` or an empty value disables the Unix socket transport (`Kcm::NoServer`). The built-in `KCM:` name dispatch has no configuration (see `missing`), where MIT reads the relation from the context profile."
+security_divergence = "`kcm_socket` names the daemon socket (MIT `cc_kcm.c:306-316`; the default is MIT's `DEFAULT_KCM_SOCKET_PATH`), and `-` or an empty value disables the Unix socket transport (`Kcm::NoServer`), which is never replaced by the default socket. It is honoured by the KCM stores built from a configuration and by every cache-name route that takes a configuration: `ccache::configured::{load_name, save_name}`, `ccache::file_store::{resolve_configured, collection_configured}` and the client's `from_ccache_name`, `from_default_ccache_name`, `from_default_ccache`, `from_ccache_env` (which reads `KRB5CCNAME`), `save_ccache_name`, `save_default_ccache_name` and `save_default_ccache`. The configuration-free routes (`CCache::load_name`, `save_name`, `load_from_env`, `save_to_env`, `file_store::resolve`) are explicit default-configuration operations: the default socket, or the installed transport. An installed `KcmTransport` precedes the configured socket. The client's `update_ccache_name` and `update_default_ccache*` write files only. The trust check on the daemon socket and the outcome-unknown rule are unchanged, and a request that may have been delivered is never repeated through another route. The daemon trust check (owner, peer user id) needs this process's user id, which the main crate reads on Linux only: the hermetic daemon tests assert the refusal elsewhere. Live evidence: the interop kcm suite saves and loads `KCM:` names through a `Config` that names the fixture socket while MIT reads the same cache from SSSD (scenario `configured_kcm_socket_name_routes_agree_with_mit`, hosted interop-mit job)."
 disposition = "WP-09"
 closing_plan = 2
 closing_todo = 28

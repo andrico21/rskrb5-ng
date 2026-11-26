@@ -10,12 +10,19 @@
 //! [`file_store::resolve`](super::file_store::resolve) uses the default socket
 //! [`wire::DEFAULT_SOCKET_PATH`], or the process-wide
 //! [`seam::KcmTransport`] an application installed with
-//! [`seam::install_transport`] (how macOS reaches its Mach service).
+//! [`seam::install_transport`] (how macOS reaches its Mach service). The
+//! configured routes
+//! ([`file_store::resolve_configured`](super::file_store::resolve_configured)
+//! and [`configured`](super::configured)) build the store from the
+//! configuration they are given: its `kcm_socket`, and its
+//! `kcm_mach_service` through the [`seam::TransportFactory`] an application
+//! installed with [`seam::install_transport_factory`].
 //! [`wire`] holds the protocol without any I/O, [`client`] a blocking client
 //! over any stream and, with the `tokio` feature, [`async_client`] one for
 //! Tokio.
 //!
-//! The macOS Mach transport is not part of this module. On targets without
+//! The macOS Mach transport is not part of this module (the companion crate
+//! `rskrb5-ng-os` supplies the factory). On targets without
 //! Unix sockets, [`Store`] reports
 //! [`error::Ccache::UnsupportedPlatform`](crate::error::Ccache::UnsupportedPlatform).
 //!
@@ -45,9 +52,9 @@ use std::path::{Path, PathBuf};
 use self::{
     cache::KcmCache,
     collection::KcmCollection,
-    session::{Endpoint, Session},
+    session::{Endpoint, Route, Session},
     socket::Trust,
-    wire::{Residual, calls},
+    wire::{DEFAULT_MACH_SERVICE, Residual, calls},
 };
 use super::{
     Error,
@@ -86,22 +93,58 @@ impl Store {
     where
         P: Into<PathBuf>,
     {
-        Self::with_endpoint(Endpoint::new(socket.into(), DEFAULT_TIMEOUT), false)
+        Self::with_endpoint(
+            Endpoint::new(socket.into(), DEFAULT_TIMEOUT),
+            Route::socket_only(),
+        )
     }
 
-    /// A store for the socket `kcm_socket` of `[libdefaults]` names (MIT
-    /// `cc_kcm.c:306-316`).
+    /// A store for the daemon `[libdefaults]` names: `kcm_socket` (MIT
+    /// `cc_kcm.c:306-316`) and `kcm_mach_service` (`cc_kcm.c:189-215`).
+    ///
+    /// Requests go to, in order: the transport installed with
+    /// [`seam::install_transport`], the transport the installed
+    /// [`seam::TransportFactory`] makes for `kcm_mach_service` (when it is
+    /// neither `-` nor empty), and the socket `kcm_socket` names (unless it
+    /// is `-` or empty). A Mach transport that finds no service hands the
+    /// request to the socket, as MIT does; a socket disabled with `-` is
+    /// never replaced by the default socket.
     ///
     /// # Errors
     ///
-    /// [`Kcm::NoServer`] when `kcm_socket` is `-` (Unix socket transport
-    /// disabled) or empty.
+    /// [`Kcm::NoMachTransport`] when `kcm_mach_service` names a service other
+    /// than MIT's default and the process has neither a transport nor a
+    /// factory: the setting cannot be honoured, and the socket does not stand
+    /// in for a service the configuration asked for (the default service is
+    /// MIT's own and falls back to the socket where Mach does not exist).
+    /// [`Kcm::NoServer`] when the socket is disabled and nothing else can
+    /// serve. The errors of the factory.
     #[inline]
     pub fn from_libdefaults(defaults: &LibDefaults) -> Result<Self, Kcm> {
-        match defaults.kcm_socket.as_str() {
-            "-" | "" => Err(Kcm::NoServer),
-            path => Ok(Self::new(path)),
+        let socket = match defaults.kcm_socket.as_str() {
+            "-" | "" => None,
+            path => Some(path),
+        };
+        let mach = match (defaults.kcm_mach_service.as_str(), seam::factory()) {
+            ("-" | "", _) => None,
+            (_, _) if seam::installed().is_some() => None,
+            (service, Some(factory)) => Some(factory.transport(service)?),
+            (service, None) if service == DEFAULT_MACH_SERVICE => None,
+            (service, None) => {
+                return Err(Kcm::NoMachTransport {
+                    service: service.to_owned(),
+                });
+            }
+        };
+        let route = Route::configured(mach);
+        if socket.is_none() && !route.has_transport() {
+            return Err(Kcm::NoServer);
         }
+        let endpoint = socket.map_or_else(
+            || Endpoint::disabled(DEFAULT_TIMEOUT),
+            |path| Endpoint::new(path.into(), DEFAULT_TIMEOUT),
+        );
+        Ok(Self::with_endpoint(endpoint, route))
     }
 
     /// The same store with another per-request time limit.
@@ -109,7 +152,7 @@ impl Store {
     #[inline]
     pub fn with_timeout(self, timeout: Duration) -> Self {
         let endpoint = self.session.endpoint().clone().with_timeout(timeout);
-        Self::with_endpoint(endpoint, self.session.is_built_in())
+        Self::with_endpoint(endpoint, self.session.route().clone())
     }
 
     /// The same store trusting `trust` as owners of the socket.
@@ -117,21 +160,20 @@ impl Store {
     #[inline]
     pub fn with_trust(self, trust: Trust) -> Self {
         let endpoint = self.session.endpoint().clone().with_trust(trust);
-        Self::with_endpoint(endpoint, self.session.is_built_in())
+        Self::with_endpoint(endpoint, self.session.route().clone())
     }
 
-    /// The socket path.
+    /// The socket path, `None` when `kcm_socket` disabled the socket.
     #[must_use]
     #[inline]
-    pub fn socket(&self) -> &Path {
+    pub fn socket(&self) -> Option<&Path> {
         self.session.endpoint().path()
     }
 
-    /// A store reaching the daemon as `endpoint` says; `built_in` lets a
-    /// [`seam::install_transport`] transport replace the socket.
-    fn with_endpoint(endpoint: Endpoint, built_in: bool) -> Self {
+    /// A store reaching the daemon as `endpoint` and `route` say.
+    fn with_endpoint(endpoint: Endpoint, route: Route) -> Self {
         Self {
-            session: Arc::new(Session::new(endpoint, built_in)),
+            session: Arc::new(Session::new(endpoint, route)),
         }
     }
 }
@@ -143,7 +185,7 @@ impl Default for Store {
     fn default() -> Self {
         Self::with_endpoint(
             Endpoint::new(wire::DEFAULT_SOCKET_PATH.into(), DEFAULT_TIMEOUT),
-            true,
+            Route::built_in(),
         )
     }
 }
@@ -194,8 +236,9 @@ impl CredentialStore for Store {
     }
 }
 
-/// The cache a built-in `KCM:` name names, through the default socket: the
-/// `KCM` arm of [`file_store::resolve`](super::file_store::resolve).
+/// The cache a built-in `KCM:` name names, through the default socket or the
+/// installed transport: the `KCM` arm of
+/// [`file_store::resolve`](super::file_store::resolve).
 ///
 /// # Errors
 ///
@@ -205,8 +248,9 @@ pub fn resolve(residual: &str) -> Result<Box<dyn CacheHandle>, Error> {
     Store::default().resolve(residual)
 }
 
-/// The collection a built-in `KCM:` name names, through the default socket:
-/// the `KCM` arm of [`file_store::collection`](super::file_store::collection).
+/// The collection a built-in `KCM:` name names, through the default socket or
+/// the installed transport: the `KCM` arm of
+/// [`file_store::collection`](super::file_store::collection).
 ///
 /// # Errors
 ///
@@ -214,4 +258,40 @@ pub fn resolve(residual: &str) -> Result<Box<dyn CacheHandle>, Error> {
 #[inline]
 pub fn collection(residual: &str) -> Result<Box<dyn CacheCollection>, Error> {
     Store::default().collection(residual)
+}
+
+/// The cache a built-in `KCM:` name names, through the daemon `defaults` name:
+/// the `KCM` arm of
+/// [`file_store::resolve_configured`](super::file_store::resolve_configured).
+///
+/// # Errors
+///
+/// The errors of [`Store::from_libdefaults`] and of
+/// [`CredentialStore::resolve`].
+#[inline]
+pub fn resolve_configured(
+    defaults: &LibDefaults,
+    residual: &str,
+) -> Result<Box<dyn CacheHandle>, Error> {
+    Store::from_libdefaults(defaults)
+        .map_err(Error::Kcm)?
+        .resolve(residual)
+}
+
+/// The collection a built-in `KCM:` name names, through the daemon
+/// `defaults` name: the `KCM` arm of
+/// [`file_store::collection_configured`](super::file_store::collection_configured).
+///
+/// # Errors
+///
+/// The errors of [`Store::from_libdefaults`] and of
+/// [`CredentialStore::collection`].
+#[inline]
+pub fn collection_configured(
+    defaults: &LibDefaults,
+    residual: &str,
+) -> Result<Box<dyn CacheCollection>, Error> {
+    Store::from_libdefaults(defaults)
+        .map_err(Error::Kcm)?
+        .collection(residual)
 }

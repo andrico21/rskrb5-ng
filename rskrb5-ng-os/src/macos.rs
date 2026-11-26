@@ -9,14 +9,14 @@ use alloc::sync::Arc;
 use rskrb5_ng::{
     ccache::{
         CCache, Credential, Principal,
+        kcm::seam::{KcmTransport, TransportFactory},
         stores::{CacheCollection, CacheCursor, CacheHandle, CredentialStore},
     },
-    config::LibDefaults,
-    error::Ccache as Error,
+    error::{Ccache as Error, Kcm},
     extensions::StoreProvider,
 };
 
-use crate::{error::Platform, kcm_store::Kcm, principal_text};
+use crate::{error::Platform, principal_text};
 
 /// CCAPI bindings.
 mod ccapi;
@@ -31,9 +31,6 @@ mod mach;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests;
-
-/// MIT's default `kcm_mach_service` (`DEFAULT_KCM_MACH_SERVICE`, `kcm.h`).
-pub const DEFAULT_KCM_MACH_SERVICE: &str = "org.h5l.kcm";
 
 /// The native macOS credential cache, `API:` (MIT 1.22.2
 /// `src/lib/krb5/ccache/cc_api_macos.c`, krb5 commit 3bb429b1).
@@ -221,52 +218,25 @@ impl CacheCollection for ApiCollection {
     }
 }
 
-/// `KCM:` over Mach RPC to the service `kcm_mach_service` names (MIT
-/// 1.22.2 `src/lib/krb5/ccache/cc_kcm.c:189-281`).
+/// The factory of the Mach transport of the built-in `KCM:` store: the
+/// service `kcm_mach_service` names becomes a [`mach::MachTransport`] (MIT
+/// 1.22.2 `kcmio_mach_connect`, `src/lib/krb5/ccache/cc_kcm.c:189-215`).
 ///
-/// MIT tries Mach first and then the KCM Unix socket; this store is the
-/// Mach transport only. The service `-` disables it, and every operation
-/// then fails with [`Platform::MachDisabled`].
+/// [`crate::install_kcm_transport`] installs it. Creating a transport does
+/// not contact the service: the lookup happens on each call, so a service
+/// that starts later is reached.
 ///
 /// # Security
 ///
 /// Every call has its own reply port and a 30-second bound; replies are
-/// checked as MIG checks them and bounded before they are parsed.
-#[derive(Clone, Debug)]
-pub struct KcmMachStore(Kcm);
+/// checked as MIG checks them and bounded before they are parsed. The service
+/// name is the configuration's: whoever can write `kcm_mach_service` chooses
+/// which Mach service receives the credentials.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct MachFactory;
 
-impl KcmMachStore {
-    /// The store talking to the Mach service `service`.
-    #[must_use]
-    #[inline]
-    pub fn new(service: &str) -> Self {
-        Self(Kcm::new(Arc::new(mach::MachTransport::new(
-            service.to_owned(),
-        ))))
-    }
-
-    /// The store of `[libdefaults] kcm_mach_service` (default
-    /// [`DEFAULT_KCM_MACH_SERVICE`]).
-    #[must_use]
-    #[inline]
-    pub fn from_libdefaults(defaults: &LibDefaults) -> Self {
-        Self::new(&defaults.kcm_mach_service)
-    }
-}
-
-impl CredentialStore for KcmMachStore {
-    #[inline]
-    fn cache_type(&self) -> &'static str {
-        "KCM"
-    }
-
-    #[inline]
-    fn resolve(&self, residual: &str) -> Result<Box<dyn CacheHandle>, Error> {
-        self.0.resolve(residual)
-    }
-
-    #[inline]
-    fn collection(&self, _residual: &str) -> Result<Box<dyn CacheCollection>, Error> {
-        Ok(self.0.collection())
+impl TransportFactory for MachFactory {
+    fn transport(&self, service: &str) -> Result<Arc<dyn KcmTransport>, Kcm> {
+        Ok(Arc::new(mach::MachTransport::new(service.to_owned())))
     }
 }

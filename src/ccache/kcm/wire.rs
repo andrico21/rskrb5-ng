@@ -44,6 +44,8 @@ pub const UUID_LENGTH: usize = 16;
 pub const MAX_NAME_LENGTH: usize = 4096;
 /// The default socket of Heimdal's `kcm` daemon (`kcm.h:43`).
 pub const DEFAULT_SOCKET_PATH: &str = "/var/run/.heim_org.h5l.kcm-socket";
+/// MIT's default `kcm_mach_service` (`DEFAULT_KCM_MACH_SERVICE`, `kcm.h:44`).
+pub const DEFAULT_MACH_SERVICE: &str = "org.h5l.kcm";
 
 /// A KCM operation (`kcm_opcode`, `kcm.h:82-117`); only the ones this client
 /// sends.

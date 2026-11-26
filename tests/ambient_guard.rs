@@ -55,7 +55,7 @@ pub(crate) mod tests {
         ),
         (
             "src/ccache.rs",
-            "CCache::load_from_env",
+            "CCache::load_from_env_with",
             "KRB5CCNAME",
             "KRB5CCNAME_ENV",
         ),

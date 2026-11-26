@@ -5,6 +5,7 @@ use super::{
     Error,
     stores::{CacheCollection, CacheHandle, CredentialStore},
 };
+use crate::config::LibDefaults;
 
 /// The `KCM` cache type, unavailable on this platform.
 #[derive(Clone, Copy, Debug, Default)]
@@ -68,5 +69,32 @@ pub fn resolve(residual: &str) -> Result<Box<dyn CacheHandle>, Error> {
 /// Always [`Error::UnsupportedPlatform`].
 #[inline]
 pub fn collection(residual: &str) -> Result<Box<dyn CacheCollection>, Error> {
+    Store.collection(residual)
+}
+
+/// The cache a built-in `KCM:` name names; the settings change nothing here.
+///
+/// # Errors
+///
+/// Always [`Error::UnsupportedPlatform`].
+#[inline]
+pub fn resolve_configured(
+    _defaults: &LibDefaults,
+    residual: &str,
+) -> Result<Box<dyn CacheHandle>, Error> {
+    Store.resolve(residual)
+}
+
+/// The collection a built-in `KCM:` name names; the settings change nothing
+/// here.
+///
+/// # Errors
+///
+/// Always [`Error::UnsupportedPlatform`].
+#[inline]
+pub fn collection_configured(
+    _defaults: &LibDefaults,
+    residual: &str,
+) -> Result<Box<dyn CacheCollection>, Error> {
     Store.collection(residual)
 }

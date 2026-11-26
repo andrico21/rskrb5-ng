@@ -1,6 +1,11 @@
 //! The macOS stores against real services.
 //!
-//! An in-process KCM service under a test Mach name is always used. The CI
+//! `KCM:` names reach Mach through the main crate's routes: the factory of
+//! [`crate::install_kcm_transport`] makes a Mach transport for the
+//! `kcm_mach_service` of the configuration a name is resolved with, and the
+//! in-memory KCM service of [`crate::kcm_fixture`] answers under a test Mach
+//! name. Every configuration here also sets `kcm_socket = -`, so that a
+//! service that does not answer can never reach the system's socket. The CI
 //! fixture job also runs the `--ignored` tests, with the variables below,
 //! against the CCAPI and Mach caches MIT 1.22.2 `kinit` seeded:
 //!
@@ -14,7 +19,7 @@
 //!   realm, and the client password, for MIT writing into the test service.
 
 use alloc::sync::Arc;
-use core::error::Error as StdError;
+use core::{error::Error as StdError, slice};
 use std::{
     env, fs,
     io::Write as _,
@@ -24,25 +29,34 @@ use std::{
 
 use rskrb5_ng::{
     ccache::{
-        CCache, Credential, CredentialTimes, EncryptionKey, Principal, file_store,
+        CCache, Credential, CredentialTimes, EncryptionKey, Principal, configured, file_store,
+        kcm::{seam::KcmTransport as _, wire::DEFAULT_MACH_SERVICE},
         stores::{CacheVersion, CredentialStore as _},
     },
-    config::{Config, ParseMode},
-    error::Ccache as Error,
+    config::Config,
+    error::{Ccache as Error, Kcm},
     extensions::{Interface, Registry},
 };
 
 use super::{
-    ApiStore, DEFAULT_KCM_MACH_SERVICE, KcmMachStore,
+    ApiStore,
     mach::{MachTransport, Service},
 };
 use crate::{
-    Secret, error::Platform, kcm_fixture::Fixture, kcm_store::KcmTransport as _, principal_text,
-    register,
+    Secret, error::Platform, kcm_fixture::Fixture, principal_text, register, tests::install_once,
 };
 
 /// The request that stops the test service.
 const STOP: [u8; 4] = [2, 0, 0xff, 0xff];
+
+/// A configuration whose `kcm_mach_service` is `service` and whose socket is
+/// disabled, with the Mach transport installed.
+fn mach_config(service: &str) -> Result<Config, Box<dyn StdError>> {
+    install_once()?;
+    Ok(Config::parse(&format!(
+        "[libdefaults]\n kcm_mach_service = {service}\n kcm_socket = -\n"
+    ))?)
+}
 
 /// A required fixture variable.
 fn var(name: &str) -> Result<String, Box<dyn StdError>> {
@@ -86,19 +100,18 @@ fn test_name(label: &str) -> String {
     format!("org.rskrb5-ng.test.kcm.{}.{label}", process::id())
 }
 
-/// The KCM store reads and writes through Mach RPC to a service checked in
-/// under a test name, set through `kcm_mach_service`.
+/// The `KCM:` names of a configuration read and write through Mach RPC to a
+/// service checked in under a test name, set through `kcm_mach_service`.
 #[test]
-fn kcm_over_mach_round_trip() -> Result<(), Box<dyn StdError>> {
+fn configured_kcm_names_use_mach_service() -> Result<(), Box<dyn StdError>> {
     // Given the in-memory KCM server under a test Mach name, configured.
     let name = test_name("roundtrip");
     let server = serve(&name)?;
-    let text = format!("[libdefaults]\n kcm_mach_service = {name}\n");
-    let config = Config::parse_with_mode(&text, ParseMode::Compatible)?;
-    let store = KcmMachStore::from_libdefaults(&config.libdefaults);
-    // When a cache is initialized, filled, read, trimmed and destroyed.
+    let config = mach_config(&name)?;
+    // When a cache is initialized, filled, read, trimmed and destroyed through
+    // the main crate's configured name route.
     let alice = Principal::new("EXAMPLE.ORG", 1, vec!["alice".to_owned()]);
-    let cache = store.resolve("")?;
+    let cache = file_store::resolve_configured("KCM:", CacheVersion::default(), &config)?;
     cache.initialize(&alice)?;
     let large = vec![0x61; 3000];
     let ticket = Credential::new(
@@ -111,15 +124,16 @@ fn kcm_over_mach_round_trip() -> Result<(), Box<dyn StdError>> {
     );
     cache.store(ticket.clone())?;
     let loaded = cache.load()?;
+    let by_name = configured::load_name(&config, "KCM:fixture")?;
     let removed = cache.remove(ticket.server())?;
     cache.destroy()?;
     let gone = cache.load();
     stop(&name, server)?;
-    // Then the KCM backend answered every step, out-of-line bodies included.
-    assert_eq!(store.cache_type(), "KCM");
+    // Then the Mach service answered every step, out-of-line bodies included.
     assert_eq!(cache.name(), "KCM:fixture");
     assert_eq!(loaded.default_principal(), &alice);
-    assert_eq!(loaded.credentials(), [ticket]);
+    assert_eq!(loaded.credentials(), slice::from_ref(&ticket));
+    assert_eq!(by_name.credentials(), slice::from_ref(&ticket));
     assert_eq!(removed, 1);
     assert!(
         matches!(gone, Err(Error::CacheNotFound { name: _ })),
@@ -128,28 +142,26 @@ fn kcm_over_mach_round_trip() -> Result<(), Box<dyn StdError>> {
     Ok(())
 }
 
-/// `-` disables Mach RPC; an unregistered name has no server.
+/// `-` disables Mach RPC and an unregistered name has no server; with the
+/// socket disabled too, neither has anything to fall back to.
 #[test]
 fn kcm_mach_disabled_and_absent() -> Result<(), Box<dyn StdError>> {
-    // Given a disabled store and one naming an unregistered service.
-    let disabled = KcmMachStore::new("-").resolve("");
-    let absent = KcmMachStore::new(&test_name("absent")).resolve("");
-    // When they are used.
-    // Then the failures name the reason.
-    for (result, expected) in [
-        (disabled, Platform::MachDisabled),
-        (absent, Platform::NoServer { code: 1102_i32 }),
-    ] {
+    // Given a configuration that disables Mach, and one naming a service that
+    // is not registered.
+    let disabled = mach_config("-")?;
+    let absent_name = test_name("absent");
+    let absent = mach_config(&absent_name)?;
+    // When a KCM name is resolved.
+    let from_disabled = file_store::resolve_configured("KCM:", CacheVersion::default(), &disabled);
+    let from_absent = file_store::resolve_configured("KCM:", CacheVersion::default(), &absent);
+    // Then both report that there is no server, and the Mach transport
+    // itself reports the lookup failure as the same definite error.
+    for result in [from_disabled, from_absent] {
         let error = result.err().ok_or("no error")?;
-        let platform = if let Error::Io(io) = &error {
-            io.get_ref()
-                .and_then(|inner| inner.downcast_ref::<Platform>())
-                .copied()
-        } else {
-            None
-        };
-        assert_eq!(platform, Some(expected), "{error}");
+        assert!(matches!(error, Error::Kcm(Kcm::NoServer)), "{error}");
     }
+    let lookup = MachTransport::new(absent_name).call(&STOP);
+    assert!(matches!(lookup, Err(Kcm::NoServer)), "{lookup:?}");
     Ok(())
 }
 
@@ -194,11 +206,13 @@ fn api_reads_writes_and_destroys_the_seeded_cache() -> Result<(), Box<dyn StdErr
 #[test]
 #[ignore = "needs the macOS CI fixture: a KCM cache seeded by MIT kinit"]
 fn kcm_reads_the_system_service_cache() -> Result<(), Box<dyn StdError>> {
-    // Given the system service and the seeded cache name.
-    let store = KcmMachStore::new(DEFAULT_KCM_MACH_SERVICE);
+    // Given the system service, named by the default `kcm_mach_service`, and
+    // the seeded cache name.
+    let config = mach_config(DEFAULT_MACH_SERVICE)?;
     let principal = principal_text::parse(&var("RSKRB5_NG_OS_PRINCIPAL")?).ok_or("principal")?;
-    // When the cache is read.
-    let loaded = store.resolve(&var("RSKRB5_NG_OS_KCM_CACHE")?)?.load()?;
+    // When the cache is read through the configured name route.
+    let loaded =
+        configured::load_name(&config, &format!("KCM:{}", var("RSKRB5_NG_OS_KCM_CACHE")?))?;
     // Then it holds MIT's tickets.
     assert_eq!(loaded.default_principal().components, principal.components);
     assert!(
@@ -238,7 +252,8 @@ fn mit_kinit_writes_to_the_test_service() -> Result<(), Box<dyn StdError>> {
         .ok_or("stdin")?
         .write_all(format!("{}\n", var("RSKRB5_NG_OS_PASSWORD")?).as_bytes())?;
     let status = kinit.wait()?;
-    let loaded = KcmMachStore::new(&name).resolve("mit-seed")?.load();
+    let config = mach_config(&name)?;
+    let loaded = configured::load_name(&config, "KCM:mit-seed");
     stop(&name, server)?;
     fs::remove_file(&profile)?;
     // Then kinit succeeded and the store reads its TGT.

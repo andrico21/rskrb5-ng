@@ -17,7 +17,7 @@ mod tests {
 
     /// Libdefaults: safe assignment and optional genuinely stronger assignment.
     /// None means no valid value tightens current behavior; table rationale explains why.
-    const LIB: [(&str, &str, Option<&str>); 1] = [("kcm_mach_service", "-", None)];
+    const LIB: [(&str, &str, Option<&str>); 0] = [];
 
     /// Realm values are restrictions on absent mechanisms; none is deferred.
     const REALM: [(&str, &str, Option<&str>); 0] = [];

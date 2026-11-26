@@ -15,50 +15,6 @@ mod tests {
         error::Config as ConfigError,
     };
 
-    /// Selected deferred values retain their type and name the missing package.
-    fn deferred(name: &str, values: &[&str], package: &str) -> Result<(), Box<dyn Error>> {
-        for value in values {
-            // Given a first scalar and an ignored duplicate, when parsed, then diagnose.
-            let text = format!("[libdefaults]\n {name} = {value}\n {name} = invalid-later\n");
-            let config = Config::parse(&text)?;
-            assert!(config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation, package: owner } if *relation == name && *owner == package)));
-            drop(
-                Config::parse_with_mode(&text, ParseMode::Strict)
-                    .err()
-                    .ok_or("strict accepted deferred relation")?,
-            );
-            let defaults = &config.libdefaults;
-            match name {
-                "k5login_authoritative" => assert_eq!(
-                    defaults.k5login_authoritative.is_enabled(),
-                    *value == "true"
-                ),
-                "k5login_directory" => assert_eq!(defaults.k5login_directory, *value),
-                "kcm_mach_service" => assert_eq!(defaults.kcm_mach_service, *value),
-                "kdc_timesync" => assert_eq!(defaults.kdc_time_sync, value.parse::<i32>()?),
-                "noaddresses" => assert!(defaults.no_addresses.is_enabled()),
-                "spake_preauth_groups" => {
-                    assert_eq!(defaults.spake_preauth_groups, ["edwards25519", "P-256"]);
-                }
-                "preferred_preauth_types" => {
-                    assert_eq!(defaults.preferred_preauth_types, [17_i32, 16_i32]);
-                    assert!(
-                        config
-                            .diagnostics()
-                            .contains(&ConfigDiagnostic::IgnoredPreauthType { id: 14_i32 })
-                    );
-                    assert!(
-                        config
-                            .diagnostics()
-                            .contains(&ConfigDiagnostic::IgnoredPreauthType { id: 15_i32 })
-                    );
-                }
-                _ => return Err(format!("missing typed assertion {name}").into()),
-            }
-        }
-        Ok(())
-    }
-
     /// Effective relations: typed value, ignored duplicates, no diagnostic in either mode.
     fn effective(name: &str, values: &[&str]) -> Result<(), Box<dyn Error>> {
         for value in values {
@@ -75,6 +31,7 @@ mod tests {
                 "realm_try_domains" => {
                     assert_eq!(defaults.realm_try_domains, value.parse::<i32>()?);
                 }
+                "kcm_mach_service" => assert_eq!(defaults.kcm_mach_service, *value),
                 "rdns" => assert_eq!(defaults.rdns.is_enabled(), *value == "true"),
                 "request_timeout" => assert_eq!(
                     defaults.request_timeout.as_secs(),
@@ -101,6 +58,7 @@ mod tests {
         )+};
     }
     effective_cases! {
+        kcm_mach_service, ["org.example.kcm", "-"];
         qualify_shortname, ["", "example.test"];
         rdns, ["true", "false"];
         realm_try_domains, ["-1", "0", "2"];
@@ -119,20 +77,6 @@ mod tests {
         let decoded: LibDefaults = serde_json::from_str(&json)?;
         assert_eq!(decoded.request_timeout.as_secs(), 7);
         Ok(())
-    }
-
-    /// Independent named tests over the common scalar/diagnostic contract.
-    macro_rules! deferred_cases {
-        ($($name:ident, $package:literal, [$($value:literal),+];)+) => {$ (
-            /// The named relation retains its typed scalar and deferred package.
-            #[test]
-            fn $name() -> Result<(), Box<dyn Error>> {
-                deferred(stringify!($name), &[$($value),+], $package)
-            }
-        )+};
-    }
-    deferred_cases! {
-        kcm_mach_service, "plan 2 WP-09", ["org.example.kcm", "-"];
     }
 
     /// `plugin_base_dir` is permanently out of scope (D1/D3).
@@ -339,13 +283,17 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn kcm_socket() -> Result<(), Box<dyn Error>> {
+        use std::path::Path;
+
         use rskrb5_ng::{ccache::kcm::Store, error::Kcm};
         for (value, expected) in [("/run/kcm.sock", Some("/run/kcm.sock")), ("-", None)] {
             let text = format!("[libdefaults]\n kcm_socket = {value}\n");
             let config = Config::parse_with_mode(&text, ParseMode::Strict)?;
             assert!(config.diagnostics().is_empty(), "{value} was diagnosed");
             match (Store::from_libdefaults(&config.libdefaults), expected) {
-                (Ok(store), Some(path)) => assert_eq!(store.socket().to_str(), Some(path)),
+                (Ok(store), Some(path)) => {
+                    assert_eq!(store.socket().and_then(Path::to_str), Some(path));
+                }
                 (Err(Kcm::NoServer), None) => {}
                 (other, _) => return Err(format!("{value}: {other:?}").into()),
             }
