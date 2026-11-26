@@ -2,8 +2,10 @@
 
 This file records where `rskrb5-ng` comes from, what was published under
 earlier names, which upstream contributions were filed along the way, and how
-the upstream work is attributed. The facts below were checked against git,
-the crates.io API and the GitHub API on 2026-10-27.
+the upstream work is attributed, and against what the parity with MIT krb5
+and gokrb5 is measured. The facts below were checked against git, the
+crates.io API and the GitHub API on 2026-10-27, and the parity section against
+the repository on 2026-11-26.
 
 ## Origin
 
@@ -45,6 +47,61 @@ work listed in [`CHANGELOG.md`](CHANGELOG.md). Code moving from
 The branch ledger [`docs/maintenance/branches.md`](https://github.com/andrico21/rskrb5-ng/blob/main/docs/maintenance/branches.md)
 lists every ref, the `archive/*` tags of the deleted release branches and the
 frozen pull-request head branches.
+
+## Parity with MIT krb5 and gokrb5
+
+The parity work of 0.3.0 compares this crate with two pinned releases:
+
+- MIT krb5 1.22.2, tag `krb5-1.22.2-final` (released 2026-01-29). MIT
+  behaviour is cited by file and line of that tag.
+- gokrb5 v8.4.4, commit `47cd2e7744531465a983bf457bac38e6ad8f4684`
+  (released 2023-02-25).
+
+[`docs/mit-krb5-parity.md`](docs/mit-krb5-parity.md) and
+[`docs/gokrb5-parity.md`](docs/gokrb5-parity.md), generated from
+`docs/mit-krb5-parity.toml` and `docs/gokrb5-parity.toml`, list every row of
+both libraries with its status, the Rust symbols, the named tests that prove
+it, its evidence status and every deliberate divergence; the manifest tests
+check that each named test exists. Those manifests are the statement of
+parity: this file claims nothing beyond them.
+
+Test fixtures do not come from this crate's own output. Where an RFC publishes
+vectors, the tests use them. Otherwise a fixture was produced independently
+and records how next to it: by MIT krb5 1.22.2 itself, captured from the live
+interop containers (for example
+[`tests/fixtures/mit-krb-cred/README.md`](https://github.com/andrico21/rskrb5-ng/blob/main/tests/fixtures/mit-krb-cred/README.md))
+or taken from the reference encodings of its source tree; by the OpenSSL
+command line (the PKINIT, KDC proxy and channel-binding certificates, each
+with its `generate.sh` or `gen.sh`); or by a generator script that shares no
+code with the crate (for example `tests/fixtures/pac/generate.py`). The gokrb5
+fixtures came with the upstream `rskrb5` code at `6f4abc9`.
+
+Live interoperability runs in containers from pinned images: an MIT krb5
+1.22.2 realm built from the release tarball checked against its sha256 and
+MIT's signing key, and two Samba 4.22 Active Directory domains with a forest
+trust. The `interop` workflow runs `scripts/interop/run.sh all` on every push
+to `main` and weekly. Its `mit` job runs these suites against the MIT realm:
+`mit`, `net`, `peer`, `replay`, `camellia`, `ccache`, `discovery`,
+`exchange`, `fast`, `gss-ext`, `gss`, `http-client`, `http-client-cbt`,
+`iakerb`, `kadm5`, `kcm`, `kkdcp`, `kpasswd`, `localauth`, `negoex`, `otp`,
+`pac`, `pkinit`, `routing`, `spake` and `trace`; its `samba` job runs them
+all again together with `samba`, `gss-samba`, `kpasswd-samba`, `pac-samba` and
+`routing-samba` (`bash scripts/interop/run.sh suites` prints the list).
+
+Limits of that evidence:
+
+- Active Directory behaviour is verified against Samba AD, not against
+  Windows: Windows-only behaviour is recorded as Samba-verified. The strict
+  Windows AD gate ([`docs/ad-integration.md`](docs/ad-integration.md)) needs a
+  lab and has not run.
+- NegoEx is proven against MIT's `negoextest` test mechanisms, not against a
+  Windows peer, and no Kerberos scheme is bundled for it.
+- `KEYRING:` cannot run in the containers (their seccomp profile refuses the
+  key system calls), and the macOS and Windows stores run only on the hosted
+  macOS and Windows runners of `ci.yml`.
+- Matching a pinned release in the scenarios the suites exercise is not a
+  certification: no part of this crate is certified, audited or endorsed by
+  the MIT Kerberos Consortium, by the gokrb5 authors or by Microsoft.
 
 ## Upstream contributions (historical)
 
