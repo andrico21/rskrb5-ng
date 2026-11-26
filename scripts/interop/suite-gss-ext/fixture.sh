@@ -10,4 +10,8 @@
 #                three-leg establishment with MIT as either end, Rust and MIT
 #                context transfer in mid-conversation, and a TGT delegated from
 #                Rust to MIT and on from MIT back to Rust
+#                (todo 28) and the MIT KDC's authentication indicator
+#                (`spake`, through the AD-CAMMAC of a ticket for
+#                authind/svc.test.rskrb5, mit/provision.d/88-authind.sh) read
+#                by the Rust acceptor as the `auth-indicators` name attribute
 interop_suite gss-ext interop_gss_ext mit-kdc mit-peer

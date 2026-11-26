@@ -1,16 +1,22 @@
-//! Name attributes from the verified PAC.
+//! Name attributes from the verified PAC and authentication indicators.
 //!
 //! RFC 6680 name attributes of the initiator's name, as MIT 1.22.2's `mspac`
 //! authorization-data module exposes them (`pac.c:880-1060`,
 //! `naming_exts.c:253-380`): `urn:mspac:` names the whole PAC and
 //! `urn:mspac:<buffer>` or `urn:mspac:<type>` one buffer. Only a PAC the
 //! acceptor verified is read; its values are authenticated when the KDC
-//! signature verified.
+//! signature verified. The authentication-indicator module's
+//! `auth-indicators` (`ai_authdata.c:113-186`) holds every indicator of the
+//! ticket's verified AD-CAMMACs, authenticated.
 
 use super::{Error, EstablishedContext, NameAttribute};
 
 /// The attribute prefix of the PAC.
 const PREFIX: &str = "urn:mspac:";
+
+/// The attribute of the authentication indicators, matched exactly (MIT
+/// `authind_attr`, `ai_authdata.c:113-117,167-168`).
+const AUTH_INDICATORS: &str = "auth-indicators";
 
 /// The PAC buffers MIT names (`pac.c:885-909`).
 const NAMED: [(u32, &str); 7] = [
@@ -61,11 +67,14 @@ fn target_of(attribute: &str) -> Option<Target> {
 
 /// `gss_inquire_name`'s attributes of the initiator's name.
 pub(super) fn names(context: &EstablishedContext) -> Vec<String> {
-    let Some(verified) = &context.pac else {
-        return Vec::new();
-    };
-    let mut out = vec![PREFIX.to_owned()];
-    out.extend(verified.pac().buffer_types().into_iter().map(name_of));
+    let mut out = Vec::new();
+    if let Some(verified) = &context.pac {
+        out.push(PREFIX.to_owned());
+        out.extend(verified.pac().buffer_types().into_iter().map(name_of));
+    }
+    if !context.auth_indicators.is_empty() {
+        out.push(AUTH_INDICATORS.to_owned());
+    }
     out
 }
 
@@ -77,6 +86,20 @@ pub(super) fn names(context: &EstablishedContext) -> Vec<String> {
 /// attribute.
 pub(super) fn get(context: &EstablishedContext, attribute: &str) -> Result<NameAttribute, Error> {
     let unavailable = || Error::NameAttributeUnavailable(attribute.to_owned());
+    if attribute == AUTH_INDICATORS {
+        if context.auth_indicators.is_empty() {
+            return Err(unavailable());
+        }
+        return Ok(NameAttribute {
+            values: context
+                .auth_indicators
+                .iter()
+                .map(|indicator| indicator.as_bytes().to_vec())
+                .collect(),
+            authenticated: true,
+            complete: true,
+        });
+    }
     let verified = context.pac.as_ref().ok_or_else(unavailable)?;
     let pac = verified.pac();
     let value = match target_of(attribute).ok_or_else(unavailable)? {
@@ -90,7 +113,7 @@ pub(super) fn get(context: &EstablishedContext, attribute: &str) -> Result<NameA
     };
     let checks = verified.checks();
     Ok(NameAttribute {
-        value,
+        values: vec![value],
         authenticated: checks.server() && checks.kdc(),
         complete: true,
     })

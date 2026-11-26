@@ -1,4 +1,5 @@
-//! AD-KDC-ISSUED and AD-AND-OR authorization data (RFC 4120 section 5.2.6.2).
+//! AD-KDC-ISSUED and AD-AND-OR authorization data (RFC 4120 section 5.2.6.2),
+//! AD-CAMMAC (RFC 7751) and authentication indicators (RFC 8129).
 //!
 //! The acceptor ([`crate::service::Validator`]) uses these helpers; they are
 //! public so a KDC or an application can build and read the same elements.
@@ -10,13 +11,22 @@
 //! cannot have written it, in the ticket; the acceptor refuses it in an
 //! authenticator. AD-AND-OR needs an application that knows what each
 //! condition means: no condition counts as satisfied unless the
-//! [`ConditionEvaluator`] says so.
+//! [`ConditionEvaluator`] says so. An AD-CAMMAC's service verifier is keyed
+//! with the service's long-term key; a CAMMAC copied into an authenticator or
+//! into another ticket of the same service would still verify, so the
+//! acceptor reads CAMMACs only from the ticket it decrypted.
 
 use alloc::string::ToString as _;
 use core::fmt::Debug;
 
-use rasn::{Decode, der};
-use rasn_kerberos::{AdAndOr, AdKdcIssued, AuthorizationData, AuthorizationDataValue, Checksum};
+use rasn::{
+    AsnType, Decode, Decoder as _, Encode, Encoder as _, der,
+    types::{SequenceOf, Utf8String},
+};
+use rasn_kerberos::{
+    AdAndOr, AdKdcIssued, AuthorizationData, AuthorizationDataValue, Checksum, Verifier,
+    VerifierMac,
+};
 
 use crate::{
     crypto::selection,
@@ -27,6 +37,40 @@ use crate::{
 
 /// The key usage of the AD-KDC-ISSUED checksum (RFC 4120 section 7.5.1).
 pub const KDC_ISSUED_CHECKSUM_USAGE: u32 = 19;
+
+/// The key usage of an AD-CAMMAC verifier (RFC 7751 section 4; MIT
+/// `KRB5_KEYUSAGE_CAMMAC`).
+pub const CAMMAC_USAGE: u32 = 64;
+
+/// AD-CAMMAC (RFC 7751 section 4).
+///
+/// ```text
+/// AD-CAMMAC ::= SEQUENCE {
+///     elements        [0] AuthorizationData,
+///     kdc-verifier    [1] Verifier-MAC OPTIONAL,
+///     svc-verifier    [2] Verifier-MAC OPTIONAL,
+///     other-verifiers [3] SEQUENCE (SIZE (1..MAX)) OF Verifier OPTIONAL
+/// }
+/// ```
+///
+/// `rasn_kerberos::AdCammac` makes `other-verifiers` mandatory, so it cannot
+/// read the CAMMACs MIT issues, which leave it out (`src/kdc/cammac.c:105-109`).
+#[derive(AsnType, Clone, Debug, Decode, Encode, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct Cammac {
+    /// The authorization data the verifiers cover.
+    #[rasn(tag(explicit(0)))]
+    pub elements: AuthorizationData,
+    /// The verifier under the KDC's ticket-granting key, over the ticket.
+    #[rasn(tag(explicit(1)))]
+    pub kdc_verifier: Option<VerifierMac>,
+    /// The verifier under the key that encrypts the ticket, over `elements`.
+    #[rasn(tag(explicit(2)))]
+    pub svc_verifier: Option<VerifierMac>,
+    /// Verifiers under the keys of other named principals.
+    #[rasn(tag(explicit(3)))]
+    pub other_verifiers: Option<SequenceOf<Verifier>>,
+}
 
 /// What an application knows about the conditions of an AD-AND-OR element.
 pub trait ConditionEvaluator: Debug + Send + Sync {
@@ -135,6 +179,67 @@ pub fn verify_kdc_issued(issued: &AdKdcIssued, key: &EncryptionKey) -> Result<()
 #[inline]
 pub fn decode_kdc_issued(bytes: &[u8]) -> Result<AdKdcIssued, Error> {
     decode("AD-KDC-ISSUED", bytes)
+}
+
+/// Decode the DER of an AD-CAMMAC element.
+///
+/// # Errors
+///
+/// Returns [`Error::Decode`].
+#[inline]
+pub fn decode_cammac(bytes: &[u8]) -> Result<Cammac, Error> {
+    decode("AD-CAMMAC", bytes)
+}
+
+/// Verify the service verifier of an AD-CAMMAC under `key`, the key that
+/// decrypted the ticket.
+///
+/// The verifier is an RFC 3961 checksum with key usage 64 over the DER of the
+/// elements, of a checksum type of the key's encryption type (RFC 7751
+/// section 4; MIT `check_svcver`, `src/lib/krb5/krb/cammac_util.c:36-59`).
+///
+/// # Errors
+///
+/// Returns [`Error::CammacVerifierAbsent`] without a service verifier (MIT
+/// refuses it too), [`Error::KeyChecksumTypeMismatch`] for a checksum type of
+/// another key type, [`Error::Encode`], and [`Error::CammacVerifierMismatch`]
+/// for an unknown checksum type or a checksum that does not verify.
+#[inline]
+pub fn verify_cammac(cammac: &Cammac, key: &EncryptionKey) -> Result<(), Error> {
+    let verifier = cammac
+        .svc_verifier
+        .as_ref()
+        .ok_or(Error::CammacVerifierAbsent)?;
+    let checksum_type = verifier.mac.r#type;
+    let etype = selection::checksum(checksum_type)?.ok_or(Error::CammacVerifierMismatch)?;
+    if etype.etype_id() != key.etype() {
+        return Err(Error::KeyChecksumTypeMismatch {
+            key_etype: key.etype(),
+            checksum_type,
+        });
+    }
+    if etype.verify_checksum(
+        key.value(),
+        &elements_der(&cammac.elements)?,
+        verifier.mac.checksum.as_ref(),
+        CAMMAC_USAGE,
+    ) {
+        Ok(())
+    } else {
+        Err(Error::CammacVerifierMismatch)
+    }
+}
+
+/// Decode the DER of an AD-AUTHENTICATION-INDICATOR element, `SEQUENCE OF
+/// UTF8String` (RFC 8129 section 4; MIT `k5_authind_decode`,
+/// `src/lib/krb5/krb/authdata_dec.c:260-296`).
+///
+/// # Errors
+///
+/// Returns [`Error::Decode`].
+#[inline]
+pub fn decode_auth_indicators(bytes: &[u8]) -> Result<Vec<String>, Error> {
+    decode::<SequenceOf<Utf8String>>("AD-AUTHENTICATION-INDICATOR", bytes)
 }
 
 /// Decode the DER of an AD-AND-OR element.

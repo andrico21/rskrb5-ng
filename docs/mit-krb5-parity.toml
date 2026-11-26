@@ -11,8 +11,8 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 149
-partial = 4
+implemented = 151
+partial = 2
 absent = 0
 rejected = 8
 omitted = 1
@@ -3374,20 +3374,24 @@ id = "MIT-gss-7"
 area = "gss"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Credential selection, store extensions: `gss_acquire_cred_from`, `gss_store_cred_into`, `gss_store_cred`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "P2-18 delivered acquire_cred_from with ccache, client_keytab, keytab, rcache (memory: only) and password, acquire_cred and store_cred_into; P2-19 delivered the verify key (gss::CredStore 'verify': a password TGT is verified against the keytab, MIT acquire_cred.c:598-606) and impersonation through gss::Credential::acquire_impersonate_name (MIT has no impersonation store key: gss_acquire_cred_impersonate_name, row MIT-gss-14). Open: selecting the cache of the desired name from a ccache collection (MIT krb5_cc_cache_match in acquire_cred.c) is not implemented; no plan-2 closer is assigned, register row FU-GSX-P03."
+missing = ""
 rust_symbols = [
   "gss::Credential::acquire_cred_from",
+  "gss::Credential::acquire_cred",
   "gss::CredStore::with",
   "gss::Credential::store_cred_into",
 ]
 test_names = [
   "tests/gss_ext/impersonate.rs::the_verify_key_needs_a_password",
   "tests/gss/credentials.rs::store_keys_are_checked",
+  "tests/gss/credentials.rs::acquire_from_collection_selects_desired_principal",
+  "tests/gss/credentials.rs::default_acquire_selects_desired_principal",
+  "tests/gss/credentials.rs::missing_desired_principal_never_uses_primary",
 ]
 feature_flags = []
-security_divergence = ""
+security_divergence = "A desired name selects its cache inside the collection the `ccache` store key names too (realm and components equal, primary never switched or substituted); MIT 1.22.2 checks only the named cache there (acquire_cred.c:746-748, scan_ccache :380-384) and searches the collection only without a ccache key (get_cache_for_name, :446-500)."
 disposition = "WP-12"
 closing_plan = 2
 closing_todo = 19
@@ -3398,9 +3402,9 @@ id = "MIT-gss-8"
 area = "gss"
 upstream_ref = "krb5-1.22.2-final"
 capability = "GSS naming extensions and name attributes (enterprise/X.509 names, auth indicators, PAC attributes)"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "live-local"
-missing = "The PAC half is delivered (pac::Verified, pac::IdentityAttributes, P2-22); P2-18 delivered the enterprise, certificate and anonymous names; P2-19 delivered the RFC 6680 urn:mspac: attributes of the acceptor's source name over the verified PAC (gss::EstablishedContext::source_attributes, source_attribute, gss::NameAttribute; authenticated only with a verified KDC signature). Open: the auth-indicators attribute: the indicators live in the ticket's AD-CAMMAC, which service::ValidatedApReq does not expose (service.rs is todo 27's file in wave 9); no plan-2 closer is assigned, register row FU-GSX-P02."
+missing = ""
 rust_symbols = [
   "pac::Verified",
   "pac::Verified::attributes_info",
@@ -3410,6 +3414,12 @@ rust_symbols = [
   "gss::EstablishedContext::source_attributes",
   "gss::EstablishedContext::source_attribute",
   "gss::NameAttribute",
+  "gss::NameAttribute::values",
+  "service::ValidatedApReq::auth_indicators",
+  "authdata::Cammac",
+  "authdata::decode_cammac",
+  "authdata::verify_cammac",
+  "authdata::decode_auth_indicators",
 ]
 test_names = [
   "tests/pac_api/identity.rs::a_verified_pac_yields_its_ad_identity_attributes",
@@ -3417,9 +3427,15 @@ test_names = [
   "tests/gss_ext/attributes.rs::the_source_name_carries_the_verified_pac_attributes",
   "tests/gss_ext/attributes.rs::a_pac_without_a_verified_kdc_signature_is_not_authenticated",
   "tests/gss_ext/attributes.rs::unknown_attributes_are_unavailable",
+  "tests/gss_ext/attributes.rs::verified_cammac_exposes_all_auth_indicators",
+  "tests/gss_ext/attributes.rs::indicator_attributes_survive_context_transfer",
+  "tests/auth_data/cammac.rs::tampered_cammac_is_refused",
+  "tests/auth_data/cammac.rs::authenticator_indicators_are_not_authenticated",
+  "tests/auth_data/cammac.rs::verified_cammacs_yield_their_indicators",
+  "tests/interop_gss_ext/indicators.rs::the_rust_acceptor_reads_the_kdc_issued_auth_indicators",
 ]
 feature_flags = []
-security_divergence = ""
+security_divergence = "A CAMMAC whose service verifier does not verify refuses the AP-REQ (MIT 1.22.2 skips it, authdata.c:555-558); a CAMMAC in an authenticator is refused (MIT reads CAMMACs of the ticket only and ignores others, authdata.c:586-606)."
 disposition = "WP-12"
 closing_plan = 2
 closing_todo = 19

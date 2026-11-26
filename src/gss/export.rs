@@ -507,6 +507,10 @@ fn put_context(writer: &mut Writer, context: &EstablishedContext) -> Result<(), 
             writer.flag(passed);
         }
     }
+    writer.word(u32::try_from(context.auth_indicators.len()).map_err(|_count| MALFORMED)?);
+    for indicator in &context.auth_indicators {
+        writer.bytes(indicator.as_bytes())?;
+    }
     Ok(())
 }
 
@@ -553,6 +557,10 @@ fn get_context(reader: &mut Reader<'_>) -> Result<EstablishedContext, Error> {
     } else {
         None
     };
+    let mut auth_indicators = Vec::new();
+    for _ in 0..reader.word()? {
+        auth_indicators.push(reader.string()?);
+    }
     Ok(EstablishedContext {
         initiated,
         source,
@@ -567,6 +575,7 @@ fn get_context(reader: &mut Reader<'_>) -> Result<EstablishedContext, Error> {
         crypto_policy: CryptoPolicy::default(),
         delegated,
         pac: verified,
+        auth_indicators,
         open,
     })
 }

@@ -356,6 +356,7 @@ fn established(parts: Parts) -> EstablishedContext {
         crypto_policy: parts.policy,
         delegated: None,
         pac: None,
+        auth_indicators: Vec::new(),
         open: true,
     }
 }

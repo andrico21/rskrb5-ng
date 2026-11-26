@@ -3,6 +3,10 @@
 
 extern crate alloc;
 
+/// AD-CAMMAC fixtures built without the crate's CAMMAC code.
+#[path = "support/cammac.rs"]
+mod cammac_fixture;
+
 #[path = "support/context.rs"]
 mod context;
 
@@ -16,6 +20,7 @@ mod context;
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod auth_data {
     mod acceptor;
+    mod cammac;
     mod helpers;
     mod support;
 }

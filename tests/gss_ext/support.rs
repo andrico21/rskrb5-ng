@@ -30,6 +30,7 @@ use rskrb5_ng::{
 use zeroize::Zeroizing;
 
 use super::context::{Context as _, TestError};
+use crate::cammac_fixture;
 
 /// The realm of every ticket.
 pub(super) const REALM: &str = "EXAMPLE.COM";
@@ -190,6 +191,19 @@ pub(super) fn ticket_for(etype: i32, set: &[usize]) -> Result<TgsRepSession, Tes
     ticket_with_pac(etype, set, None)
 }
 
+/// A service ticket like [`ticket_for`] whose authorization data holds a
+/// CAMMAC with the authentication `indicators`, made under the service key as
+/// the KDC makes it.
+///
+/// # Errors
+///
+/// Returns the encoding errors.
+pub(super) fn ticket_with_indicators(indicators: &[&str]) -> Result<TgsRepSession, TestError> {
+    let elements = vec![cammac_fixture::indicators(indicators)?];
+    let data = cammac_fixture::wrapped(&cammac_fixture::cammac(elements, &service_key())?)?;
+    ticket_with(AES256_SHA1, &[], None, Some(data))
+}
+
 /// The KDC key that signs the PAC of [`ticket_with_pac`].
 pub(super) fn kdc_key() -> EncryptionKey {
     EncryptionKey::new(AES256_SHA1, vec![0x6b; 32])
@@ -206,6 +220,20 @@ pub(super) fn ticket_with_pac(
     etype: i32,
     set: &[usize],
     buffers: Option<&[(u32, &[u8])]>,
+) -> Result<TgsRepSession, TestError> {
+    ticket_with(etype, set, buffers, None)
+}
+
+/// A service ticket with a PAC of `buffers` or the authorization `data`.
+///
+/// # Errors
+///
+/// Returns the encoding and PAC errors.
+fn ticket_with(
+    etype: i32,
+    set: &[usize],
+    buffers: Option<&[(u32, &[u8])]>,
+    authorization: Option<rasn_kerberos::AuthorizationData>,
 ) -> Result<TgsRepSession, TestError> {
     let at = validity()?;
     let (bits, bytes) = flags(set);
@@ -227,7 +255,7 @@ pub(super) fn ticket_with_pac(
         end_time: time(at.1)?,
         renew_till: None,
         caddr: None,
-        authorization_data: None,
+        authorization_data: authorization,
     };
     if let Some(extra) = buffers {
         let mut builder = pac::Builder::new();

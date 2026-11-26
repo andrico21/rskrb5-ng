@@ -1,9 +1,12 @@
-//! AD-KDC-ISSUED and AD-AND-OR in ticket and authenticator authorization data.
+//! AD-KDC-ISSUED, AD-AND-OR and AD-CAMMAC in ticket and authenticator authorization data.
 
 use super::{AuthorizationBudget, AuthorizationScope, Error, validate_authorization_elements};
 use crate::{
-    authdata::{decode_and_or, decode_kdc_issued, evaluate_and_or, verify_kdc_issued},
-    iana::authorization_data_type::{AND_OR, KDC_ISSUED},
+    authdata::{
+        decode_and_or, decode_auth_indicators, decode_cammac, decode_kdc_issued, evaluate_and_or,
+        verify_cammac, verify_kdc_issued,
+    },
+    iana::authorization_data_type::{AND_OR, CAMMAC, KDC_ISSUED},
 };
 
 /// Interpret an AD-KDC-ISSUED element.
@@ -66,4 +69,65 @@ pub(super) fn and_or(
     } else {
         Err(Error::AuthorizationConditionUnsatisfied)
     }
+}
+
+/// Interpret an AD-CAMMAC element (RFC 7751).
+///
+/// Its service verifier is verified under the key that decrypted the ticket,
+/// then its elements are interpreted at the criticality of the enclosing
+/// scope, where its authentication indicators count (MIT
+/// `get_cammac_authdata`, `authdata.c:586-606`).
+///
+/// Only ticket authorization data may carry it: the service verifier
+/// authenticates the elements, not the ticket they arrive in, so a CAMMAC
+/// copied into an authenticator would still verify.
+///
+/// # Errors
+///
+/// Returns [`Error::UnsupportedAuthorizationData`] outside a ticket,
+/// [`Error::AuthorizationDataLimit`] past the nesting bound, and
+/// [`Error::AuthorizationData`] for a malformed element or a verifier that is
+/// absent or does not verify (MIT skips a CAMMAC whose verifier does not
+/// verify, `authdata.c:555-558`; this acceptor refuses the ticket), and the
+/// errors of the nested elements.
+pub(super) fn cammac(
+    entry: &rasn_kerberos::AuthorizationDataValue,
+    scope: AuthorizationScope,
+    budget: &mut AuthorizationBudget<'_>,
+) -> Result<(), Error> {
+    let key = budget
+        .context
+        .service_key
+        .filter(|_key| scope.ticket)
+        .ok_or(Error::UnsupportedAuthorizationData { kind: CAMMAC })?;
+    if scope.depth >= 8 {
+        return Err(Error::AuthorizationDataLimit);
+    }
+    let container = decode_cammac(entry.data.as_ref())?;
+    verify_cammac(&container, key)?;
+    validate_authorization_elements(
+        &container.elements,
+        AuthorizationScope {
+            depth: scope.depth.saturating_add(1),
+            cammac: true,
+            ..scope
+        },
+        budget,
+    )
+}
+
+/// Collect the authentication indicators of an AD-AUTHENTICATION-INDICATOR
+/// element inside a verified AD-CAMMAC.
+///
+/// # Errors
+///
+/// Returns [`Error::AuthorizationData`] for a malformed indicator list.
+pub(super) fn indicators(
+    entry: &rasn_kerberos::AuthorizationDataValue,
+    budget: &mut AuthorizationBudget<'_>,
+) -> Result<(), Error> {
+    budget
+        .indicators
+        .extend(decode_auth_indicators(entry.data.as_ref())?);
+    Ok(())
 }

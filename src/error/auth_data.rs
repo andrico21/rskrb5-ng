@@ -50,4 +50,10 @@ pub enum AuthData {
     /// The encryption type is not permitted.
     #[error("policy error: {0}")]
     Policy(#[from] Policy),
+    /// The AD-CAMMAC has no service verifier (RFC 7751 section 4).
+    #[error("the AD-CAMMAC has no service verifier")]
+    CammacVerifierAbsent,
+    /// The AD-CAMMAC service verifier does not verify under the ticket's key.
+    #[error("the AD-CAMMAC service verifier does not verify")]
+    CammacVerifierMismatch,
 }
