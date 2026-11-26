@@ -4,7 +4,7 @@
 //! The TGT that authenticates the TGS request armors it: the armor key is
 //! `KRB-FX-CF2(subkey, TGT session key, "subkeyarmor", "ticketarmor")` with the
 //! subkey of the request's authenticator, so the request carries no armor AP-REQ
-//! of its own. [`wrap`] turns a TGS-REQ into the armored one; [`Armor::unwrap`]
+//! of its own. [`wrap`] turns a TGS-REQ into the armored one; [`unwrap`]
 //! authenticates the reply to it and derives its reply key.
 //!
 //! # Security
@@ -40,25 +40,13 @@ use crate::{
     keytab::EncryptionKey,
 };
 
-/// The armor of one TGS request: what authenticates its reply.
-pub(crate) struct Armor {
-    /// The armor key.
-    key: EncryptionKey,
-    /// The authenticator subkey the KDC encrypts a plain reply in.
-    subkey: EncryptionKey,
-    /// The nonce of the request.
-    nonce: u32,
-}
+/// The armor of one TGS request: the armor key, the authenticator subkey (the
+/// key a KDC without FAST encrypts its reply in) and the request's nonce.
+pub(crate) type Armor = (EncryptionKey, EncryptionKey, u32);
 
-/// An armored TGS request.
-pub(crate) struct Wrapped {
-    /// The armored request as a message.
-    pub(crate) message: TgsReq,
-    /// The armored request as sent.
-    pub(crate) der: Zeroizing<Vec<u8>>,
-    /// The armor that authenticates its reply.
-    pub(crate) armor: Armor,
-}
+/// An armored request as a message and as sent, and the armor that
+/// authenticates its reply.
+pub(crate) type Wrapped = (TgsReq, Zeroizing<Vec<u8>>, Armor);
 
 /// What the KDC's reply to an armored request is.
 pub(crate) enum Reply {
@@ -92,20 +80,20 @@ pub(crate) fn wrap(
     keys: (&EncryptionKey, &EncryptionKey),
     crypto_policy: &CryptoPolicy,
 ) -> Result<Wrapped, Error> {
-    let (message, ap_req) = parts;
+    let (original, ap_req) = parts;
     let (subkey, session) = keys;
     let key = keys::cf2((subkey, b"subkeyarmor"), (session, b"ticketarmor"))?;
     crypto_policy
         .check_use(key.etype(), Use::SessionKey)
         .map_err(Crypto::from)?;
-    let TgsReq(mut outer) = message.clone();
-    let (tgs, rest): (Vec<PaData>, Vec<PaData>) = outer
+    let TgsReq(mut outer) = original.clone();
+    let (tgs_entries, rest): (Vec<PaData>, Vec<PaData>) = outer
         .padata
         .take()
         .unwrap_or_default()
         .into_iter()
         .partition(|entry| entry.r#type == PA_TGS_REQ);
-    let [tgs] = <[PaData; 1]>::try_from(tgs).map_err(|_not_one| Error::Malformed {
+    let [tgs] = <[PaData; 1]>::try_from(tgs_entries).map_err(|_not_one| Error::Malformed {
         structure: "TGS-REQ",
         reason: "the request does not carry exactly one PA-TGS-REQ",
     })?;
@@ -134,64 +122,50 @@ pub(crate) fn wrap(
     };
     let nonce = outer.req_body.nonce;
     outer.padata = Some([tgs, fast].into_iter().chain(rest).collect());
-    let message = TgsReq(outer);
-    let der = encode("TGS-REQ", &message)?;
-    Ok(Wrapped {
-        message,
-        der,
-        armor: Armor {
-            key,
-            subkey: subkey.clone(),
-            nonce,
-        },
-    })
+    let armored_request = TgsReq(outer);
+    let der = encode("TGS-REQ", &armored_request)?;
+    Ok((armored_request, der, (key, subkey.clone(), nonce)))
 }
 
-impl Armor {
-    /// The authenticator subkey, the reply key of a KDC without FAST.
-    pub(crate) const fn subkey(&self) -> &EncryptionKey {
-        &self.subkey
+/// Authenticate the KDC's reply `bytes` to the request `armor` armored.
+///
+/// `required` refuses a KDC without FAST instead of reporting it as
+/// [`Reply::Unarmored`].
+///
+/// # Errors
+/// Returns [`Error::Unarmored`] or [`Error::UnarmoredError`] for a reply
+/// without `PA-FX-FAST` when `required`, and every FAST failure of an
+/// armored reply, among them a missing strengthen key.
+pub(crate) fn unwrap(armor: &Armor, bytes: &[u8], required: bool) -> Result<Reply, Error> {
+    let (armor_key, subkey, nonce) = armor;
+    if let Ok(outer) = der::decode::<KrbError>(bytes) {
+        return match reply::error_reply(armor_key, *nonce, &outer) {
+            Err(Error::UnarmoredError { code: _ }) if !required => Ok(Reply::Unarmored),
+            Err(error) => Err(error),
+            Ok(inner) => Ok(Reply::Error(inner.error)),
+        };
     }
-
-    /// Authenticate the KDC's reply `bytes` to the armored request.
-    ///
-    /// `required` refuses a KDC without FAST instead of reporting it as
-    /// [`Reply::Unarmored`].
-    ///
-    /// # Errors
-    /// Returns [`Error::Unarmored`] or [`Error::UnarmoredError`] for a reply
-    /// without `PA-FX-FAST` when `required`, and every FAST failure of an
-    /// armored reply, among them a missing strengthen key.
-    pub(crate) fn unwrap(&self, bytes: &[u8], required: bool) -> Result<Reply, Error> {
-        if let Ok(outer) = der::decode::<KrbError>(bytes) {
-            return match reply::error_reply(&self.key, self.nonce, &outer) {
-                Err(Error::UnarmoredError { code: _ }) if !required => Ok(Reply::Unarmored),
-                Err(error) => Err(error),
-                Ok(inner) => Ok(Reply::Error(inner.error)),
-            };
-        }
-        let rasn_kerberos::TgsRep(reply) = keys::decode("TGS-REP", bytes)?;
-        if !reply
-            .padata
-            .as_deref()
-            .unwrap_or_default()
-            .iter()
-            .any(|entry| entry.r#type == PA_FX_FAST)
-        {
-            return if required {
-                Err(Error::Unarmored)
-            } else {
-                Ok(Reply::Unarmored)
-            };
-        }
-        let (reply, strengthen, _client) = reply::kdc_reply(&self.key, self.nonce, reply)?;
-        let strengthen = strengthen.ok_or(Error::Malformed {
-            structure: "KrbFastResponse",
-            reason: "the TGS reply carries no strengthen key",
-        })?;
-        Ok(Reply::Success {
-            reply: encode("TGS-REP", &rasn_kerberos::TgsRep(reply))?,
-            key: keys::cf2((&strengthen, b"strengthenkey"), (&self.subkey, b"replykey"))?,
-        })
+    let rasn_kerberos::TgsRep(encrypted) = keys::decode("TGS-REP", bytes)?;
+    if !encrypted
+        .padata
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .any(|entry| entry.r#type == PA_FX_FAST)
+    {
+        return if required {
+            Err(Error::Unarmored)
+        } else {
+            Ok(Reply::Unarmored)
+        };
     }
+    let (reply, strengthen_key, _client) = reply::kdc_reply(armor_key, *nonce, encrypted)?;
+    let strengthen = strengthen_key.ok_or(Error::Malformed {
+        structure: "KrbFastResponse",
+        reason: "the TGS reply carries no strengthen key",
+    })?;
+    Ok(Reply::Success {
+        reply: encode("TGS-REP", &rasn_kerberos::TgsRep(reply))?,
+        key: keys::cf2((&strengthen, b"strengthenkey"), (subkey, b"replykey"))?,
+    })
 }

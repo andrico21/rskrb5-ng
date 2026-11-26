@@ -628,7 +628,11 @@ pub(crate) fn seal(
 }
 
 /// Decrypt.
-pub(crate) fn open(key: &EncryptionKey, usage: u32, encrypted: &EncryptedData) -> Result<Vec<u8>, TestError> {
+pub(crate) fn open(
+    key: &EncryptionKey,
+    usage: u32,
+    encrypted: &EncryptedData,
+) -> Result<Vec<u8>, TestError> {
     Ok(etype(key)?.decrypt_message(key.value(), &encrypted.cipher, usage)?)
 }
 

@@ -272,8 +272,11 @@ fn run_required(kdc: &mut TgsKdc) -> Result<Run, TestError> {
 #[test]
 fn a_kdc_without_fast_is_served_only_opportunistically() -> Result<(), TestError> {
     let mut kdc = TgsKdc::new(Tamper::NoFast);
-    let (plain, outcome) =
-        credential(attempt(&mut kdc, Some(Policy::Opportunistic), service(REALM))?)?;
+    let (plain, outcome) = credential(attempt(
+        &mut kdc,
+        Some(Policy::Opportunistic),
+        service(REALM),
+    )?)?;
     assert_eq!(outcome, Some(Outcome::Unarmored), "the outcome");
     assert_eq!(plain.service(), &service(REALM), "the plain ticket");
     let mut kdc = TgsKdc::new(Tamper::UnarmoredError);

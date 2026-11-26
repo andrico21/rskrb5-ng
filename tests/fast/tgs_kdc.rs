@@ -222,7 +222,14 @@ impl Context<'_> {
             realm: string(&realm)?,
             sname: service.clone(),
             enc_part: seal(
-                &EncryptionKey::new(18, if is_tgs { TGS_KEY.to_vec() } else { vec![0x88; 32] }),
+                &EncryptionKey::new(
+                    18,
+                    if is_tgs {
+                        TGS_KEY.to_vec()
+                    } else {
+                        vec![0x88; 32]
+                    },
+                ),
                 2,
                 &der::encode(&EncTicketPart {
                     flags: TicketFlags(KerberosFlags::from_slice(&[0, 0x60, 0, 0])),

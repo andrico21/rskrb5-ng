@@ -41,7 +41,7 @@ use crate::{
     extensions::{PreauthSession, ProviderError},
     keytab::{EncryptionKey, Keytab},
     preauth::{
-        fast::{Outcome as FastOutcome, Policy as FastPolicy},
+        fast::{Outcome as FastOutcome, Policy as FastPolicy, tgs},
         otp::{Challenge, Policy, Response},
         pkinit::{AnonymousOptions, Exchange as PkinitExchange, exchange::Pending},
         spake::Policy as SpakePolicy,
@@ -713,6 +713,8 @@ pub struct TicketCreds {
     trace: Option<trace::Tracer>,
     /// The FAST policy of the requests and what the replies showed.
     fast: ticket::Fast,
+    /// The armor of the request in flight, which authenticates its reply.
+    armor: Option<tgs::Armor>,
 }
 
 impl fmt::Debug for TicketCreds {
@@ -749,7 +751,7 @@ impl TicketCreds {
     /// Armor every request of this exchange under `policy`.
     #[inline]
     #[must_use]
-    pub fn with_fast(mut self, policy: FastPolicy) -> Self {
+    pub const fn with_fast(mut self, policy: FastPolicy) -> Self {
         self.fast = ticket::Fast::new(policy);
         self
     }
@@ -757,7 +759,7 @@ impl TicketCreds {
     /// Whether the replies so far were FAST-authenticated.
     #[inline]
     #[must_use]
-    pub fn fast_outcome(&self) -> Option<FastOutcome> {
+    pub const fn fast_outcome(&self) -> Option<FastOutcome> {
         self.fast.outcome()
     }
 

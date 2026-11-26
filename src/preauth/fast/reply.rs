@@ -34,8 +34,8 @@ pub(super) fn unwrap(
         let inner = error_reply(armor, nonce, &outer)?;
         return Ok(ArmoredReply::new(inner.error, None, inner.cookie));
     }
-    let rasn_kerberos::AsRep(reply) = keys::decode("AS-REP", bytes)?;
-    let (reply, strengthen_key, client) = kdc_reply(armor, nonce, reply)?;
+    let rasn_kerberos::AsRep(encrypted) = keys::decode("AS-REP", bytes)?;
+    let (reply, strengthen_key, client) = kdc_reply(armor, nonce, encrypted)?;
     Ok(ArmoredReply::new(
         encode("AS-REP", &rasn_kerberos::AsRep(reply))?,
         strengthen_key,
@@ -137,9 +137,9 @@ pub(super) fn error_reply(
 /// The authenticated error of an armored KRB-ERROR and the KDC's cookie.
 pub(super) struct InnerError {
     /// The inner KRB-ERROR, with the inner padata as its METHOD-DATA.
-    pub(super) error: Zeroizing<Vec<u8>>,
+    pub error: Zeroizing<Vec<u8>>,
     /// The KDC's cookie, bounded.
-    pub(super) cookie: Option<Vec<u8>>,
+    pub cookie: Option<Vec<u8>>,
 }
 
 /// Decrypt the single `PA-FX-FAST` of `padata` and bind it to `nonce`.
