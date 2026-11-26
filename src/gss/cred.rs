@@ -546,6 +546,11 @@ pub(super) fn inquire(credential: &Credential) -> CredentialInquiry {
 ///
 /// Returns [`Error::NoCredential`] without a ticket source, and the errors of
 /// building the client and of verifying the initial credentials.
+///
+/// # Cancel safety
+///
+/// Cancel-safe: it changes no credential; dropping the future abandons the
+/// optional verification exchange.
 #[cfg(feature = "tokio")]
 async fn ticket_source(
     credential: &Credential,
