@@ -27,6 +27,13 @@
 //!   without bindings.
 //! * A Negotiate token is used once: every redirect drops the previous token,
 //!   and a same-origin hop of an authenticated chain gets a fresh one.
+//! * The service principal is `HTTP/<lower-cased URI host>` and nothing else,
+//!   unless the caller sets a [`HostNamePolicy`]
+//!   ([`NegotiateHttpClient::with_host_name_policy`]): the profile's host-name
+//!   canonicalization then proposes names and the policy approves them. Only the
+//!   principal changes. The TLS server name, the `Host` header, the redirect and
+//!   cookie origin and the channel binding stay the URI host's, never the
+//!   canonical name's.
 //! * The challenge rounds, the `WWW-Authenticate` bytes, the redirects and the
 //!   replayed body are bounded.
 //! * When the [`InitiatorContextOptions`] ask for mutual authentication, the
@@ -63,6 +70,7 @@ use super::{
 };
 use crate::{
     client::{negotiate::Client as NegotiateClient, principal::Principal},
+    discovery::hostname::HostNamePolicy,
     error::{Http, HttpClient as Error},
     spnego::{InitiatorContext, InitiatorContextOptions},
     trace::{Event, Guard, Identity, TransportStep, TransportWire},
@@ -248,6 +256,8 @@ pub struct NegotiateHttpClient<X> {
     max_body_bytes: usize,
     /// The realm of the `HTTP/<host>` service, when it is not looked up.
     service_realm: Option<String>,
+    /// The policy of the explicit host acquisition; none keeps the URI host.
+    host_policy: Option<Box<dyn HostNamePolicy>>,
     /// The cookie jar.
     jar: Option<Box<dyn CookieJar>>,
     /// The trace guard.
@@ -291,6 +301,7 @@ impl<X: HttpExchange> NegotiateHttpClient<X> {
             max_challenge_bytes: Self::DEFAULT_MAX_CHALLENGE_BYTES,
             max_body_bytes: Self::DEFAULT_MAX_BODY_BYTES,
             service_realm: None,
+            host_policy: None,
             jar: None,
             trace: Guard::disabled(),
         }
@@ -354,6 +365,34 @@ impl<X: HttpExchange> NegotiateHttpClient<X> {
         R: Into<String>,
     {
         self.service_realm = Some(realm.into());
+        self
+    }
+
+    /// Name the service by explicit host acquisition under `policy` instead of
+    /// taking the URI host as it is.
+    ///
+    /// The profile's `dns_canonicalize_hostname`, `rdns` and `qualify_shortname`
+    /// propose canonical names for the URI host; a name other than the host
+    /// itself is used only when `policy` approves it
+    /// ([`NegotiateClient::authorization_context_for_acquired_host_with_options`]).
+    /// Without this call the service is `HTTP/<URI host>` and no DNS lookup is
+    /// made. A realm named by [`Self::with_service_realm`] is an explicit
+    /// principal input and bypasses the acquisition.
+    ///
+    /// # Security
+    ///
+    /// Canonicalization changes the Kerberos principal the token is for and
+    /// nothing else: the connection, the TLS server name, the `Host` header, the
+    /// redirect and cookie origin and the channel binding stay the URI host's.
+    /// DNS answers are not authenticated, so `policy` is the authority that
+    /// lets a canonical name receive the token.
+    #[inline]
+    #[must_use]
+    pub fn with_host_name_policy<P>(mut self, policy: P) -> Self
+    where
+        P: HostNamePolicy + 'static,
+    {
+        self.host_policy = Some(Box::new(policy));
         self
     }
 
@@ -609,13 +648,29 @@ impl<X: HttpExchange> NegotiateHttpClient<X> {
                     return Err(Error::ChannelChanged);
                 }
                 let options = self.options_for(channel.as_ref())?;
-                let service = self.service_for(chain.origin())?;
-                Some(
+                let origin = chain.origin();
+                // Explicit host acquisition, unless the realm is an explicit input: only
+                // the principal is derived from the canonical name, the origin stays the
+                // URI host's.
+                let acquisition = self
+                    .host_policy
+                    .as_deref()
+                    .filter(|_| self.service_realm.is_none());
+                let built = if let Some(policy) = acquisition {
+                    self.negotiate
+                        .authorization_context_for_acquired_host_with_options(
+                            ("HTTP", origin.host()),
+                            policy,
+                            options,
+                        )
+                        .await
+                } else {
+                    let service = self.service_for(origin)?;
                     self.negotiate
                         .authorization_context_with_options(service, options)
                         .await
-                        .map_err(|source| Error::Negotiate(Http::from(source)))?,
-                )
+                };
+                Some(built.map_err(|source| Error::Negotiate(Http::from(source)))?)
             }
         };
         let authorization = context

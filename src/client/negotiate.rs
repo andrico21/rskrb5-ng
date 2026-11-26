@@ -345,11 +345,45 @@ impl Client {
         host: &str,
         policy: &dyn HostNamePolicy,
     ) -> Result<InitiatorContext, Error> {
+        self.authorization_context_for_acquired_host_with_options(
+            (service, host),
+            policy,
+            InitiatorContextOptions::new(),
+        )
+        .await
+    }
+
+    /// [`Self::authorization_context_for_acquired_host`] with explicit
+    /// initiator options (channel bindings, context flags).
+    ///
+    /// # Security
+    ///
+    /// DNS answers are not authenticated: `policy` decides which canonical name
+    /// may receive the token.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Tokio::get_host_service_ticket`] and of building
+    /// the token.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: a service ticket is cached only after its exchange completes,
+    /// so dropping the future leaves the client's caches consistent and the call
+    /// can be repeated.
+    #[inline]
+    pub async fn authorization_context_for_acquired_host_with_options(
+        &mut self,
+        (service, host): (&str, &str),
+        policy: &dyn HostNamePolicy,
+        options: InitiatorContextOptions,
+    ) -> Result<InitiatorContext, Error> {
         let ticket = self
             .inner
             .get_host_service_ticket(service, host, policy)
             .await?;
-        self.authorization_context(ticket.service).await
+        self.authorization_context_with_options(ticket.service, options)
+            .await
     }
 
     /// Change this client's password using generated timestamp and sequence metadata.
