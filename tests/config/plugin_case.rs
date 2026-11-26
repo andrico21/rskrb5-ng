@@ -86,26 +86,24 @@ mod tests {
         Ok(())
     }
 
-    /// The correctly spelled interface keeps its fail-closed rule in both modes.
+    /// The correctly spelled interface is admitted in both modes: its control is effective.
     #[test]
-    fn lower_interface_still_fails_closed() -> Result<(), Box<dyn Error>> {
+    fn lower_interface_control_is_effective() -> Result<(), Box<dyn Error>> {
         for mode in [ParseMode::Compatible, ParseMode::Strict] {
-            let failure = Config::parse_with_mode(
+            let config = Config::parse_with_mode(
                 "[plugins]\nclpreauth = {\n disable = encrypted_timestamp\n}\n",
                 mode,
-            )
-            .err()
-            .ok_or("clpreauth restriction ignored")?;
+            )?;
             assert!(
-                matches!(
-                    failure,
-                    Failure::NotYetEffective {
-                        relation: "disable",
-                        package: _
-                    }
-                ),
-                "{failure:?}"
+                config.diagnostics().is_empty(),
+                "{:?}",
+                config.diagnostics()
             );
+            let controls = config
+                .plugins
+                .get("clpreauth")
+                .ok_or("clpreauth control lost")?;
+            assert_eq!(controls.disable, ["encrypted_timestamp"]);
         }
         Ok(())
     }

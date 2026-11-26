@@ -185,7 +185,6 @@ pub struct Config {
     pub applications: section_values::Applications,
     /// Plugin restrictions by interface, without executable module loading.
     #[cfg_attr(feature = "serde", serde(default))]
-    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::plugins"))]
     pub plugins: BTreeMap<String, section_values::Plugins>,
 }
 

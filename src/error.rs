@@ -738,12 +738,20 @@ pub enum Client {
     #[error("PKINIT preauthentication failed")]
     Pkinit(#[from] Pkinit),
     /// Encrypted timestamp is disabled for the client realm
-    /// (`[realms] disable_encrypted_timestamp`), and the KDC offered no other
-    /// usable mechanism.
+    /// (`[realms] disable_encrypted_timestamp`) or excluded by
+    /// `[plugins] clpreauth`, and the KDC offered no other usable mechanism.
     #[error("encrypted timestamp is disabled for realm {realm}")]
     EncryptedTimestampDisabled {
         /// The client realm.
         realm: String,
+    },
+    /// The exchange was built for a preauthentication mechanism that
+    /// `[plugins] clpreauth` excludes. Nothing is sent and no other mechanism
+    /// takes its place.
+    #[error("the `{mechanism}` preauthentication mechanism is excluded by [plugins] clpreauth")]
+    PreauthMechanismDisabled {
+        /// The `clpreauth` name of the excluded mechanism.
+        mechanism: &'static str,
     },
     /// `noaddresses = false` needs request addresses, and interface addresses
     /// are not enumerated: configure `extra_addresses`.

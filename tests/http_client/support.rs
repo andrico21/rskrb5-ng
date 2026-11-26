@@ -255,8 +255,16 @@ fn ticket_for(host: &str) -> Result<TgsRepSession, TestError> {
 
 /// A Negotiate client holding a ticket for each of `hosts`.
 pub(super) fn negotiate_client(hosts: &[&str]) -> Result<NegotiateClient, TestError> {
+    negotiate_client_in(Config::new(), hosts)
+}
+
+/// A Negotiate client under `config` holding a ticket for each of `hosts`.
+pub(super) fn negotiate_client_in(
+    config: Config,
+    hosts: &[&str],
+) -> Result<NegotiateClient, TestError> {
     let mut client = Tokio::with_password(
-        Config::new(),
+        config,
         KdcProtocol::Auto,
         Principal::user(REALM, USER),
         b"unused".to_vec(),

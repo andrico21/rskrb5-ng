@@ -117,8 +117,8 @@ fn plugin_selection_row_is_not_implemented_while_a_consumer_is_deferred() -> Res
     Ok(())
 }
 
-/// A row that names one relation is not `implemented` while the generated
-/// catalogue still defers that relation to a later plan-2 package.
+/// The generated catalogue defers no relation to a later plan-2 package, so
+/// no row that names one relation can claim completion over a deferral.
 #[test]
 fn relation_rows_are_not_implemented_while_the_catalogue_defers_them() -> Result<(), TestError> {
     // Given the manifest and the consumer column of every catalogue row.
@@ -133,8 +133,8 @@ fn relation_rows_are_not_implemented_while_the_catalogue_defers_them() -> Result
         })
         .collect();
     assert!(
-        !deferred.is_empty(),
-        "no deferred relation in the catalogue"
+        deferred.is_empty(),
+        "the catalogue still defers relations to a later plan-2 package: {deferred:?}"
     );
     // When a row's capability is exactly one relation name, `` `name` ``.
     let claimed: Vec<&str> = features

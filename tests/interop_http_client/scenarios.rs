@@ -245,6 +245,66 @@ fn http_client_negotiates_with_apache_and_proves_the_server() -> Result<(), Box<
     })
 }
 
+/// With a host-name policy the service is named by explicit canonicalization and the
+/// origin is not: the URI host is the one-label name, the token is for
+/// `HTTP/<qualified host>` and Apache accepts it.
+///
+/// `qualify_shortname` proposes the realm's domain for the one-label host, the policy approves
+/// exactly the fixture's host name, and no DNS is asked (`dns_canonicalize_hostname = false`).
+#[test]
+fn http_client_names_the_service_by_explicit_canonicalization() -> Result<(), Box<dyn Error>> {
+    if !harness::require(
+        "http_client_names_the_service_by_explicit_canonicalization",
+        &[MIT_KDC, HTTPD],
+    )? {
+        return Ok(());
+    }
+    runtime()?.block_on(async {
+        let realm = harness::var("INTEROP_MIT_REALM")?;
+        let canonical = harness::var("INTEROP_HTTPD_HOST")?;
+        let (short, domain) = canonical
+            .split_once('.')
+            .ok_or("the fixture host name has no domain")?;
+        let user = Principal::user(realm.clone(), harness::var("INTEROP_MIT_USER")?);
+        let config = Config::parse(&format!(
+            "[libdefaults]\n default_realm = {realm}\n dns_lookup_kdc = false\n spake_preauth_groups =\n\
+             dns_lookup_realm = false\n dns_canonicalize_hostname = false\n qualify_shortname = {domain}\n\
+             [realms]\n {realm} = {{\n  kdc = {}\n }}\n",
+            harness::var("INTEROP_MIT_KDC")?,
+        ))?;
+        let negotiate = NegotiateClient::from_tokio_client(
+            Tokio::with_password(
+                config,
+                KdcProtocol::Auto,
+                user,
+                harness::var("INTEROP_MIT_USER_PASSWORD")?.into_bytes(),
+            )
+            .with_transport(KdcTransport::new().with_timeout(Duration::from_secs(10))),
+        );
+        let approved = canonical.clone();
+        let mut client = NegotiateHttpClient::new(
+            negotiate,
+            Endpoint(harness::var("INTEROP_HTTPD")?, None),
+        )
+        .with_options(mutual())
+        .with_host_name_policy(move |_requested: &str, candidate: &str| candidate == approved);
+        let result = client.get(&format!("http://{short}/whoami/")).await?;
+        assert_eq!(result.response().status(), StatusCode::OK);
+        assert_eq!(result.uri().host(), Some(short), "the origin stays the URI host");
+        let context = result.context().ok_or("the final request had no token")?;
+        assert_eq!(
+            context.service().components,
+            ["HTTP".to_owned(), canonical.clone()],
+            "the token is for the qualified host"
+        );
+        assert_page(
+            result.response().body(),
+            &harness::var("INTEROP_MIT_USER")?,
+            &realm,
+        )
+    })
+}
+
 /// A same-origin redirect to `/whoami/`: the client follows it, answers
 /// Apache's challenge there and proves the server on the final response.
 #[test]

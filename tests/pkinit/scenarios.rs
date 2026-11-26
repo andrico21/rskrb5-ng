@@ -7,11 +7,12 @@
 use std::time::SystemTime;
 
 use rskrb5_ng::{
+    Config,
     client::{
         AsRepSession,
         options::AsReq,
         principal::Principal,
-        stepwise::{ExchangeStep, InitCreds, InitCredsOptions, StepInput},
+        stepwise::{Exchange as _, ExchangeStep, InitCreds, InitCredsOptions, StepInput},
     },
     error::{Client as ClientError, Pkinit},
     keytab::{EncryptionKey, Entry as KeytabEntry, Keytab, Principal as KeytabPrincipal},
@@ -110,6 +111,33 @@ fn certificate_login_completes_with_the_freshness_token() -> Result<(), TestErro
     assert!(
         kdc.checksums_match(),
         "paChecksum and paChecksum2 bind the body"
+    );
+    Ok(())
+}
+
+/// `[plugins] clpreauth` `disable = pkinit` refuses an exchange built for PKINIT
+/// before anything is sent: no other mechanism takes its place.
+#[test]
+fn disabled_pkinit_refuses_the_exchange_before_sending() -> Result<(), TestError> {
+    let profile = Config::parse("[plugins]\n clpreauth = {\n disable = pkinit\n }\n")?;
+    let mut engine = InitCreds::with_pkinit(
+        client(),
+        exchange(CertificatePolicy::default())?,
+        InitCredsOptions::new(request()),
+    );
+    engine.configure(&profile);
+    let error = engine
+        .step(StepInput::Start)
+        .err()
+        .ok_or("the first request went out")?;
+    assert!(
+        matches!(
+            error,
+            ClientError::PreauthMechanismDisabled {
+                mechanism: "pkinit"
+            }
+        ),
+        "{error}"
     );
     Ok(())
 }

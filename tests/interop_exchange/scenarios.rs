@@ -70,11 +70,16 @@ fn nonce(sequence: u32) -> Result<u32, Box<dyn Error>> {
 
 /// Both realms with `libdefaults` added to `[libdefaults]`.
 fn config(libdefaults: &str) -> Result<Config, Box<dyn Error>> {
+    config_with(libdefaults, "")
+}
+
+/// Both realms with `libdefaults` added to `[libdefaults]` and `sections` after `[realms]`.
+fn config_with(libdefaults: &str, sections: &str) -> Result<Config, Box<dyn Error>> {
     let realm = harness::var("INTEROP_MIT_REALM")?;
     let other = harness::var("INTEROP_MIT_OTHER_REALM")?;
     Ok(Config::parse(&format!(
         "[libdefaults]\n default_realm = {realm}\n dns_lookup_kdc = false\n{libdefaults}\
-         [realms]\n {realm} = {{\n  kdc = {}\n }}\n {other} = {{\n  kdc = {}\n }}\n",
+         [realms]\n {realm} = {{\n  kdc = {}\n }}\n {other} = {{\n  kdc = {}\n }}\n{sections}",
         harness::var("INTEROP_MIT_KDC")?,
         harness::var("INTEROP_MIT_OTHER_KDC")?,
     ))?)
@@ -229,6 +234,46 @@ fn as_exchange_prompts_and_answers_the_preauth_challenge() -> Result<(), Box<dyn
             &Principal::tgt_service(client.realm.clone())
         );
         assert_negotiated_enctype("TGT", AES256_SHA2, ticket_etype(session.ticket())?)?;
+        Ok::<_, Box<dyn Error>>(())
+    })
+}
+
+/// `[plugins] clpreauth` `disable = encrypted_timestamp` is honoured against MIT.
+///
+/// The `requires_preauth` user is offered the encrypted timestamp (SPAKE is switched off by an
+/// empty group list) and the engine, which would send it, refuses: nothing else takes its
+/// place. Excluding another mechanism leaves the login as it was.
+#[test]
+fn a_disabled_timestamp_is_never_sent_to_mit() -> Result<(), Box<dyn Error>> {
+    if !harness::require("a_disabled_timestamp_is_never_sent_to_mit", &[MIT_KDC])? {
+        return Ok(());
+    }
+    runtime()?.block_on(async {
+        let account = || {
+            user(
+                "INTEROP_MIT_PREAUTH_USER",
+                "INTEROP_MIT_PREAUTH_USER_PASSWORD",
+            )
+        };
+        let excluded = config_with(
+            " spake_preauth_groups =\n",
+            "[plugins]\n clpreauth = {\n  disable = encrypted_timestamp\n }\n",
+        )?;
+        let refused = tgt(&excluded, account()?, 8).await;
+        let error = refused.err().ok_or("the timestamp was sent")?;
+        assert!(
+            matches!(
+                error.downcast_ref::<ClientError>(),
+                Some(ClientError::EncryptedTimestampDisabled { realm: _ })
+            ),
+            "{error}"
+        );
+        let other = config_with(
+            " spake_preauth_groups =\n",
+            "[plugins]\n clpreauth = {\n  disable = pkinit\n }\n",
+        )?;
+        let session = tgt(&other, account()?, 9).await?;
+        assert_eq!(session.client(), &account()?.0);
         Ok::<_, Box<dyn Error>>(())
     })
 }

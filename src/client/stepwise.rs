@@ -275,6 +275,10 @@ pub struct InitCredsOptions {
     spake: Option<SpakePolicy>,
     /// Realms whose `disable_encrypted_timestamp` is set (MIT `encts_disabled`).
     timestamp_disabled: Vec<String>,
+    /// The built-in `clpreauth` mechanisms in use (`[plugins] clpreauth`); a
+    /// mechanism outside it is never answered, never sent and, when the caller
+    /// asked for it (PKINIT, OTP), refuses the exchange.
+    builtin_preauth: Vec<&'static str>,
     /// Anonymous credentials (RFC 6112), when requested.
     anonymous: Option<AnonymousOptions>,
 }
@@ -289,6 +293,7 @@ impl fmt::Debug for InitCredsOptions {
             .field("preferred_preauth_types", &self.preferred_preauth_types)
             .field("spake", &self.spake)
             .field("timestamp_disabled", &self.timestamp_disabled)
+            .field("builtin_preauth", &self.builtin_preauth)
             .field("anonymous", &self.anonymous)
             .finish()
     }
@@ -308,8 +313,8 @@ impl InitCredsOptions {
     /// (`ticket_lifetime`, `renew_lifetime`, `forwardable`, `proxiable`,
     /// `kdc_default_options`), request addresses (`noaddresses`,
     /// `extra_addresses`), `kdc_timesync`, `preferred_preauth_types`,
-    /// `spake_preauth_groups` and the realms whose `disable_encrypted_timestamp`
-    /// is set.
+    /// `spake_preauth_groups`, the realms whose `disable_encrypted_timestamp`
+    /// is set and the built-in mechanisms `[plugins] clpreauth` leaves in use.
     ///
     /// # Errors
     ///

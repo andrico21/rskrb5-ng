@@ -13,7 +13,7 @@ use std::{
 use rasn::der;
 use rskrb5_ng::{
     client::{
-        AsRepSession, Password,
+        AsRepSession, Password, Tokio,
         options::TgsReq,
         principal::Principal,
         stepwise::{
@@ -346,6 +346,35 @@ fn armored_tgs_request_is_accepted_by_mit() -> Result<(), Box<dyn Error>> {
         assert_armored_tgs("the armored TGS exchange", &ticket)?;
         assert_eq!(ticket.requests.len(), 1, "one request");
         assert_eq!(ticket.session.service(), &service, "the issued service");
+        Ok(())
+    })
+}
+
+/// The high-level client armors its TGS requests when asked to.
+///
+/// `client::Tokio::with_tgs_fast(Required)` refuses a reply that is not armored, so a ticket
+/// from the MIT KDC proves the request was armored and the reply authenticated.
+#[test]
+fn the_client_switch_armors_tgs_requests_against_mit() -> Result<(), Box<dyn Error>> {
+    if !harness::require(
+        "the_client_switch_armors_tgs_requests_against_mit",
+        &[MIT_KDC],
+    )? {
+        return Ok(());
+    }
+    runtime()?.block_on(async {
+        let config = config()?;
+        let service = Principal::new(
+            harness::var("INTEROP_MIT_REALM")?,
+            2,
+            harness::var("INTEROP_MIT_HTTP_SERVICE")?.split('/'),
+        );
+        let mut client =
+            Tokio::from_tgt_session(config.clone(), KdcProtocol::Tcp, armor_tgt(&config).await?)
+                .with_transport(transport())
+                .with_tgs_fast(Policy::Required);
+        let ticket = client.get_service_ticket(service.clone()).await?;
+        assert_eq!(ticket.service(), &service, "the issued service");
         Ok(())
     })
 }

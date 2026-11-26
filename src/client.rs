@@ -47,6 +47,7 @@ use crate::{
     discovery::hostname::{CanonicalizationPolicy, HostNamePolicy},
     file_name,
     keytab::configured_keytab,
+    preauth::fast::Policy as FastPolicy,
     routing::{
         impersonation::{self, Delegation, DelegationOptions, S4uIdentity},
         init_creds::{self, Verification, VerifyOptions},
@@ -1938,6 +1939,17 @@ impl Tokio {
     #[must_use]
     pub fn with_trace(mut self, guard: Guard) -> Self {
         self.trace = guard;
+        self
+    }
+    /// Armor the TGS requests of service-ticket acquisition with FAST under
+    /// `policy`; the default is [`FastPolicy::Off`], the plain request.
+    ///
+    /// See [`transport::Tokio::with_tgs_fast`] for the scope, the reason for the
+    /// default and the downgrade rule of each policy.
+    #[inline]
+    #[must_use]
+    pub fn with_tgs_fast(mut self, policy: FastPolicy) -> Self {
+        self.transport = self.transport.with_tgs_fast(policy);
         self
     }
     #[must_use]

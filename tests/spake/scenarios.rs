@@ -32,7 +32,7 @@ use crate::kdc::{Kdc, Offer, PA_ENC_TIMESTAMP, PASSWORD, REALM, Script, TestErro
 type Check = fn(&Spake) -> bool;
 
 /// The request template: AES256 only, no FAST negotiation marker.
-fn request() -> Result<AsReq, TestError> {
+pub(crate) fn request() -> Result<AsReq, TestError> {
     let now = UNIX_EPOCH
         .checked_add(Duration::from_secs(1_893_553_447))
         .ok_or("time")?;
@@ -42,7 +42,7 @@ fn request() -> Result<AsReq, TestError> {
 }
 
 /// A password exchange with `options`.
-fn exchange(options: InitCredsOptions) -> InitCreds<'static> {
+pub(crate) fn exchange(options: InitCredsOptions) -> InitCreds<'static> {
     InitCreds::with_password(
         client(),
         Some(Password::from_vec(PASSWORD.to_vec())),
@@ -58,7 +58,7 @@ fn config(realm_lines: &str, libdefaults_lines: &str) -> Result<Config, TestErro
 }
 
 /// Options from `profile`, at the scenarios' request time.
-fn configured(profile: &Config) -> Result<InitCredsOptions, TestError> {
+pub(crate) fn configured(profile: &Config) -> Result<InitCredsOptions, TestError> {
     let now = UNIX_EPOCH
         .checked_add(Duration::from_secs(1_893_553_447))
         .ok_or("time")?;
@@ -66,7 +66,7 @@ fn configured(profile: &Config) -> Result<InitCredsOptions, TestError> {
 }
 
 /// What a scripted exchange ended with.
-enum Outcome {
+pub(crate) enum Outcome {
     /// The exchange completed.
     Complete,
     /// The exchange failed.
@@ -75,7 +75,7 @@ enum Outcome {
 
 /// Drive `exchange` against `kdc` until it completes or fails, then check that
 /// a failed exchange sends nothing more.
-fn run(exchange: &mut InitCreds<'_>, kdc: &mut Kdc) -> Result<Outcome, TestError> {
+pub(crate) fn run(exchange: &mut InitCreds<'_>, kdc: &mut Kdc) -> Result<Outcome, TestError> {
     let mut input: Option<Vec<u8>> = None;
     for _ in 0_u8..8 {
         let step = match &input {
@@ -117,7 +117,7 @@ fn spake_message(kdc: &Kdc, index: usize) -> Result<Option<Message>, TestError> 
 }
 
 /// Whether request `index` carries `kind`.
-fn carries(kdc: &Kdc, index: usize, kind: i32) -> Result<bool, TestError> {
+pub(crate) fn carries(kdc: &Kdc, index: usize, kind: i32) -> Result<bool, TestError> {
     Ok(kdc
         .requests()
         .get(index)
@@ -127,7 +127,7 @@ fn carries(kdc: &Kdc, index: usize, kind: i32) -> Result<bool, TestError> {
 }
 
 /// No request of the exchange carried an encrypted timestamp.
-fn never_sent_timestamp(kdc: &Kdc) -> bool {
+pub(crate) fn never_sent_timestamp(kdc: &Kdc) -> bool {
     kdc.requests()
         .iter()
         .all(|request| request.iter().all(|entry| entry.r#type != PA_ENC_TIMESTAMP))

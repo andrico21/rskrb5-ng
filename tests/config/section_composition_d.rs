@@ -184,50 +184,41 @@ mod tests {
         Ok(())
     }
 
-    /// Plugin controls cannot silently disable the existing timestamp mechanism.
+    /// The clpreauth controls are effective: both are admitted, in both modes.
     #[test]
-    fn restrictive_preauth_plugins() -> Result<(), Box<dyn Error>> {
-        use rskrb5_ng::error::Config as Failure;
+    fn clpreauth_controls_are_admitted() -> Result<(), Box<dyn Error>> {
+        use rskrb5_ng::config::ParseMode;
         for assignment in ["disable = encrypted_timestamp", "enable_only = pkinit"] {
-            let failure =
-                Config::parse(&format!("[plugins]\n clpreauth = {{\n {assignment}\n }}\n"))
-                    .err()
-                    .ok_or("preauth policy ignored")?;
-            assert!(matches!(
-                failure,
-                Failure::NotYetEffective {
-                    relation: _,
-                    package: _
-                }
-            ));
+            for mode in [ParseMode::Compatible, ParseMode::Strict] {
+                let config = Config::parse_with_mode(
+                    &format!("[plugins]\n clpreauth = {{\n {assignment}\n }}\n"),
+                    mode,
+                )?;
+                assert!(config.diagnostics().is_empty(), "{assignment}");
+            }
         }
         Ok(())
     }
 
-    /// The timestamp-plugin refusal is decided at its own entry, before later plugin entries.
+    /// A malformed later plugin entry is the error: the clpreauth control before it is not refused.
     #[test]
-    fn restrictive_preauth_plugin_named_before_later_entries() -> Result<(), Box<dyn Error>> {
+    fn clpreauth_control_does_not_mask_later_entries() -> Result<(), Box<dyn Error>> {
         use rskrb5_ng::error::Config as Failure;
-        for (assignment, relation) in [
-            ("disable = encrypted_timestamp", "disable"),
-            ("enable_only = pkinit", "enable_only"),
-        ] {
-            // Given a clpreauth restriction and a later-sorted malformed plugin entry.
+        for assignment in ["disable = encrypted_timestamp", "enable_only = pkinit"] {
             let input = format!(
                 "[plugins]\n clpreauth = {{\n {assignment}\n }}\n interface = {{\n disable = \"two modules\"\n }}\n"
             );
-            // When the profile is parsed.
             let failure = Config::parse(&input)
                 .err()
-                .ok_or("preauth policy ignored")?;
-            // Then the restriction is refused, not the later malformed entry.
+                .ok_or("the malformed entry was accepted")?;
             assert!(
                 matches!(
                     failure,
-                    Failure::NotYetEffective {
-                        relation: named,
-                        package: _
-                    } if named == relation
+                    Failure::InvalidLine {
+                        section: _,
+                        line: _,
+                        text: _
+                    }
                 ),
                 "{failure:?}"
             );

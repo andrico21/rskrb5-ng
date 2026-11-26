@@ -45,21 +45,6 @@ where
     Ok(values)
 }
 
-/// Apply client preauthentication restrictions to the named interface.
-/// # Errors
-/// Rejects malformed or unsupported restrictions through serde.
-pub(super) fn plugins<'de, D>(
-    deserializer: D,
-) -> Result<BTreeMap<String, super::section_values::Plugins>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let values = BTreeMap::<String, super::section_values::Plugins>::deserialize(deserializer)?;
-    if let Some(value) = values.get("clpreauth") {
-        super::restrictions::plugins(value).map_err(D::Error::custom)?;
-    }
-    Ok(values)
-}
 use crate::{
     crypto::selection,
     error::{Policy, RejectedFeature, RejectionReason},

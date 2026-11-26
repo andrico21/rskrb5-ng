@@ -113,7 +113,7 @@ use super::{
     process_as_rep, process_tgs_rep,
     stepwise::{
         InitCreds, InitCredsOptions, NoResponder, TicketCreds, TicketOptions, drive_tokio,
-        options::timestamp_disabled,
+        options::timestamp_permitted,
     },
     tgt_realm,
 };
@@ -131,6 +131,7 @@ use crate::{
     keytab::{EncryptionKey, Keytab},
     krb_error::decode as decode_krb_error,
     messages::secret_der::SecretDer,
+    preauth::fast::Policy as FastPolicy,
     routing::RealmPath,
     trace::{Guard, TransportStep},
     transport::proxy::{KdcProxyTransport, Url},
@@ -356,6 +357,8 @@ pub struct Tokio {
     proxy: Option<proxied::Handle>,
     /// The caller's registry: its locators and host-realm mappers are asked first.
     registry: Option<registered::Shared>,
+    /// Whether the TGS exchanges of service tickets are armored with FAST.
+    tgs_fast: FastPolicy,
 }
 
 #[cfg(feature = "tokio")]
@@ -385,7 +388,33 @@ impl Tokio {
             watch: None,
             proxy: proxied::Handle::builtin(),
             registry: None,
+            tgs_fast: FastPolicy::Off,
         }
+    }
+
+    /// Armor the TGS requests of service-ticket acquisition with FAST under
+    /// `policy` (RFC 6113 section 5.4.2); the default is [`FastPolicy::Off`].
+    ///
+    /// MIT armors every TGS request (`send_tgs.c:178`). This client does so only
+    /// when asked, because the armored request differs from the plain one that
+    /// every KDC without FAST accepts (Samba and Active Directory among them).
+    /// The switch covers [`Self::get_service_ticket_with_referral_trace_limit`]
+    /// and the host-based acquisitions that use it; renewals and S4U requests
+    /// stay plain.
+    ///
+    /// # Security
+    ///
+    /// Under [`FastPolicy::Opportunistic`] a KDC that answers without FAST is
+    /// served as plain RFC 4120, as MIT does, so an attacker who strips the
+    /// armor downgrades the exchange to plain; [`FastPolicy::Required`] refuses
+    /// such a reply with [`crate::error::Fast::Unarmored`] or
+    /// [`crate::error::Fast::UnarmoredError`]. A reply that carries `PA-FX-FAST`
+    /// and fails any check is an error under every policy.
+    #[must_use]
+    #[inline]
+    pub const fn with_tgs_fast(mut self, policy: FastPolicy) -> Self {
+        self.tgs_fast = policy;
+        self
     }
 
     /// Ask the server locators and host-realm mappers of `registry` first on
@@ -1455,7 +1484,8 @@ impl Tokio {
     /// or an unkeyed `safe_checksum_type`) or a PA-DATA entry has a permanently
     /// rejected type (draft-9 PKINIT, types 14 and 15). Still before any I/O it
     /// returns [`Error::EncryptedTimestampDisabled`] when `request` carries
-    /// PA-ENC-TIMESTAMP and the client realm sets `disable_encrypted_timestamp`.
+    /// PA-ENC-TIMESTAMP and the client realm sets `disable_encrypted_timestamp` or
+    /// `[plugins] clpreauth` excludes `encrypted_timestamp`.
     ///
     /// Returns the errors of [`Self::send_to_realm`], [`Error::Kdc`] when the KDC
     /// answers with a KRB-ERROR, an error when the AS-REP cannot be decoded,
@@ -2061,7 +2091,8 @@ impl Tokio {
         if let Some(ticket) = second_ticket {
             ticket_options = ticket_options.with_user_to_user(ticket)?;
         }
-        let mut exchange = TicketCreds::new(tgt.clone(), service, ticket_options)?;
+        let mut exchange =
+            TicketCreds::new(tgt.clone(), service, ticket_options)?.with_fast(self.tgs_fast);
         let ticket = drive_tokio(self, (config, protocol), &mut exchange, &mut NoResponder).await?;
         Ok(ReferralTgsResult::new(
             ticket,
@@ -2837,9 +2868,11 @@ where
     Box::pin(events::scope(guard, future))
 }
 
-/// Refuse a caller-built PA-ENC-TIMESTAMP for a client realm whose
-/// `disable_encrypted_timestamp` is set, as the exchange engine refuses its own
-/// (MIT `preauth_encts.c:68-73`).
+/// Refuse a caller-built PA-ENC-TIMESTAMP that the profile does not permit.
+///
+/// The client realm's `disable_encrypted_timestamp` or `[plugins] clpreauth`
+/// excludes it, as the exchange engine refuses its own (MIT
+/// `preauth_encts.c:68-73`).
 ///
 /// # Errors
 /// Returns [`Error::EncryptedTimestampDisabled`] naming the client realm.
@@ -2850,7 +2883,7 @@ fn refuse_disabled_timestamp(config: &Config, request: &BuiltAsReq) -> Result<()
         .padata
         .as_deref()
         .is_some_and(|padata| super::padata_contains(padata, super::PA_ENC_TIMESTAMP));
-    if stamped && timestamp_disabled(config).contains(&request.client.realm) {
+    if stamped && !timestamp_permitted(config, &request.client.realm) {
         return Err(Error::EncryptedTimestampDisabled {
             realm: request.client.realm.clone(),
         });

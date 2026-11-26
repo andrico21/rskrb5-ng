@@ -52,6 +52,8 @@ use std::{collections::HashSet, time::SystemTime};
 
 use zeroize::Zeroizing;
 
+#[cfg(feature = "tokio")]
+use crate::discovery::hostname::HostNamePolicy;
 use crate::{
     ccache::{self, CCache},
     client::{TgsRepSession, principal::Principal},
