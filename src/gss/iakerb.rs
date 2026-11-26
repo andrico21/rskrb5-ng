@@ -391,8 +391,12 @@ impl Context {
     /// The cache receives the session keys of the acquired tickets.
     #[inline]
     pub fn store_acquired_into(&self, store: &CredStore, overwrite: bool) -> Result<(), Error> {
-        let _unused = (store, overwrite);
-        Err(Error::UnexpectedStep("not implemented"))
+        match &self.role {
+            Role::Initiator(state) => state.store_acquired_into(store, overwrite),
+            Role::Acceptor(_) => Err(Error::UnexpectedStep(
+                "an acceptor context acquires no tickets",
+            )),
+        }
     }
 
     /// The established context of an initiator; the acceptor's comes with

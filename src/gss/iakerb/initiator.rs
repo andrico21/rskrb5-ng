@@ -22,7 +22,8 @@ use crate::{
     },
     error::Gss,
     gss::{
-        Credential, CredentialUsage, EstablishedContext, InitStep, InitiatorOptions, Name, cred,
+        CredStore, Credential, CredentialUsage, EstablishedContext, InitStep, InitiatorOptions,
+        Name, cred,
         initiator::Pending,
     },
     krb_error,
@@ -122,6 +123,28 @@ impl State {
             drop(cache.upsert_credential(entry.clone()));
         }
         Ok(Some(cred::from_ccache(cache)?))
+    }
+
+    /// Store the acquired tickets as `gss_store_cred_into` does.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Gss::NoCredential`] when no ticket was acquired, and the
+    /// errors of [`cred::store_into`].
+    pub(super) fn store_acquired_into(
+        &self,
+        store: &CredStore,
+        overwrite: bool,
+    ) -> Result<(), Error> {
+        let acquired = self
+            .acquired
+            .clone()
+            .ok_or(Gss::NoCredential("the context acquired no tickets"))?;
+        Ok(cred::store_into(
+            &cred::from_ccache(acquired)?,
+            store,
+            overwrite,
+        )?)
     }
 
     /// Whether the context is established.
