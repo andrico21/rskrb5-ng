@@ -80,13 +80,13 @@ pub(crate) struct TgsKdc {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Seen {
     /// The outer padata types, in order.
-    pub(crate) outer_types: Vec<i32>,
+    pub outer_types: Vec<i32>,
     /// The inner (encrypted) padata types, in order.
-    pub(crate) inner_types: Vec<i32>,
+    pub inner_types: Vec<i32>,
     /// Whether the armor field of the armored request was present.
-    pub(crate) armor_field: bool,
+    pub armor_field: bool,
     /// The type of the request checksum.
-    pub(crate) checksum_type: i32,
+    pub checksum_type: i32,
 }
 
 impl TgsKdc {
@@ -129,10 +129,10 @@ impl TgsKdc {
         let session = EncryptionKey::new(enc_ticket.key.r#type, enc_ticket.key.value.to_vec());
         let authenticator: Authenticator = der::decode(&open(&session, 7, &ap_req.authenticator)?)?;
         let client_realm = String::from_utf8(authenticator.crealm.as_bytes().to_vec())?;
-        let subkey = authenticator
+        let sent = authenticator
             .subkey
             .ok_or("the authenticator carries no subkey")?;
-        let subkey = EncryptionKey::new(subkey.r#type, subkey.value.to_vec());
+        let subkey = EncryptionKey::new(sent.r#type, sent.value.to_vec());
         let armor_key = cf2((&subkey, b"subkeyarmor"), (&session, b"ticketarmor"))?;
         let PaFxFastRequest::ArmoredData(armored) = der::decode(&fast.value)?;
         let expected = etype(&armor_key)?.checksum(armor_key.value(), &tgs.value, 50)?;
@@ -204,22 +204,15 @@ impl Context<'_> {
         )?)
     }
 
-    /// The armored TGS-REP, or the broken variant of it.
-    fn reply(&self, tamper: Tamper) -> Result<Vec<u8>, TestError> {
-        let realm = self.realm()?;
-        let service = self
-            .request
-            .req_body
-            .sname
-            .clone()
-            .ok_or("the request names no service")?;
+    /// The service ticket: sealed in the TGS key when it is a TGT, else in a service key.
+    fn ticket(&self, service: &rasn_kerberos::PrincipalName) -> Result<Ticket, TestError> {
         let is_tgs = service
             .string
             .first()
             .is_some_and(|component| component.as_bytes() == b"krbtgt");
-        let ticket = Ticket {
+        Ok(Ticket {
             tkt_vno: Integer::from(5_i32),
-            realm: string(&realm)?,
+            realm: string(&self.realm()?)?,
             sname: service.clone(),
             enc_part: seal(
                 &EncryptionKey::new(
@@ -251,16 +244,17 @@ impl Context<'_> {
                     authorization_data: None,
                 })?,
             )?,
-        };
-        let strengthen = EncryptionKey::new(18, vec![0x66; 32]);
-        let plain = matches!(tamper, Tamper::DropStrengthenKey | Tamper::NoFast);
-        let reply_key = if plain {
-            self.subkey.clone()
-        } else {
-            cf2((&strengthen, b"strengthenkey"), (&self.subkey, b"replykey"))?
-        };
-        let enc_part = seal(
-            &reply_key,
+        })
+    }
+
+    /// The encrypted part of the reply, sealed in `reply_key` for the subkey usage 9.
+    fn enc_part(
+        &self,
+        service: rasn_kerberos::PrincipalName,
+        reply_key: &EncryptionKey,
+    ) -> Result<rasn_kerberos::EncryptedData, TestError> {
+        seal(
+            reply_key,
             9,
             &kdc_rep::encode_enc_tgs_rep_part(&EncKdcRepPart {
                 key: rasn_kerberos::EncryptionKey {
@@ -275,16 +269,46 @@ impl Context<'_> {
                 start_time: None,
                 end_time: self.request.req_body.till.clone(),
                 renew_till: None,
-                srealm: string(&realm)?,
+                srealm: string(&self.realm()?)?,
                 sname: service,
                 caddr: None,
                 encrypted_pa_data: None,
             })?,
-        )?;
+        )
+    }
+
+    /// The armored TGS-REP, or the broken variant of it.
+    fn reply(&self, tamper: Tamper) -> Result<Vec<u8>, TestError> {
+        let service = self
+            .request
+            .req_body
+            .sname
+            .clone()
+            .ok_or("the request names no service")?;
+        let ticket = self.ticket(&service)?;
+        let strengthen = EncryptionKey::new(18, vec![0x66; 32]);
+        let plain = matches!(tamper, Tamper::DropStrengthenKey | Tamper::NoFast);
+        let reply_key = if plain {
+            self.subkey.clone()
+        } else {
+            cf2((&strengthen, b"strengthenkey"), (&self.subkey, b"replykey"))?
+        };
+        let enc_part = self.enc_part(service, &reply_key)?;
         let reported = match tamper {
             Tamper::DropStrengthenKey => None,
             Tamper::WrongStrengthenKey => Some(vec![0x67; 32]),
-            _ => Some(strengthen.value().to_vec()),
+            Tamper::None
+            | Tamper::DropFinished
+            | Tamper::TicketChecksum
+            | Tamper::TicketChecksumType
+            | Tamper::Nonce
+            | Tamper::NoFast
+            | Tamper::StrippedFast
+            | Tamper::ReplyCiphertext
+            | Tamper::OuterClient
+            | Tamper::ArmoredError
+            | Tamper::UnarmoredError
+            | Tamper::ErrorStrengthenKey => Some(strengthen.value().to_vec()),
         };
         let response = KrbFastResponse {
             padata: Vec::new(),
@@ -307,7 +331,18 @@ impl Context<'_> {
         }
         let outer_padata = match tamper {
             Tamper::NoFast | Tamper::StrippedFast => None,
-            _ => Some(vec![pa(
+            Tamper::None
+            | Tamper::DropFinished
+            | Tamper::TicketChecksum
+            | Tamper::TicketChecksumType
+            | Tamper::Nonce
+            | Tamper::DropStrengthenKey
+            | Tamper::WrongStrengthenKey
+            | Tamper::ReplyCiphertext
+            | Tamper::OuterClient
+            | Tamper::ArmoredError
+            | Tamper::UnarmoredError
+            | Tamper::ErrorStrengthenKey => Some(vec![pa(
                 PA_FX_FAST,
                 der::encode(&PaFxFastReply::ArmoredData(KrbFastArmoredRep {
                     enc_fast_rep: sealed,

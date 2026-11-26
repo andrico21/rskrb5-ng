@@ -57,10 +57,10 @@ struct Run {
 
 /// Run a TGS exchange for `service` under `policy` against `kdc`.
 fn attempt(kdc: &mut TgsKdc, policy: Option<Policy>, target: Principal) -> Result<Run, TestError> {
-    let engine = TicketCreds::new(tgt()?, target, options()?)?;
+    let configured = TicketCreds::new(tgt()?, target, options()?)?;
     let mut engine = match policy {
-        Some(policy) => engine.with_fast(policy),
-        None => engine,
+        Some(chosen) => configured.with_fast(chosen),
+        None => configured,
     };
     let result = drive(kdc, &mut engine);
     Ok(Run {
@@ -192,13 +192,19 @@ fn tgs_fast_tamper_never_falls_back() -> Result<(), TestError> {
             matches!(
                 fast_cause(error),
                 Some(Fast::ChecksumType {
-                    expected: 16,
-                    actual: 15
+                    expected: 16_i32,
+                    actual: 15_i32
                 })
             )
         }),
         (Tamper::Nonce, |error| {
-            matches!(fast_cause(error), Some(Fast::NonceMismatch { .. }))
+            matches!(
+                fast_cause(error),
+                Some(Fast::NonceMismatch {
+                    expected: _,
+                    actual: _
+                })
+            )
         }),
         // The reply is encrypted in another key than the one the client derives.
         (Tamper::WrongStrengthenKey, |error| {
@@ -206,7 +212,13 @@ fn tgs_fast_tamper_never_falls_back() -> Result<(), TestError> {
         }),
         (Tamper::ReplyCiphertext, |error| fast_cause(error).is_some()),
         (Tamper::ErrorStrengthenKey, |error| {
-            matches!(fast_cause(error), Some(Fast::Malformed { .. }))
+            matches!(
+                fast_cause(error),
+                Some(Fast::Malformed {
+                    structure: _,
+                    reason: _
+                })
+            )
         }),
     ];
     for policy in [Policy::Required, Policy::Opportunistic] {
@@ -251,13 +263,16 @@ fn unarmored_reply_to_an_armored_request_is_refused() -> Result<(), TestError> {
         matches!(fast_cause(&error), Some(Fast::Unarmored)),
         "{error}"
     );
-    let mut kdc = TgsKdc::new(Tamper::UnarmoredError);
-    let error = failure(run_required(&mut kdc)?)?;
+    let mut unarmored = TgsKdc::new(Tamper::UnarmoredError);
+    let refusal = failure(run_required(&mut unarmored)?)?;
     assert!(
-        matches!(fast_cause(&error), Some(Fast::UnarmoredError { code: 7 })),
-        "{error}"
+        matches!(
+            fast_cause(&refusal),
+            Some(Fast::UnarmoredError { code: 7_i32 })
+        ),
+        "{refusal}"
     );
-    assert_eq!(kdc.requests().len(), 1, "no retry");
+    assert_eq!(unarmored.requests().len(), 1, "no retry");
     Ok(())
 }
 
@@ -266,9 +281,11 @@ fn run_required(kdc: &mut TgsKdc) -> Result<Run, TestError> {
     attempt(kdc, Some(Policy::Required), service(REALM))
 }
 
-/// A KDC without FAST is served only by `Opportunistic`, as MIT does
-/// (`krb5int_decode_tgs_rep` takes `KRB5_ERR_FAST_REQUIRED` as success, `decode_kdc.c:66-67`), and
-/// the outcome says it ran unarmored; its errors stay errors.
+/// A KDC without FAST is served only by `Opportunistic`.
+///
+/// MIT does the same (`krb5int_decode_tgs_rep` takes `KRB5_ERR_FAST_REQUIRED` as success,
+/// `decode_kdc.c:66-67`); the outcome says the exchange ran unarmored, and the KDC's errors stay
+/// errors.
 #[test]
 fn a_kdc_without_fast_is_served_only_opportunistically() -> Result<(), TestError> {
     let mut kdc = TgsKdc::new(Tamper::NoFast);
@@ -279,14 +296,18 @@ fn a_kdc_without_fast_is_served_only_opportunistically() -> Result<(), TestError
     )?)?;
     assert_eq!(outcome, Some(Outcome::Unarmored), "the outcome");
     assert_eq!(plain.service(), &service(REALM), "the plain ticket");
-    let mut kdc = TgsKdc::new(Tamper::UnarmoredError);
-    let refused = attempt(&mut kdc, Some(Policy::Opportunistic), service(REALM))?;
-    let error = failure(refused)?;
+    let mut erroring = TgsKdc::new(Tamper::UnarmoredError);
+    let refused = attempt(&mut erroring, Some(Policy::Opportunistic), service(REALM))?;
+    let refusal = failure(refused)?;
     assert!(
-        matches!(&error, ClientError::Kdc(kdc_error) if kdc_error.error_code() == 7),
-        "{error}"
+        matches!(&refusal, ClientError::Kdc(kdc_error) if kdc_error.error_code() == 7_i32),
+        "{refusal}"
     );
-    assert_eq!(kdc.requests().len(), 1, "an unarmored error is not retried");
+    assert_eq!(
+        erroring.requests().len(),
+        1,
+        "an unarmored error is not retried"
+    );
     Ok(())
 }
 
@@ -297,7 +318,7 @@ fn an_armored_error_surfaces_the_inner_kdc_error() -> Result<(), TestError> {
         let mut kdc = TgsKdc::new(Tamper::ArmoredError);
         let error = failure(attempt(&mut kdc, Some(policy), service(REALM))?)?;
         assert!(
-            matches!(&error, ClientError::Kdc(kdc_error) if kdc_error.error_code() == 7),
+            matches!(&error, ClientError::Kdc(kdc_error) if kdc_error.error_code() == 7_i32),
             "{policy:?}: {error}"
         );
     }
