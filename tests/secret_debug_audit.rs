@@ -1172,6 +1172,10 @@ mod tests {
         ),
         (
             "src/gss/acceptor.rs::accept",
+            "Forwards to src/gss/acceptor.rs::establish, which carries its own exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/gss/acceptor.rs::establish",
             "Borrows the validator mutably for replay admission; no keytab key or other credential storage of the acceptor is replaced.",
         ),
         (

@@ -5,19 +5,23 @@
 //!
 //! Decoding follows MIT 1.22.2 `process_checksum` (`accept_sec_context.c:464-597`):
 //! a 24-byte fixed part, an optional delegation option when the delegation
-//! flag is set and at least four bytes follow, then big-endian extensions,
-//! which are skipped. The AP-OPTIONS search follows `check_cbt`
+//! flag is set and at least four bytes follow, then big-endian extensions, of
+//! which only the `IAKERB-FINISHED` is kept (`kg_process_extension`,
+//! `accept_sec_context.c:369-401`). The AP-OPTIONS search follows `check_cbt`
 //! (`accept_sec_context.c:422-448`), the encoding `make_ap_authdata`
 //! (`mk_req_ext.c:360-400`).
 
 use rasn::der;
 use zeroize::Zeroizing;
 
-use super::{ContextFlags, Error};
+use super::{ContextFlags, Error, context::Mechanism};
 use crate::der::decode_complete;
 
 /// The authenticator checksum type of the krb5 GSS mechanism.
 pub(super) const CHECKSUM_TYPE: i32 = 0x8003;
+/// The extension type of an `IAKERB-FINISHED` (`GSS_EXTS_FINISHED`,
+/// `gssapiP_krb5.h:1296`).
+pub(super) const FINISHED_EXTENSION: u32 = 2;
 /// The length of the fixed part: bindings length, bindings, flags.
 const FIXED_LEN: usize = 24;
 /// The delegation option (`KRB5_GSS_FOR_CREDS_OPTION`).
@@ -33,6 +37,49 @@ const AD_IF_RELEVANT: i32 = 1;
 /// The deepest `AD-IF-RELEVANT` nesting searched.
 const MAX_DEPTH: usize = 8;
 
+/// The extension record of an AP exchange (MIT `krb5_gss_ctx_ext_rec`,
+/// `gssapiP_krb5.h:199-205`): what a mechanism layered on krb5 adds to the
+/// shared initiator and acceptor.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Extensions<'conv> {
+    /// The mechanism of the context and its tokens.
+    mechanism: Mechanism,
+    /// The IAKERB transcript the `IAKERB-FINISHED` covers (`iakerb.conv`),
+    /// set only when IAKERB tokens were exchanged (`iakerb_make_exts`,
+    /// `iakerb.c:838-844`).
+    conversation: Option<&'conv [u8]>,
+}
+
+impl<'conv> Extensions<'conv> {
+    /// The krb5 mechanism: no extension.
+    pub(super) const KRB5: Self = Self {
+        mechanism: Mechanism::Krb5,
+        conversation: None,
+    };
+
+    /// An IAKERB context whose exchange produced `transcript`.
+    pub(super) const fn iakerb(transcript: &'conv [u8]) -> Self {
+        Self {
+            mechanism: Mechanism::Iakerb,
+            conversation: if transcript.is_empty() {
+                None
+            } else {
+                Some(transcript)
+            },
+        }
+    }
+
+    /// The mechanism of the context.
+    pub(super) const fn mechanism(self) -> Mechanism {
+        self.mechanism
+    }
+
+    /// The transcript an `IAKERB-FINISHED` must cover.
+    pub(super) const fn conversation(self) -> Option<&'conv [u8]> {
+        self.conversation
+    }
+}
+
 /// A decoded authenticator checksum.
 pub(super) struct Decoded {
     /// The channel-binding digest; all zero when the initiator sent none.
@@ -41,6 +88,8 @@ pub(super) struct Decoded {
     flags: u32,
     /// The delegated KRB-CRED, when the initiator sent one.
     delegation: Option<Zeroizing<Vec<u8>>>,
+    /// The `IAKERB-FINISHED` extension, when the initiator sent one.
+    finished: Option<Vec<u8>>,
 }
 
 impl Decoded {
@@ -58,6 +107,26 @@ impl Decoded {
     pub(super) const fn take_delegation(&mut self) -> Option<Zeroizing<Vec<u8>>> {
         self.delegation.take()
     }
+
+    /// The `IAKERB-FINISHED` extension.
+    pub(super) fn finished(&self) -> Option<&[u8]> {
+        self.finished.as_deref()
+    }
+}
+
+/// An authenticator-checksum extension: a big-endian type and length, then
+/// the value (MIT `init_sec_context.c:341-345`).
+///
+/// # Errors
+///
+/// Returns [`Error::DefectiveChecksum`] for a value above 4 GiB.
+pub(super) fn extension(kind: u32, value: &[u8]) -> Result<Vec<u8>, Error> {
+    let length = u32::try_from(value.len())
+        .map_err(|_range| Error::DefectiveChecksum("an extension above 4 GiB"))?;
+    let mut out = kind.to_be_bytes().to_vec();
+    out.extend_from_slice(&length.to_be_bytes());
+    out.extend_from_slice(value);
+    Ok(out)
 }
 
 /// The checksum bytes of `bindings`, `flags` and an optional KRB-CRED.
@@ -125,8 +194,8 @@ fn take_slice<'bytes>(
 /// # Errors
 ///
 /// Returns [`Error::DefectiveChecksum`] for a short value, a bindings length
-/// other than 16, an unknown or truncated option, a truncated extension or more
-/// than 16 extensions.
+/// other than 16, an unknown or truncated option, a truncated extension, more
+/// than 16 extensions or two `IAKERB-FINISHED` extensions.
 pub(super) fn decode(bytes: &[u8]) -> Result<Decoded, Error> {
     let fixed = "shorter than its 24-byte fixed part";
     let mut rest = bytes;
@@ -148,21 +217,26 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Decoded, Error> {
         None
     };
     let mut extensions = 0_usize;
+    let mut finished = None;
     while !rest.is_empty() {
         extensions = extensions.saturating_add(1);
         if extensions > MAX_EXTENSIONS {
             return Err(Error::DefectiveChecksum("more than 16 extensions"));
         }
         let extension = "a truncated extension";
-        let _kind: [u8; 4] = take::<4>(&mut rest, extension)?;
+        let kind = u32::from_be_bytes(take::<4>(&mut rest, extension)?);
         let length = usize::try_from(u32::from_be_bytes(take::<4>(&mut rest, extension)?))
             .map_err(|_range| Error::DefectiveChecksum(extension))?;
-        let _value: &[u8] = take_slice(&mut rest, length, extension)?;
+        let value = take_slice(&mut rest, length, extension)?;
+        if kind == FINISHED_EXTENSION && finished.replace(value.to_vec()).is_some() {
+            return Err(Error::DefectiveChecksum("two IAKERB-FINISHED extensions"));
+        }
     }
     Ok(Decoded {
         bindings,
         flags,
         delegation,
+        finished,
     })
 }
 

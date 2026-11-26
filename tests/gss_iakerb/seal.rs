@@ -139,3 +139,15 @@ pub(super) fn service_ticket(
         at,
     )
 }
+
+/// The flags of a reply: `FORWARDABLE` when the request asks for it (RFC 4120
+/// `KDCOptions` bit 1), nothing else.
+pub(super) fn reply_flags(body: &rasn_kerberos::KdcReqBody) -> rasn_kerberos::TicketFlags {
+    let forwardable = body.kdc_options.0.get(1).is_some_and(|bit| *bit);
+    rasn_kerberos::TicketFlags(rasn_kerberos::KerberosFlags::from_slice(&[
+        u8::from(forwardable) << 6_u8,
+        0,
+        0,
+        0,
+    ]))
+}

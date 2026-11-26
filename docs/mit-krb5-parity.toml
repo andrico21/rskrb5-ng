@@ -3294,6 +3294,8 @@ rust_symbols = [
   "gss::iakerb::Context",
   "gss::iakerb::Context::init_sec_context",
   "gss::iakerb::Context::accept_sec_context",
+  "gss::iakerb::Context::init_sec_context_with_responder",
+  "gss::iakerb::Context::store_acquired_into",
   "gss::iakerb::KdcRelay",
   "gss::iakerb::RelayPolicy",
   "gss::iakerb::token::Token",
@@ -3306,9 +3308,19 @@ test_names = [
   "tests/gss_iakerb/token.rs::encoding_matches_the_layout_of_the_asn1_module",
   "tests/interop_iakerb/scenarios.rs::rust_iakerb_initiator_completes_against_mit_with_the_direct_kdc_path_blocked",
   "tests/interop_iakerb/scenarios.rs::mit_iakerb_initiator_without_a_kdc_route_completes_against_the_rust_acceptor",
+  "tests/gss_iakerb/shared.rs::shared_ap_path_preserves_iakerb_finished_validation",
+  "tests/gss_iakerb/inquiry.rs::iakerb_inquiry_reports_iakerb",
+  "tests/gss_iakerb/output.rs::iakerb_updates_explicit_output_cache",
+  "tests/gss_iakerb/responder.rs::iakerb_responder_handles_prompt",
+  "tests/gss_iakerb/delegation.rs::iakerb_delegates_only_when_requested",
+  "tests/gss_iakerb/delegation.rs::a_delegation_policy_refuses_delegation_over_iakerb",
+  "tests/gss_iakerb/retry.rs::iakerb_relay_retries_response_too_big_over_tcp",
+  "tests/interop_iakerb/gaps.rs::rust_iakerb_initiator_with_a_client_keytab_completes_against_mit",
+  "tests/interop_iakerb/gaps.rs::mit_iakerb_initiator_with_a_client_keytab_completes_against_the_rust_acceptor",
+  "tests/interop_iakerb/gaps.rs::rust_iakerb_initiator_delegates_to_mit_only_when_requested",
 ]
 feature_flags = []
-security_divergence = "The acceptor relays through the application's KdcRelay only for the realms of its RelayPolicy, only a well-formed AS-REQ or TGS-REQ for the realm of the token header, within round, message and transcript bounds, and returns only an AS-REP, TGS-REP or KRB-ERROR, where MIT sends any request to any realm its profile resolves (iakerb.c:416-435); the initiator never opens a socket; a delegation request over IAKERB is refused. MIT 1.22.2 implements draft-ietf-krb-wg-iakerb-02 and checksums the transcript with key usage 41 (iakerb.c:141,173), which this crate matches."
+security_divergence = "The acceptor relays through the application's KdcRelay only for the realms of its RelayPolicy, only a well-formed AS-REQ or TGS-REQ for the realm of the token header, within round, message and transcript bounds, and returns only an AS-REP, TGS-REP or KRB-ERROR, where MIT sends any request to any realm its profile resolves (iakerb.c:416-435); the initiator never opens a socket, and the KRB_ERR_RESPONSE_TOO_BIG retry over TCP that MIT's acceptor makes itself is the KdcRelay implementation's documented duty. The tickets the initiator acquired go to a credential cache only through an explicit store_acquired_into call after establishment (MIT writes its out_ccache during the step, iakerb.c:484-487). A requested delegation carries the forwardable TGT the relayed AS exchange acquired in the krb5 KRB-CRED, where MIT asks a KDC for a forwarded TGT (krb5_fwd_tgt_creds, init_sec_context.c:275-289) and so drops the request without a KDC route. Prompts of the relayed AS exchange go to a caller-supplied Responder, where MIT passes no prompter (iakerb.c:490-491). MIT 1.22.2 implements draft-ietf-krb-wg-iakerb-02 and checksums the transcript with key usage 41 (iakerb.c:141,173), which this crate matches."
 disposition = "WP-13"
 closing_plan = 2
 closing_todo = 20

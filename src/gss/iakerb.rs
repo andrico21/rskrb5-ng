@@ -18,15 +18,21 @@
 //!   the initiator's subkey, which the acceptor verifies (MIT `iakerb.c:125-181`).
 //! - Tokens are bounded before they are parsed; a malformed or reordered token
 //!   is an error, never a panic.
+//! - The AP exchange is the krb5 mechanism's ([`super::Initiator`],
+//!   [`super::Acceptor`]) with the transcript in its extension record: the
+//!   finished checksum and the channel bindings are checked before the replay
+//!   cache commits the authenticator. A credential is delegated only when the
+//!   initiator's options request [`super::ContextFlags::DELEG`], under the same
+//!   `enforce_ok_as_delegate` policy as krb5.
 
 use core::fmt;
 use std::time::SystemTime;
 
-use super::{Accepted, Acceptor, Config, Credential, EstablishedContext, InitStep};
+use super::{Accepted, Acceptor, Config, CredStore, Credential, EstablishedContext, InitStep};
 use crate::{
     client::{
         options::TgsReq,
-        stepwise::{InitCredsOptions, TicketOptions},
+        stepwise::{InitCredsOptions, Responder, TicketOptions},
     },
     error::Iakerb as Error,
     spnego::oid::ObjectIdentifier,
@@ -35,11 +41,11 @@ use crate::{
 mod acceptor;
 mod conversation;
 mod convert;
-mod finished;
+pub(super) mod finished;
 mod initiator;
 pub mod token;
 
-use token::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, MAX_REALM_BYTES, Token, frame, unframe};
+use token::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, MAX_REALM_BYTES, Token, unframe};
 
 /// Why a [`KdcRelay`] could not deliver a request.
 ///
@@ -62,9 +68,17 @@ pub enum RelayFailure {
 /// the realm it is for, and returns what it answers.
 ///
 /// The library never opens a socket to a KDC here. The implementation decides
-/// which servers a realm maps to, the transport and the retries (MIT retries a
-/// `KRB_ERR_RESPONSE_TOO_BIG` over TCP, `iakerb.c:416-435`); it is called only
-/// for requests the [`RelayPolicy`] already admitted.
+/// which servers a realm maps to, the transport and the retries; it is called
+/// only for requests the [`RelayPolicy`] already admitted, once per request.
+///
+/// # Transport
+///
+/// A KDC that answers a datagram with `KRB_ERR_RESPONSE_TOO_BIG` (52) must be
+/// asked again over a stream transport before `relay` returns (RFC 4120
+/// section 7.2.1; MIT's acceptor retries over TCP, `iakerb.c:416-435`). The
+/// library does not retry: a `KRB-ERROR` the relay returns is the KDC's
+/// answer, and the initiator's exchange fails on `KRB_ERR_RESPONSE_TOO_BIG`.
+/// The crate's Tokio KDC transport already retries over TCP this way.
 ///
 /// # Security
 ///
@@ -315,7 +329,45 @@ impl Context {
         input_token: Option<&[u8]>,
     ) -> Result<InitStep, Error> {
         match &mut self.role {
-            Role::Initiator(state) => initiator::step(state, credential, input_token),
+            Role::Initiator(state) => initiator::step(
+                state,
+                &mut initiator::Sources::new(credential, None),
+                input_token,
+            ),
+            Role::Acceptor(_) => Err(Error::UnexpectedStep("this is an acceptor context")),
+        }
+    }
+
+    /// One initiator step that answers the KDC's prompts through `responder`.
+    ///
+    /// As [`Self::init_sec_context`], but a prompt of the AS exchange (the
+    /// password of a credential that holds none, an OTP challenge) goes to
+    /// `responder` (MIT's responder and prompter callbacks), whose answer
+    /// continues the exchange.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Self::init_sec_context`], and
+    /// [`Error::Client`] holding `Client::Responder` when `responder` does
+    /// not answer.
+    ///
+    /// # Security
+    ///
+    /// Prompts carry no secret; an answer moves into the exchange, which
+    /// erases it when the context is dropped, a cancelled exchange included.
+    #[inline]
+    pub fn init_sec_context_with_responder(
+        &mut self,
+        credential: &Credential,
+        responder: &mut dyn Responder,
+        input_token: Option<&[u8]>,
+    ) -> Result<InitStep, Error> {
+        match &mut self.role {
+            Role::Initiator(state) => initiator::step(
+                state,
+                &mut initiator::Sources::new(credential, Some(responder)),
+                input_token,
+            ),
             Role::Acceptor(_) => Err(Error::UnexpectedStep("this is an acceptor context")),
         }
     }
@@ -364,9 +416,41 @@ impl Context {
         }
     }
 
+    /// Store the tickets the initiator's AS and TGS exchanges acquired into
+    /// the `ccache` of `store` (MIT's `out_ccache`, `iakerb.c:484-487`).
+    ///
+    /// The tickets go only to the cache the caller names here, never to a
+    /// default cache. Without `overwrite`, a cache that already holds tickets
+    /// is not replaced (MIT `GSS_S_DUPLICATE_ELEMENT`), as
+    /// [`Credential::store_cred_into`] does.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::UnexpectedStep`] on an acceptor context, the
+    /// [`Error::Gss`] of [`Credential::store_cred_into`] when no ticket was
+    /// acquired, the store names no `ccache` or the cache holds tickets, and
+    /// the errors of writing the cache. A failed write leaves the context as
+    /// it was: an established context stays established.
+    ///
+    /// # Security
+    ///
+    /// The cache receives the session keys of the acquired tickets.
+    #[inline]
+    pub fn store_acquired_into(&self, store: &CredStore, overwrite: bool) -> Result<(), Error> {
+        match &self.role {
+            Role::Initiator(state) => {
+                initiator::acquired::store_acquired_into(state, store, overwrite)
+            }
+            Role::Acceptor(_) => Err(Error::UnexpectedStep(
+                "an acceptor context acquires no tickets",
+            )),
+        }
+    }
+
     /// The established context of an initiator; the acceptor's comes with
-    /// [`AcceptStep::Complete`]. The context reports the krb5 mechanism, as
-    /// every [`EstablishedContext`] does.
+    /// [`AcceptStep::Complete`]. Both report the IAKERB mechanism in
+    /// [`EstablishedContext::inquire`] and keep it across a context transfer
+    /// (MIT `iakerb.c:1183-1226`).
     ///
     /// # Errors
     ///
