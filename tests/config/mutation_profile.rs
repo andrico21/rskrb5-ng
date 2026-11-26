@@ -136,7 +136,7 @@ mod tests {
     /// Explicit local-name maps select the `localauth` consumer, with or without the leaf.
     ///
     /// The leaf makes them effective (no diagnostic); a build without it reports
-    /// `FeatureUnavailable` and strict mode refuses it. Never `NotYetEffective`.
+    /// `FeatureUnavailable` and strict mode refuses it.
     /// (The name is kept: register row FU-CFG-R14 cites it.)
     #[test]
     fn local_name_map_scopes_select_deferred_consumer() -> Result<(), Box<dyn Error>> {

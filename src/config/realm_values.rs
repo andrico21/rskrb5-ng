@@ -1,4 +1,4 @@
-//! Typed realm admission and deferred-policy reporting.
+//! Typed realm admission and diagnostic reporting.
 
 use super::{
     ConfigDiagnostic, Error, Line, ParseMode, Realm, Toggle, parse_assignment, parse_boolean,
@@ -8,7 +8,7 @@ use super::{
 
 /// Decode selected values using the realm catalogue's type and classification.
 /// # Errors
-/// Rejects malformed values, strict-mode deferred features and timestamp prohibition.
+/// Rejects malformed values, strict-mode diagnostics and timestamp prohibition.
 pub(super) fn decode(
     realm: &mut Realm,
     key: &str,
@@ -86,7 +86,7 @@ pub(super) fn missing_localauth_leaf(consumer: &str) -> Option<&'static str> {
     (consumer.ends_with("(leaf localauth)") && !localauth).then_some("localauth")
 }
 
-/// Promote a deferred diagnostic without inventing a second classification system.
+/// Report a diagnostic, or promote it to an error in strict mode, without a second classification system.
 /// # Errors
 /// Strict mode rejects all returned section diagnostics.
 pub(super) fn report(

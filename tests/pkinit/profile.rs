@@ -73,12 +73,15 @@ fn realm_relations_shape_the_certificate_policy() -> Result<(), TestError> {
     assert_eq!(policy.kdc_hostnames(), ["kdc.test.rskrb5"], "hostnames");
     assert!(policy.crl_checking(), "crl");
     assert_eq!(policy.group(), DhGroup::P384, "group");
-    // And the relations are no longer reported as deferred.
+    // And no diagnostic remains but the leaf's own `FeatureUnavailable`
+    // (none with the leaf).
     assert!(
-        !profile.diagnostics().iter().any(|item| matches!(
-            item,
-            ConfigDiagnostic::NotYetEffective { relation, package: _ } if relation.starts_with("pkinit_")
-        )),
+        profile.diagnostics().iter().all(|item| !cfg!(feature = "pkinit")
+            && matches!(
+                item,
+                ConfigDiagnostic::FeatureUnavailable { relation, feature: "pkinit" }
+                    if relation.starts_with("pkinit_")
+            )),
         "{:?}",
         profile.diagnostics()
     );

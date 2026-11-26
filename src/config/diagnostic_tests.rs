@@ -12,6 +12,26 @@ mod tests {
 
     use super::super::{ConfigDiagnostic, Error as Failure, ParseMode, realm_values};
 
+    /// The discriminant of a diagnostic, matched exhaustively so that a new
+    /// kind cannot be added without a case below.
+    const fn kind(diagnostic: &ConfigDiagnostic) -> usize {
+        match diagnostic {
+            ConfigDiagnostic::UnknownSection { section: _ } => 0,
+            ConfigDiagnostic::UnknownRelation { path: _ } => 1,
+            ConfigDiagnostic::ServerOnly { section: _ } => 2,
+            ConfigDiagnostic::FeatureUnavailable {
+                relation: _,
+                feature: _,
+            } => 3,
+            ConfigDiagnostic::OutOfScope {
+                relation: _,
+                decision: _,
+            } => 4,
+            ConfigDiagnostic::IgnoredPreauthType { id: _ } => 5,
+            ConfigDiagnostic::UnsupportedSecureEnctype { token: _, until: _ } => 6,
+        }
+    }
+
     /// Every diagnostic discriminant is tested through production reporting in both modes.
     #[test]
     fn every_diagnostic_promotes_to_error() -> Result<(), Box<dyn Error>> {
@@ -22,9 +42,9 @@ mod tests {
             ConfigDiagnostic::UnknownRelation {
                 path: vec!["libdefaults".to_owned(), "typo".to_owned()],
             },
-            ConfigDiagnostic::NotYetEffective {
-                relation: "kcm_mach_service",
-                package: "a later change",
+            ConfigDiagnostic::FeatureUnavailable {
+                relation: "spake_preauth_groups",
+                feature: "spake",
             },
             ConfigDiagnostic::UnsupportedSecureEnctype {
                 token: "camellia".to_owned(),
@@ -37,6 +57,9 @@ mod tests {
             ConfigDiagnostic::ServerOnly { section: "logging" },
             ConfigDiagnostic::IgnoredPreauthType { id: 14_i32 },
         ];
+        let mut kinds: Vec<usize> = cases.iter().map(kind).collect();
+        kinds.sort_unstable();
+        assert_eq!(kinds, [0, 1, 2, 3, 4, 5, 6], "one case per diagnostic kind");
         for diagnostic in cases {
             let mut output = Vec::new();
             realm_values::report(diagnostic.clone(), ParseMode::Compatible, &mut output)?;
@@ -54,15 +77,12 @@ mod tests {
                     Failure::UnknownRelation { path },
                 ) => assert_eq!(path, wanted),
                 (
-                    ConfigDiagnostic::NotYetEffective {
+                    ConfigDiagnostic::FeatureUnavailable {
                         relation: wanted,
-                        package: _,
+                        feature: leaf,
                     },
-                    Failure::NotYetEffective {
-                        relation,
-                        package: _,
-                    },
-                ) => assert_eq!(relation, wanted),
+                    Failure::FeatureUnavailable { relation, feature },
+                ) => assert_eq!((relation, feature), (wanted, leaf)),
                 (
                     ConfigDiagnostic::UnsupportedSecureEnctype {
                         token: wanted,

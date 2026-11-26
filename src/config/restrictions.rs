@@ -34,7 +34,7 @@ pub(crate) fn rcache_name(value: &str) -> Result<(), Error> {
     }
 }
 
-/// Reject restrictions whose consumers have not been implemented.
+/// Validate the library defaults at every construction boundary.
 /// # Errors
 /// Returns the malformed replay-cache name before any authentication effect.
 pub(crate) fn defaults(value: &LibDefaults) -> Result<(), Error> {
@@ -43,7 +43,7 @@ pub(crate) fn defaults(value: &LibDefaults) -> Result<(), Error> {
 
 /// Validate whole configuration, including realm restrictions.
 /// # Errors
-/// Returns the named unsupported restriction.
+/// Returns the malformed replay-cache name or the named realm restriction error.
 pub(crate) fn config(value: &Config) -> Result<(), Error> {
     defaults(&value.libdefaults)?;
     for entry in &value.realms {
@@ -54,7 +54,7 @@ pub(crate) fn config(value: &Config) -> Result<(), Error> {
 
 /// Validate a realm timestamp prohibition regardless of construction path.
 /// # Errors
-/// Returns the named unsupported restriction.
+/// Returns permanent protocol rejection or the named malformed restriction.
 pub(super) fn realm(value: &Realm) -> Result<(), Error> {
     #[cfg(feature = "serde")]
     for (name, selection) in &value.protocol_relations {

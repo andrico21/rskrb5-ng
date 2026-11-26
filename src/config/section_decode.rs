@@ -216,7 +216,7 @@ pub(super) fn server(section: &'static str, config: &mut Config) -> Result<(), E
 
 /// Select scalar or repeated realm values using the catalogue's declared kind.
 /// # Errors
-/// Propagates typed value and deferred-policy failures for each selected relation.
+/// Propagates typed value and strict-mode diagnostic failures for each selected relation.
 pub(super) fn realms(
     config: &mut Config,
     values: &BTreeMap<Vec<String>, Vec<Line>>,

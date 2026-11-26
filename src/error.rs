@@ -789,14 +789,6 @@ pub enum Config {
         /// Canonical section name.
         section: &'static str,
     },
-    /// An unsupported relation requires stricter behavior or strict parsing.
-    #[error("relation {relation} is not yet effective; requires {package}")]
-    NotYetEffective {
-        /// Selected relation.
-        relation: &'static str,
-        /// Work package owning its runtime consumer.
-        package: &'static str,
-    },
     /// A relation's consumer needs a leaf Cargo feature this build lacks
     /// (strict mode).
     #[error("relation {relation} needs the `{feature}` Cargo feature")]

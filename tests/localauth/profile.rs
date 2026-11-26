@@ -1,8 +1,8 @@
 //! The four relations of WP-17 with and without the leaf.
 //!
 //! With the `localauth` leaf they are effective: no diagnostic in either parse
-//! mode. Without it each is reported as `FeatureUnavailable` (strict mode
-//! refuses it) and is never deferred to WP-17.
+//! mode. Without it each is reported as `FeatureUnavailable`, its only
+//! diagnostic, and strict mode refuses it.
 
 use core::error::Error;
 
@@ -12,27 +12,23 @@ use rskrb5_ng::config::{Config, ConfigDiagnostic, ParseMode};
 fn check(text: &str, relation: &'static str) -> Result<(), Box<dyn Error>> {
     let config = Config::parse(text)?;
     let strict = Config::parse_with_mode(text, ParseMode::Strict);
-    let deferred = config.diagnostics().iter().any(|item| {
-        matches!(
-            item,
-            ConfigDiagnostic::NotYetEffective {
-                relation: _,
-                package: _
-            }
-        )
-    });
-    assert!(!deferred, "{relation} is no longer deferred to WP-17");
-    let unavailable = config
-        .diagnostics()
-        .contains(&ConfigDiagnostic::FeatureUnavailable {
-            relation,
-            feature: "localauth",
-        });
+    let unavailable = ConfigDiagnostic::FeatureUnavailable {
+        relation,
+        feature: "localauth",
+    };
     if cfg!(feature = "localauth") {
-        assert!(!unavailable, "{relation}: the leaf is compiled in");
+        assert!(
+            config.diagnostics().is_empty(),
+            "{relation}: the leaf is compiled in: {:?}",
+            config.diagnostics()
+        );
         drop(strict?);
     } else {
-        assert!(unavailable, "{relation}: missing FeatureUnavailable");
+        assert_eq!(
+            config.diagnostics(),
+            [unavailable],
+            "{relation}: missing FeatureUnavailable"
+        );
         assert!(strict.is_err(), "{relation}: strict mode admitted it");
     }
     Ok(())
