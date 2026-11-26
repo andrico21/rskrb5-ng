@@ -90,6 +90,26 @@ mandatory. Text inside fenced blocks is ignored.
 A record may extend `deny.toml`'s licence allow-list (BSD-3-Clause, ISC) or its
 duplicate-version skips, each with a reason stated in the record.
 
+## Leaf flags and their dependencies
+
+The `[features]` table of `Cargo.toml` enables these admitted dependencies;
+each has a record below. No leaf is a default feature.
+
+| Leaf flag | Dependencies it enables |
+| --- | --- |
+| `camellia` | `camellia`, `cmac` |
+| `ccache-keyring` | `keyutils-raw`, `libc` (Linux only) |
+| `http-client` | `cookie_store`, `publicsuffix`, `url` (and the `http` feature) |
+| `kkdcp-rustls` | `hyper`, `rustls`, `rustls-rustcrypto`, `tokio-rustls` |
+| `localauth` | `regex` |
+| `pkinit` | `cms`, `crypto-bigint`, `der`, `p256`, `p384`, `p521`, `regex`, `rsa`, `spki`, `x509-cert` (and the `ecdsa` and `pkcs8` features of `p256` and `p384`) |
+| `spake` | `curve25519-dalek`, `p256`, `p384`, `p521` |
+| `tracing` | `tracing` |
+
+`p256`, `p384` and `p521` serve `spake` and `pkinit`, and `regex` serves
+`localauth` and `pkinit`; enabling one of those leaves does not enable the
+other. The only dependency added outside a leaf is `rustix` (rule 2).
+
 ## Records
 
 ### camellia
@@ -292,7 +312,6 @@ duplicate-version skips, each with a reason stated in the record.
 - Maintenance: rustls/tokio-rustls, 0.26.6 published 2026-09-28, about 255 million recent downloads. No RustSec advisory (`cargo audit` clean at admission).
 - Features: `tls12` (`default-features = false`)
 
-<a id="rskrb5-ng-os"></a>
 ### regex
 - Version: 1.13.1
 - Leaf flags: localauth, pkinit
@@ -309,7 +328,7 @@ duplicate-version skips, each with a reason stated in the record.
 - Leaf flags: http-client
 - Licence: MIT OR Apache-2.0 (the crate and every new package it brings: `cookie` 0.18.3, `time` 0.3.55 with `time-core` 0.1.9, `time-macros` 0.2.32, `deranged` 0.5.9, `num-conv` 0.2.2 and `powerfmt` 0.2.1, `publicsuffix` 2.3.0, `psl-types` 2.0.11, `document-features` 0.2.12, `litrs` 1.0.0 and `version_check` 0.9.5 are `MIT OR Apache-2.0` or `MIT/Apache-2.0`; both already on the `deny.toml` allow list, no change to it).
 - Source review: read on 2026-11-25 from the crates.io tarballs (`cookie_store` sha256 `15b2c103cf610ec6cae3da84a766285b42fd16aad564758459e6ecf128c75206`, pfernie/cookie_store, edition 2021, MSRV 1.88, no `build.rs`, no `links` key, no `unsafe` in `src/`; `cookie` 0.18.3 sha256 `d55f2d6c30eeec7d5c6f98bd4395d4abb1895629eab97ee6522d340623615f8a`, rwf2/cookie-rs, no `unsafe`, a `build.rs` that only asks `version_check` whether `doc_cfg` exists; `publicsuffix` 2.3.0 sha256 `6f42ea446cab60335f76979ec15e12619a2165b5ae2c12166bef27d283a9fadf` and `psl-types` 2.0.11 sha256 `33cb294fe86a74cbcf50d4445b37da762029549ebeea341421c7c70370f86cac`, both `#![forbid(unsafe_code)]`; `time` has `unsafe` for its niche-checked range types, which is the reason it is one of the most used crates of the ecosystem and the reason this record names it). The graph is NEW only for these 13 packages: `url`, `idna`, `percent-encoding`, `log` and `form_urlencoded` were already locked (hickory). What the leaf does with the crate: it is the cookie jar of the HTTP client (`http::cookies::CookieStore`). `cookie_store` implements the RFC 6265 storage model (section 5.3 domain matching, section 5.1.4 path matching, `Secure`, `HttpOnly`, expiry, the public-suffix check when a list is supplied) over `cookie`'s `Set-Cookie` parser. Untrusted input: the `Set-Cookie` headers of a server's response and the request URL. This crate bounds both before the jar sees them: a `Set-Cookie` value over 4096 bytes is dropped (the RFC 6265 section 6.1 minimum limit), a jar holds at most 256 cookies (the crate itself has no limit), only `http` and `https` URLs reach it, and a `Secure` cookie from a cleartext origin or a `Domain` attribute with no public-suffix list configured is refused before `insert_raw` is called (the crate would accept both). The leaf calls `insert_raw` and `matches` only: it never calls `store_response_cookies` or `parse`, because the crate logs the full cookie value of a non-`Secure` cookie at `debug` level through the `log` facade there, and cookies here are credentials. The default feature `serde_json` (and so persistence) is off: the jar lives in memory. The public-suffix list is NOT compiled in: the application passes the text of a list it chose (`publicsuffix::List` parses it), so an unset list is a typed refusal of every `Domain` attribute, never an implicit list and never public-suffix logic of this crate. The lock takes `cookie` 0.18.3 (2026-11-23), the release that fixes RUSTSEC-2026-0594 (private-cookie nonces that repeat in forked processes; this crate never enables `cookie`'s `private` feature, but `cargo deny` and `cargo audit` fail on 0.18.2 and the first admission pinned that release), and `litrs` 1.0.0 (2025-10-20) instead of its one-day-old 1.1.0.
-- Constant-time and zeroization: not a cryptographic crate and not constant-time. Cookie values are credentials: the leaf keeps them only inside the jar, the jar type has no `Debug` output of a value, and a `Cookie` header built for a request is a sensitive `HeaderValue`. The crate does not zeroize its cookies on drop; that is a residual copy recorded in `docs/security-policy.md` by the documentation todo.
+- Constant-time and zeroization: not a cryptographic crate and not constant-time. Cookie values are credentials: the leaf keeps them only inside the jar, the jar type has no `Debug` output of a value, and a `Cookie` header built for a request is a sensitive `HeaderValue`. The crate does not zeroize its cookies on drop; `docs/security-policy.md` (Secret ownership and residual copies) records that residual copy (register row FU-HTC-P06).
 - Cargo vet: no upstream audit is imported; `supply-chain/config.toml` carries 13 new `[[exemptions.*]]` entries (`cookie`, `cookie_store`, `deranged`, `document-features`, `litrs`, `num-conv`, `powerfmt`, `psl-types`, `publicsuffix`, `time`, `time-core`, `time-macros`, `version_check`), all `safe-to-deploy`; they are not independent audits and the source review above is this record's evidence. `cargo vet --locked` passes.
 - Maintenance: `cookie_store` 0.22.1 published 2026-02-16 (pfernie, about 32 million recent downloads), `cookie` (rwf2, about 77 million), `time` 0.3.55 published 2026-08-01 (about 264 million), `publicsuffix` 2.3.0 published 2024-11-14 (about 19 million, slow-moving by nature: the list data is not in the crate); no locked version is yanked. No RustSec advisory against the locked versions (`cargo audit` and `cargo deny check` clean at admission).
 - Features: `public_suffix` with `default-features = false` (so no `serde_json` and no `preserve_order`); cargo enables `cookie` `percent-encode`, `time` `alloc`, `formatting`, `macros`, `parsing`, `std` and `publicsuffix` `idna`, `punycode` from it
@@ -334,6 +353,7 @@ duplicate-version skips, each with a reason stated in the record.
 - Maintenance: see the `cookie_store` record (2.3.0 published 2024-11-14, not yanked, no advisory).
 - Features: none of its own (`default-features = false`; `cookie_store`'s dependency enables `punycode` and `idna`, which unify into the same build)
 
+<a id="rskrb5-ng-os"></a>
 ## The platform stores: `rskrb5-ng-os` (owner decision D11)
 
 Plan 2 todo 14 looked for a vetted crate with a safe API for the Windows LSA
