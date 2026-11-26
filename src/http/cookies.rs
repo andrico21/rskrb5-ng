@@ -24,9 +24,9 @@
 //! cookie is replaced or expires or the jar is dropped
 //! (`docs/dependency-admission.md#cookie_store`), so a cookie value can stay in
 //! freed memory. The jar lives in memory only and is never written to disk; an
-//! application that needs persistent cookies implements
-//! [`CookieJar`](super::wire::CookieJar) itself
-//! and owns the protection of what it stores.
+//! application that needs persistent cookies implements the
+//! [cookie jar trait](super::wire::CookieJar) itself and owns the protection
+//! of what it stores.
 #[cfg(feature = "http-client")]
 use core::fmt;
 

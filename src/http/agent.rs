@@ -116,8 +116,6 @@ impl Default for RedirectPolicy {
 
 /// Whether Negotiate tokens are bound to the TLS channel that carries them
 /// (RFC 5929 `tls-server-end-point`, see [`TlsChannel`]).
-///
-/// [`TlsChannel`]: super::wire::TlsChannel
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum ChannelBindingPolicy {
