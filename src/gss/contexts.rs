@@ -490,6 +490,8 @@ pub struct EstablishedContext {
     /// Whether the context is established; a DCE-style acceptor opens on the
     /// initiator's AP-REP.
     open: bool,
+    /// The mechanism: krb5, or IAKERB on krb5's AP exchange.
+    mechanism: context::Mechanism,
 }
 
 impl fmt::Debug for EstablishedContext {

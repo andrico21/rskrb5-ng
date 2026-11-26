@@ -14,6 +14,7 @@ use super::{
     CredentialUsage, EncryptionKey, Error, EstablishedContext, Name, ObjectIdentifier, Principal,
     bindings,
     checksum::{self, Extensions},
+    context::Mechanism,
     cred, dce,
     iakerb::finished::{self, Fault},
     impersonate, initiator, seq,
@@ -328,6 +329,7 @@ where
         validated,
         checked,
         mutual,
+        mechanism: extensions.mechanism(),
     };
     Ok(context(acceptor.credential, outcome)?)
 }
@@ -342,6 +344,8 @@ struct Outcome<'request, 'token> {
     checked: Checked,
     /// Whether the AP options ask for mutual authentication.
     mutual: bool,
+    /// The mechanism of the context.
+    mechanism: Mechanism,
 }
 
 /// The established context and its AP-REP of a validated AP-REQ; `own` is the
@@ -357,6 +361,7 @@ fn context(own: Option<&Credential>, outcome: Outcome<'_, '_>) -> Result<Accepte
         validated,
         checked,
         mutual,
+        mechanism,
     } = outcome;
     let raw = request.frame.is_none();
     let dce_style = checked.flags.contains(ContextFlags::DCE_STYLE);
@@ -425,6 +430,7 @@ fn context(own: Option<&Credential>, outcome: Outcome<'_, '_>) -> Result<Accepte
         pac: validated.pac().cloned(),
         auth_indicators: validated.auth_indicators().to_vec(),
         open: !dce_style,
+        mechanism,
     };
     Ok(Accepted {
         context,

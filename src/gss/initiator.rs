@@ -15,6 +15,7 @@ use super::{
     EstablishedContext, InitState, InitStep, Initiator, InitiatorOptions, Name, Principal,
     TgsRepSession,
     checksum::{self, Extensions},
+    context::Mechanism,
     cred, dce,
     iakerb::finished,
     seq,
@@ -66,6 +67,8 @@ struct Parts {
     flags: ContextFlags,
     /// The runtime enctype policy.
     policy: CryptoPolicy,
+    /// The mechanism.
+    mechanism: Mechanism,
 }
 
 /// One initiator step.
@@ -371,6 +374,7 @@ pub(super) fn request(
         sequence,
         flags,
         policy,
+        mechanism: extensions.mechanism(),
     });
     Ok((
         token,
@@ -407,6 +411,7 @@ fn established(parts: Parts) -> EstablishedContext {
         pac: None,
         auth_indicators: Vec::new(),
         open: true,
+        mechanism: parts.mechanism,
     }
 }
 

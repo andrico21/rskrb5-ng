@@ -59,7 +59,7 @@ pub(super) fn inquire(context: &EstablishedContext) -> ContextInquiry {
         source: context.source.clone(),
         target: context.target.clone(),
         expires: context.expires,
-        mechanism: ObjectIdentifier::krb5(),
+        mechanism: context.mechanism.oid(),
         flags: context.flags,
         locally_initiated: context.initiated,
         open: context.open,

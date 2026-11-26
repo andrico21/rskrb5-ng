@@ -365,8 +365,9 @@ impl Context {
     }
 
     /// The established context of an initiator; the acceptor's comes with
-    /// [`AcceptStep::Complete`]. The context reports the krb5 mechanism, as
-    /// every [`EstablishedContext`] does.
+    /// [`AcceptStep::Complete`]. Both report the IAKERB mechanism in
+    /// [`EstablishedContext::inquire`] and keep it across a context transfer
+    /// (MIT `iakerb.c:1183-1226`).
     ///
     /// # Errors
     ///

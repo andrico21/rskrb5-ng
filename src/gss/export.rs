@@ -32,6 +32,7 @@ use super::{
     Keytab, Name, NameKind, NameType, Principal, TransferBlob, TransferKey, TransferLedger, pac,
     seq,
 };
+use super::context::Mechanism;
 use crate::crypto::{AesSha2Etype, CryptoPolicy};
 
 /// The magic of a transfer blob.
@@ -511,6 +512,10 @@ fn put_context(writer: &mut Writer, context: &EstablishedContext) -> Result<(), 
     for indicator in &context.auth_indicators {
         writer.bytes(indicator.as_bytes())?;
     }
+    writer.byte(match context.mechanism {
+        Mechanism::Krb5 => 1,
+        Mechanism::Iakerb => 2,
+    });
     Ok(())
 }
 
@@ -561,6 +566,11 @@ fn get_context(reader: &mut Reader<'_>) -> Result<EstablishedContext, Error> {
     for _ in 0..reader.word()? {
         auth_indicators.push(reader.string()?);
     }
+    let mechanism = match reader.byte()? {
+        1 => Mechanism::Krb5,
+        2 => Mechanism::Iakerb,
+        _ => return Err(MALFORMED),
+    };
     Ok(EstablishedContext {
         initiated,
         source,
@@ -577,6 +587,7 @@ fn get_context(reader: &mut Reader<'_>) -> Result<EstablishedContext, Error> {
         pac: verified,
         auth_indicators,
         open,
+        mechanism,
     })
 }
 
