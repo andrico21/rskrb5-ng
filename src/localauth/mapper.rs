@@ -2,11 +2,12 @@
 
 use alloc::collections::BTreeMap;
 
-use super::{AuthToLocalRule, LocalNameMapper, MAX_LOCAL_NAME_BYTES, MAX_RULES, unparse};
+use super::{AuthToLocalRule, BUILTINS, LocalNameMapper, MAX_LOCAL_NAME_BYTES, MAX_RULES, unparse};
 use crate::{
     ccache::Principal,
     config::{Config, section_values::Value},
     error::LocalAuth as Error,
+    extensions::{Interface, order},
 };
 
 /// A translation that may be used as an account name.
@@ -40,6 +41,7 @@ impl LocalNameMapper {
             default_realm,
             names: BTreeMap::new(),
             rules: Vec::new(),
+            modules: None,
         }
     }
 
@@ -87,6 +89,7 @@ impl LocalNameMapper {
         let default_realm =
             Some(config.libdefaults.default_realm.clone()).filter(|realm| !realm.is_empty());
         let mut mapper = Self::new(default_realm.clone());
+        mapper.modules = Some(order::arrange(Interface::LocalAuth, config, BUILTINS));
         let Some(realm) = default_realm.as_deref().and_then(|name| config.realm(name)) else {
             return Ok(mapper);
         };
@@ -132,6 +135,14 @@ impl LocalNameMapper {
             self.rules.as_slice()
         };
         for rule in rules {
+            // A configured rule whose type module `[plugins] localauth` removed
+            // is a configuration error, as MIT's `find_typed_module` failure
+            // (`localauth.c:328-340`); the implicit `DEFAULT` needs no module.
+            if !self.rules.is_empty() && !self.consults(rule.module()) {
+                return Err(Error::UnsupportedRuleType {
+                    kind: rule.module().to_ascii_uppercase(),
+                });
+            }
             match rule.apply(principal, realm) {
                 Ok(name) => return usable(name),
                 Err(Error::NoTranslation) => {}
@@ -148,7 +159,29 @@ impl LocalNameMapper {
     /// [`Error::NoTranslation`], [`Error::InvalidLocalName`] and the errors of
     /// the rules.
     pub(super) fn translate(&self, principal: &Principal) -> Result<String, Error> {
-        self.explicit(principal)
-            .unwrap_or_else(|| self.by_rules(principal))
+        for &module in self.consulted() {
+            let answer = match module {
+                "names" => self.explicit(principal),
+                "auth_to_local" => Some(self.by_rules(principal)),
+                _ => None,
+            };
+            match answer {
+                Some(Err(Error::NoTranslation)) | None => {}
+                Some(found) => return found,
+            }
+        }
+        Err(Error::NoTranslation)
+    }
+
+    /// Whether `[plugins] localauth` leaves the built-in module `name`.
+    pub(super) fn consults(&self, name: &str) -> bool {
+        self.modules
+            .as_ref()
+            .is_none_or(|modules| modules.contains(&name))
+    }
+
+    /// The built-in modules in consultation order.
+    fn consulted(&self) -> &[&'static str] {
+        self.modules.as_deref().unwrap_or(&BUILTINS)
     }
 }

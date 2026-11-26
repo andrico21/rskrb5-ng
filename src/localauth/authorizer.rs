@@ -82,15 +82,23 @@ impl LocalAuthorizer {
         if local_name.is_empty() || local_name.contains('\0') {
             return Authorization::Denied(Denial::InvalidLocalName);
         }
-        match k5login::check(self, principal, local_name) {
+        let verdict = if self.mapper.consults("k5login") {
+            k5login::check(self, principal, local_name)
+        } else {
+            k5login::Verdict::Silent
+        };
+        match verdict {
             k5login::Verdict::Listed => Authorization::Authorized(Module::K5login),
             k5login::Verdict::Refused(fault) => Authorization::Denied(Denial::K5login(fault)),
-            k5login::Verdict::Silent => match self.mapper.translate(principal) {
-                Ok(name) if name == local_name && name.len() <= MAX_LOCAL_NAME_BYTES => {
-                    Authorization::Authorized(Module::An2ln)
+            k5login::Verdict::Silent if self.mapper.consults("an2ln") => {
+                match self.mapper.translate(principal) {
+                    Ok(name) if name == local_name && name.len() <= MAX_LOCAL_NAME_BYTES => {
+                        Authorization::Authorized(Module::An2ln)
+                    }
+                    Ok(_) | Err(_) => Authorization::Denied(Denial::NoModuleAllowed),
                 }
-                Ok(_) | Err(_) => Authorization::Denied(Denial::NoModuleAllowed),
-            },
+            }
+            k5login::Verdict::Silent => Authorization::Denied(Denial::NoModuleAllowed),
         }
     }
 }

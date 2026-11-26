@@ -180,7 +180,7 @@ mod tests {
                         None,
                     )?]);
             let checked = build_tgt_as_req(principal.clone(), checked_options)?;
-            let (expected, package) = (scope, "plan 2 WP-16");
+            let expected = scope;
             for result in [
                 runtime.block_on(transport.exchange_as_req_with_config(
                     &config,
@@ -204,7 +204,7 @@ mod tests {
                 )),
             ] {
                 assert!(
-                    matches!(result, Err(Client::Config(ConfigError::NotYetEffective { relation, package: owner })) if relation == expected && owner == package),
+                    matches!(result, Err(Client::Config(ConfigError::NotYetEffective { relation, package: _ })) if relation == expected),
                     "transport ignored {scope}"
                 );
             }
@@ -217,8 +217,8 @@ mod tests {
                 assert!(
                     matches!(
                         discovery.as_mut().poll(&mut Context::from_waker(Waker::noop())),
-                        Poll::Ready(Err(Client::Config(ConfigError::NotYetEffective { relation, package: owner })))
-                            if relation == expected && owner == package
+                        Poll::Ready(Err(Client::Config(ConfigError::NotYetEffective { relation, package: _ })))
+                            if relation == expected
                     ),
                     "discovery must refuse {scope} before endpoint/DNS handling"
                 );

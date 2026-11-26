@@ -322,6 +322,45 @@ mod tests {
         Ok(())
     }
 
+    /// `[plugins] ccselect` controls are effective over the built-in selectors
+    /// (MIT-config-54): Strict mode accepts them, a disabled `realm` selector
+    /// is not consulted, and `enable_only` keeps only `hostname`.
+    #[test]
+    fn disabled_builtin_ccselect_is_not_consulted() -> Result<(), Box<dyn Error>> {
+        // Given the built-in selectors and a server whose realm names a cache.
+        let caches = [
+            cache("bob", "EXAMPLE.ORG"),
+            cache("carol", "WWW.EXAMPLE.ORG"),
+        ];
+        let registry = Registry::with_builtins(None);
+        let server = web("www.example.org", "EXAMPLE.ORG");
+        let strict = |controls: &str| {
+            Config::parse_with_mode(
+                &format!("[plugins]\n ccselect = {{\n {controls}\n }}\n"),
+                ParseMode::Strict,
+            )
+        };
+        // When the realm selector is disabled, or only `hostname` is enabled.
+        let chosen = [
+            registry.select_cache(&Config::parse("")?, &server, &caches)?,
+            registry.select_cache(&strict("disable = realm")?, &server, &caches)?,
+            registry.select_cache(&strict("enable_only = hostname")?, &server, &caches)?,
+            registry.select_cache(&strict("enable_only = k5identity")?, &server, &caches)?,
+        ];
+        // Then the realm selector answers by default, the hostname selector
+        // without it, and no selector when only an absent one is enabled.
+        assert_eq!(
+            chosen,
+            [
+                Selection::Cache(0),
+                Selection::Cache(1),
+                Selection::Cache(1),
+                Selection::NoHandle
+            ]
+        );
+        Ok(())
+    }
+
     /// A request outside the driver, for calling a selector directly.
     fn request<'request>(
         server: &'request Principal,

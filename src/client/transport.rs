@@ -1,5 +1,6 @@
 //! Tokio-backed KDC transport, endpoint discovery, and network exchanges.
 
+use alloc::sync::Arc;
 use core::{
     net::{IpAddr, SocketAddr},
     pin::Pin,
@@ -65,6 +66,16 @@ mod password_result;
 mod primary;
 /// MS-KKDCP endpoints: the request through the KDC proxy transport.
 mod proxied;
+/// An `https://` admin server as the kpasswd fallback.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "transport/tests/proxy_admin.rs"]
+mod proxy_admin_tests;
 /// `https://` endpoints through a caller's KDC proxy transport.
 #[cfg(test)]
 #[expect(
@@ -77,6 +88,8 @@ mod proxied;
 mod proxy_tests;
 /// Configured realm protocol preference.
 mod realm_auto;
+/// The caller's extension registry.
+mod registered;
 /// Ordered SRV target address resolution.
 pub(crate) mod srv_targets;
 /// Bounded UDP socket primitives.
@@ -113,6 +126,7 @@ use crate::{
         records::{dns_resolver, lookup_name},
     },
     error::Config as ConfigError,
+    extensions::Registry,
     kadmin,
     keytab::{EncryptionKey, Keytab},
     krb_error::decode as decode_krb_error,
@@ -321,7 +335,7 @@ struct Budget {
 
 /// Tokio-backed KDC and kpasswd transport, with endpoint discovery.
 #[cfg(feature = "tokio")]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Tokio {
     /// Explicit DNS server for DNS discovery; otherwise use the system resolver.
     dns_server: Option<(IpAddr, u16)>,
@@ -340,6 +354,8 @@ pub struct Tokio {
     watch: Option<u64>,
     /// The transport of `https://` (MS-KKDCP) endpoints, if any.
     proxy: Option<proxied::Handle>,
+    /// The caller's registry: its locators and host-realm mappers are asked first.
+    registry: Option<registered::Shared>,
 }
 
 #[cfg(feature = "tokio")]
@@ -368,7 +384,34 @@ impl Tokio {
             budget: None,
             watch: None,
             proxy: proxied::Handle::builtin(),
+            registry: None,
         }
+    }
+
+    /// Ask the server locators and host-realm mappers of `registry` first on
+    /// every exchange route of this transport: KDC requests, the primary-KDC
+    /// retry, password changes, and the realm of a service host.
+    ///
+    /// Without this call no registered provider is asked. The registry's
+    /// `[plugins]` controls come from the profile of each call.
+    ///
+    /// # Security
+    ///
+    /// Registered providers are trusted code: a locator decides where requests
+    /// go and a mapper decides a service's realm. Their answers are bounded and
+    /// validated ([`crate::extensions`]), and a failing provider stops the
+    /// request instead of being skipped. An explicit service realm is never
+    /// remapped.
+    #[must_use]
+    #[inline]
+    pub fn with_registry(mut self, registry: Arc<Registry>) -> Self {
+        self.registry = Some(registered::Shared::new(registry));
+        self
+    }
+
+    /// The registry of [`Self::with_registry`], if any.
+    pub(crate) fn registry(&self) -> Option<&Registry> {
+        self.registry.as_ref().map(registered::Shared::get)
     }
 
     /// Send the requests for `https://` (MS-KKDCP) endpoints through `transport`.
@@ -388,9 +431,10 @@ impl Tokio {
     ///
     /// Zero is no budget (MIT `request_timeout = 0`). Under a budget that is already
     /// running the earlier deadline stays, so nested calls share one budget.
-    pub(crate) fn with_request_budget(mut self, total: Duration) -> Self {
+    pub(crate) fn with_request_budget(&self, total: Duration) -> Self {
+        let mut this = self.clone();
         if total.is_zero() {
-            return self;
+            return this;
         }
         let begun = Instant::now();
         let deadline = begun.checked_add(total).unwrap_or(begun);
@@ -398,9 +442,9 @@ impl Tokio {
             .budget
             .is_none_or(|running| deadline < running.deadline)
         {
-            self.budget = Some(Budget { deadline, total });
+            this.budget = Some(Budget { deadline, total });
         }
-        self
+        this
     }
 
     /// Run `operation` within the request budget, if there is one.
@@ -433,15 +477,19 @@ impl Tokio {
     }
 
     /// This transport, reporting the KDCs that answer under the login `key`.
-    pub(crate) const fn with_watch(mut self, key: u64) -> Self {
-        self.watch = Some(key);
-        self
+    pub(crate) fn with_watch(&self, key: u64) -> Self {
+        Self {
+            watch: Some(key),
+            ..self.clone()
+        }
     }
 
     /// This transport, locating primary KDCs only.
-    pub(crate) const fn with_primary_kdcs(mut self) -> Self {
-        self.primary_only = true;
-        self
+    pub(crate) fn with_primary_kdcs(&self) -> Self {
+        Self {
+            primary_only: true,
+            ..self.clone()
+        }
     }
 
     /// The explicit DNS server of [`Self::with_dns_server`], if any.
@@ -452,21 +500,19 @@ impl Tokio {
     /// A host-to-realm resolver over `config` that asks DNS through this transport.
     #[must_use]
     #[inline]
-    pub const fn host_realms<'config>(
-        &self,
-        config: &'config Config,
-    ) -> HostRealmResolver<'config> {
-        HostRealmResolver::new(*self, config)
+    pub fn host_realms<'config>(&self, config: &'config Config) -> HostRealmResolver<'config> {
+        HostRealmResolver::new(self.clone(), config)
     }
 
     /// A server locator over `config` that asks DNS through this transport.
     ///
     /// Pass a registry to [`ServerLocator::locate`] to ask its locators first; the
-    /// exchange methods of this transport do not consult a registry.
+    /// exchange methods of this transport ask the registry of
+    /// [`Self::with_registry`].
     #[must_use]
     #[inline]
-    pub const fn locator<'config>(&self, config: &'config Config) -> ServerLocator<'config> {
-        ServerLocator::new(*self, config)
+    pub fn locator<'config>(&self, config: &'config Config) -> ServerLocator<'config> {
+        ServerLocator::new(self.clone(), config)
     }
 
     #[must_use]
@@ -901,9 +947,12 @@ impl Tokio {
             EndpointRole::Kdc
         };
         let endpoints = this
-            .within_budget(Box::pin(
-                this.locator(config).locate(None, realm, role, protocol),
-            ))
+            .within_budget(Box::pin(this.locator(config).locate(
+                this.registry(),
+                realm,
+                role,
+                protocol,
+            )))
             .await?;
         events::located(realm, protocol, endpoints.len());
         if !endpoints.is_empty() {
@@ -1169,9 +1218,15 @@ impl Tokio {
         realm: &str,
         request: &[u8],
     ) -> Result<Vec<u8>, Error> {
-        let endpoints = self
-            .discover_kpasswd_servers(config, realm, protocol)
-            .await?;
+        let endpoints =
+            match ServerLocator::provided(self.registry(), realm, EndpointRole::Kpasswd, protocol)?
+            {
+                Some(located) => located,
+                None => {
+                    self.discover_kpasswd_servers(config, realm, protocol)
+                        .await?
+                }
+            };
         self.send_to_password_endpoints((config, realm), protocol, endpoints, request)
             .await
     }
@@ -1987,7 +2042,11 @@ impl Tokio {
         if service.realm.is_empty() {
             // `[domain_realm]`, then the opt-in TXT record and domain search, then `default_realm`.
             let mapped = match service.components.last() {
-                Some(host) => self.host_realms(config).service_realm(None, host).await?,
+                Some(host) => {
+                    self.host_realms(config)
+                        .service_realm(self.registry(), host)
+                        .await?
+                }
                 None => None,
             };
             service.realm = mapped.unwrap_or_else(|| current_realm.clone());

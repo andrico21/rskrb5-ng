@@ -56,6 +56,10 @@ Compatible mode reports deferred or unknown policy; Strict rejects every
 diagnostic. Unsupported settings that would tighten current behavior fail in
 both modes. Parsed values do not imply an implemented mechanism.
 
+Anonymous credentials are an API option, not a profile relation: request
+them per exchange with `client::stepwise::InitCredsOptions::with_anonymous`
+(MIT `krb5_get_init_creds_opt_set_anonymous`).
+
 """
 
 

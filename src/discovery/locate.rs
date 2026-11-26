@@ -97,7 +97,7 @@ pub fn sitename<'config>(config: &'config Config, realm: &str) -> Option<&'confi
 /// Locates the servers of a realm.
 ///
 /// Built with [`Tokio::locator`]; it uses that transport's DNS server selection.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ServerLocator<'config> {
     /// The transport whose DNS server is used.
     transport: Tokio,
@@ -162,12 +162,13 @@ impl<'config> ServerLocator<'config> {
         Ok(Vec::new())
     }
 
-    /// The first registered locator's servers.
+    /// The first registered locator's servers: for [`KdcProtocol::Auto`] its UDP
+    /// servers, then its TCP servers.
     ///
     /// # Errors
     ///
     /// Returns [`Error::Locate`] for a locator that fails or answers malformed data.
-    fn provided(
+    pub(crate) fn provided(
         registry: Option<&Registry>,
         realm: &str,
         role: EndpointRole,

@@ -1,6 +1,9 @@
 //! The stepwise engine against MIT krb5 1.22.2: AS with prompt and preauth, AS with
 //! a keytab, profile flags and renewal, plain and user-to-user TGS, referrals.
 
+extern crate alloc;
+
+use alloc::sync::Arc;
 use core::{error::Error, time::Duration};
 use std::{
     io,
@@ -21,7 +24,10 @@ use rskrb5_ng::{
     },
     config::Config,
     error::Client as ClientError,
-    extensions::ProviderError,
+    extensions::{
+        Extension, LocateRequest, LocateService, ProviderError, Registry, ServerAddress,
+        ServerLocator,
+    },
     keytab::{self, Keytab},
     ticket,
 };
@@ -450,6 +456,65 @@ fn ticket_exchange_follows_the_referral_within_its_bound() -> Result<(), Box<dyn
             AES256_SHA2,
             ticket_etype(ticket.ticket())?,
         )?;
+        Ok::<_, Box<dyn Error>>(())
+    })
+}
+
+/// The TEST.RSKRB5 KDC, as a registered locator names it (MIT-plugin-6).
+struct Located(String, u16);
+
+impl ServerLocator for Located {
+    fn id(&self) -> &'static str {
+        "interop"
+    }
+
+    fn locate(
+        &self,
+        request: &LocateRequest<'_>,
+    ) -> Result<Option<Vec<ServerAddress>>, ProviderError> {
+        Ok((request.service == LocateService::Kdc)
+            .then(|| vec![ServerAddress::new(self.0.clone(), self.1)]))
+    }
+}
+
+/// A login to a realm the profile does not list reaches the MIT KDC that a
+/// registered locator names: the transport's registry is asked on the exchange
+/// route (plan-2 todo 28, MIT-plugin-6).
+#[test]
+fn a_registered_locator_routes_the_login_to_the_mit_kdc() -> Result<(), Box<dyn Error>> {
+    if !harness::require(
+        "a_registered_locator_routes_the_login_to_the_mit_kdc",
+        &[MIT_KDC],
+    )? {
+        return Ok(());
+    }
+    runtime()?.block_on(async {
+        // Given a profile that does not list the realm and a locator that names its KDC.
+        let kdc = harness::var("INTEROP_MIT_KDC")?;
+        let (host, port) = kdc
+            .rsplit_once(':')
+            .map_or(Ok((kdc.as_str(), 88_u16)), |(name, number)| {
+                number.parse().map(|parsed| (name, parsed))
+            })?;
+        let mut registry = Registry::new();
+        registry.register(Extension::ServerLocator(Arc::new(Located(
+            host.to_owned(),
+            port,
+        ))))?;
+        let config = Config::parse("[libdefaults]\n dns_lookup_kdc = false\n")?;
+        let (principal, password) = user("INTEROP_MIT_USER", "INTEROP_MIT_USER_PASSWORD")?;
+        let options = InitCredsOptions::from_config(&config, SystemTime::now(), nonce(9)?)?;
+        let mut exchange = InitCreds::with_password(principal.clone(), Some(password), options);
+        // When the login runs through a transport carrying the registry.
+        let session = drive_tokio(
+            &transport().with_registry(Arc::new(registry)),
+            (&config, KdcProtocol::Tcp),
+            &mut exchange,
+            &mut NoResponder::default(),
+        )
+        .await?;
+        // Then the MIT KDC issued the TGT of the user.
+        assert_eq!(session.client(), &principal);
         Ok::<_, Box<dyn Error>>(())
     })
 }

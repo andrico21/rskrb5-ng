@@ -569,6 +569,14 @@ pub enum Client {
     #[cfg(feature = "tokio")]
     #[error("DNS resolver configuration failed: {0}")]
     DnsResolverConfig(String),
+    /// Host acquisition found no host name the caller's policy approves: every
+    /// canonical form of `host` other than the host itself was refused.
+    #[cfg(feature = "tokio")]
+    #[error("no approved canonical name for host {host}")]
+    HostNameNotApproved {
+        /// The requested host, folded to lower case.
+        host: String,
+    },
     /// A registered server locator or host-realm mapper failed or gave a
     /// refused answer.
     #[cfg(feature = "tokio")]
@@ -789,6 +797,15 @@ pub enum Config {
         relation: &'static str,
         /// The leaf feature.
         feature: &'static str,
+    },
+    /// A relation names behaviour this library excludes permanently by an
+    /// owner decision (strict mode).
+    #[error("relation {relation} is out of scope ({decision})")]
+    OutOfScope {
+        /// Selected relation.
+        relation: &'static str,
+        /// The owner decision that excludes it: `D1`, `D2` or `D1/D3`.
+        decision: &'static str,
     },
     /// A local-address list contains a malformed IP address.
     #[error("invalid extra address: {0}")]

@@ -11,8 +11,8 @@ inventory_date = "2026-10-29"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 139
-partial = 14
+implemented = 146
+partial = 7
 absent = 0
 rejected = 8
 omitted = 1
@@ -306,15 +306,16 @@ id = "MIT-client-11"
 area = "client"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Initial-credential options and prompting: lifetimes, addresses, enctypes, preauth options, service, anonymous, callbacks/responders"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "P2-4 delivered options, prompts, the responder and the password-expiry notice (`Responder::password_expiry`); P2-23 delivered the expiry notice from last-req and key-expiration (`ExpiryNotice`) and the automatic password change and restart on `KDC_ERR_KEY_EXPIRED` (`Tokio::login_with_expiry`). The anonymous option flow (`krb5_get_init_creds_opt_set_anonymous`) is the anonymous credentials of plan-2 todo 8, which delivered `InitCredsOptions::with_anonymous` (row MIT-client-9); the wave-5 merge keeps this row partial because the generated catalogue `docs/config-relations.md` does not record that flow (register row FU-KPW-P05); plan-2 todo 28 (parity manifests at 100%) closes it."
+missing = ""
 rust_symbols = [
   "client::stepwise::InitCredsOptions",
   "client::stepwise::Prompt",
   "client::stepwise::Responder",
   "client::kpasswd::last_req::ExpiryNotice",
   "client::kpasswd::password_expiry::ExpiryResponder",
+  "client::stepwise::InitCredsOptions::with_anonymous",
 ]
 test_names = [
   "tests/client/stepwise.rs::drive_reports_the_password_expiry",
@@ -323,6 +324,8 @@ test_names = [
   "tests/kpasswd_expiry/notice.rs::the_warning_follows_mit_rules_and_wording",
   "tests/kpasswd_expiry/flow.rs::an_expired_password_is_changed_and_the_login_restarts_with_the_new_one",
   "tests/interop_kpasswd/scenarios.rs::an_impending_expiry_reaches_the_responder",
+  "tests/pkinit/scenarios.rs::anonymous_pkinit_yields_the_anonymous_principal",
+  "tests/pkinit/scenarios.rs::realm_exposed_anonymity_requires_the_anonymous_name",
 ]
 feature_flags = []
 security_divergence = ""
@@ -1793,15 +1796,26 @@ id = "MIT-config-14"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`dns_canonicalize_hostname`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "CanonicalizationPolicy (todo 15) is the effective consumer, but no client route canonicalizes a host name implicitly: Principal::host_based_service and the GSS and HTTP name import still only lower-case the host (consumers: todo 18 for the GSS name import, todo 26 for the HTTP client)"
-rust_symbols = ["discovery::hostname::CanonicalizationPolicy"]
+missing = ""
+rust_symbols = [
+  "discovery::hostname::CanonicalizationPolicy",
+  "discovery::hostname::CanonicalizationPolicy::acquire",
+  "discovery::hostname::HostNamePolicy",
+  "client::Tokio::get_host_service_ticket",
+  "client::negotiate::Client::authorization_context_for_acquired_host",
+]
 test_names = [
   "tests/config/relations_c1.rs::dns_canonicalize_hostname",
   "tests/discovery/hostnames.rs::the_three_modes_order_their_forms",
   "tests/discovery/hostnames.rs::dns_canonicalization_follows_the_name_and_then_the_address",
   "tests/discovery/hostnames.rs::fallback_candidates_are_distinct_and_ordered",
+  "tests/discovery/acquisition.rs::opted_in_host_acquisition_uses_canonical_name",
+  "tests/discovery/acquisition.rs::fallback_does_not_resolve_after_plain_success",
+  "tests/discovery/acquisition.rs::fallback_resolves_after_principal_unknown",
+  "tests/discovery/acquisition.rs::default_host_acquisition_issues_no_dns",
+  "tests/client/host_acquisition.rs::host_acquisition_route_asks_for_the_approved_name",
 ]
 feature_flags = []
 security_divergence = ""
@@ -2251,14 +2265,23 @@ id = "MIT-config-34"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`qualify_shortname`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "CanonicalizationPolicy (todo 15) applies the suffix, but no client route canonicalizes a host name implicitly: Principal::host_based_service and the GSS and HTTP name import still only lower-case the host (consumers: todo 18 for the GSS name import, todo 26 for the HTTP client)"
-rust_symbols = ["discovery::hostname::CanonicalizationPolicy"]
+missing = ""
+rust_symbols = [
+  "discovery::hostname::CanonicalizationPolicy",
+  "discovery::hostname::CanonicalizationPolicy::acquire",
+  "discovery::hostname::HostNamePolicy",
+  "client::Tokio::get_host_service_ticket",
+  "client::negotiate::Client::authorization_context_for_acquired_host",
+]
 test_names = [
   "tests/config/relations_c2.rs::qualify_shortname",
   "tests/discovery/hostnames.rs::qualify_shortname_adds_a_suffix_to_one_label_names",
   "tests/discovery/hostnames.rs::a_failed_lookup_keeps_the_name",
+  "tests/discovery/acquisition.rs::host_acquisition_uses_explicit_shortname_suffix",
+  "tests/client/host_acquisition.rs::explicit_principal_is_not_qualified",
+  "tests/client/host_acquisition.rs::host_acquisition_route_asks_for_the_approved_name",
 ]
 feature_flags = []
 security_divergence = "unset adds no suffix (MIT uses the first search domain of the system resolver configuration, sn2princ.c:62-74; the library does not read that configuration to name a service)"
@@ -2272,14 +2295,22 @@ id = "MIT-config-35"
 area = "config"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`rdns`"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "CanonicalizationPolicy (todo 15) makes the reverse lookup, but no client route canonicalizes a host name implicitly: Principal::host_based_service and the GSS and HTTP name import still only lower-case the host (consumers: todo 18 for the GSS name import, todo 26 for the HTTP client)"
-rust_symbols = ["discovery::hostname::CanonicalizationPolicy"]
+missing = ""
+rust_symbols = [
+  "discovery::hostname::CanonicalizationPolicy",
+  "discovery::hostname::CanonicalizationPolicy::acquire",
+  "discovery::hostname::HostNamePolicy",
+  "client::Tokio::get_host_service_ticket",
+  "client::negotiate::Client::authorization_context_for_acquired_host",
+]
 test_names = [
   "tests/config/relations_c2.rs::rdns",
   "tests/discovery/hostnames.rs::dns_canonicalization_follows_the_name_and_then_the_address",
   "tests/discovery/hostnames.rs::an_address_literal_is_named_only_by_the_reverse_lookup",
+  "tests/discovery/acquisition.rs::rdns_false_never_queries_ptr",
+  "tests/discovery/acquisition.rs::unapproved_ptr_identity_is_refused",
 ]
 feature_flags = []
 security_divergence = ""
@@ -2747,7 +2778,7 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "`[plugins]` `disable`, `enable_only`, `module` common relations"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "P2-28 closes the row (register row FU-EXT-P01): the `disable` and `enable_only` consumers are deferred. `extensions::Registry::enabled` applies them to registered providers, but Strict mode still refuses both relations with `NotYetEffective`, and the built-in consumers of `clpreauth`, `ccselect`, `hostrealm` and `localauth` do not run through the registry yet (P2-4, P2-11, P2-15, P2-25 route them); lifting the Strict refusal changes an A7-pinned assertion and needs the recorded decision A7 requires."
+missing = "Plan-2 todo 28 (wave-11 lane A, register FU-EXT-P01, EXECUTOR decision W11A-6) made `disable` and `enable_only` effective over the registered and the built-in ccselect, hostrealm and localauth modules through one arrangement (extensions::order::arrange, MIT plugin.c:302-347) and lifted their Strict refusal; another interface name is an unknown path. Still missing: the built-in clpreauth mechanisms are chosen inside src/client/stepwise (init.rs, options.rs, spake.rs), which wave 11 assigns to lane E, so clpreauth controls reach only registered mechanisms and stay diagnosed (excluding encrypted_timestamp fails in both modes); closer: a todo-28 follow-up that filters the built-in clpreauth mechanisms in the stepwise engine"
 rust_symbols = [
   "extensions::Registry",
   "extensions::Registry::enabled",
@@ -2769,6 +2800,11 @@ test_names = [
   "tests/extensions.rs::plugin_module_resolves_registered_ids",
   "tests/extensions.rs::selection_order_and_priority",
   "tests/extensions.rs::local_authorization_denial_wins",
+  "tests/config/plugin_case.rs::known_interface_strict_controls_are_effective",
+  "tests/extensions.rs::disabled_builtin_ccselect_is_not_consulted",
+  "tests/discovery/realms.rs::disabled_builtin_hostrealm_is_not_consulted",
+  "tests/localauth/controls.rs::localauth_controls_apply_to_public_helpers",
+  "tests/localauth/controls.rs::localauth_controls_apply_to_authorization",
 ]
 feature_flags = []
 security_divergence = "A registered provider is active without a `module` relation, and `module = <id>:<path>` only checks that `<id>` is a registered provider of that interface (the path is ignored and nothing is reordered), where MIT puts `module` entries before the built-ins (`plugin.c:205-252`); any other `module` stays `Config::UnsupportedDynamicModule`. Strict mode still refuses `disable` and `enable_only` with `NotYetEffective` until the built-in consumers route through the registry (P2-4, P2-11, P2-15, P2-25; tests/config/plugin_case.rs::upper_interface_strict_matches_other_interfaces), and a `clpreauth` restriction that excludes `encrypted_timestamp` fails in both modes."
@@ -2922,13 +2958,22 @@ upstream_ref = "krb5-1.22.2-final"
 capability = "Hostname canonicalization with DNS, `fallback`, short-name qualification and reverse DNS"
 implementation_status = "partial"
 evidence_status = "unit"
-missing = "CanonicalizationPolicy (todo 15) is the effective consumer, but no client route canonicalizes a host name implicitly: Principal::host_based_service and the GSS and HTTP name import still only lower-case the host (consumers: todo 18 for the GSS name import, todo 26 for the HTTP client)"
-rust_symbols = ["discovery::hostname::CanonicalizationPolicy"]
+missing = "The client route is delivered (plan-2 todo 28, wave-11 lane A): CanonicalizationPolicy::acquire makes the canonical names lazily (fallback asks DNS only after KDC_ERR_S_PRINCIPAL_UNKNOWN) and uses a name other than the requested host only with the caller's HostNamePolicy approval, through client::Tokio::get_host_service_ticket and negotiate::Client::authorization_context_for_acquired_host. The GSS-API name route (gss::Name import, lanes D/N) and the HTTP client route (src/http/agent.rs, lanes F/N, register FU-HTC-P08) do not delegate to it yet (closer: todo 28, lane N naming-wiring)"
+rust_symbols = [
+  "discovery::hostname::CanonicalizationPolicy",
+  "discovery::hostname::CanonicalizationPolicy::acquire",
+  "discovery::hostname::HostNamePolicy",
+  "client::Tokio::get_host_service_ticket",
+  "client::negotiate::Client::authorization_context_for_acquired_host",
+]
 test_names = [
   "tests/discovery/hostnames.rs::the_three_modes_order_their_forms",
   "tests/discovery/hostnames.rs::dns_canonicalization_follows_the_name_and_then_the_address",
   "tests/discovery/hostnames.rs::fallback_candidates_are_distinct_and_ordered",
   "tests/discovery/hostnames.rs::qualify_shortname_adds_a_suffix_to_one_label_names",
+  "tests/discovery/acquisition.rs::fallback_does_not_resolve_after_plain_success",
+  "tests/discovery/acquisition.rs::fallback_resolves_after_principal_unknown",
+  "tests/discovery/acquisition.rs::unapproved_ptr_identity_is_refused",
 ]
 feature_flags = []
 security_divergence = ""
@@ -4019,15 +4064,20 @@ id = "MIT-authz-6"
 area = "authz"
 upstream_ref = "krb5-1.22.2-final"
 capability = "Host-to-realm plugin interface"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Registered providers are consulted when a registry is passed to ServerLocator::locate and to the HostRealmResolver methods (todo 15); the Tokio exchange routes (send_to_realm, get_service_ticket*) carry no registry, so a registered provider does not influence them (closer: todo 28, configuration consumers)"
+missing = ""
 rust_symbols = [
   "discovery::realm::HostRealmResolver",
   "client::transport::Tokio::host_realms",
+  "client::transport::Tokio::with_registry",
 ]
 test_names = [
   "tests/discovery/realms.rs::the_provider_chain_is_registry_then_profile_then_default",
+  "tests/client/registry_routes.rs::service_ticket_route_uses_registered_hostrealm",
+  "tests/client/registry_routes.rs::transport_service_route_uses_registered_hostrealm",
+  "tests/client/registry_routes.rs::failing_hostrealm_stops_ticket_acquisition",
+  "tests/client/registry_routes.rs::explicit_service_realm_is_not_remapped",
 ]
 feature_flags = []
 security_divergence = ""
@@ -4106,15 +4156,21 @@ id = "MIT-plugin-3"
 area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`hostrealm` hostname/default-realm mapping"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Registered providers are consulted when a registry is passed to ServerLocator::locate and to the HostRealmResolver methods (todo 15); the Tokio exchange routes (send_to_realm, get_service_ticket*) carry no registry, so a registered provider does not influence them (closer: todo 28, configuration consumers)"
+missing = ""
 rust_symbols = [
   "discovery::realm::HostRealmResolver",
   "client::transport::Tokio::host_realms",
+  "client::transport::Tokio::with_registry",
 ]
 test_names = [
   "tests/discovery/realms.rs::the_provider_chain_is_registry_then_profile_then_default",
+  "tests/client/registry_routes.rs::service_ticket_route_uses_registered_hostrealm",
+  "tests/client/registry_routes.rs::transport_service_route_uses_registered_hostrealm",
+  "tests/client/registry_routes.rs::failing_hostrealm_stops_ticket_acquisition",
+  "tests/client/registry_routes.rs::explicit_service_realm_is_not_remapped",
+  "tests/discovery/realms.rs::disabled_builtin_hostrealm_is_not_consulted",
 ]
 feature_flags = []
 security_divergence = ""
@@ -4176,17 +4232,23 @@ id = "MIT-plugin-6"
 area = "plugin"
 upstream_ref = "krb5-1.22.2-final"
 capability = "`locate` server-location interface"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Registered providers are consulted when a registry is passed to ServerLocator::locate and to the HostRealmResolver methods (todo 15); the Tokio exchange routes (send_to_realm, get_service_ticket*) carry no registry, so a registered provider does not influence them (closer: todo 28, configuration consumers)"
+missing = ""
 rust_symbols = [
   "discovery::locate::ServerLocator",
   "discovery::locate::EndpointRole",
   "client::transport::Tokio::locator",
+  "client::transport::Tokio::with_registry",
 ]
 test_names = [
   "tests/discovery/roles.rs::a_registered_locator_answers_before_the_profile_and_dns",
   "tests/discovery/roles.rs::a_failing_locator_stops_the_lookup",
+  "tests/discovery/exchange_registry.rs::send_to_realm_uses_registered_locator",
+  "tests/discovery/exchange_registry.rs::failing_locator_stops_send_to_realm",
+  "tests/discovery/exchange_registry.rs::primary_retry_preserves_registry",
+  "tests/client_transport/tests/kpasswd_registry.rs::kpasswd_locator_preserves_delivery_rules",
+  "tests/client_transport/tests/kpasswd_registry.rs::kpasswd_locator_answers_before_the_profile",
 ]
 feature_flags = []
 security_divergence = ""

@@ -120,11 +120,8 @@ where
     Ok(())
 }
 
-/// The providers of `items` in consultation order (MIT `plugin.c:302-347`).
-///
-/// Configured `module` names come in profile order, then the other providers in
-/// registration order; `disable` removes, then a non-empty `enable_only` keeps
-/// and reorders.
+/// The providers of `items` in consultation order (MIT `plugin.c:302-347`):
+/// [`arrange`] over their ids.
 pub(super) fn enabled<'item, T>(
     items: &'item [Arc<T>],
     interface: Interface,
@@ -134,40 +131,64 @@ pub(super) fn enabled<'item, T>(
 where
     T: ?Sized,
 {
-    let restrictions = config
-        .filter(|_| interface.configurable())
-        .and_then(|value| value.plugins.get(interface.name()));
-    let Some(plugins) = restrictions else {
+    let Some(profile) = config else {
         return items.iter().collect();
+    };
+    arrange(interface, profile, items.iter().map(|item| id(item)))
+        .into_iter()
+        .filter_map(|name| items.iter().find(|item| id(item) == name))
+        .collect()
+}
+
+/// The module names of `interface` in consultation order (MIT
+/// `configure_interface`, `plugin.c:302-347`).
+///
+/// `names` are the registered providers in registration order followed by the
+/// built-in modules in MIT's registration order. Configured `module` names come
+/// first, a repeated name keeps its first place, `disable` removes, then a
+/// non-empty `enable_only` keeps and reorders. Names match exactly
+/// (`strcmp`). An interface without `[plugins]` controls keeps `names`.
+pub(crate) fn arrange<'name, I>(interface: Interface, config: &Config, names: I) -> Vec<&'name str>
+where
+    I: IntoIterator<Item = &'name str>,
+{
+    let listed: Vec<&str> = names.into_iter().collect();
+    let restrictions = interface
+        .configurable()
+        .then(|| config.plugins.get(interface.name()))
+        .flatten();
+    let Some(plugins) = restrictions else {
+        let mut unique: Vec<&str> = Vec::new();
+        for name in listed {
+            if !unique.contains(&name) {
+                unique.push(name);
+            }
+        }
+        return unique;
     };
     let configured = plugins
         .module
         .iter()
-        .filter_map(|name| items.iter().find(|item| id(item) == name));
-    let mut full: Vec<&Arc<T>> = Vec::new();
-    for item in configured.chain(items) {
-        if !full.iter().any(|chosen| Arc::ptr_eq(chosen, item)) {
-            full.push(item);
+        .filter_map(|name| listed.iter().copied().find(|item| item == name));
+    let mut full: Vec<&str> = Vec::new();
+    for name in configured.chain(listed.iter().copied()) {
+        if !full.contains(&name) && !plugins.disable.iter().any(|item| item == name) {
+            full.push(name);
         }
     }
-    let kept: Vec<&Arc<T>> = full
-        .into_iter()
-        .filter(|item| !plugins.disable.iter().any(|name| name == id(item)))
-        .collect();
     if plugins.enable_only.is_empty() {
-        return kept;
+        return full;
     }
-    let mut ordered = Vec::new();
-    for name in &plugins.enable_only {
-        if let Some(item) = kept.iter().find(|item| id(item) == name)
-            && !ordered
-                .iter()
-                .any(|chosen: &&Arc<T>| Arc::ptr_eq(chosen, item))
-        {
-            ordered.push(*item);
-        }
-    }
-    ordered
+    plugins
+        .enable_only
+        .iter()
+        .filter_map(|name| full.iter().copied().find(|item| item == name))
+        .fold(Vec::new(), |mut ordered, name| {
+            if !ordered.contains(&name) {
+                ordered.push(name);
+            }
+            ordered
+        })
 }
 
 /// Provider ids of one interface, filtered by `config` when given.

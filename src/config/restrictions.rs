@@ -124,18 +124,17 @@ pub(super) fn plugins(value: &Plugins) -> Result<(), Error> {
     )
 }
 
-/// Central named refusal used by runtime and serde boundaries.
+/// The named refusal of a `clpreauth` control that would exclude the built-in
+/// encrypted timestamp, which only the exchange engine could honour.
 /// # Errors
 /// Returns [`Error::NotYetEffective`] when the selected restriction cannot be honored.
-pub(super) fn reject(relation: &'static str, restricted: bool) -> Result<(), Error> {
-    if restricted {
-        let package = match relation {
-            "disable" | "enable_only" => "plan 2 WP-16",
-            _ => super::libdefaults::relations::RELATIONS
+fn reject(relation: &'static str, restricted: bool) -> Result<(), Error> {
+    if restricted
+        && let Some(&(_name, _kind, _default, package, _rationale, _test)) =
+            super::section_decode::SECTION_RELATIONS
                 .iter()
                 .find(|row| row.0 == relation)
-                .map_or("plan 2 WP-04", |row| row.3),
-        };
+    {
         return Err(Error::NotYetEffective { relation, package });
     }
     Ok(())

@@ -102,6 +102,28 @@ mod budget;
 #[path = "discovery/primary.rs"]
 mod primary;
 
+/// Registered locators and host-realm mappers on the exchange routes.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "discovery/exchange_registry.rs"]
+mod exchange_registry;
+
+/// Host acquisition: lazy canonical names under the caller's approval.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "discovery/acquisition.rs"]
+mod acquisition;
+
 /// The URI record target and host splitting.
 #[cfg(test)]
 #[expect(
