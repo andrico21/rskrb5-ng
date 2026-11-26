@@ -18,19 +18,19 @@ last_reviewed = "2026-11-01"
 manifest_commit_base = "a6a1851"
 
 [summary]
-implemented = 31
-partial = 4
+implemented = 35
+partial = 0
 absent = 0
 rejected = 0
-omitted = 0
+omitted = 1
 out_of_scope = 0
-total = 35
+total = 36
 
 [insecure_summary]
 implemented = 0
-partial = 1
+partial = 0
 absent = 0
-rejected = 13
+rejected = 14
 omitted = 0
 out_of_scope = 0
 total = 14
@@ -42,9 +42,9 @@ upstream_packages = ["config"]
 upstream_tests = ["config/*_test.go"]
 rskrb5_modules = ["src/config.rs"]
 rskrb5_tests = ["tests/config.rs"]
-status = "partial"
+status = "covered"
 evidence = ["unit tests cover parsing, defaults, realm lookup, enctype mapping, path-list loading, reader adapters and gokrb5-shaped JSON", "every [libdefaults], [realms] and section relation has a typed value and a consumer, a diagnostic or an error (docs/config-relations.md); unknown relations are diagnostics and Strict mode rejects them", "unit tests cover the MIT [domain_realm] semantics that diverge from gokrb5: DNS case folding and bare tags applied to subdomains"]
-next = ["GO-config-2: relation consumers close across plan-2 todos 4, 15, 18 and 25; P2-28 closes the row", "GO-config-3 closed in P2-15: primary-KDC retry and DNS realm discovery"]
+next = []
 
 [[area]]
 id = "keytab"
@@ -86,9 +86,9 @@ upstream_packages = ["messages", "types", "asn1tools", "krberror"]
 upstream_tests = ["messages/*_test.go", "types/*_test.go", "krberror/*_test.go"]
 rskrb5_modules = ["src/messages.rs", "src/ap_req.rs", "src/ap_rep.rs", "src/kdc_req.rs", "src/kdc_rep.rs", "src/krb_error.rs", "src/krb_priv.rs", "src/krb_safe.rs", "src/krb_cred.rs", "src/ticket.rs"]
 rskrb5_tests = ["tests/asn1_fixture_matrix.rs", "tests/messages.rs", "tests/ap_req.rs", "tests/ap_rep.rs", "tests/kdc_req.rs", "tests/kdc_rep.rs", "tests/krb_error.rs", "tests/krb_priv.rs", "tests/krb_safe.rs", "tests/krb_cred.rs", "tests/ticket.rs"]
-status = "partial"
+status = "covered"
 evidence = ["translated gokrb5 DER fixtures decode and round-trip through rasn-backed wrappers", "typed domain errors keep their causes"]
-next = ["GO-messages-1: a dedicated U2U request constructor closes in P2-17", "GO-iana-1, GO-types-1 and GO-asn1tools-1: public assigned-number tables, authorization-data handling and checked DER utilities close in P2-27"]
+next = []
 
 [[area]]
 id = "kadmin-kpasswd"
@@ -108,9 +108,9 @@ upstream_packages = ["client"]
 upstream_tests = ["client/*_test.go", "client/*_integration_test.go"]
 rskrb5_modules = ["src/client.rs", "src/client/options.rs", "src/client/principal.rs", "src/client/transport.rs", "src/client/kpasswd.rs"]
 rskrb5_tests = ["tests/client.rs", "tests/client_principal.rs", "tests/client_transport.rs", "tests/client_integration.rs"]
-status = "partial"
-evidence = ["unit tests cover password/keytab/ccache login, AS/TGS exchange, referrals, renewal, S4U2Self, S4U2Proxy, diagnostics, write-back, and cache behavior", "unit tests cover the renewal series: the refresh band from the current ticket life, auto-renewal pacing, and the AS fallback for an expired or refused renewal", "historical upstream clelange/rskrb5: GitHub Actions run 28073249506 passed 40 Docker MIT client_integration tests on ubuntu-latest, including DNS-SRV, referrals, renewal, cached tickets, ccache, HTTP, and kpasswd"]
-next = ["GO-client-1: the logger landed in P2-6; the `Client.Key` accessor decision closes with P2-28", "GO-client-2: authenticated changed-client referrals; P2-28 closes the row", "GO-client-3: U2U request constructor closes in P2-17", "keep full Docker MIT integration green: run locally with scripts/run-gated-integration.sh before release; the fork's ci.yml has no Docker integration job"]
+status = "covered"
+evidence = ["unit tests cover password/keytab/ccache login, AS/TGS exchange, referrals, renewal, S4U2Self, S4U2Proxy, diagnostics, write-back, and cache behavior", "unit tests cover the renewal series: the refresh band from the current ticket life, auto-renewal pacing, and the AS fallback for an expired or refused renewal", "historical upstream clelange/rskrb5: GitHub Actions run 28073249506 passed 40 Docker MIT client_integration tests on ubuntu-latest, including DNS-SRV, referrals, renewal, cached tickets, ccache, HTTP, and kpasswd", "every row is implemented except GO-client-8 (`Client.Key`), omitted by the owner decision of 2026-11-25 (D14): no long-term key leaves a client"]
+next = ["keep full Docker MIT integration green: run locally with scripts/run-gated-integration.sh before release; the fork's ci.yml has no Docker integration job"]
 
 [[area]]
 id = "service"
@@ -119,9 +119,9 @@ upstream_packages = ["service"]
 upstream_tests = ["service/*_test.go", "messages/Ticket_test.go"]
 rskrb5_modules = ["src/service.rs", "src/http.rs"]
 rskrb5_tests = ["tests/service.rs", "tests/http.rs", "tests/client_integration.rs"]
-status = "partial"
+status = "covered"
 evidence = ["unit tests cover AP-REQ validation, replay cache, clock skew, client address checks, AP-REP mutual auth, mutual-required completion enforcement (classifier and send wrappers fail closed), [libdefaults] clockskew on the Config-driven acceptors, keytab adapters, and PAC checksum validation", "historical upstream clelange/rskrb5: GitHub Actions run 28073249506 passed Docker HTTP/SPNEGO service acceptance, raw KRB5 Negotiate, and replay rejection on ubuntu-latest"]
-next = ["GO-service-1: the logger landed in P2-6; settings equivalence (`SName`, PAC toggle) closes with P2-28", "keep Linux Docker HTTP/SPNEGO coverage green: run locally with scripts/run-gated-integration.sh before release; the fork's ci.yml has no Docker integration job"]
+next = ["keep Linux Docker HTTP/SPNEGO coverage green: run locally with scripts/run-gated-integration.sh before release; the fork's ci.yml has no Docker integration job"]
 
 [[area]]
 id = "gssapi-spnego"
@@ -130,9 +130,9 @@ upstream_packages = ["gssapi", "spnego"]
 upstream_tests = ["gssapi/*_test.go", "spnego/*_test.go", "spnego/http_test.go"]
 rskrb5_modules = ["src/spnego.rs", "src/spnego/oid.rs", "src/http.rs", "src/http/agent.rs", "src/http/sessions.rs", "src/http/cookies.rs", "src/client/negotiate.rs"]
 rskrb5_tests = ["tests/gssapi.rs", "tests/spnego.rs", "tests/http.rs", "tests/client.rs", "tests/client_integration.rs"]
-status = "partial"
+status = "covered"
 evidence = ["MIC, Wrap, SPNEGO token, raw KRB5 Negotiate, AP-REP verification, HTTP helpers, Tower middleware, and high-level header generation are covered", "transport-agnostic async and blocking HTTP client wrappers retry 401 Negotiate responses through replayable request factories"]
-next = ["GO-spnego-2 and GO-gssapi-1: credential delegation and a general mechanism/context interface close in P2-18", "keep HTTP wrapper tests green in CI and Docker SPNEGO integration green locally before release"]
+next = ["keep HTTP wrapper tests green in CI and Docker SPNEGO integration green locally before release"]
 
 [[area]]
 id = "pac"
@@ -141,9 +141,9 @@ upstream_packages = ["pac"]
 upstream_tests = ["pac/*_test.go", "messages/Ticket_test.go", "client/client_ad_integration_test.go"]
 rskrb5_modules = ["src/pac.rs", "src/pac/reader.rs", "src/pac/verify.rs", "src/pac/builder.rs", "src/service.rs"]
 rskrb5_tests = ["tests/pac.rs", "tests/pac_api.rs", "tests/service.rs", "tests/client_ad_integration.rs", "tests/interop_pac.rs", "tests/interop_pac_samba.rs"]
-status = "partial"
+status = "covered"
 evidence = ["unit tests cover PAC container data, validation info, credentials, UPN/DNS, S4U delegation, device info, claims, compression, server signatures, and AD credential summaries", "the explicit-policy verification (server, KDC, ticket and full signatures, client binding), the builder and the identity attribute set are covered by tests/pac_api.rs with independent and MIT-captured vectors and live by the pac and pac-samba interop suites against MIT krb5 1.22.2 and Samba 4.22.11 (todo 22)"]
-next = ["run TESTAD=1 against a maintained AD lab and keep it green before claiming full AD parity"]
+next = ["keep the pac and pac-samba interop suites green on every main push"]
 
 [[area]]
 id = "docker-mit"
@@ -153,7 +153,7 @@ upstream_tests = ["client/*_integration_test.go", "credentials/*_integration_tes
 rskrb5_modules = ["scripts/run-gated-integration.sh"]
 rskrb5_tests = ["tests/client_integration.rs"]
 status = "covered-with-gated-evidence"
-evidence = ["focused forwarded-port configured-KDC AS login passed locally", "full local direct-container-IP run timed out to 192.168.215.x:88 on macOS Docker networking", "historical upstream clelange/rskrb5: GitHub Actions workflow_dispatch run 28073249506 passed Docker-backed integration on ubuntu-latest with INTEGRATION=1, TESTPRIVILEGED=1, TEST_KPASSWD=1, and TEST_DNS_KDC=1"]
+evidence = ["focused forwarded-port configured-KDC AS login passed locally", "full local direct-container-IP run timed out to 192.168.215.x:88 on macOS Docker networking", "historical upstream clelange/rskrb5: GitHub Actions workflow_dispatch run 28073249506 passed Docker-backed integration on ubuntu-latest with INTEGRATION=1, TESTPRIVILEGED=1, TEST_KPASSWD=1, and TEST_DNS_KDC=1", "the interop workflow (.github/workflows/interop.yml) runs the 26 MIT krb5 1.22.2 suites in required mode on every main push in its mit job; interop run 45676384898 passed at 46aaeffa"]
 next = ["run scripts/run-gated-integration.sh run, and again with TEST_KPASSWD=1, locally before release; the fork's ci.yml has no Docker integration job and its workflow_dispatch declares no inputs"]
 
 [[area]]
@@ -163,9 +163,9 @@ upstream_packages = ["client", "pac", "service"]
 upstream_tests = ["client/client_ad_integration_test.go"]
 rskrb5_modules = ["tests/client_ad_integration.rs", "src/pac.rs", "src/client.rs"]
 rskrb5_tests = ["tests/client_ad_integration.rs"]
-status = "blocked-on-lab"
-evidence = ["AD integration tests exist, the lab contract is documented in docs/ad-integration.md, TESTAD_REQUIRED=1 fails when the strict gate would otherwise soft-skip, lab-specific keytab path/hex/base64 overrides are supported, scripts/check-ad-integration-env.py preflights strict AD runs, scripts/check-github-ad-gate.py checks GitHub secret readiness and refuses to dispatch while ci.yml has no AD job, docs/ad-lab-provisioning.md documents the live AD lab contract, and docs/github-ad-gate-setup.md documents the secret setup a restored AD job needs", "tests/client_ad_integration.rs statically verifies the embedded AD keytab fixtures contain testuser1, testuser2, testuser3, and sysHTTP principals with AES128, AES256, and RC4 key material", "historical upstream clelange/rskrb5: GitHub Actions run 28119806826 passed the hosted keytab secret-shape dry-run job (upstream dispatch input test_ad_dry_run=true)", "historical upstream clelange/rskrb5: GitHub Actions run 28117082548 reached hosted ubuntu-latest and decoded the four keytab secrets before failing because the four endpoint secrets were absent"]
-next = ["GO-doc-1: maintained live MIT, Samba and Windows AD evidence for this commit closes in P2-28", "strict AD parity stays deferred: TEST_AD_USER_KDC_ADDR, TEST_AD_RESOURCE_KDC_ADDR, TEST_AD_USER_ADMIN_ADDR, and TEST_AD_RESOURCE_ADMIN_ADDR are unavailable and the fork's ci.yml has no AD job", "do not add random or placeholder endpoint secrets; endpoint secrets must identify real reachable AD services", "use docs/samba-ad-feasibility.md only as a backup spike, not as Windows AD parity evidence", "to restore a hosted AD gate, add an AD job and its workflow_dispatch inputs to ci.yml, then run scripts/check-github-ad-gate.py before dispatching it", "after strict AD is available, run scripts/check-ad-integration-env.py before TESTAD=1 TESTAD_REQUIRED=1 with lab-specific keytabs as needed and record keytab login, no-preauth login, user-domain PAC, and resource-trust PAC evidence"]
+status = "covered"
+evidence = ["AD integration tests exist, the lab contract is documented in docs/ad-integration.md, TESTAD_REQUIRED=1 fails when the strict gate would otherwise soft-skip, lab-specific keytab path/hex/base64 overrides are supported, scripts/check-ad-integration-env.py preflights strict AD runs, scripts/check-github-ad-gate.py checks GitHub secret readiness and refuses to dispatch while ci.yml has no AD job, docs/ad-lab-provisioning.md documents the live AD lab contract, and docs/github-ad-gate-setup.md documents the secret setup a restored AD job needs", "tests/client_ad_integration.rs statically verifies the embedded AD keytab fixtures contain testuser1, testuser2, testuser3, and sysHTTP principals with AES128, AES256, and RC4 key material", "historical upstream clelange/rskrb5: GitHub Actions run 28119806826 passed the hosted keytab secret-shape dry-run job (upstream dispatch input test_ad_dry_run=true)", "historical upstream clelange/rskrb5: GitHub Actions run 28117082548 reached hosted ubuntu-latest and decoded the four keytab secrets before failing because the four endpoint secrets were absent", "owner decision D12: Samba AD in Docker is sufficient AD evidence; the interop workflow's samba job runs the samba, gss-samba, kpasswd-samba, pac-samba and routing-samba suites against a two-domain Samba AD trust in required mode on every main push (interop run 45676384898, job 139424931023, passed at 46aaeffa)"]
+next = ["Windows-specific behaviour is Samba-verified, not Windows-AD-verified (D12); the strict Windows AD gate (tests/client_ad_integration.rs, docs/github-ad-gate-setup.md) runs only if the owner provides a lab", "do not add random or placeholder endpoint secrets; endpoint secrets must identify real reachable AD services"]
 
 [[area]]
 id = "non-goals"
@@ -285,9 +285,9 @@ id = "GO-config-2"
 area = "config"
 upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
 capability = "`[libdefaults]` values"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Every [libdefaults] relation is parsed with a typed value and a consumer, a diagnostic or an error (P1-15, docs/config-relations.md); P2-4 made forwardable, proxiable, renew_lifetime, ticket_lifetime, noaddresses, extra_addresses, kdc_default_options, kdc_timesync and preferred_preauth_types effective in the exchange options; P2-25 made k5login_authoritative and k5login_directory effective (the `localauth` leaf: LocalAuthorizer::from_config); P2-18 made enforce_ok_as_delegate, ignore_acceptor_hostname and client_aware_channel_bindings effective (gss::InitiatorOptions::from_config, gss::AcceptorOptions::from_config); P2-15 made the discovery relations effective; P2-28 (wave-11 lane A) classified plugin_base_dir as permanently out of scope (OutOfScope, D1/D3, Strict refuses), made dns_canonicalize_hostname, rdns and qualify_shortname effective on the explicit host-acquisition route and removed the stale serde refusal of a nonzero request_timeout. Still deferred: kcm_mach_service (closer: todo 28, wave-11 lane B); the row closes when no [libdefaults] relation is deferred"
+missing = ""
 rust_symbols = ["config::LibDefaults", "config::Config::diagnostics"]
 test_names = [
   "tests/config/relations_c1.rs::canonicalize",
@@ -297,9 +297,13 @@ test_names = [
   "src/config/classification_e.rs::every_permanent_scope_row_is_reviewed",
   "tests/config/relations_c2.rs::plugin_base_dir",
   "tests/config/relations_c2.rs::request_timeout_survives_serde",
+  "src/config/classification_e.rs::no_catalogue_row_is_deferred",
+  "tests/spake/profile.rs::spake_preauth_groups",
+  "tests/localauth/profile.rs::k5login_authoritative",
+  "tests/localauth/profile.rs::k5login_directory",
 ]
 feature_flags = []
-security_divergence = "Relation names are case-sensitive, as in MIT; gokrb5 folds them (krb5conf.go:140). gokrb5 silently ignores unknown keys; here they are diagnostics and ParseMode::Strict turns every diagnostic into an error. A value asking for behaviour stricter than the library provides is an error in both modes."
+security_divergence = "Relation names are case-sensitive, as in MIT; gokrb5 folds them (krb5conf.go:140). gokrb5 silently ignores unknown keys; here they are diagnostics and ParseMode::Strict turns every diagnostic into an error. A value asking for behaviour stricter than the library provides is an error in both modes. Every [libdefaults] relation has an effective consumer (docs/config-relations.md, P1-15, P2-4, P2-15, P2-18, P2-25 and P2-28); a relation whose consumer needs a leaf Cargo feature the build lacks (k5login_authoritative and k5login_directory: localauth; spake_preauth_groups: spake) is the FeatureUnavailable diagnostic, and plugin_base_dir, which owner decisions D1 and D3 exclude, the OutOfScope diagnostic; Strict mode refuses both. The Camellia names of the enctype lists keep their UnsupportedSecureEnctype diagnostic without the camellia leaf."
 disposition = "WP-01"
 closing_plan = 2
 closing_todo = 28
@@ -441,13 +445,13 @@ id = "GO-client-1"
 area = "client"
 upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
 capability = "Client constructors, login and lifecycle"
-implementation_status = "partial"
+implementation_status = "implemented"
 evidence_status = "unit"
-missing = "Password, keytab and ccache constructors, login, destroy, auto-renewal handles, diagnostics and cache APIs exist; P2-4 added the stepwise exchange with explicit per-realm referral TGTs and P2-6 the logger contract (`client::Tokio::with_trace`, `client::stepwise::InitCreds::with_trace`, redacted `trace::Event`s). Still missing: gokrb5 `Client.Key`, a client-facade accessor of the long-term key for an etype; the executor declines it on the decision rule (no long-term key leaves a client; callers derive a key from their own secret with the `crypto` string-to-key functions or read their `Keytab`), the owner may veto, and P2-28 closes the row (register FU-TRC-P03)."
+missing = ""
 rust_symbols = ["client::Tokio", "client::Tokio::with_trace", "client::stepwise::InitCreds::with_trace"]
 test_names = ["tests/client/session_cache.rs::tokio_client_affirm_login_returns_current_cache_only_tgt", "tests/client/trace_events.rs::tokio_client_traces_login", "tests/client/trace_events.rs::initial_exchange_traces_each_step_without_secrets"]
 feature_flags = ["tokio"]
-security_divergence = ""
+security_divergence = "gokrb5 `Client.Key` (client/client.go:119-136 at the pin), an accessor of the long-term key of an encryption type, is not part of this row: it is GO-client-8, omitted by the owner decision of 2026-11-25 that no long-term key leaves a client (disposition D14). The constructors, login, destroy, auto-renewal handles, diagnostics, cache APIs and the logger contract of this row are delivered."
 disposition = "WP-18"
 closing_plan = 2
 closing_todo = 6
@@ -459,13 +463,29 @@ id = "GO-client-2"
 area = "client"
 upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
 capability = "AS exchange, pre-authentication, referrals, FAST indicators"
-implementation_status = "partial"
-evidence_status = "unit"
-missing = "Encrypted timestamp, ETYPE-INFO2/INFO/PW-SALT selection, cookies and PA-REQ-ENC-PA-REP exist, and P2-4 runs them in the stepwise exchange; P2-6 added the logger (`Tokio::with_trace`, `InitCreds::with_trace`); P2-7 delivered FAST armor with authenticated changed-client referrals; P2-28 closes the row."
-rust_symbols = []
-test_names = ["tests/client/login_preauth.rs::parses_kdc_preauth_required_error_and_selects_etype_info2", "tests/client/as_exchange.rs::process_as_rep_rejects_invalid_pa_req_enc_pa_rep_checksum", "tests/client/review_integrity.rs::as_reply_checksum_type_is_the_reply_keys_own", "tests/client/review_integrity.rs::tgs_reply_checksum_type_is_the_reply_keys_own"]
+implementation_status = "implemented"
+evidence_status = "live-ci"
+missing = ""
+rust_symbols = [
+  "client::stepwise::InitCreds",
+  "client::stepwise::InitCredsOptions",
+  "client::Tokio::with_trace",
+  "client::stepwise::InitCreds::with_trace",
+]
+test_names = [
+  "tests/client/login_preauth.rs::parses_kdc_preauth_required_error_and_selects_etype_info2",
+  "tests/client/as_exchange.rs::process_as_rep_rejects_invalid_pa_req_enc_pa_rep_checksum",
+  "tests/client/review_integrity.rs::as_reply_checksum_type_is_the_reply_keys_own",
+  "tests/client/review_integrity.rs::tgs_reply_checksum_type_is_the_reply_keys_own",
+  "tests/fast/exchange.rs::canonicalization_is_accepted_only_under_fast",
+  "tests/fast/exchange.rs::client_referrals_are_followed_only_when_armored_and_asked_for",
+  "tests/client/trace_events.rs::initial_exchange_traces_each_step_without_secrets",
+  "tests/interop_exchange/scenarios.rs::as_exchange_prompts_and_answers_the_preauth_challenge",
+  "tests/interop_fast/scenarios.rs::encrypted_challenge_login_is_armored",
+  "tests/interop_mit/kdc.rs::preauth_required_principal_negotiates_encrypted_timestamp",
+]
 feature_flags = ["tokio"]
-security_divergence = ""
+security_divergence = "A changed client name in the AS reply (a client referral or enterprise canonicalization) is accepted only inside FAST, when the request asked for canonicalization, and only with the authenticated PA-REQ-ENC-PA-REP checksum of the reply key's own mandatory checksum type; gokrb5 accepts the reply's name without that binding. The interop evidence runs on the hosted interop workflow's mit job against MIT krb5 1.22.2 on every main push."
 disposition = "WP-04"
 closing_plan = 2
 closing_todo = 28
@@ -569,6 +589,31 @@ disposition = "ALREADY"
 contributors = []
 doc_anchor = "docs/security-policy.md#unprotected-password-change"
 parity_area = "kadmin-kpasswd"
+
+[[feature]]
+id = "GO-client-8"
+area = "client"
+upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
+capability = "`Client.Key`: the long-term key of an encryption type from the client's keytab or password (split from GO-client-1)"
+implementation_status = "omitted"
+evidence_status = "unit"
+missing = "Omitted by the owner decision of 2026-11-25 (disposition D14): no long-term key leaves a client, so the client facade has no key accessor. gokrb5 `Client.Key` (client/client.go:119-136) returns the keytab entry (`Keytab.GetEncryptionKey`) or derives the key from the stored password (`crypto.GetKeyFromPassword`); a caller that holds the secret gets the same key itself: `Keytab::find_key` selects it by principal, realm, kvno and etype with the GetEncryptionKey rule (kvno 0 is the newest entry), and `crypto::checked::Etype::string_to_key` derives it from a password under the runtime enctype policy and its iteration floor. The client keeps its password and keytab in zeroizing owners with redacted Debug."
+rust_symbols = ["keytab::Keytab::find_key", "crypto::checked::Etype::string_to_key"]
+test_names = [
+  "tests/keytab.rs::finds_matching_key_by_principal_kvno_and_etype",
+  "tests/keytab.rs::kvno_zero_selects_newest_matching_key",
+  "tests/crypto_aes.rs::aes256_string_to_key_matches_gokrb5_vectors",
+  "tests/crypto_mutations.rs::checked_s2k_matches_rfc3962",
+  "tests/secret_debug_audit.rs::public_secret_owners_are_audited",
+]
+feature_flags = []
+security_divergence = ""
+disposition = "D14"
+closing_plan = 2
+closing_todo = 28
+contributors = []
+doc_anchor = "docs/review/parity-register.md#client-key-export"
+parity_area = "client"
 
 [[feature]]
 id = "GO-service-1"
@@ -962,13 +1007,24 @@ id = "GO-doc-1"
 area = "doc"
 upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
 capability = "Supported encryption and interoperability statement"
-implementation_status = "partial"
-evidence_status = "unproven"
-missing = "Docker MIT evidence is historical-upstream and AD is blocked-on-lab; a maintained Docker MIT 1.22.2 and Samba gate on this commit and a strict Windows AD run are needed (P2-28)."
+implementation_status = "implemented"
+evidence_status = "live-ci"
+missing = ""
 rust_symbols = []
-test_names = []
+test_names = [
+  "tests/interop_mit/kdc.rs::as_and_tgs_negotiate_each_aes_enctype_over_udp_and_tcp",
+  "tests/interop_mit/kdc.rs::preauth_required_principal_negotiates_encrypted_timestamp",
+  "tests/interop_mit/negotiate.rs::negotiate_header_is_accepted_with_the_mit_http_keytab",
+  "tests/interop_camellia/scenarios.rs::camellia_is_negotiated_with_the_mit_realm",
+  "tests/interop_samba/kdc.rs::samba_as_and_tgs_negotiate_each_aes_enctype",
+  "tests/interop_samba/kdc.rs::cross_realm_tgs_crosses_the_forest_trust_both_ways",
+  "tests/interop_samba/ad.rs::trust_resource_domain_rc4_service_ticket_crosses_the_trust",
+  "tests/interop_samba/negotiate.rs::negotiate_header_with_samba_pac_is_accepted_with_the_http_keytab",
+  "tests/interop_pac_samba/scenarios.rs::the_kdc_ticket_and_full_signatures_of_a_samba_pac_verify",
+  "tests/interop_gss_samba/scenarios.rs::a_bound_gssapi_bind_over_ldaps_is_accepted",
+]
 feature_flags = []
-security_divergence = ""
+security_divergence = "Verified against MIT krb5 1.22.2 and Samba AD; Windows-specific behaviour is Samba-verified, not Windows-AD-verified (owner decision D12: Samba AD in Docker is sufficient AD evidence, and the strict Windows AD gate of docs/github-ad-gate-setup.md runs only if a lab is provided). The supported encryption types are AES-SHA1 and AES-SHA2 by default, DES3 and RC4-HMAC only with allow_des3 and allow_rc4, and Camellia with the camellia leaf and permitted_enctypes. The named scenarios run in required mode on every main push in .github/workflows/interop.yml: its mit job runs the 26 MIT suites and its samba job every suite including the five Samba ones (samba, gss-samba, kpasswd-samba, pac-samba, routing-samba); both jobs passed at 46aaeffa (interop run 45676384898, jobs 139424930458 and 139424931023, beside CI run 45676384902)."
 disposition = "WP-14"
 closing_plan = 2
 closing_todo = 28
@@ -1188,16 +1244,19 @@ id = "GO-T2-14"
 area = "T2"
 upstream_ref = "47cd2e7744531465a983bf457bac38e6ad8f4684"
 capability = "ASN.1 helper length parsing is low-level and caller must validate"
-implementation_status = "partial"
+implementation_status = "rejected"
 evidence_status = "unit"
-missing = "Public checked app-tag and length utilities with explicit size and nesting budgets (P2-27); raw convenience codecs keep their documented prefix decoding."
-rust_symbols = []
-test_names = ["src/spnego/der/tests.rs::der_lengths_reject_nonminimal_forms"]
+missing = ""
+rust_symbols = ["asn1::decode_length", "asn1::read_element", "asn1::validate", "asn1::Limits"]
+test_names = [
+  "src/spnego/der/tests.rs::der_lengths_reject_nonminimal_forms",
+  "tests/der_utilities.rs::non_canonical_lengths_are_refused",
+  "tests/der_utilities.rs::lengths_are_bounded_by_the_budget",
+  "tests/der_utilities.rs::validate_walks_nested_structures_under_a_depth_budget",
+]
 feature_flags = []
-security_divergence = "No unvalidated length helper is public; the internal SPNEGO DER reader bounds slices, rejects indefinite and non-minimal lengths and checks OIDs."
-disposition = "WP-20"
-closing_plan = 2
-closing_todo = 27
+security_divergence = "No unvalidated length helper is public: the public checked DER utilities of `asn1` (P2-27, GO-asn1tools-1) check every length against an explicit `Limits` budget before use, bound the nesting depth and refuse indefinite, reserved and non-minimal lengths; the internal SPNEGO DER reader bounds slices, rejects indefinite and non-minimal lengths and checks OIDs; raw convenience codecs keep their documented prefix decoding."
+disposition = "ALREADY"
 contributors = []
 related_features = ["GO-asn1tools-1"]
 

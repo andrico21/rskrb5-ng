@@ -6,6 +6,17 @@ use alloc::collections::BTreeSet;
 
 use crate::Feature;
 
+/// The only rows disposition `D14` may name: the owner decision of 2026-11-25
+/// that no long-term key leaves a client omits gokrb5 `Client.Key` and nothing else.
+pub(crate) const D14_ROWS: [&str; 1] = ["GO-client-8"];
+
+/// Whether `feature` uses disposition `D14` as the decision allows: only a row of
+/// [`D14_ROWS`], and only `omitted`. Rows with another disposition pass.
+pub(crate) fn d14_admits(feature: &Feature) -> bool {
+    feature.disposition != "D14"
+        || (D14_ROWS.contains(&feature.id.as_str()) && feature.status == "omitted")
+}
+
 /// Checks the disposition, status and closing-todo rules of one row.
 pub(crate) fn check_rules(feature: &Feature, todos: &BTreeSet<(i64, i64)>) {
     let (id, status, disposition) = (
@@ -25,10 +36,11 @@ pub(crate) fn check_rules(feature: &Feature, todos: &BTreeSet<(i64, i64)>) {
         "{id}: out-of-scope only with D1"
     );
     assert_eq!(
-        disposition == "D13",
+        matches!(disposition, "D13" | "D14"),
         status == "omitted",
-        "{id}: omitted only with D13"
+        "{id}: omitted only with D13/D14"
     );
+    assert!(d14_admits(feature), "{id}: D14 names only {D14_ROWS:?}");
     assert_eq!(
         matches!(disposition, "D2" | "POL-01"),
         status == "rejected",
@@ -86,4 +98,17 @@ pub(crate) fn check_rules(feature: &Feature, todos: &BTreeSet<(i64, i64)>) {
             "{id}: {status} rows need a documentation anchor"
         );
     }
+}
+
+/// The ids of the rows in scope that are not `implemented`: a row whose
+/// disposition is a work package or `ALREADY`. The D1, D2, D13, D14 and POL-01
+/// rows keep the statuses [`check_rules`] pins for them.
+pub(crate) fn incomplete(rows: &[Feature]) -> Vec<&str> {
+    rows.iter()
+        .filter(|feature| {
+            feature.disposition == "ALREADY" || feature.disposition.starts_with("WP-")
+        })
+        .filter(|feature| feature.status != "implemented")
+        .map(|feature| feature.id.as_str())
+        .collect()
 }

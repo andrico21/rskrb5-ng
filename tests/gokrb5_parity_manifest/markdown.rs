@@ -30,7 +30,8 @@ superset must not copy are listed under
 const STATUS_VALUES: &str = "## Status values
 
 Feature rows use `implemented`, `partial` (the `missing` column names the gap
-and its closing todo) and `absent`; behaviour rows are `rejected` when the
+and its closing todo), `absent` and `omitted` (an owner decision leaves the row
+out: D14, no long-term key leaves a client); behaviour rows are `rejected` when the
 gokrb5 behaviour is not copied and `partial` while a fix is outstanding. Areas
 and gates use these values:
 
@@ -51,13 +52,14 @@ and gates use these values:
 - `missing-api`: supporting pieces exist, but the user-facing API is missing.
 - `intentionally-out-of-scope`: not required by gokrb5 alone; see the scope above.
 
-## Deferred blockers
+## Active Directory evidence
 
-- Active Directory parity is blocked on reachable USER and RESOURCE AD
-  endpoints; see [`ad-integration.md`](ad-integration.md). Do not add random or
-  placeholder endpoint secrets.
-- Use [`samba-ad-feasibility.md`](samba-ad-feasibility.md) as a backup spike
-  only; Samba results are not Windows AD parity evidence.
+- Active Directory behaviour is verified against Samba AD (owner decision D12:
+  Samba AD in Docker is sufficient AD evidence); Windows-specific behaviour is
+  Samba-verified, not Windows-AD-verified. The strict Windows AD gate of
+  [`ad-integration.md`](ad-integration.md) runs only if a lab with reachable
+  USER and RESOURCE AD endpoints is provided. Do not add random or placeholder
+  endpoint secrets.
 ";
 
 /// String field `key` of `table`.
