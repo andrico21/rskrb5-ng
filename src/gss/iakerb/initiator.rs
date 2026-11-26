@@ -22,13 +22,14 @@ use crate::{
     error::Gss,
     gss::{
         Credential, CredentialUsage, EstablishedContext, InitStep, InitiatorOptions, Name, cred,
+        initiator::Pending,
     },
     krb_error,
 };
 
 mod ap;
 
-use ap::{Pending, ap_request, reply};
+use ap::{ap_request, reply};
 
 /// `KRB_AP_ERR_IAKERB_KDC_NOT_FOUND`.
 const KDC_NOT_FOUND: i32 = 85;
@@ -175,7 +176,7 @@ fn start(state: &mut State, credential: &Credential) -> Result<InitStep, Error> 
 /// Returns [`Error::Gss`] without a ticket source, and the exchange errors.
 fn begin(state: &mut State, credential: &Credential) -> Result<InitStep, Error> {
     if let Some(ticket) = cred::service_ticket(credential, &state.target) {
-        return ap_request(state, &ticket);
+        return ap_request(state, credential, ticket);
     }
     let client = state.client.clone().ok_or(Gss::NoCredential("no client"))?;
     let now = SystemTime::now()
@@ -196,6 +197,7 @@ fn begin(state: &mut State, credential: &Credential) -> Result<InitStep, Error> 
     if let Some(tgt) = cached {
         return advance(
             state,
+            credential,
             (
                 Phase::Tgs(Box::new(ticket_creds(state, tgt)?)),
                 StepInput::Start,
@@ -210,7 +212,11 @@ fn begin(state: &mut State, credential: &Credential) -> Result<InitStep, Error> 
     } else {
         return Err(Gss::NoCredential("no ticket source").into());
     };
-    advance(state, (Phase::As(Box::new(exchange)), StepInput::Start))
+    advance(
+        state,
+        credential,
+        (Phase::As(Box::new(exchange)), StepInput::Start),
+    )
 }
 
 /// The TGS exchange for the target with `tgt`.
@@ -235,6 +241,7 @@ fn ticket_creds(state: &State, tgt: AsRepSession) -> Result<TicketCreds, Error> 
 /// Returns the exchange errors and [`Error::UnsupportedPrompt`].
 fn advance(
     state: &mut State,
+    credential: &Credential,
     (mut phase, mut input): (Phase, StepInput<'_>),
 ) -> Result<InitStep, Error> {
     loop {
@@ -255,7 +262,7 @@ fn advance(
                     state.phase = Phase::Tgs(exchange);
                     return send(state, &outbound);
                 }
-                ExchangeStep::Complete(ticket) => return ap_request(state, &ticket),
+                ExchangeStep::Complete(ticket) => return ap_request(state, credential, *ticket),
                 ExchangeStep::Prompt(_) => return Err(Error::UnsupportedPrompt),
             },
             Phase::Start
@@ -320,5 +327,9 @@ fn proxied(state: &mut State, credential: &Credential, token: &[u8]) -> Result<I
     if parsed.message().is_empty() {
         return Err(Error::BadToken("the acceptor sent no KDC message"));
     }
-    advance(state, (phase, StepInput::Reply(parsed.message())))
+    advance(
+        state,
+        credential,
+        (phase, StepInput::Reply(parsed.message())),
+    )
 }

@@ -5,8 +5,24 @@
 //! `use_self` lint wants `Self::Client`, which the error-construction audit
 //! (`scripts/check-error-constructions.py`) does not count.
 
-use super::Error;
+use super::{Error, finished::Fault};
 use crate::error::{ApRep, ApReq, Client, Service};
+
+/// The IAKERB error of a refused `IAKERB-FINISHED`.
+const fn finished(fault: Fault) -> Error {
+    match fault {
+        Fault::Unexpected => Error::UnexpectedFinished,
+        Fault::Missing => Error::MissingFinished,
+        Fault::Bad => Error::BadFinished,
+    }
+}
+
+impl From<Fault> for Error {
+    #[inline]
+    fn from(fault: Fault) -> Self {
+        finished(fault)
+    }
+}
 
 /// Wraps an exchange failure.
 const fn client(failure: Client) -> Error {

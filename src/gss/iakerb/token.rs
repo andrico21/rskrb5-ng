@@ -158,7 +158,7 @@ pub(super) const AP_REP_TOKEN_ID: [u8; 2] = [0x02, 0x00];
 /// # Errors
 ///
 /// Returns [`Error::TokenTooLarge`] above the token bound.
-pub(super) fn frame(id: [u8; 2], body: &[u8]) -> Result<Vec<u8>, Error> {
+fn frame(id: [u8; 2], body: &[u8]) -> Result<Vec<u8>, Error> {
     let content = MECHANISM_DER
         .len()
         .saturating_add(id.len())

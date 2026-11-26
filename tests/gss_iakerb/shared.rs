@@ -37,9 +37,11 @@ fn discover(
     Ok([discovery, answer].concat())
 }
 
-/// The krb5 acceptor refuses an `IAKERB-FINISHED`, an IAKERB context whose
-/// transcript differs refuses it, and neither refusal commits the
-/// authenticator: the context whose transcript it covers then accepts it.
+/// Both mechanisms check the `IAKERB-FINISHED` before the replay commitment.
+///
+/// The krb5 acceptor refuses one, an IAKERB context whose transcript differs
+/// refuses it, and neither refusal commits the authenticator: the context
+/// whose transcript it covers then accepts it.
 #[test]
 fn shared_ap_path_preserves_iakerb_finished_validation() -> Result<(), TestError> {
     // Given one acceptor (one replay cache) and an IAKERB context after discovery,

@@ -35,11 +35,11 @@ use crate::{
 mod acceptor;
 mod conversation;
 mod convert;
-mod finished;
+pub(super) mod finished;
 mod initiator;
 pub mod token;
 
-use token::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, MAX_REALM_BYTES, Token, frame, unframe};
+use token::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, MAX_REALM_BYTES, Token, unframe};
 
 /// Why a [`KdcRelay`] could not deliver a request.
 ///
