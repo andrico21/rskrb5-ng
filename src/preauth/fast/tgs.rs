@@ -14,7 +14,7 @@
 //! ticket with the armor key's own checksum type or carry the strengthen key
 //! (RFC 6113 section 5.4.3) ends the exchange under every policy. Only a
 //! reply or error without any `PA-FX-FAST` is taken for a KDC that does not do
-//! FAST (MIT `krb5int_decode_tgs_rep` takes it as success), and then only
+//! FAST (MIT `krb5int_decode_tgs_rep` takes it as success, `decode_kdc.c:66-67`), and then only
 //! under [`Opportunistic`]; [`Required`] refuses it. That
 //! reply is encrypted in the request's own subkey, which only the KDC knows,
 //! and a genuine armored reply is encrypted in the strengthened subkey, so
@@ -67,10 +67,10 @@ pub(crate) enum Reply {
 /// authenticator subkey and the TGT session key of `keys`.
 ///
 /// The encrypted `KrbFastReq` holds the body and the padata but `PA-TGS-REQ`;
-/// the request checksum covers the AP-REQ (MIT `fast.c:300-303`, the TGS case
+/// the request checksum covers the AP-REQ (MIT `fast.c:310-313`, the TGS case
 /// of `to_be_checksummed`); the outer padata are `PA-TGS-REQ`, `PA-FX-FAST` and
 /// a copy of the rest, because a KDC without FAST must still see them
-/// (`make_tgs_outer_padata`, `fast.c:231-251`).
+/// (`make_tgs_outer_padata`, `fast.c:227-251,326-330`).
 ///
 /// # Errors
 /// Returns [`Error::Malformed`] for a request without exactly the `PA-TGS-REQ`

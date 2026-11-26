@@ -371,7 +371,7 @@ fn request(engine: &mut TicketCreds) -> Result<ExchangeStep, Error> {
 }
 
 /// Build the request with a fresh authenticator subkey and armor it with the
-/// TGT (MIT `k5_make_tgs_req`, `send_tgs.c:172-179,279-281`).
+/// TGT (MIT `k5_make_tgs_req`, `send_tgs.c:178,279`).
 ///
 /// # Errors
 /// Returns the request-building errors, [`Error::Armor`] for the armor's

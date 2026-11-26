@@ -105,10 +105,10 @@ fn failure(run: Run) -> Result<ClientError, TestError> {
 /// An armored TGS request has MIT's wire form and its reply verifies.
 ///
 /// The outer request is `PA-TGS-REQ`, `PA-FX-FAST`, then a copy of the other
-/// padata (`make_tgs_outer_padata`, `fast.c:231-251`); `PA-TGS-REQ` stays out of
+/// padata (`make_tgs_outer_padata`, `fast.c:227-251,326-330`); `PA-TGS-REQ` stays out of
 /// the encrypted inner request; the armor field is absent because the TGT
 /// armors implicitly (`armored_req->armor = state->armor`, NULL for TGS); the
-/// request checksum covers the AP-REQ (`fast.c:300-303`, `to_be_checksummed`)
+/// request checksum covers the AP-REQ (`fast.c:310-313`, `to_be_checksummed`)
 /// and is the armor key's mandatory type; the reply is encrypted in the
 /// strengthened subkey (RFC 6113 section 5.4.3).
 #[test]
@@ -267,7 +267,7 @@ fn run_required(kdc: &mut TgsKdc) -> Result<Run, TestError> {
 }
 
 /// A KDC without FAST is served only by `Opportunistic`, as MIT does
-/// (`krb5int_decode_tgs_rep` takes `KRB5_ERR_FAST_REQUIRED` as success), and
+/// (`krb5int_decode_tgs_rep` takes `KRB5_ERR_FAST_REQUIRED` as success, `decode_kdc.c:66-67`), and
 /// the outcome says it ran unarmored; its errors stay errors.
 #[test]
 fn a_kdc_without_fast_is_served_only_opportunistically() -> Result<(), TestError> {

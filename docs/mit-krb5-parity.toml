@@ -518,6 +518,8 @@ rust_symbols = [
   "preauth::fast::AnonymousArmor",
   "client::stepwise::ArmoredExchange",
   "client::stepwise::InitCreds::with_armor",
+  "client::stepwise::TicketCreds::with_fast",
+  "client::stepwise::TicketCreds::fast_outcome",
 ]
 test_names = [
   "tests/fast/exchange.rs::required_fast_logs_in_with_the_encrypted_challenge",
@@ -534,13 +536,26 @@ test_names = [
   "src/preauth/fast/tests.rs::armored_rounds_are_bounded",
   "tests/fast/vectors.rs::fast_key_derivations_match_the_independent_vectors",
   "tests/interop_fast/scenarios.rs::encrypted_challenge_login_is_armored",
+  "tests/fast/tgs.rs::tgs_fast_matches_mit",
+  "tests/fast/tgs.rs::tgs_fast_is_off_unless_asked_for",
+  "tests/fast/tgs.rs::tgs_fast_requires_strengthen_key",
+  "tests/fast/tgs.rs::tgs_fast_tamper_never_falls_back",
+  "tests/fast/tgs.rs::stripped_fast_is_no_downgrade",
+  "tests/fast/tgs.rs::unarmored_reply_to_an_armored_request_is_refused",
+  "tests/fast/tgs.rs::a_kdc_without_fast_is_served_only_opportunistically",
+  "tests/fast/tgs.rs::an_armored_error_surfaces_the_inner_kdc_error",
+  "tests/fast/tgs.rs::the_authenticated_client_wins_over_the_outer_name",
+  "tests/fast/tgs.rs::every_referral_hop_is_armored",
+  "tests/interop_fast/scenarios.rs::armored_tgs_request_is_accepted_by_mit",
+  "tests/interop_fast/scenarios.rs::armored_tgs_request_keeps_the_fast_ec_indicator",
+  "tests/interop_fast/scenarios.rs::armored_tgs_referral_is_armored_at_every_hop",
 ]
 feature_flags = []
-security_divergence = "The PA-REQ-ENC-PA-REP checksum of a reply must have the type that the reply key's encryption type requires (RFC 6806 section 11), also under FAST, where it covers the armored request as sent; MIT 1.22.2 `krb5int_fast_verify_nego` (fast.c:635-668) passes any checksum type to `krb5_c_verify_checksum`, whose `verify_key` (crypto_int.h:598-607) only compares encryption providers: the AES128 and AES256 providers are shared by the SHA1 and SHA2 enctypes (etypes.c:88,132) and checksum types (cksumtypes.c:70,100), and HMAC-MD5 (-138) has no provider (cksumtypes.c:61-66), so it passes under a key of any enctype with a valid length. The `KrbFastFinished` ticket checksum must equally be the armor key's mandatory type (MIT fast.c:543-547 verifies any type). An armored exchange never accepts an unarmored reply or error (MIT treats an undecryptable FAST error as the KDC's fatal error, fast.c:445-460, and so does this crate, reporting it as `error::Fast::UnarmoredError`). TGS requests are not FAST-armored: MIT 1.22.2 armors every TGS request implicitly (send_tgs.c:178, fast.c:110-142) and accepts an unarmored reply from a KDC without FAST; executor decision recorded as FU-FST-P01."
+security_divergence = "The PA-REQ-ENC-PA-REP checksum of a reply must have the type that the reply key's encryption type requires (RFC 6806 section 11), also under FAST, where it covers the armored request as sent; MIT 1.22.2 `krb5int_fast_verify_nego` (fast.c:635-668) passes any checksum type to `krb5_c_verify_checksum`, whose `verify_key` (crypto_int.h:598-607) only compares encryption providers: the AES128 and AES256 providers are shared by the SHA1 and SHA2 enctypes (etypes.c:88,132) and checksum types (cksumtypes.c:70,100), and HMAC-MD5 (-138) has no provider (cksumtypes.c:61-66), so it passes under a key of any enctype with a valid length. The `KrbFastFinished` ticket checksum must equally be the armor key's mandatory type (MIT fast.c:543-547 verifies any type). An armored exchange never accepts an unarmored reply or error (MIT treats an undecryptable FAST error as the KDC's fatal error, fast.c:445-460, and so does this crate, reporting it as `error::Fast::UnarmoredError`). TGS requests are armored implicitly when the caller asks for it (`TicketCreds::with_fast`; MIT 1.22.2 armors every TGS request, send_tgs.c:178, fast.c:110-142, so the default here is the divergence, executor decision FU-FST-P01): the armor key, the request checksum over the AP-REQ and the outer padata copy follow fast.c:110-142,227-251,310-330. The reply must carry the strengthen key (RFC 6113 section 5.4.3; MIT uses the plain subkey when it is missing, fast.c:570-592) and a finished message with the armor key's own checksum type, and a PA-FX-FAST that fails any check ends the exchange: it is never read as a plain reply. A reply or error without any PA-FX-FAST is taken for a KDC without FAST only under `Policy::Opportunistic` (MIT takes it as success, decode_kdc.c:66-67, and surfaces an unarmored error, fast.c:445-460) and is reported as `Outcome::Unarmored`; `Policy::Required` refuses it with `error::Fast::Unarmored` or `UnarmoredError`."
 disposition = "WP-05"
 closing_plan = 2
 closing_todo = 7
-contributors = []
+contributors = ["P2-28"]
 
 [[feature]]
 id = "MIT-preauth-3"
