@@ -51,7 +51,8 @@ mod exchange;
 mod tgs_kdc;
 
 /// The explicit TGS FAST switch of the high-level client.
-#[cfg(all(test, feature = "tokio"))]
+#[cfg(test)]
+#[cfg(feature = "tokio")]
 #[expect(
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,

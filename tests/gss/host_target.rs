@@ -4,7 +4,7 @@
 //! is the explicit operation: the profile's canonicalization proposes names and
 //! the caller's policy approves them, and the name it returns is the target.
 
-use std::{env, fs, process, time::SystemTime};
+use std::{env, fs, path::PathBuf, process, time::SystemTime};
 
 use rskrb5_ng::{
     Config,
@@ -18,7 +18,7 @@ use rskrb5_ng::{
 use tokio::runtime::Builder;
 
 use super::{
-    context::{Context as _, TestError},
+    context::TestError,
     support::{HOST, cache, cached, target, tgt, ticket_for},
 };
 
@@ -32,7 +32,7 @@ fn profile() -> Result<Config, TestError> {
 }
 
 /// A credential whose cache holds the client's TGT and a ticket for `HTTP/<HOST>`.
-fn credential(label: &str) -> Result<(Credential, std::path::PathBuf), TestError> {
+fn credential(label: &str) -> Result<(Credential, PathBuf), TestError> {
     let directory = env::temp_dir().join(format!(
         "gss-host-{label}-{}-{}",
         process::id(),

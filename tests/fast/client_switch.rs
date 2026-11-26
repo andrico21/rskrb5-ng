@@ -1,9 +1,12 @@
-//! The explicit TGS FAST switch of the high-level client: a KDC proxy that is the
-//! deterministic FAST KDC of `tgs_kdc` answers the requests of `client::Tokio`.
+//! The explicit TGS FAST switch of the high-level client.
+//!
+//! A KDC proxy that is the deterministic FAST KDC of `tgs_kdc` answers the
+//! requests of `client::Tokio`.
 
 use core::fmt;
 use std::sync::{Mutex, PoisonError};
 
+use rasn::der;
 use rskrb5_ng::{
     Config, Principal,
     client::{
@@ -17,6 +20,7 @@ use rskrb5_ng::{
         proxy::{KdcProxyTransport, PostFuture, Request},
     },
 };
+use tokio::runtime::{Builder, Runtime};
 
 use super::{
     exchange::fast_cause,
@@ -54,7 +58,7 @@ impl Proxy {
 
 /// Whether the TGS-REQ `request` carries a `PA-FX-FAST` entry.
 fn names_fast(request: &[u8]) -> Result<bool, TestError> {
-    let rasn_kerberos::TgsReq(outer) = rasn::der::decode(request)?;
+    let rasn_kerberos::TgsReq(outer) = der::decode(request)?;
     Ok(outer
         .padata
         .unwrap_or_default()
@@ -109,10 +113,8 @@ fn service() -> Principal {
 }
 
 /// A runtime for one scenario.
-fn runtime() -> Result<tokio::runtime::Runtime, TestError> {
-    Ok(tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?)
+fn runtime() -> Result<Runtime, TestError> {
+    Ok(Builder::new_current_thread().enable_all().build()?)
 }
 
 /// The default client sends the plain TGS request of RFC 4120.

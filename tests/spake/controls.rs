@@ -80,12 +80,15 @@ fn enable_only_applies_to_builtin_preauth() -> Result<(), TestError> {
         Outcome::Failed(ClientError::EncryptedTimestampDisabled { realm: _ })
     ));
     assert!(never_sent_timestamp(&kdc));
-    let timestamp_only = profile(" enable_only = encrypted_timestamp")?;
-    let mut kdc = Kdc::new(Script::default())?;
-    let mut login = exchange(configured(&timestamp_only)?);
-    assert!(matches!(run(&mut login, &mut kdc)?, Outcome::Complete));
-    assert!(carries(&kdc, 1, PA_ENC_TIMESTAMP)?);
-    assert_eq!(first_with(&kdc, PA_SPAKE)?, None);
+    let keep_timestamp = profile(" enable_only = encrypted_timestamp")?;
+    let mut offering_spake = Kdc::new(Script::default())?;
+    let mut keeping = exchange(configured(&keep_timestamp)?);
+    assert!(matches!(
+        run(&mut keeping, &mut offering_spake)?,
+        Outcome::Complete
+    ));
+    assert!(carries(&offering_spake, 1, PA_ENC_TIMESTAMP)?);
+    assert_eq!(first_with(&offering_spake, PA_SPAKE)?, None);
     Ok(())
 }
 
@@ -100,9 +103,12 @@ fn clpreauth_names_match_exactly() -> Result<(), TestError> {
         Outcome::Failed(ClientError::EncryptedTimestampDisabled { realm: _ })
     ));
     let unknown = profile(" disable = nothing_by_this_name")?;
-    let mut kdc = Kdc::new(timestamp_only())?;
-    let mut login = exchange(configured(&unknown)?);
-    assert!(matches!(run(&mut login, &mut kdc)?, Outcome::Complete));
+    let mut offering_timestamp = Kdc::new(timestamp_only())?;
+    let mut unaffected = exchange(configured(&unknown)?);
+    assert!(matches!(
+        run(&mut unaffected, &mut offering_timestamp)?,
+        Outcome::Complete
+    ));
     Ok(())
 }
 
