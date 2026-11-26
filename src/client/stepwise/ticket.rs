@@ -10,12 +10,36 @@ use super::{
         AsRepSession, BuiltTgsReq, Error, KRB_NT_SRV_INST, Principal, build_tgs_req_for_realm,
         principal_matches, process_tgs_rep_with_referral, tgt_realm, ticket_error,
     },
-    ExchangeStep, Outbound, StepInput, TicketCreds, TicketOptions,
+    ExchangeStep, FastOutcome, FastPolicy, Outbound, StepInput, TicketCreds, TicketOptions,
 };
 use crate::ticket::decode as decode_ticket;
 
 /// The `ENC-TKT-IN-SKEY` KDC option bit (RFC 4120 section 5.4.1, bit 28).
 const ENC_TKT_IN_SKEY: u32 = 0x0000_0008;
+
+/// The FAST state of a TGS exchange.
+pub(super) struct Fast {
+    /// How the requests are armored.
+    policy: FastPolicy,
+    /// What the replies so far showed.
+    outcome: Option<FastOutcome>,
+}
+
+impl Fast {
+    /// FAST under `policy`, with nothing seen yet.
+    pub(super) const fn new(policy: FastPolicy) -> Self {
+        Self {
+            policy,
+            outcome: None,
+        }
+    }
+
+    /// What the replies so far showed.
+    pub(super) fn outcome(&self) -> Option<FastOutcome> {
+        // RED-RUN STUB: no armor yet.
+        self.outcome.filter(|_| self.policy != FastPolicy::Off)
+    }
+}
 
 /// Where a TGS exchange stands.
 pub(super) enum State {
@@ -61,6 +85,7 @@ pub(super) fn new(
         seen_realms: vec![realm],
         walk,
         trace: None,
+        fast: Fast::new(FastPolicy::Off),
     })
 }
 

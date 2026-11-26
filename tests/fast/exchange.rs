@@ -122,7 +122,7 @@ fn armored(kdc: &Kdc, policy: Policy) -> Result<Exchange, TestError> {
 type Expectation = fn(&Fast) -> bool;
 
 /// The FAST failure inside an exchange error.
-fn fast_cause(error: &ClientError) -> Option<&Fast> {
+pub(crate) fn fast_cause(error: &ClientError) -> Option<&Fast> {
     let mut source = error.source();
     while let Some(current) = source {
         if let Some(fast) = current.downcast_ref::<Fast>() {
