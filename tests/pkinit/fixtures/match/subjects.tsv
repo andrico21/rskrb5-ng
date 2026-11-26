@@ -1,0 +1,10 @@
+user	O=KRBTEST.COM,CN=user	O=MIT,CN=match CA
+generic	O=KRBTEST.COM,CN=user	O=MIT,CN=match CA
+alice	O=KRBTEST.COM,CN=alice	O=MIT,CN=match CA
+bob	O=KRBTEST.COM,CN=bob	O=MIT,CN=match CA
+carol	O=OTHER.COM,CN=carol	O=OTHER CA,CN=ca
+doe	O=Example,CN=John DoE	O=DoE CA,CN=ca
+erin	C=CH,O=Zurich, AG+x,CN=\U4E2D\U6587+UID=u1,emailAddress=erin@example.test	O=MIT,CN=match CA
+frank	O=KRBTEST.COM,CN=frank	O=MIT,CN=match CA
+gina	O=Zürich \U4E2D,CN=gina	O=MIT,CN=match CA
+henry	O=KRBTEST.COM,CN=henry	O=MIT,CN=match CA

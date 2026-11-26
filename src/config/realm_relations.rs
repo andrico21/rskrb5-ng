@@ -121,7 +121,7 @@ pub(crate) const REALM_RELATIONS: [(&str, &str, &str, &str, &str, &str); 28] = [
         "certificate rule list",
         "unset",
         "ConfiguredIdentities::from_config (leaf pkinit)",
-        "Matching rules are not evaluated (no admitted regex engine): a configured rule is a typed UnsupportedLocation error, never skipped; without the leaf FeatureUnavailable",
+        "Effective: the rules (SUBJECT, ISSUER, SAN, EKU and KU components under an && or double-bar prefix) choose exactly one identity among pkinit_identities, MIT pkinit_matching.c semantics on a bounded linear-time engine; a malformed rule, no match and an ambiguous match are typed errors, never skipped or first-wins; without the pkinit leaf FeatureUnavailable",
         "pkinit_cert_match",
     ),
     (

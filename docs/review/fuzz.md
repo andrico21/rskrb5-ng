@@ -42,6 +42,7 @@ the chosen entry point, so one target covers a family of related decoders.
 | `spake_message` | a KDC's PA-SPAKE value (RFC 9588) | `preauth::spake::Message::decode` twice (deterministic), then a fresh `Client` permitting all four groups answers the value twice (`Client::process`): support message for empty or out-of-policy values, response for a challenge in a permitted group, which decodes and validates the edwards25519, P-256, P-384 or P-521 element and derives `K'[0]` and `K'[1]`; a second challenge must be refused |
 | `otp_challenge` | a KDC's `PA-OTP-CHALLENGE` value (RFC 6560) | `preauth::otp::Challenge::decode` twice (deterministic) and once under a tight policy (token count, field and challenge bounds), then an accepted challenge answers every token and one index past the list, with a value and with a value and a PIN, under an AES256 armor key (`Challenge::request`): every request built is an OTP padata of the request type |
 | `pkinit_reply` | the KDC's reply to a PA-PK-AS-REQ (RFC 4556 PKINIT) | the stepwise AS engine with a certificate `preauth::pkinit::Exchange` after a fixed `PREAUTH_REQUIRED`: mode 0 the raw reply (AS-REP or KRB-ERROR, the PA-PK-AS-REP lookup), mode 1 the bytes as the PA-PK-AS-REP value of an AS-REP (`PA-PK-AS-REP`, `DHRepInfo`, the CMS `ContentInfo` and `SignedData`, X.509 certificates and CRLs, the bounded path validator, `KDCDHKeyInfo` and the key agreement); no fuzzed reply may complete the exchange |
+| `pkinit_cert_match` | the text of a `pkinit_cert_match` rule, a newline, then the DER bytes of a candidate certificate | `preauth::pkinit::matching::CertificateRules::parse` (the bounded `[&&\|\|\|]` list of `<SUBJECT>`, `<ISSUER>`, `<SAN>`, `<EKU>` and `<KU>` components, the POSIX-subset validator and the linear-time `regex` compiler), then `select` over the fuzzed certificate and the OpenSSL fixtures of `tests/pkinit/fixtures/match` (`Facts::from_der`: the subject, issuer, SAN and key usage text as OpenSSL prints it); a fixed rule list also runs over the fuzzed certificate alone; a selected index is always a candidate |
 | `routing_transit` | a ticket's DOMAIN-X500-COMPRESS transited encoding (RFC 4120 section 3.3.3.2), a KDC's `PA-S4U-X509-USER` (MS-SFU) and the text of two realm names, one selector byte then bytes or text | `routing::transited::decode` between two fixed realms (an accepted list stays within `MAX_REALMS` and, when `encode` takes it, decodes again to the same list), `routing::s4u::PaS4uX509User::decode_der` (then encode and decode again must give the same element), and `routing::RealmPath::hierarchical` (a path starts at the first realm, ends at the second and stays within `RealmPath::MAX_REALMS`) |
 | `localauth_rule` | the text of an `auth_to_local` value, a newline, then a principal (`a/b/c` in `EXAMPLE.COM`) | `localauth::AuthToLocalRule::parse` (the bounded `RULE:[n:format](regex)s/re/text/g` grammar and the linear-time `regex` compiler), then `apply` on the principal and `principal_to_local_name` through a `LocalNameMapper` (a result stays within the selection bound, a mapped name is never empty, longer than 64 bytes or NUL-holding) |
 | `localauth_k5login` | a principal (`a/b@REALM`, up to the first newline), then the bytes of a `.k5login` file | `localauth::k5login::lists` (the size, line-count and line-length bounds and the exact line match; a file past the size bound is refused) |
@@ -129,6 +130,7 @@ timeout artifact:
 | `kkdcp_message` | 6,458,968 (todo 16 of plan 2, 2026-11-21) | 121 s | 0 |
 | `otp_challenge` | 1,658,639 (todo 10 of plan 2, 2026-11-21) | 121 s | 0 |
 | `pkinit_reply` | 4,823 (todo 8 of plan 2, 2026-11-21) | 121 s | 0 |
+| `pkinit_cert_match` | 19,256 (todo 28 of plan 2, 2026-11-26) | 121 s | 0 |
 | `routing_transit` | 2,195,539 (todo 17 of plan 2, 2026-11-21) | 121 s | 0 |
 | `localauth_rule` | 283,256 (todo 25 of plan 2, 2026-11-22) | 121 s | 0 |
 | `localauth_k5login` | 2,439,093 (todo 25 of plan 2, 2026-11-22) | 121 s | 0 |
@@ -272,6 +274,23 @@ the fixture anchor, then fails on its content), an `encKeyPack` (refused by
 policy) and a KRB-ERROR. The run of 2026-11-21 made 4,823 executions in 121 s
 with no artifact. Coverage proof: `task-8-pkinit-coverage.tsv` in the
 execution evidence.
+
+### PKINIT certificate matching (todo 28 of plan 2)
+
+`pkinit_cert_match` fuzzes the rules an administrator writes into `krb5.conf` and
+the certificate text they are matched against. `CertificateRules::parse` reads at
+most 32 rules of 2,048 bytes (8 components, patterns of at most 512 bytes) and
+compiles every pattern with the linear-time `regex` engine under a compiled-size
+and a nesting limit, after a validator that refuses what POSIX and the engine
+read differently; an accepted rule selects among the fuzzed certificate and six
+OpenSSL fixture certificates, which renders the subject, the issuer, the PKINIT
+and UPN SANs and the key usage bits of the fuzzed bytes, and a fixed rule list
+runs over the fuzzed certificate alone (including `(a*)*b`, which stays linear).
+The seeds are the rules of MIT 1.22.2 `src/tests/t_pkinit.py` and of `krb5.conf(5)`
+over fixtures built to match them, malformed rules (a back-reference, `[.a.]`),
+a multi-valued RDN, a `BMPString` name and an RSA-keyed certificate. The run of
+2026-11-26 made 19,256 executions in 121 s with no artifact. Coverage proof:
+`task-28c-cert-match-coverage.tsv` in the execution evidence.
 
 ### PAC API (todo 22 of plan 2)
 
@@ -837,6 +856,10 @@ does.
 | `rskrb5_ng::preauth::pkinit::chain::parse` | `src/preauth/pkinit/chain.rs` | `pkinit_reply` |  |
 | `rskrb5_ng::preauth::pkinit::chain::parse_crls` | `src/preauth/pkinit/chain.rs` | `pkinit_reply` |  |
 | `rskrb5_ng::preauth::pkinit::config::read` | `src/preauth/pkinit/config.rs` | - | reads a bounded local file named by the profile (`pkinit_identities`, `pkinit_anchors`, `pkinit_pool`, `pkinit_revoke`); its PEM content is decoded by `keys::pem_certificates`, whose certificates are re-parsed by `chain::parse` in `pkinit_reply` |
+| `rskrb5_ng::preauth::pkinit::matching::CertificateRules::parse` | `src/preauth/pkinit/matching.rs` | `pkinit_cert_match` |  |
+| `rskrb5_ng::preauth::pkinit::matching::parse_rule` | `src/preauth/pkinit/matching.rs` | `pkinit_cert_match` |  |
+| `rskrb5_ng::preauth::pkinit::matching_facts::Facts::from_der` | `src/preauth/pkinit/matching_facts.rs` | `pkinit_cert_match` |  |
+| `rskrb5_ng::preauth::pkinit::unavailable::Rules::parse` | `src/preauth/pkinit/unavailable.rs` | - | the build without the `pkinit` leaf: it only returns `Unavailable` and reads nothing; the leaf's parser is `matching::CertificateRules::parse` |
 | `rskrb5_ng::preauth::spake::Message::decode` | `src/preauth/spake.rs` | `spake_message` |  |
 | `rskrb5_ng::routing::s4u::PaS4uX509User::decode_der` | `src/routing/s4u.rs` | `routing_transit` |  |
 | `rskrb5_ng::routing::transited::decode` | `src/routing/transited.rs` | `routing_transit` |  |

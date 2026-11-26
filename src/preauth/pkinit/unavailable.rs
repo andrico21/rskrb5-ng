@@ -14,6 +14,28 @@ use super::{
 };
 use crate::{error::Pkinit as Error, keytab::EncryptionKey};
 
+/// The `pkinit_cert_match` rules, which cannot be compiled without the leaf.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct Rules;
+
+impl Rules {
+    /// Unavailable.
+    ///
+    /// # Errors
+    /// Always [`Error::Unavailable`].
+    pub(super) const fn parse(_rules: &[String]) -> Result<Self, Error> {
+        Err(Error::Unavailable)
+    }
+}
+
+/// Unavailable.
+///
+/// # Errors
+/// Always [`Error::Unavailable`].
+pub(super) const fn select_rules(_rules: &Rules, _certificates: &[&[u8]]) -> Result<usize, Error> {
+    Err(Error::Unavailable)
+}
+
 /// Unavailable.
 ///
 /// # Errors

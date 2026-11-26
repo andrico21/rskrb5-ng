@@ -210,6 +210,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "pkinit_cert_match"
+path = "fuzz_targets/pkinit_cert_match.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "spake_message"
 path = "fuzz_targets/spake_message.rs"
 test = false

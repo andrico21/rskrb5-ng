@@ -146,6 +146,7 @@ pkinit = [
   "dep:p256",
   "dep:p384",
   "dep:p521",
+  "dep:regex",
   "dep:rsa",
   "dep:spki",
   "dep:x509-cert",
@@ -231,7 +232,8 @@ publicsuffix = { version = "2.3.0", default-features = false, optional = true }
 rasn = { version = "0.29", optional = true }
 rasn-kerberos = { version = "0.29", features = ["otp"], optional = true }
 rc4 = "0.2.0"
-# The RULE and `s/re/text/` matching of `auth_to_local` (the `localauth` leaf):
+# The RULE and `s/re/text/` matching of `auth_to_local` (the `localauth` leaf) and
+# the `pkinit_cert_match` rules (the `pkinit` leaf):
 # linear-time matching only (no backtracking, no look-around), Unicode case and
 # Perl classes, no `perf` engines and no literal optimizations. Admission
 # record: docs/dependency-admission.md#regex.
