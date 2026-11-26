@@ -42,6 +42,13 @@ pub enum HttpExchange {
         /// The limit in bytes.
         limit: usize,
     },
+    /// The peer's end-entity certificate is not one a
+    /// [`TlsChannel`](crate::http::wire::TlsChannel) can describe.
+    #[error("the TLS peer certificate is not usable: {reason}")]
+    PeerCertificate {
+        /// What is wrong with it.
+        reason: &'static str,
+    },
 }
 
 /// Error of the HTTP Negotiate client ([`crate::http::agent`]): every variant
@@ -111,6 +118,18 @@ pub enum HttpClient {
         /// The response, kept for diagnostics.
         response: Box<HttpResponse<Vec<u8>>>,
     },
+    /// Channel bindings are required, but the connection that would carry the
+    /// token has none; no token was sent.
+    #[error("channel bindings are required but unavailable: {reason}")]
+    ChannelBindingUnavailable {
+        /// Why the connection has no `tls-server-end-point` bindings.
+        reason: &'static str,
+    },
+    /// The connection for the authenticated retry presents another TLS peer
+    /// certificate than the connection that carried the challenge; no token
+    /// was sent.
+    #[error("the TLS peer certificate changed between the challenge and the authenticated retry")]
+    ChannelChanged,
 }
 
 #[cfg(feature = "http")]
@@ -155,6 +174,11 @@ impl fmt::Debug for HttpClient {
                 .field("negotiation", negotiation)
                 .field("status", &response.status())
                 .finish(),
+            Self::ChannelBindingUnavailable { reason } => f
+                .debug_struct("ChannelBindingUnavailable")
+                .field("reason", reason)
+                .finish(),
+            Self::ChannelChanged => f.write_str("ChannelChanged"),
         }
     }
 }

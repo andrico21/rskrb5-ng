@@ -34,6 +34,7 @@ use rskrb5_ng::{
     service::{ApRepOptions, Validator},
     ticket,
 };
+use tokio::runtime::Builder;
 use zeroize::Zeroizing;
 
 use super::context::{Context as _, TestError};
@@ -266,6 +267,18 @@ pub(super) fn negotiate_client(hosts: &[&str]) -> Result<NegotiateClient, TestEr
             .context("the ticket matches the client")?;
     }
     Ok(NegotiateClient::from_tokio_client(client))
+}
+
+/// Run `future` to completion on a current-thread runtime.
+pub(super) fn run<F>(future: F) -> Result<F::Output, TestError>
+where
+    F: Future,
+{
+    Ok(Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("runtime")?
+        .block_on(future))
 }
 
 /// A response with `status` and an empty body.
