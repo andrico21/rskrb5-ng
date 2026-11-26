@@ -2,10 +2,7 @@
 
 use alloc::collections::BTreeMap;
 
-use super::{
-    Config, Error, LibDefaults, Realm, Toggle,
-    section_values::{Plugins, Value},
-};
+use super::{Config, Error, LibDefaults, Realm, Toggle, section_values::Value};
 #[cfg(feature = "messages")]
 use crate::error::Policy;
 use crate::replay::RcacheName;
@@ -44,16 +41,13 @@ pub(crate) fn defaults(value: &LibDefaults) -> Result<(), Error> {
     rcache_name(&value.default_rcache_name)
 }
 
-/// Validate whole configuration, including realm and client-plugin restrictions.
+/// Validate whole configuration, including realm restrictions.
 /// # Errors
 /// Returns the named unsupported restriction.
 pub(crate) fn config(value: &Config) -> Result<(), Error> {
     defaults(&value.libdefaults)?;
     for entry in &value.realms {
         realm(entry)?;
-    }
-    if let Some(entry) = value.plugins.get("clpreauth") {
-        plugins(entry)?;
     }
     Ok(())
 }
@@ -101,41 +95,4 @@ pub(super) fn timestamp(value: Option<&Value>) -> Result<(), Error> {
             Error::InvalidBoolean("disable_encrypted_timestamp".to_owned()),
         ),
     }
-}
-
-/// Validate restrictions on the currently implemented client preauthentication method.
-/// # Errors
-/// Returns the named unsupported restriction.
-pub(super) fn plugins(value: &Plugins) -> Result<(), Error> {
-    reject(
-        "disable",
-        value
-            .disable
-            .iter()
-            .any(|name| name == "encrypted_timestamp"),
-    )?;
-    reject(
-        "enable_only",
-        !value.enable_only.is_empty()
-            && !value
-                .enable_only
-                .iter()
-                .any(|name| name == "encrypted_timestamp"),
-    )
-}
-
-/// The named refusal of a `clpreauth` control that would exclude the built-in
-/// encrypted timestamp, which only the exchange engine could honour.
-/// # Errors
-/// Returns [`Error::NotYetEffective`] when the selected restriction cannot be honored.
-fn reject(relation: &'static str, restricted: bool) -> Result<(), Error> {
-    if restricted
-        && let Some(&(_name, _kind, _default, package, _rationale, _test)) =
-            super::section_decode::SECTION_RELATIONS
-                .iter()
-                .find(|row| row.0 == relation)
-    {
-        return Err(Error::NotYetEffective { relation, package });
-    }
-    Ok(())
 }

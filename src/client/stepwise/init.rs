@@ -22,7 +22,9 @@ use super::{
         select_preauth_key_info,
     },
     Answer, ArmorRequest, ArmoredReply, Exchange, ExchangeStep, InitCreds, InitCredsOptions,
-    MAX_EXCHANGE_ROUNDS, Outbound, Prompt, Responder, StepInput, order,
+    MAX_EXCHANGE_ROUNDS, Outbound, Prompt, Responder, StepInput,
+    options::{ENCRYPTED_CHALLENGE, ENCRYPTED_TIMESTAMP, OTP, PKINIT, SPAKE, permits},
+    order,
 };
 use crate::{
     config::Config,
@@ -231,11 +233,31 @@ fn advance(engine: &mut InitCreds<'_>, input: StepInput<'_>) -> Result<ExchangeS
     }
 }
 
+/// Refuse an exchange that the caller built for a mechanism `[plugins] clpreauth`
+/// excludes (PKINIT, OTP): the exchange fails closed before anything is sent
+/// and never falls back to another mechanism.
+///
+/// # Errors
+/// Returns [`Error::PreauthMechanismDisabled`] naming the mechanism.
+fn require_requested_mechanisms(engine: &InitCreds<'_>) -> Result<(), Error> {
+    let requested = [
+        (engine.pkinit.is_some(), PKINIT),
+        (engine.otp.is_some(), OTP),
+    ];
+    for (wanted, mechanism) in requested {
+        if wanted && !permits(&engine.options, mechanism) {
+            return Err(Error::PreauthMechanismDisabled { mechanism });
+        }
+    }
+    Ok(())
+}
+
 /// Send the first request, or ask for the password it needs.
 ///
 /// # Errors
 /// Returns the typed failure of the step; the exchange cannot continue after it.
 fn start(engine: &mut InitCreds<'_>) -> Result<ExchangeStep, Error> {
+    require_requested_mechanisms(engine)?;
     otp::require_armor(engine)?;
     if engine.pkinit.is_some() {
         return pkinit::start(engine);
@@ -741,6 +763,9 @@ fn encrypted_challenge(
     reply: &[u8],
     at: Option<(SystemTime, u32)>,
 ) -> Result<Option<ExchangeStep>, Error> {
+    if !permits(&engine.options, ENCRYPTED_CHALLENGE) {
+        return Ok(None);
+    }
     let Some(armor_key) = engine
         .armor
         .as_ref()

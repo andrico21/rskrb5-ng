@@ -154,28 +154,15 @@ mod tests {
         Ok(())
     }
 
-    /// Section restrictions are compared with actual built-in behavior, not plugin names alone.
+    /// No section relation is deferred: every one has an effective consumer.
     #[test]
-    fn every_section_boundary_is_reviewed() -> Result<(), Box<dyn Error>> {
-        for row in SECTION_RELATIONS
-            .iter()
-            .filter(|row| row.3.starts_with("plan 2 "))
-        {
-            match row.0 {
-                "capaths" => boundary("capaths", "[capaths]\n A = {\n B = .\n }\n", None)?,
-                "disable" => boundary(
-                    "disable",
-                    "[plugins]\n clpreauth = {\n disable = pkinit\n }\n",
-                    Some("[plugins]\n clpreauth = {\n disable = encrypted_timestamp\n }\n"),
-                )?,
-                "enable_only" => boundary(
-                    "enable_only",
-                    "[plugins]\n clpreauth = {\n enable_only = encrypted_timestamp\n }\n",
-                    Some("[plugins]\n clpreauth = {\n enable_only = pkinit\n }\n"),
-                )?,
-                _ => return Err("unreviewed section row".into()),
-            }
-        }
-        Ok(())
+    fn every_section_boundary_is_reviewed() {
+        assert_eq!(
+            SECTION_RELATIONS
+                .iter()
+                .filter(|row| row.3.starts_with("plan 2 "))
+                .count(),
+            0
+        );
     }
 }

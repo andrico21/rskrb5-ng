@@ -113,7 +113,7 @@ use super::{
     process_as_rep, process_tgs_rep,
     stepwise::{
         InitCreds, InitCredsOptions, NoResponder, TicketCreds, TicketOptions, drive_tokio,
-        options::timestamp_disabled,
+        options::timestamp_permitted,
     },
     tgt_realm,
 };
@@ -1455,7 +1455,8 @@ impl Tokio {
     /// or an unkeyed `safe_checksum_type`) or a PA-DATA entry has a permanently
     /// rejected type (draft-9 PKINIT, types 14 and 15). Still before any I/O it
     /// returns [`Error::EncryptedTimestampDisabled`] when `request` carries
-    /// PA-ENC-TIMESTAMP and the client realm sets `disable_encrypted_timestamp`.
+    /// PA-ENC-TIMESTAMP and the client realm sets `disable_encrypted_timestamp` or
+    /// `[plugins] clpreauth` excludes `encrypted_timestamp`.
     ///
     /// Returns the errors of [`Self::send_to_realm`], [`Error::Kdc`] when the KDC
     /// answers with a KRB-ERROR, an error when the AS-REP cannot be decoded,
@@ -2837,9 +2838,11 @@ where
     Box::pin(events::scope(guard, future))
 }
 
-/// Refuse a caller-built PA-ENC-TIMESTAMP for a client realm whose
-/// `disable_encrypted_timestamp` is set, as the exchange engine refuses its own
-/// (MIT `preauth_encts.c:68-73`).
+/// Refuse a caller-built PA-ENC-TIMESTAMP that the profile does not permit.
+///
+/// The client realm's `disable_encrypted_timestamp` or `[plugins] clpreauth`
+/// excludes it, as the exchange engine refuses its own (MIT
+/// `preauth_encts.c:68-73`).
 ///
 /// # Errors
 /// Returns [`Error::EncryptedTimestampDisabled`] naming the client realm.
@@ -2850,7 +2853,7 @@ fn refuse_disabled_timestamp(config: &Config, request: &BuiltAsReq) -> Result<()
         .padata
         .as_deref()
         .is_some_and(|padata| super::padata_contains(padata, super::PA_ENC_TIMESTAMP));
-    if stamped && timestamp_disabled(config).contains(&request.client.realm) {
+    if stamped && !timestamp_permitted(config, &request.client.realm) {
         return Err(Error::EncryptedTimestampDisabled {
             realm: request.client.realm.clone(),
         });

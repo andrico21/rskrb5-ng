@@ -8,6 +8,10 @@ use super::{
 };
 
 /// Non-realm dynamic-relation catalogue, with the same six-column schema.
+///
+/// The decoder consumes no row: the generated relation document and its
+/// audits read the table.
+#[cfg(test)]
 pub(crate) const SECTION_RELATIONS: [(&str, &str, &str, &str, &str, &str); 6] = [
     (
         "domain_realm",
@@ -37,16 +41,16 @@ pub(crate) const SECTION_RELATIONS: [(&str, &str, &str, &str, &str, &str); 6] = 
         "disable",
         "repeated module names",
         "empty",
-        "plan 2 todo 28 for the clpreauth built-ins; extensions::order::arrange for ccselect (Registry::select_cache), hostrealm (HostRealmResolver) and localauth (LocalNameMapper, LocalAuthorizer, Registry::authorize_local)",
-        "Effective: removes registered and built-in ccselect, hostrealm and localauth modules; clpreauth removes registered mechanisms only and stays diagnosed (the built-in mechanisms are chosen by the exchange engine); excluding timestamp preauth fails in both modes; another interface name is an unknown path",
+        "extensions::order::arrange for clpreauth (the built-in mechanisms of client::stepwise and the registered ones), ccselect (Registry::select_cache), hostrealm (HostRealmResolver) and localauth (LocalNameMapper, LocalAuthorizer, Registry::authorize_local)",
+        "Effective: removes registered and built-in clpreauth, ccselect, hostrealm and localauth modules; a clpreauth exchange built for an excluded mechanism fails closed; names match exactly; another interface name is an unknown path",
         "disable",
     ),
     (
         "enable_only",
         "repeated module names",
         "all built-ins",
-        "plan 2 todo 28 for the clpreauth built-ins; extensions::order::arrange for ccselect (Registry::select_cache), hostrealm (HostRealmResolver) and localauth (LocalNameMapper, LocalAuthorizer, Registry::authorize_local)",
-        "Effective: keeps and orders registered and built-in ccselect, hostrealm and localauth modules; clpreauth keeps and orders registered mechanisms only and stays diagnosed (the built-in mechanisms are chosen by the exchange engine); excluding timestamp preauth fails in both modes; another interface name is an unknown path",
+        "extensions::order::arrange for clpreauth (the built-in mechanisms of client::stepwise and the registered ones), ccselect (Registry::select_cache), hostrealm (HostRealmResolver) and localauth (LocalNameMapper, LocalAuthorizer, Registry::authorize_local)",
+        "Effective: keeps and orders registered and built-in clpreauth, ccselect, hostrealm and localauth modules; a clpreauth exchange built for an excluded mechanism fails closed; names match exactly; another interface name is an unknown path",
         "enable_only",
     ),
     (
@@ -61,8 +65,7 @@ pub(crate) const SECTION_RELATIONS: [(&str, &str, &str, &str, &str, &str); 6] = 
 
 /// Decode graph, applications, realm maps and plugin lists without executing them.
 /// # Errors
-/// Rejects malformed subtrees, mixed direct/intermediate routes, strict diagnostics
-/// and restrictions on the client's existing encrypted-timestamp mechanism.
+/// Rejects malformed subtrees, mixed direct/intermediate routes and strict diagnostics.
 pub(super) fn finish(
     config: &mut Config,
     values: &BTreeMap<Vec<String>, Vec<Line>>,
@@ -131,10 +134,6 @@ pub(super) fn finish(
                 } else {
                     entry.enable_only = names;
                 }
-                if interface == "clpreauth" {
-                    // Refused at its own entry, before any later plugin entry.
-                    super::restrictions::plugins(entry)?;
-                }
                 control(config, interface, key)?;
             }
             [section, interface, key] if section == "plugins" && key == "module" => {
@@ -153,33 +152,26 @@ pub(super) fn finish(
 
 /// Classify a `disable` or `enable_only` control after its typed admission.
 ///
-/// The `ccselect`, `hostrealm` and `localauth` controls are effective over the
-/// registered and the built-in modules. The `clpreauth` controls reach only the
-/// registered mechanisms: the built-in ones are chosen by the exchange engine,
-/// so the control stays diagnosed. Any other interface name (names match
-/// exactly, as MIT's `strcmp`) has no consumer and is an unknown path.
+/// The `clpreauth`, `ccselect`, `hostrealm` and `localauth` controls are
+/// effective over the registered and the built-in modules. Any other interface
+/// name (names match exactly, as MIT's `strcmp`) has no consumer and is an
+/// unknown path.
 /// # Errors
-/// Strict mode rejects the diagnosed controls.
+/// Strict mode rejects the unknown interface.
 fn control(config: &mut Config, interface: &str, key: &str) -> Result<(), Error> {
-    let diagnostic = match interface {
-        "ccselect" | "hostrealm" | "localauth" => return Ok(()),
-        "clpreauth" => SECTION_RELATIONS.iter().find(|row| row.0 == key).map(
-            |&(relation, _kind, _default, package, _rationale, _test)| {
-                ConfigDiagnostic::NotYetEffective { relation, package }
-            },
-        ),
-        _ => Some(ConfigDiagnostic::UnknownRelation {
-            path: vec!["plugins".to_owned(), interface.to_owned(), key.to_owned()],
-        }),
-    };
-    match diagnostic {
-        Some(found) => realm_values::report(
-            found,
-            config.libdefaults.parse_mode(),
-            &mut config.libdefaults.enctype_diagnostics,
-        ),
-        None => Ok(()),
+    if matches!(
+        interface,
+        "clpreauth" | "ccselect" | "hostrealm" | "localauth"
+    ) {
+        return Ok(());
     }
+    realm_values::report(
+        ConfigDiagnostic::UnknownRelation {
+            path: vec!["plugins".to_owned(), interface.to_owned(), key.to_owned()],
+        },
+        config.libdefaults.parse_mode(),
+        &mut config.libdefaults.enctype_diagnostics,
+    )
 }
 
 /// Preserve the values of repeated relations in source order.
