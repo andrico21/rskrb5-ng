@@ -41,6 +41,7 @@ use crate::{
     extensions::{PreauthSession, ProviderError},
     keytab::{EncryptionKey, Keytab},
     preauth::{
+        fast::{Outcome as FastOutcome, Policy as FastPolicy, tgs},
         otp::{Challenge, Policy, Response},
         pkinit::{AnonymousOptions, Exchange as PkinitExchange, exchange::Pending},
         spake::Policy as SpakePolicy,
@@ -710,6 +711,10 @@ pub struct TicketCreds {
     walk: Option<ticket::Walk>,
     /// The trace of the exchange, when a guard is attached.
     trace: Option<trace::Tracer>,
+    /// The FAST policy of the requests and what the replies showed.
+    fast: ticket::Fast,
+    /// The armor of the request in flight, which authenticates its reply.
+    armor: Option<tgs::Armor>,
 }
 
 impl fmt::Debug for TicketCreds {
@@ -741,6 +746,43 @@ impl TicketCreds {
     pub fn with_trace(mut self, guard: Guard) -> Self {
         self.trace = Some(trace::Tracer::new(guard, ExchangeKind::Ticket));
         self
+    }
+
+    /// Armor every request of this exchange with FAST, as MIT does implicitly
+    /// (RFC 6113 section 5.4.2, MIT 1.22.2 `send_tgs.c:178`).
+    ///
+    /// The TGT of each hop armors its request: the armor key is
+    /// `KRB-FX-CF2(subkey, TGT session key, "subkeyarmor", "ticketarmor")`, so a
+    /// fresh authenticator subkey and armor key serve every request, and the
+    /// reply is encrypted in the subkey strengthened by the KDC.
+    /// [`FastPolicy::Off`] (the default) sends the plain request.
+    ///
+    /// # Security
+    ///
+    /// A reply that carries `PA-FX-FAST` is accepted only when its response
+    /// decrypts in the armor key, answers this request's nonce, finishes over
+    /// the ticket with the armor key's own checksum type and carries the
+    /// strengthen key (RFC 6113 section 5.4.3); any failure ends the exchange
+    /// with [`Error::Armor`] and is never read as a plain reply. A reply or
+    /// error without any `PA-FX-FAST` is the answer of a KDC without FAST: it
+    /// is taken (as MIT takes it) only under [`FastPolicy::Opportunistic`], and
+    /// [`fast_outcome`](Self::fast_outcome) then reports
+    /// [`FastOutcome::Unarmored`]; [`FastPolicy::Required`] refuses it. An
+    /// unarmored KRB-ERROR is surfaced as the KDC's error and never retried.
+    #[inline]
+    #[must_use]
+    pub const fn with_fast(mut self, policy: FastPolicy) -> Self {
+        self.fast = ticket::Fast::new(policy);
+        self
+    }
+
+    /// Whether every reply so far was FAST-authenticated ([`FastOutcome::Armored`]),
+    /// or a KDC without FAST answered one ([`FastOutcome::Unarmored`]); `None`
+    /// before a reply was accepted or without [`with_fast`](Self::with_fast).
+    #[inline]
+    #[must_use]
+    pub const fn fast_outcome(&self) -> Option<FastOutcome> {
+        self.fast.outcome()
     }
 
     /// Advance the exchange.

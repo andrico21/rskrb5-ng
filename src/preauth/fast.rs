@@ -57,6 +57,8 @@ mod reply;
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests;
+/// Implicit armor of TGS requests.
+pub(crate) mod tgs;
 
 /// `PA-FX-COOKIE` (RFC 6113 section 5.2).
 pub const PA_FX_COOKIE: i32 = 133;

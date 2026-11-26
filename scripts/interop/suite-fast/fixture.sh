@@ -5,5 +5,7 @@
 # kdc.conf.d/20-fast.conf) and testuser1's keytab for the armor TGT; it adds
 # no drop-in, port or secret (prefix 57 and ports 19570-19579 stay reserved
 # for this todo). The directory name `suite-fast` sorts after every fixture
-# directory, so mit-kdc is registered already.
-interop_suite fast interop_fast mit-kdc
+# directory, so mit-kdc is registered already. Todo 28 (lane E, implicit FAST
+# armor of TGS requests) adds mit-other: the cross-realm scenario armors the
+# referral hop and the service hop against OTHER.RSKRB5.
+interop_suite fast interop_fast mit-kdc mit-other
