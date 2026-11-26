@@ -13,7 +13,7 @@ use rskrb5_ng::{
         transport::{KdcProtocol, Tokio as KdcTransport},
     },
     config::Config,
-    error::HttpExchange as ExchangeError,
+    error::{Gss as GssError, HttpExchange as ExchangeError},
     gss::{self, AcceptorOptions, ChannelBindings, ContextFlags},
     http::{
         agent::{ChannelBindingPolicy, NegotiateHttpClient},
@@ -133,7 +133,9 @@ fn respond(head: &str, acceptor: &mut spnego::Acceptor<'static>) -> Vec<u8> {
             )
         }
         Ok(_continued) => http("403 Forbidden", "", "refused=continue\n"),
-        Err(error) => http("403 Forbidden", "", &format!("refused={error:?}\n")),
+        Err(GssError::BadBindings) => http("403 Forbidden", "", "refused=BadBindings\n"),
+        Err(GssError::MissingBindings) => http("403 Forbidden", "", "refused=MissingBindings\n"),
+        Err(error) => http("403 Forbidden", "", &format!("refused={error}\n")),
     }
 }
 
