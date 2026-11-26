@@ -48,10 +48,6 @@ pub type ExchangeFuture<'request> =
 pub type ConnectFuture<'exchange> =
     Pin<Box<dyn Future<Output = Result<PreparedConnection<'exchange>, Error>> + Send + 'exchange>>;
 
-/// The one-shot send of a [`PreparedConnection`].
-type Sender<'exchange> =
-    Box<dyn FnOnce(Request<Vec<u8>>) -> ExchangeFuture<'exchange> + Send + 'exchange>;
-
 /// Sends one HTTP request and returns its response.
 pub trait HttpExchange: Send + Sync {
     /// Send `request` (its URI is absolute) and return the response, whatever
@@ -93,12 +89,27 @@ pub trait HttpExchange: Send + Sync {
     }
 }
 
+/// The one-shot send of a [`PreparedConnection`].
+trait Sender<'exchange>: Send {
+    /// Send `request` over the connection.
+    fn send(self: Box<Self>, request: Request<Vec<u8>>) -> ExchangeFuture<'exchange>;
+}
+
+impl<'exchange, F> Sender<'exchange> for F
+where
+    F: FnOnce(Request<Vec<u8>>) -> ExchangeFuture<'exchange> + Send,
+{
+    fn send(self: Box<Self>, request: Request<Vec<u8>>) -> ExchangeFuture<'exchange> {
+        self(request)
+    }
+}
+
 /// A connection opened by [`HttpExchange::connect`] for exactly one request.
 pub struct PreparedConnection<'exchange> {
     /// The authenticated TLS peer, `None` for a connection without one.
     channel: Option<TlsChannel>,
-    /// Sends the request over the connection.
-    sender: Sender<'exchange>,
+    /// Sends the request over the connection, once.
+    sender: Box<dyn Sender<'exchange> + 'exchange>,
 }
 
 impl fmt::Debug for PreparedConnection<'_> {
@@ -148,7 +159,7 @@ impl<'exchange> PreparedConnection<'exchange> {
     /// The caller may drop the future; the request may then have been delivered.
     #[inline]
     pub fn send(self, request: Request<Vec<u8>>) -> ExchangeFuture<'exchange> {
-        (self.sender)(request)
+        self.sender.send(request)
     }
 }
 
