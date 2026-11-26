@@ -52,6 +52,7 @@ the chosen entry point, so one target covers a family of related decoders.
 | `http_location` | a base URI, a newline and a `Location` value | `http::origin::resolve_location` (absolute, scheme-relative, path-absolute, query-only and path-relative references, dot-segment removal, fragment removal; the refusals of user information, foreign schemes and forbidden bytes) and `Origin::of` on every accepted target |
 | `http_session` | a selector byte, then a session cookie value or `Cookie` header, or a principal | `SessionManager::resume` (base64url, the sealed-blob framing and the RFC 8009 authentication; no value the manager never sealed may resume) and `attach` on a `Cookie` header; an odd selector issues a session for the fuzzed principal and requires it to resume to the same principal |
 | `http_set_cookie` | a request URI, a newline and `Set-Cookie` values, one per line | `http::cookies::CookieStore::store_set_cookie` (parsing, the size, `Secure` and `Domain` refusals and the RFC 6265 storage model over a small public-suffix list) and `cookie_header` on the accepted jar (the `http-client` leaf) |
+| `http_tls_channel` | the DER end-entity certificate of a TLS peer | `http::wire::TlsChannel::from_end_entity` (the 64 KiB bound, the outer X.509 `Certificate` and its `signatureAlgorithm`, RFC 4055 RSASSA-PSS parameters) and the RFC 5929 `tls-server-end-point` hash it selects |
 
 The keys, keytabs, tickets and templates the targets use are the synthetic
 gokrb5 test vectors the tests already carry (`fuzz/fixtures/`). The fuzz
@@ -342,6 +343,18 @@ such a value (regression test `a_non_ascii_cookie_is_refused`, seed
 these two fixes. Coverage proof: `task-26-http-coverage.tsv` in the
 execution evidence.
 
+### TLS channel bindings of the HTTP client (todo 28 of plan 2)
+
+`http_tls_channel` fuzzes the certificate a TLS peer presents to the HTTP client.
+`TlsChannel::from_end_entity` refuses more than 64 KiB, decodes exactly one DER
+`Certificate` with its TBS part and signature opaque, reads the `signatureAlgorithm`
+(and RFC 4055 RSASSA-PSS parameters, whose trailer field must be 1) and picks the
+RFC 5929 section 4.1 hash; an accepted certificate keeps its bytes, and its bindings,
+when defined, are the `tls-server-end-point:` prefix and one SHA-2 digest. The seeds
+are the OpenSSL certificates of `tests/http_client/cbt/` (one per signature
+algorithm), the ECDSA server certificate of `tests/kkdcp/` and a non-certificate.
+Coverage proof: `task-28f-http-coverage.tsv` in the execution evidence.
+
 ### GSS-API (todo 18 of plan 2)
 
 `gss_name` fuzzes GSS-API name import for every name type MIT krb5 1.22.2
@@ -482,6 +495,10 @@ targets and proved their four rows the same way (4 of 4 mappings: `resolve_locat
 `SessionManager::resume`, the blob reader `open` and `CookieStore::store_set_cookie`;
 record `task-26-http-coverage.tsv` in the execution evidence). The other targets were
 not rebuilt in that lane.
+
+Plan 2 todo 28 (wave 11 lane F) added the `http_tls_channel` target and proved its two
+rows the same way (2 of 2 mappings: `TlsChannel::from_end_entity` and the hash selection
+`end_point::bindings`; record `task-28f-http-coverage.tsv` in the execution evidence).
 
 ## Round-trip properties
 
@@ -818,6 +835,8 @@ does.
 | `rskrb5_ng::http::sessions::SessionManager::resume` | `src/http/sessions.rs` | `http_session` |  |
 | `rskrb5_ng::http::sessions::blob::open` | `src/http/sessions/blob.rs` | `http_session` |  |
 | `rskrb5_ng::http::cookies::CookieStore::store_set_cookie` | `src/http/cookies.rs` | `http_set_cookie` |  |
+| `rskrb5_ng::http::wire::TlsChannel::from_end_entity` | `src/http/wire.rs` | `http_tls_channel` |  |
+| `rskrb5_ng::http::wire::end_point::bindings` | `src/http/wire/end_point.rs` | `http_tls_channel` |  |
 | `rskrb5_ng::pac::Pac::buffer_bytes` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::Pac::parse` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::Pac::parse_and_process` | `src/pac.rs` | `pac_parse` |  |

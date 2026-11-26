@@ -292,3 +292,10 @@ path = "fuzz_targets/http_set_cookie.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "http_tls_channel"
+path = "fuzz_targets/http_tls_channel.rs"
+test = false
+doc = false
+bench = false
