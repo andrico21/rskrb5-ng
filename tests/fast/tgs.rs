@@ -88,6 +88,13 @@ fn drive(kdc: &mut TgsKdc, engine: &mut TicketCreds) -> Result<AsRepSession, Cli
     }
 }
 
+/// The credential of a run, reported with the error's message when it failed.
+fn credential(run: Run) -> Result<(AsRepSession, Option<Outcome>), TestError> {
+    let outcome = run.outcome;
+    let session = run.result.map_err(|error| format!("{error:?}: {error}"))?;
+    Ok((session, outcome))
+}
+
 /// The failure of a run.
 fn failure(run: Run) -> Result<ClientError, TestError> {
     run.result
@@ -107,9 +114,9 @@ fn failure(run: Run) -> Result<ClientError, TestError> {
 #[test]
 fn tgs_fast_matches_mit() -> Result<(), TestError> {
     let mut kdc = TgsKdc::new(Tamper::None);
-    let armored = attempt(&mut kdc, Some(Policy::Required), service(REALM))?;
-    assert_eq!(armored.outcome, Some(Outcome::Armored), "the outcome");
-    let session = armored.result?;
+    let (session, outcome) =
+        credential(attempt(&mut kdc, Some(Policy::Required), service(REALM))?)?;
+    assert_eq!(outcome, Some(Outcome::Armored), "the outcome");
     assert_eq!(session.service(), &service(REALM), "the issued service");
     let seen = kdc.seen().ok_or("the KDC saw no request")?;
     assert_eq!(
@@ -172,29 +179,34 @@ fn tgs_fast_requires_strengthen_key() -> Result<(), TestError> {
 /// A reply that fails any FAST check ends the exchange: nothing is retried, nothing falls back.
 #[test]
 fn tgs_fast_tamper_never_falls_back() -> Result<(), TestError> {
-    let cases: [(Tamper, fn(&Fast) -> bool); 7] = [
-        (Tamper::DropFinished, |cause| {
-            matches!(cause, Fast::MissingFinished)
+    /// What a case expects of the exchange error.
+    type Expectation = fn(&ClientError) -> bool;
+    let cases: [(Tamper, Expectation); 7] = [
+        (Tamper::DropFinished, |error| {
+            matches!(fast_cause(error), Some(Fast::MissingFinished))
         }),
-        (Tamper::TicketChecksum, |cause| {
-            matches!(cause, Fast::TicketChecksum)
+        (Tamper::TicketChecksum, |error| {
+            matches!(fast_cause(error), Some(Fast::TicketChecksum))
         }),
-        (Tamper::TicketChecksumType, |cause| {
+        (Tamper::TicketChecksumType, |error| {
             matches!(
-                cause,
-                Fast::ChecksumType {
+                fast_cause(error),
+                Some(Fast::ChecksumType {
                     expected: 16,
                     actual: 15
-                }
+                })
             )
         }),
-        (Tamper::Nonce, |cause| {
-            matches!(cause, Fast::NonceMismatch { .. })
+        (Tamper::Nonce, |error| {
+            matches!(fast_cause(error), Some(Fast::NonceMismatch { .. }))
         }),
-        (Tamper::WrongStrengthenKey, |_| true),
-        (Tamper::ReplyCiphertext, |_| true),
-        (Tamper::ErrorStrengthenKey, |cause| {
-            matches!(cause, Fast::Malformed { .. })
+        // The reply is encrypted in another key than the one the client derives.
+        (Tamper::WrongStrengthenKey, |error| {
+            matches!(error, ClientError::Crypto(_))
+        }),
+        (Tamper::ReplyCiphertext, |error| fast_cause(error).is_some()),
+        (Tamper::ErrorStrengthenKey, |error| {
+            matches!(fast_cause(error), Some(Fast::Malformed { .. }))
         }),
     ];
     for policy in [Policy::Required, Policy::Opportunistic] {
@@ -203,10 +215,7 @@ fn tgs_fast_tamper_never_falls_back() -> Result<(), TestError> {
             let run = attempt(&mut kdc, Some(policy), service(REALM))?;
             assert_ne!(run.outcome, Some(Outcome::Armored), "{policy:?} {tamper:?}");
             let error = failure(run)?;
-            assert!(
-                fast_cause(&error).is_some_and(expected),
-                "{policy:?} {tamper:?}: {error}"
-            );
+            assert!(expected(&error), "{policy:?} {tamper:?}: {error}");
             assert_eq!(
                 kdc.requests().len(),
                 1,
@@ -263,9 +272,10 @@ fn run_required(kdc: &mut TgsKdc) -> Result<Run, TestError> {
 #[test]
 fn a_kdc_without_fast_is_served_only_opportunistically() -> Result<(), TestError> {
     let mut kdc = TgsKdc::new(Tamper::NoFast);
-    let plain = attempt(&mut kdc, Some(Policy::Opportunistic), service(REALM))?;
-    assert_eq!(plain.outcome, Some(Outcome::Unarmored), "the outcome");
-    assert_eq!(plain.result?.service(), &service(REALM), "the plain ticket");
+    let (plain, outcome) =
+        credential(attempt(&mut kdc, Some(Policy::Opportunistic), service(REALM))?)?;
+    assert_eq!(outcome, Some(Outcome::Unarmored), "the outcome");
+    assert_eq!(plain.service(), &service(REALM), "the plain ticket");
     let mut kdc = TgsKdc::new(Tamper::UnarmoredError);
     let refused = attempt(&mut kdc, Some(Policy::Opportunistic), service(REALM))?;
     let error = failure(refused)?;
@@ -295,10 +305,10 @@ fn an_armored_error_surfaces_the_inner_kdc_error() -> Result<(), TestError> {
 #[test]
 fn the_authenticated_client_wins_over_the_outer_name() -> Result<(), TestError> {
     let mut kdc = TgsKdc::new(Tamper::OuterClient);
-    let run = run_required(&mut kdc)?;
-    assert_eq!(run.outcome, Some(Outcome::Armored), "the outcome");
+    let (session, outcome) = credential(run_required(&mut kdc)?)?;
+    assert_eq!(outcome, Some(Outcome::Armored), "the outcome");
     assert_eq!(
-        run.result?.client(),
+        session.client(),
         &Principal::new(REALM, 3, ["host", "armor.fast.test"]),
         "the finished client"
     );

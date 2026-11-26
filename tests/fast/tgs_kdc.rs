@@ -225,7 +225,7 @@ impl Context<'_> {
                 &EncryptionKey::new(18, if is_tgs { TGS_KEY.to_vec() } else { vec![0x88; 32] }),
                 2,
                 &der::encode(&EncTicketPart {
-                    flags: TicketFlags(KerberosFlags::from_slice(&[0x40, 0x60, 0, 0])),
+                    flags: TicketFlags(KerberosFlags::from_slice(&[0, 0x60, 0, 0])),
                     key: rasn_kerberos::EncryptionKey {
                         r#type: 18,
                         value: vec![0x77; 32].into(),
@@ -263,7 +263,7 @@ impl Context<'_> {
                 last_req: Vec::new(),
                 nonce: self.nonce,
                 key_expiration: None,
-                flags: TicketFlags(KerberosFlags::from_slice(&[0x40, 0x60, 0, 0])),
+                flags: TicketFlags(KerberosFlags::from_slice(&[0, 0x60, 0, 0])),
                 auth_time: time(whole(SystemTime::now())?),
                 start_time: None,
                 end_time: self.request.req_body.till.clone(),

@@ -48,6 +48,8 @@ pub(crate) mod asn1;
 pub(crate) mod keys;
 /// Unwrapping armored replies.
 mod reply;
+/// Implicit armor of TGS requests.
+pub(crate) mod tgs;
 /// MIT encoding vectors and the round bound.
 #[cfg(test)]
 #[expect(
