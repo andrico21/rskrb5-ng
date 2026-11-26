@@ -130,7 +130,7 @@ pub(crate) const RELATIONS_HEAD: [(&str, &str, &str, &str, &str, &str); 21] = [
         "dns_canonicalize_hostname",
         "boolean or fallback",
         "true",
-        "discovery::hostname::CanonicalizationPolicy",
+        "discovery::hostname::CanonicalizationPolicy::acquire through client::Tokio::get_host_service_ticket, gss::Credential::acquire_host_service_ticket and http::agent::NegotiateHttpClient::with_host_name_policy",
         "Effective: true canonicalizes the host with DNS, false never does, fallback tries the plain name first; no client route canonicalizes a host implicitly",
         "dns_canonicalize_hostname",
     ),
