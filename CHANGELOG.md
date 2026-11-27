@@ -1474,11 +1474,14 @@ Configuration:
 - Unsupported restrictive settings now fail closed through serde and runtime
   configuration admission, not only text parsing: address inclusion, total
   deadlines, mandatory AP verification, channel-binding signaling, persistent
-  replay stores and encrypted-timestamp prohibitions (FU-CFG-R05).
+  replay stores and encrypted-timestamp prohibitions (FU-CFG-R05; every one of
+  them has an effective consumer since the parity work,
+  `docs/config-relations.md`).
 - Escaped permanently rejected protocol selectors are rejected before finalized
   or unknown profile scopes can discard them (FU-CFG-R06).
 - Runtime/serde timestamp-restriction errors now identify preauthentication
-  work package WP-07, matching text parsing (FU-CFG-R07).
+  work package WP-07, matching text parsing (FU-CFG-R07; the restriction is
+  effective since the parity work and no such error remains).
 - Next-line profile subsection braces give the same result as the inline form
   in every section, in Compatible and Strict mode (FU-CFG-R08). In realms,
   appdefaults, plugins and capaths an empty assignment expects an opening brace
@@ -1764,7 +1767,7 @@ Documentation:
   `.cargo/config.toml` (`build.warnings = "deny"`). There is no baseline, no
   `allow` attribute and no `unsafe` code; the only `expect` attributes are
   the six sanctioned forms in `docs/lint-policy.md`.
-- Every feature closure (36, computed from `[features]`) passes
+- Every feature closure (53, computed from `[features]`) passes
   `cargo clippy --all-targets -- -D warnings` and its tests, and clippy is
   clean on Windows.
 - The core's non-lint rules apply to the whole tree: cancel-safety sections
