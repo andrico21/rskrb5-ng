@@ -486,7 +486,8 @@ single DES is refused.
 
 No long-term key leaves a client: the client facade has no accessor for the
 key it derived from a password or read from a keytab (gokrb5 `Client.Key`),
-a deliberate security divergence recorded with the manifest row GO-client-1.
+a deliberate security divergence recorded with the manifest row GO-client-8
+(disposition D14, [`docs/gokrb5-parity.md#client-key-export`](gokrb5-parity.md#client-key-export)).
 Callers that need a key derive it with the `crypto` string-to-key functions
 from their own secret or read their own `Keytab`.
 
