@@ -1522,14 +1522,17 @@ mod tests {
             decoded.enctype_diagnostics.is_empty(),
             "parse diagnostics are not serialized"
         );
-        // `dns_lookup_realm` is effective since the discovery work package: no diagnostic.
-        assert!(!config.diagnostics().iter().any(|item| matches!(
-            item,
-            ConfigDiagnostic::NotYetEffective {
-                relation: "dns_lookup_realm",
-                package: _
-            }
-        )));
+        // `dns_lookup_realm` is effective since the discovery work package: the
+        // fixture's only diagnostics are its out-of-scope `default_domain` values.
+        assert!(
+            config.diagnostics().iter().all(|item| *item
+                == ConfigDiagnostic::OutOfScope {
+                    relation: "default_domain",
+                    decision: "D2",
+                }),
+            "{:?}",
+            config.diagnostics()
+        );
         Ok(())
     }
     /// Pins that JSON without the explicit flag deserializes as an implicit permitted list.

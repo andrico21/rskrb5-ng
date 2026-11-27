@@ -33,7 +33,9 @@ struct Feature {
     cargo_features: Vec<String>,
     /// Deliberate divergence from upstream behavior.
     divergence: String,
-    /// `ALREADY`, `WP-NN`, `POL-01`, `D1`, `D2` or `D13`.
+    /// `ALREADY`, `WP-NN`, `POL-01`, `D1`, `D2`, `D13` or `D14` (the owner
+    /// decision of 2026-11-25 that no long-term key leaves a client; only the
+    /// rows of `rules::D14_ROWS`).
     disposition: String,
     /// Closing plan and todo number, absent for `ALREADY` and `D1` rows.
     closing: Option<(i64, i64)>,

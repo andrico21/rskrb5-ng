@@ -50,13 +50,11 @@ mod tests {
             );
             assert_eq!(config.capath("Client", "Direct"), Some(&Route::Direct));
             assert_eq!(config.capath("client", "Server"), None);
-            assert!(!config.diagnostics().iter().any(|item| matches!(
-                item,
-                ConfigDiagnostic::NotYetEffective {
-                    relation: "capaths",
-                    package: _
-                }
-            )));
+            assert!(
+                config.diagnostics().is_empty(),
+                "{:?}",
+                config.diagnostics()
+            );
         }
         drop(
             Config::parse("[capaths]\n A = {\n B = .\n B = C\n }\n")

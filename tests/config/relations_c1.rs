@@ -10,10 +10,10 @@
 mod tests {
     use core::error::Error;
 
-    use rskrb5_ng::config::{Config, ConfigDiagnostic, ParseMode, hostname::Canonicalization};
+    use rskrb5_ng::config::{Config, ParseMode, hostname::Canonicalization};
 
     /// Effective relations: the first value is decoded into the typed field, later duplicates are
-    /// ignored, and no deferred-consumer diagnostic is raised, so strict mode accepts them.
+    /// ignored, and no diagnostic is raised, so strict mode accepts them.
     fn effective(name: &str, values: &[&str]) -> Result<(), Box<dyn Error>> {
         for value in values {
             // Given a selected scalar followed by a value that must not override it.
@@ -44,16 +44,19 @@ mod tests {
                 ),
                 _ => return Err(format!("unreviewed effective relation {name}").into()),
             }
-            // Then no diagnostic names the relation.
+            // Then neither mode reports a diagnostic.
             for parsed in [&config, &strict] {
-                assert!(!parsed.diagnostics().iter().any(|item| matches!(item,
-                    ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == name)));
+                assert!(
+                    parsed.diagnostics().is_empty(),
+                    "{name}: {:?}",
+                    parsed.diagnostics()
+                );
             }
         }
         Ok(())
     }
 
-    /// `canonicalize` is effective (WP-05): it parses, raises no deferred
+    /// `canonicalize` is effective (WP-05): it parses, raises no
     /// diagnostic and strict mode accepts it; the armored AS request asks for
     /// it (tests/fast.rs `canonicalization_is_accepted_only_under_fast`).
     #[test]
@@ -67,9 +70,9 @@ mod tests {
                 "{value}"
             );
             assert!(
-                !config.diagnostics().iter().any(|item| matches!(item,
-                    ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == "canonicalize")),
-                "{value}"
+                config.diagnostics().is_empty(),
+                "{value}: {:?}",
+                config.diagnostics()
             );
         }
         Ok(())

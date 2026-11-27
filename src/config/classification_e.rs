@@ -1,4 +1,4 @@
-//! Exhaustive deferred-consumer boundary review against all three catalogues.
+//! Consumer classification review of all three relation catalogues.
 
 #[cfg(test)]
 #[expect(
@@ -14,13 +14,6 @@ mod tests {
         Config, ConfigDiagnostic, ParseMode, libdefaults::relations::RELATIONS,
         realm_relations::REALM_RELATIONS, section_decode::SECTION_RELATIONS,
     };
-
-    /// Libdefaults: safe assignment and optional genuinely stronger assignment.
-    /// None means no valid value tightens current behavior; table rationale explains why.
-    const LIB: [(&str, &str, Option<&str>); 0] = [];
-
-    /// Realm values are restrictions on absent mechanisms; none is deferred.
-    const REALM: [(&str, &str, Option<&str>); 0] = [];
 
     /// Relations whose semantics an owner decision excludes: section, name,
     /// a value, and the decision both parse modes report.
@@ -45,79 +38,6 @@ mod tests {
         } else {
             format!("[libdefaults]\n {name} = {value}\n")
         }
-    }
-
-    /// Both parse modes are tested for each side; Compatible must preserve the diagnostic.
-    fn boundary(name: &str, safe: &str, tighter: Option<&str>) -> Result<(), Box<dyn Error>> {
-        let config = Config::parse(safe)?;
-        assert!(config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == name)), "safe {name}");
-        drop(
-            Config::parse_with_mode(safe, ParseMode::Strict)
-                .err()
-                .ok_or_else(|| format!("strict accepted {name}"))?,
-        );
-        if let Some(input) = tighter {
-            for mode in [ParseMode::Compatible, ParseMode::Strict] {
-                let failure = Config::parse_with_mode(input, mode)
-                    .err()
-                    .ok_or_else(|| format!("tightening ignored: {name}"))?;
-                assert!(
-                    matches!(failure, super::super::Error::NotYetEffective { relation, package: _ } if relation == name)
-                );
-            }
-        }
-        Ok(())
-    }
-
-    /// Every deferred libdefaults row has an explicit safe/tightening decision.
-    #[test]
-    fn every_libdefaults_boundary_is_reviewed() -> Result<(), Box<dyn Error>> {
-        for row in RELATIONS.iter().filter(|row| row.3.starts_with("plan 2 ")) {
-            let (name, safe, tight) = LIB
-                .iter()
-                .copied()
-                .find(|case| case.0 == row.0)
-                .ok_or("unreviewed libdefaults row")?;
-            let tighter = tight.map(|value| profile("libdefaults", name, value));
-            boundary(
-                name,
-                &profile("libdefaults", name, safe),
-                tighter.as_deref(),
-            )?;
-        }
-        assert_eq!(
-            RELATIONS
-                .iter()
-                .filter(|row| row.3.starts_with("plan 2 "))
-                .count(),
-            LIB.len()
-        );
-        Ok(())
-    }
-
-    /// Every deferred realm row has an explicit safe/tightening decision.
-    #[test]
-    fn every_realm_boundary_is_reviewed() -> Result<(), Box<dyn Error>> {
-        for row in REALM_RELATIONS
-            .iter()
-            .filter(|row| row.3.starts_with("plan 2 "))
-        {
-            let (name, safe, tight) = REALM
-                .iter()
-                .copied()
-                .find(|case| case.0 == row.0)
-                .ok_or("unreviewed realm row")?;
-            let tighter = tight.map(|value| profile("realms", name, value));
-            boundary(name, &profile("realms", name, safe), tighter.as_deref())?;
-        }
-        assert_eq!(
-            REALM_RELATIONS
-                .iter()
-                .filter(|row| row.3.starts_with("plan 2 "))
-                .count(),
-            REALM.len()
-        );
-        Ok(())
     }
 
     /// Every catalogue row an owner decision excludes reports that decision in
@@ -154,15 +74,21 @@ mod tests {
         Ok(())
     }
 
-    /// No section relation is deferred: every one has an effective consumer.
+    /// No row of the three catalogues defers its relation to a later change.
+    ///
+    /// Every consumer is effective (with its leaf, when it names one) or an
+    /// owner decision excludes the relation (`every_permanent_scope_row_is_reviewed`).
     #[test]
-    fn every_section_boundary_is_reviewed() {
+    fn no_catalogue_row_is_deferred() {
         assert_eq!(
-            SECTION_RELATIONS
+            RELATIONS
                 .iter()
-                .filter(|row| row.3.starts_with("plan 2 "))
-                .count(),
-            0
+                .chain(REALM_RELATIONS.iter())
+                .chain(SECTION_RELATIONS.iter())
+                .filter(|row| row.3.is_empty() || row.3.starts_with("plan "))
+                .map(|row| row.0)
+                .collect::<Vec<&str>>(),
+            Vec::<&str>::new()
         );
     }
 }

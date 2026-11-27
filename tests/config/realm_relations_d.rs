@@ -74,14 +74,18 @@ mod tests {
                 _ => return Err(format!("unreviewed effective relation {name}").into()),
             }
             for parsed in [&config, &strict] {
-                assert!(!parsed.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == name)));
+                assert!(
+                    parsed.diagnostics().is_empty(),
+                    "{name}: {:?}",
+                    parsed.diagnostics()
+                );
             }
         }
         Ok(())
     }
 
-    /// The client PKINIT relations (todo 8): typed values and no deferred-consumer
-    /// diagnostic; a `FeatureUnavailable` diagnostic (without the `pkinit` leaf)
+    /// The client PKINIT relations (todo 8): typed values and no other
+    /// diagnostic than a `FeatureUnavailable` one (without the `pkinit` leaf)
     /// exactly when Strict mode refuses the profile.
     fn pkinit(name: &str, kind: &str, inputs: &[&str]) -> Result<(), Box<dyn Error>> {
         for input in inputs {
@@ -96,7 +100,11 @@ mod tests {
                 ("list", Value::List(values)) => assert_eq!(values, &[*input]),
                 _ => return Err(format!("wrong value kind {name}").into()),
             }
-            assert!(!config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == name)));
+            assert!(
+                config.diagnostics().iter().all(|item| matches!(item, ConfigDiagnostic::FeatureUnavailable { relation, feature: "pkinit" } if *relation == name)),
+                "{name}: {:?}",
+                config.diagnostics()
+            );
             let unavailable = config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::FeatureUnavailable { relation, feature: "pkinit" } if *relation == name));
             let strict = Config::parse_with_mode(&text, ParseMode::Strict);
             // With the leaf the relation is effective; without it, unavailable
@@ -200,17 +208,16 @@ mod tests {
         endpoint("admin_server")
     }
 
-    /// Whether a diagnostic of `config` defers a relation to a later package.
-    fn has_deferred_diagnostic(config: &Config) -> bool {
-        config.diagnostics().iter().any(|item| {
-            matches!(
-                item,
-                ConfigDiagnostic::NotYetEffective {
-                    relation: _,
-                    package: _
-                }
-            )
-        })
+    /// Whether `config` reports nothing but the leaf's `FeatureUnavailable`.
+    ///
+    /// A build without the `localauth` leaf reports it for `auth_to_local_names`;
+    /// `tests/localauth/profile.rs` checks which one each build gives.
+    fn only_the_leaf_diagnostic(config: &Config) -> bool {
+        let unavailable = ConfigDiagnostic::FeatureUnavailable {
+            relation: "auth_to_local_names",
+            feature: "localauth",
+        };
+        config.diagnostics().is_empty() || config.diagnostics() == [unavailable]
     }
 
     /// Local mapping keys preserve case and first-wins selection.
@@ -277,8 +284,9 @@ mod tests {
                     Some(expected)
                 );
                 assert!(
-                    !has_deferred_diagnostic(&config),
-                    "the names are never deferred to WP-17 any more"
+                    only_the_leaf_diagnostic(&config),
+                    "{:?}",
+                    config.diagnostics()
                 );
             }
         }

@@ -35,7 +35,7 @@ pub(super) fn capath<'config>(
     this.capaths.get(client)?.get(server)
 }
 
-/// Diagnostics for selected profile relations, including deferred consumers.
+/// Diagnostics for selected profile relations: unknown, unavailable or out-of-scope policy.
 pub(super) fn diagnostics(this: &Config) -> &[ConfigDiagnostic] {
     &this.libdefaults.enctype_diagnostics
 }

@@ -41,7 +41,11 @@ mod tests {
             }
             // And no diagnostic names the relation.
             for parsed in [&config, &strict] {
-                assert!(!parsed.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == name)));
+                assert!(
+                    parsed.diagnostics().is_empty(),
+                    "{name}: {:?}",
+                    parsed.diagnostics()
+                );
             }
         }
         Ok(())
@@ -133,13 +137,11 @@ mod tests {
                     enabled,
                     "{value}"
                 );
-                assert!(!config.diagnostics().iter().any(|item| matches!(
-                    item,
-                    ConfigDiagnostic::NotYetEffective {
-                        relation: "client_aware_channel_bindings",
-                        package: _
-                    }
-                )));
+                assert!(
+                    config.diagnostics().is_empty(),
+                    "{value}: {:?}",
+                    config.diagnostics()
+                );
             }
         }
         Ok(())
@@ -147,7 +149,7 @@ mod tests {
 
     /// `verify_ap_req_nofail` is effective (consumer `Tokio::verify_init_creds`).
     ///
-    /// Both values parse in both modes without a deferred diagnostic, and the
+    /// Both values parse in both modes without a diagnostic, and the
     /// profile records that it was set, since unset requires verification.
     #[test]
     fn verify_ap_req_nofail() -> Result<(), Box<dyn Error>> {
@@ -168,13 +170,11 @@ mod tests {
                     defaults.verify_ap_req_nofail_explicit.is_enabled(),
                     "{value}"
                 );
-                assert!(!config.diagnostics().iter().any(|item| matches!(
-                    item,
-                    ConfigDiagnostic::NotYetEffective {
-                        relation: "verify_ap_req_nofail",
-                        package: _
-                    }
-                )));
+                assert!(
+                    config.diagnostics().is_empty(),
+                    "{value}: {:?}",
+                    config.diagnostics()
+                );
             }
         }
         // And an unset relation stays unset.

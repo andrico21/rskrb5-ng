@@ -1,4 +1,4 @@
-/// Treatment of secure configuration features that are not implemented yet.
+/// Treatment of configuration selections that this build cannot apply.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[non_exhaustive]
@@ -29,13 +29,6 @@ pub enum Diagnostic {
     ServerOnly {
         /// Canonical section name.
         section: &'static str,
-    },
-    /// A known relation has no complete runtime consumer yet.
-    NotYetEffective {
-        /// Selected scalar relation name.
-        relation: &'static str,
-        /// Work package implementing the missing behavior.
-        package: &'static str,
     },
     /// A relation's consumer lives behind a leaf Cargo feature this build lacks;
     /// the value has no effect.
@@ -75,9 +68,6 @@ impl Diagnostic {
         match self {
             Self::UnknownSection { section } => Error::UnknownSection { section },
             Self::UnknownRelation { path } => Error::UnknownRelation { path },
-            Self::NotYetEffective { relation, package } => {
-                Error::NotYetEffective { relation, package }
-            }
             Self::ServerOnly { section } => Error::ServerOnly { section },
             Self::FeatureUnavailable { relation, feature } => {
                 Error::FeatureUnavailable { relation, feature }

@@ -12,7 +12,7 @@ use crate::{
     audit::{check_evidence, check_markdown, check_shape, check_summary},
     markdown::markdown,
     model::{manifest, rows, todo_index},
-    rules::check_rules,
+    rules::{check_rules, d14_admits, incomplete},
     sources::check_test_name,
 };
 
@@ -128,8 +128,9 @@ fn area_statuses(table: &Table) -> Result<Vec<(String, String, String)>, TestErr
         .collect()
 }
 
-/// An area claims coverage only when every row is implemented; otherwise its next work
-/// names each open row's closing todo.
+/// An area claims coverage only when no row is open (`partial` or `absent`); otherwise
+/// its next work names each open row's closing todo. A row an owner decision omits
+/// or rejects is final, not open.
 #[test]
 fn area_statuses_follow_their_rows() -> Result<(), TestError> {
     // Given the areas and their feature rows.
@@ -139,7 +140,7 @@ fn area_statuses_follow_their_rows() -> Result<(), TestError> {
         let open: Vec<&Feature> = features
             .iter()
             .filter(|feature| feature.parity_area.as_deref() == Some(id.as_str()))
-            .filter(|feature| feature.status != "implemented")
+            .filter(|feature| matches!(feature.status.as_str(), "partial" | "absent"))
             .collect();
         // Then a covered area has none, and every open row's closing todo is named.
         assert!(
@@ -285,6 +286,103 @@ fn post_pin_changes_name_regression_tests() -> Result<(), TestError> {
         changes.len(),
         "every post-pin row is a table"
     );
+    Ok(())
+}
+
+/// The feature rows in scope that are not `implemented` and the upstream
+/// behaviour rows that are not `rejected` (not copied, with negative tests).
+fn open_rows(table: &Table) -> Result<Vec<String>, TestError> {
+    let features = rows(table, "feature")?;
+    let behaviours = rows(table, "insecure_behaviour")?;
+    let mut open: Vec<String> = incomplete(&features)
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    open.extend(
+        behaviours
+            .iter()
+            .filter(|row| row.status != "rejected")
+            .map(|row| row.id.clone()),
+    );
+    Ok(open)
+}
+
+/// Every feature row in scope is `implemented` and every upstream behaviour
+/// row is `rejected`.
+#[test]
+fn every_in_scope_row_is_implemented() -> Result<(), TestError> {
+    // Given the manifest.
+    let (table, _) = manifest(GO.manifest)?;
+    // When the open rows are collected.
+    // Then there are none.
+    assert_eq!(open_rows(&table)?, Vec::<String>::new());
+    Ok(())
+}
+
+/// A feature row and a behaviour row reverted to `partial` fail the
+/// completeness check.
+#[test]
+fn rows_reverted_to_partial_fail_the_completeness_check() -> Result<(), TestError> {
+    // Given the manifest with one feature and one behaviour row reverted to partial.
+    let (mut table, _) = manifest(GO.manifest)?;
+    for (key, id) in [
+        ("feature", "GO-client-2"),
+        ("insecure_behaviour", "GO-T2-14"),
+    ] {
+        let row = table
+            .get_mut(key)
+            .and_then(Value::as_array_mut)
+            .and_then(|rows| {
+                rows.iter_mut()
+                    .filter_map(Value::as_table_mut)
+                    .find(|row| row.get("id").and_then(Value::as_str) == Some(id))
+            })
+            .ok_or_else(|| format!("{id} row"))?;
+        drop(row.insert(
+            "implementation_status".to_owned(),
+            Value::String("partial".to_owned()),
+        ));
+    }
+    // When the completeness check reads the rows.
+    // Then exactly those rows are reported.
+    assert_eq!(open_rows(&table)?, ["GO-client-2", "GO-T2-14"]);
+    Ok(())
+}
+
+/// Disposition `D14` admits its one row as `omitted` and nothing else: the same
+/// disposition on another row, or with another status, is refused.
+#[test]
+fn d14_names_only_the_client_key_row() -> Result<(), TestError> {
+    // Given the manifest's D14 row and two scratch copies of it.
+    let (table, _) = manifest(GO.manifest)?;
+    let decided = |id: &str, status: &str| -> Result<bool, TestError> {
+        let mut scratch = table.clone();
+        let row = scratch
+            .get_mut("feature")
+            .and_then(Value::as_array_mut)
+            .and_then(|rows| {
+                rows.iter_mut()
+                    .filter_map(Value::as_table_mut)
+                    .find(|row| row.get("disposition").and_then(Value::as_str) == Some("D14"))
+            })
+            .ok_or("D14 row")?;
+        drop(row.insert("id".to_owned(), Value::String(id.to_owned())));
+        drop(row.insert(
+            "implementation_status".to_owned(),
+            Value::String(status.to_owned()),
+        ));
+        let features = rows(&scratch, "feature")?;
+        let feature = features
+            .iter()
+            .find(|feature| feature.disposition == "D14")
+            .ok_or("scratch row")?;
+        Ok(d14_admits(feature))
+    };
+    // When the rule reads the real row, another id and another status.
+    // Then only the real row passes.
+    assert!(decided("GO-client-8", "omitted")?, "the decided row");
+    assert!(!decided("GO-client-1", "omitted")?, "another row");
+    assert!(!decided("GO-client-8", "rejected")?, "another status");
     Ok(())
 }
 
