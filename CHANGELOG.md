@@ -61,6 +61,193 @@ the lineage is in [`PROVENANCE.md`](PROVENANCE.md).
 - The repository is `https://github.com/andrico21/rskrb5-ng`, a standalone
   repository (the old `andrico21/rskrb5` URL redirects there).
 
+### Parity features
+
+The parity work (plan 2) adds the capabilities of the MIT krb5 1.22.2 client
+libraries and of gokrb5 v8.4.4 that the manifests
+[`docs/mit-krb5-parity.md`](docs/mit-krb5-parity.md) and
+[`docs/gokrb5-parity.md`](docs/gokrb5-parity.md) list, each row with its
+tests; the decisions and defects of that work are the `FU-*-P*` rows of
+`docs/review/parity-register.md`. Everything below is new in 0.3.0 unless it
+is marked as a behaviour change against 0.2.2 or against an earlier draft of
+this release.
+
+Features, dependencies and companion crate:
+
+- Eight optional leaf flags, none of them a default: `camellia`,
+  `ccache-keyring`, `http-client`, `kkdcp-rustls`, `localauth`, `pkinit`,
+  `spake` and `tracing`. Each one adds only admitted optional dependencies
+  (`docs/dependency-admission.md`) and compiles only its own modules and
+  declared seams; none grants a runtime permission (`docs/security-policy.md`).
+  There is no `ccache-platform` flag: the Windows LSA cache `MSLSA:` and the
+  macOS `API:` cache and Mach KCM transport live in the workspace crate
+  `rskrb5-ng-os` (`publish = false`), which an application adds and registers
+  itself (FU-OSS-P01, FU-OSS-P05).
+- `rustix` is the one new non-optional dependency, only on Unix systems other
+  than Linux and Android, only for the set-uid and set-gid check of the ambient
+  readers (FU-SEC-P01).
+- `url` is locked at 2.5.9 (RUSTSEC-2026-0592, FU-DEP-P01), and `cookie`, which
+  the `http-client` leaf brings in through `cookie_store`, at 0.18.3
+  (RUSTSEC-2026-0594 concerns its `private` feature, which is not enabled).
+- The `closures` CI job checks 53 feature closures: the 36 core closures, each
+  leaf flag on the default and on its minimal build, and all features
+  (FU-CRY-P02).
+
+Extension points and exchanges:
+
+- `extensions::Registry`: registered pre-authentication mechanisms, credential
+  stores (`Registry::install_stores`), KDC locators, host-to-realm mappers,
+  cache selectors and local-authorization modules, ordered by the profile's
+  `[plugins]` `module` entries (FU-EXT-P03, FU-EXT-P06).
+- The stepwise exchange engine `client::stepwise` (`InitCreds`, `TicketCreds`,
+  `Responder`, `drive`, `drive_tokio`) runs every login, with prompts through a
+  responder (FU-CLI-P01, FU-CLI-P02).
+- `client::transport::Tokio::with_registry(Arc<Registry>)` makes the exchange
+  routes consult registered locators and host-to-realm mappers (KDC requests,
+  the primary retry, kpasswd and the service realm; MIT-plugin-6,
+  MIT-authz-6, MIT-plugin-3). API change: `client::transport::Tokio` is no
+  longer `Copy` (it stays `Clone` and `Eq`).
+- `[plugins]` `disable` and `enable_only` are effective over the registered
+  and the built-in `clpreauth`, `ccselect`, `hostrealm` and `localauth`
+  modules; an exchange built for an excluded PKINIT or OTP mechanism fails with
+  `error::Client::PreauthMechanismDisabled`. Behaviour change against the
+  earlier 0.3.0 text: Strict mode no longer refuses these controls for the four
+  known interfaces, another interface name is an `UnknownRelation`, and a
+  serialized `Config.plugins` that excludes `encrypted_timestamp` is no longer
+  refused by the serde deserializer (FU-EXT-P01, FU-EXT-P07, FU-EXT-P08).
+
+Pre-authentication and tickets:
+
+- FAST armor (`preauth::fast`) with the encrypted challenge, `canonicalize`
+  accepted only under FAST, and authenticated referrals (FU-FST-P02). Implicit
+  TGS armor is opt-in: `TicketCreds::with_fast` and
+  `client::Tokio::with_tgs_fast` (default `Off`, where MIT armors every TGS
+  request; FU-FST-P01, FU-FST-P07, FU-FST-P08).
+- SPAKE (`spake` leaf, RFC 9588; FU-SPK-P01, FU-SPK-P03), OTP (RFC 6560, only
+  inside FAST; FU-OTP-P01), PKINIT and anonymous PKINIT (`pkinit` leaf;
+  FU-PKI-P01). `pkinit_cert_match` is effective under the `pkinit` leaf with a
+  bounded `regex` engine: a malformed rule is an error, more than one matching
+  identity is `AmbiguousCertificates`, and without rules exactly one identity
+  must be configured. Behaviour change against the earlier 0.3.0 text: a
+  configured rule was a typed `UnsupportedLocation` error (FU-PKI-P04,
+  FU-PKI-P05).
+- `[realms] disable_encrypted_timestamp` is honoured by every exchange
+  (FU-SPK-P01).
+- KDC discovery: DNS URI and SRV records, sites, TXT realm lookup and
+  `realm_try_domains` (both opt-in), registered locators and the total
+  `request_timeout` budget (FU-DSC-P10 to FU-DSC-P15). A primary KDC is asked
+  again after a replica's failure (FU-DSC-P15).
+- MS-KKDCP: `transport::kkdcp`, the `transport::proxy::KdcProxyTransport`
+  trait and, with `kkdcp-rustls`, the built-in rustls transport
+  `transport::rustls_proxy::RustlsTransport` with explicit trust anchors only;
+  an `ENV:` anchor is refused (FU-KDP-P02, FU-KDP-P05). An HTTPS-only realm
+  changes passwords through its `admin_server = https://...` proxy URL, which
+  stays complete, instead of failing on `https:464` (FU-KDP-P04).
+- Cross-realm and delegation: `[capaths]` and `service::CapathsTransit`,
+  referrals to a realm the client did not ask for, S4U2Self, S4U2Proxy and
+  resource-based constrained delegation (`client::Tokio::delegate`,
+  `s4u2self_identity`), and `verify_init_creds`
+  (`routing::init_creds::VerifyOptions`; FU-RTE-P01, FU-IOP-P11, FU-IOP-P12).
+- Host-name canonicalization is an explicit operation:
+  `CanonicalizationPolicy::acquire` with a `HostNamePolicy` that approves each
+  canonical name, used by `client::Tokio::get_host_service_ticket`,
+  `gss::Credential::acquire_host_service_ticket` and
+  `NegotiateHttpClient::with_host_name_policy`. Every other constructor and
+  `gss::Name::import` make no DNS lookup whatever the profile says, and the
+  HTTP origin never changes (MIT-config-14, MIT-config-34, MIT-config-35,
+  MIT-dns-4; FU-DSC-P13, FU-GSX-P07, FU-HTC-P08, FU-HTC-P11).
+- Password expiry: `Responder::password_expiry` hears the `last-req` expiry
+  entries, and `client::Tokio::login_with_expiry` changes an expired password
+  (FU-KPW-P03, FU-KPW-P04). A password change whose request may have arrived
+  blocks the next one until its outcome is known (FU-KPW-P02).
+- The kadm5 administration client over RPCSEC_GSS (`kadm5::RemoteAdminClient`,
+  `rpcsec_gss`), with `[realms] admin_server` effective (FU-KAD-P01 to
+  FU-KAD-P03).
+- Trace events (`trace`) with identities withheld unless asked for, and the
+  `tracing` leaf adapter (FU-TRC-P01 to FU-TRC-P07).
+
+Credential stores:
+
+- The store API (`ccache::stores`, `keytab::stores`): MEMORY caches and
+  keytabs, cache collections, `DIR`, owner-only atomic writes with
+  `std::fs::File::lock` (FU-STO-P01 to FU-STO-P17).
+- KCM over its Unix socket with the daemon trust checks; `kcm_socket` and
+  `kcm_mach_service` are effective on every configured cache route, and a
+  configuration that names a Mach service while no Mach provider is installed
+  is `error::Kcm::NoMachTransport` (FU-KCM-P01 to FU-KCM-P06, FU-OSS-P02).
+- `KEYRING:` on Linux (`ccache-keyring` leaf; FU-KEY-P01 to FU-KEY-P04).
+
+GSS-API, service and messages:
+
+- `gss`: names, credentials, initiator and acceptor contexts, channel
+  bindings, delegation, IOV and AEAD wrapping, the PRF, context and credential
+  transfer under a caller key (`TransferKey`), DCE style, S4U impersonation,
+  PAC name attributes, and RFC 1964/4757 per-message tokens only for DES3 and
+  RC4 contexts that the policy permits (FU-GSS-P03, FU-GSX-P01). Duplicated
+  IOV header, trailer, padding, stream or MIC buffers are refused with
+  `Gss::BadIov`. A desired name selects its cache from the collection, also
+  under an explicit `ccache` store key, where MIT reads only the named cache
+  (FU-GSX-P03, FU-GSX-P06).
+- Verified AD-CAMMAC authentication indicators: the `auth-indicators` name
+  attribute, `ValidatedApReq::auth_indicators` and the multivalue
+  `NameAttribute::values`. A CAMMAC whose service verifier is absent or does not
+  verify, and a CAMMAC in an authenticator, refuse the AP-REQ, where MIT skips a
+  bad one (FU-GSX-P02, FU-GSX-P05).
+- `service::Validator::with_expected_service` and `with_pac_extraction(false)`;
+  the PAC policy checks still run when extraction is off (FU-GSX-P05).
+- IAKERB (`gss::iakerb`): `inquire()` reports the IAKERB mechanism,
+  `Context::store_acquired_into`, `init_sec_context_with_responder`, and
+  delegation only when it is requested. API change:
+  `error::Iakerb::DelegationUnsupported` is removed. Behaviour change matching
+  MIT: the krb5 acceptor refuses an `IAKERB-FINISHED` checksum extension and an
+  IAKERB AP-REQ with the DCE flag (FU-IAK-P01 to FU-IAK-P06).
+- NegoEx (`gss::negoex`): the negotiation framework with caller-supplied
+  mechanisms, proven against MIT's `negoextest`. No Kerberos scheme is
+  bundled, as in MIT (FU-NEG-P01 to FU-NEG-P05).
+- The context-transfer payload carries the mechanism and the verified
+  indicators; its format version stays 1 because it was never released
+  (FU-GSX-P05).
+- PAC: `pac::VerificationPolicy` with client binding and signature
+  requirements, container hardening, and a zero-length claims buffer read as no
+  claims (FU-PAC-P01 to FU-PAC-P04, FU-IOP-P14, FU-SVC-P01).
+- Replay stores (`replay`): `file2` in MIT's format, `dfl:`, `memory:` and the
+  named opt-out `none:`, with `default_rcache_name` effective; the GSS `rcache`
+  store key takes the same names (FU-RPL-P01, FU-RPL-P03).
+- The authenticated message API `messages::AuthContext` for KRB-SAFE,
+  KRB-PRIV and KRB-CRED; a plaintext KRB-CRED travels only over a channel the
+  caller vouches for (FU-RPL-P02, FU-RPL-P04).
+
+Local authorization and HTTP:
+
+- Local authorization (`localauth` leaf): `localauth::authorize_local` and
+  `principal_to_local_name` with `.k5login`, `auth_to_local` rules,
+  `auth_to_local_names` and the built-in modules; `error::Any::LocalAuth`
+  (FU-LAU-P01 to FU-LAU-P09). Behaviour change against 0.2.2:
+  `LibDefaults::from_env` no longer reads `HOME` (FU-LAU-P04).
+- The HTTP client `http::agent::NegotiateHttpClient` over the
+  `http::wire::HttpExchange` trait: same-origin redirects, bounded challenges,
+  mutual authentication and a cookie-jar hook; the `http-client` leaf adds the
+  built-in jar `http::cookies::CookieStore`, and `kkdcp-rustls` the built-in
+  HTTPS exchange. The session manager `http::sessions::SessionManager` seals
+  session cookies (FU-HTC-P05, FU-HTC-P06).
+- HTTP channel bindings: `HttpExchange::connect` returns the
+  `wire::PreparedConnection` that carries one request, with its `TlsChannel`;
+  `ChannelBindingPolicy` defaults to `WhenAvailable`, and a retry connection
+  whose TLS peer changed is refused before a token is built. Behaviour change
+  against the earlier 0.3.0 text: HTTPS Negotiate tokens of the HTTP client
+  carry `tls-server-end-point` bindings by default (FU-HTC-P07, FU-HTC-P10).
+
+Configuration diagnostics:
+
+- `ConfigDiagnostic::FeatureUnavailable` names the leaf flag a relation's
+  consumer needs, and the new `ConfigDiagnostic::OutOfScope` (with
+  `error::Config::OutOfScope`) marks six relations as excluded for good:
+  `plugin_base_dir`, `default_domain`, `pkinit_identity`, `pkinit_allow_upn`,
+  `pkinit_indicator` and `pkinit_require_freshness`.
+  `ConfigDiagnostic::NotYetEffective` and `error::Config::NotYetEffective` are
+  removed; neither was ever published.
+- A serialized nonzero `request_timeout` reads back (FU-CFG-P02).
+
 ### API
 
 - `service::ValidatedApReq` and `service::VerifiedApRep` no longer have public
@@ -202,8 +389,10 @@ These are breaking; the migration guide maps each one.
   dev `picky-krb` 0.13, dev `toml` 1.1, and `pbkdf2`
   0.13 instead of the `=0.13.0-rc.10` pre-release pin. `proptest`, `syn`
   (default features off; `full`, `visit` and `parsing`) and `proc-macro2`
-  (default features off; `span-locations`) are new dev-dependencies. No runtime
-  dependency was added.
+  (default features off; `span-locations`) are new dev-dependencies. The
+  review work added no runtime dependency; the parity work adds optional
+  dependencies behind leaf flags and `rustix` on Unix systems other than Linux
+  and Android (Parity features, above).
 - The `evaluation` feature now enables only `spnego` and `hex`: `picky-krb`,
   `picky-asn1`, `picky-asn1-der` and `serde` serve only the evaluation test
   targets, so they are dev-dependencies (`serde` stays an optional dependency
@@ -226,7 +415,9 @@ These are breaking; the migration guide maps each one.
 
 - Checked AS/TGS exchanges authorize encrypted request-body authorization data
   under the effective crypto policy before transport, preserving typed causes.
-  Known unsupported PA types (including FAST, encrypted challenge and PKINIT),
+  PA types the client does not build (legacy, vendor and KDC-side types; FAST,
+  encrypted challenge, SPAKE, the OTP request and PKINIT were in this list
+  until the parity work admitted them, each checked under the policy),
   outgoing peer-only enctype hints and the embedding wrapper
   PA-GET-FROM-TYPED-DATA (type 22) are rejected; an unsupported type is refused
   as `outgoing PA type N is not supported` (FU-CLI-R21, FU-CLI-R32, FU-CLI-R36).
@@ -597,9 +788,10 @@ Release workflow, CI docs and fixture scripts:
   impossible combinations such as Tower without HTTP do not certify an API
   (FU-TST-R20).
 
-- Explicit empty `auth_to_local_names` maps now produce the WP-17 deferred
-  diagnostic and fail Strict parsing. Populated maps report once per admitted
-  map (FU-CFG-R14).
+- Explicit `auth_to_local_names` maps, empty ones included, select the
+  local-authorization consumer: effective with the `localauth` leaf, and
+  without it `FeatureUnavailable`, which fails Strict parsing; they reported
+  the WP-17 deferred diagnostic before the parity work (FU-CFG-R14).
 
 - Local principal mapping keys under `[realms]/<realm>/auth_to_local_names`
   may spell prohibited protocol selectors without selecting those protocols;
@@ -1155,8 +1347,9 @@ Configuration:
   includes, lists and `[domain_realm]`. `forwardable` and `proxiable` set the
   request bits, `default_realm` is the host fallback, a bare
   `kdc_default_options` number is decimal, a malformed `extra_addresses` entry
-  is `InvalidAddress`, and `noaddresses = false` is `NotYetEffective`
-  (FU-CFG-03).
+  is `InvalidAddress`, and `noaddresses = false` binds requests to
+  `extra_addresses` (it was `NotYetEffective` before the exchange engine,
+  FU-CLI-P02) (FU-CFG-03).
 - Section, subsection and relation finals (`*`) stop later contributions;
   `auth_to_local` and `pkinit_cert_match` values keep a trailing `*`, and
   application, realm and local-name scopes keep their case (FU-CFG-06).
@@ -1165,8 +1358,10 @@ Configuration:
 - Ignored sections have their own brace state; re-reading a completed include is
   not a cycle (as in v0.2.2); the limits are 256 files (v0.2.2: 64) and 4 MiB
   (v0.2.2: 1 MiB over included files only). Unknown sections and relations are
-  diagnostics in compatible mode and errors in strict mode, settings without a
-  runtime consumer are `NotYetEffective`, `module` is
+  diagnostics in compatible mode and errors in strict mode, settings whose
+  consumer is not compiled in are `FeatureUnavailable` and permanently
+  excluded ones `OutOfScope` (both were `NotYetEffective` before the parity
+  work), `module` is
   `UnsupportedDynamicModule`, and default-name templates are expanded once when
   a name is resolved, failing on unavailable facts. New `Config::from_reader`,
   `from_string` and `from_path` (FU-CFG-09).
@@ -1176,15 +1371,16 @@ Configuration:
   list that mixes `.` with realm names or holds a whitespace token, and an
   `[appdefaults]` relation nested deeper than application, realm and key,
   are `InvalidLine`; a `[plugins]` control that disables the
-  encrypted-timestamp mechanism is `NotYetEffective` in every mode
-  (FU-DOC-R93).
+  encrypted-timestamp mechanism is effective (it was `NotYetEffective` in
+  every mode before the parity work, FU-EXT-P08) (FU-DOC-R93).
 - `[plugins]` interface names and the control names `disable`, `enable_only` and
   `module` are matched case-sensitively, as MIT does (`strcmp` in the profile
   library); v0.2.2 read nothing inside `[plugins]`. A wrongly cased name is not
   folded: `CLPREAUTH = { disable = encrypted_timestamp }` is an interface
   without a consumer, not the client preauthentication interface, so compatible
-  mode loads it, as v0.2.2 did, and records a `NotYetEffective` diagnostic for
-  its `disable` relation, while strict mode fails with `NotYetEffective`;
+  mode loads it, as v0.2.2 did, and records an `UnknownRelation` diagnostic for
+  its `disable` relation, while strict mode fails with `UnknownRelation` (both
+  were `NotYetEffective` before the parity work, FU-EXT-P01);
   `DISABLE = pkinit` or `MODULE = x:/y` under an interface is an unknown
   relation (a diagnostic in compatible mode, `UnknownRelation` in strict mode;
   v0.2.2 loaded both), so `MODULE` is not `UnsupportedDynamicModule`. The
@@ -1304,7 +1500,8 @@ Configuration:
   past the limit of M`: the variant also reports subsection nesting, and the
   text said `include nesting` (FU-CFG-R44).
 - Configuration defaults `k5login_authoritative` to true instead of false;
-  local-login authorization remains deferred, so this grants no login. Ticket
+  only the opt-in `localauth` leaf reads it, and every failure there denies,
+  so this grants no login by itself. Ticket
   and renewable lifetimes use the checked MIT interval parser, rejecting
   negative totals, overflow, malformed unit order and trailing garbage. Auto
   transport for KDC requests to a realm normalizes negative
@@ -1582,16 +1779,17 @@ Documentation:
 
 ### Fuzzing, tests and CI
 
-- Thirteen `cargo fuzz` targets cover every attacker-facing parser
-  (`kpasswd_reply`, `ccache_parse`, `keytab_parse`, `pac_parse`,
-  `spnego_token`, `gss_token`, `kdc_reply`, `krb5_conf`, `der_oid`,
-  `krb_messages`, `name_parse`, `http_negotiate`, `kdc_tcp_frame`), seeded from the test
-  fixtures; `docs/review/fuzz.md` maps each parser to its target. Ccache and
+- 41 `cargo fuzz` targets cover every attacker-facing parser: the thirteen
+  of the review work (`kpasswd_reply`, `ccache_parse`, `keytab_parse`,
+  `pac_parse`, `spnego_token`, `gss_token`, `kdc_reply`, `krb5_conf`,
+  `der_oid`, `krb_messages`, `name_parse`, `http_negotiate`, `kdc_tcp_frame`)
+  and 28 for the parsers of the parity work, seeded from the test fixtures; `docs/review/fuzz.md` maps each parser to its target. Ccache and
   config property tests run with `proptest`, including a ccache
   serialization round-trip.
 - CI runs on floating stable: rustfmt (`nightly-2026-10-03`), strict clippy
-  and the tests in each of the 36 feature closures (`closures`, held equal to
-  `feature_closures.py list`), clippy on Windows, library-only feature sets,
+  and the tests in each of the 53 feature closures (`closures`, held equal to
+  `feature_closures.py list`: 36 core closures, each leaf flag on the default
+  and on its minimal build, and all features), clippy on Windows, library-only feature sets,
   the README commands, the test suite on Linux, macOS and Windows, i686,
   rustdoc on stable and nightly, MSRV 1.100.0, `cargo semver-checks` once a
   published `rskrb5-ng` baseline exists, a publish dry run, a path-dependency
@@ -1604,10 +1802,13 @@ Documentation:
   of fuzzing per target.
 - Publishing needs an `N.N.N` tag on a CI-green commit of `main` and the
   owner's approval of the `release` environment (`docs/RELEASING.md`).
-- The Docker MIT KDC and Active Directory integration gates run locally with
-  `scripts/run-gated-integration.sh`; the upstream workflow-dispatch jobs
-  aren't part of this CI, and `docs/gokrb5-parity.toml` records their upstream
-  runs as historical evidence.
+- The `interop` workflow runs the live interop suites in containers on every
+  push to `main` and weekly: against an MIT krb5 1.22.2 realm and, in its
+  `samba` job, also against two Samba AD domains (`scripts/interop/run.sh`).
+  The upstream Docker MIT KDC and Active Directory integration gates run
+  locally with `scripts/run-gated-integration.sh`; the upstream
+  workflow-dispatch jobs aren't part of this CI, and `docs/gokrb5-parity.toml`
+  records their upstream runs as historical evidence.
 
 ## [0.2.2] - 2026-10-23
 

@@ -70,19 +70,25 @@ Admission does not decrypt ciphertext or certify that a KDC will accept it.
 Encrypted ticket contents and authenticator plaintext are not visible envelope
 fields; builders check locally selected keys before encryption.
 
-The checked PA boundary rejects known unsupported PA types with
-`error::Client::Encode` targeting `PA-DATA` and the message
-`outgoing PA type N is not supported`: legacy Unix-time/hardware/SAM,
-SESAME/DCE, modern PKINIT, extra TGT, X509 S4U, authentication sets,
-FAST armor, encrypted challenge, OTP, EPAK, PKINIT key exchange, PKU2U, SPAKE,
-OAuth2 and passkey mechanisms. Outgoing peer-only enctype hints (11/19/23/165)
-and the embedding wrapper PA-GET-FROM-TYPED-DATA (22), whose nested data the
-policy cannot check, are rejected too; incoming capability parsing is
-unchanged. Draft-9 retains its permanent typed policy cause. Cookies,
-ordinary informational PA data and unknown extension IDs remain opaque; unknown
-payloads are not a supported credential mechanism or a promise of nested policy
-enforcement. Implementing a new credential PA type requires extending admission
-and its inventory tests.
+The checked PA boundary admits only the PA data this client builds, each
+checked under the policy before transport: PA-TGS-REQ, PA-ENC-TIMESTAMP,
+PA-FX-FAST (the armor AP-REQ's ticket and authenticator, the keyed request
+checksum and the armor-key encryption of the inner request),
+PA-ENCRYPTED-CHALLENGE, PA-PK-AS-REQ, PA-SPAKE, PA-OTP-REQUEST, PA-FOR-USER,
+PA-S4U-X509-USER, PA-PAC-OPTIONS and PA-PAC-REQUEST
+(`tests/policy/outgoing_inventory.rs`). It rejects the types it neither builds
+nor can check with `error::Client::Encode` targeting `PA-DATA` and the message
+`outgoing PA type N is not supported`: legacy Unix-time, hardware-token,
+SESAME/DCE and SAM types, the KDC halves of PKINIT and OTP (including
+PA-OTP-CHALLENGE and the PIN-change message), extra TGT, authentication sets,
+EPAK, PKINIT key exchange, PKU2U, OAuth2 and passkey mechanisms. Outgoing
+peer-only enctype hints (11/19/23/165) and the embedding wrapper
+PA-GET-FROM-TYPED-DATA (22), whose nested data the policy cannot check, are
+rejected too; incoming capability parsing is unchanged. Draft-9 retains its
+permanent typed policy cause. Cookies, ordinary informational PA data and
+unknown extension IDs remain opaque; unknown payloads are not a supported
+credential mechanism or a promise of nested policy enforcement. Implementing a
+new credential PA type requires extending admission and its inventory tests.
 
 <a id="single-des"></a>
 ## Single DES
@@ -122,7 +128,8 @@ the **1.22** development cycle:
 [removal commit](https://github.com/krb5/krb5/commit/401f584526e501b68e7516c17d8e467883f8f210),
 [1.22 releases](https://web.mit.edu/kerberos/krb5-1.22/).
 Certificate filenames, trust anchors and revocation options are not classified
-as RSA transport. Current PKINIT itself awaits plan 2.
+as RSA transport. Current PKINIT (RFC 4556 Diffie-Hellman and ECDH) is
+implemented behind the `pkinit` leaf ([Leaf flags](#leaf-flags)).
 
 <a id="draft9-pkinit"></a>
 ## Draft-9 PKINIT
@@ -243,6 +250,30 @@ rasn password copies; generic ASN.1 codecs still have the residuals above.
 Closing a dependency residual requires a documented dependency erasure contract
 or an ownership-preserving replacement, not just wrapping the first input copy.
 
+Named residuals of the parity work, disclosed and not erased:
+
+- **OTP values and PINs** (`docs/review/parity-register.md`, FU-OTP-P02). The
+  answer, the combined PIN and value and the DER of the request live in
+  zeroizing owners, but `preauth::otp` builds the `PA-OTP-REQUEST` with `rasn`
+  containers: the value is copied into an `OctetString` and a separate PIN into
+  a `String` and then a `Utf8String`, which are freed without erasure when the
+  request is encoded. The encoded request is then copied into the `PaData` of
+  the inner AS-REQ, which the exchange keeps until the reply is processed. The
+  armored request that leaves the client is zeroizing, the copies never leave
+  the process, and a one-time value does not make a PIN public.
+- **HTTP cookies** (FU-HTC-P06). A cookie can be a credential. The
+  `http-client` leaf's jar keeps cookie values in the admitted `cookie_store`
+  crate, which does not zeroize them on drop. The built-in jar is in memory
+  only; persistence is an application's own `CookieJar`.
+- **HTTP sessions** (FU-HTC-P06). The `http::sessions::SessionManager` registry
+  is per process and per manager: a restart revokes every session, and two
+  processes or two managers share none, even under one key. The sealing key is
+  erased when dropped.
+- **KDC proxy bodies.** The built-in `kkdcp-rustls` transport hands `hyper` a
+  `Bytes` copy of the KDC-PROXY-MESSAGE, which `hyper` does not zeroize; the
+  crate's own copy is a zeroizing owner and TLS encrypts the body on the wire
+  (`docs/dependency-admission.md`, record `hyper`).
+
 ## Set-uid and set-gid processes
 
 The functions with an `# Ambient input` rustdoc section read `KRB5_CONFIG`,
@@ -311,6 +342,163 @@ its clones, never in a process-wide table; removed, replaced and destroyed
 credentials and keys are erased as they drop. `ccache_type` selects the format
 version of new caches and must be 1 to 4. The plan-2 register rows FU-STO-P01
 to P06 list where this differs from MIT 1.22.2.
+
+A `KCM:` daemon socket must be a socket, not a symbolic link, owned by root, by
+the effective user or by a user the caller names with `kcm::socket::Trust`,
+and the Tokio client also checks the peer's user id (FU-KCM-P01). The Linux `KEYRING:` cache treats
+only a missing, expired or revoked key as absent and reports permission and
+quota errors (FU-KEY-P02).
+
+<a id="leaf-flags"></a>
+## Leaf flags
+
+A Cargo feature compiles code; it never grants a runtime permission. Each leaf
+flag adds only admitted optional dependencies (`docs/dependency-admission.md`)
+and compiles only its own modules and declared seams (`leaf_features.py`).
+Without the flag, a relation whose consumer it compiles reports
+`ConfigDiagnostic::FeatureUnavailable` (Strict mode refuses it); Camellia
+enctype names keep their own diagnostic ([Camellia](#camellia)).
+
+| Leaf flag | What it compiles | What is still needed at run time |
+| --- | --- | --- |
+| `camellia` | RFC 6803 enctypes | `permitted_enctypes` must name them; `DEFAULT` never includes them |
+| `ccache-keyring` | the Linux `KEYRING:` cache | a `KEYRING:` cache name |
+| `http-client` | the built-in cookie jar `http::cookies::CookieStore` | the application installs the jar; `Domain` cookies need a public-suffix list it supplies |
+| `kkdcp-rustls` | the built-in HTTPS transport of the KDC proxy and the HTTP client | explicit trust anchors ([TLS trust](#tls-trust)) |
+| `localauth` | `.k5login`, `auth_to_local` and the local-name mapping | a verified principal and the caller's `AccountResolver`; every failure denies ([Local authorization](#local-authorization)) |
+| `pkinit` | PKINIT, anonymous PKINIT and `pkinit_cert_match` | configured identities and KDC anchors; RSA-mode PKINIT stays refused ([RSA-mode PKINIT](#rsa-pkinit)) |
+| `spake` | SPAKE pre-authentication | a KDC offer and the client's password; no fallback once SPAKE has started |
+| `tracing` | an adapter from trace events to the `tracing` crate | an application subscriber; identities are withheld unless the application asks for them |
+
+The platform stores are not a leaf flag: they live in the companion crate
+([Platform stores](#platform-stores)).
+
+<a id="platform-stores"></a>
+## Platform stores
+
+`MSLSA:` (the Windows LSA ticket cache), the macOS `API:` cache and the Mach
+transport of `KCM:` come from the workspace crate `rskrb5-ng-os`
+(`publish = false`), which an application adds itself: `rskrb5-ng` never
+depends on it and keeps `#![forbid(unsafe_code)]`. The companion confines its
+unsafe code to the OS calls, each with a `SAFETY` comment, copies every OS reply
+into owned values and parses it with safe code that Miri checks
+(`docs/dependency-admission.md`, section `rskrb5-ng-os`).
+`MSLSA:` reads never ask a KDC for a ticket, and mutations of the logon session
+need `MslsaStore::with_mutation(true)`. A configuration whose
+`kcm_mach_service` names a service other than MIT's default while no Mach
+transport is installed fails with `error::Kcm::NoMachTransport`; it never falls
+back to a socket.
+
+<a id="tls-trust"></a>
+## TLS trust
+
+The built-in TLS transports (`kkdcp-rustls`: the KDC proxy transport and the
+HTTP client's `HttpExchange`) use rustls with the pure-Rust RustCrypto
+provider, TLS 1.3 or 1.2. There is no implicit trust store and no certificate
+bypass: the KDC proxy trusts the realm's `http_anchors` (`FILE:` and `DIR:`;
+an `ENV:` anchor is refused, where MIT reads the variable) and the roots the
+application configured, and the HTTP exchange trusts only the roots given to
+`with_pem_roots`. With no anchor the request fails with `NoAnchors` before any
+connection is made. The certificate is checked against the URL's host name,
+a redirect is never followed by the transport, and a failure after the
+handshake is reported as possibly delivered, so a password change keeps its
+outcome-unknown classification. The HTTP exchange speaks `https` only.
+
+<a id="channel-bindings"></a>
+## HTTP channel bindings
+
+`http::agent::NegotiateHttpClient` opens the connection first
+(`HttpExchange::connect`) and builds each Negotiate token for the connection
+that carries it. `ChannelBindingPolicy` decides what goes into the token:
+
+- `WhenAvailable` (the default) binds the token to the RFC 5929
+  `tls-server-end-point` value of the TLS connection when the exchange reports
+  one, and sends it unbound otherwise.
+- `Required` sends no token over a connection without bindings
+  (`error::HttpClient::ChannelBindingUnavailable`).
+- `Off` derives nothing from the connection.
+
+What a bound token proves: an acceptor that checks bindings refuses it on a
+TLS connection to another server certificate, so a token relayed to another
+TLS endpoint fails there. A retry connection whose server certificate differs
+from the one that carried the challenge is refused before any token is built
+(`error::HttpClient::ChannelChanged`). What it does not prove: `WhenAvailable`
+sends unbound tokens over plain HTTP and over an exchange that reports no TLS
+channel, a binding protects nothing against an acceptor that ignores it, and
+it does not authenticate the server by itself; that is the certificate check
+of [TLS trust](#tls-trust).
+
+<a id="host-canonicalization"></a>
+## Host-name canonicalization
+
+No constructor, no `Principal::host_based_service`, no ordinary ticket request
+and no `gss::Name::import` looks up DNS to name a service, whatever
+`dns_canonicalize_hostname`, `rdns` and `qualify_shortname` say. Only the
+explicit host-acquisition operations do: `CanonicalizationPolicy::acquire`,
+`client::Tokio::get_host_service_ticket`,
+`gss::Credential::acquire_host_service_ticket` and
+`NegotiateHttpClient::with_host_name_policy`. Inside them DNS, a reverse lookup
+and `qualify_shortname` only propose names; a name other than the requested
+host is used only when the caller's `HostNamePolicy` approves it, because DNS
+answers are not authenticated. `qualify_shortname` never falls back to the
+system's search domains. In the HTTP client only the principal changes: the
+TLS server name, the `Host` header, the redirect and cookie origin and the
+channel binding stay the URI host's.
+
+<a id="tgs-fast"></a>
+## TGS FAST
+
+Implicit FAST armor of TGS requests is opt-in (`TicketCreds::with_fast`,
+`client::Tokio::with_tgs_fast`; default `Off`), where MIT armors every TGS
+request (`send_tgs.c:178`): armoring changes the request every existing TGS
+exchange sends. Once armor is on, a reply that fails any FAST check (it does
+not decrypt, bind the nonce, finish over the ticket with the armor key's
+checksum type or carry the strengthen key) ends the exchange under every
+policy. Only a reply without any `PA-FX-FAST` is taken for a KDC without FAST,
+and only under `Opportunistic`; `Required` refuses it.
+
+<a id="authentication-indicators"></a>
+## Authentication indicators
+
+Indicators count only inside an AD-CAMMAC whose service verifier verifies under
+the key that decrypted the ticket (RFC 7751 section 4, key usage 64; MIT
+`cammac_util.c:36-59`), also through AD-IF-RELEVANT or AD-KDC-ISSUED inside it.
+A CAMMAC whose verifier is absent or does not verify refuses the AP-REQ, where
+MIT skips a bad one (`authdata.c:555-558`); a CAMMAC in an authenticator is
+refused, because the client could copy it from another ticket; a bare
+AD-AUTHENTICATION-INDICATOR is never an indicator. The verified values reach
+`ValidatedApReq::auth_indicators` and the `auth-indicators` GSS name attribute.
+
+<a id="gss-transfer"></a>
+## GSS context and credential transfer
+
+`gss` exports a context or a credential only sealed under a caller-supplied
+256-bit `TransferKey` with the RFC 8009 `aes256-cts-hmac-sha384-192` profile;
+the header is authenticated with the payload, the exported object is consumed,
+and a `TransferLedger` refuses a transfer id it has already imported. MIT's
+export format is not used, because it carries the keys in the clear. The RFC
+1964 and RFC 4757 per-message token formats serve only DES3 and RC4 contexts
+whose enctype policy permits them (`allow_des3`, `allow_rc4`); a token naming
+single DES is refused.
+
+<a id="long-term-keys"></a>
+## Long-term keys
+
+No long-term key leaves a client: the client facade has no accessor for the
+key it derived from a password or read from a keytab (gokrb5 `Client.Key`),
+a deliberate security divergence recorded with the manifest row GO-client-1.
+Callers that need a key derive it with the `crypto` string-to-key functions
+from their own secret or read their own `Keytab`.
+
+<a id="negoex"></a>
+## NegoEx
+
+`gss::negoex` is the NegoEx negotiation framework with mechanisms the caller
+supplies over a registered `GssMechanism`, as MIT 1.22.2 has it, proven
+against MIT's `negoextest` mechanisms. No Kerberos scheme is bundled: no
+specification defines a Kerberos scheme or Kerberos tokens inside NegoEx, and
+neither MIT's nor Heimdal's krb5 mechanism implements the NegoEx interface.
+The parser refuses malformed messages that MIT's trusts (FU-NEG-P02).
 
 <a id="windows-api-ccache"></a>
 ## Windows API credential cache
