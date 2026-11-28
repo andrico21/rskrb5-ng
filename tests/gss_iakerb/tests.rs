@@ -60,3 +60,12 @@ mod responder;
 /// The relay's duty to retry a too-big answer over a stream.
 #[path = "retry.rs"]
 mod retry;
+
+/// An initiator credential of a client keytab.
+#[path = "client_keytab.rs"]
+mod client_keytab;
+
+/// Service tickets a credential acquires from the KDC over loopback TCP.
+#[cfg(feature = "tokio")]
+#[path = "acquisition.rs"]
+mod acquisition;
