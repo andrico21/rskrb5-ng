@@ -1,0 +1,130 @@
+name: CI probe
+
+# PROBE ONLY (plan 2 todo 29 lane LA, process rule P7): lives only on the
+# throwaway branch ci-probe/w29-hermetic-a, never merged. Runs the `test` job of
+# ci.yml on the three runner OSes, then 30 loops of the lane's new hermetic
+# tests (loopback TCP/UDP fake KDCs, kpasswd servers, clock offsets), and
+# `scripts/interop/run.sh all` (MIT and Samba) on ubuntu.
+
+on:
+  push:
+    branches: ["ci-probe/**"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # macOS images ship Rust through Homebrew (`/opt/homebrew/bin`): image
+      # 20261013 has Homebrew rustup with no toolchain, 20261021+ has Homebrew
+      # rustup owning a preinstalled stable in `~/.rustup`. Remove the Homebrew
+      # formulae, their PATH shims and the image's rustup home, so that on
+      # every image `dtolnay/rust-toolchain` finds no rustup, installs its own
+      # into `~/.cargo/bin` (prepended to PATH) and a fresh floating stable.
+      - name: Remove the image's Homebrew Rust (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          for formula in rustup rust; do
+            if brew list --formula "$formula" >/dev/null 2>&1; then
+              brew uninstall --ignore-dependencies --formula "$formula"
+            fi
+          done
+          for bin in cargo cargo-clippy cargo-fmt clippy-driver rustc rustdoc rustfmt rustup rustup-init; do
+            rm -f "/opt/homebrew/bin/$bin"
+          done
+          rm -rf "$HOME/.rustup"
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      # `cache-bin: false`: this job installs no cargo binaries, so
+      # `~/.cargo/bin` holds only the rustup proxies just installed above, and
+      # restoring a copy saved on another runner image left no `cargo` (run
+      # 40595898288 attempt 1: `cargo: command not found` on macOS image
+      # 20261021 after restoring a Darwin cache saved on 20261013). Without
+      # `~/.cargo/bin` the cache path set differs, so `actions/cache` never
+      # restores an entry saved with it. An image-version key was not chosen:
+      # it would drop the target cache at every image update and still restore
+      # `~/.cargo/bin` within one image.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-bin: false
+      # Fail fast, naming the runner image, if no working toolchain is on PATH.
+      - name: Toolchain guard (cargo and rustc on PATH)
+        shell: bash
+        run: |
+          if command -v cargo && cargo -V && rustc -V; then
+            exit 0
+          fi
+          echo "::error::no working cargo/rustc on PATH after rust-cache on runner image ${ImageOS:-unknown} ${ImageVersion:-unknown} (${RUNNER_OS:-unknown} ${RUNNER_ARCH:-unknown})"
+          exit 1
+      - name: Tests (--all-features, at least 32 test targets ok)
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --all-features --locked 2>&1 | tee test-output.log
+          ok=$(sed 's/\x1b\[[0-9;]*m//g' test-output.log | grep -c '^test result: ok' || true)
+          echo "test targets ok: $ok"
+          if [ "$ok" -lt 32 ]; then
+            echo "::error::expected at least 32 'test result: ok' lines, got $ok"
+            exit 1
+          fi
+      - name: Doctests
+        run: cargo test --doc --all-features
+
+      - name: 30 loops of the lane's new hermetic tests
+        shell: bash
+        run: |
+          set -o pipefail
+          for i in $(seq 1 30); do
+            echo "LOOP $i"
+            cargo test --all-features --locked --test routing -- delegation:: referrals:: 2>&1 | grep -E '^test result|FAILED|panicked' || exit 1
+            cargo test --all-features --locked --test client -- interop_paths:: password_change::tests::tokio_client_change_password 2>&1 | grep -E '^test result|FAILED|panicked' || exit 1
+            cargo test --all-features --locked --test pkinit -- scenarios:: profile:: 2>&1 | grep -E '^test result|FAILED|panicked' || exit 1
+            cargo test --all-features --locked --test fast -- exchange:: 2>&1 | grep -E '^test result|FAILED|panicked' || exit 1
+            cargo test --all-features --locked --test spake -- scenarios:: 2>&1 | grep -E '^test result|FAILED|panicked' || exit 1
+          done
+          echo "LOOPS-RESULT ${RUNNER_OS}: 30 loops passed"
+
+  interop:
+    name: interop (run.sh all)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      INTEROP_RUNTIME: docker
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-bin: false
+      - name: Toolchain guard (cargo and rustc on PATH)
+        shell: bash
+        run: |
+          if command -v cargo && cargo -V && rustc -V; then
+            exit 0
+          fi
+          echo "::error::no working cargo/rustc on PATH on runner image ${ImageOS:-unknown} ${ImageVersion:-unknown}"
+          exit 1
+      - name: Interop self-test (no containers)
+        run: bash scripts/interop/run.sh self-test
+      - name: Interop suites (Samba AD and every other fixture)
+        shell: bash
+        run: INTEROP_LOG_DIR="$RUNNER_TEMP/interop-logs" scripts/interop/run.sh all
+      - name: Upload the redacted fixture logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: interop-samba-logs
+          path: ${{ runner.temp }}/interop-logs
+          if-no-files-found: warn
+          retention-days: 14
