@@ -9,6 +9,11 @@
 #[path = "support/context.rs"]
 mod context;
 
+/// AD-CAMMAC fixtures built without the crate's CAMMAC code.
+#[cfg(test)]
+#[path = "support/cammac.rs"]
+mod cammac_fixture;
+
 /// The GSS extension scenarios.
 #[cfg(test)]
 #[expect(

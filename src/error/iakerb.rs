@@ -80,10 +80,6 @@ pub enum Iakerb {
     /// (`KRB5KRB_AP_ERR_MSG_TYPE`).
     #[error("an IAKERB-FINISHED arrived without an IAKERB exchange")]
     UnexpectedFinished,
-    /// The initiator asked to delegate its credentials, which IAKERB
-    /// contexts of this crate do not carry.
-    #[error("delegation is not supported over IAKERB")]
-    DelegationUnsupported,
     /// A GSS-API Kerberos mechanism step failed.
     #[error("GSS-API error: {0}")]
     Gss(#[from] Gss),

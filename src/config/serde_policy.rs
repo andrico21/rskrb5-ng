@@ -1,22 +1,9 @@
 //! Serde selection guards; opaque cache/key records are not selecting configuration.
 use alloc::collections::BTreeMap;
-use core::time::Duration;
 
 use serde::{Deserialize as _, Deserializer, de::Error as _};
 
 use super::{EnctypeExpr, ParseMode, Toggle};
-
-/// Refuse unimplemented total request deadlines.
-/// # Errors
-/// Rejects malformed or unsupported restrictions through serde.
-pub(super) fn deadline<'de, D>(deserializer: D) -> Result<Duration, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Duration::deserialize(deserializer)?;
-    super::restrictions::reject("request_timeout", !value.is_zero()).map_err(D::Error::custom)?;
-    Ok(value)
-}
 
 /// Accept unset and well-formed replay-cache names.
 /// # Errors
@@ -58,21 +45,6 @@ where
     Ok(values)
 }
 
-/// Apply client preauthentication restrictions to the named interface.
-/// # Errors
-/// Rejects malformed or unsupported restrictions through serde.
-pub(super) fn plugins<'de, D>(
-    deserializer: D,
-) -> Result<BTreeMap<String, super::section_values::Plugins>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let values = BTreeMap::<String, super::section_values::Plugins>::deserialize(deserializer)?;
-    if let Some(value) = values.get("clpreauth") {
-        super::restrictions::plugins(value).map_err(D::Error::custom)?;
-    }
-    Ok(values)
-}
 use crate::{
     crypto::selection,
     error::{Policy, RejectedFeature, RejectionReason},

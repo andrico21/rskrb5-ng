@@ -212,3 +212,7 @@ fn a_relay_request_for_a_realm_outside_the_policy_is_refused_live() -> Result<()
     assert_eq!(relay.relayed, 0);
     Ok(())
 }
+
+/// The scenarios of client keytabs and requested delegation (plan 2 todo 28).
+#[path = "gaps.rs"]
+mod gaps;

@@ -285,3 +285,55 @@ async fn the_service_realm_prefers_an_opted_in_txt_record_to_the_default() -> Re
     assert_eq!(without.as_deref(), Some("DEFAULT.REALM"));
     Ok(())
 }
+
+/// `[plugins] hostrealm` controls apply to the built-in modules (MIT-config-54).
+///
+/// A disabled `profile` module maps no host and gives no default realm, and
+/// `enable_only` keeps only the named modules, in its order.
+#[tokio::test]
+async fn disabled_builtin_hostrealm_is_not_consulted() -> Result<(), TestError> {
+    // Given `[domain_realm]`, a default realm and a registered mapper.
+    let dns = Dns::start([]).await?;
+    let mut registry = Registry::new();
+    registry.register(Extension::HostRealm(Arc::new(Mapper)))?;
+    let chained = Some(&registry);
+    let lines = "default_realm = DEFAULT.REALM";
+    let domains = "[domain_realm]\n.example.com = DOMAIN.REALM\n";
+    let without_profile = profile(
+        lines,
+        &format!("{domains}[plugins]\nhostrealm = {{\n disable = profile\n}}\n"),
+    )?;
+    let profile_first = profile(
+        lines,
+        &format!(
+            "{domains}[plugins]\nhostrealm = {{\n enable_only = profile\n enable_only = mapper\n}}\n"
+        ),
+    )?;
+    let transport = via(&dns)?;
+    // When hosts and the default realm are mapped.
+    let off = transport.host_realms(&without_profile);
+    let first = transport.host_realms(&profile_first);
+    let results = (
+        off.host_realm(None, "other.example.com")?,
+        off.service_realm(None, "elsewhere.test").await?,
+        off.default_realm(None, None).await?,
+        off.host_realm(chained, "mapped.example.com")?,
+        first.host_realm(chained, "mapped.example.com")?,
+        first.default_realm(chained, None).await?,
+    );
+    // Then the disabled profile answers nothing, the mapper still does, and
+    // `enable_only` puts the profile before the mapper.
+    assert_eq!(
+        results,
+        (
+            None,
+            None,
+            None,
+            Some("PROVIDED.REALM".to_owned()),
+            Some("DOMAIN.REALM".to_owned()),
+            Some("DEFAULT.REALM".to_owned()),
+        )
+    );
+    assert_eq!(dns.questions()?, Vec::<String>::new());
+    Ok(())
+}

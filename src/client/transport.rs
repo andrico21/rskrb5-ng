@@ -1,5 +1,6 @@
 //! Tokio-backed KDC transport, endpoint discovery, and network exchanges.
 
+use alloc::sync::Arc;
 use core::{
     net::{IpAddr, SocketAddr},
     pin::Pin,
@@ -65,6 +66,16 @@ mod password_result;
 mod primary;
 /// MS-KKDCP endpoints: the request through the KDC proxy transport.
 mod proxied;
+/// An `https://` admin server as the kpasswd fallback.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "transport/tests/proxy_admin.rs"]
+mod proxy_admin_tests;
 /// `https://` endpoints through a caller's KDC proxy transport.
 #[cfg(test)]
 #[expect(
@@ -77,6 +88,8 @@ mod proxied;
 mod proxy_tests;
 /// Configured realm protocol preference.
 mod realm_auto;
+/// The caller's extension registry.
+mod registered;
 /// Ordered SRV target address resolution.
 pub(crate) mod srv_targets;
 /// Bounded UDP socket primitives.
@@ -100,7 +113,7 @@ use super::{
     process_as_rep, process_tgs_rep,
     stepwise::{
         InitCreds, InitCredsOptions, NoResponder, TicketCreds, TicketOptions, drive_tokio,
-        options::timestamp_disabled,
+        options::timestamp_permitted,
     },
     tgt_realm,
 };
@@ -113,10 +126,12 @@ use crate::{
         records::{dns_resolver, lookup_name},
     },
     error::Config as ConfigError,
+    extensions::Registry,
     kadmin,
     keytab::{EncryptionKey, Keytab},
     krb_error::decode as decode_krb_error,
     messages::secret_der::SecretDer,
+    preauth::fast::Policy as FastPolicy,
     routing::RealmPath,
     trace::{Guard, TransportStep},
     transport::proxy::{KdcProxyTransport, Url},
@@ -321,7 +336,7 @@ struct Budget {
 
 /// Tokio-backed KDC and kpasswd transport, with endpoint discovery.
 #[cfg(feature = "tokio")]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Tokio {
     /// Explicit DNS server for DNS discovery; otherwise use the system resolver.
     dns_server: Option<(IpAddr, u16)>,
@@ -340,6 +355,10 @@ pub struct Tokio {
     watch: Option<u64>,
     /// The transport of `https://` (MS-KKDCP) endpoints, if any.
     proxy: Option<proxied::Handle>,
+    /// The caller's registry: its locators and host-realm mappers are asked first.
+    registry: Option<registered::Shared>,
+    /// Whether the TGS exchanges of service tickets are armored with FAST.
+    tgs_fast: FastPolicy,
 }
 
 #[cfg(feature = "tokio")]
@@ -368,7 +387,60 @@ impl Tokio {
             budget: None,
             watch: None,
             proxy: proxied::Handle::builtin(),
+            registry: None,
+            tgs_fast: FastPolicy::Off,
         }
+    }
+
+    /// Armor the TGS requests of service-ticket acquisition with FAST under
+    /// `policy` (RFC 6113 section 5.4.2); the default is [`FastPolicy::Off`].
+    ///
+    /// MIT armors every TGS request (`send_tgs.c:178`). This client does so only
+    /// when asked, because the armored request differs from the plain one that
+    /// every KDC without FAST accepts (Samba and Active Directory among them).
+    /// The switch covers [`Self::get_service_ticket_with_referral_trace_limit`]
+    /// and the host-based acquisitions that use it; renewals and S4U requests
+    /// stay plain.
+    ///
+    /// # Security
+    ///
+    /// Under [`FastPolicy::Opportunistic`] a KDC that answers without FAST is
+    /// served as plain RFC 4120, as MIT does, so an attacker who strips the
+    /// armor downgrades the exchange to plain; [`FastPolicy::Required`] refuses
+    /// such a reply with [`crate::error::Fast::Unarmored`] or
+    /// [`crate::error::Fast::UnarmoredError`]. A reply that carries `PA-FX-FAST`
+    /// and fails any check is an error under every policy.
+    #[must_use]
+    #[inline]
+    pub const fn with_tgs_fast(mut self, policy: FastPolicy) -> Self {
+        self.tgs_fast = policy;
+        self
+    }
+
+    /// Ask the server locators and host-realm mappers of `registry` first on
+    /// every exchange route of this transport: KDC requests, the primary-KDC
+    /// retry, password changes, and the realm of a service host.
+    ///
+    /// Without this call no registered provider is asked. The registry's
+    /// `[plugins]` controls come from the profile of each call.
+    ///
+    /// # Security
+    ///
+    /// Registered providers are trusted code: a locator decides where requests
+    /// go and a mapper decides a service's realm. Their answers are bounded and
+    /// validated ([`crate::extensions`]), and a failing provider stops the
+    /// request instead of being skipped. An explicit service realm is never
+    /// remapped.
+    #[must_use]
+    #[inline]
+    pub fn with_registry(mut self, registry: Arc<Registry>) -> Self {
+        self.registry = Some(registered::Shared::new(registry));
+        self
+    }
+
+    /// The registry of [`Self::with_registry`], if any.
+    pub(crate) fn registry(&self) -> Option<&Registry> {
+        self.registry.as_ref().map(registered::Shared::get)
     }
 
     /// Send the requests for `https://` (MS-KKDCP) endpoints through `transport`.
@@ -388,9 +460,10 @@ impl Tokio {
     ///
     /// Zero is no budget (MIT `request_timeout = 0`). Under a budget that is already
     /// running the earlier deadline stays, so nested calls share one budget.
-    pub(crate) fn with_request_budget(mut self, total: Duration) -> Self {
+    pub(crate) fn with_request_budget(&self, total: Duration) -> Self {
+        let mut this = self.clone();
         if total.is_zero() {
-            return self;
+            return this;
         }
         let begun = Instant::now();
         let deadline = begun.checked_add(total).unwrap_or(begun);
@@ -398,9 +471,9 @@ impl Tokio {
             .budget
             .is_none_or(|running| deadline < running.deadline)
         {
-            self.budget = Some(Budget { deadline, total });
+            this.budget = Some(Budget { deadline, total });
         }
-        self
+        this
     }
 
     /// Run `operation` within the request budget, if there is one.
@@ -433,15 +506,19 @@ impl Tokio {
     }
 
     /// This transport, reporting the KDCs that answer under the login `key`.
-    pub(crate) const fn with_watch(mut self, key: u64) -> Self {
-        self.watch = Some(key);
-        self
+    pub(crate) fn with_watch(&self, key: u64) -> Self {
+        Self {
+            watch: Some(key),
+            ..self.clone()
+        }
     }
 
     /// This transport, locating primary KDCs only.
-    pub(crate) const fn with_primary_kdcs(mut self) -> Self {
-        self.primary_only = true;
-        self
+    pub(crate) fn with_primary_kdcs(&self) -> Self {
+        Self {
+            primary_only: true,
+            ..self.clone()
+        }
     }
 
     /// The explicit DNS server of [`Self::with_dns_server`], if any.
@@ -452,21 +529,19 @@ impl Tokio {
     /// A host-to-realm resolver over `config` that asks DNS through this transport.
     #[must_use]
     #[inline]
-    pub const fn host_realms<'config>(
-        &self,
-        config: &'config Config,
-    ) -> HostRealmResolver<'config> {
-        HostRealmResolver::new(*self, config)
+    pub fn host_realms<'config>(&self, config: &'config Config) -> HostRealmResolver<'config> {
+        HostRealmResolver::new(self.clone(), config)
     }
 
     /// A server locator over `config` that asks DNS through this transport.
     ///
     /// Pass a registry to [`ServerLocator::locate`] to ask its locators first; the
-    /// exchange methods of this transport do not consult a registry.
+    /// exchange methods of this transport ask the registry of
+    /// [`Self::with_registry`].
     #[must_use]
     #[inline]
-    pub const fn locator<'config>(&self, config: &'config Config) -> ServerLocator<'config> {
-        ServerLocator::new(*self, config)
+    pub fn locator<'config>(&self, config: &'config Config) -> ServerLocator<'config> {
+        ServerLocator::new(self.clone(), config)
     }
 
     #[must_use]
@@ -901,9 +976,12 @@ impl Tokio {
             EndpointRole::Kdc
         };
         let endpoints = this
-            .within_budget(Box::pin(
-                this.locator(config).locate(None, realm, role, protocol),
-            ))
+            .within_budget(Box::pin(this.locator(config).locate(
+                this.registry(),
+                realm,
+                role,
+                protocol,
+            )))
             .await?;
         events::located(realm, protocol, endpoints.len());
         if !endpoints.is_empty() {
@@ -1169,9 +1247,15 @@ impl Tokio {
         realm: &str,
         request: &[u8],
     ) -> Result<Vec<u8>, Error> {
-        let endpoints = self
-            .discover_kpasswd_servers(config, realm, protocol)
-            .await?;
+        let endpoints =
+            match ServerLocator::provided(self.registry(), realm, EndpointRole::Kpasswd, protocol)?
+            {
+                Some(located) => located,
+                None => {
+                    self.discover_kpasswd_servers(config, realm, protocol)
+                        .await?
+                }
+            };
         self.send_to_password_endpoints((config, realm), protocol, endpoints, request)
             .await
     }
@@ -1400,7 +1484,8 @@ impl Tokio {
     /// or an unkeyed `safe_checksum_type`) or a PA-DATA entry has a permanently
     /// rejected type (draft-9 PKINIT, types 14 and 15). Still before any I/O it
     /// returns [`Error::EncryptedTimestampDisabled`] when `request` carries
-    /// PA-ENC-TIMESTAMP and the client realm sets `disable_encrypted_timestamp`.
+    /// PA-ENC-TIMESTAMP and the client realm sets `disable_encrypted_timestamp` or
+    /// `[plugins] clpreauth` excludes `encrypted_timestamp`.
     ///
     /// Returns the errors of [`Self::send_to_realm`], [`Error::Kdc`] when the KDC
     /// answers with a KRB-ERROR, an error when the AS-REP cannot be decoded,
@@ -1987,7 +2072,11 @@ impl Tokio {
         if service.realm.is_empty() {
             // `[domain_realm]`, then the opt-in TXT record and domain search, then `default_realm`.
             let mapped = match service.components.last() {
-                Some(host) => self.host_realms(config).service_realm(None, host).await?,
+                Some(host) => {
+                    self.host_realms(config)
+                        .service_realm(self.registry(), host)
+                        .await?
+                }
                 None => None,
             };
             service.realm = mapped.unwrap_or_else(|| current_realm.clone());
@@ -2002,7 +2091,8 @@ impl Tokio {
         if let Some(ticket) = second_ticket {
             ticket_options = ticket_options.with_user_to_user(ticket)?;
         }
-        let mut exchange = TicketCreds::new(tgt.clone(), service, ticket_options)?;
+        let mut exchange =
+            TicketCreds::new(tgt.clone(), service, ticket_options)?.with_fast(self.tgs_fast);
         let ticket = drive_tokio(self, (config, protocol), &mut exchange, &mut NoResponder).await?;
         Ok(ReferralTgsResult::new(
             ticket,
@@ -2778,9 +2868,11 @@ where
     Box::pin(events::scope(guard, future))
 }
 
-/// Refuse a caller-built PA-ENC-TIMESTAMP for a client realm whose
-/// `disable_encrypted_timestamp` is set, as the exchange engine refuses its own
-/// (MIT `preauth_encts.c:68-73`).
+/// Refuse a caller-built PA-ENC-TIMESTAMP that the profile does not permit.
+///
+/// The client realm's `disable_encrypted_timestamp` or `[plugins] clpreauth`
+/// excludes it, as the exchange engine refuses its own (MIT
+/// `preauth_encts.c:68-73`).
 ///
 /// # Errors
 /// Returns [`Error::EncryptedTimestampDisabled`] naming the client realm.
@@ -2791,7 +2883,7 @@ fn refuse_disabled_timestamp(config: &Config, request: &BuiltAsReq) -> Result<()
         .padata
         .as_deref()
         .is_some_and(|padata| super::padata_contains(padata, super::PA_ENC_TIMESTAMP));
-    if stamped && timestamp_disabled(config).contains(&request.client.realm) {
+    if stamped && !timestamp_permitted(config, &request.client.realm) {
         return Err(Error::EncryptedTimestampDisabled {
             realm: request.client.realm.clone(),
         });

@@ -8,6 +8,10 @@ use super::{
 };
 
 /// Non-realm dynamic-relation catalogue, with the same six-column schema.
+///
+/// The decoder consumes no row: the generated relation document and its
+/// audits read the table.
+#[cfg(test)]
 pub(crate) const SECTION_RELATIONS: [(&str, &str, &str, &str, &str, &str); 6] = [
     (
         "domain_realm",
@@ -37,16 +41,16 @@ pub(crate) const SECTION_RELATIONS: [(&str, &str, &str, &str, &str, &str); 6] = 
         "disable",
         "repeated module names",
         "empty",
-        "plan 2 WP-16",
-        "extensions::Registry::enabled filters registered providers; diagnosed until built-in consumers use it; excluding timestamp preauth fails",
+        "extensions::order::arrange for clpreauth (the built-in mechanisms of client::stepwise and the registered ones), ccselect (Registry::select_cache), hostrealm (HostRealmResolver) and localauth (LocalNameMapper, LocalAuthorizer, Registry::authorize_local)",
+        "Effective: removes registered and built-in clpreauth, ccselect, hostrealm and localauth modules; a clpreauth exchange built for an excluded mechanism fails closed; names match exactly; another interface name is an unknown path",
         "disable",
     ),
     (
         "enable_only",
         "repeated module names",
         "all built-ins",
-        "plan 2 WP-16",
-        "extensions::Registry::enabled keeps and orders registered providers; diagnosed until built-in consumers use it; excluding timestamp preauth fails",
+        "extensions::order::arrange for clpreauth (the built-in mechanisms of client::stepwise and the registered ones), ccselect (Registry::select_cache), hostrealm (HostRealmResolver) and localauth (LocalNameMapper, LocalAuthorizer, Registry::authorize_local)",
+        "Effective: keeps and orders registered and built-in clpreauth, ccselect, hostrealm and localauth modules; a clpreauth exchange built for an excluded mechanism fails closed; names match exactly; another interface name is an unknown path",
         "enable_only",
     ),
     (
@@ -61,8 +65,7 @@ pub(crate) const SECTION_RELATIONS: [(&str, &str, &str, &str, &str, &str); 6] = 
 
 /// Decode graph, applications, realm maps and plugin lists without executing them.
 /// # Errors
-/// Rejects malformed subtrees, mixed direct/intermediate routes, strict diagnostics
-/// and restrictions on the client's existing encrypted-timestamp mechanism.
+/// Rejects malformed subtrees, mixed direct/intermediate routes and strict diagnostics.
 pub(super) fn finish(
     config: &mut Config,
     values: &BTreeMap<Vec<String>, Vec<Line>>,
@@ -125,28 +128,13 @@ pub(super) fn finish(
                 if let Some(line) = unusable_name_line(lines, &names) {
                     return Err(invalid(line));
                 }
-                if interface == "clpreauth"
-                    && ((key == "disable"
-                        && names.iter().any(|name| name == "encrypted_timestamp"))
-                        || (key == "enable_only"
-                            && !names.iter().any(|name| name == "encrypted_timestamp")))
-                {
-                    return Err(Error::NotYetEffective {
-                        relation: if key == "disable" {
-                            "disable"
-                        } else {
-                            "enable_only"
-                        },
-                        package: "plan 2 WP-16",
-                    });
-                }
                 let entry = config.plugins.entry(interface.clone()).or_default();
                 if key == "disable" {
                     entry.disable = names;
                 } else {
                     entry.enable_only = names;
                 }
-                diagnostic(config, key)?;
+                control(config, interface, key)?;
             }
             [section, interface, key] if section == "plugins" && key == "module" => {
                 // Only `<registered id>:<path>` values reach here (profile_syntax).
@@ -162,23 +150,28 @@ pub(super) fn finish(
     Ok(())
 }
 
-/// Report a catalogue-backed section relation after its typed admission.
+/// Classify a `disable` or `enable_only` control after its typed admission.
+///
+/// The `clpreauth`, `ccselect`, `hostrealm` and `localauth` controls are
+/// effective over the registered and the built-in modules. Any other interface
+/// name (names match exactly, as MIT's `strcmp`) has no consumer and is an
+/// unknown path.
 /// # Errors
-/// Strict mode rejects deferred section consumers.
-fn diagnostic(config: &mut Config, key: &str) -> Result<(), Error> {
-    if let Some(&(name, _kind, _default, package, _rationale, _test)) =
-        SECTION_RELATIONS.iter().find(|row| row.0 == key)
-    {
-        realm_values::report(
-            ConfigDiagnostic::NotYetEffective {
-                relation: name,
-                package,
-            },
-            config.libdefaults.parse_mode(),
-            &mut config.libdefaults.enctype_diagnostics,
-        )?;
+/// Strict mode rejects the unknown interface.
+fn control(config: &mut Config, interface: &str, key: &str) -> Result<(), Error> {
+    if matches!(
+        interface,
+        "clpreauth" | "ccselect" | "hostrealm" | "localauth"
+    ) {
+        return Ok(());
     }
-    Ok(())
+    realm_values::report(
+        ConfigDiagnostic::UnknownRelation {
+            path: vec!["plugins".to_owned(), interface.to_owned(), key.to_owned()],
+        },
+        config.libdefaults.parse_mode(),
+        &mut config.libdefaults.enctype_diagnostics,
+    )
 }
 
 /// Preserve the values of repeated relations in source order.
@@ -223,7 +216,7 @@ pub(super) fn server(section: &'static str, config: &mut Config) -> Result<(), E
 
 /// Select scalar or repeated realm values using the catalogue's declared kind.
 /// # Errors
-/// Propagates typed value and deferred-policy failures for each selected relation.
+/// Propagates typed value and strict-mode diagnostic failures for each selected relation.
 pub(super) fn realms(
     config: &mut Config,
     values: &BTreeMap<Vec<String>, Vec<Line>>,

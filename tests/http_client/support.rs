@@ -34,6 +34,7 @@ use rskrb5_ng::{
     service::{ApRepOptions, Validator},
     ticket,
 };
+use tokio::runtime::Builder;
 use zeroize::Zeroizing;
 
 use super::context::{Context as _, TestError};
@@ -254,8 +255,16 @@ fn ticket_for(host: &str) -> Result<TgsRepSession, TestError> {
 
 /// A Negotiate client holding a ticket for each of `hosts`.
 pub(super) fn negotiate_client(hosts: &[&str]) -> Result<NegotiateClient, TestError> {
+    negotiate_client_in(Config::new(), hosts)
+}
+
+/// A Negotiate client under `config` holding a ticket for each of `hosts`.
+pub(super) fn negotiate_client_in(
+    config: Config,
+    hosts: &[&str],
+) -> Result<NegotiateClient, TestError> {
     let mut client = Tokio::with_password(
-        Config::new(),
+        config,
         KdcProtocol::Auto,
         Principal::user(REALM, USER),
         b"unused".to_vec(),
@@ -266,6 +275,18 @@ pub(super) fn negotiate_client(hosts: &[&str]) -> Result<NegotiateClient, TestEr
             .context("the ticket matches the client")?;
     }
     Ok(NegotiateClient::from_tokio_client(client))
+}
+
+/// Run `future` to completion on a current-thread runtime.
+pub(super) fn run<F>(future: F) -> Result<F::Output, TestError>
+where
+    F: Future,
+{
+    Ok(Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("runtime")?
+        .block_on(future))
 }
 
 /// A response with `status` and an empty body.

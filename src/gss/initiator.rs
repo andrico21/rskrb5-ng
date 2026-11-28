@@ -3,26 +3,34 @@
 //! The krb5 mechanism's initiator (MIT 1.22.2 `init_sec_context.c:240-688`
 //! and `mutual_auth`, `init_sec_context.c:691-870`).
 
-use core::{mem, slice, time::Duration};
-use std::time::{SystemTime, UNIX_EPOCH};
+use core::mem;
+use std::time::SystemTime;
 
 use rasn::types::Integer;
-use rasn_kerberos::KerberosTime;
 use zeroize::Zeroizing;
 
 use super::{
     ChannelBindings, ContextFlags, Credential, CredentialUsage, CryptoPolicy, EncryptionKey, Error,
-    EstablishedContext, InitState, InitStep, Initiator, Name, Principal, TgsRepSession, checksum,
-    cred, dce, seq,
+    EstablishedContext, InitState, InitStep, Initiator, InitiatorOptions, Name, Principal,
+    TgsRepSession,
+    checksum::{self, Extensions},
+    context::Mechanism,
+    cred, dce,
+    iakerb::finished,
+    seq,
 };
 use crate::{
-    ap_rep, ap_req,
-    client::time::from_kerberos,
     crypto::{KerberosEtype, Use, prf},
-    krb_cred,
-    spnego::{Krb5MechToken, Krb5TokenId},
-    ticket,
+    spnego::Krb5MechToken,
 };
+
+/// The authenticator and the AP-REQ.
+mod authenticator;
+/// The acceptor's AP-REP.
+pub(in crate::gss) mod mutual;
+
+use authenticator::{ap_req_der, delegation, kerberos_string, negotiate, now, principal_name};
+use mutual::reply;
 
 /// The AP option `mutual-required` (RFC 4120 section 5.5.1, bit 2).
 const MUTUAL_REQUIRED: u32 = 0x2000_0000;
@@ -62,6 +70,8 @@ struct Parts {
     flags: ContextFlags,
     /// The runtime enctype policy.
     policy: CryptoPolicy,
+    /// The mechanism.
+    mechanism: Mechanism,
 }
 
 /// One initiator step.
@@ -118,135 +128,6 @@ pub(super) fn random_sequence() -> Result<u32, Error> {
     Ok(u32::from_be_bytes(bytes) & 0x3fff_ffff)
 }
 
-/// A Kerberos string.
-///
-/// # Errors
-///
-/// Returns [`Error::BadName`] for a string Kerberos cannot carry.
-fn kerberos_string(value: &str) -> Result<rasn_kerberos::KerberosString, Error> {
-    rasn_kerberos::KerberosString::from_bytes(value.as_bytes())
-        .map_err(|_invalid| Error::BadName("not a Kerberos string"))
-}
-
-/// The ASN.1 name of `principal`.
-///
-/// # Errors
-///
-/// Returns [`Error::BadName`] for a component Kerberos cannot carry.
-fn principal_name(principal: &Principal) -> Result<rasn_kerberos::PrincipalName, Error> {
-    Ok(rasn_kerberos::PrincipalName {
-        r#type: principal.name_type,
-        string: principal
-            .components
-            .iter()
-            .map(|component| kerberos_string(component))
-            .collect::<Result<_, _>>()?,
-    })
-}
-
-/// The current time as whole seconds, microseconds and the Kerberos time.
-///
-/// # Errors
-///
-/// Returns [`Error::ContextExpired`] for a clock outside the Kerberos range.
-fn now() -> Result<(SystemTime, u32, KerberosTime), Error> {
-    let since = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_before| Error::ContextExpired)?;
-    let seconds = i64::try_from(since.as_secs()).map_err(|_range| Error::ContextExpired)?;
-    let whole = UNIX_EPOCH
-        .checked_add(Duration::from_secs(since.as_secs()))
-        .ok_or(Error::ContextExpired)?;
-    let kerberos = chrono::DateTime::from_timestamp(seconds, 0)
-        .map(|utc| KerberosTime(utc.fixed_offset()))
-        .ok_or(Error::ContextExpired)?;
-    Ok((whole, since.subsec_micros(), kerberos))
-}
-
-/// The context flags of a request against a ticket's `OK-AS-DELEGATE`
-/// (`init_sec_context.c:537-586`).
-fn negotiate(requested: ContextFlags, enforce: bool, ok_as_delegate: bool) -> ContextFlags {
-    let asked = if enforce && requested.contains(ContextFlags::DELEG) {
-        requested.difference(ContextFlags::DELEG) | ContextFlags::DELEG_POLICY
-    } else {
-        requested
-    };
-    let mut flags = asked.intersection(SENT_FLAGS)
-        | ContextFlags::TRANS
-        | ContextFlags::CONF
-        | ContextFlags::INTEG;
-    if asked.contains(ContextFlags::DCE_STYLE) {
-        // DCE style implies mutual authentication (`init_sec_context.c:554-555`).
-        flags = flags | ContextFlags::MUTUAL;
-    }
-    if asked.contains(ContextFlags::DELEG_POLICY) && ok_as_delegate {
-        flags = flags | ContextFlags::DELEG | ContextFlags::DELEG_POLICY;
-    }
-    flags
-}
-
-/// The KRB-CRED of the client's forwardable TGT, encrypted in the session key
-/// (RFC 4121 section 4.1.1.1), or `None` when there is none to forward.
-///
-/// # Errors
-///
-/// Returns [`Error::DelegatedCredential`] when the KRB-CRED cannot be built.
-fn delegation(
-    credential: &Credential,
-    session_key: &EncryptionKey,
-) -> Result<Option<Zeroizing<Vec<u8>>>, Error> {
-    let Some(tgt) = cred::forwardable_tgt(credential) else {
-        return Ok(None);
-    };
-    let etype = KerberosEtype::from_etype_id(session_key.etype())
-        .ok_or(Error::LegacyTokenFormat(session_key.etype()))?;
-    let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
-    getrandom::fill(&mut confounder).map_err(Error::Random)?;
-    krb_cred::encode_encrypt_ccache_credentials_to_krb_cred_with_confounder(
-        slice::from_ref(tgt),
-        session_key,
-        &confounder,
-    )
-    .map(|bytes| Some(Zeroizing::new(bytes)))
-    .map_err(Error::DelegatedCredential)
-}
-
-/// The krb5 AP-REQ token of `authenticator` with the service ticket.
-///
-/// # Errors
-///
-/// Returns the ticket, AP-REQ and token encoding errors.
-fn ap_req_token(
-    ticket: &TgsRepSession,
-    authenticator: &rasn_kerberos::Authenticator,
-    flags: ContextFlags,
-) -> Result<Vec<u8>, Error> {
-    let mutual = flags.contains(ContextFlags::MUTUAL);
-    let wire_ticket = ticket::decode(ticket.ticket()).map_err(Error::Ticket)?;
-    let usage = ap_req::authenticator_usage_for_ticket(&wire_ticket);
-    let kvno = wire_ticket.enc_part.kvno;
-    let etype = KerberosEtype::from_etype_id(ticket.session_key().etype())
-        .ok_or(Error::LegacyTokenFormat(ticket.session_key().etype()))?;
-    let mut confounder = Zeroizing::new(vec![0; etype.confounder_len()]);
-    getrandom::fill(&mut confounder).map_err(Error::Random)?;
-    let bits = if mutual { MUTUAL_REQUIRED } else { 0 };
-    let message = ap_req::build_ap_req_with_confounder(
-        wire_ticket,
-        ap_req::ap_options_from_bits(bits),
-        authenticator,
-        ticket.session_key(),
-        usage,
-        kvno,
-        &confounder,
-    )?;
-    let der = Zeroizing::new(ap_req::encode(&message).map_err(Error::ApReq)?);
-    if flags.contains(ContextFlags::DCE_STYLE) {
-        // A raw AP-REQ, without the RFC 2743 framing (`init_sec_context.c:420-426`).
-        return Ok(der.to_vec());
-    }
-    Ok(Krb5MechToken::ap_req(der.to_vec()).encode()?)
-}
-
 /// The first step: the AP-REQ token.
 ///
 /// # Errors
@@ -256,10 +137,45 @@ fn first(initiator: &mut Initiator, credential: &Credential) -> Result<InitStep,
     if credential.usage == CredentialUsage::Accept {
         return Err(Error::WrongCredentialUsage("initiate"));
     }
-    let options = &initiator.options;
     let _components: &[String] = cred::target_components(&initiator.target)?;
     let ticket = cred::service_ticket(credential, &initiator.target)
         .ok_or(Error::NoCredential("no live service ticket for the target"))?;
+    let (token, pending) = request(&initiator.options, (credential, ticket), Extensions::KRB5)?;
+    if pending.awaits_reply() {
+        initiator.state = InitState::AwaitingReply(Box::new(pending));
+        return Ok(InitStep::Continue(token));
+    }
+    initiator.state = InitState::Established(Box::new(pending.context));
+    Ok(InitStep::Complete(Some(token)))
+}
+
+impl Pending {
+    /// Whether the AP-REP is awaited (mutual authentication).
+    pub(super) const fn awaits_reply(&self) -> bool {
+        self.context.flags.contains(ContextFlags::MUTUAL)
+    }
+
+    /// The context, when no AP-REP is awaited.
+    pub(super) fn into_context(self) -> EstablishedContext {
+        self.context
+    }
+}
+
+/// The AP-REQ token of a service ticket and the context it starts.
+///
+/// The token carries the record's extensions in the authenticator checksum
+/// (MIT `krb5_gss_init_sec_context_ext` and `make_gss_checksum`,
+/// `init_sec_context.c:240-345`); a delegation carries the forwardable TGT of
+/// the credential.
+///
+/// # Errors
+///
+/// Returns the policy, delegation, checksum, AP-REQ and token errors.
+pub(super) fn request(
+    options: &InitiatorOptions,
+    (credential, ticket): (&Credential, TgsRepSession),
+    extensions: Extensions<'_>,
+) -> Result<(Vec<u8>, Pending), Error> {
     let policy = options.crypto_policy.clone();
     policy
         .check_use(ticket.session_key().etype(), Use::SessionKey)
@@ -291,14 +207,18 @@ fn first(initiator: &mut Initiator, credential: &Credential) -> Result<InitStep,
     let subkey = random_key(ticket.session_key().etype())?;
     let sequence = random_sequence()?;
     let (ctime, cusec, kerberos_time) = now()?;
+    let mut value = checksum::encode(&digest, flags, forwarded.as_deref().map(Vec::as_slice))?;
+    if let Some(conversation) = extensions.conversation() {
+        let proof = finished::make(&subkey, conversation)?;
+        value.extend_from_slice(&checksum::extension(checksum::FINISHED_EXTENSION, &proof)?);
+    }
     let authenticator = rasn_kerberos::Authenticator {
         authenticator_vno: Integer::from(5_i32),
         crealm: kerberos_string(&ticket.client().realm)?,
         cname: principal_name(ticket.client())?,
         cksum: Some(rasn_kerberos::Checksum {
             r#type: checksum::CHECKSUM_TYPE,
-            checksum: checksum::encode(&digest, flags, forwarded.as_deref().map(Vec::as_slice))?
-                .into(),
+            checksum: value.into(),
         }),
         cusec: Integer::from(cusec),
         ctime: kerberos_time,
@@ -313,24 +233,35 @@ fn first(initiator: &mut Initiator, credential: &Credential) -> Result<InitStep,
             None
         },
     };
-    let token = ap_req_token(&ticket, &authenticator, flags)?;
+    let der = ap_req_der(
+        &ticket,
+        &authenticator,
+        flags.contains(ContextFlags::MUTUAL),
+    )?;
+    let token = if flags.contains(ContextFlags::DCE_STYLE) {
+        // A raw AP-REQ, without the RFC 2743 framing (`init_sec_context.c:420-426`).
+        der.to_vec()
+    } else {
+        let mut framed = Krb5MechToken::ap_req(der.to_vec());
+        framed.set_oid(extensions.mechanism().oid());
+        framed.encode()?
+    };
     let context = established(Parts {
         ticket,
         subkey,
         sequence,
         flags,
         policy,
+        mechanism: extensions.mechanism(),
     });
-    if flags.contains(ContextFlags::MUTUAL) {
-        initiator.state = InitState::AwaitingReply(Box::new(Pending {
+    Ok((
+        token,
+        Pending {
             context,
             ctime,
             cusec,
-        }));
-        return Ok(InitStep::Continue(token));
-    }
-    initiator.state = InitState::Established(Box::new(context));
-    Ok(InitStep::Complete(Some(token)))
+        },
+    ))
 }
 
 /// The initiator's context; without an AP-REP it receives from its own
@@ -356,62 +287,8 @@ fn established(parts: Parts) -> EstablishedContext {
         crypto_policy: parts.policy,
         delegated: None,
         pac: None,
+        auth_indicators: Vec::new(),
         open: true,
+        mechanism: parts.mechanism,
     }
-}
-
-/// The second step: verify the acceptor's AP-REP.
-///
-/// # Errors
-///
-/// Returns [`Error::DefectiveToken`] for a token that is not an AP-REP, and the
-/// AP-REP decryption, policy and timestamp errors.
-fn reply(pending: Pending, token: &[u8]) -> Result<(EstablishedContext, InitStep), Error> {
-    let Pending {
-        mut context,
-        ctime,
-        cusec: sent_cusec,
-    } = pending;
-    let dce = context.flags.contains(ContextFlags::DCE_STYLE);
-    let wire = if dce {
-        // A raw AP-REP (`init_sec_context.c:757-759`).
-        ap_rep::decode(token).map_err(Error::ApRep)?
-    } else {
-        let mech = Krb5MechToken::decode(token)?;
-        if mech.token_id() != Krb5TokenId::ApRep {
-            return Err(Error::DefectiveToken(
-                "the acceptor did not answer with an AP-REP",
-            ));
-        }
-        ap_rep::decode(mech.message()).map_err(Error::ApRep)?
-    };
-    let policy = &context.crypto_policy;
-    policy.check_use(wire.enc_part.etype, Use::SessionKey)?;
-    let part = ap_rep::decrypt_ap_rep_enc_part(&wire, &context.session_key)?;
-    let echoed = from_kerberos(&part.ctime);
-    let cusec = part.cusec.to_string().parse::<u32>().ok();
-    if echoed != Some(ctime) || cusec != Some(sent_cusec) {
-        return Err(Error::DefectiveToken(
-            "the AP-REP does not echo the authenticator",
-        ));
-    }
-    let acceptor_subkey = match &part.subkey {
-        Some(key) => {
-            policy.check_use(key.r#type, Use::AcceptorSubkey)?;
-            Some(EncryptionKey::new(key.r#type, key.value.to_vec()))
-        }
-        None => None,
-    };
-    context.acceptor_subkey = acceptor_subkey;
-    let received = part.seq_number.unwrap_or(0);
-    context.window = seq::Window::new(
-        u64::from(received),
-        context.flags.contains(ContextFlags::REPLAY),
-        context.flags.contains(ContextFlags::SEQUENCE),
-    );
-    if dce {
-        let third = dce::initiator_reply(&context.session_key, received)?;
-        return Ok((context, InitStep::Complete(Some(third))));
-    }
-    Ok((context, InitStep::Complete(None)))
 }

@@ -9,6 +9,11 @@
 #[path = "support/context.rs"]
 mod context;
 
+/// Runs one test in a child process with a changed environment.
+#[cfg(all(test, feature = "tokio"))]
+#[path = "support/env.rs"]
+mod env;
+
 /// The GSS core scenarios.
 #[cfg(test)]
 #[expect(

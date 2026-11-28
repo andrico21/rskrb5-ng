@@ -1,4 +1,4 @@
-//! Server discovery and hostname canonicalization (plan 2 WP-10a).
+//! Server discovery and hostname canonicalization.
 //!
 //! The built-in discovery chain of MIT's `locate_kdc.c` (registered locators, the
 //! profile, DNS URI records, DNS SRV records), host-to-realm mapping as in

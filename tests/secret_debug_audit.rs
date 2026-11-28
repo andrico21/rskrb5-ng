@@ -1143,6 +1143,18 @@ mod tests {
             "Creates the credential's cache when it has none and upserts tickets into it; CCache::upsert_credential drops a replaced entry, whose ccache::Credential owner erases its key and ticket (ccache replacement proofs).",
         ),
         (
+            "src/gss/creds.rs::Credential::acquire_host_service_ticket",
+            "Forwards to src/gss/cred.rs::acquire_host_service_ticket, which carries its own exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/gss/cred.rs::acquire_host_service_ticket",
+            "Forwards the ticket it acquired to src/gss/cred.rs::keep_ticket, which carries its own exception; it replaces nothing itself.",
+        ),
+        (
+            "src/gss/cred.rs::keep_ticket",
+            "Creates the credential's cache when it has none and upserts the TGT and the service ticket into it; CCache::upsert_credential drops a replaced entry, whose ccache::Credential owner erases its key and ticket (ccache replacement proofs).",
+        ),
+        (
             "src/gss/contexts.rs::Initiator::init_sec_context",
             "Forwards to src/gss/initiator.rs::step, which carries its own exception; this wrapper replaces nothing itself.",
         ),
@@ -1160,6 +1172,10 @@ mod tests {
         ),
         (
             "src/gss/acceptor.rs::accept",
+            "Forwards to src/gss/acceptor.rs::establish, which carries its own exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/gss/acceptor.rs::establish",
             "Borrows the validator mutably for replay admission; no keytab key or other credential storage of the acceptor is replaced.",
         ),
         (
@@ -1267,12 +1283,8 @@ mod tests {
             "Calls the Kerberos client for a token and the exchange for a response; neither field is replaced, and the context of a superseded round is dropped with its keys erased (`client_cache_clear_erases_live_key_owners`).",
         ),
         (
-            "src/http/agent.rs::NegotiateHttpClient::context_for",
-            "Calls the Kerberos client to build one InitiatorContext and clones the initiator options for it; no stored credential is replaced, and the clone's subkey is erased by its EncryptionKey owner's drop (`service_key_replacements_erase_old_allocations`).",
-        ),
-        (
             "src/http/agent.rs::NegotiateHttpClient::round",
-            "Calls the exchange with one request; the exchange is not replaced, and the request's Authorization value is a sensitive header owned by the request (`http_client_redacts_credentials`).",
+            "Opens one connection through the exchange, calls the Kerberos client to build one InitiatorContext with a clone of the initiator options (the clone's subkey is erased by its EncryptionKey owner's drop, `service_key_replacements_erase_old_allocations`) and sends one request over that connection; neither the client nor the exchange is replaced, and the request's Authorization value is a sensitive header owned by the request (`http_client_redacts_credentials`).",
         ),
         (
             "src/http.rs::NegotiateService::inner_mut",
@@ -1305,6 +1317,14 @@ mod tests {
         (
             "src/client/negotiate.rs::Client::authorization_context_for_host",
             "Forwards to src/client/negotiate.rs::Client::authorization_context, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/client/negotiate.rs::Client::authorization_context_for_acquired_host",
+            "Forwards to src/client/negotiate.rs::Client::authorization_context_for_acquired_host_with_options, which carries its own registered proof, delegation or exception; this wrapper replaces nothing itself.",
+        ),
+        (
+            "src/client/negotiate.rs::Client::authorization_context_for_acquired_host_with_options",
+            "Forwards to src/client.rs::Tokio::get_host_service_ticket and src/client/negotiate.rs::Client::authorization_context_with_options, which carry their own registered proofs, delegations or exceptions; this wrapper replaces nothing itself.",
         ),
         (
             "src/client/negotiate.rs::Client::change_password",

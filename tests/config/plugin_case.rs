@@ -38,48 +38,72 @@ mod tests {
         Ok(())
     }
 
-    /// Strict mode treats the wrongly cased interface like any interface other than `clpreauth`.
+    /// Strict mode treats the wrongly cased interface like any other interface
+    /// without a consumer: an unknown path (A7: names match exactly).
     #[test]
     fn upper_interface_strict_matches_other_interfaces() -> Result<(), Box<dyn Error>> {
-        for interface in ["CLPREAUTH", "ccselect"] {
+        for interface in ["CLPREAUTH", "kdcpreauth", "CcSelect"] {
             let text = format!("[plugins]\n{interface} = {{\n disable = encrypted_timestamp\n}}\n");
+            let path = vec![
+                "plugins".to_owned(),
+                interface.to_owned(),
+                "disable".to_owned(),
+            ];
+            let config = Config::parse(&text)?;
+            assert!(
+                config
+                    .diagnostics()
+                    .contains(&ConfigDiagnostic::UnknownRelation { path: path.clone() }),
+                "{interface}: {:?}",
+                config.diagnostics()
+            );
             let failure = Config::parse_with_mode(&text, ParseMode::Strict)
                 .err()
-                .ok_or("strict accepted a plugin control")?;
+                .ok_or("strict accepted a plugin control without a consumer")?;
             assert!(
-                matches!(
-                    failure,
-                    Failure::NotYetEffective {
-                        relation: "disable",
-                        package: _
-                    }
-                ),
+                matches!(&failure, Failure::UnknownRelation { path: found } if *found == path),
                 "{interface}: {failure:?}"
             );
         }
         Ok(())
     }
 
-    /// The correctly spelled interface keeps its fail-closed rule in both modes.
+    /// The `ccselect`, `hostrealm` and `localauth` controls are effective.
+    ///
+    /// Their built-in and registered modules honour them, so no diagnostic is
+    /// raised and Strict mode accepts them (EXECUTOR decision W11A-6, the A7
+    /// transition of FU-EXT-P01).
     #[test]
-    fn lower_interface_still_fails_closed() -> Result<(), Box<dyn Error>> {
+    fn known_interface_strict_controls_are_effective() -> Result<(), Box<dyn Error>> {
+        for interface in ["ccselect", "hostrealm", "localauth"] {
+            for control in ["disable = first", "enable_only = second"] {
+                let text = format!("[plugins]\n{interface} = {{\n {control}\n}}\n");
+                let config = Config::parse_with_mode(&text, ParseMode::Strict)?;
+                assert!(config.diagnostics().is_empty(), "{interface} {control}");
+                assert!(config.plugins.contains_key(interface), "{interface}");
+            }
+        }
+        Ok(())
+    }
+
+    /// The correctly spelled interface is admitted in both modes: its control is effective.
+    #[test]
+    fn lower_interface_control_is_effective() -> Result<(), Box<dyn Error>> {
         for mode in [ParseMode::Compatible, ParseMode::Strict] {
-            let failure = Config::parse_with_mode(
+            let config = Config::parse_with_mode(
                 "[plugins]\nclpreauth = {\n disable = encrypted_timestamp\n}\n",
                 mode,
-            )
-            .err()
-            .ok_or("clpreauth restriction ignored")?;
+            )?;
             assert!(
-                matches!(
-                    failure,
-                    Failure::NotYetEffective {
-                        relation: "disable",
-                        package: _
-                    }
-                ),
-                "{failure:?}"
+                config.diagnostics().is_empty(),
+                "{:?}",
+                config.diagnostics()
             );
+            let controls = config
+                .plugins
+                .get("clpreauth")
+                .ok_or("clpreauth control lost")?;
+            assert_eq!(controls.disable, ["encrypted_timestamp"]);
         }
         Ok(())
     }

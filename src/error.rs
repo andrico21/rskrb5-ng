@@ -569,6 +569,14 @@ pub enum Client {
     #[cfg(feature = "tokio")]
     #[error("DNS resolver configuration failed: {0}")]
     DnsResolverConfig(String),
+    /// Host acquisition found no host name the caller's policy approves: every
+    /// canonical form of `host` other than the host itself was refused.
+    #[cfg(feature = "tokio")]
+    #[error("no approved canonical name for host {host}")]
+    HostNameNotApproved {
+        /// The requested host, folded to lower case.
+        host: String,
+    },
     /// A registered server locator or host-realm mapper failed or gave a
     /// refused answer.
     #[cfg(feature = "tokio")]
@@ -730,12 +738,20 @@ pub enum Client {
     #[error("PKINIT preauthentication failed")]
     Pkinit(#[from] Pkinit),
     /// Encrypted timestamp is disabled for the client realm
-    /// (`[realms] disable_encrypted_timestamp`), and the KDC offered no other
-    /// usable mechanism.
+    /// (`[realms] disable_encrypted_timestamp`) or excluded by
+    /// `[plugins] clpreauth`, and the KDC offered no other usable mechanism.
     #[error("encrypted timestamp is disabled for realm {realm}")]
     EncryptedTimestampDisabled {
         /// The client realm.
         realm: String,
+    },
+    /// The exchange was built for a preauthentication mechanism that
+    /// `[plugins] clpreauth` excludes. Nothing is sent and no other mechanism
+    /// takes its place.
+    #[error("the `{mechanism}` preauthentication mechanism is excluded by [plugins] clpreauth")]
+    PreauthMechanismDisabled {
+        /// The `clpreauth` name of the excluded mechanism.
+        mechanism: &'static str,
     },
     /// `noaddresses = false` needs request addresses, and interface addresses
     /// are not enumerated: configure `extra_addresses`.
@@ -773,14 +789,6 @@ pub enum Config {
         /// Canonical section name.
         section: &'static str,
     },
-    /// An unsupported relation requires stricter behavior or strict parsing.
-    #[error("relation {relation} is not yet effective; requires {package}")]
-    NotYetEffective {
-        /// Selected relation.
-        relation: &'static str,
-        /// Work package owning its runtime consumer.
-        package: &'static str,
-    },
     /// A relation's consumer needs a leaf Cargo feature this build lacks
     /// (strict mode).
     #[error("relation {relation} needs the `{feature}` Cargo feature")]
@@ -789,6 +797,15 @@ pub enum Config {
         relation: &'static str,
         /// The leaf feature.
         feature: &'static str,
+    },
+    /// A relation names behaviour this library excludes permanently by an
+    /// owner decision (strict mode).
+    #[error("relation {relation} is out of scope ({decision})")]
+    OutOfScope {
+        /// Selected relation.
+        relation: &'static str,
+        /// The owner decision that excludes it: `D1`, `D2` or `D1/D3`.
+        decision: &'static str,
     },
     /// A local-address list contains a malformed IP address.
     #[error("invalid extra address: {0}")]
@@ -1597,6 +1614,15 @@ pub enum Kcm {
     /// A KCM transport is installed already: the first installation wins.
     #[error("a KCM transport is installed already")]
     TransportInstalled,
+    /// The configuration names a Mach service (`kcm_mach_service`) and the
+    /// process has no Mach transport: no installed transport and no
+    /// transport factory, for example because the platform companion crate was
+    /// never asked to install its transport.
+    #[error("no Mach transport is installed to reach the KCM service {service}")]
+    NoMachTransport {
+        /// The configured service name.
+        service: String,
+    },
 }
 
 #[cfg(feature = "messages")]
@@ -2853,6 +2879,35 @@ pub enum Pkinit {
         relation: &'static str,
         /// The location type, such as `PKCS11`.
         location: String,
+    },
+    /// A `pkinit_cert_match` rule is malformed, uses a construct the bounded
+    /// matching engine does not honour, or exceeds a bound.
+    ///
+    /// MIT 1.22.2 skips some malformed rules (`pkinit_matching.c:650-656`);
+    /// this client never does.
+    #[error("pkinit_cert_match rule {rule:?} is refused: {reason}")]
+    CertificateRule {
+        /// The rule text as configured.
+        rule: String,
+        /// Why, without certificate contents.
+        reason: &'static str,
+    },
+    /// No candidate identity satisfies a `pkinit_cert_match` rule.
+    ///
+    /// MIT `pkinit_matching.c:701-703` (`TRACE_PKINIT_NO_MATCHING_CERT`, `ENOENT`).
+    #[error("no PKINIT identity of the {candidates} candidates matches pkinit_cert_match")]
+    NoMatchingCertificate {
+        /// The candidate identities that were checked.
+        candidates: usize,
+    },
+    /// More than one candidate identity remains and no rule selects exactly one.
+    ///
+    /// MIT `pkinit_identity.c:600` and `crypto_cert_select_default`
+    /// (`pkinit_crypto_openssl.c:4986`, `cert_count != 1`, `EINVAL`).
+    #[error("{candidates} PKINIT identities are candidates and no rule selects exactly one")]
+    AmbiguousCertificates {
+        /// The candidate identities that were checked.
+        candidates: usize,
     },
     /// `pkinit_dh_min_bits` asks for a group below the 2048-bit floor.
     #[error("Diffie-Hellman groups of {bits} bits are refused; the floor is 2048")]

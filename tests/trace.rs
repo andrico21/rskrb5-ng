@@ -442,8 +442,8 @@ mod tests {
         Ok(())
     }
 
-    /// `err_fmt` no longer yields `NotYetEffective`, even in strict mode, and the
-    /// formatter reads the configured template.
+    /// `err_fmt` raises no diagnostic, even in strict mode, and the formatter
+    /// reads the configured template.
     #[test]
     fn err_fmt() -> Result<(), Box<dyn Error>> {
         let text = "[libdefaults]\n err_fmt = %C: %M\n";

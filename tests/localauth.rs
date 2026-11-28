@@ -70,6 +70,17 @@ mod k5login_content;
 #[path = "localauth/builtin.rs"]
 mod builtin;
 
+/// `[plugins] localauth` controls over the public helpers.
+#[cfg(test)]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "localauth/controls.rs"]
+mod controls;
+
 /// `HOME` never selects the `.k5login` file.
 #[cfg(test)]
 #[cfg(unix)]

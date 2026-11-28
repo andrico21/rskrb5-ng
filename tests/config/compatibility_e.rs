@@ -35,22 +35,27 @@ mod tests {
         };
         assert_eq!(config.libdefaults.permitted_enctype_ids(), permitted);
         assert_eq!(config.configured_kdcs("ATHENA.MIT.EDU")?.len(), 3);
-        assert!(config.diagnostics().iter().any(|item| matches!(
-            item,
-            ConfigDiagnostic::NotYetEffective {
-                relation: "default_domain",
-                package: _
-            }
-        )));
-        // `rdns` is effective since the discovery work package, so it has no diagnostic.
-        assert!(!config.diagnostics().iter().any(|item| matches!(
-            item,
-            ConfigDiagnostic::NotYetEffective {
-                relation: "rdns",
-                package: _
-            }
-        )));
-        assert!(!config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == "ccache_type")));
+        assert!(
+            config
+                .diagnostics()
+                .contains(&ConfigDiagnostic::OutOfScope {
+                    relation: "default_domain",
+                    decision: "D2"
+                })
+        );
+        // Every other relation of the host profile (`rdns`, `ccache_type` among
+        // them) is effective: only these three kinds of diagnostic remain.
+        assert!(
+            config.diagnostics().iter().all(|item| matches!(
+                item,
+                ConfigDiagnostic::OutOfScope {
+                    relation: "default_domain",
+                    decision: "D2"
+                } | ConfigDiagnostic::UnsupportedSecureEnctype { token: _, until: _ }
+            ) || matches!(item, ConfigDiagnostic::UnknownRelation { path } if path == &["libdefaults", "fcc-mit-ticketflags"])),
+            "{:?}",
+            config.diagnostics()
+        );
         assert!(config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::UnknownRelation { path } if path == &["libdefaults", "fcc-mit-ticketflags"])));
         assert_eq!(
             config
@@ -91,7 +96,7 @@ mod tests {
     }
 
     /// The plan's exact realm policy is effective (plan 2 todo 9): both modes admit
-    /// it without a deferred-consumer diagnostic, and the exchange engine honours it.
+    /// it without a diagnostic, and the exchange engine honours it.
     #[test]
     fn plan_timestamp_qa_is_effective() -> Result<(), Box<dyn Error>> {
         for mode in [ParseMode::Compatible, ParseMode::Strict] {
@@ -100,14 +105,9 @@ mod tests {
                 mode,
             )?;
             assert!(
-                !config.diagnostics().iter().any(|item| matches!(
-                    item,
-                    ConfigDiagnostic::NotYetEffective {
-                        relation: "disable_encrypted_timestamp",
-                        package: _
-                    }
-                )),
-                "{mode:?}"
+                config.diagnostics().is_empty(),
+                "{mode:?}: {:?}",
+                config.diagnostics()
             );
         }
         Ok(())

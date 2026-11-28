@@ -9,6 +9,15 @@
 //! instead of the socket. A [`Store`](super::Store) made for a socket path
 //! keeps using that socket.
 //!
+//! The Mach service is a setting (`kcm_mach_service`), so a transport for it
+//! cannot be one process-wide value: [`install_transport_factory`] installs a
+//! [`TransportFactory`] that makes the transport for the service name of the
+//! configuration a store is built from
+//! ([`Store::from_libdefaults`](super::Store::from_libdefaults)). An installed
+//! transport precedes the factory and the configured socket; a transport that
+//! reports [`Error::NoServer`] hands its request to the configured socket, as
+//! MIT falls back from Mach to the socket (`kcmio_connect`, `cc_kcm.c:436-438`).
+//!
 //! # Security
 //!
 //! An installed transport is trusted code: it sees every request, including
@@ -70,8 +79,39 @@ pub trait KcmTransport: fmt::Debug + Send + Sync {
     fn call(&self, request: &[u8]) -> Result<Vec<u8>, Error>;
 }
 
+/// How a configuration's `kcm_mach_service` becomes a [`KcmTransport`].
+///
+/// An application (or the platform companion crate) installs one with
+/// [`install_transport_factory`]; a store built from a configuration asks it
+/// for the transport of that configuration's service, so two configurations
+/// naming two services reach two services.
+///
+/// # Security
+///
+/// The transport it returns is trusted code: see [`KcmTransport`]. The factory
+/// decides who answers for a service name.
+///
+/// # Cancel safety
+///
+/// The method is synchronous.
+pub trait TransportFactory: fmt::Debug + Send + Sync {
+    /// The transport that reaches the service `service` (never `-` or empty:
+    /// those disable the service and never reach a factory).
+    ///
+    /// Creating the transport does not contact the service.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NoServer`] when the factory cannot serve this name at all; any
+    /// other error is returned to the caller of the store's constructor.
+    fn transport(&self, service: &str) -> Result<Arc<dyn KcmTransport>, Error>;
+}
+
 /// The installed transport, if any.
 static INSTALLED: OnceLock<Arc<dyn KcmTransport>> = OnceLock::new();
+
+/// The installed transport factory, if any.
+static FACTORY: OnceLock<Arc<dyn TransportFactory>> = OnceLock::new();
 
 /// Make `transport` the one the built-in `KCM` store uses, for the whole
 /// process. The first installation wins.
@@ -85,6 +125,25 @@ pub fn install_transport(transport: Arc<dyn KcmTransport>) -> Result<(), Error> 
     INSTALLED
         .set(transport)
         .map_err(|_refused| Error::TransportInstalled)
+}
+
+/// Make `factory` the one that serves the `kcm_mach_service` of every
+/// configured `KCM` store, for the whole process. The first installation wins.
+///
+/// # Errors
+///
+/// [`Error::TransportInstalled`] when a factory is installed already
+/// (including this one).
+#[inline]
+pub fn install_transport_factory(factory: Arc<dyn TransportFactory>) -> Result<(), Error> {
+    FACTORY
+        .set(factory)
+        .map_err(|_refused| Error::TransportInstalled)
+}
+
+/// The installed transport factory.
+pub(super) fn factory() -> Option<&'static Arc<dyn TransportFactory>> {
+    FACTORY.get()
 }
 
 /// The installed transport.

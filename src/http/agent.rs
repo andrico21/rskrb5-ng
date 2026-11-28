@@ -17,8 +17,23 @@
 //!   Negotiate token is ever sent to an origin other than the one the caller
 //!   asked for.
 //! * A redirect from `https` to `http` is an error, never a request.
+//! * Every request goes over a connection the exchange opened first
+//!   ([`HttpExchange::connect`]); a token is built afterwards, bound to that
+//!   connection's RFC 5929 `tls-server-end-point` bindings under the
+//!   [`ChannelBindingPolicy`], and sent over it. A retry connection whose TLS
+//!   peer certificate differs from the one that carried the challenge is
+//!   refused with [`HttpClient::ChannelChanged`] before any token is built,
+//!   and [`ChannelBindingPolicy::Required`] sends no token over a connection
+//!   without bindings.
 //! * A Negotiate token is used once: every redirect drops the previous token,
 //!   and a same-origin hop of an authenticated chain gets a fresh one.
+//! * The service principal is `HTTP/<lower-cased URI host>` and nothing else,
+//!   unless the caller sets a [`HostNamePolicy`]
+//!   ([`NegotiateHttpClient::with_host_name_policy`]): the profile's host-name
+//!   canonicalization then proposes names and the policy approves them. Only the
+//!   principal changes. The TLS server name, the `Host` header, the redirect and
+//!   cookie origin and the channel binding stay the URI host's, never the
+//!   canonical name's.
 //! * The challenge rounds, the `WWW-Authenticate` bytes, the redirects and the
 //!   replayed body are bounded.
 //! * When the [`InitiatorContextOptions`] ask for mutual authentication, the
@@ -36,6 +51,7 @@
 //! [`http::Request<Vec<u8>>`]: http_types::Request
 //! [`NegotiateClient`]: crate::client::negotiate::Client
 //! [`HttpClient::MutualAuthenticationNotProven`]: crate::error::HttpClient::MutualAuthenticationNotProven
+//! [`HttpClient::ChannelChanged`]: crate::error::HttpClient::ChannelChanged
 
 use core::fmt;
 
@@ -49,11 +65,12 @@ use super::{
     ClientNegotiateResponse, classify_negotiate_response, mutual_requested_by,
     negotiate_challenge_is_bare,
     origin::Origin,
-    wire::{CookieJar, HttpExchange},
+    wire::{CookieJar, HttpExchange, TlsChannel},
     www_authenticate_negotiate_header,
 };
 use crate::{
     client::{negotiate::Client as NegotiateClient, principal::Principal},
+    discovery::hostname::HostNamePolicy,
     error::{Http, HttpClient as Error},
     spnego::{InitiatorContext, InitiatorContextOptions},
     trace::{Event, Guard, Identity, TransportStep, TransportWire},
@@ -105,6 +122,23 @@ impl Default for RedirectPolicy {
     }
 }
 
+/// Whether Negotiate tokens are bound to the TLS channel that carries them
+/// (RFC 5929 `tls-server-end-point`, see [`TlsChannel`]).
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum ChannelBindingPolicy {
+    /// Never derive bindings from the connection; a token carries the
+    /// bindings of the [`InitiatorContextOptions`], if any.
+    Off,
+    /// Bind a token to its connection when the exchange reports a TLS channel
+    /// with `tls-server-end-point` bindings; send it unbound otherwise.
+    #[default]
+    WhenAvailable,
+    /// Bind every token to its connection; with no bindings, fail with
+    /// [`Error::ChannelBindingUnavailable`] and send no token.
+    Required,
+}
+
 /// The authenticated context of a request and its classified response.
 struct Negotiated {
     /// The initiator context that built the request's token.
@@ -112,6 +146,27 @@ struct Negotiated {
     /// The classification of the response against that context.
     negotiation: ClientNegotiateResponse,
 }
+
+/// What the request of one round carries.
+#[derive(Clone, Copy)]
+enum Attempt<'challenge> {
+    /// No token.
+    Anonymous,
+    /// A fresh token for the connection that carries it.
+    Token {
+        /// The TLS peer of the connection that carried the challenge this
+        /// token answers, if any: the retry connection must present it too.
+        challenge: Option<&'challenge TlsChannel>,
+    },
+}
+
+/// The response of one round, the context of its token and the TLS peer of
+/// its connection.
+type Round = (
+    Response<Vec<u8>>,
+    Option<InitiatorContext>,
+    Option<TlsChannel>,
+);
 
 /// The result of [`NegotiateHttpClient::send`].
 #[non_exhaustive]
@@ -191,6 +246,8 @@ pub struct NegotiateHttpClient<X> {
     options: InitiatorContextOptions,
     /// The redirect policy.
     redirect: RedirectPolicy,
+    /// When tokens are bound to their TLS channel.
+    binding: ChannelBindingPolicy,
     /// The most tokens sent after a challenge, per hop.
     max_challenges: u8,
     /// The most `WWW-Authenticate` bytes of one response.
@@ -199,6 +256,8 @@ pub struct NegotiateHttpClient<X> {
     max_body_bytes: usize,
     /// The realm of the `HTTP/<host>` service, when it is not looked up.
     service_realm: Option<String>,
+    /// The policy of the explicit host acquisition; none keeps the URI host.
+    host_policy: Option<Box<dyn HostNamePolicy>>,
     /// The cookie jar.
     jar: Option<Box<dyn CookieJar>>,
     /// The trace guard.
@@ -211,6 +270,7 @@ impl<X> fmt::Debug for NegotiateHttpClient<X> {
         f.debug_struct("NegotiateHttpClient")
             .field("redirect", &self.redirect)
             .field("max_challenges", &self.max_challenges)
+            .field("channel_binding", &self.binding)
             .field("cookie_jar", &self.jar.is_some())
             .finish_non_exhaustive()
     }
@@ -236,10 +296,12 @@ impl<X: HttpExchange> NegotiateHttpClient<X> {
             exchange,
             options: InitiatorContextOptions::new(),
             redirect: RedirectPolicy::default(),
+            binding: ChannelBindingPolicy::default(),
             max_challenges: Self::DEFAULT_MAX_CHALLENGES,
             max_challenge_bytes: Self::DEFAULT_MAX_CHALLENGE_BYTES,
             max_body_bytes: Self::DEFAULT_MAX_BODY_BYTES,
             service_realm: None,
+            host_policy: None,
             jar: None,
             trace: Guard::disabled(),
         }
@@ -259,6 +321,15 @@ impl<X: HttpExchange> NegotiateHttpClient<X> {
     #[must_use]
     pub const fn with_redirect_policy(mut self, policy: RedirectPolicy) -> Self {
         self.redirect = policy;
+        self
+    }
+
+    /// Bind tokens to their TLS channel under `policy` (the default is
+    /// [`ChannelBindingPolicy::WhenAvailable`]).
+    #[inline]
+    #[must_use]
+    pub const fn with_channel_binding_policy(mut self, policy: ChannelBindingPolicy) -> Self {
+        self.binding = policy;
         self
     }
 
@@ -294,6 +365,34 @@ impl<X: HttpExchange> NegotiateHttpClient<X> {
         R: Into<String>,
     {
         self.service_realm = Some(realm.into());
+        self
+    }
+
+    /// Name the service by explicit host acquisition under `policy` instead of
+    /// taking the URI host as it is.
+    ///
+    /// The profile's `dns_canonicalize_hostname`, `rdns` and `qualify_shortname`
+    /// propose canonical names for the URI host; a name other than the host
+    /// itself is used only when `policy` approves it
+    /// ([`NegotiateClient::authorization_context_for_acquired_host_with_options`]).
+    /// Without this call the service is `HTTP/<URI host>` and no DNS lookup is
+    /// made. A realm named by [`Self::with_service_realm`] is an explicit
+    /// principal input and bypasses the acquisition.
+    ///
+    /// # Security
+    ///
+    /// Canonicalization changes the Kerberos principal the token is for and
+    /// nothing else: the connection, the TLS server name, the `Host` header, the
+    /// redirect and cookie origin and the channel binding stay the URI host's.
+    /// DNS answers are not authenticated, so `policy` is the authority that
+    /// lets a canonical name receive the token.
+    #[inline]
+    #[must_use]
+    pub fn with_host_name_policy<P>(mut self, policy: P) -> Self
+    where
+        P: HostNamePolicy + 'static,
+    {
+        self.host_policy = Some(Box::new(policy));
         self
     }
 
@@ -412,9 +511,9 @@ impl<X: HttpExchange> NegotiateHttpClient<X> {
     ///
     /// # Errors
     ///
-    /// Returns the errors of [`Self::round`] and [`Self::context_for`],
-    /// [`Error::ChallengeLimit`], [`Error::ChallengeTooLarge`] and, when
-    /// `mutual` is set, [`Error::MutualAuthenticationNotProven`].
+    /// Returns the errors of [`Self::round`], [`Error::ChallengeLimit`],
+    /// [`Error::ChallengeTooLarge`] and, when `mutual` is set,
+    /// [`Error::MutualAuthenticationNotProven`].
     ///
     /// # Cancel safety
     ///
@@ -424,12 +523,12 @@ impl<X: HttpExchange> NegotiateHttpClient<X> {
         chain: &mut Chain,
         mutual: bool,
     ) -> Result<(Response<Vec<u8>>, Option<Negotiated>), Error> {
-        let mut sent = if chain.is_authenticated() {
-            Some(self.context_for(chain.origin()).await?)
+        let first = if chain.is_authenticated() {
+            Attempt::Token { challenge: None }
         } else {
-            None
+            Attempt::Anonymous
         };
-        let mut response = self.round(chain, sent.as_ref()).await?;
+        let (mut response, mut sent, mut channel) = self.round(chain, first).await?;
         let mut rounds = 0_u8;
         while chain.on_home() && is_fresh_challenge(&response)? {
             check_challenge_size(&response, self.max_challenge_bytes)?;
@@ -439,9 +538,10 @@ impl<X: HttpExchange> NegotiateHttpClient<X> {
                 });
             }
             rounds = rounds.saturating_add(1);
-            let fresh = self.context_for(chain.origin()).await?;
-            response = self.round(chain, Some(&fresh)).await?;
-            sent = Some(fresh);
+            let attempt = Attempt::Token {
+                challenge: channel.as_ref(),
+            };
+            (response, sent, channel) = self.round(chain, attempt).await?;
             chain.authenticate();
         }
         let Some(context) = sent else {
@@ -469,49 +569,112 @@ impl<X: HttpExchange> NegotiateHttpClient<X> {
         ))
     }
 
-    /// The initiator context for the `HTTP/<host>` service of `origin`.
+    /// The `HTTP/<host>` service of `origin`: the one place the client derives
+    /// the service name from the URI host (lower-cased by [`Origin`]).
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Negotiate`] when the service name is invalid or no
-    /// token can be built.
-    ///
-    /// # Cancel safety
-    ///
-    /// cancel-safe: the client caches a service ticket only after its exchange
-    /// completes, so dropping the future leaves it consistent.
-    async fn context_for(&mut self, origin: &Origin) -> Result<InitiatorContext, Error> {
-        let service = self
-            .service_realm
+    /// Returns [`Error::Negotiate`] when the service name is invalid.
+    fn service_for(&self, origin: &Origin) -> Result<Principal, Error> {
+        self.service_realm
             .as_ref()
             .map_or_else(
                 || Principal::host_based_service("HTTP", origin.host()),
                 |realm| Principal::host_based_service_in_realm("HTTP", origin.host(), realm),
             )
-            .map_err(|source| Error::Negotiate(Http::from(source)))?;
-        self.negotiate
-            .authorization_context_with_options(service, self.options.clone())
-            .await
             .map_err(|source| Error::Negotiate(Http::from(source)))
     }
 
-    /// Send the current request of `chain`, with `context`'s token and the
-    /// jar's cookies, and feed the jar with the response.
+    /// The initiator options of a token sent over a connection whose TLS peer
+    /// is `channel`, under the channel-binding policy.
+    ///
+    /// With a connection binding, it replaces any bindings of the configured
+    /// options: a token describes the connection that carries it.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Negotiate`] for a token that is not a header value and
-    /// the exchange's errors.
+    /// Returns [`Error::ChannelBindingUnavailable`] when bindings are required
+    /// and the connection has none.
+    fn options_for(&self, channel: Option<&TlsChannel>) -> Result<InitiatorContextOptions, Error> {
+        let bindings = channel.and_then(TlsChannel::server_end_point);
+        let options = self.options.clone();
+        match (self.binding, bindings) {
+            (ChannelBindingPolicy::Off, _) | (ChannelBindingPolicy::WhenAvailable, None) => {
+                Ok(options)
+            }
+            (ChannelBindingPolicy::WhenAvailable | ChannelBindingPolicy::Required, Some(found)) => {
+                Ok(options.with_channel_bindings(found.clone()))
+            }
+            (ChannelBindingPolicy::Required, None) => Err(Error::ChannelBindingUnavailable {
+                reason: if channel.is_some() {
+                    "RFC 5929 defines no tls-server-end-point hash this client computes for the peer certificate"
+                } else {
+                    "the exchange reports no TLS channel for the connection"
+                },
+            }),
+        }
+    }
+
+    /// Open a connection for the current request of `chain`, add the jar's
+    /// cookies and, for [`Attempt::Token`], a token built for that connection,
+    /// send it over that connection and feed the jar with the response.
+    ///
+    /// Returns the response, the context of the token sent and the TLS peer of
+    /// the connection. The token is built after the connection is open, so the
+    /// service ticket may be requested from the KDC while it waits.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ChannelChanged`] when the connection presents another
+    /// certificate than the one that carried the challenge, the errors of
+    /// [`Self::options_for`] and [`Self::service_for`], [`Error::Negotiate`]
+    /// when no token can be built or it is not a header value, and the
+    /// exchange's errors. Every failure before the send sends nothing.
     ///
     /// # Cancel safety
     ///
     /// NOT cancel-safe, see the module documentation.
-    async fn round(
-        &mut self,
-        chain: &Chain,
-        context: Option<&InitiatorContext>,
-    ) -> Result<Response<Vec<u8>>, Error> {
+    async fn round(&mut self, chain: &Chain, attempt: Attempt<'_>) -> Result<Round, Error> {
+        let connection = self
+            .exchange
+            .connect(chain.uri())
+            .await
+            .map_err(Error::Exchange)?;
+        let channel = connection.tls_channel().cloned();
+        let context = match attempt {
+            Attempt::Anonymous => None,
+            Attempt::Token { challenge } => {
+                if challenge.is_some_and(|seen| channel.as_ref() != Some(seen)) {
+                    return Err(Error::ChannelChanged);
+                }
+                let options = self.options_for(channel.as_ref())?;
+                let origin = chain.origin();
+                // Explicit host acquisition, unless the realm is an explicit input: only
+                // the principal is derived from the canonical name, the origin stays the
+                // URI host's.
+                let acquisition = self
+                    .host_policy
+                    .as_deref()
+                    .filter(|_| self.service_realm.is_none());
+                let built = if let Some(policy) = acquisition {
+                    self.negotiate
+                        .authorization_context_for_acquired_host_with_options(
+                            ("HTTP", origin.host()),
+                            policy,
+                            options,
+                        )
+                        .await
+                } else {
+                    let service = self.service_for(origin)?;
+                    self.negotiate
+                        .authorization_context_with_options(service, options)
+                        .await
+                };
+                Some(built.map_err(|source| Error::Negotiate(Http::from(source)))?)
+            }
+        };
         let authorization = context
+            .as_ref()
             .map(|found| {
                 let mut value = HeaderValue::from_str(found.header_ref())?;
                 value.set_sensitive(true);
@@ -535,11 +698,7 @@ impl<X: HttpExchange> NegotiateHttpClient<X> {
             target: Identity::new(chain.origin().host()),
             size: request.body().len(),
         });
-        let response = self
-            .exchange
-            .exchange(request)
-            .await
-            .map_err(Error::Exchange)?;
+        let response = connection.send(request).await.map_err(Error::Exchange)?;
         self.trace.emit(&Event::Transport {
             step: TransportStep::Answered,
             wire,
@@ -549,7 +708,7 @@ impl<X: HttpExchange> NegotiateHttpClient<X> {
         if let Some(jar) = self.jar.as_mut() {
             jar.store(chain.uri(), response.headers());
         }
-        Ok(response)
+        Ok((response, context, channel))
     }
 }
 

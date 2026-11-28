@@ -15,7 +15,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::{CertificatePolicy, DhGroup, EkuChecking, KdcTrust, MAX_CRL_BYTES, ops};
+use super::{
+    CertificatePolicy, DhGroup, EkuChecking, KdcTrust, MAX_CRL_BYTES, MAX_IDENTITIES, ops,
+};
 use crate::{
     config::{
         Config, Toggle,
@@ -198,26 +200,24 @@ pub(super) fn pkinit_trust(config: &Config, realm: &str) -> Result<KdcTrust, Err
         .with_crls(pkinit_pem_files(config, realm, "pkinit_revoke", true)?))
 }
 
+/// The `pkinit_cert_match` rule texts of `realm`, when configured.
+pub(super) fn pkinit_cert_rules(config: &Config, realm: &str) -> Option<Vec<String>> {
+    match relation(config, realm, "pkinit_cert_match") {
+        Some(Value::List(rules)) => Some(rules.clone()),
+        _ => None,
+    }
+}
+
 /// `pkinit_identities` of `realm` as `(certificate, key)` pairs: `FILE:cert[,key]`,
 /// and for `DIR:` each `*.crt` with its `*.key` (MIT `pkinit_get_certs_dir`).
 ///
-/// `pkinit_cert_match` rules select among identities with POSIX regular
-/// expressions (MIT `pkinit_matching.c`); no regex engine is admitted, so a
-/// configured rule is refused rather than skipped.
-///
 /// # Errors
-/// Returns the location and directory errors, and
-/// [`Error::UnsupportedLocation`] when `pkinit_cert_match` is set.
+/// Returns the location and directory errors and [`Error::TooLarge`] for more
+/// than [`MAX_IDENTITIES`] identities.
 pub(super) fn pkinit_identity_files(
     config: &Config,
     realm: &str,
 ) -> Result<Vec<(PathBuf, Option<PathBuf>)>, Error> {
-    if relation(config, realm, "pkinit_cert_match").is_some() {
-        return Err(unsupported(
-            "pkinit_cert_match",
-            "certificate matching rules",
-        ));
-    }
     let Some(Value::Locations(locations)) = relation(config, realm, "pkinit_identities") else {
         return Ok(Vec::new());
     };
@@ -243,6 +243,12 @@ pub(super) fn pkinit_identity_files(
             Location::Pkcs12(_) => return Err(unsupported("pkinit_identities", "PKCS12")),
             Location::Environment(_) => return Err(unsupported("pkinit_identities", "nested ENV")),
         }
+    }
+    if out.len() > MAX_IDENTITIES {
+        return Err(Error::TooLarge {
+            structure: "pkinit_identities",
+            limit: MAX_IDENTITIES,
+        });
     }
     Ok(out)
 }

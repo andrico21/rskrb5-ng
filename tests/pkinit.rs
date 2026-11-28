@@ -31,6 +31,30 @@ mod kdc;
 #[path = "pkinit/scenarios.rs"]
 mod scenarios;
 
+/// `pkinit_cert_match` selection.
+#[cfg(test)]
+#[cfg(feature = "pkinit")]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "pkinit/matching.rs"]
+mod matching;
+
+/// `pkinit_cert_match` rejections.
+#[cfg(test)]
+#[cfg(feature = "pkinit")]
+#[expect(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    reason = "test code is not rendered API documentation"
+)]
+#[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
+#[path = "pkinit/matching_errors.rs"]
+mod matching_errors;
+
 /// Configuration, with and without the leaf.
 #[cfg(test)]
 #[expect(

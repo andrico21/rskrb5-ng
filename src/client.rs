@@ -44,8 +44,10 @@ use crate::{
 #[cfg(feature = "tokio")]
 use crate::{
     config::{credential_names, parameters::DefaultName},
+    discovery::hostname::{CanonicalizationPolicy, HostNamePolicy},
     file_name,
     keytab::configured_keytab,
+    preauth::fast::Policy as FastPolicy,
     routing::{
         impersonation::{self, Delegation, DelegationOptions, S4uIdentity},
         init_creds::{self, Verification, VerifyOptions},
@@ -1596,8 +1598,10 @@ impl Tokio {
     /// Create a cache-only client by loading a ccache name.
     ///
     /// Bare paths, `FILE:path`, `WRFILE:path`, and MIT `DIR:` collection names
-    /// are supported by the ccache module. Other credential cache stores are
-    /// rejected explicitly.
+    /// are supported by the ccache module, and so are `KCM:` names, which reach
+    /// the daemon `config` names (`kcm_socket`, `kcm_mach_service`; see
+    /// [`ccache::configured`]). Other credential cache stores are rejected
+    /// explicitly.
     /// # Errors
     ///
     /// Returns [`Error::CCache`] when the cache name uses an unsupported store or
@@ -1611,7 +1615,7 @@ impl Tokio {
     where
         P: AsRef<str>,
     {
-        let cache = ccache::CCache::load_name(cache_name)?;
+        let cache = ccache::configured::load_name(&config, cache_name.as_ref())?;
         Self::try_from_ccache(config, protocol, &cache)
     }
     /// Create a cache-only client from `config.libdefaults.default_ccache_name`.
@@ -1630,7 +1634,8 @@ impl Tokio {
     #[inline]
     pub fn from_default_ccache_name(config: Config, protocol: KdcProtocol) -> Result<Self, Error> {
         let cache_name = configured_default_ccache_name(&config)?;
-        let cache = ccache::CCache::load_resolved_name(&cache_name)?;
+        let cache =
+            ccache::CCache::load_resolved_name_with(&cache_name, Some(&config.libdefaults))?;
         Self::try_from_ccache(config, protocol, &cache)
     }
     /// Create a cache-only client from the default credential cache.
@@ -1654,7 +1659,8 @@ impl Tokio {
     #[inline]
     pub fn from_default_ccache(config: Config, protocol: KdcProtocol) -> Result<Self, Error> {
         let cache_name = default_ccache_name(&config)?;
-        let cache = ccache::CCache::load_resolved_name(&cache_name)?;
+        let cache =
+            ccache::CCache::load_resolved_name_with(&cache_name, Some(&config.libdefaults))?;
         Self::try_from_ccache(config, protocol, &cache)
     }
     /// Create a cache-only client by loading the file ccache named by `KRB5CCNAME`.
@@ -1672,7 +1678,7 @@ impl Tokio {
     /// cannot be loaded.
     #[inline]
     pub fn from_ccache_env(config: Config, protocol: KdcProtocol) -> Result<Self, Error> {
-        let cache = ccache::CCache::load_from_env()?;
+        let cache = ccache::CCache::load_from_env_with(Some(&config.libdefaults))?;
         Self::try_from_ccache(config, protocol, &cache)
     }
     #[must_use]
@@ -1742,7 +1748,7 @@ impl Tokio {
     where
         P: AsRef<str>,
     {
-        self.to_ccache()?.save_name(cache_name)?;
+        ccache::configured::save_name(&self.config, &self.to_ccache()?, cache_name.as_ref())?;
         Ok(())
     }
     /// Save current TGT and service-ticket state to `config.libdefaults.default_ccache_name`.
@@ -1760,8 +1766,10 @@ impl Tokio {
     /// and the errors of [`Self::save_ccache_name`].
     #[inline]
     pub fn save_default_ccache_name(&self) -> Result<(), Error> {
-        self.to_ccache()?
-            .save_resolved_name(&configured_default_ccache_name(&self.config)?)?;
+        self.to_ccache()?.save_resolved_name_with(
+            &configured_default_ccache_name(&self.config)?,
+            Some(&self.config.libdefaults),
+        )?;
         Ok(())
     }
     /// Save current TGT and service-ticket state to the default credential cache.
@@ -1787,8 +1795,10 @@ impl Tokio {
     /// [`Self::save_ccache_name`].
     #[inline]
     pub fn save_default_ccache(&self) -> Result<(), Error> {
-        self.to_ccache()?
-            .save_resolved_name(&default_ccache_name(&self.config)?)?;
+        self.to_ccache()?.save_resolved_name_with(
+            &default_ccache_name(&self.config)?,
+            Some(&self.config.libdefaults),
+        )?;
         Ok(())
     }
     /// Load an existing ccache when present, update this client's entries, and save it.
@@ -1910,7 +1920,7 @@ impl Tokio {
     #[must_use]
     /// Override the transport used for KDC exchanges.
     #[inline]
-    pub const fn with_transport(mut self, transport: TokioKdcTransport) -> Self {
+    pub fn with_transport(mut self, transport: TokioKdcTransport) -> Self {
         self.transport = transport;
         self
     }
@@ -1929,6 +1939,17 @@ impl Tokio {
     #[must_use]
     pub fn with_trace(mut self, guard: Guard) -> Self {
         self.trace = guard;
+        self
+    }
+    /// Armor the TGS requests of service-ticket acquisition with FAST under
+    /// `policy`; the default is [`FastPolicy::Off`], the plain request.
+    ///
+    /// See [`transport::Tokio::with_tgs_fast`] for the scope, the reason for the
+    /// default and the downgrade rule of each policy.
+    #[inline]
+    #[must_use]
+    pub fn with_tgs_fast(mut self, policy: FastPolicy) -> Self {
+        self.transport = self.transport.with_tgs_fast(policy);
         self
     }
     #[must_use]
@@ -2166,7 +2187,7 @@ impl Tokio {
     #[inline]
     pub fn cached_service_ticket(&self, service: Principal) -> Option<TgsRepSession> {
         crypto_policy::ready(self).ok()?;
-        let resolved = self.resolve_service_principal(service);
+        let resolved = self.resolve_service_principal(service).ok()?;
         let key = service_cache_key(&resolved);
         let mut ticket = self.service_tickets.get(&key)?.clone();
         crypto_policy::session(
@@ -2184,7 +2205,7 @@ impl Tokio {
     /// Remove a cached service ticket without dropping the TGT.
     #[inline]
     pub fn remove_cached_service_ticket(&mut self, service: Principal) -> Option<TgsRepSession> {
-        let resolved = self.resolve_service_principal(service);
+        let resolved = self.resolve_service_principal(service).ok()?;
         let key = service_cache_key(&resolved);
         self.service_tickets.remove(&key)
     }
@@ -2512,6 +2533,46 @@ impl Tokio {
         }
         result
     }
+    /// Acquire a ticket for the host-based service `service` on `host` with the
+    /// profile's host-name canonicalization (`dns_canonicalize_hostname`,
+    /// `rdns`, `qualify_shortname`), trying each canonical name that `policy`
+    /// approves (MIT `k5_canonprinc`). The returned ticket names the service
+    /// principal that was used.
+    ///
+    /// This is the explicit host-acquisition operation: the other acquisition
+    /// methods, [`Principal::host_based_service`] and explicit principals never
+    /// canonicalize, so they make no DNS lookup whatever the profile says.
+    ///
+    /// # Security
+    ///
+    /// See [`CanonicalizationPolicy::acquire`]: a canonical name other than the
+    /// requested host itself is used only when `policy` approves it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidPrincipalName`] for an empty service or host,
+    /// [`Error::HostNameNotApproved`] when `policy` refuses every canonical
+    /// name, and the errors of [`Self::get_service_ticket`].
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe as [`Self::get_service_ticket`].
+    #[inline]
+    pub async fn get_host_service_ticket(
+        &mut self,
+        service: &str,
+        host: &str,
+        policy: &dyn HostNamePolicy,
+    ) -> Result<TgsRepSession, Error> {
+        let canonicalization = CanonicalizationPolicy::from_config(&self.config);
+        let transport = self.transport.clone();
+        canonicalization
+            .acquire(&transport, (host, policy), async |name: &str| {
+                self.get_service_ticket(Principal::host_based_service(service, name)?)
+                    .await
+            })
+            .await
+    }
 
     /// Acquire a service ticket with a clock shared by the cache-selection decisions.
     ///
@@ -2529,7 +2590,7 @@ impl Tokio {
         F: FnMut() -> SystemTime,
     {
         crypto_policy::ready(self)?;
-        let service = self.resolve_service_principal(requested);
+        let service = self.resolve_service_principal(requested)?;
         let key = service_cache_key(&service);
         if let Some(mut ticket) = self.service_tickets.get(&key).cloned() {
             crypto_policy::session(
@@ -3009,14 +3070,20 @@ impl Tokio {
         crypto_policy::ready(self)?;
         TgsReq::from_libdefaults(SystemTime::now(), random_nonce()?, &self.config.libdefaults)
     }
-    /// Fill in an empty service realm from the domain-realm mapping, falling back
-    /// to the client realm.
-    fn resolve_service_principal(&self, mut service: Principal) -> Principal {
+    /// Fill in an empty service realm: the transport's registered host-realm
+    /// mappers, then the domain-realm mapping and `default_realm`, falling back
+    /// to the client realm. An explicit realm is kept.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Locate`] for a registered mapper that fails or answers
+    /// malformed data.
+    fn resolve_service_principal(&self, mut service: Principal) -> Result<Principal, Error> {
         if service.realm.is_empty() {
-            service.realm =
-                service_realm(&self.config, &service).unwrap_or_else(|| self.client.realm.clone());
+            service.realm = service_realm(&self.transport, &self.config, &service)?
+                .unwrap_or_else(|| self.client.realm.clone());
         }
-        service
+        Ok(service)
     }
 
     /// All cached TGT and service-ticket sessions as ccache credentials.
@@ -5859,14 +5926,27 @@ fn tgt_realm(session: &AsRepSession) -> Option<String> {
     }
 }
 
-/// The realm mapped to the service host (its last component), if any.
+/// The realm mapped to the service host (its last component), if any: the
+/// registered host-realm mappers of `transport`, then `[domain_realm]` and
+/// `default_realm`.
+///
+/// # Errors
+///
+/// Returns [`Error::Locate`] for a registered mapper that fails or answers
+/// malformed data.
 #[cfg(feature = "tokio")]
-fn service_realm(config: &Config, service: &Principal) -> Option<String> {
-    service
-        .components
-        .last()
-        .and_then(|host| config.realm_for_host(host))
-        .map(str::to_owned)
+fn service_realm(
+    transport: &TokioKdcTransport,
+    config: &Config,
+    service: &Principal,
+) -> Result<Option<String>, Error> {
+    let Some(host) = service.components.last() else {
+        return Ok(None);
+    };
+    let mapped = transport
+        .host_realms(config)
+        .host_realm(transport.registry(), host)?;
+    Ok(mapped.or_else(|| config.realm_for_host(host).map(str::to_owned)))
 }
 
 /// Convert a string to an ASN.1 Kerberos string.

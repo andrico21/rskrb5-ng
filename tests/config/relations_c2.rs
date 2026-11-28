@@ -10,52 +10,10 @@
 mod tests {
     use core::error::Error;
 
-    use rskrb5_ng::config::{Config, ConfigDiagnostic, ParseMode};
-
-    /// Selected deferred values retain their type and name the missing package.
-    fn deferred(name: &str, values: &[&str], package: &str) -> Result<(), Box<dyn Error>> {
-        for value in values {
-            // Given a first scalar and an ignored duplicate, when parsed, then diagnose.
-            let text = format!("[libdefaults]\n {name} = {value}\n {name} = invalid-later\n");
-            let config = Config::parse(&text)?;
-            assert!(config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation, package: owner } if *relation == name && *owner == package)));
-            drop(
-                Config::parse_with_mode(&text, ParseMode::Strict)
-                    .err()
-                    .ok_or("strict accepted deferred relation")?,
-            );
-            let defaults = &config.libdefaults;
-            match name {
-                "k5login_authoritative" => assert_eq!(
-                    defaults.k5login_authoritative.is_enabled(),
-                    *value == "true"
-                ),
-                "k5login_directory" => assert_eq!(defaults.k5login_directory, *value),
-                "kcm_mach_service" => assert_eq!(defaults.kcm_mach_service, *value),
-                "plugin_base_dir" => assert_eq!(defaults.plugin_base_dir, *value),
-                "kdc_timesync" => assert_eq!(defaults.kdc_time_sync, value.parse::<i32>()?),
-                "noaddresses" => assert!(defaults.no_addresses.is_enabled()),
-                "spake_preauth_groups" => {
-                    assert_eq!(defaults.spake_preauth_groups, ["edwards25519", "P-256"]);
-                }
-                "preferred_preauth_types" => {
-                    assert_eq!(defaults.preferred_preauth_types, [17_i32, 16_i32]);
-                    assert!(
-                        config
-                            .diagnostics()
-                            .contains(&ConfigDiagnostic::IgnoredPreauthType { id: 14_i32 })
-                    );
-                    assert!(
-                        config
-                            .diagnostics()
-                            .contains(&ConfigDiagnostic::IgnoredPreauthType { id: 15_i32 })
-                    );
-                }
-                _ => return Err(format!("missing typed assertion {name}").into()),
-            }
-        }
-        Ok(())
-    }
+    use rskrb5_ng::{
+        config::{Config, ConfigDiagnostic, ParseMode},
+        error::Config as ConfigError,
+    };
 
     /// Effective relations: typed value, ignored duplicates, no diagnostic in either mode.
     fn effective(name: &str, values: &[&str]) -> Result<(), Box<dyn Error>> {
@@ -73,6 +31,7 @@ mod tests {
                 "realm_try_domains" => {
                     assert_eq!(defaults.realm_try_domains, value.parse::<i32>()?);
                 }
+                "kcm_mach_service" => assert_eq!(defaults.kcm_mach_service, *value),
                 "rdns" => assert_eq!(defaults.rdns.is_enabled(), *value == "true"),
                 "request_timeout" => assert_eq!(
                     defaults.request_timeout.as_secs(),
@@ -82,7 +41,11 @@ mod tests {
             }
             // And no diagnostic names the relation.
             for parsed in [&config, &strict] {
-                assert!(!parsed.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == name)));
+                assert!(
+                    parsed.diagnostics().is_empty(),
+                    "{name}: {:?}",
+                    parsed.diagnostics()
+                );
             }
         }
         Ok(())
@@ -99,25 +62,59 @@ mod tests {
         )+};
     }
     effective_cases! {
+        kcm_mach_service, ["org.example.kcm", "-"];
         qualify_shortname, ["", "example.test"];
         rdns, ["true", "false"];
         realm_try_domains, ["-1", "0", "2"];
         request_timeout, ["0", "0s", "1s"];
     }
 
-    /// Independent named tests over the common scalar/diagnostic contract.
-    macro_rules! deferred_cases {
-        ($($name:ident, $package:literal, [$($value:literal),+];)+) => {$ (
-            /// The named relation retains its typed scalar and deferred package.
-            #[test]
-            fn $name() -> Result<(), Box<dyn Error>> {
-                deferred(stringify!($name), &[$($value),+], $package)
-            }
-        )+};
+    /// A nonzero `request_timeout` is effective, so a serialized configuration
+    /// carrying one deserializes unchanged (the serde guard that refused it
+    /// predated the total request budget).
+    #[cfg(feature = "serde")]
+    #[test]
+    fn request_timeout_survives_serde() -> Result<(), Box<dyn Error>> {
+        use rskrb5_ng::config::LibDefaults;
+        let config = Config::parse("[libdefaults]\n request_timeout = 7s\n")?;
+        let json = serde_json::to_string(&config.libdefaults)?;
+        let decoded: LibDefaults = serde_json::from_str(&json)?;
+        assert_eq!(decoded.request_timeout.as_secs(), 7);
+        Ok(())
     }
-    deferred_cases! {
-        kcm_mach_service, "plan 2 WP-09", ["org.example.kcm", "-"];
-        plugin_base_dir, "plan 2 WP-16", ["/never-load", "%{LIBDIR}/krb5/plugins"];
+
+    /// `plugin_base_dir` is permanently out of scope (D1/D3).
+    ///
+    /// It names the directory MIT loads plugin code from, which this library
+    /// never does: the value is kept inert, Compatible mode reports the
+    /// permanent decision and Strict mode refuses it.
+    #[test]
+    fn plugin_base_dir() -> Result<(), Box<dyn Error>> {
+        for value in ["/never-load", "%{LIBDIR}/krb5/plugins"] {
+            let text = format!("[libdefaults]\n plugin_base_dir = {value}\n");
+            let config = Config::parse(&text)?;
+            assert_eq!(config.libdefaults.plugin_base_dir, value);
+            assert!(
+                config
+                    .diagnostics()
+                    .contains(&ConfigDiagnostic::OutOfScope {
+                        relation: "plugin_base_dir",
+                        decision: "D1/D3",
+                    })
+            );
+            let strict = Config::parse_with_mode(&text, ParseMode::Strict);
+            assert!(
+                matches!(
+                    strict,
+                    Err(ConfigError::OutOfScope {
+                        relation: "plugin_base_dir",
+                        decision: "D1/D3"
+                    })
+                ),
+                "{strict:?}"
+            );
+        }
+        Ok(())
     }
 
     /// `client_aware_channel_bindings` is effective (consumer
@@ -140,13 +137,11 @@ mod tests {
                     enabled,
                     "{value}"
                 );
-                assert!(!config.diagnostics().iter().any(|item| matches!(
-                    item,
-                    ConfigDiagnostic::NotYetEffective {
-                        relation: "client_aware_channel_bindings",
-                        package: _
-                    }
-                )));
+                assert!(
+                    config.diagnostics().is_empty(),
+                    "{value}: {:?}",
+                    config.diagnostics()
+                );
             }
         }
         Ok(())
@@ -154,7 +149,7 @@ mod tests {
 
     /// `verify_ap_req_nofail` is effective (consumer `Tokio::verify_init_creds`).
     ///
-    /// Both values parse in both modes without a deferred diagnostic, and the
+    /// Both values parse in both modes without a diagnostic, and the
     /// profile records that it was set, since unset requires verification.
     #[test]
     fn verify_ap_req_nofail() -> Result<(), Box<dyn Error>> {
@@ -175,13 +170,11 @@ mod tests {
                     defaults.verify_ap_req_nofail_explicit.is_enabled(),
                     "{value}"
                 );
-                assert!(!config.diagnostics().iter().any(|item| matches!(
-                    item,
-                    ConfigDiagnostic::NotYetEffective {
-                        relation: "verify_ap_req_nofail",
-                        package: _
-                    }
-                )));
+                assert!(
+                    config.diagnostics().is_empty(),
+                    "{value}: {:?}",
+                    config.diagnostics()
+                );
             }
         }
         // And an unset relation stays unset.
@@ -290,13 +283,17 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn kcm_socket() -> Result<(), Box<dyn Error>> {
+        use std::path::Path;
+
         use rskrb5_ng::{ccache::kcm::Store, error::Kcm};
         for (value, expected) in [("/run/kcm.sock", Some("/run/kcm.sock")), ("-", None)] {
             let text = format!("[libdefaults]\n kcm_socket = {value}\n");
             let config = Config::parse_with_mode(&text, ParseMode::Strict)?;
             assert!(config.diagnostics().is_empty(), "{value} was diagnosed");
             match (Store::from_libdefaults(&config.libdefaults), expected) {
-                (Ok(store), Some(path)) => assert_eq!(store.socket().to_str(), Some(path)),
+                (Ok(store), Some(path)) => {
+                    assert_eq!(store.socket().and_then(Path::to_str), Some(path));
+                }
                 (Err(Kcm::NoServer), None) => {}
                 (other, _) => return Err(format!("{value}: {other:?}").into()),
             }

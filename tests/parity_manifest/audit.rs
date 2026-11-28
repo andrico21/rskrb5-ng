@@ -24,7 +24,7 @@ const EVIDENCE: [&str; 6] = [
     "blocked",
 ];
 /// Dispositions other than the work packages `WP-01`..`WP-20`.
-const DISPOSITIONS: [&str; 5] = ["ALREADY", "POL-01", "D1", "D2", "D13"];
+const DISPOSITIONS: [&str; 6] = ["ALREADY", "POL-01", "D1", "D2", "D13", "D14"];
 
 /// Whether `disposition` is a work package `WP-01`..`WP-20`.
 fn is_work_package(disposition: &str) -> bool {

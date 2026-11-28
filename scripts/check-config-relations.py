@@ -52,9 +52,15 @@ Reference: [MIT krb5 1.22 documentation](https://web.mit.edu/kerberos/krb5-1.22/
 Defaults below are MIT's; stricter library defaults and unavailable consumers
 are noted in the classification. See [profile semantics](config-profile.md)
 and [security policy](security-policy.md) for explicit divergences and limits.
-Compatible mode reports deferred or unknown policy; Strict rejects every
-diagnostic. Unsupported settings that would tighten current behavior fail in
-both modes. Parsed values do not imply an implemented mechanism.
+Compatible mode reports unknown policy, relations whose consumer needs a leaf
+Cargo feature this build lacks (`FeatureUnavailable`) and relations an owner
+decision excludes (`OutOfScope`); Strict rejects every diagnostic. Settings that
+would tighten current behavior beyond what the library provides fail in both
+modes. A parsed value takes effect only where its consumer is compiled in.
+
+Anonymous credentials are an API option, not a profile relation: request
+them per exchange with `client::stepwise::InitCredsOptions::with_anonymous`
+(MIT `krb5_get_init_creds_opt_set_anonymous`).
 
 """
 

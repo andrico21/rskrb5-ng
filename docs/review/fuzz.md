@@ -42,16 +42,18 @@ the chosen entry point, so one target covers a family of related decoders.
 | `spake_message` | a KDC's PA-SPAKE value (RFC 9588) | `preauth::spake::Message::decode` twice (deterministic), then a fresh `Client` permitting all four groups answers the value twice (`Client::process`): support message for empty or out-of-policy values, response for a challenge in a permitted group, which decodes and validates the edwards25519, P-256, P-384 or P-521 element and derives `K'[0]` and `K'[1]`; a second challenge must be refused |
 | `otp_challenge` | a KDC's `PA-OTP-CHALLENGE` value (RFC 6560) | `preauth::otp::Challenge::decode` twice (deterministic) and once under a tight policy (token count, field and challenge bounds), then an accepted challenge answers every token and one index past the list, with a value and with a value and a PIN, under an AES256 armor key (`Challenge::request`): every request built is an OTP padata of the request type |
 | `pkinit_reply` | the KDC's reply to a PA-PK-AS-REQ (RFC 4556 PKINIT) | the stepwise AS engine with a certificate `preauth::pkinit::Exchange` after a fixed `PREAUTH_REQUIRED`: mode 0 the raw reply (AS-REP or KRB-ERROR, the PA-PK-AS-REP lookup), mode 1 the bytes as the PA-PK-AS-REP value of an AS-REP (`PA-PK-AS-REP`, `DHRepInfo`, the CMS `ContentInfo` and `SignedData`, X.509 certificates and CRLs, the bounded path validator, `KDCDHKeyInfo` and the key agreement); no fuzzed reply may complete the exchange |
+| `pkinit_cert_match` | the text of a `pkinit_cert_match` rule, a newline, then the DER bytes of a candidate certificate | `preauth::pkinit::matching::CertificateRules::parse` (the bounded `[&&\|\|\|]` list of `<SUBJECT>`, `<ISSUER>`, `<SAN>`, `<EKU>` and `<KU>` components, the POSIX-subset validator and the linear-time `regex` compiler), then `select` over the fuzzed certificate and the OpenSSL fixtures of `tests/pkinit/fixtures/match` (`Facts::from_der`: the subject, issuer, SAN and key usage text as OpenSSL prints it); a fixed rule list also runs over the fuzzed certificate alone; a selected index is always a candidate |
 | `routing_transit` | a ticket's DOMAIN-X500-COMPRESS transited encoding (RFC 4120 section 3.3.3.2), a KDC's `PA-S4U-X509-USER` (MS-SFU) and the text of two realm names, one selector byte then bytes or text | `routing::transited::decode` between two fixed realms (an accepted list stays within `MAX_REALMS` and, when `encode` takes it, decodes again to the same list), `routing::s4u::PaS4uX509User::decode_der` (then encode and decode again must give the same element), and `routing::RealmPath::hierarchical` (a path starts at the first realm, ends at the second and stays within `RealmPath::MAX_REALMS`) |
 | `localauth_rule` | the text of an `auth_to_local` value, a newline, then a principal (`a/b/c` in `EXAMPLE.COM`) | `localauth::AuthToLocalRule::parse` (the bounded `RULE:[n:format](regex)s/re/text/g` grammar and the linear-time `regex` compiler), then `apply` on the principal and `principal_to_local_name` through a `LocalNameMapper` (a result stays within the selection bound, a mapped name is never empty, longer than 64 bytes or NUL-holding) |
 | `localauth_k5login` | a principal (`a/b@REALM`, up to the first newline), then the bytes of a `.k5login` file | `localauth::k5login::lists` (the size, line-count and line-length bounds and the exact line match; a file past the size bound is refused) |
 | `replay_file` | a selector byte, then the bytes of an existing MIT `file2` replay-cache file, or a replay-cache name | `replay::File2ReplayStore::admit` over an in-memory file holding the fuzzed bytes (the seed, the hash tables, truncated and hostile files; a tag accepted twice is a failure), and `replay::RcacheName::parse` (`dfl:`, `file2:<path>`, `none:`, `memory:`) |
-| `auth_message` | a selector byte, then a KRB-PRIV, KRB-SAFE, KRB-CRED, a DER element or an authorization-data element | `messages::AuthContext::rd_priv`, `rd_safe` and `rd_cred` (encrypted, and unencrypted over a vouched channel) under a fixed key, clock and sequence checking (an accepted message is refused the second time), the public `asn1` length, element, application-tag and structure readers under a size budget, and the `authdata` AD-KDC-ISSUED and AD-AND-OR decoders |
+| `auth_message` | a selector byte, then a KRB-PRIV, KRB-SAFE, KRB-CRED, a DER element or an authorization-data element | `messages::AuthContext::rd_priv`, `rd_safe` and `rd_cred` (encrypted, and unencrypted over a vouched channel) under a fixed key, clock and sequence checking (an accepted message is refused the second time), the public `asn1` length, element, application-tag and structure readers under a size budget, and the `authdata` AD-KDC-ISSUED, AD-AND-OR, AD-CAMMAC (with its service-verifier check under a fixed key) and AD-AUTHENTICATION-INDICATOR decoders |
 | `name_parse` | names and values as text | `Principal::parse_user`, `Principal::parse_service`, `CacheName::parse`, `keytab::Name::parse`, `KdcEndpoint::configured`, `Tokio::with_dns_server`, `config::parse_duration`, `config::parse_boolean`, `crypto::s2kparams_to_iterations` |
 | `discovery_uri` | the data DNS hands to server discovery, one selector byte then bytes or text | `discovery::uri::parse` (a `krb5srv:flags:transport:host` URI record target) and `host_port` on an accepted target, `split_rdata` (URI record data), `realm_from_txt` (the first string of a TXT realm record) and `host_port` on arbitrary text; the target text, the host and the realm stay within their bounds |
 | `http_location` | a base URI, a newline and a `Location` value | `http::origin::resolve_location` (absolute, scheme-relative, path-absolute, query-only and path-relative references, dot-segment removal, fragment removal; the refusals of user information, foreign schemes and forbidden bytes) and `Origin::of` on every accepted target |
 | `http_session` | a selector byte, then a session cookie value or `Cookie` header, or a principal | `SessionManager::resume` (base64url, the sealed-blob framing and the RFC 8009 authentication; no value the manager never sealed may resume) and `attach` on a `Cookie` header; an odd selector issues a session for the fuzzed principal and requires it to resume to the same principal |
 | `http_set_cookie` | a request URI, a newline and `Set-Cookie` values, one per line | `http::cookies::CookieStore::store_set_cookie` (parsing, the size, `Secure` and `Domain` refusals and the RFC 6265 storage model over a small public-suffix list) and `cookie_header` on the accepted jar (the `http-client` leaf) |
+| `http_tls_channel` | the DER end-entity certificate of a TLS peer | `http::wire::TlsChannel::from_end_entity` (the 64 KiB bound, the outer X.509 `Certificate` and its `signatureAlgorithm`, RFC 4055 RSASSA-PSS parameters) and the RFC 5929 `tls-server-end-point` hash it selects |
 
 The keys, keytabs, tickets and templates the targets use are the synthetic
 gokrb5 test vectors the tests already carry (`fuzz/fixtures/`). The fuzz
@@ -129,12 +131,14 @@ timeout artifact:
 | `kkdcp_message` | 6,458,968 (todo 16 of plan 2, 2026-11-21) | 121 s | 0 |
 | `otp_challenge` | 1,658,639 (todo 10 of plan 2, 2026-11-21) | 121 s | 0 |
 | `pkinit_reply` | 4,823 (todo 8 of plan 2, 2026-11-21) | 121 s | 0 |
+| `pkinit_cert_match` | 19,256 (todo 28 of plan 2, 2026-11-26) | 121 s | 0 |
 | `routing_transit` | 2,195,539 (todo 17 of plan 2, 2026-11-21) | 121 s | 0 |
 | `localauth_rule` | 283,256 (todo 25 of plan 2, 2026-11-22) | 121 s | 0 |
 | `localauth_k5login` | 2,439,093 (todo 25 of plan 2, 2026-11-22) | 121 s | 0 |
 | `http_location` | 1,197,682 (todo 26 of plan 2, 2026-11-25) | 61 s | 0 |
 | `http_session` | 469,278 (todo 26 of plan 2, 2026-11-25) | 61 s | 0 |
 | `http_set_cookie` | 242,019 (todo 26 of plan 2, 2026-11-25) | 61 s | 0 |
+| `http_tls_channel` | 1,523,382 (todo 28 of plan 2, 2026-11-26) | 62 s | 0 |
 | `gss_name` | 2,118,533 (todo 18 of plan 2, 2026-11-22) | 121 s | 0 |
 | `gss_context` | 1,096,589 (todo 18 of plan 2, 2026-11-22) | 121 s | 0 |
 | `gss_iov` | 24,211 (todo 19 of plan 2, 2026-11-23) | 121 s | 0 |
@@ -273,6 +277,23 @@ policy) and a KRB-ERROR. The run of 2026-11-21 made 4,823 executions in 121 s
 with no artifact. Coverage proof: `task-8-pkinit-coverage.tsv` in the
 execution evidence.
 
+### PKINIT certificate matching (todo 28 of plan 2)
+
+`pkinit_cert_match` fuzzes the rules an administrator writes into `krb5.conf` and
+the certificate text they are matched against. `CertificateRules::parse` reads at
+most 32 rules of 2,048 bytes (8 components, patterns of at most 512 bytes) and
+compiles every pattern with the linear-time `regex` engine under a compiled-size
+and a nesting limit, after a validator that refuses what POSIX and the engine
+read differently; an accepted rule selects among the fuzzed certificate and six
+OpenSSL fixture certificates, which renders the subject, the issuer, the PKINIT
+and UPN SANs and the key usage bits of the fuzzed bytes, and a fixed rule list
+runs over the fuzzed certificate alone (including `(a*)*b`, which stays linear).
+The seeds are the rules of MIT 1.22.2 `src/tests/t_pkinit.py` and of `krb5.conf(5)`
+over fixtures built to match them, malformed rules (a back-reference, `[.a.]`),
+a multi-valued RDN, a `BMPString` name and an RSA-keyed certificate. The run of
+2026-11-26 made 19,256 executions in 121 s with no artifact. Coverage proof:
+`task-28c-cert-match-coverage.tsv` in the execution evidence.
+
 ### PAC API (todo 22 of plan 2)
 
 `pac_parse` gained four entry points for what a service reads from a KDC or a peer:
@@ -341,6 +362,18 @@ such a value (regression test `a_non_ascii_cookie_is_refused`, seed
 `non-ascii-value`). The three 61-second runs recorded above are the clean ones after
 these two fixes. Coverage proof: `task-26-http-coverage.tsv` in the
 execution evidence.
+
+### TLS channel bindings of the HTTP client (todo 28 of plan 2)
+
+`http_tls_channel` fuzzes the certificate a TLS peer presents to the HTTP client.
+`TlsChannel::from_end_entity` refuses more than 64 KiB, decodes exactly one DER
+`Certificate` with its TBS part and signature opaque, reads the `signatureAlgorithm`
+(and RFC 4055 RSASSA-PSS parameters, whose trailer field must be 1) and picks the
+RFC 5929 section 4.1 hash; an accepted certificate keeps its bytes, and its bindings,
+when defined, are the `tls-server-end-point:` prefix and one SHA-2 digest. The seeds
+are the OpenSSL certificates of `tests/http_client/cbt/` (one per signature
+algorithm), the ECDSA server certificate of `tests/kkdcp/` and a non-certificate.
+Coverage proof: `task-28f-http-coverage.tsv` in the execution evidence.
 
 ### GSS-API (todo 18 of plan 2)
 
@@ -482,6 +515,10 @@ targets and proved their four rows the same way (4 of 4 mappings: `resolve_locat
 `SessionManager::resume`, the blob reader `open` and `CookieStore::store_set_cookie`;
 record `task-26-http-coverage.tsv` in the execution evidence). The other targets were
 not rebuilt in that lane.
+
+Plan 2 todo 28 (wave 11 lane F) added the `http_tls_channel` target and proved its two
+rows the same way (2 of 2 mappings: `TlsChannel::from_end_entity` and the hash selection
+`end_point::bindings`; record `task-28f-http-coverage.tsv` in the execution evidence).
 
 ## Round-trip properties
 
@@ -679,6 +716,8 @@ does.
 | `rskrb5_ng::asn1::identifier::read_identifier` | `src/asn1/identifier.rs` | `auth_message` |  |
 | `rskrb5_ng::authdata::decode` | `src/authdata.rs` | `auth_message` |  |
 | `rskrb5_ng::authdata::decode_and_or` | `src/authdata.rs` | `auth_message` |  |
+| `rskrb5_ng::authdata::decode_auth_indicators` | `src/authdata.rs` | `auth_message` |  |
+| `rskrb5_ng::authdata::decode_cammac` | `src/authdata.rs` | `auth_message` |  |
 | `rskrb5_ng::authdata::decode_kdc_issued` | `src/authdata.rs` | `auth_message` |  |
 | `rskrb5_ng::messages::forwarding::read_cred` | `src/messages/forwarding.rs` | `auth_message` |  |
 | `rskrb5_ng::messages::private_safe::read_priv` | `src/messages/private_safe.rs` | `auth_message` |  |
@@ -818,6 +857,8 @@ does.
 | `rskrb5_ng::http::sessions::SessionManager::resume` | `src/http/sessions.rs` | `http_session` |  |
 | `rskrb5_ng::http::sessions::blob::open` | `src/http/sessions/blob.rs` | `http_session` |  |
 | `rskrb5_ng::http::cookies::CookieStore::store_set_cookie` | `src/http/cookies.rs` | `http_set_cookie` |  |
+| `rskrb5_ng::http::wire::TlsChannel::from_end_entity` | `src/http/wire.rs` | `http_tls_channel` |  |
+| `rskrb5_ng::http::wire::end_point::bindings` | `src/http/wire/end_point.rs` | `http_tls_channel` |  |
 | `rskrb5_ng::pac::Pac::buffer_bytes` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::Pac::parse` | `src/pac.rs` | `pac_parse` |  |
 | `rskrb5_ng::pac::Pac::parse_and_process` | `src/pac.rs` | `pac_parse` |  |
@@ -837,6 +878,10 @@ does.
 | `rskrb5_ng::preauth::pkinit::chain::parse` | `src/preauth/pkinit/chain.rs` | `pkinit_reply` |  |
 | `rskrb5_ng::preauth::pkinit::chain::parse_crls` | `src/preauth/pkinit/chain.rs` | `pkinit_reply` |  |
 | `rskrb5_ng::preauth::pkinit::config::read` | `src/preauth/pkinit/config.rs` | - | reads a bounded local file named by the profile (`pkinit_identities`, `pkinit_anchors`, `pkinit_pool`, `pkinit_revoke`); its PEM content is decoded by `keys::pem_certificates`, whose certificates are re-parsed by `chain::parse` in `pkinit_reply` |
+| `rskrb5_ng::preauth::pkinit::matching::CertificateRules::parse` | `src/preauth/pkinit/matching.rs` | `pkinit_cert_match` |  |
+| `rskrb5_ng::preauth::pkinit::matching::parse_rule` | `src/preauth/pkinit/matching.rs` | `pkinit_cert_match` |  |
+| `rskrb5_ng::preauth::pkinit::matching_facts::Facts::from_der` | `src/preauth/pkinit/matching_facts.rs` | `pkinit_cert_match` |  |
+| `rskrb5_ng::preauth::pkinit::unavailable::Rules::parse` | `src/preauth/pkinit/unavailable.rs` | - | the build without the `pkinit` leaf: it only returns `Unavailable` and reads nothing; the leaf's parser is `matching::CertificateRules::parse` |
 | `rskrb5_ng::preauth::spake::Message::decode` | `src/preauth/spake.rs` | `spake_message` |  |
 | `rskrb5_ng::routing::s4u::PaS4uX509User::decode_der` | `src/routing/s4u.rs` | `routing_transit` |  |
 | `rskrb5_ng::routing::transited::decode` | `src/routing/transited.rs` | `routing_transit` |  |

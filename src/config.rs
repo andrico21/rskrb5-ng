@@ -185,7 +185,6 @@ pub struct Config {
     pub applications: section_values::Applications,
     /// Plugin restrictions by interface, without executable module loading.
     #[cfg_attr(feature = "serde", serde(default))]
-    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::plugins"))]
     pub plugins: BTreeMap<String, section_values::Plugins>,
 }
 
@@ -801,9 +800,8 @@ pub struct LibDefaults {
     /// Requested shortname suffix; None means unspecified, Some("") disables it.
     #[cfg_attr(feature = "serde", serde(default))]
     pub qualify_shortname: Option<String>,
-    /// Total request deadline; nonzero profile values fail until a total budget exists.
+    /// Total budget of each KDC and kpasswd request; zero is no budget.
     #[cfg_attr(feature = "serde", serde(default))]
-    #[cfg_attr(feature = "serde", serde(deserialize_with = "serde_policy::deadline"))]
     pub request_timeout: Duration,
     /// Recognized SPAKE group names; no SPAKE exchange is enabled.
     #[cfg_attr(feature = "serde", serde(default))]

@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rasn::der;
 use rskrb5_ng::{
+    Config,
     ccache::{
         CCache, Credential, CredentialTimes, EncryptionKey as CacheKey, Principal as CachePrincipal,
     },
@@ -15,7 +16,7 @@ use rskrb5_ng::{
         AsRepSession, KDC_OPTION_CANONICALIZE,
         options::AsReq,
         principal::Principal,
-        stepwise::{ExchangeStep, InitCreds, InitCredsOptions, StepInput},
+        stepwise::{Exchange as _, ExchangeStep, InitCreds, InitCredsOptions, StepInput},
     },
     error::{Client as ClientError, Fast},
     extensions::ProviderError,
@@ -87,12 +88,24 @@ fn login(
     fast: &mut Exchange,
     canonicalize: bool,
 ) -> Result<AsRepSession, ClientError> {
+    login_under(kdc, fast, (canonicalize, None))
+}
+
+/// Run a keytab exchange armored by `fast` against `kdc`, adopting `profile` when given.
+fn login_under(
+    kdc: &mut Kdc,
+    fast: &mut Exchange,
+    (canonicalize, profile): (bool, Option<&Config>),
+) -> Result<AsRepSession, ClientError> {
     let mut exchange = InitCreds::with_keytab(
         Principal::user(REALM, CLIENT),
         keytab(kdc),
         options(canonicalize),
     )
     .with_armor(fast);
+    if let Some(found) = profile {
+        exchange.configure(found);
+    }
     let mut step = exchange.step(StepInput::Start)?;
     loop {
         match step {
@@ -122,7 +135,7 @@ fn armored(kdc: &Kdc, policy: Policy) -> Result<Exchange, TestError> {
 type Expectation = fn(&Fast) -> bool;
 
 /// The FAST failure inside an exchange error.
-fn fast_cause(error: &ClientError) -> Option<&Fast> {
+pub(crate) fn fast_cause(error: &ClientError) -> Option<&Fast> {
     let mut source = error.source();
     while let Some(current) = source {
         if let Some(fast) = current.downcast_ref::<Fast>() {
@@ -169,6 +182,39 @@ fn required_fast_logs_in_with_the_encrypted_challenge() -> Result<(), TestError>
     }
     assert_eq!(fast.outcome(), Some(Outcome::Armored), "the outcome");
     fast.require_armored()?;
+    Ok(())
+}
+
+/// `[plugins] clpreauth` `disable = encrypted_challenge` leaves the armored
+/// exchange without the mechanism that answers the KDC's challenge: it is never
+/// answered, and nothing else takes its place silently.
+#[test]
+fn disabled_encrypted_challenge_is_never_answered() -> Result<(), TestError> {
+    let profile = Config::parse(
+        "[libdefaults]\n default_realm = FAST.TEST\n[plugins]\n clpreauth = {\n disable = encrypted_challenge\n }\n",
+    )?;
+    let mut kdc = Kdc::new();
+    let mut fast = armored(&kdc, Policy::Required)?;
+    let outcome = login_under(&mut kdc, &mut fast, (false, Some(&profile)));
+    assert!(
+        outcome.is_err(),
+        "the exchange completed without the mechanism"
+    );
+    assert!(
+        !kdc.challenge_verified(),
+        "an encrypted challenge reached the KDC"
+    );
+    let mut enabled_kdc = Kdc::new();
+    let mut enabled = armored(&enabled_kdc, Policy::Required)?;
+    let other = Config::parse(
+        "[libdefaults]\n default_realm = FAST.TEST\n[plugins]\n clpreauth = {\n disable = pkinit\n }\n",
+    )?;
+    drop(login_under(
+        &mut enabled_kdc,
+        &mut enabled,
+        (false, Some(&other)),
+    )?);
+    assert!(enabled_kdc.challenge_verified());
     Ok(())
 }
 

@@ -61,6 +61,8 @@ mod tests {
     /// Password change discovery through DNS for `KdcProtocol::Auto`.
     mod kpasswd_dns;
     mod kpasswd_order;
+    /// Password-change servers named by a registered locator.
+    mod kpasswd_registry;
     /// Checked password result regressions.
     mod password_results;
     /// The shared loopback port-pair helper and its retry proof.

@@ -15,8 +15,12 @@ mod tests {
         error::Config as ConfigError,
     };
 
-    /// Exercise typed admission and the actual diagnostic/error boundary.
-    fn deferred(name: &str, kind: &str, inputs: &[&str]) -> Result<(), Box<dyn Error>> {
+    /// Exercise typed admission and the permanent-scope diagnostic/error boundary.
+    fn out_of_scope(
+        name: &'static str,
+        kind: &str,
+        (decision, inputs): (&'static str, &[&str]),
+    ) -> Result<(), Box<dyn Error>> {
         for input in inputs {
             let text = format!("[realms]\n EXAMPLE = {{\n {name} = {input}\n }}\n");
             let config = Config::parse(&text)?;
@@ -30,11 +34,20 @@ mod tests {
                 ("text", Value::Text(scalar)) => assert_eq!(scalar, input),
                 _ => return Err(format!("wrong value kind {name}").into()),
             }
-            assert!(config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == name)));
-            drop(
-                Config::parse_with_mode(&text, ParseMode::Strict)
-                    .err()
-                    .ok_or("strict accepted deferred relation")?,
+            assert!(
+                config
+                    .diagnostics()
+                    .contains(&ConfigDiagnostic::OutOfScope {
+                        relation: name,
+                        decision
+                    }),
+                "{:?}",
+                config.diagnostics()
+            );
+            let strict = Config::parse_with_mode(&text, ParseMode::Strict);
+            assert!(
+                matches!(&strict, Err(ConfigError::OutOfScope { relation, decision: reason }) if *relation == name && *reason == decision),
+                "{strict:?}"
             );
         }
         Ok(())
@@ -61,14 +74,18 @@ mod tests {
                 _ => return Err(format!("unreviewed effective relation {name}").into()),
             }
             for parsed in [&config, &strict] {
-                assert!(!parsed.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == name)));
+                assert!(
+                    parsed.diagnostics().is_empty(),
+                    "{name}: {:?}",
+                    parsed.diagnostics()
+                );
             }
         }
         Ok(())
     }
 
-    /// The client PKINIT relations (todo 8): typed values and no deferred-consumer
-    /// diagnostic; a `FeatureUnavailable` diagnostic (without the `pkinit` leaf)
+    /// The client PKINIT relations (todo 8): typed values and no other
+    /// diagnostic than a `FeatureUnavailable` one (without the `pkinit` leaf)
     /// exactly when Strict mode refuses the profile.
     fn pkinit(name: &str, kind: &str, inputs: &[&str]) -> Result<(), Box<dyn Error>> {
         for input in inputs {
@@ -83,7 +100,11 @@ mod tests {
                 ("list", Value::List(values)) => assert_eq!(values, &[*input]),
                 _ => return Err(format!("wrong value kind {name}").into()),
             }
-            assert!(!config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == name)));
+            assert!(
+                config.diagnostics().iter().all(|item| matches!(item, ConfigDiagnostic::FeatureUnavailable { relation, feature: "pkinit" } if *relation == name)),
+                "{name}: {:?}",
+                config.diagnostics()
+            );
             let unavailable = config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::FeatureUnavailable { relation, feature: "pkinit" } if *relation == name));
             let strict = Config::parse_with_mode(&text, ParseMode::Strict);
             // With the leaf the relation is effective; without it, unavailable
@@ -131,18 +152,21 @@ mod tests {
 
     /// Named tests keep independent relation failures visible.
     macro_rules! cases {
-        ($($name:ident, $kind:literal, [$($value:literal),+];)+) => {$ (
-            /// The named relation has typed values and a deferred-consumer diagnostic.
+        ($($name:ident, $kind:literal, $decision:literal, [$($value:literal),+];)+) => {$ (
+            /// The named relation keeps its typed value, and both parse modes
+            /// report the owner decision that excludes its semantics.
             #[test]
-            fn $name() -> Result<(), Box<dyn Error>> { deferred(stringify!($name), $kind, &[$($value),+]) }
+            fn $name() -> Result<(), Box<dyn Error>> {
+                out_of_scope(stringify!($name), $kind, ($decision, &[$($value),+]))
+            }
         )+};
     }
     cases! {
-        default_domain, "text", ["example.test", "other.test"];
-        pkinit_identity, "locations", ["FILE:/cert,/key", "PKCS12:/server"];
-        pkinit_allow_upn, "bool", ["true", "false"];
-        pkinit_indicator, "list", ["strong", "pkinit"];
-        pkinit_require_freshness, "bool", ["true", "false"];
+        default_domain, "text", "D2", ["example.test", "other.test"];
+        pkinit_identity, "locations", "D1", ["FILE:/cert,/key", "PKCS12:/server"];
+        pkinit_allow_upn, "bool", "D1", ["true", "false"];
+        pkinit_indicator, "list", "D1", ["strong", "pkinit"];
+        pkinit_require_freshness, "bool", "D1", ["true", "false"];
     }
 
     /// Existing endpoint consumers preserve ordered repeated values.
@@ -184,17 +208,16 @@ mod tests {
         endpoint("admin_server")
     }
 
-    /// Whether a diagnostic of `config` defers a relation to a later package.
-    fn has_deferred_diagnostic(config: &Config) -> bool {
-        config.diagnostics().iter().any(|item| {
-            matches!(
-                item,
-                ConfigDiagnostic::NotYetEffective {
-                    relation: _,
-                    package: _
-                }
-            )
-        })
+    /// Whether `config` reports nothing but the leaf's `FeatureUnavailable`.
+    ///
+    /// A build without the `localauth` leaf reports it for `auth_to_local_names`;
+    /// `tests/localauth/profile.rs` checks which one each build gives.
+    fn only_the_leaf_diagnostic(config: &Config) -> bool {
+        let unavailable = ConfigDiagnostic::FeatureUnavailable {
+            relation: "auth_to_local_names",
+            feature: "localauth",
+        };
+        config.diagnostics().is_empty() || config.diagnostics() == [unavailable]
     }
 
     /// Local mapping keys preserve case and first-wins selection.
@@ -261,8 +284,9 @@ mod tests {
                     Some(expected)
                 );
                 assert!(
-                    !has_deferred_diagnostic(&config),
-                    "the names are never deferred to WP-17 any more"
+                    only_the_leaf_diagnostic(&config),
+                    "{:?}",
+                    config.diagnostics()
                 );
             }
         }

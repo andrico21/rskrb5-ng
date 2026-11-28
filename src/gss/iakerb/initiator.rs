@@ -7,33 +7,27 @@
 //! (`init_sec_context.c:313-345`).
 
 use core::mem;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::{Error, Token, conversation::Conversation};
 use crate::{
+    ccache::CCache,
     client::{
-        AsRepSession, Password,
         principal::Principal,
-        stepwise::{
-            ExchangeStep, InitCreds, InitCredsOptions, Outbound, StepInput, TicketCreds,
-            TicketOptions,
-        },
+        stepwise::{InitCreds, InitCredsOptions, Responder, TicketCreds, TicketOptions},
     },
     error::Gss,
     gss::{
         Credential, CredentialUsage, EstablishedContext, InitStep, InitiatorOptions, Name, cred,
+        initiator::Pending,
     },
-    krb_error,
 };
 
+pub(super) mod acquired;
 mod ap;
+mod exchange;
 
-use ap::{Pending, ap_request, reply};
-
-/// `KRB_AP_ERR_IAKERB_KDC_NOT_FOUND`.
-const KDC_NOT_FOUND: i32 = 85;
-/// `KRB_AP_ERR_IAKERB_KDC_NO_RESPONSE`.
-const KDC_NO_RESPONSE: i32 = 86;
+use ap::reply;
+use exchange::{begin, proxied};
 
 /// Where the initiator is.
 enum Phase {
@@ -69,6 +63,8 @@ pub(super) struct State {
     phase: Phase,
     /// The tokens exchanged and their bounds.
     conversation: Conversation,
+    /// The tickets the AS and TGS exchanges acquired.
+    acquired: Option<CCache>,
 }
 
 /// A new initiator state.
@@ -85,6 +81,7 @@ pub(super) const fn new(
         cookie: None,
         phase: Phase::Start,
         conversation: Conversation::with_defaults(),
+        acquired: None,
     }
 }
 
@@ -112,6 +109,27 @@ impl State {
     }
 }
 
+/// What a step draws on: the caller's credential and responder.
+pub(super) struct Sources<'step> {
+    /// The credential.
+    credential: &'step Credential,
+    /// The responder that answers the KDC's prompts, if any.
+    responder: Option<&'step mut dyn Responder>,
+}
+
+impl<'step> Sources<'step> {
+    /// The credential and, if given, the responder.
+    pub(super) fn new(
+        credential: &'step Credential,
+        responder: Option<&'step mut dyn Responder>,
+    ) -> Self {
+        Self {
+            credential,
+            responder,
+        }
+    }
+}
+
 /// One initiator step.
 ///
 /// # Errors
@@ -119,15 +137,15 @@ impl State {
 /// Returns the errors of [`super::Context::init_sec_context`].
 pub(super) fn step(
     state: &mut State,
-    credential: &Credential,
+    sources: &mut Sources<'_>,
     input: Option<&[u8]>,
 ) -> Result<InitStep, Error> {
     match (mem::replace(&mut state.phase, Phase::Done), input) {
-        (Phase::Start, None) => start(state, credential),
+        (Phase::Start, None) => start(state, sources),
         (Phase::Reply(pending), Some(token)) => reply(state, *pending, token),
         (phase @ (Phase::Discovery | Phase::As(_) | Phase::Tgs(_)), Some(token)) => {
             state.phase = phase;
-            proxied(state, credential, token)
+            proxied(state, sources, token)
         }
         (phase, _) => {
             state.phase = phase;
@@ -143,7 +161,8 @@ pub(super) fn step(
 /// # Errors
 ///
 /// Returns the errors of [`step`].
-fn start(state: &mut State, credential: &Credential) -> Result<InitStep, Error> {
+fn start(state: &mut State, sources: &mut Sources<'_>) -> Result<InitStep, Error> {
+    let credential = sources.credential;
     if credential.usage == CredentialUsage::Accept {
         return Err(Gss::WrongCredentialUsage("initiate").into());
     }
@@ -156,169 +175,11 @@ fn start(state: &mut State, credential: &Credential) -> Result<InitStep, Error> 
     let known = !client.realm.is_empty();
     state.client = Some(client);
     if known {
-        return begin(state, credential);
+        return begin(state, sources);
     }
     let token = state
         .conversation
         .produce(Token::new("", None, Vec::new()).encode()?)?;
     state.phase = Phase::Discovery;
     Ok(InitStep::Continue(token))
-}
-
-/// Choose where to enter the exchanges once the client's realm is known.
-///
-/// A cached service ticket needs no relay, a cached TGT only the TGS exchange
-/// (MIT `iakerb_get_initial_state`, `iakerb.c:713-772`).
-///
-/// # Errors
-///
-/// Returns [`Error::Gss`] without a ticket source, and the exchange errors.
-fn begin(state: &mut State, credential: &Credential) -> Result<InitStep, Error> {
-    if let Some(ticket) = cred::service_ticket(credential, &state.target) {
-        return ap_request(state, &ticket);
-    }
-    let client = state.client.clone().ok_or(Gss::NoCredential("no client"))?;
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(u64::MAX, |since| since.as_secs());
-    let cached = credential.cache.as_ref().and_then(|cache| {
-        let realm = &client.realm;
-        cache
-            .credentials()
-            .iter()
-            .find(|entry| {
-                entry.server().components == ["krbtgt", realm.as_str()]
-                    && entry.server().realm == *realm
-                    && u64::from(entry.times().end_time) > now
-            })
-            .map(cred::session_of)
-    });
-    if let Some(tgt) = cached {
-        return advance(
-            state,
-            (
-                Phase::Tgs(Box::new(ticket_creds(state, tgt)?)),
-                StepInput::Start,
-            ),
-        );
-    }
-    let options = state.exchanges.0.clone();
-    let exchange = if let Some(password) = &credential.password {
-        InitCreds::with_password(client, Some(Password::from_vec(password.to_vec())), options)
-    } else if let Some(keytab) = &credential.client_keytab {
-        InitCreds::with_keytab(client, keytab.clone(), options)
-    } else {
-        return Err(Gss::NoCredential("no ticket source").into());
-    };
-    advance(state, (Phase::As(Box::new(exchange)), StepInput::Start))
-}
-
-/// The TGS exchange for the target with `tgt`.
-///
-/// # Errors
-///
-/// Returns the errors of [`TicketCreds::new`] and of reading the target.
-fn ticket_creds(state: &State, tgt: AsRepSession) -> Result<TicketCreds, Error> {
-    let components = cred::target_components(&state.target)?.to_vec();
-    let service = Principal::new(
-        state.target.principal().realm.clone(),
-        state.target.principal().name_type,
-        components,
-    );
-    Ok(TicketCreds::new(tgt, service, state.exchanges.1.clone())?)
-}
-
-/// Run the current exchange on `input` until it needs a KDC or finishes.
-///
-/// # Errors
-///
-/// Returns the exchange errors and [`Error::UnsupportedPrompt`].
-fn advance(
-    state: &mut State,
-    (mut phase, mut input): (Phase, StepInput<'_>),
-) -> Result<InitStep, Error> {
-    loop {
-        match phase {
-            Phase::As(mut exchange) => match exchange.step(input)? {
-                ExchangeStep::Outbound(outbound) => {
-                    state.phase = Phase::As(exchange);
-                    return send(state, &outbound);
-                }
-                ExchangeStep::Complete(tgt) => {
-                    phase = Phase::Tgs(Box::new(ticket_creds(state, *tgt)?));
-                    input = StepInput::Start;
-                }
-                ExchangeStep::Prompt(_) => return Err(Error::UnsupportedPrompt),
-            },
-            Phase::Tgs(mut exchange) => match exchange.step(input)? {
-                ExchangeStep::Outbound(outbound) => {
-                    state.phase = Phase::Tgs(exchange);
-                    return send(state, &outbound);
-                }
-                ExchangeStep::Complete(ticket) => return ap_request(state, &ticket),
-                ExchangeStep::Prompt(_) => return Err(Error::UnsupportedPrompt),
-            },
-            Phase::Start
-            | Phase::Discovery
-            | Phase::Reply(_)
-            | Phase::Established(_)
-            | Phase::Done => return Err(Error::UnexpectedStep("no exchange is running")),
-        }
-    }
-}
-
-/// Send `outbound` as a proxy token, echoing the proxy's cookie.
-///
-/// # Errors
-///
-/// Returns the token and round-bound errors.
-fn send(state: &mut State, outbound: &Outbound) -> Result<InitStep, Error> {
-    let token = Token::new(
-        outbound.realm(),
-        state.cookie.clone(),
-        outbound.message().to_vec(),
-    )
-    .encode()?;
-    Ok(InitStep::Continue(state.conversation.produce(token)?))
-}
-
-/// The KRB-ERROR code of a proxy token's message, if it is one.
-fn error_code(message: &[u8]) -> Option<i32> {
-    (message.first() == Some(&0x7e))
-        .then(|| krb_error::decode(message).ok())
-        .flatten()
-        .map(|error| error.error_code)
-}
-
-/// A proxy token from the acceptor: record it, then feed the exchange.
-///
-/// # Errors
-///
-/// Returns the token errors, the acceptor's IAKERB errors and the exchange errors.
-fn proxied(state: &mut State, credential: &Credential, token: &[u8]) -> Result<InitStep, Error> {
-    state.conversation.check_size(token.len())?;
-    let parsed = Token::decode(token)?;
-    state.conversation.append(token)?;
-    let phase = mem::replace(&mut state.phase, Phase::Done);
-    state.cookie = parsed.cookie().map(<[u8]>::to_vec);
-    match error_code(parsed.message()) {
-        Some(KDC_NOT_FOUND) => return Err(Error::KdcNotFound),
-        Some(KDC_NO_RESPONSE) => return Err(Error::KdcNoResponse),
-        Some(_) | None => {}
-    }
-    if matches!(phase, Phase::Discovery) {
-        if parsed.realm().is_empty() {
-            return Err(Error::BadToken("the acceptor sent no realm"));
-        }
-        let client = state
-            .client
-            .as_mut()
-            .ok_or(Gss::NoCredential("no client"))?;
-        parsed.realm().clone_into(&mut client.realm);
-        return begin(state, credential);
-    }
-    if parsed.message().is_empty() {
-        return Err(Error::BadToken("the acceptor sent no KDC message"));
-    }
-    advance(state, (phase, StepInput::Reply(parsed.message())))
 }

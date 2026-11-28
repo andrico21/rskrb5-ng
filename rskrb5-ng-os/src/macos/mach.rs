@@ -10,10 +10,14 @@
 
 use alloc::ffi::CString;
 use core::{ffi::c_char, ptr, slice};
+use std::io;
 
-use rskrb5_ng::error::Ccache as CacheError;
+use rskrb5_ng::{
+    ccache::kcm::seam::KcmTransport,
+    error::{Kcm, KcmStage},
+};
 
-use crate::{Secret, error::Platform, kcm_store::KcmTransport, mig};
+use crate::{Secret, error::Platform, mig};
 
 /// A Mach port name.
 type Port = u32;
@@ -271,8 +275,10 @@ fn call(service: &str, request: &[u8]) -> Result<Secret, Platform> {
 /// The KCM transport over Mach RPC to a named service (`kcm_mach_service`,
 /// MIT 1.22.2 `kcmio_mach_connect` and `kcmio_mach_call`, `cc_kcm.c:189-281`).
 ///
-/// It implements the transport seam of the `KCM:` store; once `rskrb5-ng`
-/// offers `ccache::kcm::install_transport`, `register` installs it there.
+/// It is the transport the factory of [`crate::install_kcm_transport`] makes
+/// for the built-in `KCM:` store; the main crate disables Mach for `-` and
+/// never asks for it. A service that is not registered is
+/// [`Kcm::NoServer`], so the store falls back to the socket as MIT does.
 ///
 /// # Security
 ///
@@ -282,18 +288,59 @@ fn call(service: &str, request: &[u8]) -> Result<Secret, Platform> {
 pub(crate) struct MachTransport(String);
 
 impl MachTransport {
-    /// The transport to `service`; `-` disables Mach RPC as in MIT.
+    /// The transport to `service`.
     pub(crate) const fn new(service: String) -> Self {
         Self(service)
     }
 }
 
-impl KcmTransport for MachTransport {
-    fn call(&self, request: &[u8]) -> Result<Vec<u8>, CacheError> {
-        if self.0 == "-" {
-            return Err(Platform::MachDisabled.into());
+/// The opcode of a KCM request, `0` for one too short to carry it.
+fn opcode(request: &[u8]) -> u16 {
+    request
+        .get(2..4)
+        .and_then(|bytes| <[u8; 2]>::try_from(bytes).ok())
+        .map_or(0, u16::from_be_bytes)
+}
+
+/// `failure` of a call with `request` as the transport error the seam
+/// classifies: no service, the service's own failure code, or a lost call.
+fn kcm_error(failure: Platform, request: &[u8]) -> Kcm {
+    match failure {
+        Platform::NoServer { code: _ } => Kcm::NoServer,
+        Platform::Kcm { code } => Kcm::Daemon {
+            opcode: opcode(request),
+            code,
+        },
+        Platform::MutationNotAuthorized { cache_type: _ }
+        | Platform::UnsupportedOperation {
+            cache_type: _,
+            operation: _,
         }
-        Ok(call(&self.0, request)?.to_vec())
+        | Platform::MalformedReply {
+            cache_type: _,
+            reason: _,
+        }
+        | Platform::TooLarge {
+            cache_type: _,
+            length: _,
+        }
+        | Platform::MachRpc { code: _ }
+        | Platform::Ccapi { code: _ }
+        | Platform::Lsa {
+            status: _,
+            sub_status: _,
+        } => Kcm::Io {
+            stage: KcmStage::Read,
+            source: io::Error::other(failure),
+        },
+    }
+}
+
+impl KcmTransport for MachTransport {
+    fn call(&self, request: &[u8]) -> Result<Vec<u8>, Kcm> {
+        call(&self.0, request)
+            .map(|reply| reply.to_vec())
+            .map_err(|failure| kcm_error(failure, request))
     }
 }
 

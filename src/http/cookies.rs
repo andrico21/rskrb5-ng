@@ -18,6 +18,15 @@
 //! visible ASCII. The public-suffix list is
 //! never compiled in: the application supplies the text of the list it trusts.
 //! Values are never shown by `Debug`.
+//!
+//! Residual copies and limits (register row FU-HTC-P06): `cookie_store` holds
+//! cookie values in ordinary heap strings and does not erase them when a
+//! cookie is replaced or expires or the jar is dropped
+//! (`docs/dependency-admission.md#cookie_store`), so a cookie value can stay in
+//! freed memory. The jar lives in memory only and is never written to disk; an
+//! application that needs persistent cookies implements the
+//! [cookie jar trait](super::wire::CookieJar) itself and owns the protection
+//! of what it stores.
 #[cfg(feature = "http-client")]
 use core::fmt;
 

@@ -10,6 +10,7 @@ use runtime::BlockingRuntime;
 use super::{Error, KdcProtocol, Password, Principal, RequestOptions, Tokio};
 use crate::{
     config::Config,
+    discovery::hostname::HostNamePolicy,
     kadmin::ChangePasswordResult,
     keytab::Keytab,
     spnego::{InitiatorContext, InitiatorContextOptions},
@@ -311,6 +312,77 @@ impl Client {
         Q: AsRef<str>,
     {
         self.authorization_context(Principal::host_based_service(service, host)?)
+            .await
+    }
+
+    /// Build a SPNEGO initiator context for the host-based service `service` on
+    /// `host`, naming the service by host acquisition: the profile's host-name
+    /// canonicalization, with each canonical name other than `host` itself used
+    /// only when `policy` approves it ([`Tokio::get_host_service_ticket`]).
+    ///
+    /// [`Self::authorization_context_for_host`] never canonicalizes; this is the
+    /// one operation that does, for the HTTP and GSS-API name routes to share.
+    ///
+    /// # Security
+    ///
+    /// DNS answers are not authenticated: `policy` decides which canonical name
+    /// may receive the token.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Tokio::get_host_service_ticket`] and of building
+    /// the token.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: a service ticket is cached only after its exchange completes,
+    /// so dropping the future leaves the client's caches consistent and the call
+    /// can be repeated.
+    #[inline]
+    pub async fn authorization_context_for_acquired_host(
+        &mut self,
+        service: &str,
+        host: &str,
+        policy: &dyn HostNamePolicy,
+    ) -> Result<InitiatorContext, Error> {
+        self.authorization_context_for_acquired_host_with_options(
+            (service, host),
+            policy,
+            InitiatorContextOptions::new(),
+        )
+        .await
+    }
+
+    /// [`Self::authorization_context_for_acquired_host`] with explicit
+    /// initiator options (channel bindings, context flags).
+    ///
+    /// # Security
+    ///
+    /// DNS answers are not authenticated: `policy` decides which canonical name
+    /// may receive the token.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`Tokio::get_host_service_ticket`] and of building
+    /// the token.
+    ///
+    /// # Cancel safety
+    ///
+    /// cancel-safe: a service ticket is cached only after its exchange completes,
+    /// so dropping the future leaves the client's caches consistent and the call
+    /// can be repeated.
+    #[inline]
+    pub async fn authorization_context_for_acquired_host_with_options(
+        &mut self,
+        (service, host): (&str, &str),
+        policy: &dyn HostNamePolicy,
+        options: InitiatorContextOptions,
+    ) -> Result<InitiatorContext, Error> {
+        let ticket = self
+            .inner
+            .get_host_service_ticket(service, host, policy)
+            .await?;
+        self.authorization_context_with_options(ticket.service, options)
             .await
     }
 

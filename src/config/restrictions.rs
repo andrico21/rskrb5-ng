@@ -2,10 +2,7 @@
 
 use alloc::collections::BTreeMap;
 
-use super::{
-    Config, Error, LibDefaults, Realm, Toggle,
-    section_values::{Plugins, Value},
-};
+use super::{Config, Error, LibDefaults, Realm, Toggle, section_values::Value};
 #[cfg(feature = "messages")]
 use crate::error::Policy;
 use crate::replay::RcacheName;
@@ -37,30 +34,27 @@ pub(crate) fn rcache_name(value: &str) -> Result<(), Error> {
     }
 }
 
-/// Reject restrictions whose consumers have not been implemented.
+/// Validate the library defaults at every construction boundary.
 /// # Errors
 /// Returns the malformed replay-cache name before any authentication effect.
 pub(crate) fn defaults(value: &LibDefaults) -> Result<(), Error> {
     rcache_name(&value.default_rcache_name)
 }
 
-/// Validate whole configuration, including realm and client-plugin restrictions.
+/// Validate whole configuration, including realm restrictions.
 /// # Errors
-/// Returns the named unsupported restriction.
+/// Returns the malformed replay-cache name or the named realm restriction error.
 pub(crate) fn config(value: &Config) -> Result<(), Error> {
     defaults(&value.libdefaults)?;
     for entry in &value.realms {
         realm(entry)?;
-    }
-    if let Some(entry) = value.plugins.get("clpreauth") {
-        plugins(entry)?;
     }
     Ok(())
 }
 
 /// Validate a realm timestamp prohibition regardless of construction path.
 /// # Errors
-/// Returns the named unsupported restriction.
+/// Returns permanent protocol rejection or the named malformed restriction.
 pub(super) fn realm(value: &Realm) -> Result<(), Error> {
     #[cfg(feature = "serde")]
     for (name, selection) in &value.protocol_relations {
@@ -101,42 +95,4 @@ pub(super) fn timestamp(value: Option<&Value>) -> Result<(), Error> {
             Error::InvalidBoolean("disable_encrypted_timestamp".to_owned()),
         ),
     }
-}
-
-/// Validate restrictions on the currently implemented client preauthentication method.
-/// # Errors
-/// Returns the named unsupported restriction.
-pub(super) fn plugins(value: &Plugins) -> Result<(), Error> {
-    reject(
-        "disable",
-        value
-            .disable
-            .iter()
-            .any(|name| name == "encrypted_timestamp"),
-    )?;
-    reject(
-        "enable_only",
-        !value.enable_only.is_empty()
-            && !value
-                .enable_only
-                .iter()
-                .any(|name| name == "encrypted_timestamp"),
-    )
-}
-
-/// Central named refusal used by runtime and serde boundaries.
-/// # Errors
-/// Returns [`Error::NotYetEffective`] when the selected restriction cannot be honored.
-pub(super) fn reject(relation: &'static str, restricted: bool) -> Result<(), Error> {
-    if restricted {
-        let package = match relation {
-            "disable" | "enable_only" => "plan 2 WP-16",
-            _ => super::libdefaults::relations::RELATIONS
-                .iter()
-                .find(|row| row.0 == relation)
-                .map_or("plan 2 WP-04", |row| row.3),
-        };
-        return Err(Error::NotYetEffective { relation, package });
-    }
-    Ok(())
 }

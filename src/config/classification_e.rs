@@ -1,4 +1,4 @@
-//! Exhaustive deferred-consumer boundary review against all three catalogues.
+//! Consumer classification review of all three relation catalogues.
 
 #[cfg(test)]
 #[expect(
@@ -15,20 +15,20 @@ mod tests {
         realm_relations::REALM_RELATIONS, section_decode::SECTION_RELATIONS,
     };
 
-    /// Libdefaults: safe assignment and optional genuinely stronger assignment.
-    /// None means no valid value tightens current behavior; table rationale explains why.
-    const LIB: [(&str, &str, Option<&str>); 2] = [
-        ("kcm_mach_service", "-", None),
-        ("plugin_base_dir", "%{LIBDIR}/unloaded", None),
-    ];
-
-    /// Realm values are restrictions on absent mechanisms, except encrypted timestamp.
-    const REALM: [(&str, &str, Option<&str>); 5] = [
-        ("default_domain", "example.test", None),
-        ("pkinit_identity", "FILE:/identity", None),
-        ("pkinit_allow_upn", "false", None),
-        ("pkinit_indicator", "strong", None),
-        ("pkinit_require_freshness", "true", None),
+    /// Relations whose semantics an owner decision excludes: section, name,
+    /// a value, and the decision both parse modes report.
+    const PERMANENT: [(&str, &str, &str, &str); 6] = [
+        (
+            "libdefaults",
+            "plugin_base_dir",
+            "%{LIBDIR}/unloaded",
+            "D1/D3",
+        ),
+        ("realms", "default_domain", "example.test", "D2"),
+        ("realms", "pkinit_identity", "FILE:/identity", "D1"),
+        ("realms", "pkinit_allow_upn", "false", "D1"),
+        ("realms", "pkinit_indicator", "strong", "D1"),
+        ("realms", "pkinit_require_freshness", "true", "D1"),
     ];
 
     /// Render actual profile inputs, not direct calls to classification predicates.
@@ -40,101 +40,55 @@ mod tests {
         }
     }
 
-    /// Both parse modes are tested for each side; Compatible must preserve the diagnostic.
-    fn boundary(name: &str, safe: &str, tighter: Option<&str>) -> Result<(), Box<dyn Error>> {
-        let config = Config::parse(safe)?;
-        assert!(config.diagnostics().iter().any(|item| matches!(item, ConfigDiagnostic::NotYetEffective { relation, package: _ } if *relation == name)), "safe {name}");
-        drop(
-            Config::parse_with_mode(safe, ParseMode::Strict)
-                .err()
-                .ok_or_else(|| format!("strict accepted {name}"))?,
-        );
-        if let Some(input) = tighter {
-            for mode in [ParseMode::Compatible, ParseMode::Strict] {
-                let failure = Config::parse_with_mode(input, mode)
-                    .err()
-                    .ok_or_else(|| format!("tightening ignored: {name}"))?;
-                assert!(
-                    matches!(failure, super::super::Error::NotYetEffective { relation, package: _ } if relation == name)
-                );
-            }
+    /// Every catalogue row an owner decision excludes reports that decision in
+    /// Compatible mode and is refused with it in Strict mode.
+    #[test]
+    fn every_permanent_scope_row_is_reviewed() -> Result<(), Box<dyn Error>> {
+        let rows: Vec<&str> = RELATIONS
+            .iter()
+            .chain(REALM_RELATIONS.iter())
+            .filter(|row| row.3.starts_with(super::super::diagnostic::OUT_OF_SCOPE))
+            .map(|row| row.0)
+            .collect();
+        let reviewed: Vec<&str> = PERMANENT.iter().map(|case| case.1).collect();
+        assert_eq!(rows, reviewed);
+        for (section, name, value, decision) in PERMANENT {
+            let text = profile(section, name, value);
+            let config = Config::parse(&text)?;
+            assert!(
+                config
+                    .diagnostics()
+                    .contains(&ConfigDiagnostic::OutOfScope {
+                        relation: name,
+                        decision
+                    }),
+                "{name}: {:?}",
+                config.diagnostics()
+            );
+            let strict = Config::parse_with_mode(&text, ParseMode::Strict);
+            assert!(
+                matches!(strict, Err(super::super::Error::OutOfScope { relation, decision: reason }) if relation == name && reason == decision),
+                "{name}: {strict:?}"
+            );
         }
         Ok(())
     }
 
-    /// Every deferred libdefaults row has an explicit safe/tightening decision.
+    /// No row of the three catalogues defers its relation to a later change.
+    ///
+    /// Every consumer is effective (with its leaf, when it names one) or an
+    /// owner decision excludes the relation (`every_permanent_scope_row_is_reviewed`).
     #[test]
-    fn every_libdefaults_boundary_is_reviewed() -> Result<(), Box<dyn Error>> {
-        for row in RELATIONS.iter().filter(|row| row.3.starts_with("plan 2 ")) {
-            let (name, safe, tight) = LIB
-                .iter()
-                .copied()
-                .find(|case| case.0 == row.0)
-                .ok_or("unreviewed libdefaults row")?;
-            let tighter = tight.map(|value| profile("libdefaults", name, value));
-            boundary(
-                name,
-                &profile("libdefaults", name, safe),
-                tighter.as_deref(),
-            )?;
-        }
+    fn no_catalogue_row_is_deferred() {
         assert_eq!(
             RELATIONS
                 .iter()
-                .filter(|row| row.3.starts_with("plan 2 "))
-                .count(),
-            LIB.len()
+                .chain(REALM_RELATIONS.iter())
+                .chain(SECTION_RELATIONS.iter())
+                .filter(|row| row.3.is_empty() || row.3.starts_with("plan "))
+                .map(|row| row.0)
+                .collect::<Vec<&str>>(),
+            Vec::<&str>::new()
         );
-        Ok(())
-    }
-
-    /// Every deferred realm row has an explicit safe/tightening decision.
-    #[test]
-    fn every_realm_boundary_is_reviewed() -> Result<(), Box<dyn Error>> {
-        for row in REALM_RELATIONS
-            .iter()
-            .filter(|row| row.3.starts_with("plan 2 "))
-        {
-            let (name, safe, tight) = REALM
-                .iter()
-                .copied()
-                .find(|case| case.0 == row.0)
-                .ok_or("unreviewed realm row")?;
-            let tighter = tight.map(|value| profile("realms", name, value));
-            boundary(name, &profile("realms", name, safe), tighter.as_deref())?;
-        }
-        assert_eq!(
-            REALM_RELATIONS
-                .iter()
-                .filter(|row| row.3.starts_with("plan 2 "))
-                .count(),
-            REALM.len()
-        );
-        Ok(())
-    }
-
-    /// Section restrictions are compared with actual built-in behavior, not plugin names alone.
-    #[test]
-    fn every_section_boundary_is_reviewed() -> Result<(), Box<dyn Error>> {
-        for row in SECTION_RELATIONS
-            .iter()
-            .filter(|row| row.3.starts_with("plan 2 "))
-        {
-            match row.0 {
-                "capaths" => boundary("capaths", "[capaths]\n A = {\n B = .\n }\n", None)?,
-                "disable" => boundary(
-                    "disable",
-                    "[plugins]\n clpreauth = {\n disable = pkinit\n }\n",
-                    Some("[plugins]\n clpreauth = {\n disable = encrypted_timestamp\n }\n"),
-                )?,
-                "enable_only" => boundary(
-                    "enable_only",
-                    "[plugins]\n clpreauth = {\n enable_only = encrypted_timestamp\n }\n",
-                    Some("[plugins]\n clpreauth = {\n enable_only = pkinit\n }\n"),
-                )?,
-                _ => return Err("unreviewed section row".into()),
-            }
-        }
-        Ok(())
     }
 }

@@ -25,6 +25,10 @@ mod support;
 #[path = "legs.rs"]
 mod legs;
 
+/// Authentication indicators of the MIT KDC on the Rust acceptor.
+#[path = "indicators.rs"]
+mod indicators;
+
 /// A Rust context and the adapter's context on the other end of it.
 #[derive(Debug)]
 pub(super) struct Pair {

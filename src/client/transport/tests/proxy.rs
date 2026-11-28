@@ -16,7 +16,7 @@ use crate::{
 
 /// What a fake proxy answers.
 #[derive(Clone, Copy, Debug)]
-enum Answer {
+pub(super) enum Answer {
     /// The reply `[0x6b, 1, 2]` in a KDC-PROXY-MESSAGE.
     Reply,
     /// A failure before delivery.
@@ -30,11 +30,11 @@ enum Answer {
 }
 
 /// URL, realm, anchors and the Kerberos message of one request a fake proxy saw.
-type Seen = (String, String, Vec<Location>, Vec<u8>);
+pub(super) type Seen = (String, String, Vec<Location>, Vec<u8>);
 
 /// A fake proxy that records each request and answers as told.
 #[derive(Debug)]
-struct Fake {
+pub(super) struct Fake {
     /// The answers, one per call; the last one repeats.
     answers: &'static [Answer],
     /// URL, realm, anchors and the Kerberos message of each request.
@@ -43,7 +43,7 @@ struct Fake {
 
 impl Fake {
     /// A fake that answers `answers` in turn.
-    const fn new(answers: &'static [Answer]) -> Self {
+    pub(super) const fn new(answers: &'static [Answer]) -> Self {
         Self {
             answers,
             seen: Mutex::new(Vec::new()),
@@ -51,7 +51,7 @@ impl Fake {
     }
 
     /// The requests seen so far.
-    fn seen(&self) -> Vec<Seen> {
+    pub(super) fn seen(&self) -> Vec<Seen> {
         self.seen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -96,7 +96,7 @@ impl KdcProxyTransport for Fake {
 }
 
 /// A profile whose realm `R.TEST` names `servers` under `relation`, with one anchor.
-fn profile(relation: &str, servers: &[&str]) -> Result<Config, Box<dyn StdError>> {
+pub(super) fn profile(relation: &str, servers: &[&str]) -> Result<Config, Box<dyn StdError>> {
     let lines = servers.iter().fold(String::new(), |mut lines, server| {
         lines.push_str(relation);
         lines.push_str(" = ");

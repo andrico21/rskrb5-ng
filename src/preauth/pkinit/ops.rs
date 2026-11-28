@@ -25,6 +25,17 @@ use crate::{
     keytab::EncryptionKey,
 };
 
+/// The compiled `pkinit_cert_match` rules.
+pub(super) type Rules = super::matching::CertificateRules;
+
+/// The index of the one candidate (DER) that `rules` select.
+///
+/// # Errors
+/// Returns the errors of [`Rules::select`](super::matching::CertificateRules::select).
+pub(super) fn select_rules(rules: &Rules, certificates: &[&[u8]]) -> Result<usize, Error> {
+    rules.select(certificates)
+}
+
 /// The DER certificates of a PEM document.
 ///
 /// # Errors

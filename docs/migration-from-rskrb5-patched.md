@@ -40,9 +40,10 @@ rskrb5-ng = "0.3"
 and the imports: `use rskrb5::...` becomes `use rskrb5_ng::...`, and so does
 every `rskrb5::` path. A manifest that renames the dependency key,
 `rskrb5 = { package = "rskrb5-ng", version = "0.3" }`, keeps the `rskrb5::`
-paths compiling and changes only the package. The features are the same
-(`messages`, `spnego`, `tokio`, `http`, `tower`, `serde`, `evaluation`;
-default `spnego`, `tokio`, `serde`).
+paths compiling and changes only the package. The features of 0.2.2 keep
+their names and meaning (`messages`, `spnego`, `tokio`, `http`, `tower`,
+`serde`, `evaluation`; default `spnego`, `tokio`, `serde`), and 0.3.0 adds
+eight optional leaf flags ("New capabilities" below).
 
 `rskrb5-ng` needs Rust 1.100 or newer (`rust-version = "1.100"`; it was 1.88).
 It depends on `rasn` and `rasn-kerberos` 0.29 (v0.2.2: 0.28.13); a caller that
@@ -57,6 +58,133 @@ Callers of the plain `encode`/`decode` methods or of the crate's own DER helpers
 are unaffected; a direct caller of any `*_with_constraints*` or
 `*_with_tag_and_constraints` method passes a reference (FU-DOC-R54,
 FU-DOC-R74).
+
+## New capabilities
+
+Earlier text of this guide said that the features of 0.3.0 are the features
+of 0.2.2. That is no longer true: the parity work adds the eight optional leaf
+flags below and the capabilities in the table, and the `[0.3.0]` "Parity
+features" section of `CHANGELOG.md` lists each one with its register row. The
+seven features of 0.2.2 keep their names and meaning, and the defaults are
+unchanged. A leaf flag only compiles code: it never grants a runtime
+permission, so a capability still needs its configuration or an explicit call
+(`docs/security-policy.md`).
+
+| Capability | Entry points | Cargo features |
+| --- | --- | --- |
+| Extension points | `extensions::Registry`, `Registry::install_stores`, `client::transport::Tokio::with_registry` | always (registry); `tokio` (exchange routes) |
+| Stepwise exchanges with prompts | `client::stepwise::{InitCreds, TicketCreds, Responder, drive, drive_tokio}` | `messages`; `tokio` for `drive_tokio` |
+| FAST and encrypted challenge | `preauth::fast::Policy`, `TicketCreds::with_fast`, `client::Tokio::with_tgs_fast` | `messages`; `tokio` for the client |
+| SPAKE | `preauth::spake` | `spake` |
+| OTP | `preauth::otp::{Policy, Responder}` | `messages` |
+| PKINIT, anonymous PKINIT, `pkinit_cert_match` | `preauth::pkinit::{Identity, IdentityProvider, Signer, KdcTrust}` | `pkinit` |
+| Camellia enctypes | `crypto::camellia` | `camellia` |
+| MEMORY, DIR, collections | `ccache::{stores, in_memory, dir_store}`, `keytab::stores` | always |
+| KCM | `ccache::kcm` | always (a typed error outside Unix) |
+| Linux keyring caches | `ccache::keyring` | `ccache-keyring` |
+| Windows LSA, macOS `API:`, Mach KCM | the companion crate `rskrb5-ng-os` | the application adds it |
+| Discovery and host canonicalization | `discovery::{locate::ServerLocator, realm::HostRealmResolver, hostname::{CanonicalizationPolicy, HostNamePolicy}}`, `client::Tokio::get_host_service_ticket` | `tokio` |
+| MS-KKDCP | `transport::kkdcp`, `transport::proxy::KdcProxyTransport`; built-in `transport::rustls_proxy::RustlsTransport` | `messages`, `tokio`; `kkdcp-rustls` for the built-in transport |
+| Cross-realm, S4U and RBCD, `verify_init_creds` | `service::CapathsTransit`, `client::Tokio::{delegate, s4u2self_identity}`, `routing::init_creds::VerifyOptions` | `tokio` |
+| Password expiry | `client::Tokio::login_with_expiry`, `Responder::password_expiry` | `tokio` |
+| Remote administration | `kadm5::RemoteAdminClient` over `rpcsec_gss` | `spnego`, `tokio` |
+| GSS-API | `gss` (names, credentials, contexts, IOV, PRF, transfer, impersonation, `gss::iakerb`, `gss::negoex`) | `spnego` |
+| Service settings and CAMMAC indicators | `service::Validator::{with_expected_service, with_pac_extraction}`, `ValidatedApReq::auth_indicators`, `authdata::verify_cammac` | `messages` |
+| PAC verification | `pac::VerificationPolicy` | always |
+| Replay stores | `replay::{Store, RcacheName}` | `RcacheName` always; `messages` for the stores |
+| Authenticated messages | `messages::AuthContext` | `messages` |
+| Local authorization | `localauth::{authorize_local, principal_to_local_name, LocalAuthorizer}` | `localauth` |
+| HTTP client and sessions | `http::agent::NegotiateHttpClient`, `http::wire::HttpExchange`, `http::sessions::SessionManager` | `http`, `tokio` (client); `http` (sessions) |
+| Built-in cookie jar | `http::cookies::CookieStore` | `http-client` |
+| Built-in HTTPS exchange | `transport::rustls_proxy::RustlsTransport` (also an `HttpExchange`) | `kkdcp-rustls` |
+| Trace events | `trace`, `client::Tokio::with_trace` | `trace` always; `tokio` for the client; `tracing` for the `tracing` adapter |
+
+The platform stores come from the workspace crate `rskrb5-ng-os`, which is
+`publish = false`: take it from this repository, call
+`rskrb5_ng_os::register(&mut registry)` and then `registry.install_stores()`,
+and on macOS `rskrb5_ng_os::install_kcm_transport()` for Mach KCM. Without
+that last call a configuration whose `kcm_mach_service` names another service
+fails with `error::Kcm::NoMachTransport` instead of using a socket.
+
+Host-name canonicalization happens only in the explicit acquisition
+operations, and a canonical name other than the requested host is used only
+when the caller's `HostNamePolicy` approves it (DNS answers are not
+authenticated):
+
+```rust,no_run
+# #[cfg(feature = "tokio")]
+# async fn host_ticket(client: &mut rskrb5_ng::client::Tokio) -> Result<(), Box<dyn std::error::Error>> {
+// DNS may propose names; only this one may receive a ticket for `web`.
+let approved = |requested: &str, candidate: &str| {
+    requested == "web" && candidate == "web01.example.com"
+};
+let ticket = client.get_host_service_ticket("HTTP", "web", &approved).await?;
+drop(ticket);
+# Ok(())
+# }
+```
+
+Implicit FAST armor of the TGS requests is opt-in (MIT armors every TGS
+request):
+
+```rust,no_run
+# #[cfg(feature = "tokio")]
+# fn armored(client: rskrb5_ng::client::Tokio) -> rskrb5_ng::client::Tokio {
+use rskrb5_ng::preauth::fast::Policy;
+
+client.with_tgs_fast(Policy::Required)
+# }
+```
+
+The HTTP client binds its Negotiate tokens to the TLS channel when the
+exchange reports one (`ChannelBindingPolicy::WhenAvailable`, the default);
+`Required` sends no token over a connection without bindings:
+
+```rust,no_run
+# #[cfg(all(feature = "http", feature = "tokio"))]
+# fn bound<X: rskrb5_ng::http::wire::HttpExchange>(
+#     client: rskrb5_ng::http::agent::NegotiateHttpClient<X>,
+# ) -> rskrb5_ng::http::agent::NegotiateHttpClient<X> {
+use rskrb5_ng::http::agent::ChannelBindingPolicy;
+
+client.with_channel_binding_policy(ChannelBindingPolicy::Required)
+# }
+```
+
+### Configuration changes of the parity work
+
+`[plugins]` `disable` and `enable_only` are effective over the registered and
+the built-in modules of `clpreauth`, `ccselect`, `hostrealm` and `localauth`.
+Earlier 0.3.0 text said that Strict mode refuses them with `NotYetEffective`;
+it now accepts them for these four interfaces, and another interface name is
+an `UnknownRelation` (`tests/config/plugin_case.rs`). Six relations that the
+library excludes for good report the new `ConfigDiagnostic::OutOfScope`
+(Strict mode: `error::Config::OutOfScope`): `plugin_base_dir`,
+`default_domain`, `pkinit_identity`, `pkinit_allow_upn`, `pkinit_indicator`
+and `pkinit_require_freshness`.
+
+```rust
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+use rskrb5_ng::config::{Config, ConfigDiagnostic, ParseMode};
+
+let controls = "[plugins]\nclpreauth = {\n disable = encrypted_timestamp\n}\n";
+assert!(Config::parse_with_mode(controls, ParseMode::Strict)?.diagnostics().is_empty());
+let unknown = "[plugins]\nkdcpreauth = {\n disable = encrypted_timestamp\n}\n";
+assert!(Config::parse_with_mode(unknown, ParseMode::Strict).is_err());
+
+let excluded = Config::parse("[libdefaults]\n plugin_base_dir = /never-load\n")?;
+assert!(excluded.diagnostics().iter().any(|diagnostic| matches!(
+    diagnostic,
+    ConfigDiagnostic::OutOfScope { relation: "plugin_base_dir", .. }
+)));
+# Ok(())
+# }
+```
+
+`LibDefaults::from_env` no longer reads `HOME`: it returns what
+`LibDefaults::new` returns, with an empty `k5login_directory`. The `localauth`
+leaf takes each account's home directory from the caller's `AccountResolver`,
+never from the environment (FU-LAU-P04).
 
 ## New configuration keys
 
@@ -78,8 +206,8 @@ requested enctypes, including single DES and RC4-EXP. Passive decoding remains
 available for historical records; raw encoding still does not impose runtime
 RC4-HMAC or DES3 opt-in permission (FU-MSG-R02).
 
-An explicit `auth_to_local_names = { ... }` subsection selects deferred local
-authorization even if it is empty (FU-CFG-R14). Compatible parsing reports one
+An explicit `auth_to_local_names = { ... }` subsection selects the local
+authorization consumer even if it is empty (FU-CFG-R14). Compatible parsing reports one
 `FeatureUnavailable` diagnostic per admitted map in a build without the
 `localauth` leaf (none with it, where the map is effective); Strict parsing
 rejects it with relation `auth_to_local_names` and feature `localauth`. Omit
@@ -808,7 +936,7 @@ behaviour that skipped families, `DEFAULT` and `-name`:
 | unknown name (`typo-enctype`) | skipped | `error::Config::UnknownEnctype { token }` |
 | RC4/DES3 name without `allow_rc4`/`allow_des3` | accepted for `rc4-hmac`, `arcfour-hmac`, `arcfour-hmac-md5` and `des3-cbc-sha1-kd` (v0.2.2 had no flag); skipped for `des3-hmac-sha1` and `des3-cbc-sha1` | `error::Config::DisabledEnctype { token }` |
 | single DES, RC4 export or another permanently refused name | skipped | `error::Config::RejectedEnctype { token, source }` |
-| Camellia | skipped | skipped with a `ConfigDiagnostic` in `ParseMode::Compatible`; `error::Config::UnsupportedSecureEnctype` in `ParseMode::Strict` |
+| Camellia | skipped | without the `camellia` leaf: skipped with a `ConfigDiagnostic` in `ParseMode::Compatible`, `error::Config::UnsupportedSecureEnctype` in `ParseMode::Strict`; with it, an ordinary entry that the runtime policy permits only when `permitted_enctypes` names it |
 | `-name` | ignored | removes the entry; removing never needs permission |
 | nothing left | `NoUsableEnctypes` / `NoPermittedEnctypes` | `error::Config::EmptyEnctypeExpression` |
 | `allow_weak_crypto = true` | accepted | `error::Config::Policy(Policy::RejectedFeature { feature: WeakCrypto, .. })` |
@@ -1048,8 +1176,9 @@ their `*_without_env` twins are gone. Named ambient discovery remains explicit:
 
 ### Configuration composition (FU-CFG-01, FU-CFG-03, FU-CFG-06, FU-CFG-07, FU-CFG-09)
 
-`k5login_authoritative` now defaults to true rather than false; its deferred
-local-login consumer still grants no authorization. Ticket and renewable
+`k5login_authoritative` now defaults to true rather than false; only the
+opt-in `localauth` leaf reads it, and every failure there denies, so the
+default grants no authorization by itself. Ticket and renewable
 lifetimes use checked MIT intervals: negative totals, overflow, malformed unit
 order and trailing garbage are rejected. Zero renewable lifetime disables
 renewal. For KDC requests to a realm, Auto transport uses 1465 for a negative
@@ -1076,11 +1205,12 @@ Configuration now follows MIT profile semantics; the details are in
   limits are 256 files (v0.2.2: 64) and 4 MiB in total (v0.2.2: 1 MiB, counted
   over included files only), root files included (FU-DOC-R86).
 - **Unknown input.** Unknown sections and relations are diagnostics in
-  compatible mode and errors in strict mode. Recognized settings without a
-  runtime effect produce `ConfigDiagnostic::NotYetEffective` in compatible mode
-  when they do not request tighter security. Unsupported tightening values fail
-  with `error::Config::NotYetEffective` in both modes. Strict mode rejects every
-  diagnostic; the [relation catalogue](config-relations.md) identifies each case.
+  compatible mode and errors in strict mode. A recognized setting whose
+  consumer is not compiled in produces `ConfigDiagnostic::FeatureUnavailable`,
+  and a permanently excluded one `ConfigDiagnostic::OutOfScope`, in compatible
+  mode; both replaced the `NotYetEffective` diagnostic of earlier 0.3.0 text,
+  which is removed. Unsupported tightening values fail in both modes. Strict
+  mode rejects every diagnostic; the [relation catalogue](config-relations.md) identifies each case.
 - **`[appdefaults]`, `[capaths]`, `[plugins]`.** v0.2.2 skipped these sections.
   They are now parsed into `Config::applications`, `Config::capaths` and
   `Config::plugins` (read with `appdefault`, `appdefault_boolean` and `capath`;
@@ -1090,13 +1220,13 @@ Configuration now follows MIT profile semantics; the details are in
   relation nested deeper than application, realm and key (`d = e` inside
   `a = {`, `b = {` and `c = {` blocks, each opened on its own line), are
   `InvalidLine`; a `[plugins]` control
-  that would disable the encrypted-timestamp mechanism is `NotYetEffective` in
-  every mode (FU-DOC-R93). Interface names and the control names `disable`,
+  that disables the encrypted-timestamp mechanism is effective (earlier 0.3.0
+  text: `NotYetEffective` in every mode; FU-DOC-R93, FU-EXT-P08). Interface names and the control names `disable`,
   `enable_only` and `module` are case-sensitive, as in MIT (FU-CFG-R36):
   `CLPREAUTH = { disable = encrypted_timestamp }` is an interface without a
   consumer, not the client preauthentication interface, so in compatible mode it
-  loads and is recorded as a `NotYetEffective` diagnostic (v0.2.2 read nothing
-  in `[plugins]`), while in strict mode it is an error, and `DISABLE = pkinit`
+  loads and is recorded as an `UnknownRelation` diagnostic (v0.2.2 read nothing
+  in `[plugins]`), while in strict mode it is an `UnknownRelation` error, and `DISABLE = pkinit`
   or `MODULE = x:/y` under an interface is an unknown relation (a diagnostic in
   compatible mode, `UnknownRelation` in strict mode). The section header is
   case-sensitive too, so `[Plugins]` is an unknown section.
@@ -1550,17 +1680,19 @@ relation's own value rules apply to it, see `docs/config-profile.md`.
 Restrictive settings (FU-CFG-R05): serde and programmatic configurations now
 receive the same refusal for unsupported restrictions as profile input. Runtime
 client/service/request boundaries revalidate mutable fields before effects.
-Unset these settings until their documented plan-2 consumer exists; text and
-client admission return `NotYetEffective`, while infallible request options
+Since the parity work every such restriction has an effective consumer
+(`docs/config-relations.md`), so the earlier advice to leave them unset and
+the `NotYetEffective` refusal no longer apply; infallible request options
 retain an invalid-policy error for the eventual build.
 
 Discarded selectors (FU-CFG-R06): quoting or escaping a forbidden RSA, draft-9,
 v4 or unprotected-password selector cannot hide it in an ignored profile scope.
 Permanent rejection checks the decoded scalar before composition discards it.
 
-Timestamp restriction diagnostics (FU-CFG-R07): the deferred package for
-`disable_encrypted_timestamp` is `plan 2 WP-07` for runtime/serde admission, as
-for text parsing. Plugin `disable` and `enable_only` are WP-16.
+Timestamp restriction diagnostics (FU-CFG-R07): `disable_encrypted_timestamp`
+is effective in every exchange (FU-SPK-P01), and the plugin `disable` and
+`enable_only` controls are effective too (FU-EXT-P07, FU-EXT-P08), so the
+deferred packages WP-07 and WP-16 that earlier text named no longer apply.
 
 Profile braces (FU-CFG-R08): `name =` followed by `{` has the same subsection
 meaning as `name = {` in every section, matching MIT's generic profile grammar.
@@ -1695,7 +1827,8 @@ a subkey continue to use usage 8. `BuiltTgsReq::new` constructs metadata for
 requests without a subkey; use the subkey builders for subkey-bearing requests.
 The public `reply_key_usage: TgsReplyKey` metadata distinguishes `Session`
 from `Subkey`; manually constructed metadata must match the authenticator.
-This completes the existing TGS path, not FAST armor negotiation.
+This completes the existing TGS path; implicit FAST armor of TGS requests is
+a separate opt-in (`TicketCreds::with_fast`, `client::Tokio::with_tgs_fast`).
 
 ```rust,no_run
 # #[cfg(feature = "messages")]
@@ -1766,16 +1899,18 @@ failure as malformed input; password delivery-outcome rules follow "Unknown
 password-mutation outcome" above.
 
 Configured transport admission (FU-TRN-R06): password and keytab configured
-AS-login helpers, including their TGT wrappers, now return the named
-`Client::Config(Config::NotYetEffective { .. })` restriction before constructing
-preauthentication or contacting a KDC. Programmatically supplied realm
-`disable_encrypted_timestamp` and clpreauth restrictions have the same
-fail-closed handling as high-level clients.
+AS-login helpers, including their TGT wrappers, admit the configuration
+before constructing preauthentication or contacting a KDC. Realm
+`disable_encrypted_timestamp` and clpreauth restrictions, also when supplied
+programmatically, are honoured by the exchange engine (FU-SPK-P01,
+FU-EXT-P07); earlier 0.3.0 text refused them with
+`Client::Config(Config::NotYetEffective { .. })`.
 
-Checked AS exchange (FU-TRN-R07): `exchange_as_req_with_config` now returns
-the named `Config::NotYetEffective` error for unsupported realm and clpreauth
-restrictions before discovery or sending a previously built request. Programmatic
-configuration has the same admission as configured password/keytab login.
+Checked AS exchange (FU-TRN-R07): `exchange_as_req_with_config` admits the
+realm and clpreauth restrictions before discovery or sending a previously built
+request (earlier 0.3.0 text: the named `Config::NotYetEffective` error).
+Programmatic configuration has the same admission as configured password/keytab
+login.
 
 #### Crypto policy
 
@@ -2244,6 +2379,24 @@ change_password_for_with_options}` accepted an `impl AsRef<[u8]>` argument.
 They now take a `client::Password` by value ("Owned passwords").
 
 ## Signature changes
+
+### Changes of the parity work
+
+These items changed APIs that earlier 0.3.0 text described; none of them was
+in 0.2.2, so code moving from 0.2.2 is not affected unless it already followed
+that text.
+
+- `client::transport::Tokio` is no longer `Copy`: it carries the registry that
+  `with_registry` installs (`Arc<extensions::Registry>`). It stays `Clone`,
+  `Debug` and `Eq`; replace implicit copies with `.clone()`. For the same
+  reason `client::transport::Tokio::host_realms`, `locator` and
+  `client::Tokio::with_transport` are no longer `const fn`.
+- `error::Iakerb::DelegationUnsupported` is removed: an IAKERB context now
+  carries a delegated credential when the caller asks for one (FU-IAK-P04).
+- `ConfigDiagnostic::NotYetEffective` and `error::Config::NotYetEffective` are
+  removed in this release; neither was ever published. A relation whose
+  consumer is not compiled in reports `FeatureUnavailable`, and a permanently
+  excluded one `OutOfScope` ("New capabilities" above).
 
 ### Validated security contexts have no public mutators (FU-GSS-P01)
 

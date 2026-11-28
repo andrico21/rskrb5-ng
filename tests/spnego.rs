@@ -588,6 +588,75 @@ mod tests {
         Ok(())
     }
 
+    /// The initiator's channel bindings reach the authenticator checksum
+    /// (RFC 4121 section 4.1.1.2), so an acceptor holding the same bindings
+    /// accepts the token and one holding other bindings refuses it.
+    #[test]
+    fn initiator_channel_bindings_reach_the_checksum() -> Result<(), TestError> {
+        use rskrb5_ng::{
+            error::Gss,
+            gss::{self, AcceptorOptions, ChannelBindings},
+        };
+
+        let bindings = ChannelBindings::tls_server_end_point(&[0x5c; 32])?;
+        let other = ChannelBindings::tls_server_end_point(&[0x5d; 32])?;
+        // Given a token built for `bindings`,
+        let context = spnego::init_sec_context_with_confounder(
+            &service_ticket_session_from_valid_ap_req()?,
+            InitiatorContextOptions::new()
+                .with_sequence_number(Some(42))
+                .with_channel_bindings(bindings.clone()),
+            timestamp(1_893_553_447)?,
+            123_456,
+            &decode_hex(AP_REP_CONFOUNDER)?,
+        )?;
+        let ap_req: rasn_kerberos::ApReq =
+            der::decode(context.ap_req_der_ref()).context("AP-REQ decodes")?;
+        let plain = AesSha1Etype::Aes256.decrypt_message(
+            context.session_key_ref().value(),
+            ap_req.authenticator.cipher.as_ref(),
+            11,
+        )?;
+        let authenticator: rasn_kerberos::Authenticator = der::decode(&plain)?;
+        let checksum = authenticator.cksum.context("GSS checksum exists")?;
+        // then its checksum carries their digest,
+        assert_eq!(
+            checksum.checksum.get(4..20),
+            Some(&bindings.digest()[..]),
+            "the 0x8003 checksum carries the bindings digest"
+        );
+        let keytab = Keytab::parse(&decode_hex(HTTP_KEYTAB)?).context("HTTP keytab parses")?;
+        let Token::Init(init) = spnego::parse_negotiate_header(context.header_ref())? else {
+            return Err("a NegTokenInit".into());
+        };
+        let token = init.mech_token().context("an optimistic token")?.to_vec();
+        for (held, accepted) in [(bindings, true), (other, false)] {
+            // and an acceptor that requires bindings accepts it only with the same ones.
+            let validator = Validator::new(&keytab).with_now(timestamp(1_893_553_447)?);
+            let mut acceptor = gss::Acceptor::from_validator(
+                validator,
+                AcceptorOptions::new()
+                    .with_channel_bindings(held)
+                    .require_channel_bindings(true),
+            );
+            let result = acceptor.accept_sec_context(&token);
+            assert_eq!(
+                result.is_ok(),
+                accepted,
+                "accepted={accepted}: {:?}",
+                result.as_ref().err()
+            );
+            if !accepted {
+                assert!(
+                    matches!(result, Err(Gss::BadBindings)),
+                    "{:?}",
+                    result.err()
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Pins that the initiator verifies the acceptor's SPNEGO AP-REP response header.
     #[test]
     fn verifies_spnego_ap_rep_response_header_as_client() -> Result<(), TestError> {

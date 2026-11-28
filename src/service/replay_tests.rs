@@ -55,6 +55,7 @@ fn mandatory_authenticator_pac_is_rejected() -> Result<(), Error> {
         remaining: 8,
         pac_seen: false,
         context: super::AuthorizationContext::new(),
+        indicators: Vec::new(),
     };
     let refusal = super::validate_authorization_elements(
         &data,
@@ -62,6 +63,7 @@ fn mandatory_authenticator_pac_is_rejected() -> Result<(), Error> {
             critical: true,
             ticket: false,
             depth: 0,
+            cammac: false,
         },
         &mut remaining,
     )

@@ -7,15 +7,57 @@ use core::{fmt, mem};
 
 use super::{
     super::{
-        AsRepSession, BuiltTgsReq, Error, KRB_NT_SRV_INST, Principal, build_tgs_req_for_realm,
-        principal_matches, process_tgs_rep_with_referral, tgt_realm, ticket_error,
+        AsRepSession, BuiltTgsReq, Error, KRB_NT_SRV_INST, Principal, TgsFastRequestParts,
+        TgsRepSession, build_tgs_req_for_realm, build_tgs_req_for_realm_with_subkey, crypto_policy,
+        options::TgsReq, principal_matches, process_tgs_rep_with_referral, tgt_realm, ticket_error,
     },
-    ExchangeStep, Outbound, StepInput, TicketCreds, TicketOptions,
+    ExchangeStep, FastOutcome, FastPolicy, Outbound, StepInput, TicketCreds, TicketOptions,
 };
-use crate::ticket::decode as decode_ticket;
+use crate::{
+    error::Fast as FastError,
+    extensions::ProviderError,
+    keytab::EncryptionKey,
+    preauth::fast::tgs::{self, Armor},
+    ticket::decode as decode_ticket,
+};
 
 /// The `ENC-TKT-IN-SKEY` KDC option bit (RFC 4120 section 5.4.1, bit 28).
 const ENC_TKT_IN_SKEY: u32 = 0x0000_0008;
+
+/// The FAST state of a TGS exchange.
+pub(super) struct Fast {
+    /// How the requests are armored.
+    policy: FastPolicy,
+    /// What the replies so far showed.
+    outcome: Option<FastOutcome>,
+}
+
+impl Fast {
+    /// FAST under `policy`, with nothing seen yet.
+    pub(super) const fn new(policy: FastPolicy) -> Self {
+        Self {
+            policy,
+            outcome: None,
+        }
+    }
+
+    /// What the replies so far showed.
+    pub(super) const fn outcome(&self) -> Option<FastOutcome> {
+        self.outcome
+    }
+
+    /// Fold what one authenticated reply showed into the outcome: the exchange
+    /// is armored only while every reply was.
+    fn record(&mut self, seen: FastOutcome) {
+        self.outcome = Some(
+            if seen == FastOutcome::Unarmored || self.outcome == Some(FastOutcome::Unarmored) {
+                FastOutcome::Unarmored
+            } else {
+                FastOutcome::Armored
+            },
+        );
+    }
+}
 
 /// Where a TGS exchange stands.
 pub(super) enum State {
@@ -61,6 +103,8 @@ pub(super) fn new(
         seen_realms: vec![realm],
         walk,
         trace: None,
+        fast: Fast::new(FastPolicy::Off),
+        armor: None,
     })
 }
 
@@ -85,6 +129,7 @@ pub(super) fn debug(engine: &TicketCreds, formatter: &mut fmt::Formatter<'_>) ->
         .field("tgt_service", &engine.tgt.service)
         .field("referrals", &engine.referral_tgts.len())
         .field("user_to_user", &engine.options.second_ticket.is_some())
+        .field("fast", &engine.fast.policy)
         .finish_non_exhaustive()
 }
 
@@ -135,14 +180,22 @@ fn advance(engine: &mut TicketCreds, input: StepInput<'_>) -> Result<ExchangeSte
         (State::Start, StepInput::Start) => request(engine),
         (State::Await(pending), StepInput::Reply(reply)) => {
             let for_service = principal_matches(&pending.service, &engine.service);
-            let ticket =
-                match process_tgs_rep_with_referral(&pending, reply, engine.tgt.session_key()) {
-                    Ok(ticket) => ticket,
-                    Err(Error::Kdc(_)) if !for_service && back_off(engine) => {
-                        return request(engine);
-                    }
-                    Err(error) => return Err(error),
-                };
+            let armor = engine.armor.take();
+            let required = engine.fast.policy == FastPolicy::Required;
+            let (ticket, seen) = match process(
+                (&pending, reply),
+                armor.as_ref().map(|armored| (armored, required)),
+                engine.tgt.session_key(),
+            ) {
+                Ok(processed) => processed,
+                Err(Error::Kdc(_)) if !for_service && back_off(engine) => {
+                    return request(engine);
+                }
+                Err(error) => return Err(error),
+            };
+            if let Some(outcome) = seen {
+                engine.fast.record(outcome);
+            }
             if principal_matches(&ticket.service, &engine.service) {
                 return Ok(ExchangeStep::Complete(Box::new(ticket)));
             }
@@ -186,6 +239,50 @@ fn advance(engine: &mut TicketCreds, input: StepInput<'_>) -> Result<ExchangeSte
             Err(Error::UnexpectedStepInput { expected })
         }
     }
+}
+
+/// Authenticate and validate the reply to the request, and report whether it
+/// was armored.
+///
+/// `armor` is the armor of an armored request and whether the exchange
+/// requires FAST. A reply to an armored request that fails FAST
+/// authentication is the error of the exchange: it is never read as a plain
+/// reply. `tgt_key` decrypts the reply to an unarmored request.
+///
+/// # Errors
+/// Returns [`Error::Armor`] for the FAST failure of a reply and the errors of
+/// [`process_tgs_rep_with_referral`].
+fn process(
+    (request, reply): (&BuiltTgsReq, &[u8]),
+    armored: Option<(&Armor, bool)>,
+    tgt_key: &EncryptionKey,
+) -> Result<(TgsRepSession, Option<FastOutcome>), Error> {
+    let Some((armor, required)) = armored else {
+        return Ok((
+            process_tgs_rep_with_referral(request, reply, tgt_key)?,
+            None,
+        ));
+    };
+    let (_armor_key, subkey, _nonce) = armor;
+    match tgs::unwrap(armor, reply, required).map_err(armor_error)? {
+        tgs::Reply::Unarmored => Ok((
+            process_tgs_rep_with_referral(request, reply, subkey)?,
+            Some(FastOutcome::Unarmored),
+        )),
+        tgs::Reply::Error(inner) => Ok((
+            process_tgs_rep_with_referral(request, &inner, subkey)?,
+            None,
+        )),
+        tgs::Reply::Success { reply: inner, key } => Ok((
+            process_tgs_rep_with_referral(request, &inner, &key)?,
+            Some(FastOutcome::Armored),
+        )),
+    }
+}
+
+/// The exchange error of a FAST failure.
+fn armor_error(error: FastError) -> Error {
+    Error::Armor(ProviderError::from(error))
 }
 
 /// After a KDC refused a TGT on the configured path, ask for the next closer
@@ -253,7 +350,17 @@ fn request(engine: &mut TicketCreds) -> Result<ExchangeStep, Error> {
             ["krbtgt".to_owned(), target],
         )
     };
-    let request = build_tgs_req_for_realm(&engine.tgt, current, requested, options)?;
+    let (request, armor) = match engine.fast.policy {
+        FastPolicy::Off => (
+            build_tgs_req_for_realm(&engine.tgt, current, requested, options)?,
+            None,
+        ),
+        FastPolicy::Opportunistic | FastPolicy::Required => {
+            let (request, armor) = armored(&engine.tgt, (current, requested), options)?;
+            (request, Some(armor))
+        }
+    };
+    engine.armor = armor;
     let outbound = Outbound {
         realm: request.kdc_realm.clone(),
         message: request.der.clone(),
@@ -261,4 +368,35 @@ fn request(engine: &mut TicketCreds) -> Result<ExchangeStep, Error> {
     };
     engine.state = State::Await(Box::new(request));
     Ok(ExchangeStep::Outbound(outbound))
+}
+
+/// Build the request with a fresh authenticator subkey and armor it with the
+/// TGT (MIT `k5_make_tgs_req`, `send_tgs.c:178,279`).
+///
+/// # Errors
+/// Returns the request-building errors, [`Error::Armor`] for the armor's
+/// failure and the policy refusal of the padata it adds.
+fn armored(
+    tgt: &AsRepSession,
+    (realm, service): (String, Principal),
+    options: TgsReq,
+) -> Result<(BuiltTgsReq, Armor), Error> {
+    let TgsFastRequestParts {
+        mut request,
+        ap_req_der,
+        authenticator_subkey,
+    } = build_tgs_req_for_realm_with_subkey(tgt, realm, service, options)?;
+    let (message, der, armor) = tgs::wrap(
+        (&request.message, &ap_req_der),
+        (&authenticator_subkey, tgt.session_key()),
+        &request.crypto_policy,
+    )
+    .map_err(armor_error)?;
+    crypto_policy::padata(
+        &request.crypto_policy,
+        message.0.padata.as_deref().unwrap_or_default(),
+    )?;
+    request.message = message;
+    request.der = der;
+    Ok((request, armor))
 }

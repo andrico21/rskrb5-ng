@@ -9,13 +9,14 @@ use std::time::SystemTime;
 use rasn::types::BitString;
 use rasn_kerberos::otp::{OtpFlags, OtpTokenInfo, PaOtpChallenge};
 use rskrb5_ng::{
+    Config,
     client::{
         AsRepSession, KdcTransport,
         options::AsReq,
         principal::Principal,
         stepwise::{
-            Answer, ExchangeStep, InitCreds, InitCredsOptions, NoResponder, Prompt, Responder as _,
-            StepInput, drive,
+            Answer, Exchange as _, ExchangeStep, InitCreds, InitCredsOptions, NoResponder, Prompt,
+            Responder as _, StepInput, drive,
         },
     },
     error::{Client as ClientError, Fast, Otp},
@@ -250,6 +251,27 @@ fn an_invalid_answer_sends_nothing() -> Result<(), TestError> {
         "{error}"
     );
     assert_eq!(kdc.requests().len(), 1);
+    Ok(())
+}
+
+/// `[plugins] clpreauth` `disable = otp` refuses an exchange built for OTP before
+/// anything is sent: nothing else takes its place.
+#[test]
+fn disabled_otp_refuses_the_exchange_before_sending() -> Result<(), TestError> {
+    let profile = Config::parse("[plugins]\n clpreauth = {\n disable = otp\n }\n")?;
+    let mut exchange = engine().with_otp(Policy::default());
+    exchange.configure(&profile);
+    let error = exchange
+        .step(StepInput::Start)
+        .err()
+        .ok_or("the first request went out")?;
+    assert!(
+        matches!(
+            error,
+            ClientError::PreauthMechanismDisabled { mechanism: "otp" }
+        ),
+        "{error}"
+    );
     Ok(())
 }
 

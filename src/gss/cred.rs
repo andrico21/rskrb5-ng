@@ -8,13 +8,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use zeroize::Zeroizing;
 
+#[cfg(feature = "tokio")]
+use super::HostNamePolicy;
 use super::{
     CCache, CredStore, Credential, CredentialInquiry, CredentialUsage, Error, Keytab, Name,
     ObjectIdentifier, Principal, TgsRepSession, ccache,
 };
+use crate::{
+    ccache::{file_store, stores::CacheVersion},
+    keytab::EncryptionKey,
+    replay::RcacheName,
+    service::AcceptorName,
+};
 #[cfg(feature = "tokio")]
-use crate::client;
-use crate::{keytab::EncryptionKey, replay::RcacheName, service::AcceptorName};
+use crate::{client, error::Client as ClientError};
 
 /// The `FORWARDABLE` ticket flag in ccache byte order (RFC 4120 flag 1).
 const FORWARDABLE: u8 = 0x40;
@@ -209,6 +216,34 @@ pub(super) fn with_name(mut credential: Credential, name: Name) -> Result<Creden
     Ok(credential)
 }
 
+/// Make `cache` the credential's tickets, named by its default principal.
+fn take_cache(credential: &mut Credential, cache: CCache) {
+    credential.name = Some(Name::from_principal(&principal_of(
+        cache.default_principal(),
+    )));
+    credential.cache = Some(cache);
+}
+
+/// The cache of the collection `name` whose default principal is `desired`:
+/// realm and ordered components equal (MIT `krb5_cc_cache_match`,
+/// `cccursor.c:184-219`). The collection's primary cache is not switched.
+///
+/// # Errors
+///
+/// Returns the errors of opening the collection, walking it and loading the
+/// matching cache; caches that cannot be read are skipped, as MIT does.
+fn matching_cache(
+    name: &str,
+    desired: &Name,
+    version: CacheVersion,
+) -> Result<Option<CCache>, Error> {
+    let client = cache_principal(desired.principal());
+    Ok(file_store::collection(name, version)?
+        .cache_match(&client)?
+        .map(|cache| cache.load())
+        .transpose()?)
+}
+
 /// The initiator half of `acquire_cred_from`.
 ///
 /// # Errors
@@ -221,13 +256,13 @@ fn initiator_from(
     store: &CredStore,
 ) -> Result<(), Error> {
     if let Some(cache_name) = &store.ccache {
-        let cache = CCache::load_name(cache_name).map_err(Error::Ccache)?;
-        let client = Name::from_principal(&principal_of(cache.default_principal()));
-        if desired.is_some_and(|name| !name.compare(&client)) {
-            return Err(Error::NoCredential("the cache holds another principal"));
-        }
-        credential.name = Some(client);
-        credential.cache = Some(cache);
+        let cache = match desired {
+            Some(name) => matching_cache(cache_name, name, CacheVersion::default())?.ok_or(
+                Error::NoCredential("no cache of the collection holds the desired name"),
+            )?,
+            None => CCache::load_name(cache_name).map_err(Error::Ccache)?,
+        };
+        take_cache(credential, cache);
         return Ok(());
     }
     let need = Error::NoCredential("a client keytab or password needs the desired name");
@@ -331,6 +366,46 @@ pub(super) fn acquire_from(
     Ok(credential)
 }
 
+/// The initiator half of `gss_acquire_cred`.
+///
+/// That is the default cache, or with a desired name its cache in the default
+/// collection, else the default client keytab (MIT `acquire_init_cred` and
+/// `get_cache_for_name`, `acquire_cred.c:446-500,681-780`).
+///
+/// # Errors
+///
+/// Returns [`Error::NoCredential`] when neither a cache nor the client keytab
+/// holds the desired name, and the errors of the default names, the collection
+/// and the client keytab.
+#[cfg(feature = "tokio")]
+fn default_initiator(
+    credential: &mut Credential,
+    desired: Option<&Name>,
+    config: &super::Config,
+) -> Result<(), Error> {
+    let default_name = client::default_ccache_name(config);
+    let Some(name) = desired else {
+        let loaded = CCache::load_resolved_name(&default_name?).map_err(ClientError::from)?;
+        take_cache(credential, loaded);
+        return Ok(());
+    };
+    if let Ok(cache_name) = default_name
+        && let Some(loaded) = matching_cache(&cache_name, name, CacheVersion::default())?
+    {
+        take_cache(credential, loaded);
+        return Ok(());
+    }
+    let keytab = client::default_client_keytab_name(config)?;
+    if !client_keytab_matches(&keytab, name) {
+        return Err(Error::NoCredential(
+            "the client keytab holds no key for the name",
+        ));
+    }
+    credential.name = Some(name.clone());
+    credential.client_keytab = Some(keytab);
+    Ok(())
+}
+
 /// `gss_acquire_cred` from the default names.
 ///
 /// # Errors
@@ -346,29 +421,7 @@ pub(super) fn acquire_default(
 
     let mut credential = empty(usage);
     if usage != CredentialUsage::Accept {
-        let cache = client::default_ccache_name(config)
-            .and_then(|cache_name| Ok(CCache::load_resolved_name(&cache_name)?));
-        match (cache, desired) {
-            (Ok(loaded), _) => {
-                let client = Name::from_principal(&principal_of(loaded.default_principal()));
-                if desired.is_some_and(|name| !name.compare(&client)) {
-                    return Err(Error::NoCredential("the cache holds another principal"));
-                }
-                credential.name = Some(client);
-                credential.cache = Some(loaded);
-            }
-            (Err(_missing), Some(name)) => {
-                let keytab = client::default_client_keytab_name(config)?;
-                if !client_keytab_matches(&keytab, name) {
-                    return Err(Error::NoCredential(
-                        "the client keytab holds no key for the name",
-                    ));
-                }
-                credential.name = Some(name.clone());
-                credential.client_keytab = Some(keytab);
-            }
-            (Err(missing), None) => return Err(missing.into()),
-        }
+        default_initiator(&mut credential, desired, config)?;
     }
     if usage != CredentialUsage::Initiate {
         let keytab = keytab::default_keytab_name(&config.libdefaults)?;
@@ -485,54 +538,42 @@ pub(super) fn inquire(credential: &Credential) -> CredentialInquiry {
     }
 }
 
-/// Acquire and keep a service ticket for `target`.
+/// The Kerberos client that holds the credential's ticket source: its cache,
+/// its client keytab or its password, the last with the optional verification
+/// of the initial credentials.
 ///
 /// # Errors
 ///
-/// Returns the errors of [`super::Credential::acquire_service_ticket`].
+/// Returns [`Error::NoCredential`] without a ticket source, and the errors of
+/// building the client and of verifying the initial credentials.
 ///
 /// # Cancel safety
 ///
-/// Cancel-safe: the ticket is stored only after its exchange completes.
+/// Cancel-safe: it changes no credential; dropping the future abandons the
+/// optional verification exchange.
 #[cfg(feature = "tokio")]
-pub(super) async fn acquire_service_ticket(
-    credential: &mut Credential,
-    target: &Name,
+async fn ticket_source(
+    credential: &Credential,
+    client: &Principal,
     config: &super::Config,
-) -> Result<(), Error> {
+) -> Result<client::Tokio, Error> {
     use client::{Tokio, transport::KdcProtocol};
 
     use crate::routing::init_creds::VerifyOptions;
 
-    if credential.usage == CredentialUsage::Accept {
-        return Err(Error::WrongCredentialUsage("initiate"));
-    }
-    let service = Principal::new(
-        target.principal().realm.clone(),
-        target.principal().name_type,
-        target_components(target)?.to_vec(),
-    );
-    if credential.impersonator.is_some() {
-        let ticket = super::impersonate::proxy_ticket(credential, service, config).await?;
-        if let Some(cache) = &mut credential.cache {
-            drop(cache.upsert_credential(entry_of(&ticket)));
-        }
-        return Ok(());
-    }
-    let client = credential
-        .name
-        .as_ref()
-        .map(|name| name.principal().clone())
-        .ok_or(Error::NoCredential("the credential names no client"))?;
-    let mut kerberos = if let Some(cache) = &credential.cache {
-        Tokio::try_from_ccache(config.clone(), KdcProtocol::Auto, cache)?
+    if let Some(cache) = &credential.cache {
+        Ok(Tokio::try_from_ccache(
+            config.clone(),
+            KdcProtocol::Auto,
+            cache,
+        )?)
     } else if let Some(keytab) = &credential.client_keytab {
-        Tokio::with_keytab(
+        Ok(Tokio::with_keytab(
             config.clone(),
             KdcProtocol::Auto,
             client.clone(),
             keytab.clone(),
-        )
+        ))
     } else if let Some(password) = &credential.password {
         let mut password_client = Tokio::with_password(
             config.clone(),
@@ -551,20 +592,112 @@ pub(super) async fn acquire_service_ticket(
                     .await?,
             );
         }
-        password_client
+        Ok(password_client)
     } else {
-        return Err(Error::NoCredential("no ticket source"));
-    };
+        Err(Error::NoCredential("no ticket source"))
+    }
+}
+
+/// The client the credential's tickets are for.
+///
+/// # Errors
+///
+/// Returns [`Error::NoCredential`] for a credential that names no client.
+#[cfg(feature = "tokio")]
+fn ticket_client(credential: &Credential) -> Result<Principal, Error> {
+    credential
+        .name
+        .as_ref()
+        .map(|name| name.principal().clone())
+        .ok_or(Error::NoCredential("the credential names no client"))
+}
+
+/// Keep `ticket` and the TGT it came through in the credential's cache.
+#[cfg(feature = "tokio")]
+fn keep_ticket(
+    credential: &mut Credential,
+    client: &Principal,
+    (kerberos, ticket): (&client::Tokio, &TgsRepSession),
+) {
+    let cache = credential
+        .cache
+        .get_or_insert_with(|| CCache::new(cache_principal(client)));
+    if let Some(tgt) = kerberos.tgt_session() {
+        drop(cache.upsert_credential(entry_of(tgt)));
+    }
+    drop(cache.upsert_credential(entry_of(ticket)));
+}
+
+/// Acquire and keep a service ticket for `target`.
+///
+/// # Errors
+///
+/// Returns the errors of [`super::Credential::acquire_service_ticket`].
+///
+/// # Cancel safety
+///
+/// Cancel-safe: the ticket is stored only after its exchange completes.
+#[cfg(feature = "tokio")]
+pub(super) async fn acquire_service_ticket(
+    credential: &mut Credential,
+    target: &Name,
+    config: &super::Config,
+) -> Result<(), Error> {
+    if credential.usage == CredentialUsage::Accept {
+        return Err(Error::WrongCredentialUsage("initiate"));
+    }
+    let service = Principal::new(
+        target.principal().realm.clone(),
+        target.principal().name_type,
+        target_components(target)?.to_vec(),
+    );
+    if credential.impersonator.is_some() {
+        let ticket = super::impersonate::proxy_ticket(credential, service, config).await?;
+        if let Some(cache) = &mut credential.cache {
+            drop(cache.upsert_credential(entry_of(&ticket)));
+        }
+        return Ok(());
+    }
+    let client = ticket_client(credential)?;
+    let mut kerberos = ticket_source(credential, &client, config).await?;
     let ticket = kerberos
         .get_service_ticket(service)
         .await
         .map_err(Error::Client)?;
-    let cache = credential
-        .cache
-        .get_or_insert_with(|| CCache::new(cache_principal(&client)));
-    if let Some(tgt) = kerberos.tgt_session() {
-        drop(cache.upsert_credential(entry_of(tgt)));
-    }
-    drop(cache.upsert_credential(entry_of(&ticket)));
+    keep_ticket(credential, &client, (&kerberos, &ticket));
     Ok(())
+}
+
+/// Acquire and keep a service ticket for the host-based service `service` on
+/// `host` under the profile's host-name canonicalization, and name its principal.
+///
+/// # Errors
+///
+/// Returns the errors of [`super::Credential::acquire_host_service_ticket`].
+///
+/// # Cancel safety
+///
+/// Cancel-safe: the ticket is stored only after its exchange completes.
+#[cfg(feature = "tokio")]
+pub(super) async fn acquire_host_service_ticket(
+    credential: &mut Credential,
+    (service, host): (&str, &str),
+    (policy, config): (&dyn HostNamePolicy, &super::Config),
+) -> Result<Name, Error> {
+    if credential.usage == CredentialUsage::Accept {
+        return Err(Error::WrongCredentialUsage("initiate"));
+    }
+    if credential.impersonator.is_some() {
+        return Err(Error::NoCredential(
+            "host acquisition does not apply to an impersonator credential",
+        ));
+    }
+    let client = ticket_client(credential)?;
+    let mut kerberos = ticket_source(credential, &client, config).await?;
+    let ticket = kerberos
+        .get_host_service_ticket(service, host, policy)
+        .await
+        .map_err(Error::Client)?;
+    keep_ticket(credential, &client, (&kerberos, &ticket));
+    Ok(Name::from_principal(ticket.service()))
 }

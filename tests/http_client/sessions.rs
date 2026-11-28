@@ -415,6 +415,24 @@ fn sessions_are_independent() -> Result<(), TestError> {
     Ok(())
 }
 
+/// The registry is per manager: a manager created after a restart refuses the
+/// cookies of its predecessor, even under the same sealing key (FU-HTC-P06).
+#[test]
+fn restarted_manager_rejects_previous_sessions() -> Result<(), TestError> {
+    let (before, _before_clock) = manager();
+    let (_session, cookie) = before.issue(&alice())?;
+    drop(before);
+    let (after, _after_clock) = manager();
+    assert!(
+        matches!(
+            after.resume(&value_of(&cookie)?),
+            Err(SessionError::Revoked)
+        ),
+        "a session of the previous manager resumed"
+    );
+    Ok(())
+}
+
 /// The continuation of a Negotiate exchange through the Tower service.
 #[cfg(feature = "tower")]
 mod continuation {

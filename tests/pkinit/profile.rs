@@ -73,12 +73,18 @@ fn realm_relations_shape_the_certificate_policy() -> Result<(), TestError> {
     assert_eq!(policy.kdc_hostnames(), ["kdc.test.rskrb5"], "hostnames");
     assert!(policy.crl_checking(), "crl");
     assert_eq!(policy.group(), DhGroup::P384, "group");
-    // And the relations are no longer reported as deferred.
+    // And no diagnostic remains but the leaf's own `FeatureUnavailable`
+    // (none with the leaf).
     assert!(
-        !profile.diagnostics().iter().any(|item| matches!(
-            item,
-            ConfigDiagnostic::NotYetEffective { relation, package: _ } if relation.starts_with("pkinit_")
-        )),
+        profile
+            .diagnostics()
+            .iter()
+            .all(|item| !cfg!(feature = "pkinit")
+                && matches!(
+                    item,
+                    ConfigDiagnostic::FeatureUnavailable { relation, feature: "pkinit" }
+                        if relation.starts_with("pkinit_")
+                )),
         "{:?}",
         profile.diagnostics()
     );
@@ -104,22 +110,46 @@ fn refused_identity_locations_are_typed_errors() -> Result<(), TestError> {
     Ok(())
 }
 
-/// `pkinit_cert_match` rules are refused, never skipped.
+/// Without the leaf a configured `pkinit_cert_match` rule is reported as
+/// unavailable and refused, never skipped.
+#[cfg(not(feature = "pkinit"))]
 #[test]
-fn certificate_matching_rules_are_refused_not_skipped() -> Result<(), TestError> {
-    // Given identities and a pkinit_cert_match rule, which this client cannot
-    // evaluate, when the identities are read, then the rule is a typed error.
+fn certificate_rules_are_unavailable_without_the_leaf() -> Result<(), TestError> {
+    // Given identities and a pkinit_cert_match rule in a build without the leaf.
     let profile = config(&format!(
         " pkinit_identities = FILE:{}\n pkinit_cert_match = <EKU>pkinit",
         fixture("client.pem")
     ))?;
+    // Then the relation is reported as unavailable and reading the identities fails typed.
+    assert!(
+        profile.diagnostics().iter().any(|item| matches!(
+            item,
+            ConfigDiagnostic::FeatureUnavailable {
+                relation: "pkinit_cert_match",
+                feature: "pkinit"
+            }
+        )),
+        "{:?}",
+        profile.diagnostics()
+    );
     assert!(matches!(
         ConfiguredIdentities::from_config(&profile, REALM),
-        Err(Pkinit::UnsupportedLocation {
-            relation: "pkinit_cert_match",
-            location: _
-        })
+        Err(Pkinit::Unavailable)
     ));
+    Ok(())
+}
+
+/// A rule whose keyword is unknown is refused when the profile is read.
+#[test]
+fn certificate_rules_with_an_unknown_keyword_are_refused_by_the_profile() -> Result<(), TestError> {
+    // Given a profile whose rule starts with a keyword, then it parses.
+    let valid = config(" pkinit_cert_match = <EKU>pkinit")?;
+    assert_eq!(valid.realms.len(), 1, "the realm with its rule");
+    // And MIT 1.22.2 knows the `&&` and `||` prefixes only: `+` and `-` start no rule.
+    for rule in ["<ISSUERS>x", "+<EKU>pkinit", "-<EKU>pkinit", "<DNS>x"] {
+        let profile = config(&format!(" pkinit_cert_match = {rule}"));
+        assert!(profile.is_err(), "{rule}: {profile:?}");
+    }
     Ok(())
 }
 

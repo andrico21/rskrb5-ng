@@ -25,6 +25,7 @@ mod service {
     mod pac_binding;
     mod pac_fixture;
     mod service_identity;
+    mod settings;
     mod trace_events;
     mod transit;
 

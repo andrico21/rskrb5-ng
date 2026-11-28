@@ -9,17 +9,13 @@
 )]
 #[expect(clippy::panic_in_result_fn, reason = "a test fails by panicking")]
 mod tests {
-    use core::{
-        error::Error,
-        pin::pin,
-        task::{Context, Poll, Waker},
-    };
+    use core::error::Error;
     use std::time::UNIX_EPOCH;
 
     use rskrb5_ng::{
         Config, Principal,
         client::{
-            Tokio, build_tgt_as_req,
+            build_tgt_as_req,
             options::AsReq,
             pa_enc_timestamp_with_confounder,
             transport::{KdcProtocol, Tokio as Transport},
@@ -29,7 +25,7 @@ mod tests {
             section_values::{Plugins, Value},
         },
         error::{Client, Config as ConfigError},
-        keytab::{EncryptionKey, Keytab},
+        keytab::EncryptionKey,
     };
     use tokio::runtime::Builder;
 
@@ -147,10 +143,11 @@ mod tests {
         Ok(())
     }
 
-    /// Plugin restrictions reject independently of defaults and credentials (the realm
-    /// timestamp prohibition is effective since plan 2 todo 9 and admitted).
+    /// A `[plugins] clpreauth` control that excludes the encrypted timestamp is
+    /// admitted by every construction path, and a caller-built request that
+    /// carries one is refused before any I/O.
     #[test]
-    fn restrictive_scopes_fail_before_login() -> Result<(), Box<dyn Error>> {
+    fn excluded_timestamp_request_fails_before_login() -> Result<(), Box<dyn Error>> {
         let runtime = Builder::new_current_thread().enable_all().build()?;
         for scope in ["disable", "enable_only"] {
             let mut config = Config::parse("[realms]\nR = {\nkdc = 127.0.0.1:1\n}\n")?;
@@ -162,76 +159,30 @@ mod tests {
             }
             drop(config.plugins.insert("clpreauth".to_owned(), plugins));
             assert!(
-                serde_json::from_value::<Config>(serde_json::to_value(&config)?).is_err(),
-                "serde accepted {scope}"
+                serde_json::from_value::<Config>(serde_json::to_value(&config)?).is_ok(),
+                "serde refused {scope}"
             );
             let transport = Transport::new();
             let principal = Principal::user("R", "alice");
-            let options = AsReq::new(UNIX_EPOCH, 42);
             let reply_key = EncryptionKey::new(18, vec![0x42; 32]);
             let checked_options =
-                options
-                    .clone()
-                    .with_padata(vec![pa_enc_timestamp_with_confounder(
-                        &reply_key,
-                        UNIX_EPOCH,
-                        0,
-                        &[0x22; 16],
-                        None,
-                    )?]);
-            let checked = build_tgt_as_req(principal.clone(), checked_options)?;
-            let (expected, package) = (scope, "plan 2 WP-16");
-            for result in [
-                runtime.block_on(transport.exchange_as_req_with_config(
-                    &config,
-                    KdcProtocol::Tcp,
-                    &checked,
+                AsReq::new(UNIX_EPOCH, 42).with_padata(vec![pa_enc_timestamp_with_confounder(
                     &reply_key,
-                )),
-                runtime.block_on(transport.login_tgt_with_password_config(
-                    &config,
-                    KdcProtocol::Tcp,
-                    principal.clone(),
-                    b"password",
-                    options.clone(),
-                )),
-                runtime.block_on(transport.login_tgt_with_keytab_config(
-                    &config,
-                    KdcProtocol::Tcp,
-                    principal,
-                    &Keytab::new(),
-                    options,
-                )),
-            ] {
-                assert!(
-                    matches!(result, Err(Client::Config(ConfigError::NotYetEffective { relation, package: owner })) if relation == expected && owner == package),
-                    "transport ignored {scope}"
-                );
-            }
-            let mut dns_config = config.clone();
-            dns_config.realms.first_mut().ok_or("realm")?.kdc.clear();
-            dns_config.libdefaults.dns_lookup_kdc = Toggle::Enabled;
-            let _runtime_guard = runtime.enter();
-            for candidate in [&config, &dns_config] {
-                let mut discovery = pin!(transport.discover_kdcs(candidate, "R", KdcProtocol::Tcp));
-                assert!(
-                    matches!(
-                        discovery.as_mut().poll(&mut Context::from_waker(Waker::noop())),
-                        Poll::Ready(Err(Client::Config(ConfigError::NotYetEffective { relation, package: owner })))
-                            if relation == expected && owner == package
-                    ),
-                    "discovery must refuse {scope} before endpoint/DNS handling"
-                );
-            }
-            let mut client = Tokio::with_password(
-                config,
+                    UNIX_EPOCH,
+                    0,
+                    &[0x22; 16],
+                    None,
+                )?]);
+            let checked = build_tgt_as_req(principal, checked_options)?;
+            let result = runtime.block_on(transport.exchange_as_req_with_config(
+                &config,
                 KdcProtocol::Tcp,
-                Principal::user("R", "alice"),
-                b"password".to_vec(),
-            );
+                &checked,
+                &reply_key,
+            ));
             assert!(
-                matches!(runtime.block_on(client.login()), Err(Client::Config(_))),
-                "login accepted {scope}"
+                matches!(result, Err(Client::EncryptedTimestampDisabled { realm }) if realm == "R"),
+                "transport ignored {scope}"
             );
         }
         Ok(())

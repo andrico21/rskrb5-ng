@@ -583,7 +583,7 @@ fn error(inner: &KrbFastReq, e_data: Option<Vec<u8>>) -> Result<KrbError, TestEr
 }
 
 /// One PA-DATA.
-fn pa(r#type: i32, value: Vec<u8>) -> PaData {
+pub(crate) fn pa(r#type: i32, value: Vec<u8>) -> PaData {
     PaData {
         r#type,
         value: value.into(),
@@ -591,7 +591,7 @@ fn pa(r#type: i32, value: Vec<u8>) -> PaData {
 }
 
 /// The implemented enctype of `key`.
-fn etype(key: &EncryptionKey) -> Result<KerberosEtype, TestError> {
+pub(crate) fn etype(key: &EncryptionKey) -> Result<KerberosEtype, TestError> {
     Ok(KerberosEtype::from_etype_id(key.etype()).ok_or("enctype")?)
 }
 
@@ -628,12 +628,16 @@ pub(crate) fn seal(
 }
 
 /// Decrypt.
-fn open(key: &EncryptionKey, usage: u32, encrypted: &EncryptedData) -> Result<Vec<u8>, TestError> {
+pub(crate) fn open(
+    key: &EncryptionKey,
+    usage: u32,
+    encrypted: &EncryptedData,
+) -> Result<Vec<u8>, TestError> {
     Ok(etype(key)?.decrypt_message(key.value(), &encrypted.cipher, usage)?)
 }
 
 /// Corrupt the first ciphertext byte.
-fn flip(encrypted: &mut EncryptedData) -> Result<(), TestError> {
+pub(crate) fn flip(encrypted: &mut EncryptedData) -> Result<(), TestError> {
     let mut bytes = encrypted.cipher.to_vec();
     flip_bytes(&mut bytes)?;
     encrypted.cipher = bytes.into();
@@ -641,14 +645,14 @@ fn flip(encrypted: &mut EncryptedData) -> Result<(), TestError> {
 }
 
 /// Corrupt the first byte.
-fn flip_bytes(bytes: &mut [u8]) -> Result<(), TestError> {
+pub(crate) fn flip_bytes(bytes: &mut [u8]) -> Result<(), TestError> {
     let first = bytes.first_mut().ok_or("empty")?;
     *first ^= 0x01;
     Ok(())
 }
 
 /// `value` truncated to whole seconds.
-fn whole(value: SystemTime) -> Result<SystemTime, TestError> {
+pub(crate) fn whole(value: SystemTime) -> Result<SystemTime, TestError> {
     let seconds = value.duration_since(UNIX_EPOCH)?.as_secs();
     Ok(UNIX_EPOCH
         .checked_add(Duration::from_secs(seconds))
@@ -656,12 +660,12 @@ fn whole(value: SystemTime) -> Result<SystemTime, TestError> {
 }
 
 /// A Kerberos time.
-fn time(value: SystemTime) -> KerberosTime {
+pub(crate) fn time(value: SystemTime) -> KerberosTime {
     KerberosTime(chrono::DateTime::<chrono::Utc>::from(value).into())
 }
 
 /// A Kerberos string.
-fn string(value: &str) -> Result<KerberosString, TestError> {
+pub(crate) fn string(value: &str) -> Result<KerberosString, TestError> {
     Ok(KerberosString::try_from(value.to_owned())?)
 }
 

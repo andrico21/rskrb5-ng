@@ -11,31 +11,24 @@ use rskrb5_ng::config::{Config, ConfigDiagnostic, ParseMode};
 fn spake_preauth_groups() -> Result<(), Box<dyn Error>> {
     let text = "[libdefaults]\n spake_preauth_groups = P-256 edwards25519\n";
     let config = Config::parse(text)?;
-    let unavailable = config.diagnostics().iter().any(|item| {
-        matches!(
-            item,
-            ConfigDiagnostic::FeatureUnavailable {
-                relation: "spake_preauth_groups",
-                feature: "spake"
-            }
-        )
-    });
-    let deferred = config.diagnostics().iter().any(|item| {
-        matches!(
-            item,
-            ConfigDiagnostic::NotYetEffective {
-                relation: "spake_preauth_groups",
-                package: _
-            }
-        )
-    });
+    let unavailable = ConfigDiagnostic::FeatureUnavailable {
+        relation: "spake_preauth_groups",
+        feature: "spake",
+    };
     let strict = Config::parse_with_mode(text, ParseMode::Strict);
-    assert!(!deferred, "spake_preauth_groups is no longer deferred");
     if cfg!(feature = "spake") {
-        assert!(!unavailable, "the leaf is compiled in");
+        assert!(
+            config.diagnostics().is_empty(),
+            "the leaf is compiled in: {:?}",
+            config.diagnostics()
+        );
         drop(strict?);
     } else {
-        assert!(unavailable, "missing FeatureUnavailable");
+        assert_eq!(
+            config.diagnostics(),
+            [unavailable],
+            "missing FeatureUnavailable"
+        );
         assert!(
             strict.is_err(),
             "strict mode admitted an unavailable relation"

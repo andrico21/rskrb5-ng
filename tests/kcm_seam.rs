@@ -27,7 +27,7 @@ mod tests {
 
     use rskrb5_ng::{
         ccache::{
-            file_store,
+            CCache, Principal, configured, file_store,
             kcm::{
                 Store,
                 seam::{KcmTransport, install_transport},
@@ -36,6 +36,7 @@ mod tests {
             },
             stores::{CacheVersion, CredentialStore as _},
         },
+        config::Config,
         error::{Ccache as CcacheError, Kcm, KcmStage},
     };
 
@@ -216,6 +217,41 @@ mod tests {
             .destroy();
         assert!(outcome.is_err());
         assert!(!recorder.seen().contains(&request(DESTROY, "socket-only")));
+        Ok(())
+    }
+
+    /// The installed transport precedes the configured socket: a socket that
+    /// does not exist is never tried, and a disabled socket still has the
+    /// transport to serve the store.
+    #[test]
+    fn installed_transport_precedes_configured_socket() -> Result<(), TestError> {
+        let recorder = recorder()?;
+        let named =
+            Config::parse("[libdefaults]\n kcm_socket = /nonexistent/rskrb5-kcm-config.sock\n")?;
+        let disabled = Config::parse("[libdefaults]\n kcm_socket = -\n")?;
+        for (config, cache) in [
+            (&named, "configured-socket"),
+            (&disabled, "disabled-socket"),
+        ] {
+            let name = format!("KCM:{cache}");
+            let handle = file_store::resolve_configured(&name, version(), config)?;
+            handle.destroy()?;
+            let store = Store::from_libdefaults(&config.libdefaults)?;
+            // A disabled socket has no path at all: the default socket never
+            // stands in for it.
+            assert_eq!(
+                store.socket().is_some(),
+                config.libdefaults.kcm_socket != "-"
+            );
+            store.resolve(cache)?.destroy()?;
+            let by_name = configured::save_name(
+                config,
+                &CCache::new(Principal::new("TEST.RSKRB5", 1, vec!["alice".to_owned()])),
+                &name,
+            );
+            assert!(by_name.is_ok(), "{by_name:?}");
+            assert!(recorder.seen().contains(&request(DESTROY, cache)));
+        }
         Ok(())
     }
 }

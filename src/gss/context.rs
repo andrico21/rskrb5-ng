@@ -22,6 +22,27 @@ use crate::{
 /// The longest per-message token, in bytes.
 pub(super) const MAX_TOKEN_LEN: usize = 0x100_0000;
 
+/// The mechanism a context runs: krb5, or IAKERB on top of krb5's AP exchange
+/// (MIT keeps the IAKERB OID as the krb5 context's `mech_used`,
+/// `init_sec_context.c:925-926`, `accept_sec_context.c:653-654`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Mechanism {
+    /// The krb5 mechanism.
+    Krb5,
+    /// IAKERB ([`super::iakerb`]).
+    Iakerb,
+}
+
+impl Mechanism {
+    /// The mechanism's OID.
+    pub(super) fn oid(self) -> ObjectIdentifier {
+        match self {
+            Self::Krb5 => ObjectIdentifier::krb5(),
+            Self::Iakerb => super::iakerb::Context::mechanism(),
+        }
+    }
+}
+
 /// The context key: the acceptor subkey, else the initiator subkey, else the
 /// session key (RFC 4121 section 2).
 pub(super) fn key(context: &EstablishedContext) -> &EncryptionKey {
@@ -38,7 +59,7 @@ pub(super) fn inquire(context: &EstablishedContext) -> ContextInquiry {
         source: context.source.clone(),
         target: context.target.clone(),
         expires: context.expires,
-        mechanism: ObjectIdentifier::krb5(),
+        mechanism: context.mechanism.oid(),
         flags: context.flags,
         locally_initiated: context.initiated,
         open: context.open,

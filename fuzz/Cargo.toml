@@ -210,6 +210,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "pkinit_cert_match"
+path = "fuzz_targets/pkinit_cert_match.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "spake_message"
 path = "fuzz_targets/spake_message.rs"
 test = false
@@ -289,6 +296,13 @@ bench = false
 [[bin]]
 name = "http_set_cookie"
 path = "fuzz_targets/http_set_cookie.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "http_tls_channel"
+path = "fuzz_targets/http_tls_channel.rs"
 test = false
 doc = false
 bench = false

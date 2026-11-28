@@ -9,9 +9,13 @@ mod seal;
 #[path = "kdc.rs"]
 mod kdc;
 
-/// Keytabs, credentials, tickets and the token loop.
+/// Keytabs, credentials and the token loop.
 #[path = "support.rs"]
 mod support;
+
+/// Tickets and AP-REQs built by the tests.
+#[path = "forged.rs"]
+mod forged;
 
 /// The token framing and the `IAKERB-HEADER`.
 #[path = "token.rs"]
@@ -32,3 +36,27 @@ mod finished;
 /// Malformed, reordered and replayed tokens.
 #[path = "malformed.rs"]
 mod malformed;
+
+/// The AP exchange shared with the krb5 mechanism.
+#[path = "shared.rs"]
+mod shared;
+
+/// The mechanism an IAKERB context reports.
+#[path = "inquiry.rs"]
+mod inquiry;
+
+/// Delegation over IAKERB.
+#[path = "delegation.rs"]
+mod delegation;
+
+/// The acquired tickets in a cache the caller names.
+#[path = "output.rs"]
+mod output;
+
+/// Prompts answered through the responder.
+#[path = "responder.rs"]
+mod responder;
+
+/// The relay's duty to retry a too-big answer over a stream.
+#[path = "retry.rs"]
+mod retry;

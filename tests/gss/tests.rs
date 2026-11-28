@@ -46,3 +46,8 @@ mod spnego;
 /// The mechanism, name, per-OID and status inquiries.
 #[path = "inquiry.rs"]
 mod inquiry;
+
+/// Host-based targets named by explicit acquisition.
+#[cfg(feature = "tokio")]
+#[path = "host_target.rs"]
+mod host_target;

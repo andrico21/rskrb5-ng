@@ -13,9 +13,9 @@
 use rasn_kerberos::PaData;
 
 use super::{
-    Error, ExchangeStep, InitCreds, InitCredsOptions, KDC_ERR_PREAUTH_REQUIRED, KdcError,
-    PA_ENC_TIMESTAMP, Principal, State, build_as_req, encode, order, preauth_retry_options,
-    process_kdc_error,
+    ENCRYPTED_TIMESTAMP, Error, ExchangeStep, InitCreds, InitCredsOptions,
+    KDC_ERR_PREAUTH_REQUIRED, KdcError, PA_ENC_TIMESTAMP, Principal, SPAKE, State, build_as_req,
+    encode, order, permits, preauth_retry_options, process_kdc_error,
 };
 use crate::{
     error::Spake as SpakeError,
@@ -31,13 +31,24 @@ pub(in super::super) struct Round {
     first: KdcError,
 }
 
-/// Whether the exchange may send an encrypted timestamp for its client realm
-/// (MIT `encts_disabled`, `get_in_tkt.c:758-772,815-818`).
+/// Whether the options let the exchange send an encrypted timestamp for `realm`.
+///
+/// The realm's `disable_encrypted_timestamp` and `[plugins] clpreauth` must
+/// both leave it (MIT `encts_disabled`, `get_in_tkt.c:758-772,815-818`).
+fn timestamp_permitted(options: &InitCredsOptions, realm: &str) -> bool {
+    permits(options, ENCRYPTED_TIMESTAMP)
+        && !options.timestamp_disabled.iter().any(|name| name == realm)
+}
+
+/// Whether the exchange may send an encrypted timestamp for its client realm.
 pub(super) fn timestamp_allowed(engine: &InitCreds<'_>) -> bool {
-    !engine
-        .options
-        .timestamp_disabled
-        .contains(&engine.client.realm)
+    timestamp_permitted(&engine.options, &engine.client.realm)
+}
+
+/// Whether the exchange answers PA-SPAKE: the mechanism is in use and the
+/// policy has a usable group.
+pub(super) fn usable(engine: &InitCreds<'_>) -> bool {
+    permits(&engine.options, SPAKE) && engine.options.spake.clone().unwrap_or_default().is_usable()
 }
 
 /// Refuse the encrypted-timestamp answer when it is disabled for the client
@@ -55,9 +66,9 @@ pub(super) fn check_timestamp(engine: &InitCreds<'_>) -> Result<(), Error> {
     }
 }
 
-/// Never send an optimistic encrypted timestamp for a realm that disables it.
+/// Never send an optimistic encrypted timestamp where it is not permitted.
 pub(super) fn strip_timestamp(client: &Principal, options: &mut InitCredsOptions) {
-    if options.timestamp_disabled.contains(&client.realm) {
+    if !timestamp_permitted(options, &client.realm) {
         options.request = options.request.clone().with_assume_preauthentication(false);
     }
 }
@@ -70,10 +81,10 @@ pub(super) fn offer(
     engine: &mut InitCreds<'_>,
     reply: &[u8],
 ) -> Result<Option<ExchangeStep>, Error> {
-    let policy = engine.options.spake.clone().unwrap_or_default();
-    if !policy.is_usable() {
+    if !usable(engine) {
         return Ok(None);
     }
+    let policy = engine.options.spake.clone().unwrap_or_default();
     let Ok(error) = process_kdc_error(reply) else {
         return Ok(None);
     };

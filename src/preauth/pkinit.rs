@@ -90,6 +90,21 @@ mod kdf;
 #[cfg(feature = "pkinit")]
 #[path = "pkinit/keys.rs"]
 mod keys;
+#[cfg(feature = "pkinit")]
+#[path = "pkinit/matching.rs"]
+pub mod matching;
+/// The matching data of a certificate.
+#[cfg(feature = "pkinit")]
+#[path = "pkinit/matching_facts.rs"]
+mod matching_facts;
+/// The rendering of a certificate name.
+#[cfg(feature = "pkinit")]
+#[path = "pkinit/matching_name.rs"]
+mod matching_name;
+/// The POSIX extended expressions of the rules.
+#[cfg(feature = "pkinit")]
+#[path = "pkinit/matching_pattern.rs"]
+mod matching_pattern;
 /// The cryptographic and parsing operations of the leaf.
 #[cfg(feature = "pkinit")]
 #[path = "pkinit/ops.rs"]
@@ -136,6 +151,9 @@ pub const MAX_CHAIN_LENGTH: usize = 8;
 /// The most certificates a chain is built from (pool, anchors and the
 /// KDC's `SignedData` together).
 pub const MAX_CERTIFICATES: usize = 64;
+/// The most identities one `pkinit_identities` list names (MIT
+/// `MAX_CREDS_ALLOWED`, `pkinit_crypto_openssl.c:60`).
+pub const MAX_IDENTITIES: usize = 20;
 /// The smallest RSA modulus accepted on a certificate or a CMS signature.
 pub const MIN_RSA_BITS: usize = 2048;
 /// Whether the `pkinit` leaf feature, and with it the cryptography, is compiled in.
@@ -284,24 +302,39 @@ pub trait IdentityProvider: Send + Sync {
     fn identity(&self, client: &Principal) -> Result<Identity, ProviderError>;
 }
 
-/// The identities of `pkinit_identities`: `FILE:` and `DIR:` locations, and
-/// `ENV:` references to them, tried in order (MIT `pkinit_identity.c`).
+/// The identities of `pkinit_identities` and the rules that choose one.
+///
+/// `FILE:` and `DIR:` locations and `ENV:` references to them name the
+/// candidates; `pkinit_cert_match` chooses exactly one (MIT
+/// `pkinit_identity.c:560-640`, `pkinit_matching.c`).
+///
+/// Without rules exactly one identity must be configured. With rules the
+/// first rule that selects exactly one candidate wins; no match, an ambiguous
+/// match and an unreadable candidate certificate are typed errors, never the
+/// first identity. Only the certificates of the candidates are read to match;
+/// the key of the selected identity alone is loaded.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfiguredIdentities {
     /// `(certificate, key)` file pairs, in order.
     files: Vec<(PathBuf, Option<PathBuf>)>,
+    /// The `pkinit_cert_match` rules, when configured.
+    rules: Option<ops::Rules>,
 }
 
 impl ConfiguredIdentities {
-    /// The identities of `realm` in `config`.
+    /// The identities and `pkinit_cert_match` rules of `realm` in `config`.
     ///
     /// # Errors
     ///
     /// Returns [`Error::UnsupportedLocation`](crate::error::Pkinit::UnsupportedLocation)
-    /// for `PKCS11:` (D8) and `PKCS12:` locations, for an `ENV:` variable that
-    /// names one and for configured `pkinit_cert_match` rules (not evaluated),
-    /// and [`Error::Io`](crate::error::Pkinit::Io) for an unreadable `DIR:`
-    /// location.
+    /// for `PKCS11:` (D8) and `PKCS12:` locations and for an `ENV:` variable
+    /// that names one, [`Error::Io`](crate::error::Pkinit::Io) for an unreadable
+    /// `DIR:` location, [`Error::TooLarge`](crate::error::Pkinit::TooLarge)
+    /// for more than [`MAX_IDENTITIES`] identities or `matching::MAX_RULES`
+    /// rules, [`Error::CertificateRule`](crate::error::Pkinit::CertificateRule)
+    /// for a rule that is malformed or not honoured, and
+    /// [`Error::Unavailable`](crate::error::Pkinit::Unavailable) for rules
+    /// without the leaf.
     /// # Ambient input
     ///
     /// An `ENV:` location reads the variable an ENV: location names, through
@@ -311,7 +344,11 @@ impl ConfiguredIdentities {
     ///
     #[inline]
     pub fn from_config(config: &Config, realm: &str) -> Result<Self, Error> {
-        config::pkinit_identity_files(config, realm).map(|files| Self { files })
+        let files = config::pkinit_identity_files(config, realm)?;
+        let rules = config::pkinit_cert_rules(config, realm)
+            .map(|texts| ops::Rules::parse(&texts))
+            .transpose()?;
+        Ok(Self { files, rules })
     }
 
     /// The `(certificate, key)` file pairs, in order.
@@ -320,21 +357,57 @@ impl ConfiguredIdentities {
     pub fn files(&self) -> &[(PathBuf, Option<PathBuf>)] {
         &self.files
     }
+
+    /// The first DER certificate of each candidate file, for the rules.
+    ///
+    /// # Errors
+    ///
+    /// Returns the file and PEM errors, and [`Error::Identity`] for a file
+    /// without a certificate.
+    fn candidate_certificates(&self) -> Result<Vec<Vec<u8>>, Error> {
+        let mut certificates = Vec::new();
+        for (certificate, _key) in &self.files {
+            let pem = config::read(certificate, MAX_CRL_BYTES)?;
+            certificates.push(ops::pem_certificates(&pem)?.into_iter().next().ok_or(
+                Error::Identity {
+                    reason: "a candidate file holds no certificate",
+                },
+            )?);
+        }
+        Ok(certificates)
+    }
+
+    /// The index of the candidate to authenticate with: the one the rules
+    /// select, or the only one when no rule is configured.
+    ///
+    /// # Errors
+    ///
+    /// Returns the errors of [`ConfiguredIdentities::candidate_certificates`]
+    /// and [`matching::CertificateRules::select`]
+    /// ([`Error::AmbiguousCertificates`] without rules and several candidates).
+    fn selected(&self) -> Result<usize, Error> {
+        match &self.rules {
+            Some(rules) => {
+                let certificates = self.candidate_certificates()?;
+                let views: Vec<&[u8]> = certificates.iter().map(Vec::as_slice).collect();
+                ops::select_rules(rules, &views)
+            }
+            None if self.files.len() > 1 => Err(Error::AmbiguousCertificates {
+                candidates: self.files.len(),
+            }),
+            None => Ok(0),
+        }
+    }
 }
 
 impl IdentityProvider for ConfiguredIdentities {
     #[inline]
     fn identity(&self, _client: &Principal) -> Result<Identity, ProviderError> {
-        let mut last: Option<Error> = None;
-        for (certificate, key) in &self.files {
-            match Identity::from_files(certificate, key.as_deref()) {
-                Ok(identity) => return Ok(identity),
-                Err(error) => last = Some(error),
-            }
-        }
-        Err(Box::new(last.unwrap_or(Error::Identity {
+        let index = self.selected()?;
+        let (certificate, key) = self.files.get(index).ok_or(Error::Identity {
             reason: "pkinit_identities names no identity",
-        })))
+        })?;
+        Ok(Identity::from_files(certificate, key.as_deref())?)
     }
 }
 

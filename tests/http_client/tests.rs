@@ -22,3 +22,11 @@ mod cookies;
 /// The session manager.
 #[path = "sessions.rs"]
 mod sessions;
+
+/// RFC 5929 channel bindings and the connection-bound send.
+#[path = "channel.rs"]
+mod channel;
+
+/// Host acquisition: the service name may be canonicalized, the origin never.
+#[path = "canonicalization.rs"]
+mod canonicalization;

@@ -11,8 +11,9 @@
 //! tries another mechanism and never retries the value.
 
 use super::{
-    Answer, Error, ExchangeStep, InitCreds, KDC_ERR_PREAUTH_REQUIRED, KdcError, PA_ENC_TIMESTAMP,
-    Prompt, State, Use, build_as_req, crypto_policy, preauth_retry_options, process_kdc_error,
+    Answer, ENCRYPTED_CHALLENGE, Error, ExchangeStep, InitCreds, KDC_ERR_PREAUTH_REQUIRED,
+    KdcError, PA_ENC_TIMESTAMP, Prompt, State, Use, build_as_req, crypto_policy, permits,
+    preauth_retry_options, process_kdc_error,
 };
 use crate::{
     error::Otp,
@@ -68,8 +69,10 @@ fn preferred(engine: &InitCreds<'_>, error: &KdcError) -> bool {
     for &pa_type in &engine.options.preferred_preauth_types {
         let usable = match pa_type {
             PA_OTP_CHALLENGE => return true,
-            PA_SPAKE => engine.options.spake.clone().unwrap_or_default().is_usable(),
-            PA_ENCRYPTED_CHALLENGE => engine.armor.is_some(),
+            PA_SPAKE => super::spake::usable(engine),
+            PA_ENCRYPTED_CHALLENGE => {
+                engine.armor.is_some() && permits(&engine.options, ENCRYPTED_CHALLENGE)
+            }
             PA_ENC_TIMESTAMP => super::spake::timestamp_allowed(engine),
             _ => false,
         };

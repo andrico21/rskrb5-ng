@@ -50,13 +50,11 @@ mod tests {
             );
             assert_eq!(config.capath("Client", "Direct"), Some(&Route::Direct));
             assert_eq!(config.capath("client", "Server"), None);
-            assert!(!config.diagnostics().iter().any(|item| matches!(
-                item,
-                ConfigDiagnostic::NotYetEffective {
-                    relation: "capaths",
-                    package: _
-                }
-            )));
+            assert!(
+                config.diagnostics().is_empty(),
+                "{:?}",
+                config.diagnostics()
+            );
         }
         drop(
             Config::parse("[capaths]\n A = {\n B = .\n B = C\n }\n")
@@ -83,7 +81,12 @@ mod tests {
     }
 
     /// Plugin values accumulate as individual names, never whitespace token lists.
+    ///
+    /// The control of a client interface (`ccselect`) is effective, so Strict
+    /// mode accepts it; a KDC-side interface (`certauth`) has no consumer here
+    /// and Strict mode refuses it as an unknown path.
     fn plugin(key: &str) -> Result<(), Box<dyn Error>> {
+        use rskrb5_ng::error::Config as Failure;
         for interface in ["ccselect", "certauth"] {
             let text = format!(
                 "[plugins]\n {interface} = {{\n {key} = first\n {key}* = second\n {key} = ignored\n }}\n"
@@ -96,11 +99,24 @@ mod tests {
                 &selected.enable_only
             };
             assert_eq!(names, &["first", "second"]);
-            drop(
-                Config::parse_with_mode(&text, ParseMode::Strict)
-                    .err()
-                    .ok_or("strict plugin ignored")?,
-            );
+            let strict = Config::parse_with_mode(&text, ParseMode::Strict);
+            if interface == "ccselect" {
+                assert!(
+                    config.diagnostics().is_empty(),
+                    "{:?}",
+                    config.diagnostics()
+                );
+                assert!(strict.is_ok(), "{strict:?}");
+            } else {
+                assert!(
+                    matches!(
+                        &strict,
+                        Err(Failure::UnknownRelation { path })
+                            if path == &["plugins", interface, key]
+                    ),
+                    "{strict:?}"
+                );
+            }
         }
         Ok(())
     }
@@ -166,50 +182,41 @@ mod tests {
         Ok(())
     }
 
-    /// Plugin controls cannot silently disable the existing timestamp mechanism.
+    /// The clpreauth controls are effective: both are admitted, in both modes.
     #[test]
-    fn restrictive_preauth_plugins() -> Result<(), Box<dyn Error>> {
-        use rskrb5_ng::error::Config as Failure;
+    fn clpreauth_controls_are_admitted() -> Result<(), Box<dyn Error>> {
+        use rskrb5_ng::config::ParseMode;
         for assignment in ["disable = encrypted_timestamp", "enable_only = pkinit"] {
-            let failure =
-                Config::parse(&format!("[plugins]\n clpreauth = {{\n {assignment}\n }}\n"))
-                    .err()
-                    .ok_or("preauth policy ignored")?;
-            assert!(matches!(
-                failure,
-                Failure::NotYetEffective {
-                    relation: _,
-                    package: "plan 2 WP-16"
-                }
-            ));
+            for mode in [ParseMode::Compatible, ParseMode::Strict] {
+                let config = Config::parse_with_mode(
+                    &format!("[plugins]\n clpreauth = {{\n {assignment}\n }}\n"),
+                    mode,
+                )?;
+                assert!(config.diagnostics().is_empty(), "{assignment}");
+            }
         }
         Ok(())
     }
 
-    /// The timestamp-plugin refusal is decided at its own entry, before later plugin entries.
+    /// A malformed later plugin entry is the error: the clpreauth control before it is not refused.
     #[test]
-    fn restrictive_preauth_plugin_named_before_later_entries() -> Result<(), Box<dyn Error>> {
+    fn clpreauth_control_does_not_mask_later_entries() -> Result<(), Box<dyn Error>> {
         use rskrb5_ng::error::Config as Failure;
-        for (assignment, relation) in [
-            ("disable = encrypted_timestamp", "disable"),
-            ("enable_only = pkinit", "enable_only"),
-        ] {
-            // Given a clpreauth restriction and a later-sorted malformed plugin entry.
+        for assignment in ["disable = encrypted_timestamp", "enable_only = pkinit"] {
             let input = format!(
                 "[plugins]\n clpreauth = {{\n {assignment}\n }}\n interface = {{\n disable = \"two modules\"\n }}\n"
             );
-            // When the profile is parsed.
             let failure = Config::parse(&input)
                 .err()
-                .ok_or("preauth policy ignored")?;
-            // Then the restriction is refused, not the later malformed entry.
+                .ok_or("the malformed entry was accepted")?;
             assert!(
                 matches!(
                     failure,
-                    Failure::NotYetEffective {
-                        relation: named,
-                        package: "plan 2 WP-16"
-                    } if named == relation
+                    Failure::InvalidLine {
+                        section: _,
+                        line: _,
+                        text: _
+                    }
                 ),
                 "{failure:?}"
             );

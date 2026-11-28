@@ -325,7 +325,11 @@ mod tests {
         // Given a retrieved ticket with a session key.
         let buffer = ticket(&[5; 32]);
         // When it is converted for the client realm R.
-        let value = credential(View::new(&buffer.0, BASE), "R")?.ok_or(Platform::MachDisabled)?;
+        let value =
+            credential(View::new(&buffer.0, BASE), "R")?.ok_or(Platform::MalformedReply {
+                cache_type: "MSLSA",
+                reason: "no credential",
+            })?;
         // Then names, realms, key, times, flags and ticket are carried over.
         assert_eq!(value.client().components, ["alice"]);
         assert_eq!(value.server().components, ["HTTP", "web"]);

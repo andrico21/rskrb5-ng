@@ -37,6 +37,7 @@ fn service_key_replacements_erase_old_allocations() -> Result<(), hex::FromHexEr
         authenticator_cusec: 0,
         authenticator_time: UNIX_EPOCH,
         pac: None,
+        auth_indicators: Vec::new(),
     };
     EVENTS.with_borrow_mut(Vec::clear);
     options.set_subkey(None);

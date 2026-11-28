@@ -485,9 +485,13 @@ pub struct EstablishedContext {
     delegated: Option<Box<Credential>>,
     /// The ticket's verified PAC, on the acceptor.
     pac: Option<pac::Verified>,
+    /// The authentication indicators of the ticket's verified AD-CAMMACs, on the acceptor.
+    auth_indicators: Vec<String>,
     /// Whether the context is established; a DCE-style acceptor opens on the
     /// initiator's AP-REP.
     open: bool,
+    /// The mechanism: krb5, or IAKERB on krb5's AP exchange.
+    mechanism: context::Mechanism,
 }
 
 impl fmt::Debug for EstablishedContext {
@@ -752,7 +756,9 @@ impl EstablishedContext {
 
     /// `gss_inquire_name` of the initiator's name on the acceptor: the
     /// `urn:mspac:` attributes of the ticket's verified PAC (MIT
-    /// `mspac_get_attribute_types`, `pac.c:960-1010`), none without a PAC.
+    /// `mspac_get_attribute_types`, `pac.c:960-1010`), then `auth-indicators`
+    /// when the ticket carries authentication indicators (MIT
+    /// `authind_get_attribute_types`, `ai_authdata.c:119-151`).
     #[inline]
     #[must_use]
     pub fn source_attributes(&self) -> Vec<String> {
@@ -762,17 +768,23 @@ impl EstablishedContext {
     /// `gss_get_name_attribute` of the initiator's name on the acceptor:
     /// `urn:mspac:` for the whole PAC, `urn:mspac:<buffer>` or
     /// `urn:mspac:<type>` for one buffer, the name matched without case (MIT
-    /// `mspac_get_attribute`, `pac.c:1012-1056`).
+    /// `mspac_get_attribute`, `pac.c:1012-1056`); `auth-indicators`, matched
+    /// exactly, for the ticket's authentication indicators, every one of them
+    /// in [`NameAttribute::values`] (MIT `authind_get_attribute`,
+    /// `ai_authdata.c:153-186`).
     ///
     /// # Security
     ///
-    /// The values come from a PAC the acceptor verified; they are reported
-    /// authenticated only when its KDC signature verified.
+    /// The PAC values come from a PAC the acceptor verified; they are reported
+    /// authenticated only when its KDC signature verified. The indicators come
+    /// only from AD-CAMMACs of the ticket whose service verifier verified, and
+    /// are authenticated.
     ///
     /// # Errors
     ///
     /// Returns [`Error::NameAttributeUnavailable`] for an unknown attribute, a
-    /// buffer the PAC does not carry, or a context without a verified PAC.
+    /// buffer the PAC does not carry, a context without a verified PAC, or a
+    /// ticket without authentication indicators.
     #[inline]
     pub fn source_attribute(&self, attribute: &str) -> Result<NameAttribute, Error> {
         attributes::get(self, attribute)

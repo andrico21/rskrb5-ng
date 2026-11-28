@@ -29,8 +29,8 @@ use zeroize::Zeroizing;
 
 use super::{
     CCache, ContextFlags, Credential, CredentialUsage, EncryptionKey, Error, EstablishedContext,
-    Keytab, Name, NameKind, NameType, Principal, TransferBlob, TransferKey, TransferLedger, pac,
-    seq,
+    Keytab, Name, NameKind, NameType, Principal, TransferBlob, TransferKey, TransferLedger,
+    context::Mechanism, pac, seq,
 };
 use crate::crypto::{AesSha2Etype, CryptoPolicy};
 
@@ -507,6 +507,14 @@ fn put_context(writer: &mut Writer, context: &EstablishedContext) -> Result<(), 
             writer.flag(passed);
         }
     }
+    writer.word(u32::try_from(context.auth_indicators.len()).map_err(|_count| MALFORMED)?);
+    for indicator in &context.auth_indicators {
+        writer.bytes(indicator.as_bytes())?;
+    }
+    writer.byte(match context.mechanism {
+        Mechanism::Krb5 => 1,
+        Mechanism::Iakerb => 2,
+    });
     Ok(())
 }
 
@@ -553,6 +561,15 @@ fn get_context(reader: &mut Reader<'_>) -> Result<EstablishedContext, Error> {
     } else {
         None
     };
+    let mut auth_indicators = Vec::new();
+    for _ in 0..reader.word()? {
+        auth_indicators.push(reader.string()?);
+    }
+    let mechanism = match reader.byte()? {
+        1 => Mechanism::Krb5,
+        2 => Mechanism::Iakerb,
+        _ => return Err(MALFORMED),
+    };
     Ok(EstablishedContext {
         initiated,
         source,
@@ -567,7 +584,9 @@ fn get_context(reader: &mut Reader<'_>) -> Result<EstablishedContext, Error> {
         crypto_policy: CryptoPolicy::default(),
         delegated,
         pac: verified,
+        auth_indicators,
         open,
+        mechanism,
     })
 }
 

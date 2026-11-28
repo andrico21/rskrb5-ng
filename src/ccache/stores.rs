@@ -374,14 +374,18 @@ pub trait CredentialStore: fmt::Debug + Send + Sync {
 /// That is a provider installed with
 /// [`crate::extensions::Registry::install_stores`] that claims its prefix, else
 /// a built-in non-file type (`KCM`, `KEYRING`) through the arms of
-/// [`super::file_store::resolve`]; `None` for a file name.
+/// [`super::file_store::resolve`]; `None` for a file name. `settings` are the
+/// daemon settings of a `KCM` name (`None`: the defaults).
 ///
 /// # Errors
 ///
 /// The errors of the store's [`CredentialStore::resolve`].
-pub(crate) fn store_cache(name: &str) -> Result<Option<Box<dyn CacheHandle>>, Error> {
+pub(crate) fn store_cache(
+    name: &str,
+    settings: Option<&LibDefaults>,
+) -> Result<Option<Box<dyn CacheHandle>>, Error> {
     let Some((provider, residual)) = extensions::stores::installed(name) else {
-        return file_store::non_file(name).transpose();
+        return file_store::non_file(name, settings).transpose();
     };
     provider
         .credential_store()

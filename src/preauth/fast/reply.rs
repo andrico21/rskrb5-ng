@@ -1,7 +1,7 @@
 //! Replies to armored requests (MIT `fast.c:359-567`).
 
 use rasn::der;
-use rasn_kerberos::{KrbError, PaData, PrincipalName, Realm};
+use rasn_kerberos::{KdcRep, KrbError, PaData, PrincipalName, Realm};
 use zeroize::Zeroizing;
 
 use super::{
@@ -31,9 +31,33 @@ pub(super) fn unwrap(
     bytes: &[u8],
 ) -> Result<ArmoredReply, Error> {
     if let Ok(outer) = der::decode::<KrbError>(bytes) {
-        return error_reply(armor, nonce, &outer);
+        let inner = error_reply(armor, nonce, &outer)?;
+        return Ok(ArmoredReply::new(inner.error, None, inner.cookie));
     }
-    let rasn_kerberos::AsRep(mut reply) = keys::decode("AS-REP", bytes)?;
+    let rasn_kerberos::AsRep(encrypted) = keys::decode("AS-REP", bytes)?;
+    let (reply, strengthen_key, client) = kdc_reply(armor, nonce, encrypted)?;
+    Ok(ArmoredReply::new(
+        encode("AS-REP", &rasn_kerberos::AsRep(reply))?,
+        strengthen_key,
+        None,
+    )
+    .with_authenticated_client(client))
+}
+
+/// What an armored KDC-REP is: its FAST response checked and applied.
+///
+/// The response is decrypted and bound to `nonce`, its finished message must
+/// cover the reply's ticket, and the reply then carries the authenticated
+/// client and the inner padata in place of the unauthenticated outer ones
+/// (MIT `krb5int_fast_process_response`, `fast.c:515-567`).
+///
+/// # Errors
+/// Returns the FAST failure of the reply; nothing unauthenticated is passed on.
+pub(super) fn kdc_reply(
+    armor: &EncryptionKey,
+    nonce: u32,
+    mut reply: KdcRep,
+) -> Result<(KdcRep, Option<EncryptionKey>, Principal), Error> {
     let response = fast_response(armor, nonce, reply.padata.as_deref().unwrap_or_default())?;
     let finished = response.finished.ok_or(Error::MissingFinished)?;
     let ticket_der = Zeroizing::new(
@@ -52,12 +76,7 @@ pub(super) fn unwrap(
     let strengthen_key = response
         .strengthen_key
         .map(|key| EncryptionKey::new(key.r#type, key.value.to_vec()));
-    Ok(ArmoredReply::new(
-        encode("AS-REP", &rasn_kerberos::AsRep(reply))?,
-        strengthen_key,
-        None,
-    )
-    .with_authenticated_client(client))
+    Ok((reply, strengthen_key, client))
 }
 
 /// The inner error of an armored KRB-ERROR (RFC 6113 section 5.4.4).
@@ -65,7 +84,11 @@ pub(super) fn unwrap(
 /// # Errors
 /// Returns [`Error::UnarmoredError`] for an error without `PA-FX-FAST`, and
 /// the FAST failure of an armored one.
-fn error_reply(armor: &EncryptionKey, nonce: u32, outer: &KrbError) -> Result<ArmoredReply, Error> {
+pub(super) fn error_reply(
+    armor: &EncryptionKey,
+    nonce: u32,
+    outer: &KrbError,
+) -> Result<InnerError, Error> {
     let unarmored = Error::UnarmoredError {
         code: outer.error_code,
     };
@@ -105,11 +128,18 @@ fn error_reply(armor: &EncryptionKey, nonce: u32, outer: &KrbError) -> Result<Ar
     if !rest.is_empty() {
         inner.e_data = Some(encode("METHOD-DATA", &rest)?.to_vec().into());
     }
-    Ok(ArmoredReply::new(
-        encode("KRB-ERROR", &inner)?,
-        None,
+    Ok(InnerError {
+        error: encode("KRB-ERROR", &inner)?,
         cookie,
-    ))
+    })
+}
+
+/// The authenticated error of an armored KRB-ERROR and the KDC's cookie.
+pub(super) struct InnerError {
+    /// The inner KRB-ERROR, with the inner padata as its METHOD-DATA.
+    pub error: Zeroizing<Vec<u8>>,
+    /// The KDC's cookie, bounded.
+    pub cookie: Option<Vec<u8>>,
 }
 
 /// Decrypt the single `PA-FX-FAST` of `padata` and bind it to `nonce`.

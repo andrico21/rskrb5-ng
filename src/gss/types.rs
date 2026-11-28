@@ -590,9 +590,10 @@ impl IovBuffer {
 #[derive(Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct NameAttribute {
-    /// The value.
-    value: Vec<u8>,
-    /// Whether the value is authenticated: the PAC's KDC signature verified.
+    /// The values, at least one, in the mechanism's order.
+    values: Vec<Vec<u8>>,
+    /// Whether the values are authenticated: the PAC's KDC signature verified,
+    /// or the indicators' AD-CAMMAC verified.
     authenticated: bool,
     /// Whether the value is complete.
     complete: bool,
@@ -602,7 +603,8 @@ impl fmt::Debug for NameAttribute {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("NameAttribute")
-            .field("value_len", &self.value.len())
+            .field("value_len", &self.value().len())
+            .field("values", &self.values.len())
             .field("authenticated", &self.authenticated)
             .field("complete", &self.complete)
             .finish()
@@ -610,22 +612,34 @@ impl fmt::Debug for NameAttribute {
 }
 
 impl NameAttribute {
-    /// The value: the bytes of the PAC or of one PAC buffer.
+    /// The first value: the bytes of the PAC or of one PAC buffer, or the
+    /// first authentication indicator.
     #[inline]
     #[must_use]
     pub fn value(&self) -> &[u8] {
-        &self.value
+        self.values.first().map_or(&[], Vec::as_slice)
     }
 
-    /// Whether the value is authenticated: only when the PAC's KDC signature
-    /// verified, not merely its server signature.
+    /// Every value, in order: one for a PAC attribute, each authentication
+    /// indicator for `auth-indicators` (MIT returns them one by one through
+    /// `gss_get_name_attribute`'s `more`, `ai_authdata.c:166-178`).
+    #[inline]
+    #[must_use]
+    pub fn values(&self) -> &[Vec<u8>] {
+        &self.values
+    }
+
+    /// Whether the values are authenticated: for a PAC attribute only when the
+    /// PAC's KDC signature verified, not merely its server signature; always
+    /// for authentication indicators, which come from a verified AD-CAMMAC.
     #[inline]
     #[must_use]
     pub const fn authenticated(&self) -> bool {
         self.authenticated
     }
 
-    /// Whether the value is complete (always, for PAC attributes).
+    /// Whether the values are complete (always, for PAC attributes and
+    /// authentication indicators).
     #[inline]
     #[must_use]
     pub const fn complete(&self) -> bool {

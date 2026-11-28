@@ -18,6 +18,36 @@ use crate::{
     trace::{Event as TraceEvent, Identity},
 };
 
+/// The ticket's and the authenticator's client, which must be the same.
+///
+/// RFC 4120 section 3.2.3: compare the client name and realm of the ticket
+/// with the same fields in the authenticator and reject `KRB_AP_ERR_BADMATCH`
+/// on any mismatch.
+///
+/// # Errors
+///
+/// Returns [`Error::ClientPrincipalMismatch`] and the name errors.
+fn matched_clients(
+    ticket: &rasn_kerberos::EncTicketPart,
+    authenticator: &rasn_kerberos::Authenticator,
+) -> Result<(Principal, Principal), Error> {
+    let ticket_client = principal_from_parts(&ticket.crealm, &ticket.cname)?;
+    let authenticator_client = principal_from_parts(&authenticator.crealm, &authenticator.cname)?;
+    if authenticator_client.realm != ticket_client.realm
+        || authenticator_client.components != ticket_client.components
+    {
+        return Err(Error::ClientPrincipalMismatch {
+            ticket: format!("{}@{}", ticket_client.name(), ticket_client.realm),
+            authenticator: format!(
+                "{}@{}",
+                authenticator_client.name(),
+                authenticator_client.realm
+            ),
+        });
+    }
+    Ok((ticket_client, authenticator_client))
+}
+
 impl Validator<'_> {
     /// Resolve the ticket's key identity without altering policy or replay state.
     /// # Errors
@@ -58,6 +88,23 @@ impl Validator<'_> {
         }
     }
 
+    /// Refuse a ticket whose key is not the expected service's.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::WrongPrincipal`].
+    fn check_expected_service(&self, realm: &str, components: &[String]) -> Result<(), Error> {
+        match &self.expected_service {
+            Some(expected) if expected.realm != realm || expected.components != components => {
+                Err(Error::WrongPrincipal {
+                    expected: format!("{}@{}", expected.name(), expected.realm),
+                    actual: format!("{}@{realm}", components.join("/")),
+                })
+            }
+            Some(_) | None => Ok(()),
+        }
+    }
+
     /// The PAC settings this validator verifies a ticket for `service` against.
     fn pac_check<'check>(&'check self, service: &'check Principal) -> PacCheck<'check> {
         PacCheck::new(
@@ -83,6 +130,7 @@ impl Validator<'_> {
             false,
             AuthorizationContext::new().with_conditions(self.authorization_conditions.as_deref()),
         )
+        .map(drop)
     }
 
     /// Enforce RFC 4120 section 2.7 before replay admission.
@@ -160,6 +208,7 @@ impl Validator<'_> {
         #[cfg(feature = "spnego")]
         self.check_acceptor_name(&ticket_service)?;
         let (keytab_components, service_key) = self.ticket_key(&ticket_service, &ap_req.ticket)?;
+        self.check_expected_service(&ticket_service.realm, &keytab_components)?;
 
         let enc_ticket =
             ticket::decrypt_ticket_enc_part(&ap_req.ticket, service_key).map_err(ticket_error)?;
@@ -169,7 +218,8 @@ impl Validator<'_> {
         self.validate_ticket_times(&ticket_service, &enc_ticket)?;
         self.validate_client_address(&ticket_service, &enc_ticket)?;
         self.validate_transit(&ticket_service, &enc_ticket)?;
-        let pac = verified_ticket_pac(&enc_ticket, service_key, &self.pac_check(&ticket_service))?;
+        let (pac, auth_indicators) =
+            verified_ticket_pac(&enc_ticket, service_key, &self.pac_check(&ticket_service))?;
 
         let session_key = encryption_key_from_rasn(&enc_ticket.key);
         let authenticator_usage = ap_req::authenticator_usage_for_ticket(&ap_req.ticket);
@@ -184,25 +234,7 @@ impl Validator<'_> {
 
         self.validate_authenticator_authorization(authenticator.authorization_data.as_ref())?;
 
-        let ticket_client = principal_from_parts(&enc_ticket.crealm, &enc_ticket.cname)?;
-        let authenticator_client =
-            principal_from_parts(&authenticator.crealm, &authenticator.cname)?;
-        // RFC 4120 section 3.2.3: compare the client name and realm of the
-        // ticket with the same fields in the authenticator and reject
-        // KRB_AP_ERR_BADMATCH on any mismatch.
-        if authenticator_client.realm != ticket_client.realm
-            || authenticator_client.components != ticket_client.components
-        {
-            return Err(Error::ClientPrincipalMismatch {
-                ticket: format!("{}@{}", ticket_client.name(), ticket_client.realm),
-                authenticator: format!(
-                    "{}@{}",
-                    authenticator_client.name(),
-                    authenticator_client.realm
-                ),
-            }
-            .into());
-        }
+        let (ticket_client, authenticator_client) = matched_clients(&enc_ticket, &authenticator)?;
 
         let cusec = microseconds_to_u32("authenticator.cusec", &authenticator.cusec)?;
         let authenticator_ctime = system_time_from_kerberos_time(&authenticator.ctime)?;
@@ -262,7 +294,8 @@ impl Validator<'_> {
             authenticator_ctime,
             authenticator_cusec: cusec,
             authenticator_time: authenticator_timestamp,
-            pac,
+            pac: pac.filter(|_verified| self.pac_extraction),
+            auth_indicators,
         };
         let tag = Tag::from_authenticator(
             ap_req.authenticator.etype,
