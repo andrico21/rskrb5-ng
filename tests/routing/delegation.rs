@@ -6,6 +6,7 @@ use std::time::SystemTime;
 use rskrb5_ng::{
     client::{
         Tokio,
+        options::TgsReq,
         principal::Principal,
         transport::{KdcProtocol, Tokio as Transport},
     },
@@ -323,5 +324,190 @@ async fn verify_init_creds_follows_the_nofail_truth_table() -> Result<(), TestEr
             "{setting}: {result:?}"
         );
     }
+    Ok(())
+}
+
+/// Same-realm resource-based delegation (`s4u_creds.c:1004-1016`): the
+/// service's own KDC answers the `S4U2Proxy` request with the target's
+/// ticket, which ends the exchange; the evidence of the first leg names the
+/// user and the service.
+#[tokio::test]
+async fn same_realm_rbcd_ends_with_the_first_proxy_reply() -> Result<(), TestError> {
+    // Given a target in the service realm that trusts the service.
+    let service = Principal::user(SERVICE_REALM, "svc");
+    let (tab, key) = keytab(&service, "service-password")?;
+    let target = Principal::new(SERVICE_REALM, 2, ["HTTP", "app.svc.test"]);
+    let (_, target_key) = keytab(&target, "target-password")?;
+    let kdc = Kdc::new(&[])
+        .with_service(service.clone(), key.clone())
+        .with_service(target.clone(), target_key.clone())
+        .with_delegation(service.clone(), target.clone())
+        .leak();
+    let mut client = client(profile(&[SERVICE_REALM], "")?, kdc, &service, tab)?;
+    let user = Principal::user(SERVICE_REALM, "alice");
+    // When the service delegates the user to the target.
+    let delegation = explained(
+        client
+            .delegate(
+                S4uIdentity::Principal(user.clone()),
+                target.clone(),
+                DelegationOptions::new(),
+            )
+            .await,
+        kdc,
+    )?;
+    // Then the evidence is the user's ticket to the service.
+    assert_eq!(delegation.evidence().client(), &user);
+    assert_eq!(delegation.evidence().service().components, service.components);
+    assert_eq!(decrypted_client(delegation.evidence().ticket(), &key)?, "alice");
+    // And the target's key opens the delegated ticket in the user's name.
+    assert_eq!(delegation.ticket().client(), &user);
+    assert_eq!(delegation.ticket().service(), &target);
+    assert_eq!(
+        decrypted_client(delegation.ticket().ticket(), &target_key)?,
+        "alice"
+    );
+    // And the KDC saw exactly the S4U2Self and the S4U2Proxy request.
+    let requested: Vec<Vec<String>> = kdc
+        .log()
+        .into_iter()
+        .map(|(realm, principal)| {
+            assert_eq!(realm, SERVICE_REALM, "every request stays in the service realm");
+            principal.components
+        })
+        .collect();
+    assert_eq!(requested, [service.components.clone(), target.components]);
+    Ok(())
+}
+
+/// A certificate `S4U2Self` reply without the `PA-S4U-X509-USER` answer names
+/// no user, so the request is refused as modified (MIT `s4u_creds.c:302-310`
+/// and `:529-533`).
+#[tokio::test]
+async fn certificate_s4u2self_without_the_kdc_answer_is_refused() -> Result<(), TestError> {
+    // Given a KDC that maps the certificate to carol but omits its answer.
+    let service = Principal::user(SERVICE_REALM, "svc");
+    let (tab, key) = keytab(&service, "service-password")?;
+    let kdc = Kdc::new(&[])
+        .with_service(service.clone(), key)
+        .with_certificate_user(Principal::user(SERVICE_REALM, "carol"))
+        .without_s4u_answer()
+        .leak();
+    let mut client = client(profile(&[SERVICE_REALM], "")?, kdc, &service, tab)?;
+    // When the service asks for the user of a certificate.
+    let identity = CertificateIdentity::new(vec![0x30, 0x03, 0x02, 0x01, 0x05], SERVICE_REALM)?;
+    let refused = client
+        .s4u2self_identity(S4uIdentity::Certificate(identity), DelegationOptions::new())
+        .await;
+    // Then the reply is refused as modified, after one request.
+    assert!(
+        matches!(refused, Err(ClientError::S4uReplyModified)),
+        "{refused:?}"
+    );
+    assert_eq!(kdc.log().len(), 1);
+    Ok(())
+}
+
+/// A named-user `S4U2Self` reply without the `PA-S4U-X509-USER` answer is
+/// accepted as an older KDC's (MIT `s4u_creds.c:302-310`): the evidence is
+/// still bound to the requested user through its decrypted part.
+#[tokio::test]
+async fn named_s4u2self_without_the_kdc_answer_is_bound_to_the_user() -> Result<(), TestError> {
+    // Given a KDC that omits the PA-S4U-X509-USER answer.
+    let service = Principal::user(SERVICE_REALM, "svc");
+    let (tab, key) = keytab(&service, "service-password")?;
+    let kdc = Kdc::new(&[])
+        .with_service(service.clone(), key.clone())
+        .without_s4u_answer()
+        .leak();
+    let mut client = client(profile(&[SERVICE_REALM], "")?, kdc, &service, tab)?;
+    let user = Principal::user(SERVICE_REALM, "alice");
+    // When the service impersonates the user.
+    let evidence = explained(
+        client
+            .s4u2self_identity(S4uIdentity::Principal(user.clone()), DelegationOptions::new())
+            .await,
+        kdc,
+    )?;
+    // Then the evidence names the user and decrypts to the user.
+    assert_eq!(evidence.client(), &user);
+    assert_eq!(decrypted_client(evidence.ticket(), &key)?, "alice");
+    Ok(())
+}
+
+/// MIT `vfy_increds.c:222-257`: a host principal with several keys in the
+/// keytab is one candidate, and its key verifies.
+#[tokio::test]
+async fn verify_init_creds_takes_a_host_principal_once() -> Result<(), TestError> {
+    // Given a host keytab with two key versions of one host principal.
+    let alice = Principal::user(USER_REALM, "alice");
+    let (tab, _) = keytab(&alice, "alice-password")?;
+    let host = Principal::new(USER_REALM, 2, ["host", "box.user.test"]);
+    let (mut host_tab, host_key) = keytab(&host, "host-password")?;
+    host_tab.add_entry_from_password(
+        KeytabPrincipal::new(USER_REALM, 2, ["host", "box.user.test"]),
+        Zeroizing::new(b"older-host-password".to_vec()),
+        SystemTime::now(),
+        0,
+        18,
+    )?;
+    assert_eq!(host_tab.entries().len(), 2);
+    let kdc = Kdc::new(&[]).with_service(host.clone(), host_key).leak();
+    let mut client = client(profile(&[USER_REALM], "")?, kdc, &alice, tab)?;
+    // When the credentials are verified with it.
+    let verified = client
+        .verify_init_creds(&host_tab, VerifyOptions::new())
+        .await?;
+    // Then the host principal verifies, after one ticket request for it.
+    assert_eq!(verified, Verification::Verified(host.clone()));
+    assert_eq!(
+        kdc.log()
+            .into_iter()
+            .filter(|(_, requested)| requested.components == host.components)
+            .count(),
+        1
+    );
+    Ok(())
+}
+
+/// The referral-following TGS exchange reports the service ticket and the
+/// cross-realm TGT it crossed on the way (`get_creds.c:561-634`).
+#[tokio::test]
+async fn referral_trace_reports_the_ticket_and_the_crossed_tgt() -> Result<(), TestError> {
+    // Given a user in USER.TEST and a service in RES.TEST, the realms trusting each other.
+    let alice = Principal::user(USER_REALM, "alice");
+    let target = Principal::new(RESOURCE_REALM, 2, ["HTTP", "app.res.test"]);
+    let (_, target_key) = keytab(&target, "target-password")?;
+    let kdc = Kdc::new(&[(USER_REALM, RESOURCE_REALM)])
+        .with_service(target.clone(), target_key.clone())
+        .leak();
+    let tgt = kdc.tgt(alice.clone())?;
+    // When the user asks for a ticket to the service.
+    let result = explained(
+        Transport::new()
+            .with_kdc_proxy(kdc)
+            .get_service_ticket_with_referral_trace(
+                &profile(&[USER_REALM, RESOURCE_REALM], "")?,
+                KdcProtocol::Tcp,
+                &tgt,
+                target.clone(),
+                TgsReq::new(SystemTime::now(), 0x0a0b_0c0d).with_etypes(vec![18_i32]),
+            )
+            .await,
+        kdc,
+    )?;
+    // Then the ticket is the user's ticket to the service.
+    assert_eq!(result.ticket().client(), &alice);
+    assert_eq!(result.ticket().service(), &target);
+    assert_eq!(
+        decrypted_client(result.ticket().ticket(), &target_key)?,
+        "alice"
+    );
+    // And the one crossed TGT is krbtgt/RES.TEST@USER.TEST.
+    let crossed: Vec<&Principal> = result.referral_tgts().iter().map(|tgt| tgt.service()).collect();
+    assert_eq!(
+        crossed,
+        [&Principal::new(USER_REALM, 2, ["krbtgt", RESOURCE_REALM])]
+    );
     Ok(())
 }

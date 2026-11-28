@@ -168,3 +168,27 @@ fn direct_path_stops_on_a_kdc_error() -> Result<(), TestError> {
     );
     Ok(())
 }
+
+/// The `[capaths]` back-off ends at the hop next to the client's realm
+/// (`get_creds.c:923-932`): when the KDC refuses that TGT too, no closer realm
+/// is left and its error is returned.
+#[test]
+fn capaths_back_off_stops_at_the_nearest_hop() -> Result<(), TestError> {
+    // Given the client path TEST -> OTHER -> FAR and a TEST.RSKRB5 TGT.
+    let config = Config::parse("[capaths]\n TEST.RSKRB5 = {\n  FAR.EXAMPLE = OTHER.RSKRB5\n }\n")?;
+    let path = RealmPath::client(&config.capaths, "TEST.RSKRB5", "FAR.EXAMPLE")?;
+    let service = Principal::new("FAR.EXAMPLE", 2, ["HTTP", "http.far.example"]);
+    let mut exchange =
+        TicketCreds::new(tgt("TEST.RSKRB5")?, service, options().with_realm_path(path))?;
+    let first = exchange.step(StepInput::Start)?;
+    let second = refuse(&mut exchange, &first, KDC_ERR_S_PRINCIPAL_UNKNOWN)??;
+    assert_eq!(request_of(&second)?.1, tgs("TEST.RSKRB5", "OTHER.RSKRB5"));
+    // When the TEST KDC refuses the TGT of the nearest hop as well.
+    let refused = refuse(&mut exchange, &second, KDC_ERR_S_PRINCIPAL_UNKNOWN)?;
+    // Then its error ends the exchange.
+    assert!(
+        matches!(&refused, Err(ClientError::Kdc(error)) if error.error_code() == KDC_ERR_S_PRINCIPAL_UNKNOWN),
+        "{refused:?}"
+    );
+    Ok(())
+}

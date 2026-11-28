@@ -73,6 +73,9 @@ struct State {
     delegations: Vec<(Principal, Principal)>,
     /// The user a certificate maps to.
     certificate_user: Option<Principal>,
+    /// Whether an `S4U2Self` reply omits the `PA-S4U-X509-USER` answer, as a
+    /// KDC that predates it does.
+    s4u_answer_omitted: bool,
     /// Every request: KDC realm and requested principal.
     log: Vec<(String, Principal)>,
     /// Requests the KDC could not answer, with the reason.
@@ -123,6 +126,12 @@ impl Kdc {
     /// Map every certificate to `user`.
     pub(crate) fn with_certificate_user(self, user: Principal) -> Self {
         self.state().certificate_user = Some(user);
+        self
+    }
+
+    /// Answer `S4U2Self` without the `PA-S4U-X509-USER` element.
+    pub(crate) fn without_s4u_answer(self) -> Self {
+        self.state().s4u_answer_omitted = true;
         self
     }
 
@@ -341,15 +350,11 @@ impl Kdc {
         };
         let reply = UserId::new(user_id.nonce, Some(name(&user)?), text(&user.realm)?, None);
         let answer = PaS4uX509User::sign(reply, element.1, REPLY_USAGE)?;
-        Ok(Ok((
-            issued_for,
-            user,
-            None,
-            Some(vec![rasn_kerberos::PaData {
-                r#type: PA_S4U_X509_USER,
-                value: der::encode(&answer)?.into(),
-            }]),
-        )))
+        let padata = (!self.state().s4u_answer_omitted).then_some(vec![rasn_kerberos::PaData {
+            r#type: PA_S4U_X509_USER,
+            value: der::encode(&answer)?.into(),
+        }]);
+        Ok(Ok((issued_for, user, None, padata)))
     }
 
     /// An `S4U2Proxy` request: a proxy TGT to the target's realm when the
