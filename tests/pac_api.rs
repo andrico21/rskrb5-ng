@@ -36,6 +36,7 @@ mod pac_api {
     mod regressions;
     mod request;
     mod verification;
+    mod verified_buffers;
 
     use core::{error::Error, time::Duration};
     use std::time::{SystemTime, UNIX_EPOCH};

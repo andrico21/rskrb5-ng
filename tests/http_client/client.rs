@@ -514,3 +514,33 @@ fn an_ap_rep_of_another_server_does_not_prove_the_service() -> Result<(), TestEr
     );
     Ok(())
 }
+
+/// `into_response` hands over the final response itself: its status, headers
+/// and body.
+#[test]
+fn the_final_response_is_handed_over() -> Result<(), TestError> {
+    let network = Network::new();
+    let server = Arc::new(Kerberos::new(&[HOST_A]));
+    let network = network.serve("https://a.example.com/", move |request| {
+        server.respond(request, &|_| {
+            let mut response = Response::new(b"handed over".to_vec());
+            *response.status_mut() = StatusCode::ACCEPTED;
+            drop(
+                response
+                    .headers_mut()
+                    .insert("x-origin", HeaderValue::from_static("a")),
+            );
+            response
+        })
+    })?;
+    let mut client = client(&network, &[HOST_A])?;
+    let result = run(async { client.get("https://a.example.com/page").await })??;
+    let response = result.into_response();
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    assert_eq!(
+        response.headers().get("x-origin"),
+        Some(&HeaderValue::from_static("a"))
+    );
+    assert_eq!(response.body().as_slice(), b"handed over");
+    Ok(())
+}

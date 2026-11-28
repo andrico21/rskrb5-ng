@@ -15,7 +15,7 @@ use rskrb5_ng::{
     },
     spnego::{
         NegState, NegTokenInit, NegTokenResp, Token,
-        negoex::{AcceptStep, Acceptor, Initiator},
+        negoex::{AcceptStep, Accepted, Acceptor, Initiator},
         oid::ObjectIdentifier,
     },
 };
@@ -264,5 +264,70 @@ fn a_wrong_verify_checksum_fails_through_spnego() -> Result<(), TestError> {
         initiator.into_session().is_err(),
         "no session after a failure"
     );
+    Ok(())
+}
+
+/// Run `hops` hops until the acceptor completes: the initiator that has not
+/// read the acceptor's last answer yet, the accepted context, and that answer.
+fn until_accepted(
+    hops: u8,
+) -> Result<(Initiator, Accepted, Vec<u8>), TestError> {
+    let (ours, theirs) = contexts(hops)?;
+    let mut initiator = Initiator::new(ours);
+    let mut acceptor = Acceptor::new(theirs);
+    let InitStep::Continue(mut token) = initiator.init_sec_context(None)? else {
+        return Err("the first token".into());
+    };
+    for _ in 0_u8..10 {
+        match acceptor.accept_sec_context(&token)? {
+            AcceptStep::Continue(reply) => {
+                let InitStep::Continue(next) = initiator.init_sec_context(Some(&reply))? else {
+                    return Err("the initiator continues until the acceptor completes".into());
+                };
+                token = next;
+            }
+            AcceptStep::Complete(accepted) => {
+                let answer = accepted.output_token().to_vec();
+                return Ok((initiator, *accepted, answer));
+            }
+            _ => return Err("an unexpected acceptor step".into()),
+        }
+    }
+    Err("the acceptor never completed".into())
+}
+
+/// When the initiator's last token completes its `NegoEx` context, the
+/// acceptor's `accept-completed` carries no token and completes the initiator,
+/// which then reports the mechanism the acceptor selected.
+#[test]
+fn a_tokenless_completion_ends_a_completed_initiator() -> Result<(), TestError> {
+    // Given two hops, after which the initiator's VERIFY is the last message,
+    let (mut initiator, accepted, answer) = until_accepted(2)?;
+    let resp = resp_token(&answer)?;
+    assert_eq!(resp.neg_state(), Some(NegState::AcceptCompleted));
+    assert!(resp.response_token().is_none(), "no mechanism token is left");
+    // when the initiator reads the acceptor's completion,
+    let InitStep::Complete(None) = initiator.init_sec_context(Some(&answer))? else {
+        return Err("the tokenless completion completes the initiator".into());
+    };
+    // then it reports the acceptor's mechanism.
+    assert_eq!(initiator.selected().as_ref(), Some(accepted.mechanism()));
+    Ok(())
+}
+
+/// A completed initiator refuses a completion that still carries a token.
+#[test]
+fn a_completed_initiator_refuses_a_spurious_token() -> Result<(), TestError> {
+    // Given the initiator whose last token completed its context,
+    let (mut initiator, _accepted, answer) = until_accepted(2)?;
+    // when the acceptor's completion carries a mechanism token,
+    let mut resp = resp_token(&answer)?;
+    resp.set_response_token(Some(SIGNATURE.to_vec().into()));
+    // then the initiator refuses it.
+    let failure = initiator
+        .init_sec_context(Some(&resp.encode()?))
+        .err()
+        .context("a spurious token must fail")?;
+    assert!(matches!(failure, Gss::DefectiveToken(_)), "{failure}");
     Ok(())
 }

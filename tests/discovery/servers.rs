@@ -295,3 +295,50 @@ async fn kpasswd_discovery_uses_uri_records_first() -> Result<(), TestError> {
     assert_eq!(asked(&dns, "SRV")?, 0);
     Ok(())
 }
+
+/// MIT-dns-6 for URI records: a site that answers with URI records is used and the
+/// realm's own name is not asked; a site that answers with none falls back.
+#[tokio::test]
+async fn the_sites_uri_records_come_before_the_realms() -> Result<(), TestError> {
+    // Given URI records for the site `hq`, none for the site `branch`, and the realm's own.
+    let dns = Dns::start([
+        (
+            "_kerberos.hq._sites.test.gokrb5.",
+            RecordType::Unknown(256),
+            Reply::Records(vec![uri(0, "krb5srv::tcp:127.0.0.1:6088")]),
+        ),
+        (
+            "_kerberos.branch._sites.test.gokrb5.",
+            RecordType::Unknown(256),
+            Reply::Records(Vec::new()),
+        ),
+        (
+            KDC_URI,
+            RecordType::Unknown(256),
+            Reply::Records(vec![uri(0, "krb5srv::tcp:127.0.0.1:5088")]),
+        ),
+    ])
+    .await?;
+    // When URI discovery runs for the site with records,
+    let site = via(&dns)?
+        .discover_kdcs(&config(true, Some("hq"))?, REALM, KdcProtocol::Tcp)
+        .await?;
+    // then the site's server is used and the realm's URI name was not asked,
+    assert_eq!(authorities(&site), ["127.0.0.1:6088"]);
+    assert_eq!(
+        site.first().map(|endpoint| endpoint.source),
+        Some(KdcEndpointSource::DnsUri)
+    );
+    assert!(
+        !dns.questions()?
+            .iter()
+            .any(|question| question.contains(KDC_URI)),
+        "the realm's URI name was asked"
+    );
+    // and the site without records falls back to the realm's own record.
+    let fallback = via(&dns)?
+        .discover_kdcs(&config(true, Some("branch"))?, REALM, KdcProtocol::Tcp)
+        .await?;
+    assert_eq!(authorities(&fallback), ["127.0.0.1:5088"]);
+    Ok(())
+}
