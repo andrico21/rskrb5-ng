@@ -1,0 +1,141 @@
+name: mutants-tuning-probe
+# PROBE ONLY (W29-8), never merged: measures which cargo-mutants settings cut
+# the per-mutant wall time. Variant x shard (0 and 47 of 96), same list and
+# order as the ci.yml `mutants` job (--no-shuffle).
+on:
+  push:
+    branches: ["ci-probe/mutants-tuning"]
+permissions:
+  contents: read
+jobs:
+  tune:
+    name: tune (${{ matrix.variant }}, shard ${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 80
+    strategy:
+      fail-fast: false
+      matrix:
+        # second push (the first run's derive step could not parse colored
+        # cargo output): only the inc-skip variant is rerun
+        variant: [inc-skip]
+        shard: [0, 47]
+    env:
+      CARGO_BUILD_WARNINGS: allow
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants --locked
+      - name: Confine the mutation run's memory
+        run: |
+          grep -qw memory /sys/fs/cgroup/cgroup.subtree_control
+          sudo mkdir /sys/fs/cgroup/mutants
+          echo 12G | sudo tee /sys/fs/cgroup/mutants/memory.max
+          echo 0 | sudo tee /sys/fs/cgroup/mutants/memory.swap.max
+          echo 16384 | sudo tee /sys/fs/cgroup/mutants/pids.max
+      - name: Derive and print the skip set (inc-skip only)
+        if: matrix.variant == 'inc-skip'
+        run: |
+          mkdir -p "$RUNNER_TEMP/probe-info"
+          # List every test of every lib and integration binary (build only
+          # for the listing; the mutation run builds its own copies).
+          cargo test --color never --all-features --locked --lib --tests -- --list > "$RUNNER_TEMP/probe-info/all-tests.raw" 2>&1 || true
+          python3 - <<'PY'
+          import os, re, sys
+          cur = None
+          bins = {}
+          for line in open(os.environ["RUNNER_TEMP"] + "/probe-info/all-tests.raw", errors="replace"):
+              line = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", line)
+              m = re.search(r"Running (?:unittests )?(\S+)", line)
+              if m:
+                  cur = m.group(1)
+                  bins.setdefault(cur, [])
+                  continue
+              m = re.match(r"^(\S.*): test$", line.rstrip("\n"))
+              if m and cur:
+                  bins[cur].append(m.group(1))
+          targets = [b for b in bins if b.endswith(("mit_parity_manifest.rs", "gokrb5_parity_manifest.rs"))]
+          skip = sorted({t for b in targets for t in bins[b]})
+          others = [(b, t) for b, ts in bins.items() if b not in targets for t in ts]
+          for b in targets:
+              print("BIN", b, len(bins[b]))
+              for t in bins[b]:
+                  print("  ", t)
+          bad = [(b, t, s) for b, t in others for s in skip if s == t]
+          sub = sum(1 for b, t in others for s in skip if s in t and s != t)
+          print("SUBSTRING_ONLY_MATCHES_IN_OTHER_BINARIES (harmless under --exact)", sub)
+          print("TOTAL_BINARIES", len(bins), "TOTAL_TESTS", sum(len(v) for v in bins.values()))
+          print("SKIP_COUNT", len(skip), "TARGET_BINS", len(targets))
+          print("EXACT_NAME_COLLISIONS", len(bad))
+          for b in bad:
+              print("COLLISION", b)
+          open(os.environ["RUNNER_TEMP"] + "/probe-info/skip-names.txt", "w").write("\n".join(skip) + "\n")
+          if len(targets) != 2 or not skip:
+              sys.exit("skip set not clean")
+          PY
+          cat "$RUNNER_TEMP/probe-info/skip-names.txt"
+      - name: Run cargo mutants (${{ matrix.variant }}, shard ${{ matrix.shard }}/96)
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/probe-info"
+          echo "$$" | sudo tee /sys/fs/cgroup/mutants/cgroup.procs
+          set +e
+          variant='${{ matrix.variant }}'
+          jobs=2
+          case "$variant" in
+            ctl) ;;
+            inc) export CARGO_INCREMENTAL=1 ;;
+            inc-j3) export CARGO_INCREMENTAL=1; jobs=3 ;;
+            inc-j4) export CARGO_INCREMENTAL=1; jobs=4 ;;
+            inc-skip) export CARGO_INCREMENTAL=1 ;;
+          esac
+          {
+            echo "variant=$variant shard=${{ matrix.shard }}/96 jobs=$jobs"
+            echo "CARGO_INCREMENTAL=${CARGO_INCREMENTAL-unset}"
+            cargo -V; rustc -V; cargo mutants --version
+            echo "nproc=$(nproc)"; free -m
+            env | grep -E '^CARGO|^RUSTFLAGS' | sed 's/=.*TOKEN.*//' | sort
+          } 2>&1 | tee "$RUNNER_TEMP/probe-info/env.txt"
+          extra=()
+          if [ "$variant" = "inc-skip" ]; then
+            extra=(-- -- --exact)
+            while read -r n; do [ -n "$n" ] && extra+=(--skip "$n"); done < "$RUNNER_TEMP/probe-info/skip-names.txt"
+          fi
+          start=$(date +%s)
+          timeout -k 2m 50m cargo mutants --all-features --no-shuffle --cap-lints=true --shard ${{ matrix.shard }}/96 -j "$jobs" "${extra[@]}"
+          status=$?
+          end=$(date +%s)
+          echo "RUN_STEP_SECONDS=$((end-start)) STATUS=$status" | tee "$RUNNER_TEMP/probe-info/run.txt"
+          echo "MUTANTS_STATUS=$status" >> "$GITHUB_ENV"
+          exit "$status"
+      - name: Record cgroup and summary
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/probe-info"
+          { echo "memory.peak=$(cat /sys/fs/cgroup/mutants/memory.peak 2>/dev/null || echo absent)"; cat /sys/fs/cgroup/mutants/memory.events; } | tee "$RUNNER_TEMP/probe-info/cgroup.txt"
+          out=mutants.out
+          generated=$(jq 'length' "$out/mutants.json" 2>/dev/null || echo 0)
+          total=$(jq '[.outcomes[]? | select(.scenario != "Baseline")] | length' "$out/outcomes.json" 2>/dev/null || echo 0)
+          summary=$(jq -r '"caught=\(.caught) missed=\(.missed) unviable=\(.unviable) timeout=\(.timeout) success=\(.success)"' "$out/outcomes.json" 2>/dev/null || echo "no outcomes.json")
+          line="${{ matrix.variant }} shard ${{ matrix.shard }}/96: generated=$generated tested=$total $summary status=${MUTANTS_STATUS:-none} $(cat "$RUNNER_TEMP/probe-info/run.txt" 2>/dev/null)"
+          echo "$line"
+          echo "$line" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload mutants.out
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tune-${{ matrix.variant }}-${{ matrix.shard }}
+          path: mutants.out
+          retention-days: 14
+      - name: Upload probe info
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: info-${{ matrix.variant }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/probe-info
+          retention-days: 14
