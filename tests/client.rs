@@ -92,6 +92,9 @@ mod as_exchange;
 #[path = "client/host_acquisition.rs"]
 mod host_acquisition;
 #[cfg(feature = "tokio")]
+#[path = "client/interop_paths.rs"]
+mod interop_paths;
+#[cfg(feature = "tokio")]
 #[path = "client/kdc_recorder.rs"]
 mod kdc_recorder;
 #[path = "client/login_preauth.rs"]

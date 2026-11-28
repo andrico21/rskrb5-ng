@@ -1217,4 +1217,141 @@ TEST.GOKRB5 = {{
             Ok::<(), TestError>(())
         })
     }
+
+    /// The sender address in the KRB-PRIV of a parsed kpasswd request whose
+    /// AP-REQ is under `service_session_key`.
+    #[cfg(feature = "tokio")]
+    fn krb_priv_sender_address(
+        parsed: &KpasswdRequest,
+        service_session_key: &EncryptionKey,
+    ) -> Result<rasn_kerberos::HostAddress, TestError> {
+        let (authenticator, _) = decrypt_change_data(parsed, service_session_key)?;
+        let subkey = authenticator.subkey.context("AP-REQ reply key included")?;
+        let reply_key = EncryptionKey::new(subkey.r#type, subkey.value.as_ref().to_vec());
+        Ok(decrypt_krb_priv_enc_part(parsed.krb_priv(), &reply_key)
+            .context("KRB-PRIV payload decrypts")?
+            .sender_address)
+    }
+
+    /// A Tokio client with a cached `kadmin/changepw` ticket for the kpasswd
+    /// server on a fresh loopback listener, the listener, and the ticket's
+    /// session key.
+    #[cfg(feature = "tokio")]
+    async fn client_with_changepw_ticket() -> Result<(Tokio, TcpListener, EncryptionKey), TestError>
+    {
+        let tgt = sample_tgt_session()?;
+        let changepw_ticket = current_changepw_ticket(&tgt)?;
+        let session_key = changepw_ticket.session_key().clone();
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .context("bind local kpasswd listener")?;
+        let addr = listener.local_addr().context("local listener address")?;
+        let mut client = Tokio::from_tgt_session(
+            config_with_kpasswd_server(&addr.to_string())?,
+            KdcProtocol::Tcp,
+            tgt,
+        );
+        client.cache_service_ticket(changepw_ticket)?;
+        Ok((client, listener, session_key))
+    }
+
+    /// Pins the generated-metadata wrapper `change_password_for`: the RFC 3244
+    /// request names the explicit target, carries the new password and the
+    /// caller's sender address, and the server's result is returned.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_change_password_for_sends_the_target_and_sender_address()
+    -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let (mut client, listener, session_key) = client_with_changepw_ticket().await?;
+            let target = Principal::new("TEST.GOKRB5", 1, ["other-user"]);
+            let target_for_server = target.clone();
+            let task = tokio::spawn(async move {
+                let (request, mut socket) = read_tcp_kdc_request(&listener).await?;
+                let parsed = KpasswdRequest::parse(&request).context("kpasswd request parses")?;
+                assert_eq!(parsed.version(), 0xff80, "a set-password request");
+                let (authenticator, change_data) = decrypt_change_data(&parsed, &session_key)?;
+                assert_eq!(
+                    principal_from_parts(
+                        change_data.targ_realm().context("target realm set")?,
+                        change_data.targ_name().context("target name set")?,
+                    )?,
+                    target_for_server
+                );
+                assert_eq!(change_data.new_passwd().to_vec(), b"newpassword".to_vec());
+                let sender = krb_priv_sender_address(&parsed, &session_key)?;
+                assert_eq!(sender.addr_type, 2_i32);
+                assert_eq!(sender.address.as_ref(), [192, 0, 2, 7]);
+                let response = kpasswd_success_reply_with_ap_rep_subkey(
+                    &authenticator,
+                    &session_key,
+                    &session_key,
+                    KPASSWD_SUCCESS,
+                    "target password changed",
+                )?;
+                write_tcp_kdc_response(&mut socket, &response).await?;
+                Ok::<(), TestError>(())
+            });
+
+            let result = client
+                .change_password_for(
+                    target,
+                    Password::copy_from_str("newpassword"),
+                    ipv4_host_address([192, 0, 2, 7]),
+                )
+                .await
+                .context("change target password succeeds")?;
+
+            task.await.context("kpasswd server task completes")??;
+            assert_eq!(result.code, KPASSWD_SUCCESS);
+            assert_eq!(result.text, "target password changed");
+            Ok::<(), TestError>(())
+        })?;
+        Ok(())
+    }
+
+    /// Pins the generated-metadata wrapper `change_password`: a change of the
+    /// client's own password is the version 1 protocol (MIT `changepw.c:308-315`),
+    /// whose KRB-PRIV carries the new password and the caller's sender address.
+    #[cfg(feature = "tokio")]
+    #[test]
+    fn tokio_client_change_password_sends_its_own_password_change() -> Result<(), TestError> {
+        runtime()?.block_on(async {
+            let (mut client, listener, session_key) = client_with_changepw_ticket().await?;
+            let task = tokio::spawn(async move {
+                let (request, mut socket) = read_tcp_kdc_request(&listener).await?;
+                let parsed = KpasswdRequest::parse(&request).context("kpasswd request parses")?;
+                assert_eq!(parsed.version(), 1, "a change-password request");
+                let (authenticator, change_data) = decrypt_change_data(&parsed, &session_key)?;
+                assert!(change_data.targ_name().is_none(), "no target name");
+                assert!(change_data.targ_realm().is_none(), "no target realm");
+                assert_eq!(change_data.new_passwd().to_vec(), b"own-new-password".to_vec());
+                let sender = krb_priv_sender_address(&parsed, &session_key)?;
+                assert_eq!(sender.address.as_ref(), [198, 51, 100, 9]);
+                let response = kpasswd_success_reply_with_ap_rep_subkey(
+                    &authenticator,
+                    &session_key,
+                    &session_key,
+                    KPASSWD_SUCCESS,
+                    "own password changed",
+                )?;
+                write_tcp_kdc_response(&mut socket, &response).await?;
+                Ok::<(), TestError>(())
+            });
+
+            let result = client
+                .change_password(
+                    Password::copy_from_str("own-new-password"),
+                    ipv4_host_address([198, 51, 100, 9]),
+                )
+                .await
+                .context("own password change succeeds")?;
+
+            task.await.context("kpasswd server task completes")??;
+            assert_eq!(result.code, KPASSWD_SUCCESS);
+            assert_eq!(result.text, "own password changed");
+            Ok::<(), TestError>(())
+        })?;
+        Ok(())
+    }
 }
