@@ -76,6 +76,9 @@ struct State {
     /// Whether an `S4U2Self` reply omits the `PA-S4U-X509-USER` answer, as a
     /// KDC that predates it does.
     s4u_answer_omitted: bool,
+    /// Every `S4U2Self` request: its `KDCOptions` and whether it carried a
+    /// certificate.
+    s4u_requests: Vec<(u32, bool)>,
     /// Every request: KDC realm and requested principal.
     log: Vec<(String, Principal)>,
     /// Requests the KDC could not answer, with the reason.
@@ -155,6 +158,12 @@ impl Kdc {
     /// The requests the KDC could not answer.
     pub(crate) fn failures(&self) -> Vec<String> {
         self.state().failures.clone()
+    }
+
+    /// The `KDCOptions` of every `S4U2Self` request so far, and whether it
+    /// carried the user's certificate.
+    pub(crate) fn s4u_requests(&self) -> Vec<(u32, bool)> {
+        self.state().s4u_requests.clone()
     }
 
     /// The realm and principal of every request so far.
@@ -285,6 +294,11 @@ impl Kdc {
         let s4u = padata.iter().find(|entry| entry.r#type == PA_S4U_X509_USER);
         let second = body.additional_tickets.as_deref().and_then(<[_]>::first);
         let decision = if let Some(element) = s4u {
+            let certified = PaS4uX509User::decode_der(&element.value)?
+                .user_id
+                .subject_certificate
+                .is_some();
+            self.state().s4u_requests.push((options, certified));
             self.s4u2self(realm, requested.clone(), (&element.value, &header_key))?
         } else if options & 0x0002_0000 != 0 {
             self.s4u2proxy(

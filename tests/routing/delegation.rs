@@ -511,3 +511,87 @@ async fn referral_trace_reports_the_ticket_and_the_crossed_tgt() -> Result<(), T
     );
     Ok(())
 }
+
+/// `KDCOptions` forwardable.
+const FORWARDABLE: u32 = 0x4000_0000;
+/// `KDCOptions` proxiable.
+const PROXIABLE: u32 = 0x1000_0000;
+/// `KDCOptions` canonicalize.
+const CANONICALIZE: u32 = 0x0001_0000;
+
+/// A cross-realm certificate `S4U2Self` sends the certificate on the first
+/// hop only (MIT `s4u_creds.c:420-490`): the user's KDC names the user, and
+/// the request back to the service's realm carries that name instead.
+#[tokio::test]
+async fn cross_realm_certificate_s4u2self_sends_the_certificate_once() -> Result<(), TestError> {
+    // Given a service in SVC.TEST and a certificate the USER.TEST KDC maps to alice.
+    let service = Principal::user(SERVICE_REALM, "svc");
+    let (tab, key) = keytab(&service, "service-password")?;
+    let alice = Principal::user(USER_REALM, "alice");
+    let kdc = Kdc::new(&[(SERVICE_REALM, USER_REALM)])
+        .with_service(service.clone(), key.clone())
+        .with_certificate_user(alice.clone())
+        .leak();
+    let mut client = client(
+        profile(&[SERVICE_REALM, USER_REALM], "")?,
+        kdc,
+        &service,
+        tab,
+    )?;
+    // When the service asks for the user of a USER.TEST certificate.
+    let identity = CertificateIdentity::new(vec![0x30, 0x03, 0x02, 0x01, 0x05], USER_REALM)?;
+    let evidence = explained(
+        client
+            .s4u2self_identity(S4uIdentity::Certificate(identity), DelegationOptions::new())
+            .await,
+        kdc,
+    )?;
+    // Then the evidence names alice, and only the first S4U request carried the certificate.
+    assert_eq!(evidence.client(), &alice);
+    assert_eq!(decrypted_client(evidence.ticket(), &key)?, "alice");
+    let certified: Vec<bool> = kdc
+        .s4u_requests()
+        .into_iter()
+        .map(|(_, certified)| certified)
+        .collect();
+    assert_eq!(certified, [true, false]);
+    Ok(())
+}
+
+/// The `S4U2Self` request keeps the profile's options and adds CANONICALIZE,
+/// and FORWARDABLE when the delegation asks for forwardable evidence
+/// (MIT `s4u_creds.c:557-561`).
+#[tokio::test]
+async fn s4u2self_options_add_canonicalize_and_forwardable() -> Result<(), TestError> {
+    for forwardable in [true, false] {
+        // Given a profile that asks for forwardable, proxiable and canonicalized tickets.
+        let service = Principal::user(SERVICE_REALM, "svc");
+        let (tab, key) = keytab(&service, "service-password")?;
+        let kdc = Kdc::new(&[])
+            .with_service(service.clone(), key)
+            .leak();
+        let profiled = profile(
+            &[SERVICE_REALM],
+            "[libdefaults]\n forwardable = true\n proxiable = true\n canonicalize = true\n",
+        )?;
+        let mut client = client(profiled, kdc, &service, tab)?;
+        // When the service impersonates alice.
+        drop(explained(
+            client
+                .s4u2self_identity(
+                    S4uIdentity::Principal(Principal::user(SERVICE_REALM, "alice")),
+                    DelegationOptions::new().with_forwardable(forwardable),
+                )
+                .await,
+            kdc,
+        )?);
+        // Then the request asked for exactly the profile's options plus CANONICALIZE.
+        let [(options, _)] = kdc.s4u_requests()[..] else {
+            return Err(format!("{forwardable}: one S4U request expected").into());
+        };
+        assert_eq!(options & CANONICALIZE, CANONICALIZE, "{forwardable}: {options:#010x}");
+        assert_eq!(options & PROXIABLE, PROXIABLE, "{forwardable}: {options:#010x}");
+        assert_eq!(options & FORWARDABLE, FORWARDABLE, "{forwardable}: {options:#010x}");
+    }
+    Ok(())
+}
