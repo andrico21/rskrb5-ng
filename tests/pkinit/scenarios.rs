@@ -4,7 +4,10 @@
 //! untrusted chain, RSA key transport, wrong nonce, malformed CMS, a wrong
 //! or missing anonymous key exchange).
 
-use std::time::SystemTime;
+use std::{
+    sync::{Arc, Mutex, PoisonError},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use rskrb5_ng::{
     Config,
@@ -20,14 +23,15 @@ use rskrb5_ng::{
         fast::AnonymousArmor as _,
         pkinit::{
             AnonymousArmorSource, AnonymousOptions, CertificatePolicy, DhGroup, EkuChecking,
-            Exchange, Identity, KDC_OPTION_REQUEST_ANONYMOUS, KdcTrust,
+            Exchange, Identity, IdentityProvider, KDC_OPTION_REQUEST_ANONYMOUS, KdcTrust,
         },
     },
+    extensions::ProviderError,
 };
 
 use crate::kdc::{
-    Behaviour, CA_EC, CLIENT_KEY, CLIENT_PEM, FRESHNESS, Kdc, Naming, REALM, TestError, Transport,
-    plain_reply,
+    AHEAD_SECONDS, Behaviour, CA_EC, CLIENT_KEY, CLIENT_NOT_TRUSTED, CLIENT_PEM, FRESHNESS, Kdc,
+    Naming, REALM, TestError, Transport, plain_reply,
 };
 
 /// A check of the PKINIT error a scenario ends with.
@@ -358,5 +362,164 @@ fn anonymous_armor_source_obtains_an_anonymous_tgt() -> Result<(), TestError> {
         "client"
     );
     assert_eq!(ticket.service(), &Principal::tgt_service(REALM), "service");
+    Ok(())
+}
+
+/// An identity provider that hands out the client certificate, or fails,
+/// and records whom it was asked for.
+struct Provider {
+    /// Whether it supplies the identity.
+    supplies: bool,
+    /// The clients it was asked for.
+    asked: Mutex<Vec<Principal>>,
+}
+
+impl IdentityProvider for Provider {
+    fn identity(&self, client: &Principal) -> Result<Identity, ProviderError> {
+        self.asked
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(client.clone());
+        if self.supplies {
+            Ok(Identity::from_pem(CLIENT_PEM, CLIENT_KEY)?)
+        } else {
+            Err("the smart card is absent".into())
+        }
+    }
+}
+
+/// A provider exchange over `provider` that trusts the fixture CA.
+fn provider_exchange(provider: &Arc<Provider>) -> Result<Exchange, TestError> {
+    let shared: Arc<dyn IdentityProvider> = Arc::<Provider>::clone(provider);
+    Ok(Exchange::with_provider(
+        shared,
+        KdcTrust::from_pem(CA_EC)?,
+        CertificatePolicy::default().with_group(DhGroup::P256),
+    ))
+}
+
+/// The D8 identity provider supplies the certificate the client signs with:
+/// it is asked once, for the client, and the login completes.
+#[test]
+fn provider_identity_authenticates_the_client() -> Result<(), TestError> {
+    // Given a provider that supplies the client certificate.
+    let provider = Arc::new(Provider {
+        supplies: true,
+        asked: Mutex::new(Vec::new()),
+    });
+    let mut kdc = Kdc::new(Behaviour::Honest, true);
+    let mut engine = InitCreds::with_pkinit(
+        client(),
+        provider_exchange(&provider)?,
+        InitCredsOptions::new(request()),
+    );
+    // When the exchange runs.
+    let outcome = run(&mut engine, &mut kdc)?;
+    // Then it completes for the client after one signed AuthPack.
+    assert_eq!(outcome.map_err(|error| error.to_string())?, client());
+    assert_eq!(kdc.auth_packs().len(), 1);
+    assert!(kdc.checksums_match(), "the AuthPack binds the request body");
+    let asked = provider.asked.lock().unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(asked.as_slice(), [client()]);
+    Ok(())
+}
+
+/// A provider that fails ends the exchange with its failure before any
+/// PA-PK-AS-REQ is sent.
+#[test]
+fn provider_failure_ends_the_exchange_before_sending() -> Result<(), TestError> {
+    // Given a provider that cannot supply an identity.
+    let provider = Arc::new(Provider {
+        supplies: false,
+        asked: Mutex::new(Vec::new()),
+    });
+    let mut kdc = Kdc::new(Behaviour::Honest, true);
+    let mut engine = InitCreds::with_pkinit(
+        client(),
+        provider_exchange(&provider)?,
+        InitCredsOptions::new(request()),
+    );
+    // When the exchange runs.
+    let outcome = run(&mut engine, &mut kdc)?;
+    // Then the provider's failure is the outcome and the KDC saw no AuthPack.
+    assert!(
+        matches!(pkinit_error(&outcome), Some(Pkinit::Provider(_))),
+        "{outcome:?}"
+    );
+    assert!(kdc.auth_packs().is_empty(), "no PA-PK-AS-REQ was sent");
+    let asked = provider.asked.lock().unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(asked.as_slice(), [client()]);
+    Ok(())
+}
+
+/// Seconds since the Unix epoch of now.
+fn now_seconds() -> Result<i64, TestError> {
+    Ok(i64::try_from(
+        SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
+    )?)
+}
+
+/// Under `kdc_timesync` the PKAuthenticator carries the KDC's time from its
+/// `PREAUTH_REQUIRED` error (MIT `pkinit_clnt.c` uses the preauth request
+/// time, `get_in_tkt.c:1425-1439`); without it, the local time.
+#[test]
+fn kdc_timesync_dates_the_pk_authenticator_in_kdc_time() -> Result<(), TestError> {
+    for (timesync, offset) in [(true, i64::try_from(AHEAD_SECONDS)?), (false, 0)] {
+        // Given a KDC whose clock runs two hours ahead.
+        let mut kdc = Kdc::new(Behaviour::Ahead, false);
+        let mut engine = InitCreds::with_pkinit(
+            client(),
+            exchange(CertificatePolicy::default())?,
+            InitCredsOptions::new(request()).with_kdc_timesync(timesync),
+        );
+        // When the exchange runs.
+        let before = now_seconds()?;
+        let outcome = run(&mut engine, &mut kdc)?;
+        let after = now_seconds()?;
+        // Then the authenticator time is the KDC's under timesync, else local.
+        assert!(outcome.is_ok(), "{timesync}: {outcome:?}");
+        let pack = kdc.auth_packs().first().ok_or("no AuthPack")?;
+        let ctime = pack.pk_authenticator.ctime.0.timestamp();
+        assert!(
+            (before + offset - 5..=after + offset + 5).contains(&ctime),
+            "{timesync}: ctime {ctime} for local {before}..{after}"
+        );
+    }
+    Ok(())
+}
+
+/// A KDC that answers the PA-PK-AS-REQ with a KRB-ERROR ends the exchange
+/// with that error.
+#[test]
+fn kdc_error_to_the_pk_as_req_is_the_outcome() -> Result<(), TestError> {
+    let mut kdc = Kdc::new(Behaviour::Refused, true);
+    let mut engine = InitCreds::with_pkinit(
+        client(),
+        exchange(CertificatePolicy::default())?,
+        InitCredsOptions::new(request()),
+    );
+    let outcome = run(&mut engine, &mut kdc)?;
+    assert!(
+        matches!(&outcome, Err(ClientError::Kdc(error)) if error.error_code() == CLIENT_NOT_TRUSTED),
+        "{outcome:?}"
+    );
+    assert_eq!(kdc.auth_packs().len(), 1);
+    Ok(())
+}
+
+/// An empty PA-AS-FRESHNESS offer carries no token, so none is echoed
+/// (RFC 8070 section 2).
+#[test]
+fn empty_freshness_offer_sends_no_token() -> Result<(), TestError> {
+    let mut kdc = Kdc::new(Behaviour::EmptyFreshness, false);
+    let mut engine = InitCreds::with_pkinit(
+        client(),
+        exchange(CertificatePolicy::default())?,
+        InitCredsOptions::new(request()),
+    );
+    let outcome = run(&mut engine, &mut kdc)?;
+    assert!(outcome.is_ok(), "{outcome:?}");
+    let pack = kdc.auth_packs().first().ok_or("no AuthPack")?;
+    assert_eq!(pack.pk_authenticator.freshness_token, None, "no token");
     Ok(())
 }

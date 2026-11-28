@@ -463,6 +463,27 @@ fn disable_encrypted_timestamp() -> Result<(), TestError> {
     Ok(())
 }
 
+/// Options already built from the profile adopt it again on `configure` (the
+/// `drive_tokio` route): the realm stays timestamp-disabled, once, and a
+/// timestamp-only offer still gets no timestamp.
+#[test]
+fn configure_over_profile_options_keeps_the_timestamp_disabled() -> Result<(), TestError> {
+    // Given options from a profile that disables the timestamp in the realm.
+    let disabled = config(" disable_encrypted_timestamp = true", "")?;
+    let mut login = exchange(configured(&disabled)?);
+    // When the exchange adopts the same profile and meets a timestamp-only offer.
+    login.configure(&disabled);
+    let mut kdc = Kdc::new(Script::offering(Offer::TimestampOnly))?;
+    let outcome = run(&mut login, &mut kdc)?;
+    // Then the timestamp is refused for the realm and never sent.
+    assert!(matches!(
+        &outcome,
+        Outcome::Failed(ClientError::EncryptedTimestampDisabled { realm }) if realm == REALM
+    ));
+    assert!(never_sent_timestamp(&kdc));
+    Ok(())
+}
+
 #[cfg(feature = "spake")]
 /// MIT's order: when the KDC lists encrypted timestamp first, it is used; when
 /// the realm disables it, the exchange moves on to SPAKE.

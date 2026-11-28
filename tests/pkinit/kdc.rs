@@ -99,7 +99,18 @@ pub(crate) enum Behaviour {
     WrongKx,
     /// An AS-REP to the first request, without any preauthentication.
     NoPreauth,
+    /// A KRB-ERROR (`KDC_ERR_CLIENT_NOT_TRUSTED`) to the PA-PK-AS-REQ.
+    Refused,
+    /// A clock two hours ahead of the client's in the `PREAUTH_REQUIRED` error.
+    Ahead,
+    /// An empty PA-AS-FRESHNESS offer, which offers no token.
+    EmptyFreshness,
 }
+
+/// `KDC_ERR_CLIENT_NOT_TRUSTED`.
+pub(crate) const CLIENT_NOT_TRUSTED: i32 = 62;
+/// How far the clock of [`Behaviour::Ahead`] runs ahead, in seconds.
+pub(crate) const AHEAD_SECONDS: u64 = 7_200;
 
 /// `AlgorithmIdentifier`.
 #[derive(AsnType, Clone, Debug, Decode, Encode)]
@@ -321,10 +332,18 @@ impl Kdc {
                 offer(PA_PK_AS_REQ, Vec::new()),
                 offer(PA_PKINIT_KX, Vec::new()),
             ];
+            if self.behaviour == Behaviour::EmptyFreshness {
+                offers.insert(0, offer(PA_AS_FRESHNESS, Vec::new()));
+            }
             if self.freshness {
                 offers.push(offer(PA_AS_FRESHNESS, FRESHNESS.to_vec()));
             }
-            return krb_error(PREAUTH_REQUIRED, &offers);
+            let ahead = if self.behaviour == Behaviour::Ahead {
+                AHEAD_SECONDS
+            } else {
+                0
+            };
+            return krb_error(PREAUTH_REQUIRED, &offers, start().saturating_add(ahead));
         };
         let pa: PaPkAsReq = rasn_der::decode(&pk.value)?;
         let info = ContentInfo::from_der(&pa.signed_auth_pack)?;
@@ -354,6 +373,9 @@ impl Kdc {
             .as_ref()
             .ok_or("no client value")?;
         self.auth_packs.push(auth_pack.clone());
+        if self.behaviour == Behaviour::Refused {
+            return krb_error(CLIENT_NOT_TRUSTED, &[], start());
+        }
         self.reply(&request, bytes, spki_der.as_bytes(), nonce)
     }
 
@@ -449,7 +471,10 @@ impl Kdc {
             | Behaviour::MalformedCms
             | Behaviour::MissingKx
             | Behaviour::WrongKx
-            | Behaviour::NoPreauth => (fixture!("kdc.pem"), fixture!("kdc.key")),
+            | Behaviour::NoPreauth
+            | Behaviour::Refused
+            | Behaviour::Ahead
+            | Behaviour::EmptyFreshness => (fixture!("kdc.pem"), fixture!("kdc.key")),
         };
         let (_, cert_der) = pem::decode_vec(pem)?;
         let certificate = Certificate::from_der(&cert_der)?;
@@ -639,14 +664,14 @@ fn tgs() -> Result<PrincipalName, TestError> {
     })
 }
 
-/// A KRB-ERROR with `code` and METHOD-DATA `offers`.
-fn krb_error(code: i32, offers: &[PaData]) -> Result<Vec<u8>, TestError> {
+/// A KRB-ERROR with `code` and METHOD-DATA `offers` at the KDC time `stime`.
+fn krb_error(code: i32, offers: &[PaData], stime: u64) -> Result<Vec<u8>, TestError> {
     Ok(rasn_der::encode(&KrbError {
         pvno: Integer::from(5_i32),
         msg_type: Integer::from(30_i32),
         ctime: None,
         cusec: None,
-        stime: kerberos_time(start())?,
+        stime: kerberos_time(stime)?,
         susec: Integer::from(0_i32),
         error_code: code,
         crealm: None,

@@ -106,6 +106,11 @@ fn login_under(
     if let Some(found) = profile {
         exchange.configure(found);
     }
+    drive(kdc, &mut exchange)
+}
+
+/// Step `exchange` against `kdc` to its end.
+fn drive(kdc: &mut Kdc, exchange: &mut InitCreds<'_>) -> Result<AsRepSession, ClientError> {
     let mut step = exchange.step(StepInput::Start)?;
     loop {
         match step {
@@ -577,5 +582,35 @@ fn debug_output_is_redacted() -> Result<(), TestError> {
     let mut kdc_two = Kdc::new();
     drop(login(&mut kdc_two, &mut fast, false));
     assert!(!format!("{fast:?}").contains("0x33"), "no key bytes");
+    Ok(())
+}
+
+/// Under `kdc_timesync` the encrypted challenge is dated in the KDC's time,
+/// learnt from its `PREAUTH_REQUIRED` error (MIT `preauth_ec.c:96-142` with
+/// `get_in_tkt.c:1425-1439`); without it, in the local time.
+#[test]
+fn kdc_timesync_dates_the_encrypted_challenge_in_kdc_time() -> Result<(), TestError> {
+    for (timesync, offset) in [(true, 7_200_i64), (false, 0)] {
+        // Given a KDC whose clock runs two hours ahead.
+        let mut kdc = Kdc::ahead(7_200);
+        let mut fast = armored(&kdc, Policy::Required)?;
+        let mut exchange = InitCreds::with_keytab(
+            Principal::user(REALM, CLIENT),
+            keytab(&kdc),
+            options(false).with_kdc_timesync(timesync),
+        )
+        .with_armor(&mut fast);
+        // When the armored login answers the challenge.
+        let before = i64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())?;
+        let session = drive(&mut kdc, &mut exchange)?;
+        let after = i64::try_from(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())?;
+        // Then the challenge carries the KDC's time under timesync, else the local time.
+        assert_eq!(session.client(), &Principal::user(REALM, CLIENT));
+        let stamp = kdc.challenge_time().ok_or("no verified challenge")?;
+        assert!(
+            (before + offset - 5..=after + offset + 5).contains(&stamp),
+            "{timesync}: challenge time {stamp} for local {before}..{after}"
+        );
+    }
     Ok(())
 }

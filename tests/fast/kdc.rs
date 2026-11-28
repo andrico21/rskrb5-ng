@@ -88,6 +88,10 @@ pub(crate) struct Kdc {
     cookie: Vec<u8>,
     /// The realm a request to [`REALM`] is referred to.
     referral: Option<&'static str>,
+    /// How many seconds the KDC clock runs ahead of the client's.
+    ahead: u64,
+    /// The time of the last verified encrypted challenge, in Unix seconds.
+    challenge_time: Option<i64>,
 }
 
 impl Kdc {
@@ -102,7 +106,22 @@ impl Kdc {
             challenge_verified: false,
             cookie: b"MIT\x01cookie-state".to_vec(),
             referral: None,
+            ahead: 0,
+            challenge_time: None,
         }
+    }
+
+    /// A KDC whose clock runs `seconds` ahead of the client's.
+    pub(crate) fn ahead(seconds: u64) -> Self {
+        Self {
+            ahead: seconds,
+            ..Self::new()
+        }
+    }
+
+    /// The time of the last verified encrypted challenge, in Unix seconds.
+    pub(crate) const fn challenge_time(&self) -> Option<i64> {
+        self.challenge_time
     }
 
     /// A KDC that breaks `tamper`.
@@ -230,11 +249,8 @@ impl Kdc {
                     (&self.client_key, b"challengelongterm"),
                 )?;
                 let encrypted: EncryptedData = der::decode(&challenge.value)?;
-                drop(der::decode::<PaEncTsEnc>(&open(
-                    &client_key,
-                    54,
-                    &encrypted,
-                )?)?);
+                let stamp = der::decode::<PaEncTsEnc>(&open(&client_key, 54, &encrypted)?)?;
+                self.challenge_time = Some(stamp.patimestamp.0.timestamp());
                 self.challenge_verified = true;
                 self.as_rep(&context, &inner)
             }
@@ -248,7 +264,10 @@ impl Kdc {
         context: &Context,
         inner: &KrbFastReq,
     ) -> Result<Vec<u8>, TestError> {
-        let fx_error = error(inner, None)?;
+        let clock = SystemTime::now()
+            .checked_add(Duration::from_secs(self.ahead))
+            .ok_or("KDC clock")?;
+        let fx_error = error(inner, None, clock)?;
         let info = vec![EtypeInfo2Entry {
             etype: 18,
             salt: Some(KerberosString::try_from(format!(
@@ -302,6 +321,7 @@ impl Kdc {
         Ok(der::encode(&error(
             inner,
             Some(der::encode(&method_data)?),
+            clock,
         )?)?)
     }
 
@@ -542,7 +562,7 @@ fn enc_part(
 
 /// The armored `KDC_ERR_WRONG_REALM` that refers the client to `realm`.
 fn wrong_realm(context: &Context, inner: &KrbFastReq, realm: &str) -> Result<Vec<u8>, TestError> {
-    let mut referral = error(inner, None)?;
+    let mut referral = error(inner, None, SystemTime::now())?;
     referral.error_code = 68_i32;
     referral.crealm = Some(string(realm)?);
     let response = KrbFastResponse {
@@ -562,15 +582,19 @@ fn wrong_realm(context: &Context, inner: &KrbFastReq, realm: &str) -> Result<Vec
     Ok(der::encode(&referral)?)
 }
 
-/// The KRB-ERROR `PREAUTH_REQUIRED` for `inner` with `e_data`.
-fn error(inner: &KrbFastReq, e_data: Option<Vec<u8>>) -> Result<KrbError, TestError> {
+/// The KRB-ERROR `PREAUTH_REQUIRED` for `inner` with `e_data` at the KDC time `stime`.
+fn error(
+    inner: &KrbFastReq,
+    e_data: Option<Vec<u8>>,
+    stime: SystemTime,
+) -> Result<KrbError, TestError> {
     let realm = String::from_utf8(inner.req_body.realm.as_bytes().to_vec())?;
     Ok(KrbError {
         pvno: Integer::from(5_i32),
         msg_type: Integer::from(30_i32),
         ctime: None,
         cusec: None,
-        stime: time(whole(SystemTime::now())?),
+        stime: time(whole(stime)?),
         susec: Integer::from(0_i32),
         error_code: 25,
         crealm: Some(string(&realm)?),

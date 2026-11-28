@@ -243,3 +243,27 @@ fn without_the_leaf_every_operation_is_unavailable() -> Result<(), TestError> {
     ));
     Ok(())
 }
+
+/// Without the realm relations the policy is MIT's default: kpKDC, the
+/// default group, no KDC hostnames and no CRL requirement; `none`, `kpKDC`
+/// and an explicit `false` map like MIT's.
+#[test]
+fn absent_relations_give_the_default_certificate_policy() -> Result<(), TestError> {
+    // Given a realm without any pkinit relation.
+    let policy = CertificatePolicy::from_config(&config("")?, REALM)?;
+    // When the policy is read, then every default applies.
+    assert_eq!(policy.eku_checking(), EkuChecking::KpKdc, "eku");
+    assert_eq!(policy.group(), DhGroup::default(), "group");
+    assert!(policy.kdc_hostnames().is_empty(), "hostnames");
+    assert!(!policy.crl_checking(), "crl");
+    // And the other EKU settings and an explicit `false` map like MIT's.
+    for (value, eku) in [("none", EkuChecking::None), ("kpKDC", EkuChecking::KpKdc)] {
+        let named = CertificatePolicy::from_config(
+            &config(&format!(" pkinit_eku_checking = {value}\n pkinit_require_crl_checking = false"))?,
+            REALM,
+        )?;
+        assert_eq!(named.eku_checking(), eku, "{value}");
+        assert!(!named.crl_checking(), "{value}: crl");
+    }
+    Ok(())
+}
