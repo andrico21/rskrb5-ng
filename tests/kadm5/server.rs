@@ -13,7 +13,9 @@
 use alloc::collections::VecDeque;
 use std::io;
 
-use rskrb5_ng::gss::{Acceptor, AcceptorOptions, Credential, EstablishedContext};
+use rskrb5_ng::gss::{
+    Acceptor, AcceptorOptions, ChannelBindings, ContextFlags, Credential, EstablishedContext,
+};
 use tokio::{
     io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _, DuplexStream, duplex},
     task::JoinHandle,
@@ -106,15 +108,18 @@ pub(super) struct Script {
     pub faults: VecDeque<Fault>,
     /// The answer to the context destruction.
     pub destroy: Destroy,
+    /// The options of the GSS acceptor: no channel bindings, as kadmind.
+    pub acceptor: AcceptorOptions,
 }
 
 impl Script {
     /// A server without faults.
-    pub(super) const fn plain() -> Self {
+    pub(super) fn plain() -> Self {
         Self {
             init: Init::Accept,
             faults: VecDeque::new(),
             destroy: Destroy::Protected,
+            acceptor: AcceptorOptions::new(),
         }
     }
 
@@ -123,7 +128,15 @@ impl Script {
         Self {
             init: Init::Accept,
             faults: faults.iter().copied().collect(),
-            destroy: Destroy::Protected,
+            ..Self::plain()
+        }
+    }
+
+    /// A server without faults whose acceptor holds `bindings`.
+    pub(super) fn bound(bindings: ChannelBindings) -> Self {
+        Self {
+            acceptor: AcceptorOptions::new().with_channel_bindings(bindings),
+            ..Self::plain()
         }
     }
 }
@@ -139,6 +152,8 @@ pub(super) struct Seen {
     pub calls: Vec<(u32, Vec<u8>)>,
     /// Whether the client destroyed the context.
     pub destroyed: bool,
+    /// Whether the acceptor's context is channel-bound.
+    pub bound: bool,
 }
 
 /// Start a server on one end of a duplex stream; the client gets the other.
@@ -350,7 +365,7 @@ fn init(
     let (_version, _proc, _sequence, service) =
         (reader.u32()?, reader.u32()?, reader.u32()?, reader.u32()?);
     let token = Reader::new(&call.arguments).opaque()?.to_vec();
-    let mut acceptor = Acceptor::new(acceptor_credential, AcceptorOptions::new())?;
+    let mut acceptor = Acceptor::new(acceptor_credential, script.acceptor.clone())?;
     let accepted_context = acceptor.accept_sec_context(&token)?;
     let reply_token = accepted_context.output_token().unwrap_or_default().to_vec();
     let mut context = accepted_context.into_context();
@@ -484,6 +499,12 @@ where
         if state.context.is_none() {
             let reply = init(&mut state, &acceptor_credential, &call, &script)?;
             seen.service = state.service;
+            seen.bound = state.context.as_ref().is_some_and(|context| {
+                context
+                    .inquire()
+                    .flags()
+                    .contains(ContextFlags::CHANNEL_BOUND)
+            });
             write_fragments(&mut stream, &reply, usize::MAX).await?;
             continue;
         }

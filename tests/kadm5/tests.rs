@@ -38,3 +38,7 @@ mod outcome;
 /// `[realms] admin_server` selects the administration server.
 #[path = "relations.rs"]
 mod relations;
+
+/// The options a profile makes, the policy classes and the procedure names.
+#[path = "profile.rs"]
+mod profile;

@@ -275,8 +275,7 @@ async fn auth_sys_only_server_is_refused() -> Result<(), TestError> {
         privileges(),
         Script {
             init: Init::AuthSysOnly(2),
-            faults: Vec::new().into(),
-            destroy: Destroy::Protected,
+            ..Script::plain()
         },
     );
     // When the client connects.
@@ -310,8 +309,7 @@ async fn unverified_context_creation_is_refused() -> Result<(), TestError> {
             privileges(),
             Script {
                 init,
-                faults: Vec::new().into(),
-                destroy: Destroy::Protected,
+                ..Script::plain()
             },
         );
         let credential = support::credential()?;
