@@ -563,17 +563,20 @@ async fn cross_realm_certificate_s4u2self_sends_the_certificate_once() -> Result
 /// (MIT `s4u_creds.c:557-561`).
 #[tokio::test]
 async fn s4u2self_options_add_canonicalize_and_forwardable() -> Result<(), TestError> {
-    for forwardable in [true, false] {
-        // Given a profile that asks for forwardable, proxiable and canonicalized tickets.
+    let cases = [
+        (" forwardable = true\n proxiable = true\n canonicalize = true\n", true, true),
+        (" forwardable = true\n proxiable = true\n canonicalize = true\n", false, true),
+        (" proxiable = true\n", true, true),
+        (" proxiable = true\n", false, false),
+    ];
+    for (libdefaults, forwardable, expected_forwardable) in cases {
+        // Given a profile with `libdefaults` and a service with a TGT.
         let service = Principal::user(SERVICE_REALM, "svc");
         let (tab, key) = keytab(&service, "service-password")?;
         let kdc = Kdc::new(&[])
             .with_service(service.clone(), key)
             .leak();
-        let profiled = profile(
-            &[SERVICE_REALM],
-            "[libdefaults]\n forwardable = true\n proxiable = true\n canonicalize = true\n",
-        )?;
+        let profiled = profile(&[SERVICE_REALM], libdefaults)?;
         let mut client = client(profiled, kdc, &service, tab)?;
         // When the service impersonates alice.
         drop(explained(
@@ -585,13 +588,15 @@ async fn s4u2self_options_add_canonicalize_and_forwardable() -> Result<(), TestE
                 .await,
             kdc,
         )?);
-        // Then the request asked for exactly the profile's options plus CANONICALIZE.
+        // Then the request asks for the profile's options plus CANONICALIZE,
+        // and FORWARDABLE from the profile or the delegation.
         let [(options, _)] = kdc.s4u_requests()[..] else {
-            return Err(format!("{forwardable}: one S4U request expected").into());
+            return Err(format!("{libdefaults:?} {forwardable}: one S4U request expected").into());
         };
-        assert_eq!(options & CANONICALIZE, CANONICALIZE, "{forwardable}: {options:#010x}");
-        assert_eq!(options & PROXIABLE, PROXIABLE, "{forwardable}: {options:#010x}");
-        assert_eq!(options & FORWARDABLE, FORWARDABLE, "{forwardable}: {options:#010x}");
+        let case = format!("{libdefaults:?} {forwardable}: {options:#010x}");
+        assert_eq!(options & CANONICALIZE, CANONICALIZE, "{case}");
+        assert_eq!(options & PROXIABLE, PROXIABLE, "{case}");
+        assert_eq!(options & FORWARDABLE != 0, expected_forwardable, "{case}");
     }
     Ok(())
 }
